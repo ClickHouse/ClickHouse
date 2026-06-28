@@ -79,7 +79,8 @@ def _normalize_sf(sf: str) -> str:
 
 
 def _parse_info(path: str) -> dict:
-    """Parse an LCOV `.info` file into `{rel_path: {"lines": {ln: cnt}, "fns": {name: cnt}}}`.
+    """Parse an LCOV `.info` file into
+    `{rel_path: {"lines": {ln: cnt}, "fns": {name: cnt}, "branches": {(ln,blk,br): cnt}}}`.
 
     Counts accumulate when the same SF appears more than once (which happens
     after lcov merges multiple tracefiles).
@@ -91,7 +92,7 @@ def _parse_info(path: str) -> dict:
             line = raw.strip()
             if line.startswith("SF:"):
                 cur_rel = _normalize_sf(line[3:])
-                data.setdefault(cur_rel, {"lines": {}, "fns": {}})
+                data.setdefault(cur_rel, {"lines": {}, "fns": {}, "branches": {}})
             elif not cur_rel:
                 continue
             elif line.startswith("DA:"):
@@ -102,6 +103,18 @@ def _parse_info(path: str) -> dict:
                 # whether the count is zero or non-zero).
                 ln, cnt = int(parts[0]), int(float(parts[1]))
                 data[cur_rel]["lines"][ln] = data[cur_rel]["lines"].get(ln, 0) + cnt
+            elif line.startswith("BRDA:"):
+                # BRDA:<line>,<block>,<branch>,<count|-|0>
+                parts = line[5:].split(",", 3)
+                if len(parts) == 4:
+                    ln_b = int(parts[0])
+                    blk, br, cnt_s = parts[1], parts[2], parts[3]
+                    bkey = (ln_b, blk, br)
+                    prev = data[cur_rel]["branches"].get(bkey, 0)
+                    if cnt_s != "-":
+                        data[cur_rel]["branches"][bkey] = prev + int(float(cnt_s))
+                    elif bkey not in data[cur_rel]["branches"]:
+                        data[cur_rel]["branches"][bkey] = 0
             elif line.startswith("FNDA:"):
                 cnt_str, name = line[5:].split(",", 1)
                 data[cur_rel]["fns"][name] = (
@@ -300,15 +313,20 @@ if __name__ == "__main__":
     _stable_base_line_tot: set[tuple[str, int]] = set()
     _stable_base_fn_cov: set[tuple[str, str]] = set()
     _stable_base_fn_tot: set[tuple[str, str]] = set()
+    _stable_base_br_cov: set[tuple[str, int, str, str]] = set()
+    _stable_base_br_tot: set[tuple[str, int, str, str]] = set()
     # PR side: starts with the primary baseline (m1); ALL extras added in
     # the loop below; PR (curr_data) added after the loop.
     _stable_pr_line_cov: set[tuple[str, int]] = set()
     _stable_pr_line_tot: set[tuple[str, int]] = set()
     _stable_pr_fn_cov: set[tuple[str, str]] = set()
     _stable_pr_fn_tot: set[tuple[str, str]] = set()
+    _stable_pr_br_cov: set[tuple[str, int, str, str]] = set()
+    _stable_pr_br_tot: set[tuple[str, int, str, str]] = set()
 
     def _accum(data: dict,
-               lc: set, lt: set, fc: set, ft: set) -> None:
+               lc: set, lt: set, fc: set, ft: set,
+               bc: set, bt: set) -> None:
         """Accumulate without remapping (for primary baseline and PR run)."""
         for _rel, _v in data.items():
             for _ln, _cnt in _v["lines"].items():
@@ -319,9 +337,15 @@ if __name__ == "__main__":
                 ft.add((_rel, _fn))
                 if _cnt > 0:
                     fc.add((_rel, _fn))
+            for (_ln, _blk, _br), _cnt in _v.get("branches", {}).items():
+                bkey = (_rel, _ln, _blk, _br)
+                bt.add(bkey)
+                if _cnt > 0:
+                    bc.add(bkey)
 
     def _accum_with_remap(data: dict, file_hunks: dict,
-                          lc: set, lt: set, fc: set, ft: set) -> None:
+                          lc: set, lt: set, fc: set, ft: set,
+                          bc: set, bt: set) -> None:
         """Accumulate with line-number remapping for extra baselines.
 
         Lines from each extra baseline were produced from a different master
@@ -332,6 +356,7 @@ if __name__ == "__main__":
         Lines deleted between the extra and primary are dropped (new_ln = None).
         Functions are identified by mangled name — stable across minor source
         changes — and need no remapping.
+        Branch records carry a line number and are remapped the same way as lines.
         """
         for _rel, _v in data.items():
             hunks = file_hunks.get(_rel, [])
@@ -350,14 +375,27 @@ if __name__ == "__main__":
                 ft.add((_rel, _fn))
                 if _cnt > 0:
                     fc.add((_rel, _fn))
+            for (_ln, _blk, _br), _cnt in _v.get("branches", {}).items():
+                if hunks:
+                    new_ln = _remap_old_to_new(_ln, hunks)
+                    if new_ln is None:
+                        continue
+                    bkey = (_rel, new_ln, _blk, _br)
+                else:
+                    bkey = (_rel, _ln, _blk, _br)
+                bt.add(bkey)
+                if _cnt > 0:
+                    bc.add(bkey)
 
     # Primary (m1) goes into both sides.
     _accum(base_data,
            _stable_base_line_cov, _stable_base_line_tot,
-           _stable_base_fn_cov,  _stable_base_fn_tot)
+           _stable_base_fn_cov,  _stable_base_fn_tot,
+           _stable_base_br_cov,  _stable_base_br_tot)
     _accum(base_data,
            _stable_pr_line_cov, _stable_pr_line_tot,
-           _stable_pr_fn_cov,   _stable_pr_fn_tot)
+           _stable_pr_fn_cov,   _stable_pr_fn_tot,
+           _stable_pr_br_cov,   _stable_pr_br_tot)
 
     # Load all extra baselines, accumulate into stable_base with remapping.
     # Hunks are stored alongside data so stable_pr can reuse them.
@@ -404,7 +442,8 @@ if __name__ == "__main__":
         # m1's coordinate system.
         _accum_with_remap(_bx, file_hunks,
                           _stable_base_line_cov, _stable_base_line_tot,
-                          _stable_base_fn_cov,   _stable_base_fn_tot)
+                          _stable_base_fn_cov,   _stable_base_fn_tot,
+                          _stable_base_br_cov,   _stable_base_br_tot)
         _all_extra_data.append(_bx)
         _all_extra_hunks.append(file_hunks)
         del _bx
@@ -415,11 +454,13 @@ if __name__ == "__main__":
     for _bx, _hunks in zip(_all_extra_data, _all_extra_hunks):
         _accum_with_remap(_bx, _hunks,
                           _stable_pr_line_cov, _stable_pr_line_tot,
-                          _stable_pr_fn_cov,   _stable_pr_fn_tot)
+                          _stable_pr_fn_cov,   _stable_pr_fn_tot,
+                          _stable_pr_br_cov,   _stable_pr_br_tot)
     # PR side: no remapping needed (same source/binary epoch as m1).
     _accum(curr_data,
            _stable_pr_line_cov, _stable_pr_line_tot,
-           _stable_pr_fn_cov,   _stable_pr_fn_tot)
+           _stable_pr_fn_cov,   _stable_pr_fn_tot,
+           _stable_pr_br_cov,   _stable_pr_br_tot)
 
     have_extra = extra_baselines_used > 0
     if have_extra:
@@ -459,20 +500,27 @@ if __name__ == "__main__":
     # are comparable.
     _all_tot    = _stable_base_line_tot | _stable_pr_line_tot
     _all_fn_tot = _stable_base_fn_tot   | _stable_pr_fn_tot
+    _all_br_tot = _stable_base_br_tot   | _stable_pr_br_tot
     b_lt = c_lt = len(_all_tot)       # shared line denominator
-    b_ft = c_ft = len(_all_fn_tot)    # shared function denominator (was wrongly using line total)
+    b_ft = c_ft = len(_all_fn_tot)    # shared function denominator
+    b_bt = c_bt = len(_all_br_tot)    # shared branch denominator
     b_lh = len(_stable_base_line_cov)
     b_fh = len(_stable_base_fn_cov)
+    b_bh = len(_stable_base_br_cov)
     c_lh = len(_stable_pr_line_cov)
     c_fh = len(_stable_pr_fn_cov)
+    c_bh = len(_stable_pr_br_cov)
     # Fall back to primary-only counts if no extras (single-baseline mode).
     if not _all_tot:
         b_lt = c_lt = len(_stable_base_line_tot) or 1
         b_ft = c_ft = len(_stable_base_fn_tot) or 1
+        b_bt = c_bt = len(_stable_base_br_tot) or 1
     b_lp = (100.0 * b_lh / b_lt) if b_lt else 0.0
     c_lp = (100.0 * c_lh / c_lt) if c_lt else 0.0
     b_fp = (100.0 * b_fh / b_ft) if b_ft else 0.0
     c_fp = (100.0 * c_fh / c_ft) if c_ft else 0.0
+    b_bp = (100.0 * b_bh / b_bt) if b_bt else 0.0
+    c_bp = (100.0 * c_bh / c_bt) if c_bt else 0.0
 
     print("\nOverall coverage delta (current vs master baseline):")
     print(
@@ -482,6 +530,10 @@ if __name__ == "__main__":
     print(
         f"  Functions: {c_fp - b_fp:+.4f} pp  "
         f"({b_fp:.4f}% -> {c_fp:.4f}%, {c_fh - b_fh:+,} covered)"
+    )
+    print(
+        f"  Branches : {c_bp - b_bp:+.4f} pp  "
+        f"({b_bp:.4f}% -> {c_bp:.4f}%, {c_bh - b_bh:+,} covered)"
     )
 
     nc_lines: dict[str, list[int]] = defaultdict(list)
@@ -600,18 +652,24 @@ if __name__ == "__main__":
     r.ext["newly_covered_fns"] = total_fns
     r.ext["newly_covered_files"] = total_files
     # Stable-union coverage delta for the GitHub comment table.
-    r.ext["stable_b_line_cov"] = b_lp
-    r.ext["stable_c_line_cov"] = c_lp
-    r.ext["stable_b_func_cov"] = b_fp
-    r.ext["stable_c_func_cov"] = c_fp
-    r.ext["stable_b_line_hit"]  = b_lh
-    r.ext["stable_b_line_tot"]  = b_lt
-    r.ext["stable_c_line_hit"]  = c_lh
-    r.ext["stable_c_line_tot"]  = c_lt
-    r.ext["stable_b_func_hit"]  = b_fh
-    r.ext["stable_b_func_tot"]  = b_ft
-    r.ext["stable_c_func_hit"]  = c_fh
-    r.ext["stable_c_func_tot"]  = c_ft
+    r.ext["stable_b_line_cov"]   = b_lp
+    r.ext["stable_c_line_cov"]   = c_lp
+    r.ext["stable_b_func_cov"]   = b_fp
+    r.ext["stable_c_func_cov"]   = c_fp
+    r.ext["stable_b_branch_cov"] = b_bp
+    r.ext["stable_c_branch_cov"] = c_bp
+    r.ext["stable_b_line_hit"]   = b_lh
+    r.ext["stable_b_line_tot"]   = b_lt
+    r.ext["stable_c_line_hit"]   = c_lh
+    r.ext["stable_c_line_tot"]   = c_lt
+    r.ext["stable_b_func_hit"]   = b_fh
+    r.ext["stable_b_func_tot"]   = b_ft
+    r.ext["stable_c_func_hit"]   = c_fh
+    r.ext["stable_c_func_tot"]   = c_ft
+    r.ext["stable_b_branch_hit"] = b_bh
+    r.ext["stable_b_branch_tot"] = b_bt
+    r.ext["stable_c_branch_hit"] = c_bh
+    r.ext["stable_c_branch_tot"] = c_bt
     # Snapshot the top files into the result for inline rendering in the GH comment.
     r.ext["newly_covered_top_files"] = [
         {"rel": rel, "lines": lc, "fns": fc}
