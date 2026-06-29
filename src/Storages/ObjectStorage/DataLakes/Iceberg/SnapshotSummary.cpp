@@ -50,52 +50,86 @@ SnapshotSummary::SnapshotSummary(
     : update(std::move(update_))
     , extra_fields(std::move(extra_fields_))
 {
+    SnapshotSummaryTotals parent;
+
     if (parent_totals)
-        totals = *parent_totals;
+    {
+        parent = *parent_totals;
+    }
     else if (getOperation() != SnapshotSummaryOperation::APPEND)
+    {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No parent snapshot for DELETE/OVERWRITE/REPLACE");
+    }
+    else
+    {
+        parent = SnapshotSummaryTotals{
+            .records = 0,
+            .files_size = 0,
+            .data_files = 0,
+            .delete_files = 0,
+            .position_deletes = 0,
+            .equality_deletes = 0};
+    }
+
+    /// Mirror Iceberg's `SnapshotProducer.updateTotal`: carry a total forward only if the parent had
+    /// it, and drop (omit) any total that would go negative instead of writing a wrapped value.
+    auto update_total = [](std::optional<UInt64> parent_value, UInt64 added, UInt64 removed) -> std::optional<UInt64>
+    {
+        if (!parent_value.has_value())
+            return std::nullopt;
+        const UInt64 value = *parent_value + added;
+        if (value < removed)
+            return std::nullopt;
+        return value - removed;
+    };
 
     switch (getOperation())
     {
         case SnapshotSummaryOperation::APPEND:
         {
             const auto & u = std::get<SnapshotSummaryUpdateAppend>(update);
-            totals.records += u.added_records;
-            totals.files_size += u.added_files_size;
-            totals.data_files += u.added_files;
+            totals.records = update_total(parent.records, u.added_records, 0);
+            totals.files_size = update_total(parent.files_size, u.added_files_size, 0);
+            totals.data_files = update_total(parent.data_files, u.added_files, 0);
+            totals.delete_files = update_total(parent.delete_files, 0, 0);
+            totals.position_deletes = update_total(parent.position_deletes, 0, 0);
+            totals.equality_deletes = update_total(parent.equality_deletes, 0, 0);
             break;
         }
         case SnapshotSummaryOperation::OVERWRITE:
         {
             const auto & u = std::get<SnapshotSummaryUpdateOverwrite>(update);
-            totals.records += u.added_records - u.removed_records;
-            totals.files_size += u.added_files_size - u.removed_files_size;
-            totals.data_files += u.added_files - u.deleted_data_files;
-            totals.delete_files += u.added_delete_files;
-            totals.position_deletes += u.added_position_deletes;
-            totals.equality_deletes += u.added_equality_deletes;
+            totals.records = update_total(parent.records, u.added_records, u.removed_records);
+            totals.files_size = update_total(parent.files_size, u.added_files_size, u.removed_files_size);
+            totals.data_files = update_total(parent.data_files, u.added_files, u.deleted_data_files);
+            totals.delete_files = update_total(parent.delete_files, u.added_delete_files, 0);
+            totals.position_deletes = update_total(parent.position_deletes, u.added_position_deletes, 0);
+            totals.equality_deletes = update_total(parent.equality_deletes, u.added_equality_deletes, 0);
             break;
         }
         case SnapshotSummaryOperation::DELETE:
         {
             const auto & u = std::get<SnapshotSummaryUpdateDelete>(update);
-            totals.records -= u.removed_records;
-            totals.files_size -= u.removed_files_size;
-            totals.data_files -= u.deleted_data_files;
-            totals.delete_files -= u.removed_position_delete_files + u.removed_equality_delete_files;
-            totals.position_deletes -= u.removed_position_deletes;
-            totals.equality_deletes -= u.removed_equality_deletes;
+            totals.records = update_total(parent.records, 0, u.removed_records);
+            totals.files_size = update_total(parent.files_size, 0, u.removed_files_size);
+            totals.data_files = update_total(parent.data_files, 0, u.deleted_data_files);
+            totals.delete_files
+                = update_total(parent.delete_files, 0, u.removed_position_delete_files + u.removed_equality_delete_files);
+            totals.position_deletes = update_total(parent.position_deletes, 0, u.removed_position_deletes);
+            totals.equality_deletes = update_total(parent.equality_deletes, 0, u.removed_equality_deletes);
             break;
         }
         case SnapshotSummaryOperation::REPLACE:
         {
             const auto & u = std::get<SnapshotSummaryUpdateReplace>(update);
-            totals.records += u.added_records - u.removed_records;
-            totals.files_size += u.added_files_size - u.removed_files_size;
-            totals.data_files += u.added_files - u.deleted_data_files;
-            totals.delete_files += u.added_delete_files - u.removed_delete_files;
-            totals.position_deletes += u.added_position_deletes - u.removed_position_deletes;
-            totals.equality_deletes += u.added_equality_deletes - u.removed_equality_deletes;
+            totals.records = update_total(parent.records, u.added_records, u.removed_records);
+            totals.files_size = update_total(parent.files_size, u.added_files_size, u.removed_files_size);
+            totals.data_files = update_total(parent.data_files, u.added_files, u.deleted_data_files);
+            totals.delete_files = update_total(parent.delete_files, u.added_delete_files, u.removed_delete_files);
+            totals.position_deletes
+                = update_total(parent.position_deletes, u.added_position_deletes, u.removed_position_deletes);
+            totals.equality_deletes
+                = update_total(parent.equality_deletes, u.added_equality_deletes, u.removed_equality_deletes);
             break;
         }
     }
@@ -219,12 +253,22 @@ try
     else
         return std::unexpected(fmt::format("Unexpected operation '{}'", operation_str));
 
-    result.totals.records = get_optional_uint64(Iceberg::f_total_records);
-    result.totals.files_size = get_optional_uint64(Iceberg::f_total_files_size);
-    result.totals.data_files = get_optional_uint64(Iceberg::f_total_data_files);
-    result.totals.delete_files = get_optional_uint64(Iceberg::f_total_delete_files);
-    result.totals.position_deletes = get_optional_uint64(Iceberg::f_total_position_deletes);
-    result.totals.equality_deletes = get_optional_uint64(Iceberg::f_total_equality_deletes);
+    /// An absent `total-*` stays unknown (`std::nullopt`) rather than becoming 0, so it is
+    /// propagated forward as unknown by the next write instead of corrupting the totals.
+    auto get_present_uint64 = [&](const char * field) -> std::optional<UInt64>
+    {
+        if (!obj.has(field))
+            return std::nullopt;
+
+        return DB::parse<UInt64>(get_string(field));
+    };
+
+    result.totals.records = get_present_uint64(Iceberg::f_total_records);
+    result.totals.files_size = get_present_uint64(Iceberg::f_total_files_size);
+    result.totals.data_files = get_present_uint64(Iceberg::f_total_data_files);
+    result.totals.delete_files = get_present_uint64(Iceberg::f_total_delete_files);
+    result.totals.position_deletes = get_present_uint64(Iceberg::f_total_position_deletes);
+    result.totals.equality_deletes = get_present_uint64(Iceberg::f_total_equality_deletes);
 
     if (with_extra_fields)
     {
@@ -349,12 +393,18 @@ void SnapshotSummary::forEachField(std::function<void(std::string_view, std::str
         }
     }
 
-    set_as_string(Iceberg::f_total_records, totals.records);
-    set_as_string(Iceberg::f_total_files_size, totals.files_size);
-    set_as_string(Iceberg::f_total_data_files, totals.data_files);
-    set_as_string(Iceberg::f_total_delete_files, totals.delete_files);
-    set_as_string(Iceberg::f_total_position_deletes, totals.position_deletes);
-    set_as_string(Iceberg::f_total_equality_deletes, totals.equality_deletes);
+    /// An unknown total is omitted entirely (matching Iceberg), never written as 0.
+    auto set_total = [&](const char * field, const std::optional<UInt64> & value)
+    {
+        if (value)
+            set_as_string(field, *value);
+    };
+    set_total(Iceberg::f_total_records, totals.records);
+    set_total(Iceberg::f_total_files_size, totals.files_size);
+    set_total(Iceberg::f_total_data_files, totals.data_files);
+    set_total(Iceberg::f_total_delete_files, totals.delete_files);
+    set_total(Iceberg::f_total_position_deletes, totals.position_deletes);
+    set_total(Iceberg::f_total_equality_deletes, totals.equality_deletes);
 
     if (with_extra_fields)
         for (const auto & [key, value] : extra_fields)
