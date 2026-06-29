@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int BAD_ARGUMENTS;
 }
 
 ConnectionsCredentials parseConnectionsCredentials(const Poco::Util::AbstractConfiguration & config, const std::string & host, const std::optional<std::string> & connection_name)
@@ -44,6 +45,10 @@ ConnectionsCredentials parseConnectionsCredentials(const Poco::Util::AbstractCon
             res.user.emplace(config.getString(prefix + ".user"));
         if (config.has(prefix + ".password"))
             res.password.emplace(config.getString(prefix + ".password"));
+        if (config.has(prefix + ".ssh_key_file"))
+            res.ssh_key_file.emplace(config.getString(prefix + ".ssh_key_file"));
+        if (config.has(prefix + ".ssh_key_passphrase"))
+            res.ssh_key_passphrase.emplace(config.getString(prefix + ".ssh_key_passphrase"));
         if (config.has(prefix + ".database"))
             res.database.emplace(config.getString(prefix + ".database"));
         if (config.has(prefix + ".history_file"))
@@ -55,6 +60,9 @@ ConnectionsCredentials parseConnectionsCredentials(const Poco::Util::AbstractCon
         if (config.has(prefix + ".prompt"))
             res.prompt.emplace(config.getString(prefix + ".prompt"));
     }
+
+    if (res.password.has_value() && res.ssh_key_file.has_value())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "<password/> and <ssh_key_file/> cannot be specified at the same time");
 
     if (connection_name.has_value() && !connection_found)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No such connection '{}' in connections_credentials", connection_name.value());
