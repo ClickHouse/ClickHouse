@@ -339,6 +339,9 @@ public:
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
+    bool isQuorumFailedForPart(const String & part_name, const zkutil::ZooKeeperPtr & zookeeper) const;
+    bool isQuorumWritePendingForPart(const String & part_name, const zkutil::ZooKeeperPtr & zookeeper) const;
+
     // Return default or custom zookeeper name for table
     const String & getZooKeeperName() const { return zookeeper_info.zookeeper_name; }
     const String & getZooKeeperPath() const { return zookeeper_info.path; }
