@@ -12,6 +12,12 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True)
 
+
+def skip_test_msan(instance):
+    if instance.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with vfork")
+
+
 config = """<clickhouse>
     <user_defined_executable_functions_config>/etc/clickhouse-server/functions/version_udf_function.xml</user_defined_executable_functions_config>
 </clickhouse>"""
@@ -69,6 +75,8 @@ def write_script(version):
 
 
 def test_lifetime_reloads_executable_pool_script(started_cluster):
+    skip_test_msan(node)
+
     # The pool UDF starts with the script printing "v1".
     assert node.query("SELECT version_udf(toUInt64(1))") == "v1\n"
 
