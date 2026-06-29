@@ -27,6 +27,7 @@ workflow = Workflow.Config(
         *JobConfigs.build_jobs,
         *JobConfigs.build_llvm_coverage_job,
         *JobConfigs.release_build_jobs,
+        *JobConfigs.sccache_warmup_build_jobs,
         *[
             job.set_run_after(
                 REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_arm_jobs[0].name]
