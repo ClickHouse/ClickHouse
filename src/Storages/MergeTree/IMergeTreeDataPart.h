@@ -53,6 +53,7 @@ class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
 class PackedFilesReader;
+struct IMergeTreeIndex;
 
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -128,6 +129,12 @@ public:
 
     /// Returns true if there is materialized index with specified name in part.
     bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
+
+    /// True iff any of @index's substreams (base plus side streams like .dct/.pst for text indices)
+    /// is stored inside this part's skp_idx.packed archive. Probing every substream, not just
+    /// .idx/.idx2, keeps a mixed-layout index from looking absent and losing its packed side
+    /// streams. Returns false on storages without a packed archive.
+    bool isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const;
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const;

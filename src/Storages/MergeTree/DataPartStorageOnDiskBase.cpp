@@ -1168,6 +1168,22 @@ bool DataPartStorageOnDiskBase::hasSkipIndicesPackedArchive() const
     return getSkipIndicesPackedReader() != nullptr;
 }
 
+void DataPartStorageOnDiskBase::copyArchiveEntryTo(
+    const PackedFilesReader & source_archive,
+    const String & file_name,
+    PackedFilesWriter & target,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings) const
+{
+    /// Route the read through this storage's readFile (the overlay), not source_archive.readFile,
+    /// so a storage where skp_idx.packed isn't a flat disk file still composes the read correctly.
+    const auto file_size = source_archive.getFileSize(file_name);
+    auto src = readFile(file_name, read_settings, file_size);
+    auto dst = target.writeFile(file_name, write_settings);
+    copyData(*src, *dst);
+    dst->finalize();
+}
+
 void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     const NameSet & file_names,
     PackedFilesWriter & target,
@@ -1181,18 +1197,10 @@ void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     if (!source_archive)
         return;
 
-    /// Route reads through readFile (the storage's overlay), not source_archive->readFile, so a
-    /// storage where skp_idx.packed isn't a flat disk file still composes the read correctly.
     for (const auto & file_name : file_names)
     {
-        if (!source_archive->exists(file_name))
-            continue;
-
-        const auto file_size = source_archive->getFileSize(file_name);
-        auto src = readFile(file_name, read_settings, file_size);
-        auto dst = target.writeFile(file_name, write_settings);
-        copyData(*src, *dst);
-        dst->finalize();
+        if (source_archive->exists(file_name))
+            copyArchiveEntryTo(*source_archive, file_name, target, read_settings, write_settings);
     }
 }
 
@@ -1226,13 +1234,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
             continue;
 
         any_kept = true;
-        const auto file_size = source_archive->getFileSize(file_name);
-        /// See copyPackedSkipIndicesFilesInto: go through the storage's readFile so subclasses
-        /// that need to compose the read (e.g. archive-in-archive) get a chance to intervene.
-        auto src = readFile(file_name, read_settings, file_size);
-        auto dst = writer.writeFile(file_name, write_settings);
-        copyData(*src, *dst);
-        dst->finalize();
+        copyArchiveEntryTo(*source_archive, file_name, writer, read_settings, write_settings);
     }
 
     if (!any_kept)

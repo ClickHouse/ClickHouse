@@ -155,8 +155,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
-    PackedFilesWriter * packed_writer_for_streams =
-        skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
+    PackedFilesWriter * packed_writer_for_streams = getSkipIndicesPackedWriter();
 
     for (const auto & skip_index : skip_indices)
     {
@@ -186,6 +185,14 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             auto logical_stream_name = index_name + index_substream.suffix;
             auto on_disk_stream_name = replaceFileNameToHashIfNeeded(logical_stream_name, *storage_settings, data_part_storage.get());
 
+            SizeAdaptivePacking packing;
+            if (packs_this_index)
+                packing = {
+                    packed_writer_for_streams,
+                    logical_stream_name + index_substream.extension,
+                    logical_stream_name + marks_file_extension,
+                    packed_spill_threshold};
+
             auto stream = std::make_unique<MergeTreeIndexWriterStream>(
                 on_disk_stream_name,
                 data_part_storage,
@@ -198,10 +205,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 marks_compression_codec,
                 settings.marks_compress_block_size,
                 settings.query_write_settings,
-                packs_this_index ? packed_writer_for_streams : nullptr,
-                packs_this_index ? logical_stream_name + index_substream.extension : String{},
-                packs_this_index ? logical_stream_name + marks_file_extension : String{},
-                packed_spill_threshold);
+                packing);
 
             index_streams[index_substream.type] = stream.get();
             skip_indices_streams_holders.push_back(std::move(stream));

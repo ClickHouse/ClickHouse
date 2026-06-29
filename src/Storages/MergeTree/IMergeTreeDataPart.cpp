@@ -2823,6 +2823,18 @@ bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const Stor
         || getStreamNameOrHashResolved(file_name, ".idx2").has_value();
 }
 
+bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const
+{
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
+    if (!disk_storage)
+        return false;
+    const String file_name = skip_index.getFileName();
+    for (const auto & substream : skip_index.getSubstreams())
+        if (disk_storage->isFileInPackedSkipIndicesArchive(file_name + substream.suffix + substream.extension))
+            return true;
+    return false;
+}
+
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const
 {
     UniqueLock lock(columns_and_secondary_indices_sizes_mutex);

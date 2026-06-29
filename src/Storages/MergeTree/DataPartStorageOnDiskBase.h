@@ -200,6 +200,15 @@ protected:
     /// keeping a bad/future-version archive from blocking reads of unrelated files.
     std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(const std::string & name) const;
 
+    /// Copy a single archive member into @target, reading it through this storage's readFile
+    /// overlay. Shared by copyPackedSkipIndicesFilesInto and filterPackedSkipIndicesArchiveTo.
+    void copyArchiveEntryTo(
+        const PackedFilesReader & source_archive,
+        const String & file_name,
+        PackedFilesWriter & target,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings) const;
+
 public:
     /// Pre-populate the cached PackedFilesReader from an in-memory index produced by the
     /// writer's PackedFilesWriter::finalize. This lets the overlay (existsFile / getFileSize)
