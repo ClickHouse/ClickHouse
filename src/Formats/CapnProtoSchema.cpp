@@ -32,7 +32,7 @@ capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaIn
     capnp::ParsedSchema schema;
     try
     {
-        int fd;
+        int fd = 0;
         KJ_SYSCALL(fd = open(schema_info.schemaDirectory().data(), O_RDONLY)); // NOLINT(bugprone-suspicious-semicolon)
         auto schema_dir = kj::newDiskDirectory(kj::OsFileHandle(fd));
         schema = impl.parseFromDirectory(*schema_dir, kj::Path::parse(schema_info.schemaPath()), {});

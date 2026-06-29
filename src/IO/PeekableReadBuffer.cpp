@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= 0*/)
+PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= 0*/) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `stack_memory` is scratch space, written before read
         : BufferWithOwnMemory(start_size_), sub_buf(&sub_buf_)
 {
     padded &= sub_buf->isPadded();
@@ -164,7 +164,7 @@ bool PeekableReadBuffer::nextImpl()
     ///        if some pointers were invalidated.
 
     checkStateCorrect();
-    bool res;
+    bool res = false;
     bool checkpoint_at_end = checkpoint && *checkpoint == working_buffer.end() && currentlyReadFromOwnMemory();
 
     if (checkpoint)

@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 
+#include <exception>
+
 namespace DB
 {
 
@@ -69,6 +71,11 @@ public:
     /// sleep or overflow `std::chrono::milliseconds`.
     static UInt64 computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt);
 
+    /// Whether a failed provider request should be retried: transient network failures and
+    /// transient/server-side HTTP responses are retriable, deterministic argument/usage errors are not.
+    /// `eptr` must be the currently handled exception, i.e. `std::current_exception()`.
+    static bool isRetriableProviderError(std::exception_ptr eptr);
+
 protected:
     ContextPtr context;
     ContextPtr getContext() const { return context; }
@@ -109,8 +116,8 @@ private:
         String model;
         String api_key;
         String api_version;
-        float temperature;
-        UInt64 max_tokens;
+        float temperature = 0;
+        UInt64 max_tokens = 0;
     };
 
     ResolvedConfig resolveConfig(const ColumnsWithTypeAndName & arguments) const;

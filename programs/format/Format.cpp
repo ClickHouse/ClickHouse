@@ -63,10 +63,9 @@ namespace
 {
 }
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
-
 extern const char * auto_time_zones[];
+
+int mainEntryClickHouseFormat(int argc, char ** argv);
 
 int mainEntryClickHouseFormat(int argc, char ** argv)
 {
@@ -356,6 +355,12 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         settings.print_pretty_type_names = !oneline_current_query;
                         res->format(str_buf, settings);
 
+                        if (insert_query_payload)
+                        {
+                            str_buf.write(' ');
+                            copyData(*insert_query_payload, str_buf);
+                        }
+
                         String formatted_query = str_buf.str();
 #if USE_REPLXX
                         if (hilite)
@@ -374,8 +379,10 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         }
 
                         res_cout.finalize();
-                        if (multiple)
+                        if (multiple && !insert_query_payload)
                             std::cout << " \\\n;\n";
+                        else if (multiple && insert_query_payload)
+                            std::cout << "\n";
                         std::cout << std::endl;
                     }
                 }

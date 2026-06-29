@@ -5,6 +5,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
@@ -25,7 +26,6 @@
 #include <Client/ConnectionEstablisher.h>
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
-#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/StorageMemory.h>
 
@@ -60,8 +60,12 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
-    extern const int DUPLICATED_PART_UUIDS;
     extern const int SYSTEM_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char remote_query_executor_cancel_before_send[];
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -415,6 +419,9 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallb
 
 void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
 {
+    /// Emulate a concurrent cancel() landing right before the query is sent.
+    fiu_do_on(FailPoints::remote_query_executor_cancel_before_send, { was_cancelled = true; });
+
     if (sent_query || was_cancelled)
         return;
 
@@ -447,9 +454,6 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     if (extension)
         modified_client_info.collaborate_with_initiator = true;
-
-    if (!duplicated_part_uuids.empty())
-        connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
     // Collect all roles granted on this node and pass those to the remote node
     Strings local_granted_roles;
@@ -488,7 +492,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
 int RemoteQueryExecutor::sendQueryAsync()
 {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     LockAndBlocker lock(was_cancelled_mutex);
     if (was_cancelled)
         return -1;
@@ -535,6 +539,14 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     {
         sendQuery();
 
+        /// `connections` stays null if sendQuery() was cancelled before sending,
+        /// so guard the dereference below (as every other use of it does).
+        {
+            LockAndBlocker lock(was_cancelled_mutex);
+            if (was_cancelled)
+                return ReadResult(Block());
+        }
+
         if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
             return ReadResult(Block());
     }
@@ -550,18 +562,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
         if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
             return anything;
-
-        if (got_duplicated_part_uuids)
-            break;
     }
-
-    return restartQueryWithoutDuplicatedUUIDs();
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 {
-#if defined(OS_LINUX)
-    if (!read_context || (resent_query && recreate_read_context))
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    if (!read_context)
     {
         LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
@@ -571,7 +578,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             *this,
             /*suspend_when_query_sent*/ false,
             read_packet_type_separately);
-        recreate_read_context = false;
     }
 
     while (true)
@@ -593,9 +599,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             auto read_result = processPacket(read_context->getPacket());
             if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
                 return read_result;
-
-            if (got_duplicated_part_uuids)
-                break;
         }
 
         read_context->resume();
@@ -625,47 +628,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         auto read_result = processPacket(read_context->getPacket());
         if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
             return read_result;
-
-        if (got_duplicated_part_uuids)
-            break;
     }
-
-    return restartQueryWithoutDuplicatedUUIDs();
 #else
     return read();
 #endif
-}
-
-
-RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs()
-{
-    {
-        LockAndBlocker lock(was_cancelled_mutex);
-        if (was_cancelled)
-            return ReadResult(Block());
-
-        /// Cancel previous query and disconnect before retry.
-        cancelUnlocked();
-        connections->disconnect();
-
-        /// Only resend once, otherwise throw an exception
-        if (resent_query)
-            throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate uuids while processing query");
-
-        if (log)
-            LOG_DEBUG(log, "Found duplicate UUIDs, will retry query without those parts");
-
-        resent_query = true;
-        recreate_read_context = true;
-        sent_query = false;
-        got_duplicated_part_uuids = false;
-        was_cancelled = false;
-    }
-
-    /// Consecutive read will implicitly send query first.
-    if (!read_context)
-        return read();
-    return readAsync();
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)
@@ -686,8 +652,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             processReadTaskRequest();
             break;
         case Protocol::Server::PartUUIDs:
-            if (!setPartUUIDs(packet.part_uuids))
-                got_duplicated_part_uuids = true;
+            LOG_WARNING(
+                log,
+                "The remote server has sent no longer supported packet (Server::PartUUIDs). allow_experimental_query_deduplication feature "
+                "has been deprecated. Consider upgrading the remote server ({})",
+                connections->dumpAddresses());
             break;
         case Protocol::Server::Data:
             /// Note: `packet.block.rows() > 0` means it's a header block.
@@ -766,19 +735,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     }
 
     return ReadResult(ReadResult::Type::Nothing);
-}
-
-bool RemoteQueryExecutor::setPartUUIDs(const UUIDs & uuids)
-{
-    auto query_context = context->getQueryContext();
-    auto duplicates = query_context->getPartUUIDs()->add(uuids);
-
-    if (!duplicates.empty())
-    {
-        duplicated_part_uuids.insert(duplicated_part_uuids.begin(), duplicates.begin(), duplicates.end());
-        return false;
-    }
-    return true;
 }
 
 void RemoteQueryExecutor::processReadTaskRequest()
@@ -950,7 +906,7 @@ void RemoteQueryExecutor::sendExternalTables()
                 /// It is required to be able CTE materialization plan with parallel replicas (avoiding
                 /// circular dependency between CTE materialization and parallel replicas external tables.
                 auto materialized_cte = storage_memory->getMaterializedCTE();
-                if (materialized_cte != nullptr && !materialized_cte->is_built)
+                if (materialized_cte != nullptr && !materialized_cte->isBuilt())
                 {
                     LOG_DEBUG(log, "Skipping sending CTE '{}' because it has not been materialized yet", materialized_cte->cte_name);
                     continue;
@@ -1053,7 +1009,7 @@ bool RemoteQueryExecutor::needToSkipUnavailableShard()
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
     if (!read_context->readPacketTypeSeparately())
         return false;

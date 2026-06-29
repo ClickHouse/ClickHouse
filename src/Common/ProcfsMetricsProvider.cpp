@@ -80,7 +80,7 @@ ssize_t readFromFD(const int fd, const char * filename, char * buf, size_t buf_s
 
 bool ProcfsMetricsProvider::isAvailable() noexcept
 {
-    struct stat sb;
+    struct stat sb{};
     int res = ::stat(thread_schedstat, &sb);
 
     /// Verify that procfs is mounted, one of the stats file exists and is a regular file

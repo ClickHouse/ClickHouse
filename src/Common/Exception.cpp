@@ -442,6 +442,16 @@ std::string getExtraExceptionInfo(const std::exception & e)
     return msg;
 }
 
+/// Formats the trailing ", Stack trace (...)\n\n<trace>" section of an exception message.
+/// Returns an empty string when there is no stack trace, so that the message never ends with the
+/// "always include the lines below" promise without any lines following it.
+static std::string formatStackTraceSection(const std::string & stack_trace)
+{
+    if (stack_trace.empty())
+        return {};
+    return ", Stack trace (when copying this message, always include the lines below):\n\n" + stack_trace;
+}
+
 std::string getCurrentExceptionMessage(
     bool with_stacktrace,
     bool check_embedded_stacktrace /*= false*/,
@@ -483,7 +493,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
         {
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
                 << ", " << e.displayText()
-                << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
+                << (with_stacktrace ? formatStackTraceSection(getExceptionStackTraceString(e)) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "");
             if (with_version)
                 stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
@@ -501,7 +511,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
                 name += " (demangling status: " + toString(status) + ")";
 
             stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what()
-                << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
+                << (with_stacktrace ? formatStackTraceSection(getExceptionStackTraceString(e)) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "");
             if (with_version)
                 stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
@@ -662,7 +672,7 @@ PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with
         stream << " (" << ErrorCodes::getName(e.code()) << ")";
 
         if (with_stacktrace && !has_embedded_stack_trace)
-            stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTraceString();
+            stream << formatStackTraceSection(e.getStackTraceString());
     }
     catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
 
