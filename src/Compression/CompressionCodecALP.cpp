@@ -1226,11 +1226,19 @@ private:
                 source_end - source, dict_size * sizeof(UInt16));
 
         // Read dictionary values
+        const UInt32 dict_value_limit = 1 << dict_params.left_bits;
+
         dict_params.values.clear();
         for (UInt16 i = 0; i < dict_size; ++i)
         {
             const UInt16 dict_entry = unalignedLoadLittleEndian<UInt16>(source);
+            if (unlikely(dict_entry >= dict_value_limit))
+                throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                    "Cannot decompress ALP(RD)-encoded data, invalid dictionary value: {}, limit: {}",
+                    dict_entry, dict_value_limit - 1);
+            
             source += sizeof(UInt16);
+            
             dict_params.values.push_back(dict_entry);
         }
     }
@@ -1364,7 +1372,7 @@ UInt32 CompressionCodecALP::getMaxCompressedDataSize(UInt32 uncompressed_size) c
     // Maximum possible encoding size = uncompressed data + codec header + number of blocks * block header
     const UInt32 num_blocks = uncompressed_size / float_width / ALP_BLOCK_MAX_FLOAT_COUNT + 1;
     return uncompressed_size +
-        std::max(ALP_CODEC_HEADER_SIZE, ALP_RD_HEADER_TOTAL_MAX_SIZE) +
+        ALP_CODEC_HEADER_SIZE + ALP_RD_HEADER_TOTAL_MAX_SIZE +
             num_blocks * std::max(ALP_BLOCK_HEADER_SIZE, ALP_RD_BLOCK_HEADER_SIZE);
 }
 

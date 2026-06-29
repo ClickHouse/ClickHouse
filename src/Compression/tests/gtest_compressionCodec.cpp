@@ -2163,6 +2163,20 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidDictionarySizeGreaterThanAl
     verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, invalid dictionary size: 9, max allowed: 8");
 }
 
+TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidDictionaryEntryGreaterThanAllowed)
+{
+    const std::vector<UInt8> source = {
+        0x11,       // meta byte (version=1, variant=RD)
+        0x08,       // float width (Float64)
+        0x00, 0x04, // block float count = 1024
+        // RD header
+        0x01,       // left_bits = 1
+        0x01,       // dict_size = 1
+        0x02, 0x00  // dictionary entry = 2 (invalid, max allowed: 1)
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, invalid dictionary value: 2, limit: 1");
+}
+
 TEST_F(ALPTest, DecompressMalformedInputRDWithTruncatedBlockData)
 {
     const std::vector<UInt8> source = {
@@ -2207,7 +2221,7 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidDictionaryIndex)
         0x08,       // float width (Float64)
         0x00, 0x04, // block float count = 1024
         // RD header: left_bits=1, dict_size=3, three dictionary entries
-        0x01,       // left_bits = 1
+        0x02,       // left_bits = 2
         0x03,       // dict_size = 3
         0x00, 0x00, // dict entry 0
         0x01, 0x00, // dict entry 1
