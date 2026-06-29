@@ -719,7 +719,9 @@ try
             /// With `--pager` the result set is written through the pager's stdin pipe rather than
             /// through `std_out`, so install the cancellation hook here too. Otherwise a stuck or
             /// slow pager could fill its stdin pipe and the first Ctrl+C would appear to have no
-            /// effect. `pager_cmd` is recreated per query, so the hook does not need to be removed.
+            /// effect. The hook is re-pointed during teardown in resetOutput() (and `pager_cmd`,
+            /// recreated per query, destroyed there), so it is never finalized with a stale
+            /// handler-based hook.
             pager_cmd->in.setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
         }
         else
@@ -807,10 +809,14 @@ try
                     /// In `INTO OUTFILE ... AND STDOUT` mode the result is written to this separate
                     /// stdout buffer rather than through `std_out`, so install the same cancellation
                     /// hook here. Otherwise Ctrl+C would not promptly abort the output when the
-                    /// stdout sink (e.g. a slow terminal) is blocked. This buffer is recreated per
-                    /// query, so the hook does not need to be removed afterwards.
+                    /// stdout sink (e.g. a slow terminal) is blocked. The hook is re-pointed during
+                    /// teardown in resetOutput() (and the buffer, recreated per query, destroyed
+                    /// there), so it is never finalized with a stale handler-based hook.
                     auto stdout_buf = std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd);
                     stdout_buf->setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
+
+                    /// Keep a handle so resetOutput() can re-point the hook before finalizing it.
+                    select_into_file_and_stdout_buf = stdout_buf;
 
                     out_file_buf = std::make_unique<ForkWriteBuffer>(
                         ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf), std::move(stdout_buf)});
@@ -1878,13 +1884,24 @@ void ClientBase::resetOutput()
     /// already-produced output; on normal completion the handler is still armed and is honored so a
     /// fresh Ctrl+C keeps interrupting a flush to a slow/stuck stdout.
     const bool interrupt_handler_armed = !query_interrupt_handler.cancelled();
+    auto teardown_cancellation_hook = [this, interrupt_handler_armed]
+    { return interrupt_handler_armed ? query_interrupt_handler.cancelled() : cancelled.load(); };
     if (std_out)
-        std_out->setCancellationHook(
-            [this, interrupt_handler_armed]
-            { return interrupt_handler_armed ? query_interrupt_handler.cancelled() : cancelled.load(); });
+        std_out->setCancellationHook(teardown_cancellation_hook);
+    /// The per-query pager and `INTO OUTFILE ... AND STDOUT` stdout buffers carry the same
+    /// handler-based hook (installed in initOutputFormat), and are finalized by the teardown
+    /// flushes below (std_out_wrapper->finalize() and out_file_buf->finalize() respectively).
+    /// Re-point them too, otherwise on an exception path (where the handler has been stopped but
+    /// the query was not genuinely cancelled) finalizing them would discard already-produced
+    /// output. They are destroyed in this function, so they need no clearing afterwards.
+    if (pager_cmd)
+        pager_cmd->in.setCancellationHook(teardown_cancellation_hook);
+    if (select_into_file_and_stdout_buf)
+        select_into_file_and_stdout_buf->setCancellationHook(teardown_cancellation_hook);
     SCOPE_EXIT({
         if (std_out)
             std_out->setCancellationHook({});
+        select_into_file_and_stdout_buf.reset();
     });
 
     /// out_file_buf wraps std_out_wrapper (via a raw pointer), so it must be finalized

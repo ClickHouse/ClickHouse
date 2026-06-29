@@ -411,6 +411,10 @@ protected:
 
     /// The user can specify to redirect query output to a file.
     std::unique_ptr<WriteBuffer> out_file_buf;
+    /// The stdout buffer used by `INTO OUTFILE ... AND STDOUT` (wrapped inside out_file_buf).
+    /// Kept separately so its cancellation hook can be re-pointed during teardown in resetOutput(),
+    /// exactly like std_out's.
+    std::shared_ptr<WriteBufferFromFileDescriptor> select_into_file_and_stdout_buf;
     std::shared_ptr<IOutputFormat> output_format;
 
     /// The user could specify special file for server logs (stderr by default)
