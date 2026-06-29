@@ -330,6 +330,16 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       - 04338_on_fly_mutation_read_overwritten_lc_source: `MODIFY COLUMN v UInt64` on String data ('x')
 #       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
 #       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
+# `Value passed to 'throwIf' function is non-zero` (`FUNCTION_THROW_IF_VALUE_IS_NON_ZERO`, Code: 395) is the same
+#       class of expected test-induced mutation error. It comes from `04341_broken_mutation_part_log_flush`, which
+#       runs an intentionally-failing `ALTER TABLE ... UPDATE x = x + throwIf(1)` async mutation to assert that the
+#       failed `MutatePart` part_log entry is flushed. After the upgrade restart the broken mutation is retried in
+#       the background and logged to `clickhouse-server.upgrade.log`. The table uses a plain `MergeTree`, so the
+#       error is emitted by `MutatePlainMergeTreeTask` rather than `MutateFromLogEntryTask` and is not covered by
+#       that exclusion. `throwIf` is a user-level function that only ever raises when a query explicitly calls it
+#       with a truthy argument, so the message can only originate from such a test, never from an upgrade
+#       incompatibility. The single substring also covers the wrapping `MergeTreeBackgroundExecutor` line, since
+#       both contain it.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
@@ -443,6 +453,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 269. DB::Exception: Destination table is myself" \
            -e "Coordination::Exception: Connection loss" \
            -e "MutateFromLogEntryTask" \
+           -e "Value passed to 'throwIf' function is non-zero" \
            -e "No connection to ZooKeeper, cannot get shared table ID" \
            -e "Session expired" \
            -e "TOO_MANY_PARTS" \
