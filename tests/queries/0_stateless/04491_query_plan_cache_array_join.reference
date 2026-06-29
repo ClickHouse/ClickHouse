@@ -1,0 +1,26 @@
+-- first run (cold, miss)
+1	10
+1	20
+1	110
+1	120
+2	30
+2	130
+-- hits: 0
+-- second run: arrayJoin query must hit the plan cache
+1	10
+1	20
+1	110
+1	120
+2	30
+2	130
+-- hits: 1
+-- data freshness: cache hit must see newly inserted rows
+1	10
+1	20
+1	110
+1	120
+2	30
+2	130
+3	40
+3	140
+-- hits: 1

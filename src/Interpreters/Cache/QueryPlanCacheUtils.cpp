@@ -427,10 +427,17 @@ bool queryTreeIsEligibleImpl(const IQueryTreeNode & node, const ContextPtr & con
     {
         if (function_node->isOrdinaryFunction())
         {
-            const auto & function = function_node->getFunction();
-            /// An unresolved ordinary function after analysis is unexpected; refuse to cache.
-            if (!function || !function->isDeterministic())
-                return false;
+            /// `arrayJoin` reports `isDeterministic() = false` because it is multi-valued, but it is
+            /// pure (same argument - same set of rows), so it is safe for the plan cache. Mirror the
+            /// AST-side exemption in `isFunctionUnsafeForPlanCache`; without it any query (or expanded
+            /// view body) using `arrayJoin` would be wrongly rejected, contradicting the cache contract.
+            if (function_node->getFunctionName() != "arrayJoin")
+            {
+                const auto & function = function_node->getFunction();
+                /// An unresolved ordinary function after analysis is unexpected; refuse to cache.
+                if (!function || !function->isDeterministic())
+                    return false;
+            }
         }
     }
     else if (const auto * constant_node = node.as<ConstantNode>())
