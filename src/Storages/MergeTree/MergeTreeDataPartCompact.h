@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <mutex>
+#include <unordered_map>
 
 namespace DB
 {
@@ -63,6 +65,12 @@ private:
 
      /// Compact parts don't support per column size, only total size
      void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
+
+     void loadColumnCompressionCodecs() const;
+
+     mutable std::mutex column_compression_codecs_mutex;
+     mutable bool column_compression_codecs_initialized = false;
+     mutable std::unordered_map<String, CompressionCodecPtr> column_compression_codecs;
 };
 
 }

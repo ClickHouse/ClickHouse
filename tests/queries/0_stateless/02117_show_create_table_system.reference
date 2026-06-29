@@ -655,6 +655,7 @@ CREATE TABLE system.parts_columns
     `estimates.max` Nullable(String),
     `estimates.cardinality` Nullable(UInt64),
     `estimates.null_count` Nullable(UInt64),
+    `compression_codec` String,
     `serialization_kind` String,
     `substreams` Array(String),
     `filenames` Array(String),
