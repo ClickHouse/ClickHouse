@@ -414,6 +414,8 @@ FROM example_theta;
 
     factory.registerFunction("uniqTheta",
         {createAggregateFunctionUniq<AggregateFunctionUniqThetaData, AggregateFunctionUniqThetaDataForVariadic>, documentation_uniqTheta, properties});
+    factory.registerFunction("uniqHLL",
+        {createAggregateFunctionUniq<AggregateFunctionUniqHLLData, AggregateFunctionUniqHLLDataForVariadic>, {}, properties});
 #endif
 
 }

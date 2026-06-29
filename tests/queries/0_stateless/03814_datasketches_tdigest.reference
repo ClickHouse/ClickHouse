@@ -1,0 +1,18 @@
+Test 1: serializedTDigest basic
+1
+Test 2: mergeSerializedTDigest basic
+1
+Test 3: percentileFromTDigest p50
+1
+Test 4: percentileFromTDigest p95
+1
+Test 5: percentileFromTDigest empty sketch returns NaN
+1
+Test 6: percentileFromTDigest invalid sketch returns NaN
+1
+Test 7: centroidsFromTDigest basic
+1
+Test 8: centroidsFromTDigest empty sketch
+1
+Test 9: centroidsFromTDigest invalid sketch returns {}
+1
