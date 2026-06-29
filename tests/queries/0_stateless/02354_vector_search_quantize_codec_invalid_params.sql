@@ -1,6 +1,6 @@
--- The `Quantize(method, dimensions[, bits])` codec validates its parameters at DDL time.
--- The bit-packed methods (rabitq, turboquant, e8) require `dimensions` to be a multiple of 8, and `e8` requires
--- `bits` in [1, 16] (it builds a 2^bits codebook). `int8` accepts any positive dimension.
+-- The `Quantize(method, dimensions[, ...])` codec validates its parameters at DDL time.
+-- The bit-packed methods (rabitq, turboquant) require `dimensions` to be a multiple of 8; `int8` accepts any positive
+-- dimension. The `mrl` method takes Quantize('mrl', dimensions, leading_dimensions, 'int8'|'bf16').
 
 SET allow_experimental_codecs = 1;
 
@@ -9,18 +9,25 @@ DROP TABLE IF EXISTS quantize_bad;
 -- Dimensions not a multiple of 8 are rejected for the bit-packed methods.
 CREATE TABLE quantize_bad (id UInt32, vec Array(Float32) CODEC(Quantize('rabitq', 65))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
 CREATE TABLE quantize_bad (id UInt32, vec Array(Float32) CODEC(Quantize('turboquant', 60))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
-CREATE TABLE quantize_bad (id UInt32, vec Array(Float32) CODEC(Quantize('e8', 65, 8))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
-
--- e8 requires bits in [1, 16] (0 or an unbounded value would otherwise build a degenerate or huge codebook).
-CREATE TABLE quantize_bad (id UInt32, vec Array(Float32) CODEC(Quantize('e8', 64))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
-CREATE TABLE quantize_bad (id UInt32, vec Array(Float32) CODEC(Quantize('e8', 64, 0))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
-CREATE TABLE quantize_bad (id UInt32, vec Array(Float32) CODEC(Quantize('e8', 64, 30))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
 
 -- An unknown method is rejected.
 CREATE TABLE quantize_bad (id UInt32, vec Array(Float32) CODEC(Quantize('nope', 64))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
+
+-- `mrl` requires the 4-argument form with a format of 'int8' or 'bf16'.
+CREATE TABLE quantize_bad (id UInt32, vec Array(Float32) CODEC(Quantize('mrl', 64, 32))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_SYNTAX_FOR_CODEC_TYPE }
+CREATE TABLE quantize_bad (id UInt32, vec Array(Float32) CODEC(Quantize('mrl', 64, 32, 'fp8'))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
+-- The number of leading dimensions must be in [1, dimensions].
+CREATE TABLE quantize_bad (id UInt32, vec Array(Float32) CODEC(Quantize('mrl', 64, 0, 'int8'))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
+CREATE TABLE quantize_bad (id UInt32, vec Array(Float32) CODEC(Quantize('mrl', 64, 128, 'int8'))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
 
 -- int8 is not bit-packed, so a non-multiple-of-8 dimension is accepted; its code is dimensions + 4 = 69 bytes.
 CREATE TABLE quantize_int8_ok (id UInt32, vec Array(Float32) CODEC(Quantize('int8', 65))) ENGINE = MergeTree ORDER BY id;
 INSERT INTO quantize_int8_ok SELECT 1, arrayMap(j -> toFloat32(j), range(65));
 SELECT 'int8_non_multiple_of_8_ok', length(vec.quantized) FROM quantize_int8_ok;
 DROP TABLE quantize_int8_ok;
+
+-- mrl int8: stores the leading 32 dims as int8 + a 4-byte scale = 36 bytes. mrl bf16: 32 * 2 = 64 bytes.
+CREATE TABLE quantize_mrl_ok (id UInt32, vi Array(Float32) CODEC(Quantize('mrl', 64, 32, 'int8')), vb Array(Float32) CODEC(Quantize('mrl', 64, 32, 'bf16'))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO quantize_mrl_ok SELECT 1, arrayMap(j -> toFloat32(j), range(64)), arrayMap(j -> toFloat32(j), range(64));
+SELECT 'mrl_int8_ok', length(vi.quantized), 'mrl_bf16_ok', length(vb.quantized) FROM quantize_mrl_ok;
+DROP TABLE quantize_mrl_ok;

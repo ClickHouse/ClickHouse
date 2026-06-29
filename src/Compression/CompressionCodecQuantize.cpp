@@ -84,6 +84,38 @@ QuantizeCodecParams parseQuantizeCodecArguments(const ASTPtr & arguments)
     params.method = method_literal->value.safeGet<String>();
     params.dimensions = dimensions_literal->value.safeGet<UInt64>();
 
+    /// Sugar for the Matryoshka prefix method: Quantize('mrl', dimensions, leading_dimensions, 'int8'|'bf16'). It stores
+    /// only the leading `leading_dimensions` of the vector, quantized to int8 (per-vector scale) or bfloat16. Fold the
+    /// format into the canonical method name ('mrl_int8'/'mrl_bf16') and put the prefix length in the `bits` slot, so the
+    /// rest of the pipeline (serialization, planner, distance) uses it like any other data-independent method.
+    if (params.method == "mrl")
+    {
+        if (arguments->children.size() != 4)
+            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
+                "Codec Quantize method 'mrl' requires Quantize('mrl', dimensions, leading_dimensions, format) "
+                "where format is 'int8' or 'bf16'");
+
+        const auto * prefix_literal = arguments->children[2]->as<ASTLiteral>();
+        if (!prefix_literal || prefix_literal->value.getType() != Field::Types::UInt64)
+            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+                "Third argument of codec Quantize('mrl', ...) (number of leading dimensions) must be an unsigned integer");
+        params.bits = prefix_literal->value.safeGet<UInt64>();
+
+        const auto * format_literal = arguments->children[3]->as<ASTLiteral>();
+        if (!format_literal || format_literal->value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+                "Fourth argument of codec Quantize('mrl', ...) (format) must be a string literal: 'int8' or 'bf16'");
+        const String format = format_literal->value.safeGet<String>();
+        if (format != "int8" && format != "bf16")
+            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+                "Codec Quantize('mrl', ...): format must be 'int8' or 'bf16', got '{}'", format);
+        params.method = "mrl_" + format;
+
+        if (const std::string error = VectorQuantization::validateParams(params.method, params.dimensions, params.bits); !error.empty())
+            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Codec Quantize: {}", error);
+        return params;
+    }
+
     if (arguments->children.size() >= 3)
     {
         const auto * bits_literal = arguments->children[2]->as<ASTLiteral>();

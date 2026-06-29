@@ -8,14 +8,16 @@
 #include <string_view>
 
 /// Stateless, data-independent quantization of dense vectors for fast (brute-force) KNN. Each method is a pure per-row
-/// function of the vector (a fixed-seed random projection / the data-independent E8 lattice; no trained codebook), so
-/// the codes can be produced on the write path (as a derived companion stream of the vector column) and the per-row
-/// approximate distance computed at query time.
+/// function of the vector (a fixed-seed random projection, a truncated prefix; no trained codebook), so the codes can be
+/// produced on the write path (as a derived companion stream of the vector column) and the per-row approximate distance
+/// computed at query time.
 ///
-/// Methods: "turboquant", "rabitq", "e8", "int8". `bits` is only used by "e8" (bits per 8-dim sub-quantizer, 1..16);
-/// ignored otherwise. "int8" stores one Lloyd-Max Int8 code per coordinate (of the rotated, unit-variance vector) plus
-/// the per-vector L2 norm, and uses an asymmetric (full-precision query) distance. The "turboquant", "rabitq" and "e8"
-/// methods pack their codes 8 coordinates to the byte, so they require `dimensions` to be a multiple of 8; "int8" does not.
+/// Methods: "turboquant", "rabitq", "int8", "mrl_int8", "mrl_bf16". "int8" stores one Lloyd-Max Int8 code per coordinate
+/// (of the rotated, unit-variance vector) plus the per-vector L2 norm, with an asymmetric (full-precision query)
+/// distance. The "mrl_*" (Matryoshka) methods keep only the leading `bits` dimensions (the prefix) - int8 with a
+/// per-vector scale, or bfloat16 - and compute the distance on that prefix; here `bits` is the prefix length, not a bit
+/// width. "turboquant" and "rabitq" pack their codes 8 coordinates to the byte, so they require `dimensions` to be a
+/// multiple of 8; the others do not.
 namespace DB::VectorQuantization
 {
 
