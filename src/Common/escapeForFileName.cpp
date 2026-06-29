@@ -15,7 +15,8 @@ std::string escapeForFileName(const std::string & s)
     {
         unsigned char c = *pos;
 
-        if (isWordCharASCII(c))
+        /// Dots are safe in file names, so keep them verbatim instead of percent-encoding.
+        if (isWordCharASCII(c) || c == '.')
             res += c;
         else
         {
