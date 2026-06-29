@@ -1,10 +1,7 @@
-// aarch64 `memmove`. `memcpy`/`memset` deliberately come from musl's Arm
-// Optimized Routines assembly (see contrib/musl-cmake/CMakeLists.txt), which
-// beats LLVM-libc's generic C++ tiers by 10-30% on the small/medium copies that
-// dominate ClickHouse column operations. musl has no aarch64 `memmove`
-// assembly, so it is provided here: overlap-safe NEON head-tail tiers up to 128
-// bytes, a tail call to the AOR `memcpy` for larger disjoint buffers, and a
-// DST-aligned 64-byte-per-iteration NEON loop for genuine overlaps.
+// aarch64 `memmove`. `memcpy`/`memset` come from musl's Arm Optimized Routines
+// assembly (see contrib/musl-cmake/CMakeLists.txt); musl has no aarch64
+// `memmove`, so it is provided here, tail-calling the AOR `memcpy` for large
+// disjoint buffers and using a DST-aligned NEON loop for genuine overlaps.
 
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
@@ -23,10 +20,9 @@ extern "C" void *memcpy(void *__restrict, const void *__restrict, size_t);
 
 namespace LIBC_NAMESPACE_DECL {
 
-// Upstream aligns SRC; we align DST (stores benefit from alignment more). The
-// alignment type must be the *smaller* uint256_t: align_forward/backward
-// consume up to 2*SIZE bytes from count, and aligning with the 64-byte type can
-// leave the main loop with count < SIZE and corrupt trailing bytes.
+// Align DST (stores benefit more). The alignment type must be the smaller
+// uint256_t: aligning with the 64-byte type can consume enough of count to
+// leave the main loop with count < SIZE and corrupt the tail.
 __attribute__((flatten, always_inline)) LIBC_INLINE void
 ch_inline_memmove_follow_up_aarch64(Ptr dst, CPtr src, size_t count) {
   using uint256_t = generic_v256;

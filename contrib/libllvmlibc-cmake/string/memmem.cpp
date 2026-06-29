@@ -1,22 +1,12 @@
-// Strong `memmem`, overriding musl's Two-Way in the static link.
-//
-// Lives in its own translation unit on purpose: it is a strong, always-pulled
-// symbol, while `memcpy`/`memmove`/`memset` in mem_functions.cpp are weak (so
-// the strong glibc-compatibility `memcpy` keeps precedence). If they shared an
-// object, a reference to `memmem` would drag the weak `memcpy` into the link.
+// Strong `memmem`, overriding musl's Two-Way in the static link. Lives in its
+// own TU so a reference to it does not drag in mem_functions.cpp's weak `memcpy`.
 //
 // Short needles use a SIMD "two-byte filter": broadcast the first and last
 // needle byte, compare both against the haystack per stride, AND the masks and
-// verify each surviving candidate with memcmp. This beats Two-Way 3-10x on the
-// short found-needle workloads that dominate ClickHouse (`cutURLParameter`,
-// `position`, LIKE '%x%').
-//
-// The filter's per-candidate verification is O(needle) and degenerates to
-// O(haystack*needle) on low-selectivity needles (e.g. "aa..aba" over "aa..aa",
-// where both filter bytes match almost everywhere). Needles >= TWO_WAY_THRESHOLD
-// bytes are therefore routed to Two-Way (linear time, no worst case); below the
-// threshold the verification is bounded by a small constant, so the filter
-// stays linear in the haystack.
+// verify each survivor with memcmp. This beats Two-Way 3-10x on the short
+// found-needle workloads that dominate ClickHouse. The verification degenerates
+// to O(haystack*needle) on low-selectivity needles, so needles >=
+// TWO_WAY_THRESHOLD are routed to Two-Way (linear time, no worst case) instead.
 
 #include <cstddef>
 #include <cstdint>

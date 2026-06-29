@@ -1,17 +1,11 @@
 // x86_64 `memcpy`/`memmove`/`memset` with runtime AVX-512 dispatch.
 //
-// The binary baseline is x86-64-v3 (raising it to v4 disables
-// ENABLE_MULTITARGET_CODE and costs 2-4x elsewhere — see PR #97452), so the
-// AVX-512 variants are v4-attributed clones selected by a lazy cpuid check on
-// the first large-size call instead of compile-time `__AVX512F__` gating.
-//
-// Each large-size operation goes through a function pointer initialised to a
-// resolver; the resolver runs cpuid once, swaps the pointer and forwards. Same
-// shape as a glibc IFUNC: after the first call, one predicted indirect `jmp` on
-// the large-size path only. The pointer indirection (not an `if (avx512)`
-// branch) is forced by two constraints: LLVM will not emit a direct tail call
-// from a v3 function to a v4 callee (so the branch form pays a full frame), and
-// `flatten` hard-errors on a direct reference to a higher-feature callee.
+// The binary baseline is x86-64-v3 (raising it to v4 costs 2-4x elsewhere — see
+// PR #97452), so the AVX-512 variants are v4-attributed clones selected at
+// runtime. Each large-size op goes through a function pointer initialised to a
+// resolver that runs cpuid once, swaps the pointer and forwards (glibc-IFUNC
+// shape). A pointer, not an `if (avx512)` branch, because LLVM won't tail-call
+// from a v3 function to a v4 callee and `flatten` rejects a direct reference.
 
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
@@ -224,10 +218,9 @@ CH_NO_SSP LLVM_LIBC_FUNCTION(void *, memset,
 // memmove
 // ============================================================================
 
-// AVX-512 overlapping move. Aligns DST (upstream aligns SRC). The alignment
-// type must be the *smaller* generic_v256: align_forward/backward consume up to
-// 2*SIZE bytes from count, and aligning with the 64-byte type can leave the
-// generic_v512 loop with count < SIZE and corrupt trailing bytes.
+// AVX-512 overlapping move, aligning DST. The alignment type must be the
+// smaller generic_v256: aligning with the 64-byte type can consume enough of
+// count to leave the generic_v512 loop with count < SIZE and corrupt the tail.
 CH_AVX512_CLONE static void *memmove_overlap_avx512(Ptr dst, CPtr src,
                                                     size_t count) {
   void *const ret = dst;

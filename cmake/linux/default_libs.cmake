@@ -47,24 +47,11 @@ if (NOT OS_ANDROID)
     add_subdirectory(base/harmful)
 endif ()
 
-# Force the strong glibc-compatibility `memcpy` to always be linked, so it keeps
-# precedence over libllvmlibc's weak `memcpy`. Both are static archives and lld
-# resolves a `memcpy` reference from whichever archive it reaches first; because
-# CMake can place libllvmlibc ahead of libmemcpy, the `weak` attribute alone
-# does not guarantee precedence. `--whole-archive` makes the strong definition
-# unconditionally present, so it wins regardless of archive order. The path is
-# passed via CMAKE_EXE_LINKER_FLAGS (not the memcpy target) for the same reason
-# as compiler-rt: $<LINK_LIBRARY:WHOLE_ARCHIVE,...> does not survive the
-# global-libs INTERFACE_LINK_LIBRARIES indirection. memcpy stays in global-libs
-# (above) for the build-order dependency.
-#
-# Not under sanitizers: there, compiler_rt_link.cmake already force-links the
-# sanitizer runtime's own `memcpy` interceptor with `--whole-archive`. Adding a
-# second `--whole-archive` `memcpy` lets the custom one defeat the interceptor,
-# bypassing the sanitizer's shadow-memory handling and segfaulting (the binary's
-# perf does not matter under sanitizers, so the interceptor must win).
+# Force-link the strong glibc-compatibility `memcpy` so it wins over libllvmlibc's
+# weak `memcpy` regardless of archive order (the `weak` attribute alone does not
+# guarantee precedence). Skipped under sanitizers, where compiler_rt_link.cmake
+# force-links the sanitizer's own `memcpy` interceptor and that must win instead.
 if (TARGET memcpy AND NOT SANITIZE)
-    # Literal path (not the target / $<TARGET_FILE:...>) because CMAKE_EXE_LINKER_FLAGS
-    # does not expand generator expressions, same as compiler_rt_link.cmake.
+    # Literal path, not a generator expression: CMAKE_EXE_LINKER_FLAGS does not expand them.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive ${CMAKE_BINARY_DIR}/base/glibc-compatibility/memcpy/libmemcpy.a -Wl,--no-whole-archive")
 endif ()

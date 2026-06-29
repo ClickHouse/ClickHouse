@@ -1,8 +1,6 @@
 // Runtime AVX-512/AVX2 detection shared by the x86_64 mem* dispatchers and
-// memmem. Detected lazily on the first large call (no static initializer); the
-// benign race has all writers storing the same value, so relaxed atomics are
-// enough. Everything is `static`, so each including TU gets its own cached
-// level and detection routine.
+// memmem. Detected lazily on the first large call; the benign race has all
+// writers storing the same value, so relaxed atomics suffice.
 #pragma once
 
 #include <cstdint>
@@ -53,9 +51,8 @@ static inline uint32_t cpu_level() {
   return v;
 }
 
-// A v4-attributed clone gets ZMM codegen on a v3 TU; `no-prefer-256-bit` makes
-// clang pick ZMM over 2xYMM. `no_stack_protector` keeps the dispatch tail-jmp a
-// jmp (a canary would force a frame), as glibc does for its string routines.
+// v4-attributed clone: gets ZMM codegen on a v3 TU, `no-prefer-256-bit` picks
+// ZMM over 2xYMM, `no_stack_protector` keeps the dispatch tail-call a plain jmp.
 #define CH_AVX512_CLONE                                                        \
   __attribute__((target("arch=x86-64-v4,no-prefer-256-bit"), noinline,         \
                  flatten, no_stack_protector))
