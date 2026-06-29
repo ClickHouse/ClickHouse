@@ -396,6 +396,12 @@ void StorageView::drop()
         ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 }
 
+void StorageView::shutdown(bool)
+{
+    /// Make sure the dependency is removed after DETACH TABLE.
+    DatabaseCatalog::instance().removePlainViewDependencies(getStorageID());
+}
+
 void StorageView::alter(
     const AlterCommands & params,
     ContextPtr context,

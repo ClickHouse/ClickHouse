@@ -507,6 +507,14 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
         {
             SCOPE_EXIT(TransactionLog::decreaseAsyncTablesLoadingJobNumber(););
             loadTableFromMetadata(local_context, file_path, name, ast, mode);
+            /// Add plain view dependencies only after successful attach (failed attach must not leave dependencies in the catalog).
+            const auto * create_query = ast->as<ASTCreateQuery>();
+            if (create_query && create_query->is_ordinary_view)
+            {
+                auto ref_deps = getDependenciesFromCreateQuery(local_context->getGlobalContext(), name, ast, name.database, /* can_throw */ false, /* validate_current_database */ false);
+                if (!ref_deps.plain_view_dependencies.empty())
+                    DatabaseCatalog::instance().addPlainViewDependencies(name, ref_deps.plain_view_dependencies);
+            }
         });
 
     return load_table[name.table] = makeLoadTask(async_loader, {job});
@@ -770,7 +778,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
-    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
+    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{}, ref_dependencies.plain_view_dependencies);
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
 }

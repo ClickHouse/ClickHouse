@@ -62,6 +62,17 @@ namespace
             return mv_from_dependency;
         }
 
+        TableNamesSet getPlainViewDependencies()
+        {
+            if (!is_plain_view)
+                return {};
+
+            TableNamesSet result = source_tables;
+            /// Avoid circular dependencies
+            result.erase(table_name);
+            return result;
+        }
+
         bool needChildVisit(const ASTPtr & child) const { return !skip_asts.contains(child.get()); }
 
         void visit(const ASTPtr & ast)
@@ -95,8 +106,10 @@ namespace
         String current_database;
         ContextPtr global_context;
         TableNamesSet dependencies;
+        TableNamesSet source_tables;  /// All source tables referenced in table expressions
         bool can_throw;
         bool validate_current_database;
+        bool is_plain_view = false;
         std::optional<StorageID> mv_to_dependency;
         std::optional<StorageID> mv_from_dependency;
 
@@ -192,6 +205,8 @@ namespace
                             mv_from_dependency->uuid = UUIDHelpers::Nil;
                         }
                     }
+                    else if (create.is_ordinary_view)
+                        is_plain_view = true;
                 }
                 else
                     skip_asts.insert(create.select);
@@ -259,6 +274,7 @@ namespace
             }
 
             dependencies.emplace(qualified_name);
+            source_tables.emplace(qualified_name);
         }
 
         /// Finds dependencies of a table engine.
@@ -601,7 +617,7 @@ CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global
     DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database};
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
-    return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency()};
+    return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency(), data.getPlainViewDependencies()};
 }
 
 TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw)
