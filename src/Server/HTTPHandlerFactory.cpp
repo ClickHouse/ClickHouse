@@ -498,6 +498,15 @@ void addDefaultHandlersFactory(
             bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
                                    || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
 
+            /// An `OPTIONS` request is a CORS preflight (and the web-UI connectivity health-check).
+            /// `HTTPHandler::handleRequest` answers it via `processOptionsRequest` before
+            /// authentication and without running a query, so it must always be claimed here —
+            /// regardless of the URL shape and independent of `http_allow_path_requests`. Otherwise an
+            /// `OPTIONS` preflight to a path the page will later GET (e.g. `/play`, `/db/table`)
+            /// reaches no handler and the browser treats the connection as broken.
+            if (method == Poco::Net::HTTPRequest::HTTP_OPTIONS)
+                return true;
+
             /// Existing routing: explicit query-string forms (`?...`, `/?...`, `/query?...`) plus an
             /// empty or "/" POST.
             bool original_get_match = startsWith(uri, "?")
