@@ -80,7 +80,11 @@ template <StorageConfiguration BaseStorageConfiguration, typename DataLakeMetada
 class DataLakeConfiguration : public BaseStorageConfiguration, public std::enable_shared_from_this<StorageObjectStorageConfiguration>
 {
 public:
-    explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_) : settings(settings_) {}
+    explicit DataLakeConfiguration(
+        DataLakeStorageSettingsPtr settings_,
+        std::optional<std::string> catalog_namespaces_ = std::nullopt)
+        : settings(settings_)
+        , catalog_namespaces(catalog_namespaces_.value_or("*")) {}
 
     bool isDataLakeConfiguration() const override { return true; }
 
@@ -407,6 +411,7 @@ public:
 private:
     const DataLakeStorageSettingsPtr settings;
     ObjectStoragePtr ready_object_storage;
+    std::string catalog_namespaces;
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
 

@@ -58,6 +58,7 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int CATALOG_NAMESPACE_DISABLED;
     extern const int FAULT_INJECTED;
 }
 
@@ -172,9 +173,9 @@ GlueCatalog::GlueCatalog(
         LOG_TRACE(log, "Creating AWS glue client with credentials empty {}, region '{}', endpoint '{}'", credentials.IsEmpty(), region, endpoint);
     }
 
+    boost::split(allowed_namespaces, settings.namespaces, boost::is_any_of(", "), boost::token_compress_on);
     credentials_provider = DB::S3::getCredentialsProvider(poco_config, credentials, creds_config);
     glue_client = std::make_unique<Aws::Glue::GlueClient>(credentials_provider, endpoint_provider, client_configuration);
-
 }
 
 GlueCatalog::~GlueCatalog() = default;
@@ -200,8 +201,9 @@ DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & pre
             for (const auto & db : dbs)
             {
                 const auto & db_name = db.GetName();
-                if (!db_name.starts_with(prefix))
+                if (!isNamespaceAllowed(db_name) || !db_name.starts_with(prefix))
                     continue;
+
                 result.push_back(db_name);
                 if (limit != 0 && result.size() >= limit)
                     break;
@@ -286,6 +288,9 @@ DB::Names GlueCatalog::getTables() const
 
 bool GlueCatalog::existsTable(const std::string & database_name, const std::string & table_name) const
 {
+    if (!isNamespaceAllowed(database_name))
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED, "Namespace {} is filtered by `namespaces` database parameter", database_name);
+
     Aws::Glue::Model::GetTableRequest request;
     request.SetDatabaseName(database_name);
     request.SetName(table_name);
@@ -299,6 +304,9 @@ bool GlueCatalog::tryGetTableMetadata(
     const std::string & table_name,
     TableMetadata & result) const
 {
+    if (!isNamespaceAllowed(database_name))
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED, "Namespace {} is filtered by `namespaces` database parameter", database_name);
+
     Aws::Glue::Model::GetTableRequest request;
     request.SetDatabaseName(database_name);
     request.SetName(table_name);
@@ -543,7 +551,7 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
 
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
-    auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
+    auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings, settings.namespaces);
     DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
 
     auto object_storage = configuration->createObjectStorage(getContext(), true, {});
@@ -604,6 +612,11 @@ void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
 
 void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
+    if (!isNamespaceAllowed(namespace_name))
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
+            "Failed to create table {}, namespace {} is filtered by `namespaces` database parameter",
+            table_name, namespace_name);
+
     createNamespaceIfNotExists(namespace_name);
 
     Aws::Glue::Model::CreateTableRequest request;
@@ -686,6 +699,11 @@ bool GlueCatalog::updateSchema(
 
 void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
+    if (!isNamespaceAllowed(namespace_name))
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
+            "Failed to drop table {}, namespace {} is filtered by `namespaces` database parameter",
+            table_name, namespace_name);
+
     Aws::Glue::Model::DeleteTableRequest request;
     request.SetDatabaseName(namespace_name);
     request.SetName(table_name);
@@ -697,6 +715,11 @@ void GlueCatalog::dropTable(const String & namespace_name, const String & table_
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
             "Can not delete table from glue catalog: {}",
             response.GetError().GetMessage());
+}
+
+bool GlueCatalog::isNamespaceAllowed(const std::string & namespace_) const
+{
+    return allowed_namespaces.contains("*") || allowed_namespaces.contains(namespace_);
 }
 
 }
