@@ -12,6 +12,8 @@
 #include <span>
 #include <string>
 #include <variant>
+#include <pthread.h>
+#include <base/scope_guard.h>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 #include <base/MemorySanitizer.h>
@@ -58,10 +60,83 @@ void setStoreFuel(wasmtime::Store::Context ctx, const WasmModule::Config & cfg, 
 wasmtime::Module compileModuleWithEngine(wasmtime::Engine & engine, std::string_view module_bytes, std::string_view phase)
 {
     std::span<uint8_t> bytes(reinterpret_cast<uint8_t *>(const_cast<char *>(module_bytes.data())), module_bytes.size());
-    auto result = wasmtime::Module::compile(engine, bytes);
-    if (!result)
-        throw Exception(ErrorCodes::WASM_ERROR, "Failed to compile wasm code ({}): {}", phase, result.err().message());
-    return std::move(result.ok());
+
+    // Cranelift's ISLE-generated `constructor_simplify` is a monolithic function
+    // whose stack frame (~64 KB in release builds) multiplied by REWRITE_LIMIT=5
+    // recursion levels can overflow small user-space thread stacks (e.g. the 512 KB
+    // TCPHandler stack on aarch64-apple-darwin), causing SIGILL via the OS stack
+    // guard page. `compileModule` can be called from any thread (query threads,
+    // pipeline executor threads, etc.), so the overflow is not limited to any
+    // particular thread type.
+    //
+    // Root cause: in release builds the ISLE compiler emits one large function body
+    // without splitting match arms into closures. Cranelift's `isle-split-match`
+    // Cargo feature enables that splitting (it is unconditionally on in debug builds
+    // for exactly this reason). We enable it via `rust/workspace/wasmtime/Cargo.toml`,
+    // which should eliminate the overflow once verified on aarch64-apple-darwin.
+    //
+    // This thread workaround is kept as a defensive layer until the `isle-split-match`
+    // fix is confirmed to keep the release-build frame within 512 KB at depth 5.
+    // If confirmed, this thread spawn can be removed and compilation can run inline.
+    // REWRITE_LIMIT=5 is a Cranelift compile-time constant, so recursion depth is
+    // bounded regardless of user input; 8 MiB is well above any realistic maximum.
+    struct CompileTask
+    {
+        wasmtime::Engine & engine;
+        std::span<uint8_t> bytes;
+        std::optional<wasmtime::Module> result;
+        std::string error;
+        std::exception_ptr exception;
+    };
+    CompileTask task{engine, bytes, std::nullopt, {}, nullptr};
+
+    pthread_attr_t attr;
+    if (int rc = pthread_attr_init(&attr); rc != 0)
+        throw Exception(ErrorCodes::WASM_ERROR, "pthread_attr_init failed: {}", rc);
+    SCOPE_EXIT(pthread_attr_destroy(&attr));
+
+    if (int rc = pthread_attr_setstacksize(&attr, 8 * 1024 * 1024); rc != 0)
+        throw Exception(ErrorCodes::WASM_ERROR, "pthread_attr_setstacksize failed: {}", rc);
+
+    auto compile_fn = [](void * arg) -> void *
+    {
+        auto & t = *static_cast<CompileTask *>(arg);
+        try
+        {
+            auto res = wasmtime::Module::compile(t.engine, t.bytes);
+            if (res)
+                t.result = res.ok();
+            else
+                t.error = res.err().message();
+        }
+        catch (...)
+        {
+            t.exception = std::current_exception();
+        }
+        return nullptr;
+    };
+
+    pthread_t thread;
+    if (int rc = pthread_create(&thread, &attr, compile_fn, &task); rc != 0)
+        throw Exception(ErrorCodes::WASM_ERROR, "pthread_create failed: {}", rc);
+
+    if (int rc = pthread_join(thread, nullptr); rc != 0)
+    {
+        /// pthread_join failure is unrecoverable: the worker may still be running
+        /// and writing to task. Throwing here would destroy task during stack
+        /// unwinding, causing a data race or use-after-free. Treat as fatal —
+        /// pthread_join can only fail if the thread is not joinable or another
+        /// thread is already waiting, neither of which can happen here.
+        std::terminate();
+    }
+
+    if (task.exception)
+        std::rethrow_exception(task.exception);
+
+    if (!task.result)
+        throw Exception(ErrorCodes::WASM_ERROR, "Failed to compile wasm code ({}): {}", phase, task.error);
+
+    return std::move(*task.result);
 }
 
 }
