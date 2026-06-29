@@ -437,6 +437,24 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Compression codec have to be specified for part on disk, empty for {}", new_part->name);
     }
 
+    const auto & column_compression_codecs = writer->getColumnCompressionCodecs();
+    if (!column_compression_codecs.empty())
+    {
+        write_plain_file(IMergeTreeDataPart::COLUMN_COMPRESSION_CODECS_FILE_NAME, [&](auto & buffer)
+        {
+            writeString("column compression codecs format version: 1\n", buffer);
+            writeText(column_compression_codecs.size(), buffer);
+            writeString(" columns:\n", buffer);
+            for (const auto & [column, codec] : column_compression_codecs)
+            {
+                writeBackQuotedString(column, buffer);
+                writeChar(' ', buffer);
+                writeEscapedString(codec, buffer);
+                writeChar('\n', buffer);
+            }
+        });
+    }
+
     write_plain_file("checksums.txt", [&](auto & buffer)
     {
         checksums.write(buffer);

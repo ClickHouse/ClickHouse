@@ -588,6 +588,9 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
 
 CompressionCodecPtr MergeTreeDataPartWide::getColumnCompressionCodec(const NameAndTypePair & column) const
 {
+    if (auto codec = tryGetColumnCompressionCodecFromFile(column))
+        return *codec;
+
     String path_to_data_file;
     getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {

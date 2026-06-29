@@ -237,6 +237,9 @@ std::optional<time_t> MergeTreeDataPartCompact::getColumnModificationTime(const 
 
 CompressionCodecPtr MergeTreeDataPartCompact::getColumnCompressionCodec(const NameAndTypePair & column) const
 {
+    if (auto codec = tryGetColumnCompressionCodecFromFile(column))
+        return *codec;
+
     std::lock_guard lock(column_compression_codecs_mutex);
     if (!column_compression_codecs_initialized)
         loadColumnCompressionCodecs();
