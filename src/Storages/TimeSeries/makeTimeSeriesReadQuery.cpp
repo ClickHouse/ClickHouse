@@ -1,8 +1,12 @@
 #include <Storages/TimeSeries/makeTimeSeriesReadQuery.h>
 
+#include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Core/Joins.h>
 #include <Core/Names.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -11,6 +15,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Parsers/makeASTForLogicalFunction.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -95,10 +101,153 @@ namespace
         return metric_name;
     }
 
+    ASTPtr makeTagsTableElement(const StorageID & tags_table_id, const ASTPtr & index_filter);
+
+    /// Builds an index-usable predicate to push onto the raw "tags" table scan, from the query filter's
+    /// top-level equality conjuncts on key-like columns:
+    ///   - `metric_name = <const>`            -> `metric_name IN ('', <consts>)`
+    ///   - `tags['<tag>'] = <const>`, where `<tag>` is promoted to its own column via `tags_to_columns`,
+    ///                                        -> `<column> IN ('', <consts>)`
+    ///   - `timeSeriesSelectorMatchTags('<selector>', ...)` -> the same, built from the equality (`=`)
+    ///                                        matchers of the constant PromQL selector (regex and negative
+    ///                                        matchers can't use an index and are ignored)
+    /// Conditions on different columns are combined with AND. The empty string keeps rows whose value is
+    /// stored in the `tags` Map instead of the column; correctness is still guaranteed by the outer filter
+    /// on the reconstructed columns, so this only needs to be a sound over-approximation. A column is only
+    /// used by the primary key when it is part of the "tags" table's sorting key. Returns nullptr when no
+    /// such conjunct is found.
+    ASTPtr makeTagsTableIndexFilter(const ActionsDAG * filter_actions_dag,
+                                    const std::vector<std::pair<String, String>> & tag_columns)
+    {
+        if (!filter_actions_dag || filter_actions_dag->getOutputs().empty())
+            return nullptr;
+
+        auto unwrap_alias = [](const ActionsDAG::Node * node)
+        {
+            while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+                node = node->children.front();
+            return node;
+        };
+
+        /// Input column names can be qualified (e.g. `__table1.metric_name`).
+        auto input_is = [&](const ActionsDAG::Node * node, std::string_view column_name)
+        {
+            return node->type == ActionsDAG::ActionType::INPUT
+                && (node->result_name == column_name || node->result_name.ends_with(String(".") + String(column_name)));
+        };
+        auto get_const_string = [](const ActionsDAG::Node * node, String & out)
+        {
+            if (node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+                return false;
+            Field value = (*node->column)[0];
+            if (value.getType() != Field::Types::String)
+                return false;
+            out = value.safeGet<String>();
+            return true;
+        };
+
+        std::unordered_map<String, String> column_by_tag_name;
+        for (const auto & [tag_name, column_name] : tag_columns)
+            column_by_tag_name[tag_name] = column_name;
+
+        /// Inner column name -> the constant values the filter restricts it to. Ordered for stable output.
+        std::map<String, std::vector<String>> values_by_column;
+
+        /// Records that the tag `tag_name` is restricted to `value`, if it maps to an indexable column
+        /// (`__name__` -> the "metric_name" column; a promoted tag -> its column; otherwise ignored).
+        auto record_tag_value = [&](const String & tag_name, const String & value)
+        {
+            if (tag_name == TimeSeriesTagNames::MetricName)
+                values_by_column[TimeSeriesColumnNames::MetricName].push_back(value);
+            else if (auto it = column_by_tag_name.find(tag_name); it != column_by_tag_name.end())
+                values_by_column[it->second].push_back(value);
+        };
+
+        /// Records the equality matchers of a constant PromQL selector (the argument of
+        /// timeSeriesSelectorMatchTags); an unparseable selector simply disables the push-down.
+        auto record_selector_matchers = [&](const String & selector)
+        {
+            PrometheusQueryTree query_tree;
+            if (!query_tree.tryParse(selector))
+                return;
+            const auto * root = query_tree.getRoot();
+            if (!root || root->node_type != PrometheusQueryTree::NodeType::InstantSelector)
+                return;
+            for (const auto & matcher : static_cast<const PrometheusQueryTree::InstantSelector &>(*root).matchers)
+            {
+                if (matcher.matcher_type == PrometheusQueryTree::MatcherType::EQ)
+                    record_tag_value(matcher.label_name, matcher.label_value);
+            }
+        };
+
+        for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_actions_dag->getOutputs().front()))
+        {
+            const auto * node = unwrap_alias(atom);
+            if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+                continue;
+            const auto function_name = node->function_base->getName();
+
+            /// `metric_name = <value>` or `tags['<tag>'] = <value>`.
+            if (function_name == "equals" && node->children.size() == 2)
+            {
+                const auto * lhs = unwrap_alias(node->children[0]);
+                const auto * rhs = unwrap_alias(node->children[1]);
+
+                /// One side must be a String constant (the compared value).
+                String value;
+                const ActionsDAG::Node * expr = nullptr;
+                if (get_const_string(rhs, value))
+                    expr = lhs;
+                else if (get_const_string(lhs, value))
+                    expr = rhs;
+                else
+                    continue;
+
+                if (input_is(expr, TimeSeriesColumnNames::MetricName))
+                {
+                    record_tag_value(TimeSeriesTagNames::MetricName, value);
+                }
+                else if (expr->type == ActionsDAG::ActionType::FUNCTION && expr->function_base
+                    && expr->function_base->getName() == "arrayElement" && expr->children.size() == 2)
+                {
+                    String tag_name;
+                    if (input_is(unwrap_alias(expr->children[0]), TimeSeriesColumnNames::Tags)
+                        && get_const_string(unwrap_alias(expr->children[1]), tag_name))
+                        record_tag_value(tag_name, value);
+                }
+            }
+            /// `timeSeriesSelectorMatchTags('<selector>', ...)` -> the selector's equality matchers.
+            else if (function_name == "timeSeriesSelectorMatchTags" && !node->children.empty())
+            {
+                String selector;
+                if (get_const_string(unwrap_alias(node->children[0]), selector))
+                    record_selector_matchers(selector);
+            }
+        }
+
+        if (values_by_column.empty())
+            return nullptr;
+
+        /// AND over columns of `<column> IN ('', <values>)`.
+        ASTs conditions;
+        for (const auto & [column_name, values] : values_by_column)
+        {
+            ASTs tuple_args;
+            tuple_args.push_back(make_intrusive<ASTLiteral>(Field{String{}}));
+            for (const auto & value : values)
+                tuple_args.push_back(make_intrusive<ASTLiteral>(Field{value}));
+            conditions.push_back(makeASTFunction("in",
+                make_intrusive<ASTIdentifier>(column_name),
+                makeASTFunction("tuple", std::move(tuple_args))));
+        }
+        return makeASTForLogicalAnd(std::move(conditions));
+    }
+
     /// Builds `SELECT <requested columns> FROM <tags_table_id>` — only the columns the caller
     /// asked for via `column_names` are returned.
     ASTPtr makeTagsOnlySelect(const StorageID & tags_table_id, const NameSet & column_names,
-                              const std::vector<std::pair<String, String>> & tag_columns)
+                              const std::vector<std::pair<String, String>> & tag_columns,
+                              const ASTPtr & index_filter)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
         auto select_list = make_intrusive<ASTExpressionList>();
@@ -116,16 +265,8 @@ namespace
 
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
-        auto table_exp = make_intrusive<ASTTableExpression>();
-        table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
-        table_exp->children.push_back(table_exp->database_and_table_name);
-
-        auto table_elem = make_intrusive<ASTTablesInSelectQueryElement>();
-        table_elem->table_expression = table_exp;
-        table_elem->children.push_back(table_exp);
-
         auto tables = make_intrusive<ASTTablesInSelectQuery>();
-        tables->children.push_back(table_elem);
+        tables->children.push_back(makeTagsTableElement(tags_table_id, index_filter));
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
 
         return wrapInUnionQuery(std::move(select_query));
@@ -229,12 +370,42 @@ namespace
         return select_list;
     }
 
-    /// Builds the `FROM <tags_table_id>` element that the multi-table reads are anchored on.
-    ASTPtr makeTagsTableElement(const StorageID & tags_table_id)
+    /// Builds the `FROM <tags_table_id>` element that the multi-table reads are anchored on. When
+    /// `index_filter` is set, the table is wrapped in `(SELECT * FROM tags WHERE <index_filter>) AS __tags`
+    /// so the predicate is applied at the tags scan and its primary key can skip granules.
+    ASTPtr makeTagsTableElement(const StorageID & tags_table_id, const ASTPtr & index_filter)
     {
         auto tags_exp = make_intrusive<ASTTableExpression>();
-        tags_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
-        tags_exp->children.push_back(tags_exp->database_and_table_name);
+
+        if (index_filter)
+        {
+            auto inner = make_intrusive<ASTSelectQuery>();
+
+            auto select_list = make_intrusive<ASTExpressionList>();
+            select_list->children.push_back(make_intrusive<ASTAsterisk>());
+            inner->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
+
+            auto inner_exp = make_intrusive<ASTTableExpression>();
+            inner_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
+            inner_exp->children.push_back(inner_exp->database_and_table_name);
+            auto inner_elem = make_intrusive<ASTTablesInSelectQueryElement>();
+            inner_elem->table_expression = inner_exp;
+            inner_elem->children.push_back(inner_exp);
+            auto inner_tables = make_intrusive<ASTTablesInSelectQuery>();
+            inner_tables->children.push_back(inner_elem);
+            inner->setExpression(ASTSelectQuery::Expression::TABLES, inner_tables);
+
+            inner->setExpression(ASTSelectQuery::Expression::WHERE, index_filter->clone());
+
+            tags_exp->subquery = make_intrusive<ASTSubquery>(wrapInUnionQuery(std::move(inner)));
+            tags_exp->subquery->setAlias("__tags");
+            tags_exp->children.push_back(tags_exp->subquery);
+        }
+        else
+        {
+            tags_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
+            tags_exp->children.push_back(tags_exp->database_and_table_name);
+        }
 
         auto tags_elem = make_intrusive<ASTTablesInSelectQueryElement>();
         tags_elem->table_expression = tags_exp;
@@ -395,13 +566,14 @@ namespace
         const std::optional<StorageID> & samples_table_id,
         const std::optional<StorageID> & metrics_table_id,
         const NameSet & column_names,
-        const std::vector<std::pair<String, String>> & tag_columns)
+        const std::vector<std::pair<String, String>> & tag_columns,
+        const ASTPtr & index_filter)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, makeJoinedSelectList(column_names, tag_columns));
 
         auto tables = make_intrusive<ASTTablesInSelectQuery>();
-        tables->children.push_back(makeTagsTableElement(tags_table_id));
+        tables->children.push_back(makeTagsTableElement(tags_table_id, index_filter));
         if (samples_table_id)
             tables->children.push_back(makeSamplesSemiJoinElement(*samples_table_id));
         if (metrics_table_id)
@@ -416,7 +588,8 @@ namespace
 ASTPtr makeTimeSeriesReadQuery(
     const StorageTimeSeries & storage,
     const Names & column_names,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const ActionsDAG * filter_actions_dag)
 {
     NameSet requested{column_names.begin(), column_names.end()};
 
@@ -436,9 +609,16 @@ ASTPtr makeTimeSeriesReadQuery(
     if (!need_tags && !need_samples && !need_metrics)
         need_tags = true;
 
+    auto tag_columns = getPromotedTagColumns(storage);
+
+    /// Conditions on `metric_name` and promoted tag columns are pushed onto the "tags" table read so its
+    /// primary key (or a custom sorting key over a promoted column) can skip granules.
+    auto tags_index_filter = makeTagsTableIndexFilter(filter_actions_dag, tag_columns);
+
     /// Single-table reads (no join).
     if (!need_samples && !need_metrics)
-        return makeTagsOnlySelect(storage.getTargetTableID(ViewTarget::Tags, context), requested, getPromotedTagColumns(storage));
+        return makeTagsOnlySelect(storage.getTargetTableID(ViewTarget::Tags, context), requested,
+                                  tag_columns, tags_index_filter);
     if (need_samples && !need_tags && !need_metrics)
         return makeSamplesOnlySelect(storage.getTargetTableID(ViewTarget::Samples, context));
     if (need_metrics && !need_tags && !need_samples)
@@ -455,7 +635,8 @@ ASTPtr makeTimeSeriesReadQuery(
     if (need_metrics)
         metrics_table_id = storage.getTargetTableID(ViewTarget::Metrics, context);
 
-    return makeTagsBasedSelect(tags_table_id, samples_table_id, metrics_table_id, requested, getPromotedTagColumns(storage));
+    return makeTagsBasedSelect(tags_table_id, samples_table_id, metrics_table_id, requested,
+                               tag_columns, tags_index_filter);
 }
 
 }

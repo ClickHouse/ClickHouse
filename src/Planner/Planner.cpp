@@ -56,6 +56,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageView.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
@@ -261,6 +262,13 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             break;
         }
         if (typeid_cast<const StorageView *>(storage.get()))
+        {
+            collect_filters = true;
+            break;
+        }
+        /// StorageTimeSeries reads through a generated inner query, so the outer WHERE isn't visible to its
+        /// inner tables. Collect filters so conditions can be pushed down onto the "tags" table read.
+        if (typeid_cast<const StorageTimeSeries *>(storage.get()))
         {
             collect_filters = true;
             break;

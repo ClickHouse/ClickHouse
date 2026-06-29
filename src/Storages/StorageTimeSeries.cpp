@@ -549,7 +549,7 @@ void StorageTimeSeries::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto select_query = makeTimeSeriesReadQuery(*this, column_names, local_context);
+    auto select_query = makeTimeSeriesReadQuery(*this, column_names, local_context, query_info.filter_actions_dag.get());
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, /*is_subquery=*/false,
                                       query_info.settings_limit_offset_done);
     InterpreterSelectQueryAnalyzer interpreter(select_query, local_context, options, column_names);

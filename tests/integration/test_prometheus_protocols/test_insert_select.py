@@ -133,6 +133,89 @@ def test_select_tags_with_name_in_tags_map():
     assert node.query("SELECT metric_name, tags FROM prometheus") == TSV([["bar", "{'__name__':'bar','x':'1'}"]])
 
 
+def test_select_where_metric_name_pushdown_keeps_name_in_tags():
+    """A `metric_name` condition is pushed onto the tags scan as `metric_name IN ('', <consts>)`. The empty
+    string keeps series whose name lives in the tags Map (empty `metric_name` column), so such a series is
+    still returned when filtered by its name."""
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
+        " ('cpu', {'a': '1'}, [(toDateTime64(1000, 3), 1.0)])"
+    )
+    node.query(
+        "INSERT INTO FUNCTION timeSeriesTags(prometheus) (metric_name, tags) VALUES"
+        " ('', {'__name__': 'cpu', 'z': '9'})"
+    )
+
+    # Both series have metric name 'cpu' (one in the column, one in the tags Map) and must be returned.
+    assert node.query("SELECT count() FROM prometheus WHERE metric_name = 'cpu'") == "2\n"
+    assert node.query("SELECT count() FROM prometheus WHERE metric_name = 'mem'") == "0\n"
+
+
+def test_select_where_promoted_tag_pushdown():
+    """A condition on a tag promoted to its own column (`tags_to_columns`) is pushed onto that column on the
+    tags scan as `<col> IN ('', <consts>)`. The empty string keeps a series whose tag is instead stored in
+    the `tags` Map (empty column), so it is still returned."""
+    node.query("DROP TABLE IF EXISTS prom_promoted SYNC")
+    node.query("CREATE TABLE prom_promoted ENGINE=TimeSeries SETTINGS tags_to_columns={'job': 'job'}")
+    try:
+        node.query(
+            "INSERT INTO prom_promoted (metric_name, tags, time_series) VALUES"
+            " ('cpu', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)]),"
+            " ('mem', {'job': 'web'}, [(toDateTime64(2000, 3), 2.0)])"
+        )
+        # A series whose `job` is stored in the tags Map (empty `job` column), inserted into the inner table.
+        node.query(
+            "INSERT INTO FUNCTION timeSeriesTags(prom_promoted) (metric_name, tags) VALUES"
+            " ('direct', {'job': 'api', 'x': '1'})"
+        )
+
+        # 'cpu' (job in column) and 'direct' (job in the Map) both match; 'mem' does not.
+        assert node.query("SELECT count() FROM prom_promoted WHERE tags['job'] = 'api'") == "2\n"
+        assert node.query("SELECT count() FROM prom_promoted WHERE tags['job'] = 'web'") == "1\n"
+    finally:
+        node.query("DROP TABLE IF EXISTS prom_promoted SYNC")
+
+
+def test_select_where_selector_match_tags_pushdown():
+    """A `WHERE timeSeriesSelectorMatchTags('<selector>', tags)` filter has the equality matchers of its
+    constant PromQL selector pushed onto the tags scan (`__name__` -> the metric_name column, a promoted tag
+    -> its column), each as `<col> IN ('', <consts>)`. The empty string keeps series whose value lives in the
+    `tags` Map, so they are still returned. Regex and negative matchers can't use the index, but the outer
+    function call still enforces the whole selector exactly."""
+    node.query("DROP TABLE IF EXISTS prom_selector SYNC")
+    node.query("CREATE TABLE prom_selector ENGINE=TimeSeries SETTINGS tags_to_columns={'job': 'job'}")
+    try:
+        node.query(
+            "INSERT INTO prom_selector (metric_name, tags, time_series) VALUES"
+            " ('cpu', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)]),"
+            " ('mem', {'job': 'web'}, [(toDateTime64(2000, 3), 2.0)])"
+        )
+        # A series whose name and `job` both live in the tags Map (empty `metric_name`/`job` columns).
+        node.query(
+            "INSERT INTO FUNCTION timeSeriesTags(prom_selector) (metric_name, tags) VALUES"
+            " ('', {'__name__': 'cpu', 'job': 'api'})"
+        )
+
+        # `__name__` matcher: 'cpu' in the column and 'cpu' in the Map both match; 'mem' does not.
+        assert node.query(
+            "SELECT count() FROM prom_selector WHERE timeSeriesSelectorMatchTags('{__name__=\"cpu\"}', tags)"
+        ) == "2\n"
+        # Metric name plus a promoted-tag matcher.
+        assert node.query(
+            "SELECT count() FROM prom_selector WHERE timeSeriesSelectorMatchTags('cpu{job=\"api\"}', tags)"
+        ) == "2\n"
+        # A promoted-tag matcher alone keeps the column-stored 'mem' series only.
+        assert node.query(
+            "SELECT count() FROM prom_selector WHERE timeSeriesSelectorMatchTags('{job=\"web\"}', tags)"
+        ) == "1\n"
+        # A regex matcher isn't pushed down but is still enforced exactly by the outer call.
+        assert node.query(
+            "SELECT count() FROM prom_selector WHERE timeSeriesSelectorMatchTags('{__name__=~\"c.*\"}', tags)"
+        ) == "2\n"
+    finally:
+        node.query("DROP TABLE IF EXISTS prom_selector SYNC")
+
+
 def test_select_count():
     insert_three_series()
 
