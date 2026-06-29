@@ -1014,6 +1014,12 @@ void logExceptionBeforeStart(
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
         query_span->finish(query_end_time);
     }
+
+    /// Audit queries that fail before execution starts (malformed SQL, early DDL/DML failures).
+    /// These never reach logQueryFinish/logQueryException, so without this they would be missing
+    /// from the audit trail even though they appear in system.query_log.
+    if (!internal)
+        auditLog(elem, context, ast);
 }
 
 void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast)
@@ -1097,7 +1103,7 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
     if (!context->isEnabledAuditType(audit_type))
         return;
 
-    String object_names; /// tables / views
+    String object_names; /// tables / views / databases
     if (audit_type == Context::AuditLogTypes::DDL || audit_type == Context::AuditLogTypes::DML)
     {
         for (const auto & table : elem.query_tables)
@@ -1112,6 +1118,20 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
             if (!object_names.empty())
                 object_names += ",";
             object_names += view;
+        }
+
+        /// Database-level statements such as `CREATE DATABASE` / `DROP DATABASE` populate only
+        /// `query_databases` (no table/view names). Include them so the affected object name is
+        /// not lost. Skip when table/view names were already collected to avoid redundantly
+        /// repeating the database of fully-qualified objects.
+        if (object_names.empty())
+        {
+            for (const auto & database : elem.query_databases)
+            {
+                if (!object_names.empty())
+                    object_names += ",";
+                object_names += database;
+            }
         }
     }
 
