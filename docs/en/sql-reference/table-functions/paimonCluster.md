@@ -50,4 +50,4 @@ A table with the specified structure for reading data from cluster in the specif
 
 **See Also**
 
-- [Paimon table function](sql-reference/table-functions/paimon.md)
+- [Paimon table function](/sql-reference/table-functions/paimon.md)
