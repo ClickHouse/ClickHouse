@@ -132,6 +132,11 @@ const LoggerPtr & FileSegment::getLog() const
 
 FileSegment::State FileSegment::state() const
 {
+    /// Read without lock. This is safe because every terminal state is published as the last write
+    /// of its transition: in particular DOWNLOADED is set only after the segment is fully
+    /// finalized (writer flushed and closed, `download_data` released, range/size settled - see
+    /// `setDownloadedUnlocked` and `shrinkFileSegmentToDownloadedSize`). So an observer of a state
+    /// here is guaranteed to also see all the state that belongs to it.
     return download_state.load();
 }
 
@@ -218,6 +223,8 @@ size_t FileSegment::getDownloadedSize() const
 
 bool FileSegment::isDownloaded() const
 {
+    /// Read without lock, see the comment in `state`: DOWNLOADED is published last, so observing it here
+    /// implies a fully-downloaded, consistent segment.
     return download_state.load() == State::DOWNLOADED;
 }
 
@@ -654,7 +661,6 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
     if (download_state == State::DOWNLOADED)
         return;
 
-    download_state = State::DOWNLOADED;
     download_finished_time = timeInSeconds(std::chrono::system_clock::now());
 
     if (download_data && download_data->cache_writer)
@@ -664,6 +670,12 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
 
     chassert(downloaded_size > 0);
     chassert(fs::file_size(getPath()) == downloaded_size);
+
+    /// Publish DOWNLOADED only once the segment is fully finalized (writer flushed and closed,
+    /// `download_data` released). `download_state` is read without lock (see `FileSegment::state`
+    /// and `FileSegment::isDownloaded`), so an observer of DOWNLOADED must see a fully-downloaded
+    /// segment, not an intermediate state.
+    download_state = State::DOWNLOADED;
 }
 
 void FileSegment::setDownloadFailed()
@@ -758,11 +770,9 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     LOG_TEST(getLog(),"Shrinking file segment {} -> {} (downloaded size: {})",
              range().size(), result_size, downloaded_size.load());
 
-    if (downloaded_size == result_size)
-    {
-        setDownloadState(State::DOWNLOADED, lock);
+    const bool fully_downloaded = downloaded_size == result_size;
+    if (fully_downloaded)
         resetDownloadDataUnlocked(lock);
-    }
     else
         setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
 
@@ -773,6 +783,12 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
         queue_iterator->decrementSize(reserved_size - result_size);
         reserved_size = result_size;
     }
+
+    /// Publish DOWNLOADED only after the resize is fully applied (range and reserved_size updated,
+    /// `download_data` released), since DOWNLOADED is read without lock and implies a consistent,
+    /// fully-downloaded segment (downloaded_size == range().size(), no pending download_data).
+    if (fully_downloaded)
+        setDownloadState(State::DOWNLOADED, lock);
 }
 
 size_t FileSegment::getSizeForBackgroundDownload() const

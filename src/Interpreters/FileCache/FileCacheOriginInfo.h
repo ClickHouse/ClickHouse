@@ -53,13 +53,10 @@ struct OriginPoolKey
 template <>
 struct std::hash<DB::OriginPoolKey>
 {
+    /// Distinct origins are very few and dominated by the user id, so hashing it alone gives
+    /// a good enough spread; equality (which compares all fields) keeps lookups correct.
     size_t operator()(const DB::OriginPoolKey & key) const noexcept
     {
-        size_t h = std::hash<DB::FileCacheOriginInfo::UserID>{}(key.user_id);
-        h ^= std::hash<std::optional<DB::FileCacheOriginInfo::Weight>>{}(key.weight) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        h ^= std::hash<std::underlying_type_t<DB::FileCacheOriginInfo::SegmentKeyType>>{}(
-                 static_cast<std::underlying_type_t<DB::FileCacheOriginInfo::SegmentKeyType>>(key.segment_type))
-             + 0x9e3779b9 + (h << 6) + (h >> 2);
-        return h;
+        return std::hash<DB::FileCacheOriginInfo::UserID>{}(key.user_id);
     }
 };
