@@ -54,6 +54,31 @@ FROM
 )
 WHERE explain LIKE '%GradualResize%';
 
+-- Verify split-resize is actually applied to the gradual path (regression guard for the interaction
+-- between `min_rows_per_stream_for_gradual_resize` and `min_outstreams_per_resize_after_split`).
+-- With split-resize active and enough upstream streams, `Pipe::resizeGradual` builds one
+-- `GradualResizeProcessor` per split group. `EXPLAIN PIPELINE` collapses identical processors and
+-- renders this as `GradualResize × G ...`; a single, non-split resize renders without the `× `
+-- multiplier. `numbers(...)` reports `hasEvenlyDistributedRead = true` and bypasses the
+-- pre-aggregation resize entirely, so a `MergeTree` source is required to exercise this path.
+-- Matching `GradualResize × ` fails if split-resize is silently dropped from the gradual path
+-- (it would degrade to a single `GradualResize`) or if the gradual path is dropped altogether.
+SET min_rows_per_stream_for_gradual_resize = 1000;
+SET min_bytes_per_stream_for_gradual_resize = 0;
+SET min_outstreams_per_resize_after_split = 4;
+SET max_threads = 16;
+SET optimize_aggregation_in_order = 0;
+
+SELECT count() > 0
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT k, count()
+    FROM test_gradual_resize
+    GROUP BY k
+)
+WHERE explain LIKE '%GradualResize × %';
+
 DROP TABLE test_gradual_resize;
 
 -- Verify GradualResize works correctly together with `min_outstreams_per_resize_after_split`.
