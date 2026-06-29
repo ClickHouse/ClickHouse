@@ -260,10 +260,25 @@ const ActionsDAG::Node & addConstUInt8(ActionsDAG & dag, UInt8 value, const Stri
 /// `convertFieldToType` so the Field is reshaped to what `createColumnConst` requires;
 /// returns `nullptr` (and the caller bails out of the bulk path) if no representable value
 /// exists in the target type.
+///
+/// Reject lossy conversions and fall back to the per-granule scalar path. The scalar
+/// `KeyCondition::checkInHyperrectangle` compares the original bound `Field` against the granule
+/// min/max accurately *across types* (e.g. a `Decimal64(2)` bound `33.33` against a `Decimal64(1)`
+/// granule `33.3`, keeping the granule because `33.3 < 33.33`). Here the bound is materialized as
+/// a constant column in the index column type, so the DAG compares everything in that single type.
+/// When the conversion changes the value - `Decimal` / `DateTime64` scale reduction, `Float64` ->
+/// `Float32` narrowing, integer narrowing, etc. - the rounded literal would make the DAG strictly
+/// more selective than the scalar path and could prune granules that actually match, returning
+/// wrong results under `use_minmax_index_bulk_filtering = 1`. `accurateEquals` detects any such
+/// value change so we bail out and let the caller use the per-granule path, which compares the
+/// exact bound. The supported cross-type-but-exact cases (e.g. `UInt64` seconds -> `DateTime64`)
+/// stay on the bulk path because their converted value is numerically equal to the original.
 const ActionsDAG::Node * addLiteral(ActionsDAG & dag, const DataTypePtr & type, const Field & value, const String & name_hint)
 {
     Field converted = convertFieldToType(value, *type);
     if (converted.isNull() && !value.isNull())
+        return nullptr;
+    if (!value.isNull() && !accurateEquals(value, converted))
         return nullptr;
     auto column = type->createColumnConst(1, converted);
     return &dag.addColumn(std::move(column), type, name_hint);
