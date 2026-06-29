@@ -7971,6 +7971,15 @@ Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted 
 )", BETA, enable_nullable_tuple_type) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
+    DECLARE(Timezone, iceberg_partition_timezone, "", R"(
+Time zone by which partitioning of Iceberg tables was performed.
+Possible values:
+
+- Any valid timezone, e.g. `Europe/Berlin`, `UTC` or `Zulu`
+- `` (empty value) - use server or session timezone
+
+Default value is empty.
+)", 0) \
     DECLARE(UInt64, shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms, 50, R"(
 Initial backoff in milliseconds for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
 )", 0) \

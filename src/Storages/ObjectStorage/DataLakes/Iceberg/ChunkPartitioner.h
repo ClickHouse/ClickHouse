@@ -43,6 +43,7 @@ private:
 
     std::vector<FunctionOverloadResolverPtr> functions;
     std::vector<std::optional<size_t>> function_params;
+    std::vector<std::optional<String>> function_time_zones;
     std::vector<String> columns_to_apply;
     DataTypes result_data_types;
 
