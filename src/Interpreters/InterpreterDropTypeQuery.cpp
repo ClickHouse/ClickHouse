@@ -15,13 +15,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_TYPE;
-    extern const int CANNOT_REMOVE_TYPE; // Потенциально новая ошибка, если удаление из БД не удалось
-    // ACCESS_DENIED уже должен быть
-}
-
 BlockIO InterpreterDropTypeQuery::execute()
 {
     const auto & drop_query = query_ptr->as<const ASTDropTypeQuery &>();

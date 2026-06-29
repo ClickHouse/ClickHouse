@@ -37,10 +37,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_PARSE_TEXT;
-    extern const int BAD_ARGUMENTS;
-    extern const int TABLE_ALREADY_EXISTS;
-    extern const int UNKNOWN_DATABASE;
 }
 
 UserDefinedTypeFactory & UserDefinedTypeFactory::instance()
