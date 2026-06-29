@@ -12,7 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-QUERY="EXPLAIN actions = 1 SELECT encrypt('aes-128-ecb', toString(number), concat('SECRET_', 'KEY')) FROM numbers(1)"
+QUERY="EXPLAIN actions = 1 SELECT encrypt('aes-128-ecb', toString(number), concat('SECRET_', 'KEY')) FROM numbers(1) SETTINGS explain_query_plan_default = 'legacy'"
 
 echo "-- secondary query, secrets hidden by default"
 ${CLICKHOUSE_CLIENT} --query_kind secondary_query --query "${QUERY}"
