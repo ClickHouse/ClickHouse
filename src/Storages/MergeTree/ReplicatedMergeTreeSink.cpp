@@ -552,7 +552,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
 }
 
 template<>
-bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
+bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool deduplicate_part)
 {
     /// NOTE: No delay in this case. That's Ok.
     auto origin_zookeeper = storage.getZooKeeper();
@@ -591,7 +591,7 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
         part->info.mutation = 0;
 
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        String block_id = deduplicate ? fmt::format("{}_{}", part->info.getPartitionId(), part->checksums.getTotalChecksumHex()) : "";
+        String block_id = deduplicate && deduplicate_part ? fmt::format("{}_{}", part->info.getPartitionId(), part->checksums.getTotalChecksumHex()) : "";
         bool deduplicated = commitPart(zookeeper, part, block_id, replicas_num).second;
 
         int error = 0;
