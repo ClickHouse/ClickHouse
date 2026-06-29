@@ -24,9 +24,9 @@
 
 #include <incbin.h>
 /// A minimal file used when the server is run without installation
-INCBIN(proxy_resource_embedded_xml, SOURCE_DIR "/programs/proxy-server/embedded.xml");
+INCBIN(proxy_resource_embedded_xml, SOURCE_DIR "/programs/proxy/embedded.xml");
 
-int mainEntryClickHouseProxyServer(int argc, char ** argv)
+int mainEntryClickHouseProxy(int argc, char ** argv)
 {
     Proxy::ProxyServer app;
 
