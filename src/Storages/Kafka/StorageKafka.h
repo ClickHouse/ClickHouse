@@ -21,6 +21,8 @@
 namespace DB
 {
 
+namespace AWSMSKIAMAuth { struct OAuthBearerTokenRefreshContext; }
+
 struct KafkaSettings;
 class ReadFromStorageKafka;
 class ThreadStatus;
@@ -101,6 +103,16 @@ public:
 
     const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
 
+    /// Returns the existing OAuth context, or installs `candidate` if none exists yet. Thread-safe.
+    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext>
+    ensureOAuthContext(std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> candidate)
+    {
+        std::lock_guard lock(oauth_context_mutex);
+        if (!oauth_context)
+            oauth_context = std::move(candidate);
+        return oauth_context;
+    }
+
 private:
     friend class ReadFromStorageKafka;
 
@@ -118,6 +130,9 @@ private:
     LoggerPtr log;
     const bool intermediate_commit;
     const SettingsChanges settings_adjustments;
+
+    mutable std::mutex oauth_context_mutex;
+    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> oauth_context TSA_GUARDED_BY(oauth_context_mutex);
 
     std::vector<KafkaConsumerPtr> consumers;
 
