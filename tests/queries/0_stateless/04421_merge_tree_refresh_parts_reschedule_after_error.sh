@@ -18,11 +18,11 @@ ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE writer (s String) ORDER BY ()
 SETTINGS table_disk = true,
   disk = disk(
-      name = 04414_writer_${CLICKHOUSE_DATABASE},
+      name = 04421_writer_${CLICKHOUSE_DATABASE},
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      path = 'disks/04414/${CLICKHOUSE_DATABASE}/')
+      path = 'disks/04421/${CLICKHOUSE_DATABASE}/')
 "
 
 ${CLICKHOUSE_CLIENT} --query "
@@ -30,11 +30,11 @@ CREATE TABLE reader (s String) ORDER BY ()
 SETTINGS table_disk = true, refresh_parts_interval = 1,
   disk = disk(
       readonly = true,
-      name = 04414_reader_${CLICKHOUSE_DATABASE},
+      name = 04421_reader_${CLICKHOUSE_DATABASE},
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      path = 'disks/04414/${CLICKHOUSE_DATABASE}/')
+      path = 'disks/04421/${CLICKHOUSE_DATABASE}/')
 "
 
 # Sanity check: the background refresh picks up the first part.
