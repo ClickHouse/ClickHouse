@@ -1,3 +1,5 @@
+import struct
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -11,6 +13,11 @@ from .prometheus_test_utils import (
     http_api_response_close_to,
     send_protobuf_to_remote_write,
 )
+
+
+# The Prometheus stale-marker NaN bit pattern (0x7ff0000000000002). A sample carrying this
+# value marks a series as stale from that point; queries must treat it as "no value".
+PROMETHEUS_STALE_MARKER = struct.unpack("<d", struct.pack("<Q", 0x7FF0000000000002))[0]
 
 
 cluster = ClickHouseCluster(__file__)
@@ -158,6 +165,24 @@ def send_test_data():
                     210: 8,
                     220: 12,
                     230: 13,
+                },
+            )
+        ]
+    )
+
+    # A series whose most recent samples within the lookback window are Prometheus stale
+    # markers. Used to verify that timestamp() drops a stale last sample instead of
+    # reporting its timestamp. The real sample at t=110 ensures the empty result is caused
+    # by the stale last sample and not by the series being empty - timestamp() must not
+    # fall back to the earlier non-stale sample.
+    send_data(
+        [
+            (
+                {"__name__": "stale_test"},
+                {
+                    110: 7,
+                    130: PROMETHEUS_STALE_MARKER,
+                    160: PROMETHEUS_STALE_MARKER,
                 },
             )
         ]
@@ -1154,6 +1179,26 @@ def test_conversion_functions():
         180,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "210"]}]}',
         [["[]", "1970-01-01 00:03:00.000", 210]],
+    )
+
+    # Behavior: `timestamp` over a selector whose most recent sample in the lookback
+    # window is a stale marker returns no value (the series is stale), instead of
+    # reporting the stale sample's timestamp. At t=160 the last sample is the stale
+    # marker at t=160; the earlier non-stale sample at t=110 must not be used.
+    do_query_test(
+        "timestamp(stale_test)",
+        160,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Behavior: same through an `offset` - the offset reference time (160 - 30 = 130)
+    # also lands on a stale marker, so the result is empty.
+    do_query_test(
+        "timestamp(stale_test offset 30s)",
+        160,
+        '{"resultType": "vector", "result": []}',
+        [],
     )
 
     # Behavior: Prometheus `scalar` returns the only float sample value.
