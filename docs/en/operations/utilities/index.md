@@ -16,6 +16,7 @@ doc_type: 'landing-page'
 |[ClickHouse obfuscator](../../operations/utilities/clickhouse-obfuscator.md) | Obfuscates data.|
 |[ClickHouse compressor](../../operations/utilities/clickhouse-compressor.md) | Compresses and decompresses data.|
 | [clickhouse-disks](../../operations/utilities/clickhouse-disks.md) | Provides filesystem-like operations on files among different ClickHouse disks.|
+| [clickhouse-proxy](../../operations/utilities/clickhouse-proxy.md) | A native load-balancing and routing proxy that sits in front of ClickHouse servers.|
 | [clickhouse-odbc-bridge](../../operations/utilities/odbc-bridge.md) | A proxy server for ODBC driver.|
 | [clickhouse_backupview](../../operations/utilities/backupview.md) | A python module to analyze ClickHouse backups.|
 | [clickhouse-keeper-client](../../operations/utilities/clickhouse-keeper-client.md) | A client application to interact with ClickHouse Keeper.|
