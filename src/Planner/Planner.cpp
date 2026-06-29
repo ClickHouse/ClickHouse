@@ -136,7 +136,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
-    extern const SettingsBool parallel_replicas_exchange_plan;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool query_cache_compress_entries;
     extern const SettingsUInt64 query_cache_max_entries;
     extern const SettingsUInt64 query_cache_max_size_in_bytes;
@@ -1953,17 +1953,13 @@ void Planner::buildQueryPlanIfNeeded()
     else
         buildPlanForQueryNode();
 
-    /// The planner builds only the plain local plan (PR construction in PlannerJoinTree is skipped under
-    /// this setting). Apply parallel replicas as a plan transformation here, where the full plan and the
-    /// query context are both available. Applicability is decided by inspecting the plan.
+    /// inject parallel replicas split step if applicable
     const auto & query_context = planner_context->getQueryContext();
-    if (query_context->getSettingsRef()[Setting::parallel_replicas_exchange_plan]
+    if (query_context->getSettingsRef()[Setting::parallel_replicas_plan_based]
         && !select_query_options.only_analyze
         && !select_query_options.build_logical_plan)
     {
-        auto pr_storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
-        pr_storage_limits->push_back(buildStorageLimits(*query_context, select_query_options));
-        ClusterProxy::applyParallelReplicasSplit(query_plan, query_tree, planner_context, query_context, std::move(pr_storage_limits));
+        ClusterProxy::applyParallelReplicasSplit(query_plan, query_context);
     }
 
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);

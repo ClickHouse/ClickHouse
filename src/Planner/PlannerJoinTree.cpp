@@ -140,7 +140,7 @@ namespace Setting
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
-    extern const SettingsBool parallel_replicas_exchange_plan;
+    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace ErrorCodes
@@ -1302,7 +1302,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// parallel replicas are applied later as a plan transformation (see
                 /// ClusterProxy::applyParallelReplicasSplit), so skip the PR construction here.
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
-                    && !settings[Setting::parallel_replicas_exchange_plan]
+                    && !settings[Setting::parallel_replicas_plan_based]
                     && parallelReplicasEnabledForStorage(storage, query_context, settings))
                 {
                     if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)

@@ -127,15 +127,8 @@ void executeQueryWithParallelReplicas(
     std::shared_ptr<const StorageLimitsList> storage_limits,
     QueryPlanStepPtr read_from_merge_tree);
 
-/// Apply parallel replicas to an already-built local plan: split it at the reading step into a local
-/// (coordinator) fragment and a remote (replicas) fragment, and replace the reading step with a UNION of
-/// a local read and a remote read of the fragment. Gated by `parallel_replicas_exchange_plan`.
-void applyParallelReplicasSplit(
-    QueryPlan & query_plan,
-    const QueryTreeNodePtr & query_tree,
-    const PlannerContextPtr & planner_context,
-    ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits);
+/// inject parallel replicas split step into plan
+void applyParallelReplicasSplit(QueryPlan & query_plan, ContextPtr context);
 
 void executeQueryWithParallelReplicasCustomKey(
     QueryPlan & query_plan,

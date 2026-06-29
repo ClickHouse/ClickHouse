@@ -42,7 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
-            {"parallel_replicas_exchange_plan", false, false, "New experimental setting to express the parallel replicas local/remote boundary as an explicit exchange in the query plan."},
+            {"parallel_replicas_plan_based", false, false, "New setting"},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",

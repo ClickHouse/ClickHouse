@@ -185,6 +185,7 @@ void optimizeExchanges(QueryPlan::Node & root);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
+void applyParallelReplicas(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
@@ -335,6 +336,17 @@ void optimizeTreeSecondPass(
             }
         });
 
+    const bool enable_parallel_replicas = optimization_settings.enable_parallel_replicas;
+    traverseQueryPlan(stack, root,
+        [&](auto &) {},
+        [&](auto & frame_node)
+        {
+            /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
+            if (enable_parallel_replicas)
+            {
+                applyParallelReplicas(frame_node, nodes, optimization_settings);
+            }
+        });
     stack.push_back({.node = &root});
 
     while (!stack.empty())

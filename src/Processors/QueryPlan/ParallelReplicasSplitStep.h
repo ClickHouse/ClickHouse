@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -15,8 +16,9 @@ namespace DB
 class ParallelReplicasSplitStep final : public ITransformingStep
 {
 public:
-    explicit ParallelReplicasSplitStep(SharedHeader input_header_)
+    explicit ParallelReplicasSplitStep(SharedHeader input_header_, ContextPtr context_)
         : ITransformingStep(input_header_, input_header_, {})
+        , context(context_)
     {
     }
 
@@ -27,6 +29,8 @@ public:
 
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }
+
+    ContextPtr context;
 };
 
 }
