@@ -385,12 +385,11 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(bool sync)
 
         index_file_hashing_stream = nullptr;
 
-        /// Release the primary index file descriptor now that the data has been flushed and synced.
-        /// Otherwise the writer keeps this handle open until it is destroyed, which happens only after
-        /// the part's temporary directory has been renamed to its final name. Renaming a directory that
-        /// still has open file descriptors inside fails on filesystems backed by Windows (WSL, CIFS/SMB,
-        /// Docker Desktop bind mounts). See https://github.com/ClickHouse/ClickHouse/issues/56288.
-        /// The wrapper streams above were reset first, so no live buffer references index_file_stream.
+        /// Release the primary index (`primary.cidx` / `primary.idx`) file descriptor now that the data
+        /// has been flushed and synced, so it is not held open across the part-directory rename. See the
+        /// detailed rationale in MergeTreeDataPartWriterCompact::finishDataSerialization and
+        /// https://github.com/ClickHouse/ClickHouse/issues/56288. The wrapper streams above were reset
+        /// first, so no live buffer references index_file_stream.
         index_file_stream = nullptr;
     }
 }
