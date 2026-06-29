@@ -61,6 +61,10 @@ public:
     /// Group to which belongs current thread
     static ThreadGroupPtr getGroup();
 
+    /// Cheap sequence number of the current query's thread group (no shared_ptr refcount touch), or 0 when
+    /// there is no current thread/group. See ThreadStatus::getThreadGroupSequence.
+    static UInt64 getThreadGroupSequence() noexcept;
+
     /// MemoryTracker for user that owns current thread if any
     static MemoryTracker * getUserMemoryTracker();
 

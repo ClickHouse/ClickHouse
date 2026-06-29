@@ -64,11 +64,34 @@ constexpr size_t MAX_ARRAY_SIZE = 1000000;
 
 /// MAX_ARRAY_SIZE prevents wide types (single Tuple with 10M elements) before allocation. getMaxTypeDecodingComplexity() prevents
 /// large width × depth (e.g. Tuple(Tuple(...) x 999999) x 10000) that does not trigger stack overflow or MAX_ARRAY_SIZE check.
-inline ALWAYS_INLINE size_t getMaxTypeDecodingComplexity()
+///
+/// decodeDataType() is called once per value while reading Dynamic/JSON shared data, so fetching the query
+/// context on every call (CurrentThread::tryGetQueryContext() copies a shared_ptr) caused severe atomic
+/// refcount contention on the shared Context across the reading threads, serializing the work. Cache the
+/// resolved limit per thread and refresh it only when the query changes - getQueryId() is a cheap
+/// thread-local read with no atomics, so the hot path no longer touches the shared Context.
+size_t getMaxTypeDecodingComplexity()
 {
-    if (auto query_context = CurrentThread::tryGetQueryContext())
-        return query_context->getSettingsRef()[Setting::input_format_binary_max_type_complexity];
-    return 1000; /// Default value that matches the default input_format_binary_max_type_complexity setting
+    static constexpr size_t default_complexity = 1000; /// Matches the default input_format_binary_max_type_complexity setting.
+
+    /// The resolved limit is cached per thread and refreshed only when the thread (re)attaches to a
+    /// different query. The cache key is the thread group sequence number, which changes on every
+    /// detach/attach and is never reused (so neither a reused query_id nor a reused group address can
+    /// serve a stale limit). It is a cheap thread-local read with no atomics, so the hot path no longer
+    /// touches the shared Context. 0 means "no thread group", which maps to the default limit.
+    thread_local UInt64 cached_group_sequence = 0;
+    thread_local size_t cached_complexity = default_complexity;
+
+    const UInt64 group_sequence = CurrentThread::getThreadGroupSequence();
+    if (group_sequence != cached_group_sequence)
+    {
+        cached_group_sequence = group_sequence;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            cached_complexity = query_context->getSettingsRef()[Setting::input_format_binary_max_type_complexity];
+        else
+            cached_complexity = default_complexity;
+    }
+    return cached_complexity;
 }
 
 /// In future we can introduce more arguments in the JSON data type definition.

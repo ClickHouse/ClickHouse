@@ -162,6 +162,13 @@ ThreadStatus::ThreadStatus()
 #endif
 }
 
+UInt64 nextThreadGroupSequenceNumber()
+{
+    static std::atomic<UInt64> counter{0};
+    /// Starts from 1; 0 is reserved to mean "no thread group".
+    return counter.fetch_add(1, std::memory_order_relaxed) + 1;
+}
+
 ThreadGroupPtr ThreadStatus::getThreadGroup() const
 {
     chassert(current_thread == this);
