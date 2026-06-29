@@ -34,6 +34,7 @@ Checks: [
   '-bugprone-forward-declaration-namespace',
   '-bugprone-nondeterministic-pointer-iteration-order',
   '-bugprone-sizeof-expression', # too aggressive
+  '-bugprone-throwing-static-initialization',
 
   '-cert-dcl16-c',
   '-cert-arr39-c', # alias of bugprone-sizeof-expression
@@ -138,6 +139,7 @@ Checks: [
   '-misc-use-internal-linkage',
 
   '-modernize-avoid-c-arrays',
+  '-modernize-avoid-c-style-cast',
   '-modernize-concat-nested-namespaces',
   '-modernize-pass-by-value',
   '-modernize-return-braced-init-list',
@@ -172,6 +174,7 @@ Checks: [
   '-readability-identifier-length',
   '-readability-identifier-naming', # useful but too slow
   '-readability-implicit-bool-conversion',
+  '-readability-inconsistent-ifelse-braces',
   '-readability-magic-numbers',
   '-readability-named-parameter',
   '-readability-redundant-declaration',
