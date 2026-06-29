@@ -133,6 +133,8 @@ private:
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
         HTTPHeaderEntries headers;
         String session_token = settings.auth_settings[S3AuthSetting::session_token];
+        String sse_customer_key = settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
+        S3::ServerSideEncryptionKMSConfig sse_kms_config = settings.auth_settings.server_side_encryption_kms_config;
         /// Whether the base key pair came from the request rather than the server `<s3>` config fallback below.
         const bool base_keys_supplied_by_query = !access_key_id.empty();
         if (access_key_id.empty())
@@ -146,6 +148,16 @@ private:
         /// the server's temporary token is not sent with the query's keys (a named collection carries its own).
         if (base_keys_supplied_by_query && !from_named_collection)
             session_token.clear();
+
+        /// The explicit url/key form likewise cannot supply request-auth material, so under the restriction drop
+        /// the server-config SSE-C/SSE-KMS keys (and any inherited headers): they must not be sent to the
+        /// user-chosen endpoint alongside the query's own keys. A named collection is handled by its caller.
+        if (base_keys_supplied_by_query && !from_named_collection && context->shouldRestrictUserQueryS3Credentials())
+        {
+            sse_customer_key.clear();
+            sse_kms_config = {};
+            headers.clear();
+        }
 
         const auto & request_settings = settings.request_settings;
         const auto & server_settings = context->getGlobalContext()->getServerSettings();
@@ -265,8 +277,8 @@ private:
             client_settings,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
-            settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
-            settings.auth_settings.server_side_encryption_kms_config,
+            sse_customer_key,
+            sse_kms_config,
             std::move(headers),
             std::move(credentials_configuration),
             session_token,

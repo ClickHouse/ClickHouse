@@ -204,14 +204,12 @@ $CLICKHOUSE_CLIENT --dynamic_disk_allow_include=1 -q "
 
 # Create a dummy table so the `BACKUP` statements reach credential resolution and
 # not an earlier "unknown table" error, then batch the negative backups:
-#  * extra_credentials(role_arn) without explicit keys: the query-supplied role_arn is dropped (it must not
-#    assume the role with the server's keys), so the backup goes anonymous and reaches S3 (S3_ERROR)
 #  * named collection with role_arn but no explicit S3 credentials -> server-credential rejection
 #  * named collection with use_environment_credentials = 1 -> server-credential rejection
+# (The `extra_credentials(role_arn)` backup form is covered by the s3() SELECT case above: a query-supplied
+# role_arn with no keys is dropped to anonymous, whose backup write outcome is bucket-policy dependent.)
 $CLICKHOUSE_CLIENT -m -q "
     CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple();
-    BACKUP TABLE ${TABLE} TO S3('http://localhost:11111/test/${DB}_backup1/',
-        extra_credentials(role_arn = '${ROLE_ARN}')); -- { serverError S3_ERROR }
     BACKUP TABLE ${TABLE} TO S3(${NC_BACKUP_ROLE}); -- { serverError ACCESS_DENIED }
     BACKUP TABLE ${TABLE} TO S3(${NC_BACKUP_ENV}); -- { serverError ACCESS_DENIED }
 "

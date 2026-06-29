@@ -334,16 +334,18 @@ bool resolvedS3BackendIsRestricted(
         = config.has(key("use_environment_credentials")) && !config.getBool(key("use_environment_credentials"), true);
 
     bool safe = false;
-    if (resolved_no_sign)
+    if (resolved_wants_gcp_oauth)
+    {
+        /// `gcp_oauth` mints a bearer token (server GCP metadata unless a complete ADC triple is given). It is
+        /// checked before NOSIGN because NOSIGN only disables the AWS credentials provider: a child that is both
+        /// NOSIGN and `gcp_oauth` still mints and sends the server GCP token, so it is not anonymous.
+        safe = is_root && info.ast_has_explicit_gcp_adc;
+    }
+    else if (resolved_no_sign)
     {
         /// NOSIGN sends no credentials at all, so it is anonymous regardless of where it was configured. For the
         /// root this still requires the AST itself to have proved NOSIGN (an `include` could otherwise inject it).
         safe = is_root ? info.ast_has_no_sign_request : true;
-    }
-    else if (resolved_wants_gcp_oauth)
-    {
-        /// `gcp_oauth` mints a bearer token (server GCP metadata unless a complete ADC triple is given).
-        safe = is_root && info.ast_has_explicit_gcp_adc;
     }
     else if (resolved_has_role_arn || resolved_has_key_pair)
     {

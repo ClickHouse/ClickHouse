@@ -462,6 +462,40 @@ def test_backup_named_collection_does_not_inherit_server_sse():
     node_with_server_sse.query("DROP TABLE t_backup_sse SYNC")
 
 
+def test_backup_explicit_keys_do_not_inherit_server_sse():
+    # The explicit-key BACKUP TO S3(url, ak, sk) form (no named collection) must not inherit the server <s3>
+    # SSE-C key either: the backup objects are written without it and can be read back with plain keys. If the
+    # server SSE-C key leaked into the backup client, the objects would be encrypted and a plain GET would fail.
+    node_with_server_sse.query("DROP TABLE IF EXISTS t_backup_n1 SYNC")
+    node_with_server_sse.query(
+        "CREATE TABLE t_backup_n1 (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node_with_server_sse.query("INSERT INTO t_backup_n1 SELECT 1")
+    node_with_server_sse.query(
+        f"BACKUP TABLE t_backup_n1 TO S3('http://minio1:9001/root/sse_test/backup_n1/b1', "
+        f"'{minio_access_key}', '{minio_secret_key}')"
+    )
+    node_with_server_sse.query(
+        "SELECT count() FROM s3('http://minio1:9001/root/sse_test/backup_n1/b1/.backup', "
+        f"'{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
+    )
+    node_with_server_sse.query("DROP TABLE t_backup_n1 SYNC")
+
+
+def test_dynamic_disk_include_locations_child_nosign_gcp_oauth_restricted():
+    # A `locations.<name>` child that resolves NOSIGN is anonymous for AWS signing, but if it also resolves
+    # http_client = gcp_oauth the GCP OAuth client still mints and sends the server metadata token. Such a child
+    # must be restricted, not treated as anonymous because of NOSIGN.
+    node_with_includes.query("DROP TABLE IF EXISTS t_loc_gcp SYNC")
+    error = node_with_includes.query_and_get_error(
+        "CREATE TABLE t_loc_gcp (x UInt8) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS disk = disk(type = object_storage, object_storage_type = local_blob_storage, "
+        "include = 'evil_locations_nosign_gcp')",
+        settings={"dynamic_disk_allow_include": 1},
+    )
+    assert "ACCESS_DENIED" in error or "must provide its credentials explicitly" in error, error
+
+
 def test_dynamic_disk_include_locations_child_keys_not_vouched_by_root():
     # A dummy explicit key pair on the disk root must not vouch for a `locations.<name>` S3 child whose
     # credentials were resolved from the include/server config: the child's keys are not user-supplied SQL for
