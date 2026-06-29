@@ -1990,7 +1990,8 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         const auto & settings = client_context->getSettingsRef();
         if (settings[Setting::throw_if_no_data_to_insert])
             throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
-        return;
+        if (!parsed_insert_query.returning_select)
+            return;
     }
 
     if (isEmbeeddedClient() && parsed_insert_query.infile)

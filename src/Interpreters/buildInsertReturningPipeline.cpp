@@ -1,6 +1,7 @@
 #include <Interpreters/buildInsertReturningPipeline.h>
 
 #include <Common/Exception.h>
+#include <Core/Names.h>
 #include <Core/Settings.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
@@ -171,13 +172,28 @@ namespace Setting
     extern const SettingsSetOperationMode union_default_mode;
 }
 
-ContextMutablePtr makeReturningSelectContext(const ASTPtr & returning_select, ContextPtr context)
+ContextMutablePtr makeReturningSelectContext(
+    const ASTPtr & returning_select,
+    ContextPtr context,
+    const ASTPtr & source_select_settings_ast)
 {
     auto returning_context = Context::createCopy(context);
     /// `Context::createCopy` gives the subquery an independent `QueryAccessInfo`, so the tables and columns read by
     /// the RETURNING subquery would be missing from `system.query_log`. Share the outer query's access info (the same
     /// approach as the materialized-view path in `InsertDependenciesBuilder`) so the accesses are recorded.
     returning_context->setQueryAccessInfo(context->getQueryAccessInfoPtr());
+    if (source_select_settings_ast)
+    {
+        Names settings_to_reset;
+        const auto & source_select_settings = source_select_settings_ast->as<ASTSetQuery &>();
+        settings_to_reset.reserve(source_select_settings.changes.size() + source_select_settings.default_settings.size());
+        for (const auto & change : source_select_settings.changes)
+            settings_to_reset.push_back(change.name);
+        for (const auto & default_setting : source_select_settings.default_settings)
+            settings_to_reset.push_back(default_setting);
+        if (!settings_to_reset.empty())
+            returning_context->resetSettingsToDefaultValue(settings_to_reset);
+    }
     InterpreterSetQuery::applySettingsFromQuery(returning_select, returning_context);
     return returning_context;
 }
@@ -252,14 +268,15 @@ void setupPullingQueryPipeline(
     QueryPipeline & pipeline,
     ContextPtr context,
     QueryProcessingStage::Enum stage,
-    const ASTPtr & returning_select)
+    const ASTPtr & returning_select,
+    const ASTPtr & source_select_settings_ast)
 {
     pipeline.setProgressCallback(context->getProgressCallback());
     pipeline.setProcessListElement(context->getProcessListElement());
 
     if (stage == QueryProcessingStage::Complete && pipeline.pulling())
     {
-        const auto limits_context = returning_select ? makeReturningSelectContext(returning_select, context) : context;
+        const auto limits_context = returning_select ? makeReturningSelectContext(returning_select, context, source_select_settings_ast) : context;
         const auto & settings = limits_context->getSettingsRef();
         StreamLocalLimits limits;
         limits.mode = LimitsMode::LIMITS_CURRENT;
@@ -282,7 +299,7 @@ bool replacePipelineWithInsertReturningAfterPush(
 
     io.pipeline.reset();
     io.pipeline = buildReturningSelectPipeline(insert_query.returning_select, context, io.query_metadata_cache);
-    setupPullingQueryPipeline(io.pipeline, context, stage, insert_query.returning_select);
+    setupPullingQueryPipeline(io.pipeline, context, stage, insert_query.returning_select, insert_query.source_select_settings_ast);
     if (io.finish_callback_state)
         io.finish_callback_state->insert_returning_result_as_select = true;
     return true;

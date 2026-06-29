@@ -7,6 +7,9 @@ rows after insert
 select returning trailing settings pushed down
 5
 5
+trailing settings still apply to source select
+1
+1
 trailing settings do not cap returning
 0
 1

@@ -1500,6 +1500,8 @@ static BlockIO executeQueryImpl(
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+            if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->source_select_settings_ast)
+                InterpreterSetQuery::applySettingsFromQuery(insert_query->source_select_settings_ast, context);
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
             /// The RETURNING subquery is an independent `SELECT` that must be validated and normalized with its own
@@ -2003,7 +2005,7 @@ static BlockIO executeQueryImpl(
             if (stage == QueryProcessingStage::Complete && pipeline.pulling())
             {
                 if (insert_query && insert_query->returning_select)
-                    setupPullingQueryPipeline(pipeline, context, stage, insert_query->returning_select);
+                    setupPullingQueryPipeline(pipeline, context, stage, insert_query->returning_select, insert_query->source_select_settings_ast);
                 else
                     pipeline.setLimitsAndQuota(limits, quota);
             }
@@ -2109,7 +2111,7 @@ static BlockIO executeQueryImpl(
                     res.finish_callback_state->insert_returning_result_as_select = true;
                 if (insert_table)
                     res.pipeline.addStorageHolder(insert_table);
-                setupPullingQueryPipeline(res.pipeline, context, stage, insert_query->returning_select);
+                setupPullingQueryPipeline(res.pipeline, context, stage, insert_query->returning_select, insert_query->source_select_settings_ast);
             };
 
             if (!res.pipeline.pushing())

@@ -13,7 +13,10 @@ namespace DB
 class ASTInsertQuery;
 
 /// Context with SETTINGS from the RETURNING subquery applied (for interpreters and result limits).
-ContextMutablePtr makeReturningSelectContext(const ASTPtr & returning_select, ContextPtr context);
+ContextMutablePtr makeReturningSelectContext(
+    const ASTPtr & returning_select,
+    ContextPtr context,
+    const ASTPtr & source_select_settings_ast = nullptr);
 
 /// Run the completed INSERT pipeline to finish, then return a pulling pipeline for the `RETURNING` subquery.
 /// `out_metadata_cache` receives the query-scoped `QueryMetadataCache` installed for the subquery (if any); the caller
@@ -35,7 +38,8 @@ void setupPullingQueryPipeline(
     QueryPipeline & pipeline,
     ContextPtr context,
     QueryProcessingStage::Enum stage,
-    const ASTPtr & returning_select = nullptr);
+    const ASTPtr & returning_select = nullptr,
+    const ASTPtr & source_select_settings_ast = nullptr);
 
 /// After a native-protocol push INSERT finishes, replace the pipeline with the RETURNING SELECT.
 bool replacePipelineWithInsertReturningAfterPush(

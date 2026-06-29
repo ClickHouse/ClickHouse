@@ -272,8 +272,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// A query-level SETTINGS clause normally trails the source SELECT and is absorbed by
         /// `ParserSelectWithUnionQuery` as the SELECT's own settings. When RETURNING is present the
         /// SELECT parser stops at RETURNING, so the trailing `SETTINGS` (e.g. `parallel_distributed_insert_select`)
-        /// would never be consumed. Parse it here and attach it to the INSERT; the push-down visitor
-        /// below propagates it into the source SELECT exactly as in the non-RETURNING case.
+        /// would never be consumed. Parse it here and keep it separately from INSERT-level `settings_ast`:
+        /// these settings still apply to the INSERT/source SELECT phase, but must not leak into RETURNING
+        /// limits/context.
         if (has_returning && s_settings.ignore(pos, expected))
         {
             if (settings_ast)
@@ -395,6 +396,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->select = select;
     query->returning_select = returning_select;
     query->settings_ast = settings_ast;
+    query->source_select_settings_ast = source_select_settings_ast;
     query->data = data != end ? data : nullptr;
     query->end = data ? end : nullptr;
 
