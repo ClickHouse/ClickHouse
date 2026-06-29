@@ -12,6 +12,11 @@
 using namespace DB;
 namespace fs = std::filesystem;
 
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_READ_ALL_DATA;
+}
+
 class AsynchronousBoundedReadBufferTest : public ::testing::TestWithParam<const char *>
 {
 public:
@@ -82,5 +87,39 @@ TEST_F(AsynchronousBoundedReadBufferTest, setReadUntilPosition)
 
         EXPECT_EQ(try_read(15), "z0123456789");
         EXPECT_EQ(try_read(15), "");
+    }
+}
+
+TEST_F(AsynchronousBoundedReadBufferTest, throwsWhenFileGrewBeyondCachedSize)
+{
+    /// Open a buffer over a 1-byte file, then grow the file on disk, simulating an
+    /// object-storage metadata file (e.g. a Paimon LATEST snapshot hint) rewritten by
+    /// a concurrent external writer after its size was cached. The cached file size
+    /// stays 1 while the reader hands back the grown content, so the read must throw a
+    /// catchable CANNOT_READ_ALL_DATA rather than aborting on a failed assertion.
+    String file_path = makeTempFile("1");
+    ThreadPoolRemoteFSReader remote_fs_reader(4, 0);
+
+    AsynchronousBoundedReadBuffer read_buffer(
+        createReadBufferFromFileBase(file_path, ReadSettings{}), remote_fs_reader,
+        DBMS_DEFAULT_BUFFER_SIZE, /* min_bytes_for_seek */ 0,
+        Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
+
+    {
+        WriteBufferFromFile out{file_path};
+        out.write("100", 3);
+        out.finalize();
+    }
+
+    String str;
+    str.resize(16);
+    try
+    {
+        [[maybe_unused]] size_t bytes_read = read_buffer.read(str.data(), str.size());
+        FAIL() << "Expected CANNOT_READ_ALL_DATA to be thrown";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CANNOT_READ_ALL_DATA);
     }
 }
