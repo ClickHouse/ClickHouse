@@ -494,6 +494,31 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
     const Granule & granule)
 {
     const auto & serialization = getSerialization(name_and_type.name);
+
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
+    auto enumerate_settings = getEnumerateSettings(settings);
+
+    /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float> require specifying the
+    /// array dimensions before compression starts (for 1D arrays it's simply the length). This must happen
+    /// before serializing the granule below, because serialization may already fill a compressed buffer and
+    /// trigger compression.
+    serialization->enumerateStreams(enumerate_settings, [&] (const ISerialization::SubstreamPath & substream_path)
+    {
+        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+            return;
+
+        auto stream_name = getStreamName(name_and_type, substream_path);
+        if (stream_name.empty())
+            return;
+
+        bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
+        if (is_offsets && offset_substreams.contains(stream_name))
+            return;
+
+        auto compression_codec = column_streams.at(stream_name)->compressor.getCodec();
+        setVectorDimensionsIfNeeded(compression_codec, &column);
+    }, data);
+
     serialization->serializeBinaryBulkWithMultipleStreams(column, granule.start_row, granule.rows_to_write, serialize_settings, serialization_state);
 
     /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
@@ -512,17 +537,9 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         if (is_offsets && offset_substreams.contains(stream_name))
             return;
 
-        /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float>
-        /// require specifying the array dimensions before compression starts.
-        /// For 1D arrays, it's simply the length.
-        auto compression_codec = column_streams.at(stream_name)->compressor.getCodec();
-        setVectorDimensionsIfNeeded(compression_codec, &column);
-
         column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
     };
 
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
-    auto enumerate_settings = getEnumerateSettings(settings);
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 

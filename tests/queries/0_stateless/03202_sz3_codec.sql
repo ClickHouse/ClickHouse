@@ -36,6 +36,10 @@ CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_INTERP', 1, 0.01))) Engine 
 -- The 3rd argument must be a Float64
 CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_INTERP', 'REL', 'not_a_f64'))) Engine = Memory; -- { serverError ILLEGAL_CODEC_PARAMETER }
 
+-- Only ALGO_LORENZO_REG, ALGO_INTERP_LORENZO and ALGO_INTERP are supported
+CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_BIOMD', 'REL', 0.01))) Engine = Memory; -- { serverError ILLEGAL_CODEC_PARAMETER }
+CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_LOSSLESS', 'REL', 0.01))) Engine = Memory; -- { serverError ILLEGAL_CODEC_PARAMETER }
+
 SELECT 'Test wide/compact format';
 -- Very basic test to make sure nothing breaks
 

@@ -712,20 +712,15 @@ void MergeTreeDataPartWriterOnDisk::setVectorDimensionsIfNeeded(CompressionCodec
     {
         Field sample_field;
         column->get(0, sample_field);
+        /// Only arrays carry a vector dimension here. A `Tuple` is serialized as one stream per element,
+        /// so each element stream is scalar; using the tuple arity as the dimension would make the codec
+        /// read several values from a single-value stream.
         if (sample_field.getType() == Field::Types::Array)
         {
             for (size_t j = 0; j < column->size(); ++j)
             {
                 column->get(j, sample_field);
                 codec->setAndCheckVectorDimension(sample_field.safeGet<Array>().size());
-            }
-        }
-        if (sample_field.getType() == Field::Types::Tuple)
-        {
-            for (size_t j = 0; j < column->size(); ++j)
-            {
-                column->get(j, sample_field);
-                codec->setAndCheckVectorDimension(sample_field.safeGet<Tuple>().size());
             }
         }
     }

@@ -164,7 +164,7 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     }
 
     std::unique_ptr<char[]> compressed;
-    size_t compressed_size;
+    size_t compressed_size = 0;
     switch (float_width)
     {
         case 4:
@@ -280,7 +280,20 @@ static UInt8 getFloatByteWidth(const IDataType & column_type)
 
 static SZ3::ALGO getSZ3Algorithm(const String & algorithm)
 {
-    return SZ3::ALGO_MAP.at(algorithm);
+    /// Only the algorithms that go through the default (interpolation/Lorenzo) decompression path are
+    /// allowed. The other SZ3 algorithms (e.g. ALGO_BIOMD, ALGO_BIOMDXTC, ALGO_NOPRED, ALGO_LOSSLESS)
+    /// use different decompositions/encoders that are neither tested nor hardened here.
+    if (algorithm == "ALGO_LORENZO_REG")
+        return SZ3::ALGO_LORENZO_REG;
+    if (algorithm == "ALGO_INTERP_LORENZO")
+        return SZ3::ALGO_INTERP_LORENZO;
+    if (algorithm == "ALGO_INTERP")
+        return SZ3::ALGO_INTERP;
+    throw Exception(
+        ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+        "Unsupported algorithm '{}' for codec 'SZ3'. Supported algorithms are "
+        "'ALGO_LORENZO_REG', 'ALGO_INTERP_LORENZO' and 'ALGO_INTERP'",
+        algorithm);
 }
 
 static SZ3::EB getSZ3ErrorBoundMode(const String & error_bound_mode)
