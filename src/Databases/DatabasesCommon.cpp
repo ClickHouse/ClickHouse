@@ -614,7 +614,7 @@ void DatabaseWithOwnTablesBase::shutdown()
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::SHUTDOWN_TABLES);
         for (const auto & kv : tables_snapshot)
         {
-            runner.enqueueAndKeepTrack([this, table = kv.second, &record_error]
+            auto run_task = [this, table = kv.second, &record_error]
             {
                 auto table_id = table->getStorageID();
                 try
@@ -631,7 +631,19 @@ void DatabaseWithOwnTablesBase::shutdown()
                     record_error(std::current_exception());
                     tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table_id.getNameForLogs()));
                 }
-            });
+            };
+
+            try
+            {
+                runner.enqueueAndKeepTrack(run_task);
+            }
+            catch (...)
+            {
+                /// Scheduling itself failed (e.g. CannotAllocateThreadFaultInjector, pool exhausted).
+                /// Fall back to inline execution so the per-table cleanup still runs for this table
+                /// and the function reaches its tail cleanup (tables.clear(), rethrow first_error).
+                run_task();
+            }
         }
         runner.waitForAllToFinish();
         LOG_INFO(log, "flushAndPrepareForShutdown for {} tables in {} took {} ms",
@@ -643,7 +655,7 @@ void DatabaseWithOwnTablesBase::shutdown()
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::SHUTDOWN_TABLES);
         for (const auto & kv : tables_snapshot)
         {
-            runner.enqueueAndKeepTrack([this, table = kv.second, &record_error]
+            auto run_task = [this, table = kv.second, &record_error]
             {
                 auto table_id = table->getStorageID();
                 try
@@ -670,7 +682,18 @@ void DatabaseWithOwnTablesBase::shutdown()
                 }
                 if (table_id.hasUUID())
                     DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
-            });
+            };
+
+            try
+            {
+                runner.enqueueAndKeepTrack(run_task);
+            }
+            catch (...)
+            {
+                /// See comment above. Inline fallback so the UUID mapping still gets released
+                /// and the function reaches its tail cleanup.
+                run_task();
+            }
         }
         runner.waitForAllToFinish();
         LOG_INFO(log, "flushAndShutdown for {} tables in {} took {} ms",
