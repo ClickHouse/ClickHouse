@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_CODEC;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
 
@@ -152,6 +153,17 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 else
                 {
                     result_codec = getImpl(codec_family_name, codec_arguments, nullptr);
+
+                    /// This is a no-column validation context that produces a write codec (e.g.
+                    /// `TTL ... RECOMPRESS CODEC(...)`, network compression method). Some codecs (e.g.
+                    /// `Chimp`) can be built here without a determined data width — they stay
+                    /// constructible for method-byte decoding and `system.codecs`, but cannot compress.
+                    /// Reject them now, instead of persisting a codec that would only fail later during
+                    /// a background recompression merge.
+                    if (!result_codec->isReadyToCompress())
+                        throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+                            "Codec {} cannot be used without a column type or an explicit width argument, "
+                            "because its data width is undetermined", codec_family_name);
                 }
 
                 if (!allow_experimental_codecs && result_codec->isExperimental())

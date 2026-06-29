@@ -47,6 +47,11 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
+    /// `Chimp` only supports 4- and 8-byte values and has no default width, so a codec built without
+    /// an explicit width argument or a column type (`data_bytes_size == 0`) cannot compress. Such an
+    /// instance is still constructible for method-byte decoding and `system.codecs`, but it must not
+    /// be accepted as a write codec.
+    bool isReadyToCompress() const override { return data_bytes_size == 4 || data_bytes_size == 8; }
     /// A new on-disk format: keep it behind `allow_experimental_codecs` until there is
     /// enough compatibility, fuzzing and performance evidence (same as `ALP`).
     bool isExperimental() const override { return true; }

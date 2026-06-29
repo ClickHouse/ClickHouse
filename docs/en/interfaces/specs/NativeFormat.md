@@ -1368,6 +1368,12 @@ flowchart LR
 | `0x82` | LZ4    | Body is the **LZ4 block format** — *not* the LZ4 frame format. No magic number. |
 | `0x90` | ZSTD   | Body is a raw zstd single-frame stream (the standard zstd magic number is part of the body). |
 
+These three are the generic codecs used for Native-stream compression (`network_compression_method`, the HTTP `compress=1`/`decompress=1` path, and the server default). They are not the only method-byte values: the full set is defined by `CompressionMethodByte` in `src/Compression/CompressionInfo.h` and also includes `Multiple` (`0x91`) and the specialized column-storage codecs (`Delta` `0x92`, `T64` `0x93`, `DoubleDelta` `0x94`, `Gorilla` `0x95`, the encryption codecs `0x96`/`0x97`, `FPC` `0x98`, `GCD` `0x9a`, `ALP` `0x9c`, `Chimp` `0x9d`). A reader that accepts the method byte from each frame (the `decompress=1` path) must be prepared to dispatch on these too: a column compressed with a chain such as `CODEC(Chimp, LZ4)` is stored as a `Multiple` (`0x91`) frame that recursively wraps the inner method bytes.
+
+For the floating-point time series codecs, the per-frame body carries the parameters the decoder needs, so the codec does not need to be reconstructed with a width up front. For `Chimp` (`0x9d`) the body is: 1 byte data width (4 or 8), 1 byte `bytes_to_skip` (kept for backward compatibility), `bytes_to_skip` raw leading bytes (`uncompressed_size % width`), then the compressed stream — a little-endian `u32` item count, the first value verbatim, and the bit-packed XOR encoding of the remaining values.
+
+`Chimp` cannot be selected as `network_compression_method`: it has no default width and is rejected without a column type, so it never appears as a standalone top-level frame method byte produced by a ClickHouse server — only as a column-storage codec, typically nested inside a `Multiple` frame.
+
 ### Checksum {#checksum}
 
 ClickHouse uses CityHash v1.0.2 (the historical variant), **not** modern Google CityHash; the two produce different outputs.

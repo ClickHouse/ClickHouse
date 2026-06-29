@@ -95,6 +95,16 @@ public:
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
+    /// Whether this instance can be used to compress data as constructed.
+    /// Most codecs are always ready. A few (e.g. `Chimp`) can be built without a determined data
+    /// width — with neither an explicit width argument nor a column type — solely so that
+    /// method-byte decoding (`CompressionCodecFactory::get(uint8_t)`) and codec metadata
+    /// (`system.codecs`) keep working; such an instance can decompress and describe itself but
+    /// cannot compress. It must be rejected when validated as a write codec (e.g.
+    /// `TTL ... RECOMPRESS CODEC(...)`), instead of being persisted and only failing later during a
+    /// background recompression merge.
+    virtual bool isReadyToCompress() const { return true; }
+
     // Returns a string with a high level codec description.
     virtual String getDescription() const = 0;
 
