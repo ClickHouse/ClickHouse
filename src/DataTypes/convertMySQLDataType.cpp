@@ -1,4 +1,4 @@
-#include "convertMySQLDataType.h"
+#include <DataTypes/convertMySQLDataType.h>
 
 #include <Core/Field.h>
 #include <base/types.h>
@@ -6,18 +6,18 @@
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
-#include "DataTypeDate.h"
-#include "DataTypeDate32.h"
-#include "DataTypeDateTime.h"
-#include "DataTypeDateTime64.h"
-#include "DataTypesDecimal.h"
-#include "DataTypeFixedString.h"
-#include "DataTypeNullable.h"
-#include "DataTypeString.h"
-#include "DataTypesNumber.h"
-#include "DataTypeCustomGeo.h"
-#include "DataTypeFactory.h"
-#include "IDataType.h"
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeCustomGeo.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -111,13 +111,13 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     }
     else if (type_support.isSet(MySQLDataTypesSupport::DECIMAL) && (type_name == "numeric" || type_name == "decimal"))
     {
-        if (precision <= DecimalUtils::max_precision<Decimal32>)
+        if (precision <=  DataTypeDecimalBase<Decimal32>::maxPrecision())
             res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-        else if (precision <= DecimalUtils::max_precision<Decimal64>)
+        else if (precision <= DataTypeDecimalBase<Decimal64>::maxPrecision())
             res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-        else if (precision <= DecimalUtils::max_precision<Decimal128>)
+        else if (precision <= DataTypeDecimalBase<Decimal128>::maxPrecision())
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-        else if (precision <= DecimalUtils::max_precision<Decimal256>)
+        else if (precision <= DataTypeDecimalBase<Decimal256>::maxPrecision())
             res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
     }
     else if (type_name == "point")

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Core/Field.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Core/Field.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 /** Range between fields, used for index analysis
   * (various arithmetic on intervals of various forms).
@@ -27,9 +27,7 @@ struct FieldRef : public Field
     FieldRef(T && value) : Field(std::forward<T>(value)) {} /// NOLINT
 
     /// Create as reference to field in block.
-    FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
-        : Field((*(*columns_)[column_idx_].column)[row_idx_]),
-          columns(columns_), row_idx(row_idx_), column_idx(column_idx_) {}
+    FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_);
 
     bool isExplicit() const { return columns == nullptr; }
 
@@ -38,12 +36,11 @@ struct FieldRef : public Field
     size_t column_idx = 0;
 };
 
-/** Range with open or closed ends; possibly unbounded.
- */
+/// Range with open or closed ends; possibly unbounded.
 struct Range;
-/** A serious of range who can overlap or non-overlap.
- */
-using Ranges = std::vector<Range>;
+
+/// A series of ranges which may overlap.
+using Ranges = VectorWithMemoryTracking<Range>;
 
 /** Range with open or closed ends; possibly unbounded.
   */
@@ -63,6 +60,7 @@ public:
 
     static Range createWholeUniverse();
     static Range createWholeUniverseWithoutNull();
+    static Range createWholeUniverseTypeAware(const DataTypePtr & type);
     static Range createRightBounded(const FieldRef & right_point, bool right_included, bool with_null = false);
     static Range createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null = false);
 
@@ -124,7 +122,7 @@ Range intersect(const Range & a, const Range & b);
 
 /** Hyperrectangle is a product of ranges: each range across each coordinate.
   */
-using Hyperrectangle = std::vector<Range>;
+using Hyperrectangle = VectorWithMemoryTracking<Range>;
 
 Hyperrectangle intersect(const Hyperrectangle & a, const Hyperrectangle & b);
 String toString(const Hyperrectangle & x);

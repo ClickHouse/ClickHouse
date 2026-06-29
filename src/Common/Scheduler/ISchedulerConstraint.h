@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Scheduler/ISchedulerNode.h>
+#include <Common/Scheduler/ITimeSharedNode.h>
 
 namespace DB
 {
@@ -15,44 +16,25 @@ namespace DB
  * When constraint is again satisfied, scheduleActivation() is called from finishRequest().
  *
  * Derived class behaviour requirements:
- *  - dequeueRequest() must fill `request->constraint` iff it is nullptr;
- *  - finishRequest() must be recursive: call to `parent_constraint->finishRequest()`.
+ *  - dequeueRequest() must call `request->addConstraint()`.
  */
-class ISchedulerConstraint : public ISchedulerNode
+class ISchedulerConstraint : public ITimeSharedNode
 {
 public:
-    explicit ISchedulerConstraint(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ISchedulerNode(event_queue_, config, config_prefix)
+    explicit ISchedulerConstraint(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+        : ITimeSharedNode(event_queue_, config, config_prefix)
+    {}
+
+    ISchedulerConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_)
+        : ITimeSharedNode(event_queue_, info_)
     {}
 
     /// Resource consumption by `request` is finished.
     /// Should be called outside of scheduling subsystem, implementation must be thread-safe.
     virtual void finishRequest(ResourceRequest * request) = 0;
 
-    void setParent(ISchedulerNode * parent_) override
-    {
-        ISchedulerNode::setParent(parent_);
-
-        // Assign `parent_constraint` to the nearest parent derived from ISchedulerConstraint
-        for (ISchedulerNode * node = parent_; node != nullptr; node = node->parent)
-        {
-            if (auto * constraint = dynamic_cast<ISchedulerConstraint *>(node))
-            {
-                parent_constraint = constraint;
-                break;
-            }
-        }
-    }
-
     /// For introspection of current state (true = satisfied, false = violated)
     virtual bool isSatisfied() = 0;
-
-protected:
-    // Reference to nearest parent that is also derived from ISchedulerConstraint.
-    // Request can traverse through multiple constraints while being dequeue from hierarchy,
-    // while finishing request should traverse the same chain in reverse order.
-    // NOTE: it must be immutable after initialization, because it is accessed in not thread-safe way from finishRequest()
-    ISchedulerConstraint * parent_constraint = nullptr;
 };
 
 }

@@ -64,6 +64,14 @@
     :default 1000
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
+   [nil "--with-auth auth" "Enable auth on connections (0 or 1)"
+    :default false
+    :parse-fn #(= % "1")
+    :validate [boolean? "Must be 0, 1, true or false"]]
+   [nil "--use-bg-thread-for-snapshot-io val" "Use background thread for NuRaft snapshot IO (0 or 1)"
+    :default false
+    :parse-fn #(= % "1")
+    :validate [boolean? "Must be 0, 1, true or false"]]
    [nil "--reserved-log-items NUM" "Number of log entries to keep after snapshot"
     :default 1000
     :parse-fn read-string

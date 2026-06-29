@@ -1,7 +1,10 @@
-#include <Storages/SetSettings.h>
+#include <Core/BaseSettings.h>
+#include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Core/FormatFactorySettings.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Storages/SetSettings.h>
 #include <Common/Exception.h>
 
 
@@ -13,7 +16,30 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-IMPLEMENT_SETTINGS_TRAITS(setSettingsTraits, LIST_OF_SET_SETTINGS)
+#define SET_RELATED_SETTINGS(DECLARE, ALIAS) \
+    DECLARE(Bool, persistent, true, "Disable setting to avoid the overhead of writing to disk for StorageSet", 0) \
+    DECLARE(String, disk, "default", "Name of the disk used to persist set data", 0)
+
+#define LIST_OF_SET_SETTINGS(M, ALIAS) \
+    SET_RELATED_SETTINGS(M, ALIAS) \
+    LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
+
+DECLARE_SETTINGS_TRAITS(SetSettingsTraits, LIST_OF_SET_SETTINGS, SET_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(SetSettingsTraits, LIST_OF_SET_SETTINGS, SetSettings, SetSetting)
+
+SetSettings::SetSettings() : impl(std::make_unique<SetSettingsImpl>())
+{
+}
+
+SetSettings::SetSettings(const SetSettings & settings) : impl(std::make_unique<SetSettingsImpl>(*settings.impl))
+{
+}
+
+SetSettings::SetSettings(SetSettings && settings) noexcept = default;
+
+SetSettings::~SetSettings() = default;
+
+SET_SETTINGS_SUPPORTED_TYPES(SetSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
 void SetSettings::loadFromQuery(ASTStorage & storage_def)
 {
@@ -21,7 +47,7 @@ void SetSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            applyChanges(storage_def.settings->changes);
+            impl->applyChanges(storage_def.settings->changes);
         }
         catch (Exception & e)
         {
@@ -32,10 +58,14 @@ void SetSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }
 }
 
+bool SetSettings::hasBuiltin(std::string_view name)
+{
+    return SetSettingsImpl::hasBuiltin(name);
+}
 }

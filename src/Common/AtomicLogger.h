@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <memory>
 
 #include <base/types.h>

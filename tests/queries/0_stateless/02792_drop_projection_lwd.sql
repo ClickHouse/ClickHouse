@@ -7,7 +7,7 @@ CREATE TABLE t_projections_lwd (a UInt32, b UInt32, PROJECTION p (SELECT * ORDER
 INSERT INTO t_projections_lwd SELECT number, number FROM numbers(100);
 
 -- LWD does not work, as expected
-DELETE FROM t_projections_lwd WHERE a = 1; -- { serverError NOT_IMPLEMENTED }
+DELETE FROM t_projections_lwd WHERE a = 1; -- { serverError SUPPORT_IS_DISABLED }
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_projections_lwd' SYNC FORMAT Null;
 
 -- drop projection

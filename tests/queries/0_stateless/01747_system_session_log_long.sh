@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-fasttest, no-debug
+# Tags: long, no-parallel, no-fasttest, no-debug, no-openssl-fips
+# fips: SHA1 is not available in FIPS mode
 
 ##################################################################################################
 # Verify that login, logout, and login failure events are properly stored in system.session_log
@@ -82,7 +83,7 @@ trap "cleanup" EXIT
 function executeQueryExpectError()
 {
     cat - > "${TMP_QUERY_FILE}"
-    ! ${CLICKHOUSE_CLIENT} --multiquery --queries-file "${TMP_QUERY_FILE}" "${@}"  2>&1 | tee -a "${TMP_QUERY_FILE}"
+    ! ${CLICKHOUSE_CLIENT} --queries-file "${TMP_QUERY_FILE}" "${@}"  2>&1 | tee -a "${TMP_QUERY_FILE}"
 }
 
 function createUser()
@@ -202,12 +203,7 @@ function testHTTPNamedSession()
     echo "HTTP endpoint with named session"
     local HTTP_SESSION_ID
     HTTP_SESSION_ID="session_id_$(tr -cd 'a-f0-9' < /dev/urandom | head -c 32)"
-    if [ -v CLICKHOUSE_URL_PARAMS ]
-    then
-        CLICKHOUSE_URL_WITH_SESSION_ID="${CLICKHOUSE_URL}&session_id=${HTTP_SESSION_ID}"
-    else
-        CLICKHOUSE_URL_WITH_SESSION_ID="${CLICKHOUSE_URL}?session_id=${HTTP_SESSION_ID}"
-    fi
+    CLICKHOUSE_URL_WITH_SESSION_ID="${CLICKHOUSE_URL}&session_id=${HTTP_SESSION_ID}"
 
     testHTTPWithURL "${1}" "${2}" "${3}" "${CLICKHOUSE_URL_WITH_SESSION_ID}"
 }
@@ -228,13 +224,13 @@ function testMySQL()
         echo "MySQL 'successful login' case is skipped for ${auth_type}."
     else
         executeQuery \
-            <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', '${username}', '${password}') LIMIT 1 \
+            <<< "SELECT 1 FROM mysql('127.0.0.1:${CLICKHOUSE_PORT_MYSQL}', 'system', 'one', '${username}', '${password}') LIMIT 1 \
             FORMAT Null"
     fi
 
     echo 'Wrong username'
     executeQueryExpectError \
-        <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', 'invalid_${username}', '${password}') LIMIT 1 \
+        <<< "SELECT 1 FROM mysql('127.0.0.1:${CLICKHOUSE_PORT_MYSQL}', 'system', 'one', 'invalid_${username}', '${password}') LIMIT 1 \
         FORMAT Null" \
         | grep -Eq "Code: 279\. DB::Exception: .* invalid_${username}"
 
@@ -246,7 +242,7 @@ function testMySQL()
         echo "MySQL 'wrong password' case is skipped for ${auth_type}."
     else
         executeQueryExpectError \
-            <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', '${username}', 'invalid_${password}') LIMIT 1 \
+            <<< "SELECT 1 FROM mysql('127.0.0.1:${CLICKHOUSE_PORT_MYSQL}', 'system', 'one', '${username}', 'invalid_${password}') LIMIT 1 \
             FORMAT Null" | grep -Eq "Code: 279\. DB::Exception: .* ${username}"
     fi
 }
@@ -267,11 +263,11 @@ function testMySQL()
     ## Loging\Logout
     ## CH is being able to log into itself via PostgreSQL protocol but query fails.
     #executeQueryExpectError \
-    #    <<< "SELECT 1 FROM postgresql('localhost:9005', 'system', 'one', '${username}', '${password}') LIMIT 1 FORMAT Null" \
+    #    <<< "SELECT 1 FROM postgresql('localhost:${CLICKHOUSE_PORT_POSTGRESQL', 'system', 'one', '${username}', '${password}') LIMIT 1 FORMAT Null" \
 
     # Wrong username
     executeQueryExpectError \
-        <<< "SELECT 1 FROM postgresql('localhost:9005', 'system', 'one', 'invalid_${username}', '${password}') LIMIT 1 FORMAT Null" \
+        <<< "SELECT 1 FROM postgresql('localhost:${CLICKHOUSE_PORT_POSTGRESQL}', 'system', 'one', 'invalid_${username}', '${password}') LIMIT 1 FORMAT Null" \
         | grep -Eq "Invalid user or password"
 
     if [[ "${auth_type}" == "no_password" ]]
@@ -281,7 +277,7 @@ function testMySQL()
     else
         # Wrong password
         executeQueryExpectError \
-            <<< "SELECT 1 FROM postgresql('localhost:9005', 'system', 'one', '${username}', 'invalid_${password}') LIMIT 1 FORMAT Null" \
+            <<< "SELECT 1 FROM postgresql('localhost:${CLICKHOUSE_PORT_POSTGRESQL}', 'system', 'one', '${username}', 'invalid_${password}') LIMIT 1 FORMAT Null" \
             | grep -Eq "Invalid user or password"
     fi
  }
@@ -303,7 +299,7 @@ function runEndpointTests()
     if [[ -n "${setup_queries}" ]]
     then
         # echo "Executing setup queries: ${setup_queries}"
-        echo "${setup_queries}" | executeQuery --multiquery
+        echo "${setup_queries}" | executeQuery
     fi
 
     testTCP "${auth_type}" "${username}" "${password}"
@@ -357,8 +353,8 @@ testAsUserIdentifiedBy "plaintext_password"
 testAsUserIdentifiedBy "sha256_password"
 testAsUserIdentifiedBy "double_sha1_password"
 
-executeQuery --multiquery <<EOF
-SYSTEM FLUSH LOGS;
+executeQuery <<EOF
+SYSTEM FLUSH LOGS session_log;
 
 WITH
     now64(6) as n,

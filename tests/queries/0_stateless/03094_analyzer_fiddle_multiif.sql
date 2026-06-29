@@ -5,7 +5,7 @@ INSERT INTO users_03094 VALUES ('John', 33);
 INSERT INTO users_03094 VALUES ('Ksenia', 48);
 INSERT INTO users_03094 VALUES ('Alice', 50);
 
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 SELECT
     multiIf((age > 30) or (true), '1', '2') AS a,

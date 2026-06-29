@@ -1,23 +1,23 @@
 Partial sorting plan
   optimize_read_in_window_order=0
     Sort description: n ASC, x ASC
-  optimize_read_in_window_order=0, allow_experimental_analyzer=1
+  optimize_read_in_window_order=0, enable_analyzer=1
     Sort description: n ASC, x ASC
   optimize_read_in_window_order=1
     Prefix sort description: n ASC
     Result sort description: n ASC, x ASC
-  optimize_read_in_window_order=1, allow_experimental_analyzer=1
+  optimize_read_in_window_order=1, enable_analyzer=1
     Prefix sort description: __table1.n ASC
     Result sort description: __table1.n ASC, __table1.x ASC
 No sorting plan
   optimize_read_in_window_order=0
     Sort description: n ASC, x ASC
-  optimize_read_in_window_order=0, allow_experimental_analyzer=1
+  optimize_read_in_window_order=0, enable_analyzer=1
     Sort description: __table1.n ASC, __table1.x ASC
   optimize_read_in_window_order=1
     Prefix sort description: n ASC, x ASC
     Result sort description: n ASC, x ASC
-  optimize_read_in_window_order=1, allow_experimental_analyzer=1
+  optimize_read_in_window_order=1, enable_analyzer=1
     Prefix sort description: __table1.n ASC, __table1.x ASC
     Result sort description: __table1.n ASC, __table1.x ASC
 Complex ORDER BY

@@ -37,7 +37,7 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
     if (!func_plus_minus || !function_supported.contains(Poco::toLower(func_plus_minus->name)) || func_plus_minus->arguments->children.size() != 2)
         return;
 
-    size_t column_id;
+    size_t column_id = 0;
     if (func_plus_minus->arguments->children[0]->as<ASTIdentifier>() && func_plus_minus->arguments->children[1]->as<ASTLiteral>())
         column_id = 0;
     else if (func_plus_minus->arguments->children[0]->as<ASTLiteral>() && func_plus_minus->arguments->children[1]->as<ASTIdentifier>())
@@ -90,41 +90,37 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
 
     if (column_id == 0)
     {
-        const auto new_ast = makeASTFunction(func_plus_minus->name,
+        const auto new_ast = makeASTOperator(func_plus_minus->name,
                                                 makeASTFunction("sum",
-                                                                std::make_shared<ASTIdentifier>(column_name)
+                                                                make_intrusive<ASTIdentifier>(column_name)
                                                                 ),
-                                                makeASTFunction("multiply",
-                                                                std::make_shared<ASTLiteral>(* literal),
-                                                                makeASTFunction("count", std::make_shared<ASTIdentifier>(column_name))
+                                             makeASTOperator("multiply",
+                                                                make_intrusive<ASTLiteral>(* literal),
+                                                                makeASTFunction("count", make_intrusive<ASTIdentifier>(column_name))
                                                                 )
                                                 );
         if (!new_ast)
             return;
-        else
-        {
-            new_ast->setAlias(ast->tryGetAlias());
-            ast = new_ast;
-        }
+
+        new_ast->setAlias(ast->tryGetAlias());
+        ast = new_ast;
     }
     else if (column_id == 1)
     {
         const auto new_ast = makeASTFunction(func_plus_minus->name,
-                                                makeASTFunction("multiply",
-                                                                std::make_shared<ASTLiteral>(* literal),
-                                                                makeASTFunction("count", std::make_shared<ASTIdentifier>(column_name))
+                                             makeASTOperator("multiply",
+                                                                make_intrusive<ASTLiteral>(* literal),
+                                                                makeASTFunction("count", make_intrusive<ASTIdentifier>(column_name))
                                                                 ),
                                                 makeASTFunction("sum",
-                                                                std::make_shared<ASTIdentifier>(column_name)
+                                                                make_intrusive<ASTIdentifier>(column_name)
                                                                 )
                                                 );
         if (!new_ast)
             return;
-        else
-        {
-            new_ast->setAlias(ast->tryGetAlias());
-            ast = new_ast;
-        }
+
+        new_ast->setAlias(ast->tryGetAlias());
+        ast = new_ast;
     }
 }
 

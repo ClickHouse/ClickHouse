@@ -23,11 +23,11 @@ struct ProcessorProfileInfo
     void update(const Chunk & block);
 };
 
-class LimitsCheckingTransform : public ISimpleTransform
+class LimitsCheckingTransform final : public ISimpleTransform
 {
 public:
 
-    LimitsCheckingTransform(const Block & header_, StreamLocalLimits limits_);
+    LimitsCheckingTransform(SharedHeader header_, StreamLocalLimits limits_);
 
     String getName() const override { return "LimitsCheckingTransform"; }
 

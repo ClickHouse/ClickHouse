@@ -14,19 +14,22 @@ class ASTRowPolicyNames;
 class ASTMoveAccessEntityQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    AccessEntityType type;
+    AccessEntityType type{};
     Strings names;
-    std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
 
     String storage_name;
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTMoveAccessEntityQuery>(clone()); }
 
     void replaceEmptyDatabase(const String & current_database) const;
 
     QueryKind getQueryKind() const override { return QueryKind::Move; }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
+
 }

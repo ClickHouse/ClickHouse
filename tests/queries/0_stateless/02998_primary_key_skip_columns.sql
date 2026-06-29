@@ -1,4 +1,5 @@
--- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-random-settings, no-debug
+-- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-random-settings, no-debug, no-fasttest
+-- no-fasttest: Low index granularity and too many parts makes the test slow
 
 DROP TABLE IF EXISTS test;
 

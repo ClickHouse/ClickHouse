@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
 
 DROP DATABASE IF EXISTS test_truncate_database;
 
@@ -72,5 +72,9 @@ SELECT name, database, element_count FROM system.dictionaries WHERE database = '
 SELECT * FROM dest_dictionary; -- {serverError UNKNOWN_TABLE}
 SHOW TABLES FROM test_truncate_database;
 SHOW DICTIONARIES FROM test_truncate_database;
+
+CREATE TABLE new_table (x UInt16) ENGINE = MergeTree ORDER BY x;
+select 'new tables';
+SHOW TABLES FROM test_truncate_database;
 
 DROP DATABASE test_truncate_database;

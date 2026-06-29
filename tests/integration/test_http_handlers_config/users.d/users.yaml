@@ -1,0 +1,7 @@
+users:
+  with_password:
+    profile: default
+    password: password
+  without_password:
+    profile: default
+    no_password: 1

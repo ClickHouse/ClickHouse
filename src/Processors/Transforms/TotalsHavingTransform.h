@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/PODArray_fwd.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
 
@@ -8,6 +9,7 @@ namespace DB
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+using IColumnFilter = PaddedPODArray<UInt8>;
 
 class ActionsDAG;
 
@@ -17,7 +19,7 @@ enum class TotalsMode : uint8_t;
   * Calculates total values according to totals_mode.
   * If necessary, evaluates the expression from HAVING and filters rows. Returns the finalized and filtered blocks.
   */
-class TotalsHavingTransform : public ISimpleTransform
+class TotalsHavingTransform final : public ISimpleTransform
 {
 public:
     TotalsHavingTransform(
@@ -50,7 +52,7 @@ protected:
     Chunk totals;
 
 private:
-    void addToTotals(const Chunk & chunk, const IColumn::Filter * filter);
+    void addToTotals(const Chunk & chunk, const IColumnFilter * filter);
     void prepareTotals();
 
     /// Params

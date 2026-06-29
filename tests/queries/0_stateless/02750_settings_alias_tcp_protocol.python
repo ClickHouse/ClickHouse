@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-import socket
-import os
-import uuid
 import json
+import os
+import socket
+import uuid
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "900000"))

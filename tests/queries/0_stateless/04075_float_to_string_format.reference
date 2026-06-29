@@ -1,0 +1,87 @@
+--- Float64 fixed/scientific boundaries ---
+0.000001
+1e-7
+0.00001
+0.0001
+0.1
+1000000000000000
+10000000000000000
+100000000000000000000
+1e21
+--- Float64 scientific exponent format ---
+1e-7
+1e-20
+1e-100
+1e21
+1e100
+1.7976931348623157e308
+--- Float64 multi-digit threshold values ---
+0.0000123456789
+0.00000123456789
+1.23456789e-7
+99900000000000000000
+999000000000000000000
+9.99e21
+31415900000
+--- Float64 full precision ---
+1.2345678901234567
+999999999999999700000
+1.0000000000000002
+--- Float64 special values ---
+nan
+nan
+nan
+inf
+-inf
+0
+-0
+--- Float64 subnormal ---
+5e-324
+2.225073858507201e-308
+2.2250738585072014e-308
+--- Float32 fixed/scientific boundaries ---
+0.000001
+1e-7
+0.00001
+0.0001
+10000000
+100000000
+100000000000000000000
+1e21
+--- Float32 scientific exponent format ---
+1e-20
+3.4e38
+1e30
+--- Float32 special values ---
+nan
+nan
+inf
+-inf
+0
+--- Float32 small values ---
+1.1754941e-38
+3.14
+--- BFloat16 ---
+3.125
+9999221000
+9.9651515e-8
+nan
+nan
+inf
+-inf
+--- Negative FP values ---
+-0.000001
+-1e-7
+-1.23456789e-7
+-999000000000000000000
+-9.99e21
+-3.14
+-1e-7
+--- Integer-representable floats ---
+1
+-1
+42
+1000000
+1
+-1
+42

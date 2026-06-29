@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-$CLICKHOUSE_CLIENT -nq "
+$CLICKHOUSE_CLIENT -q "
     CREATE TABLE t1
     (
         a UInt32,
@@ -38,7 +38,7 @@ $CLICKHOUSE_CLIENT -nq "
     ENGINE = Merge(currentDatabase(), 't*');"
 
 query_id="${CLICKHOUSE_DATABASE}_merge_engine_set_index_$RANDOM$RANDOM"
-$CLICKHOUSE_CLIENT --query_id="$query_id" --multiquery -q "
+$CLICKHOUSE_CLIENT --query_id="$query_id" -q "
 SELECT
     a,
     b
@@ -57,9 +57,9 @@ ORDER BY
     b DESC
 FORMAT Null;"
 
-$CLICKHOUSE_CLIENT -nq "
-SYSTEM FLUSH LOGS;
+$CLICKHOUSE_CLIENT -q "
+SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['SelectedMarks']
 FROM system.query_log
-WHERE event_date >= yesterday() AND current_database = currentDatabase() AND (query_id = '$query_id') AND (type = 'QueryFinish');"
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND (query_id = '$query_id') AND (type = 'QueryFinish');"

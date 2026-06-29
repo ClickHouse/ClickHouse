@@ -1,0 +1,63 @@
+<test>
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+        <max_expanded_ast_elements>5000000000</max_expanded_ast_elements>
+    </settings>
+
+    <query>
+SELECT
+    multiIf(number = 0, 0, number = 1, 2, number = 2, 4, number = 3, 6, number = 4, 8, number = 5, 10, number = 6, 12, number = 7, 14, number = 8, 16, number = 9, 18, number = 10, 20, number = 11, 22, number = 12, 24, number = 13, 26, number = 14, 28, number = 15, 30, number = 16, 32, number = 17, 34, number = 18, 36, number = 19, 38, number = 20, 40, number = 21, 42, number = 22, 44, number = 23, 46, number = 24, 48, number = 25, 50, number = 26, 52, number = 27, 54, number = 28, 56, number = 29, 58, number = 30, 60, number = 31, 62, number = 32, 64, number = 33, 66, number = 34, 68, number = 35, 70, number = 36, 72, number = 37, 74, number = 38, 76, number = 39, 78, number = 40, 80, number = 41, 82, number = 42, 84, number = 43, 86, number = 44, 88, number = 45, 90, number = 46, 92, number = 47, 94, number = 48, 96, number = 49, 98, number = 50, 100, number = 51, 102, number = 52, 104, number = 53, 106, number = 54, 108, number = 55, 110, number = 56, 112, number = 57, 114, number = 58, 116, number = 59, 118, number = 60, 120, number = 61, 122, number = 62, 124, number = 63, 126, number = 64, 128, number = 65, 130, number = 66, 132, number = 67, 134, number = 68, 136, number = 69, 138, number) AS number_revised,
+    multiIf(number_revised = 0, 0, number_revised = 1, 2, number_revised = 2, 4, number_revised = 3, 6, number_revised = 4, 8, number_revised = 5, 10, number_revised = 6, 12, number_revised = 7, 14, number_revised = 8, 16, number_revised = 9, 18, number_revised = 10, 20, number_revised = 11, 22, number_revised = 12, 24, number_revised = 13, 26, number_revised = 14, 28, number_revised = 15, 30, number_revised = 16, 32, number_revised = 17, 34, number_revised = 18, 36, number_revised = 19, 38, number_revised = 20, 40, number_revised = 21, 42, number_revised = 22, 44, number_revised = 23, 46, number_revised = 24, 48, number_revised = 25, 50, number_revised = 26, 52, number_revised = 27, 54, number_revised = 28, 56, number_revised = 29, 58, number_revised = 30, 60, number_revised = 31, 62, number_revised = 32, 64, number_revised = 33, 66, number_revised = 34, 68, number_revised = 35, 70, number_revised = 36, 72, number_revised = 37, 74, number_revised = 38, 76, number_revised = 39, 78, number_revised = 40, 80, number_revised = 41, 82, number_revised = 42, 84, number_revised = 43, 86, number_revised = 44, 88, number_revised = 45, 90, number_revised = 46, 92, number_revised = 47, 94, number_revised = 48, 96, number_revised = 49, 98, number_revised = 50, 100, number_revised = 51, 102, number_revised = 52, 104, number_revised = 53, 106, number_revised = 54, 108, number_revised = 55, 110, number_revised = 56, 112, number_revised = 57, 114, number_revised = 58, 116, number_revised = 59, 118, number_revised = 60, 120, number_revised = 61, 122, number_revised = 62, 124, number_revised = 63, 126, number_revised = 64, 128, number_revised = 65, 130, number_revised = 66, 132, number_revised = 67, 134, number_revised = 68, 136, number_revised = 69, 138, number_revised) AS number_revised_2,
+    multiIf(number_revised_2 = 0, 0, number_revised_2 = 1, 2, number_revised_2 = 2, 4, number_revised_2 = 3, 6, number_revised_2 = 4, 8, number_revised_2 = 5, 10, number_revised_2) AS number_revised_3,
+    multiIf(number_revised_3 = 0, 0, number_revised_3 = 1, 2, number_revised_3 = 2, 4, number_revised_3) AS number_revised_4
+FROM system.numbers
+LIMIT 100
+    </query>
+
+    <query>
+WITH multiIf(number = 0, 0, number = 1, 2, number = 2, 4, number = 3, 6, number = 4, 8, number = 5, 10, number = 6, 12, number = 7, 14, number = 8, 16, number = 9, 18, number = 10, 20, number = 11, 22, number = 12, 24, number = 13, 26, number = 14, 28, number = 15, 30, number = 16, 32, number = 17, 34, number = 18, 36, number = 19, 38, number = 20, 40, number = 21, 42, number = 22, 44, number = 23, 46, number = 24, 48, number = 25, 50, number = 26, 52, number = 27, 54, number = 28, 56, number = 29, 58, number = 30, 60, number = 31, 62, number = 32, 64, number = 33, 66, number = 34, 68, number = 35, 70, number = 36, 72, number = 37, 74, number = 38, 76, number = 39, 78, number = 40, 80, number = 41, 82, number = 42, 84, number = 43, 86, number = 44, 88, number = 45, 90, number = 46, 92, number = 47, 94, number = 48, 96, number = 49, 98, number = 50, 100, number = 51, 102, number = 52, 104, number = 53, 106, number = 54, 108, number = 55, 110, number = 56, 112, number = 57, 114, number = 58, 116, number = 59, 118, number = 60, 120, number = 61, 122, number = 62, 124, number = 63, 126, number = 64, 128, number = 65, 130, number = 66, 132, number = 67, 134, number = 68, 136, number = 69, 138, number) AS heavy
+SELECT
+    heavy IN (0, 1, 2) AS i0,
+    heavy IN (1, 2, 3) AS i1,
+    heavy IN (2, 3, 4) AS i2,
+    heavy IN (3, 4, 5) AS i3,
+    heavy IN (4, 5, 6) AS i4,
+    heavy IN (5, 6, 7) AS i5,
+    heavy IN (6, 7, 8) AS i6,
+    heavy IN (7, 8, 9) AS i7,
+    heavy IN (8, 9, 10) AS i8,
+    heavy IN (9, 10, 11) AS i9,
+    heavy IN (10, 11, 12) AS i10,
+    heavy IN (11, 12, 13) AS i11,
+    heavy IN (12, 13, 14) AS i12,
+    heavy IN (13, 14, 15) AS i13,
+    heavy IN (14, 15, 16) AS i14,
+    heavy IN (15, 16, 17) AS i15,
+    heavy IN (16, 17, 18) AS i16,
+    heavy IN (17, 18, 19) AS i17,
+    heavy IN (18, 19, 20) AS i18,
+    heavy IN (19, 20, 21) AS i19,
+    heavy IN (20, 21, 22) AS i20,
+    heavy IN (21, 22, 23) AS i21,
+    heavy IN (22, 23, 24) AS i22,
+    heavy IN (23, 24, 25) AS i23,
+    heavy IN (24, 25, 26) AS i24,
+    heavy IN (25, 26, 27) AS i25,
+    heavy IN (26, 27, 28) AS i26,
+    heavy IN (27, 28, 29) AS i27,
+    heavy IN (28, 29, 30) AS i28,
+    heavy IN (29, 30, 31) AS i29,
+    heavy IN (30, 31, 32) AS i30,
+    heavy IN (31, 32, 33) AS i31,
+    heavy IN (32, 33, 34) AS i32,
+    heavy IN (33, 34, 35) AS i33,
+    heavy IN (34, 35, 36) AS i34,
+    heavy IN (35, 36, 37) AS i35,
+    heavy IN (36, 37, 38) AS i36,
+    heavy IN (37, 38, 39) AS i37,
+    heavy IN (38, 39, 40) AS i38,
+    heavy IN (39, 40, 41) AS i39
+FROM system.numbers
+LIMIT 100
+    </query>
+</test>

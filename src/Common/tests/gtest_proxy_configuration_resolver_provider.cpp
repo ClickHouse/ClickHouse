@@ -20,7 +20,7 @@ protected:
     }
 
     static void TearDownTestSuite() {
-        context->setConfig(Poco::AutoPtr(new Poco::Util::MapConfiguration()));
+        context->setConfig(Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration()));
     }
 
     static DB::ContextMutablePtr context;
@@ -45,7 +45,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedI
 
 TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPOnly)
 {
-    ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
+    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
     config->setString("proxy.http", "");
@@ -61,7 +61,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPOnly)
 
 TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPSOnly)
 {
-    ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
+    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
     config->setString("proxy.https", "");
@@ -77,7 +77,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPSOnly)
 
 TEST_F(ProxyConfigurationResolverProviderTests, ListBoth)
 {
-    ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
+    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
     config->setString("proxy.http", "");
@@ -98,7 +98,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListBoth)
 
 TEST_F(ProxyConfigurationResolverProviderTests, RemoteResolverIsBasedOnProtocolConfigurationHTTPS)
 {
-    ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
+    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
     config->setString("proxy.http", "");
@@ -121,7 +121,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, RemoteResolverIsBasedOnProtocolC
 
 TEST_F(ProxyConfigurationResolverProviderTests, RemoteResolverHTTPSOnly)
 {
-    ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
+    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
     config->setString("proxy.https", "");
@@ -145,7 +145,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, RemoteResolverHTTPSOnly)
 template <bool DISABLE_TUNNELING_FOR_HTTPS_REQUESTS_OVER_HTTP_PROXY, bool STRING>
 void test_tunneling(DB::ContextMutablePtr context)
 {
-    ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
+    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
     config->setString("proxy.https", "");

@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDate32.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -8,6 +9,16 @@
 
 namespace DB
 {
+
+UInt128 SerializationDate32::getHash(const DateLUTImpl & time_zone_)
+{
+    SipHash hash;
+    hash.update("Date32");
+    const auto & tz = time_zone_.getTimeZone();
+    hash.update(tz.size());
+    hash.update(tz);
+    return hash.get128();
+}
 
 void SerializationDate32::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
@@ -83,19 +94,26 @@ void SerializationDate32::serializeTextJSON(const IColumn & column, size_t row_n
     writeChar('"', ostr);
 }
 
-void SerializationDate32::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDate32::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & format_settings) const
 {
+    if (!checkChar('"', istr))
+    {
+        SerializationNumber<Int32>::deserializeTextJSON(column, istr, format_settings);
+        return;
+    }
     ExtendedDayNum x;
-    assertChar('"', istr);
     readDateText(x, istr, time_zone);
     assertChar('"', istr);
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);
 }
 
-bool SerializationDate32::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+bool SerializationDate32::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & format_settings) const
 {
+    if (!checkChar('"', istr))
+        return SerializationNumber<Int32>::tryDeserializeTextJSON(column, istr, format_settings);
+
     ExtendedDayNum x;
-    if (!checkChar('"', istr) || !tryReadDateText(x, istr, time_zone) || !checkChar('"', istr))
+    if (!tryReadDateText(x, istr, time_zone) || !checkChar('"', istr))
         return false;
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);
     return true;
@@ -127,4 +145,10 @@ bool SerializationDate32::tryDeserializeTextCSV(IColumn & column, ReadBuffer & i
 SerializationDate32::SerializationDate32(const DateLUTImpl & time_zone_) : time_zone(time_zone_)
 {
 }
+
+SerializationPtr SerializationDate32::create(const DateLUTImpl & time_zone_)
+{
+    return ISerialization::pooled(getHash(time_zone_), [&] { return new SerializationDate32(time_zone_); });
+}
+
 }

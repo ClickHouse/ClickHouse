@@ -4,8 +4,8 @@
 namespace DB
 {
 
-ExtractColumnsTransform::ExtractColumnsTransform(const Block & header_, const NamesAndTypesList & requested_columns_)
-    : ISimpleTransform(header_, transformHeader(header_, requested_columns_), false), requested_columns(requested_columns_)
+ExtractColumnsTransform::ExtractColumnsTransform(SharedHeader header_, const NamesAndTypesList & requested_columns_)
+    : ISimpleTransform(header_, std::make_shared<const Block>(transformHeader(*header_, requested_columns_)), false), requested_columns(requested_columns_)
 {
 
 }

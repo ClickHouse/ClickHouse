@@ -1,8 +1,9 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
 import uuid
 
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
@@ -65,7 +66,7 @@ def test_shutdown_wait_backup():
         "CREATE TABLE tbl (x UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY x%5"
     )
 
-    node.query(f"INSERT INTO tbl SELECT number FROM numbers(500)")
+    node.query("INSERT INTO tbl SELECT number FROM numbers(500)")
 
     backup_id = uuid.uuid4().hex
     start_backup(backup_id)

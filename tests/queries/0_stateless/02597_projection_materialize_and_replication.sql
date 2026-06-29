@@ -6,13 +6,13 @@ CREATE TABLE test (
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test/test_table', '1')
 ORDER BY (c_id, p_id);
 
-INSERT INTO test SELECT '1', '11', '111' FROM numbers(3);
+INSERT INTO test SELECT '1', '11', '111' FROM numbers(30);
 
-INSERT INTO test SELECT '2', '22', '22' FROM numbers(3);
+INSERT INTO test SELECT '2', '22', '22' FROM numbers(30);
 
 set mutations_sync=0;
 
-ALTER TABLE test UPDATE d = d || toString(sleepEachRow(0.3)) where 1;
+ALTER TABLE test UPDATE d = d || toString(sleepEachRow(0.1)) where 1;
 
 ALTER TABLE test ADD PROJECTION d_order ( SELECT min(c_id) GROUP BY `d`);
 ALTER TABLE test MATERIALIZE PROJECTION d_order;

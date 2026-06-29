@@ -5,11 +5,9 @@
 #
 # Caveats for generic entry "fun":
 # - does not work for __attribute__((__always_inline__))
+# - and may not work for functions that had been inlined
 # - requires asterisk at the beginning *and* end for static functions
 #
 [thread]
 # https://github.com/ClickHouse/ClickHouse/issues/55629
 fun:rd_kafka_broker_set_nodename
-# https://github.com/ClickHouse/ClickHouse/issues/60443
-fun:*rd_avg_calc*
-fun:*rd_avg_rollover*

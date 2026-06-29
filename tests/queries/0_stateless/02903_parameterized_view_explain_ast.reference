@@ -1,4 +1,4 @@
-CreateQuery  numbers_pv (children 2)
+CreateQuery numbers_pv (children 2)
  Identifier numbers_pv
  SelectWithUnionQuery (children 1)
   ExpressionList (children 1)

@@ -1,11 +1,15 @@
+#include <AggregateFunctions/AggregateFunctionNothing.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
 static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 
@@ -13,6 +17,10 @@ static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 namespace DB
 {
 struct Settings;
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -28,7 +36,7 @@ const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
     return AggregateFunctionFactory::instance().getCanonicalNameIfAny(name);
 }
 
-void AggregateFunctionFactory::registerFunction(const String & name, Value creator_with_properties, CaseSensitiveness case_sensitiveness)
+void AggregateFunctionFactory::registerFunction(const String & name, Value creator_with_properties, Case case_sensitiveness)
 {
     if (creator_with_properties.creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: "
@@ -38,7 +46,7 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: the aggregate function name '{}' is not unique",
             name);
 
-    if (case_sensitiveness == CaseInsensitive)
+    if (case_sensitiveness == Case::Insensitive)
     {
         auto key = Poco::toLower(name);
         if (!case_insensitive_aggregate_functions.emplace(key, creator_with_properties).second)
@@ -80,7 +88,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     NullsAction action,
     const DataTypes & argument_types,
     const Array & parameters,
-    AggregateFunctionProperties & out_properties) const
+    AggregateFunctionProperties & out_properties,
+    AggregateFunctionStateVariant state_variant) const
 {
     /// This to prevent costly string manipulation in parsing the aggregate function combinators.
     /// Example: avgArrayArrayArrayArray...(1000 times)...Array
@@ -109,7 +118,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); });
 
-        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments);
+        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant);
 
         // Pure window functions are not real aggregate functions. Applying
         // combinators doesn't make sense for them, they must handle the
@@ -120,7 +129,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
-    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false);
+    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant);
 
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
@@ -132,13 +141,12 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
 {
     if (action == NullsAction::RESPECT_NULLS)
     {
-        if (auto it = respect_nulls.find(name); it == respect_nulls.end())
+        auto it = respect_nulls.find(name);
+        if (it == respect_nulls.end())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", name);
-        else if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
+        if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
             return {associated_it->second};
-        else
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} RESPECT NULLS')", it->second, name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} RESPECT NULLS')", it->second, name);
     }
 
     if (action == NullsAction::IGNORE_NULLS)
@@ -147,9 +155,8 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
         {
             if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
                 return {associated_it->second};
-            else
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} IGNORE NULLS')", it->second, name);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} IGNORE NULLS')", it->second, name);
         }
         /// We don't throw for IGNORE NULLS of other functions because that's the default in CH
     }
@@ -164,7 +171,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     const DataTypes & argument_types,
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
-    bool has_null_arguments) const
+    bool has_null_arguments,
+    AggregateFunctionStateVariant state_variant) const
 {
     String name = getAliasToOrName(name_param);
     String case_insensitive_name;
@@ -189,7 +197,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
     ContextPtr query_context;
     if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
+        query_context = CurrentThread::get().tryGetQueryContext();
 
     if (found.creator)
     {
@@ -198,7 +206,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             found = *opt;
 
         out_properties = found.properties;
-        if (query_context && query_context->getSettingsRef().log_queries)
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(
                 Context::QueryLogFactories::AggregateFunction, is_case_insensitive ? case_insensitive_name : name);
 
@@ -207,7 +215,28 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             return nullptr;
 
         const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
-        return found.creator(name, argument_types, parameters, settings);
+
+        AggregateFunctionPtr function;
+        if (state_variant == AggregateFunctionStateVariant::Window && found.window_creator)
+            function = found.window_creator(name, argument_types, parameters, settings);
+        else
+            function = found.creator(name, argument_types, parameters, settings);
+
+        /// Invariant: For any aggregation function IAggregateFunction::getParameters() should return exactly
+        /// the parameters used to create the aggregation function. Aggregation functions are not allowed to change
+        /// or normalize these parameters.
+        /// (Otherwise it would become a different DataTypeAggregateFunction (see DataTypeAggregateFunction::strictEquals),
+        /// and could fail to reattach a table because decodeDataType() would reconstruct a type different from the one
+        /// recorded in the column metadata; or fail on parallel replicas under serialize_query_plan=1 because the replica's
+        /// decodeDataType() would reconstruct a type different from the one the coordinator sent in the plan.)
+        ///
+        /// TODO: Some aggregation functions (at least `kolmogorovSmirnovTest`, `mannWhitneyUTest`, `groupArrayMovingSum`, `groupArrayMovingAvg`)
+        /// drop their parameters completely, so the check below has to tolerate `function->getParameters().empty()`.
+        /// They should be fixed to preserve their parameters like every other aggregation function.
+        chassert(function && (function->getParameters().empty() || function->getParameters() == parameters),
+            "function->getParameters() must equal the parameters passed to the factory");
+
+        return function;
     }
 
     /// Combinators of aggregate functions.
@@ -223,7 +252,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 "Aggregate function combinator '{}' is only for internal usage",
                 combinator_name);
 
-        if (query_context && query_context->getSettingsRef().log_queries)
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator_name);
 
         String nested_name = name.substr(0, name.size() - combinator_name.size());
@@ -245,8 +274,12 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties);
-        return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+        AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
+        auto combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+        /// Same invariant as above.
+        chassert(combined_function && (combined_function->getParameters().empty() || combined_function->getParameters() == parameters),
+            "function->getParameters() must equal the parameters passed to the factory");
+        return combined_function;
     }
 
 
@@ -258,8 +291,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     if (!hints.empty())
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
                         "Unknown aggregate function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
-    else
-        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
+    throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
 }
 
 std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(String name, NullsAction action) const
@@ -347,4 +379,23 @@ AggregateFunctionFactory & AggregateFunctionFactory::instance()
     return ret;
 }
 
+
+FunctionDocumentation AggregateFunctionFactory::getDocumentation(const String & name) const
+{
+    String canonical_name = getAliasToOrName(name);
+
+    if (auto it = aggregate_functions.find(canonical_name); it != aggregate_functions.end())
+        return it->second.documentation;
+
+    String name_lowercase = Poco::toLower(canonical_name);
+    if (auto it = case_insensitive_aggregate_functions.find(name_lowercase); it != case_insensitive_aggregate_functions.end())
+        return it->second.documentation;
+
+    return {};
+}
+
+bool AggregateUtils::isAggregateFunction(const ASTFunction & node)
+{
+    return AggregateFunctionFactory::instance().isAggregateFunctionName(node.name);
+}
 }

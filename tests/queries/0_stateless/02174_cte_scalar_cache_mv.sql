@@ -14,7 +14,7 @@ CREATE MATERIALIZED VIEW mv1 TO t2 AS
     FROM t1
     LIMIT 5;
 
-set allow_experimental_analyzer = 0;
+set enable_analyzer = 0;
 
 -- FIRST INSERT
 INSERT INTO t1
@@ -37,7 +37,7 @@ FROM t2
 GROUP BY k, l, m, n
 ORDER BY k, l, m, n;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 -- The main query should have a cache miss and 3 global hits
 -- The MV is executed 20 times (100 / 5) and each run does 1 miss and 4 hits to the LOCAL cache
 -- In addition to this, to prepare the MV, there is an extra preparation to get the list of columns via
@@ -61,7 +61,7 @@ WHERE
   AND event_date >= yesterday() AND event_time > now() - interval 10 minute;
 
 truncate table t2;
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 
 -- FIRST INSERT ANALYZER
 INSERT INTO t1
@@ -84,7 +84,7 @@ FROM t2
 GROUP BY k, l, m, n
 ORDER BY k, l, m, n;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     '02177_MV',
@@ -100,7 +100,7 @@ WHERE
 
 DROP TABLE mv1;
 
-set allow_experimental_analyzer = 0;
+set enable_analyzer = 0;
 
 CREATE TABLE t3 (z Int64) ENGINE = Memory;
 CREATE MATERIALIZED VIEW mv2 TO t3 AS
@@ -120,7 +120,7 @@ SETTINGS
     max_threads=1;
 
 SELECT * FROM t3 ORDER BY z ASC;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     '02177_MV_2',
     ProfileEvents['ScalarSubqueriesGlobalCacheHit'] as scalar_cache_global_hit,
@@ -134,7 +134,7 @@ WHERE
   AND event_date >= yesterday() AND event_time > now() - interval 10 minute;
 
 truncate table t3;
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 
 -- SECOND INSERT ANALYZER
 INSERT INTO t1
@@ -147,7 +147,7 @@ SETTINGS
     max_threads=1;
 
 SELECT * FROM t3 ORDER BY z ASC;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     '02177_MV_2',
     ProfileEvents['ScalarSubqueriesGlobalCacheHit'] as scalar_cache_global_hit,
@@ -162,7 +162,7 @@ WHERE
 
 DROP TABLE mv2;
 
-set allow_experimental_analyzer = 0;
+set enable_analyzer = 0;
 
 CREATE TABLE t4 (z Int64) ENGINE = Memory;
 CREATE MATERIALIZED VIEW mv3 TO t4 AS
@@ -180,7 +180,7 @@ SELECT number as i, number as j from numbers(100)
     min_insert_block_size_rows_for_materialized_views=5,
     max_block_size=5,
     max_threads=1;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT * FROM t4 ORDER BY z ASC;
 
@@ -197,7 +197,7 @@ WHERE
   AND event_date >= yesterday() AND event_time > now() - interval 10 minute;
 
 truncate table t4;
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 
 -- THIRD INSERT ANALYZER
 INSERT INTO t1
@@ -208,7 +208,7 @@ SELECT number as i, number as j from numbers(100)
     min_insert_block_size_rows_for_materialized_views=5,
     max_block_size=5,
     max_threads=1;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT * FROM t4 ORDER BY z ASC;
 

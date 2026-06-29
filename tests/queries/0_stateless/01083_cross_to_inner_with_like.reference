@@ -1,21 +1,9 @@
-SELECT
-    k,
-    r.k,
-    name
-FROM n
-ALL INNER JOIN r ON k = r.k
-WHERE (k = r.k) AND (name = \'A\')
-SELECT
-    k,
-    r.k,
-    name
-FROM n
-ALL INNER JOIN r ON k = r.k
-WHERE (k = r.k) AND (name LIKE \'A%\')
-SELECT
-    k,
-    r.k,
-    name
-FROM n
-ALL INNER JOIN r ON k = r.k
-WHERE (k = r.k) AND (name NOT LIKE \'A%\')
+SELECT *
+FROM n, r
+WHERE and(equals(n.k, r.k), equals(r.name, \'A\'))
+SELECT *
+FROM n, r
+WHERE and(equals(n.k, r.k), like(r.name, \'A%\'))
+SELECT *
+FROM n, r
+WHERE and(equals(n.k, r.k), notLike(r.name, \'A%\'))

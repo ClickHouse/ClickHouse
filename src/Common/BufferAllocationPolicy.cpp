@@ -1,5 +1,7 @@
-#include "BufferAllocationPolicy.h"
+#include <Common/BufferAllocationPolicy.h>
+#include <base/defines.h>
 
+#include <algorithm>
 #include <memory>
 
 namespace DB
@@ -95,8 +97,7 @@ BufferAllocationPolicyPtr BufferAllocationPolicy::create(BufferAllocationPolicy:
 {
     if (settings_.strict_size > 0)
         return std::make_unique<FixedSizeBufferAllocationPolicy>(settings_);
-    else
-        return std::make_unique<ExpBufferAllocationPolicy>(settings_);
+    return std::make_unique<ExpBufferAllocationPolicy>(settings_);
 }
 
 }

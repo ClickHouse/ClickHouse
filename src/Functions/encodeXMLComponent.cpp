@@ -25,17 +25,17 @@ namespace
             const ColumnString::Chars & data,
             const ColumnString::Offsets & offsets,
             ColumnString::Chars & res_data,
-            ColumnString::Offsets & res_offsets)
+            ColumnString::Offsets & res_offsets,
+            size_t input_rows_count)
         {
             /// 6 is the maximum size amplification (the maximum length of encoded entity: &quot;)
             res_data.resize(data.size() * 6);
-            size_t size = offsets.size();
-            res_offsets.resize(size);
+            res_offsets.resize(input_rows_count);
 
             size_t prev_offset = 0;
             size_t res_offset = 0;
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const char * src_data = reinterpret_cast<const char *>(&data[prev_offset]);
                 size_t src_size = offsets[i] - prev_offset;
@@ -49,7 +49,7 @@ namespace
             res_data.resize(res_offset);
         }
 
-        [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+        [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function encodeXML cannot work with FixedString argument");
         }
@@ -70,7 +70,7 @@ namespace
                 {
                     break;
                 }
-                else if (*src_curr_pos == '<')
+                if (*src_curr_pos == '<')
                 {
                     size_t bytes_to_copy = src_curr_pos - src_prev_pos;
                     memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
@@ -139,6 +139,33 @@ namespace
 
 REGISTER_FUNCTION(EncodeXMLComponent)
 {
-    factory.registerFunction<FunctionEncodeXMLComponent>();
+    FunctionDocumentation::Description description = R"(
+Escapes characters to place string into XML text node or attribute.
+)";
+    FunctionDocumentation::Syntax syntax = "encodeXMLComponent(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "String to escape.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the escaped string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    '<tag>Hello & "World"</tag>' AS original,
+    encodeXMLComponent('<tag>Hello & "World"</tag>') AS xml_encoded;
+        )",
+        R"(
+┌─original───────────────────┬─xml_encoded──────────────────────────────────────────┐
+│ <tag>Hello & "World"</tag> │ &lt;tag&gt;Hello &amp; &quot;World&quot;&lt;/tag&gt; │
+└────────────────────────────┴──────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionEncodeXMLComponent>(documentation);
 }
 }

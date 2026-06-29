@@ -28,7 +28,7 @@ exttypes=("Int128" "Int256" "UInt256")
             echo "SELECT avgWeighted(to${left}(1), to${right}(2));"
         done
     done
-) | $CLICKHOUSE_CLIENT_BINARY -nm
+) | $CLICKHOUSE_CLIENT_BINARY -m
 
 ${CLICKHOUSE_CLIENT} --server_logs_file=/dev/null --query="SELECT avgWeighted(['string'], toFloat64(0))" 2>&1 \
   | grep -c 'Code: 43. DB::Exception: .* DB::Exception:.* Types .* are non-conforming as arguments for aggregate function avgWeighted'

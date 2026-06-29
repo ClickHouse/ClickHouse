@@ -1,13 +1,12 @@
 #pragma once
 
-#include <vector>
-
 #include <Core/ColumnWithTypeAndName.h>
 
+#include <vector>
 
 namespace DB
 {
 
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
 
 }

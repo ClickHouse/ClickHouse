@@ -1,0 +1,24 @@
+WITH t(a, b) AS
+    (
+        SELECT
+            1,
+            2
+    )
+SELECT *
+FROM t
+WITH t(a) AS
+    (
+        SELECT 1
+    )
+SELECT *
+FROM t
+WITH phrase(ph) AS
+    (
+        SELECT concat(COALESCE(CAST(NULLIF(beer, 0), 'text'), 'no'), ' bottle', caseWithExpression(beer, 1, '', 's'), ' of beer')
+        FROM generate_series(99, 0, -1) AS c(beer)
+    )
+SELECT concat(ph, ' on the wall, ', ph, '.', '\n', 'Take one down and pass it around, ', LEAD(ph) OVER (), ' on the wall.\n') AS ` `
+FROM phrase
+LIMIT 99
+UNION ALL
+SELECT 'No more bottles of beer on the wall, no more bottles of beer.\nGo to the store and buy some more, 99 bottles of beer on the wall.'

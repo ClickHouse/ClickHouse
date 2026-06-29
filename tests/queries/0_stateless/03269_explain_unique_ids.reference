@@ -1,0 +1,46 @@
+[\n  {\n    "Plan": {\n      "Node Type": "CreatingSets",\n      "Node Id": "CreatingSets_22",\n      "Description": "Create sets before main query execution",\n      "Plans": [\n        {\n          "Node Type": "Expression",\n          "Node Id": "Expression_18",\n          "Description": "(Project names + (Before ORDER BY + Projection) [lifted up part])",\n          "Plans": [\n            {\n              "Node Type": "Sorting",\n              "Node Id": "Sorting_7",\n              "Description": "Sorting for ORDER BY",\n              "Plans": [\n                {\n                  "Node Type": "Expression",\n                  "Node Id": "Expression_16",\n                  "Description": "(Before ORDER BY + Projection)",\n                  "Plans": [\n                    {\n                      "Node Type": "Aggregating",\n                      "Node Id": "Aggregating_4",\n                      "Plans": [\n                        {\n                          "Node Type": "Expression",\n                          "Node Id": "Expression_3",\n                          "Description": "Before GROUP BY",\n                          "Plans": [\n                            {\n                              "Node Type": "Filter",\n                              "Node Id": "Filter_14",\n                              "Description": "(WHERE + Change column names to column identifiers)",\n                              "Plans": [\n                                {\n                                  "Node Type": "ReadFromMergeTree",\n                                  "Node Id": "ReadFromMergeTree_0",\n                                  "Description": "default.t"\n                                }\n                              ]\n                            }\n                          ]\n                        }\n                      ]\n                    }\n                  ]\n                }\n              ]\n            }\n          ]\n        }\n      ]\n    }\n  }\n]
+
+
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    n0[label="MergeTreeSelect_5"];
+    n1[label="FilterTransform_6"];
+    n2[label="ExpressionTransform_7"];
+    n3[label="AggregatingTransform_8"];
+    n4[label="ExpressionTransform_9"];
+    n5[label="PartialSortingTransform_10"];
+    n6[label="LimitsCheckingTransform_11"];
+    n7[label="MergeSortingTransform_12"];
+    n8[label="ExpressionTransform_13"];
+  }
+  n0 -> n1;
+  n1 -> n2;
+  n2 -> n3;
+  n3 -> n4;
+  n4 -> n5;
+  n5 -> n6;
+  n6 -> n7;
+  n7 -> n8;
+}
+
+
+('AggregatingTransform_8','Aggregating_4')
+('ConvertingAggregatedToChunksTransform_18','')
+('CreatingSetsTransform_2','CreatingSet_19')
+('EmptySink_3','')
+('ExpressionTransform_1','Expression_21')
+('ExpressionTransform_13','Expression_18')
+('ExpressionTransform_7','Expression_3')
+('ExpressionTransform_9','Expression_16')
+('FilterTransform_6','Filter_14')
+('LazyOutputFormat_15','')
+('LimitsCheckingTransform_11','Sorting_7')
+('LimitsCheckingTransform_14','')
+('MergeSortingTransform_12','Sorting_7')
+('MergeTreeSelect_5','ReadFromMergeTree_0')
+('NullSource_16','')
+('NullSource_17','')
+('NumbersRange_0','ReadFromSystemNumbers_9')
+('PartialSortingTransform_10','Sorting_7')

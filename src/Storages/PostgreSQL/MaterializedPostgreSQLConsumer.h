@@ -3,11 +3,11 @@
 #include <Core/PostgreSQL/Connection.h>
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
 
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 
 namespace DB
@@ -38,9 +38,10 @@ private:
 
         const Block & getSampleBlock() const { return table_description.sample_block; }
 
-        using ArrayInfo = std::unordered_map<size_t, PostgreSQLArrayInfo>;
+        using ArrayInfo = UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo>;
 
         const StoragePtr storage;
+        const StorageMetadataHandle metadata_snapshot;
         const ExternalResultDescription table_description;
         const PostgreSQLTableStructure::Attributes columns_attributes;
         const Names column_names;
@@ -132,7 +133,8 @@ private:
     /// lsn - log sequence number, like wal offset (64 bit).
     static Int64 getLSNValue(const std::string & lsn)
     {
-        UInt32 upper_half, lower_half;
+        UInt32 upper_half = 0;
+        UInt32 lower_half = 0;
         std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half); /// NOLINT
         return (static_cast<Int64>(upper_half) << 32) + lower_half;
     }

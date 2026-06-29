@@ -26,6 +26,14 @@ select pow(2, 1) = 2;
 select sum(abs(pow(x, 1) - x) < 1.0e-9) / count() from system.one array join range(1000000) as x;
 select sum(pow(x, 2) = x * x) / count() from system.one array join range(10000) as x;
 
+select isNaN(lgamma(-2));
+select isNaN(lgamma(-1));
+select lgamma(0) = inf;
+select lgamma(1) = 0;
+select lgamma(2) = 0;
+select abs(lgamma(3) - 0.693147181) < 1.0e-8;
+select abs(lgamma(4) - 1.791759469) < 1.0e-8;
+
 select tgamma(0) = inf;
 select tgamma(1) = 1;
 select tgamma(2) = 1;

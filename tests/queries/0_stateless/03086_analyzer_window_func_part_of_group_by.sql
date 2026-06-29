@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/57321
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 SELECT
     ver,
     max(ver) OVER () AS ver_max

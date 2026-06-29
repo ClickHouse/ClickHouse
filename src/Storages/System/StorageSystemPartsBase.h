@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Formats/FormatSettings.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
@@ -38,9 +37,7 @@ struct StoragesInfo
 class StoragesInfoStreamBase
 {
 public:
-    explicit StoragesInfoStreamBase(ContextPtr context)
-        : query_id(context->getCurrentQueryId()), settings(context->getSettingsRef()), next_row(0), rows(0)
-    {}
+    explicit StoragesInfoStreamBase(ContextPtr context);
 
     StoragesInfoStreamBase(const StoragesInfoStreamBase&) = default;
     virtual ~StoragesInfoStreamBase() = default;
@@ -51,13 +48,13 @@ public:
         {
             StoragesInfo info;
 
-            info.database = (*database_column)[next_row].get<String>();
-            info.table = (*table_column)[next_row].get<String>();
-            UUID storage_uuid = (*storage_uuid_column)[next_row].get<UUID>();
+            info.database = (*database_column)[next_row].safeGet<String>();
+            info.table = (*table_column)[next_row].safeGet<String>();
+            UUID storage_uuid = (*storage_uuid_column)[next_row].safeGet<UUID>();
 
             auto is_same_table = [&storage_uuid, this] (size_t row) -> bool
             {
-                return (*storage_uuid_column)[row].get<UUID>() == storage_uuid;
+                return (*storage_uuid_column)[row].safeGet<UUID>() == storage_uuid;
             };
 
             /// We may have two rows per table which differ in 'active' value.
@@ -65,7 +62,7 @@ public:
             /// must collect the inactive parts. Remember this fact in StoragesInfo.
             for (; next_row < rows && is_same_table(next_row); ++next_row)
             {
-                const auto active = (*active_column)[next_row].get<UInt64>();
+                const auto active = (*active_column)[next_row].safeGet<UInt64>();
                 if (active == 0)
                     info.need_inactive_parts = true;
             }
@@ -88,16 +85,10 @@ public:
         return {};
     }
 protected:
-    virtual bool tryLockTable(StoragesInfo & info)
-    {
-        info.table_lock = info.storage->tryLockForShare(query_id, settings.lock_acquire_timeout);
-        // nullptr means table was dropped while acquiring the lock
-        return info.table_lock != nullptr;
-    }
+    virtual bool tryLockTable(StoragesInfo & info);
 
     String query_id;
-    Settings settings;
-
+    std::chrono::milliseconds lock_timeout;
 
     ColumnPtr database_column;
     ColumnPtr table_column;
@@ -115,15 +106,15 @@ protected:
 class StoragesInfoStream : public StoragesInfoStreamBase
 {
 public:
-    StoragesInfoStream(const ActionsDAGPtr & filter_by_database, const ActionsDAGPtr & filter_by_other_columns, ContextPtr context);
+    StoragesInfoStream(std::optional<ActionsDAG> filter_by_database, std::optional<ActionsDAG> filter_by_other_columns, ContextPtr context);
 };
 
 /** Implements system table 'parts' which allows to get information about data parts for tables of MergeTree family.
   */
-class StorageSystemPartsBase : public IStorage
+class StorageSystemPartsBase : public StorageWithCommonVirtualColumns
 {
 public:
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -133,6 +124,8 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    static VirtualColumnsDescription createVirtuals();
+
     bool isSystemStorage() const override { return true; }
 
 private:
@@ -141,13 +134,11 @@ private:
 protected:
     friend class ReadFromSystemPartsBase;
 
-    const FormatSettings format_settings = {};
-
     StorageSystemPartsBase(const StorageID & table_id_, ColumnsDescription && columns);
 
-    virtual std::unique_ptr<StoragesInfoStreamBase> getStoragesInfoStream(const ActionsDAGPtr & filter_by_database, const ActionsDAGPtr & filter_by_other_columns, ContextPtr context)
+    virtual std::unique_ptr<StoragesInfoStreamBase> getStoragesInfoStream(std::optional<ActionsDAG> filter_by_database, std::optional<ActionsDAG> filter_by_other_columns, ContextPtr context)
     {
-        return std::make_unique<StoragesInfoStream>(filter_by_database, filter_by_other_columns, context);
+        return std::make_unique<StoragesInfoStream>(std::move(filter_by_database), std::move(filter_by_other_columns), context);
     }
 
     virtual void

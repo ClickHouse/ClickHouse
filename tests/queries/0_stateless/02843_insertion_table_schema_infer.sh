@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATA_DIR=$CUR_DIR/data_tsv
 
-$CLICKHOUSE_LOCAL --multiquery \
+$CLICKHOUSE_LOCAL \
 "CREATE VIEW users AS SELECT * FROM file('$DATA_DIR/mock_data.tsv', TSVWithNamesAndTypes); 
  CREATE TABLE users_output (name String, tag UInt64)ENGINE = Memory;
  INSERT INTO users_output WITH (SELECT groupUniqArrayArray(mapKeys(Tags)) FROM users) AS unique_tags SELECT UserName AS name, length(unique_tags) AS tag FROM users;

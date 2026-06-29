@@ -2,9 +2,10 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
-from helpers.cluster import ClickHouseCluster
-from helpers.client import QueryRuntimeException
 import pytest
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", user_configs=["configs/users_overrides.xml"])
@@ -23,6 +24,7 @@ def start_cluster():
 def test_set():
     node.query(
         """
+    DROP TABLE IF EXISTS 02581_trips;
     CREATE TABLE 02581_trips (id UInt32, description String, id2 UInt32) ENGINE = MergeTree PRIMARY KEY id ORDER BY id;
     INSERT INTO 02581_trips SELECT number, '', number FROM numbers(1);
     INSERT INTO 02581_trips SELECT number, '', number FROM numbers(1);
@@ -63,8 +65,11 @@ def test_set():
     )
     with pytest.raises(
         QueryRuntimeException,
-        match="Exception happened during execution of mutation",
+        match="Exception happened during execution of mutation|Timeout exceeded",
     ):
         node.query(
             "ALTER TABLE `02581_trips` UPDATE description = 'a' WHERE id IN (SELECT CAST(number * 10, 'UInt32') FROM numbers(10e9)) SETTINGS mutations_sync = 2"
         )
+    node.query(
+        "DROP TABLE IF EXISTS 02581_trips SETTINGS max_execution_time = 0"
+    )

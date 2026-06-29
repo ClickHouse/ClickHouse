@@ -1,5 +1,7 @@
 -- Tags: no-parallel, no-fasttest, no-random-settings
 
+SET max_bytes_in_join = 0;
+SET max_rows_in_join = 0;
 SET max_memory_usage = 32000000;
 SET join_on_disk_max_files_to_merge = 4;
 

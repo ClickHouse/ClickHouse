@@ -3,36 +3,36 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_nonconst_timezone_arguments;
+}
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int UNKNOWN_FUNCTION;
 }
 
 namespace
 {
 
 /// See generateSnowflakeID.cpp
-constexpr int time_shift = 22;
+constexpr size_t time_shift = 22;
 
 }
 
-class FunctionSnowflakeIDToDateTime : public IFunction
+class FunctionSnowflakeIDToDateTime final : public IFunction
 {
 private:
-    const bool uniform_snowflake_conversion_functions;
     const bool allow_nonconst_timezone_arguments;
 
 public:
@@ -40,8 +40,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSnowflakeIDToDateTime>(context); }
     explicit FunctionSnowflakeIDToDateTime(ContextPtr context)
-        : uniform_snowflake_conversion_functions(context->getSettingsRef().uniform_snowflake_conversion_functions)
-        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
     String getName() const override { return name; }
@@ -56,10 +55,10 @@ public:
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64), nullptr, "UInt64"}
         };
         FunctionArgumentDescriptors optional_args{
-            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "UInt*"},
+            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args, optional_args);
+        validateFunctionArguments(*this, arguments, args, optional_args);
 
         String timezone;
         if (arguments.size() == 3)
@@ -70,12 +69,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!uniform_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "To use function {}, setting 'uniform_snowflake_conversion_functions' must be enabled", getName());
-
         const auto & col_src = *arguments[0].column;
 
-        size_t epoch = 0;
+        UInt64 epoch = 0;
         if (arguments.size() >= 2 && input_rows_count != 0)
         {
             const auto & col_epoch = *arguments[1].column;
@@ -105,10 +101,9 @@ public:
 };
 
 
-class FunctionSnowflakeIDToDateTime64 : public IFunction
+class FunctionSnowflakeIDToDateTime64 final : public IFunction
 {
 private:
-    const bool uniform_snowflake_conversion_functions;
     const bool allow_nonconst_timezone_arguments;
 
 public:
@@ -116,8 +111,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSnowflakeIDToDateTime64>(context); }
     explicit FunctionSnowflakeIDToDateTime64(ContextPtr context)
-        : uniform_snowflake_conversion_functions(context->getSettingsRef().uniform_snowflake_conversion_functions)
-        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
     String getName() const override { return name; }
@@ -132,10 +126,10 @@ public:
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64), nullptr, "UInt64"}
         };
         FunctionArgumentDescriptors optional_args{
-            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "UInt*"},
+            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args, optional_args);
+        validateFunctionArguments(*this, arguments, args, optional_args);
 
         String timezone;
         if (arguments.size() == 3)
@@ -146,12 +140,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!uniform_snowflake_conversion_functions)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "To use function {}, setting 'uniform_snowflake_conversion_functions' must be enabled", getName());
-
         const auto & col_src = *arguments[0].column;
 
-        size_t epoch = 0;
+        UInt64 epoch = 0;
         if (arguments.size() >= 2 && input_rows_count != 0)
         {
             const auto & col_epoch = *arguments[1].column;
@@ -183,35 +174,65 @@ public:
 
 REGISTER_FUNCTION(SnowflakeIDToDateTime)
 {
+    /// snowflakeIDToDateTime documentation
+    FunctionDocumentation::Description description_snowflakeIDToDateTime = R"(
+Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime](../data-types/datetime.md).
+    )";
+    FunctionDocumentation::Syntax syntax_snowflakeIDToDateTime = "snowflakeIDToDateTime(value[, epoch[, time_zone]])";
+    FunctionDocumentation::Arguments arguments_snowflakeIDToDateTime = {
+        {"value", "Snowflake ID.", {"UInt64"}},
+        {"epoch", "Optional. Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657.", {"UInt*"}},
+        {"time_zone", "Optional. [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_snowflakeIDToDateTime = {"Returns the timestamp component of `value`.", {"DateTime"}};
+    FunctionDocumentation::Examples examples_snowflakeIDToDateTime = {
     {
-        FunctionDocumentation::Description description = R"(Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime](../data-types/datetime.md).)";
-        FunctionDocumentation::Syntax syntax = "snowflakeIDToDateTime(value[, epoch[, time_zone]])";
-        FunctionDocumentation::Arguments arguments = {
-            {"value", "Snowflake ID. [UInt64](../data-types/int-uint.md)"},
-            {"epoch", "Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md)"},
-            {"time_zone", "[Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md)"}
-        };
-        FunctionDocumentation::ReturnedValue returned_value = "The timestamp component of `value` as a [DateTime](../data-types/datetime.md) value.";
-        FunctionDocumentation::Examples examples = {{"simple", "SELECT snowflakeIDToDateTime(7204436857747984384)", "2024-06-06 10:59:58"}};
-        FunctionDocumentation::Categories categories = {"Snowflake ID"};
-
-        factory.registerFunction<FunctionSnowflakeIDToDateTime>({description, syntax, arguments, returned_value, examples, categories});
+        "Usage example",
+        R"(
+SELECT snowflakeIDToDateTime(7204436857747984384) AS res
+        )",
+        R"(
+┌─────────────────res─┐
+│ 2024-06-06 10:59:58 │
+└─────────────────────┘
+        )"
     }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_snowflakeIDToDateTime = {24, 6};
+    FunctionDocumentation::Category category_snowflakeIDToDateTime = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_snowflakeIDToDateTime = {description_snowflakeIDToDateTime, syntax_snowflakeIDToDateTime, arguments_snowflakeIDToDateTime, {}, returned_value_snowflakeIDToDateTime, examples_snowflakeIDToDateTime, introduced_in_snowflakeIDToDateTime, category_snowflakeIDToDateTime};
 
+    factory.registerFunction<FunctionSnowflakeIDToDateTime>(documentation_snowflakeIDToDateTime);
+
+    /// snowflakeIDToDateTime64 documentation
+    FunctionDocumentation::Description description_snowflakeIDToDateTime64 = R"(
+Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime64](../data-types/datetime64.md).
+    )";
+    FunctionDocumentation::Syntax syntax_snowflakeIDToDateTime64 = "snowflakeIDToDateTime64(value[, epoch[, time_zone]])";
+    FunctionDocumentation::Arguments arguments_snowflakeIDToDateTime64 = {
+        {"value", "Snowflake ID.", {"UInt64"}},
+        {"epoch", "Optional. Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657.", {"UInt*"}},
+        {"time_zone", "Optional. [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_snowflakeIDToDateTime64 = {"Returns the timestamp component of `value` as a `DateTime64` with scale = 3, i.e. millisecond precision.", {"DateTime64"}};
+    FunctionDocumentation::Examples examples_snowflakeIDToDateTime64 = {
     {
-        FunctionDocumentation::Description description = R"(Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime64](../data-types/datetime64.md).)";
-        FunctionDocumentation::Syntax syntax = "snowflakeIDToDateTime64(value[, epoch[, time_zone]])";
-        FunctionDocumentation::Arguments arguments = {
-            {"value", "Snowflake ID. [UInt64](../data-types/int-uint.md)"},
-            {"epoch", "Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md)"},
-            {"time_zone", "[Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md)"}
-        };
-        FunctionDocumentation::ReturnedValue returned_value = "The timestamp component of `value` as a [DateTime64](../data-types/datetime64.md) with scale = 3, i.e. millisecond precision.";
-        FunctionDocumentation::Examples examples = {{"simple", "SELECT snowflakeIDToDateTime64(7204436857747984384)", "2024-06-06 10:59:58"}};
-        FunctionDocumentation::Categories categories = {"Snowflake ID"};
-
-        factory.registerFunction<FunctionSnowflakeIDToDateTime64>({description, syntax, arguments, returned_value, examples, categories});
+        "Usage example",
+        R"(
+SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
+        )",
+        R"(
+┌─────────────────res─┐
+│ 2024-06-06 10:59:58 │
+└─────────────────────┘
+        )"
     }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_snowflakeIDToDateTime64 = {24, 6};
+    FunctionDocumentation::Category category_snowflakeIDToDateTime64 = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_snowflakeIDToDateTime64 = {description_snowflakeIDToDateTime64, syntax_snowflakeIDToDateTime64, arguments_snowflakeIDToDateTime64, {}, returned_value_snowflakeIDToDateTime64, examples_snowflakeIDToDateTime64, introduced_in_snowflakeIDToDateTime64, category_snowflakeIDToDateTime64};
+
+    factory.registerFunction<FunctionSnowflakeIDToDateTime64>(documentation_snowflakeIDToDateTime64);
 }
 
 }

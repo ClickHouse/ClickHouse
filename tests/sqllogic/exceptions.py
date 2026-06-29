@@ -6,12 +6,12 @@ class Error(Exception):
     def __init__(
         self,
         message,
+        *args,
         file=None,
         name=None,
         pos=None,
         request=None,
         details=None,
-        *args,
         **kwargs,
     ):
         super().__init__(message, *args, **kwargs)
@@ -69,7 +69,7 @@ class Error(Exception):
 
 
 class ErrorWithParent(Error):
-    def __init__(self, message, parent=None, *args, **kwargs):
+    def __init__(self, message, *args, parent=None, **kwargs):
         super().__init__(message, *args, **kwargs)
         self._parent = parent
 

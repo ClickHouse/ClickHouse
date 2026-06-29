@@ -21,9 +21,9 @@ select * from dist_01757 where dummy = 0 or dummy = 1 format Null settings optim
 
 -- and negative
 -- disabled for analyzer cause new implementation consider `dummy = 0 and dummy = 1` as constant False.
-select * from dist_01757 where dummy = 0 and dummy = 1 settings optimize_skip_unused_shards_limit=1, allow_experimental_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
-select * from dist_01757 where dummy = 0 and dummy = 2 and dummy = 3 settings optimize_skip_unused_shards_limit=1, allow_experimental_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
-select * from dist_01757 where dummy = 0 and dummy = 2 and dummy = 3 settings optimize_skip_unused_shards_limit=2, allow_experimental_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
+select * from dist_01757 where dummy = 0 and dummy = 1 settings optimize_skip_unused_shards_limit=1, enable_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
+select * from dist_01757 where dummy = 0 and dummy = 2 and dummy = 3 settings optimize_skip_unused_shards_limit=1, enable_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
+select * from dist_01757 where dummy = 0 and dummy = 2 and dummy = 3 settings optimize_skip_unused_shards_limit=2, enable_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 
 -- and
 select * from dist_01757 where dummy = 0 and dummy = 1 settings optimize_skip_unused_shards_limit=2;

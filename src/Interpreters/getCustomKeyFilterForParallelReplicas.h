@@ -6,13 +6,12 @@
 #include <Storages/IStorage.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
 struct ParallelReplicasCustomKeyFilter
 {
-    ParallelReplicasCustomKeyFilterType filter_type;
+    ParallelReplicasMode filter_type;
     UInt64 range_lower;
     UInt64 range_upper;
 };

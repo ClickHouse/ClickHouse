@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/42399
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 CREATE TABLE IF NOT EXISTS t0 (c0 Int32) ENGINE = Memory() ;
 CREATE TABLE t1 (c0 Int32, c1 Int32, c2 Int32) ENGINE = Memory() ;

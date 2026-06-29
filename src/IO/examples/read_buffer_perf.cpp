@@ -5,9 +5,10 @@
 #include <base/types.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Examples/clickhouse_examples.h>
 
 
-int main(int, char **)
+int mainEntryExampleReadBufferPerf(int, char **)
 {
     try
     {
@@ -15,7 +16,8 @@ int main(int, char **)
 
         Int64 a = 0;
         Float64 b = 0;
-        String c, d;
+        String c;
+        String d;
 
         size_t i = 0;
         while (!in.eof())

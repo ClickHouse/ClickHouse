@@ -4,13 +4,15 @@
 #include <Storages/DataDestinationType.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Storages/TTLMode.h>
 
 
 namespace DB
 {
+
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /// Assignment expression in TTL with GROUP BY
 struct TTLAggregateDescription
@@ -47,7 +49,7 @@ struct ExpressionAndSets
 /// Common struct for TTL record in storage
 struct TTLDescription
 {
-    TTLMode mode;
+    TTLMode mode{};
 
     /// Expression part of TTL AST:
     /// TTL d + INTERVAL 1 DAY
@@ -84,7 +86,7 @@ struct TTLDescription
 
     /// Destination type, only valid for table TTLs.
     /// For example DISK or VOLUME
-    DataDestinationType destination_type;
+    DataDestinationType destination_type{};
 
     /// Name of destination disk or volume
     String destination_name;
@@ -137,7 +139,7 @@ struct TTLTableDescription
         const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
 
     /// Parse description from string
-    static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key);
+    static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
 };
 
 }

@@ -7,7 +7,7 @@ string2	String
 
 \N	None	42	Int64
 42	Int64	string	String
-string	String	[1, 2]	String
+string	String	[1,2]	Array(Int64)
 [1,2]	Array(Int64)	\N	None
     ┌─d────────────────────────┬─dynamicType(d)─┬─d.Int64─┬─d.String─┬─────d.Date─┬─d.Float64─┬──────────d.DateTime─┬─d.Array(Int64)─┬─d.Array(String)──────────┐
  1. │ 42                       │ Int64          │      42 │ ᴺᵁᴸᴸ     │       ᴺᵁᴸᴸ │      ᴺᵁᴸᴸ │                ᴺᵁᴸᴸ │ []             │ []                       │

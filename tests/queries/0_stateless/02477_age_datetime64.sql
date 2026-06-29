@@ -75,3 +75,7 @@ SELECT age('second', materialize(toDateTime64('2015-08-18 00:00:00', 0, 'UTC')),
 SELECT age('second', materialize(toDateTime('2015-08-18 00:00:00', 'UTC')), materialize(toDateTime64('2015-08-18 00:00:10', 3, 'UTC')));
 SELECT age('day', materialize(toDateTime64('2015-08-18 00:00:00', 0, 'UTC')), materialize(toDate('2015-08-19', 'UTC')));
 SELECT age('day', materialize(toDate('2015-08-18', 'UTC')), materialize(toDateTime64('2015-08-19 00:00:00', 3, 'UTC')));
+
+-- UBsan bug #66638
+set session_timezone = 'UTC';
+SELECT age('second', toDateTime(1157339245694594829, 6, 'UTC'), toDate('2015-08-18'))

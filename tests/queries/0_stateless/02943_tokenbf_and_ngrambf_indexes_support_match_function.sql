@@ -1,3 +1,9 @@
+SET explain_query_plan_default = 'legacy';
+SET optimize_rewrite_regexp_functions = 1;
+SET use_skip_indexes_on_data_read = 1;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
+
 DROP TABLE IF EXISTS tokenbf_tab;
 DROP TABLE IF EXISTS ngrambf_tab;
 
@@ -41,7 +47,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-  allow_experimental_analyzer = 0;
+  enable_analyzer = 0;
 
 SELECT *
 FROM
@@ -52,7 +58,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-  allow_experimental_analyzer = 1;
+  enable_analyzer = 1;
 
 SELECT *
 FROM
@@ -63,7 +69,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-  allow_experimental_analyzer = 0;
+  enable_analyzer = 0;
 
 SELECT *
 FROM
@@ -74,7 +80,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-  allow_experimental_analyzer = 1;
+  enable_analyzer = 1;
 
 
 SELECT '---';
@@ -96,7 +102,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-  allow_experimental_analyzer = 0;
+  enable_analyzer = 0;
 
 SELECT *
 FROM
@@ -107,7 +113,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-  allow_experimental_analyzer = 1;
+  enable_analyzer = 1;
 
 SELECT *
 FROM
@@ -118,7 +124,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-  allow_experimental_analyzer = 0;
+  enable_analyzer = 0;
 
 SELECT *
 FROM
@@ -129,7 +135,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-  allow_experimental_analyzer = 1;
+  enable_analyzer = 1;
 
 SELECT '---';
 
@@ -150,7 +156,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-  allow_experimental_analyzer = 0;
+  enable_analyzer = 0;
 SELECT *
 FROM
 (
@@ -160,7 +166,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-  allow_experimental_analyzer = 1;
+  enable_analyzer = 1;
 
 SELECT *
 FROM
@@ -171,7 +177,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-  allow_experimental_analyzer = 0;
+  enable_analyzer = 0;
 
 SELECT *
 FROM
@@ -182,7 +188,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-  allow_experimental_analyzer = 1;
+  enable_analyzer = 1;
 
 DROP TABLE tokenbf_tab;
 DROP TABLE ngrambf_tab;

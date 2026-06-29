@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/FieldVisitors.h>
 #include <Common/NaNUtils.h>
+#include <Core/AccurateComparison.h>
 #include <base/demangle.h>
 #include <type_traits>
 
@@ -58,7 +60,7 @@ public:
 
     T operator() (const Float64 & x) const
     {
-        if constexpr (!std::is_floating_point_v<T>)
+        if constexpr (!is_floating_point<T>)
         {
             if (!isFinite(x))
             {
@@ -69,7 +71,23 @@ public:
                 /// Conversion of infinite values to integer is undefined.
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
             }
-            else if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
+            /// Use precision-correct float-vs-integer comparison via `accurate::greaterOp` / `accurate::lessOp`.
+            /// A naive `x > Float64(numeric_limits<T>::max())` is wrong for wide integer types
+            /// (`Int64`, `UInt64`, `Int128`, `UInt128`, `Int256`, `UInt256`): when `numeric_limits<T>::max()`
+            /// has more than 53 significant bits, converting it to `Float64` rounds it UP, so the comparison
+            /// fails to reject `Float64` values equal to that rounded-up boundary, leading to undefined
+            /// behavior in the subsequent `static_cast<T>(x)` (UBSan: "value 1.84467e+19 is outside the range
+            /// of representable values of type 'unsigned long'", see issue #103817).
+            ///
+            /// Bool is special-cased: `numeric_limits<bool>` is exactly representable in `Float64`, and
+            /// `accurate::lessOp` would fail to instantiate for `bool` (`make_unsigned_t<bool>` is ill-formed).
+            if constexpr (std::is_same_v<T, bool>)
+            {
+                if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
+            }
+            else if (accurate::greaterOp(x, std::numeric_limits<T>::max())
+                     || accurate::lessOp(x, std::numeric_limits<T>::lowest()))
             {
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
             }
@@ -88,7 +106,7 @@ public:
     template <typename U>
     T operator() (const DecimalField<U> & x) const
     {
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point<T>)
             return x.getValue().template convertTo<T>() / x.getScaleMultiplier().template convertTo<T>();
         else
             return (x.getValue() / x.getScaleMultiplier()).template convertTo<T>();
@@ -129,6 +147,7 @@ extern template class FieldVisitorConvertToNumber<Int128>;
 extern template class FieldVisitorConvertToNumber<UInt128>;
 extern template class FieldVisitorConvertToNumber<Int256>;
 extern template class FieldVisitorConvertToNumber<UInt256>;
+//extern template class FieldVisitorConvertToNumber<BFloat16>;
 extern template class FieldVisitorConvertToNumber<Float32>;
 extern template class FieldVisitorConvertToNumber<Float64>;
 

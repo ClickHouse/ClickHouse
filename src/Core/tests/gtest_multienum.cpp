@@ -90,7 +90,7 @@ GTEST_TEST(MultiEnum, SetAndUnSet)
     multi_enum.set(TestEnum::TWO);
     ASSERT_EQ(1 << 1| (1 << 2), multi_enum);
 
-    multi_enum.unSet(TestEnum::ONE);
+    multi_enum.unset(TestEnum::ONE);
     ASSERT_EQ(1 << 2, multi_enum);
 }
 
@@ -139,13 +139,13 @@ GTEST_TEST(MultiEnum, UnSetValuesThatWerentSet)
 {
     // Unsetting values that weren't set shouldn't change other flags nor aggregate value.
     MultiEnum<TestEnum> multi_enum{TestEnum::ONE, TestEnum::THREE};
-    multi_enum.unSet(TestEnum::TWO);
+    multi_enum.unset(TestEnum::TWO);
     ASSERT_EQ(1 << 1 | 1 << 3, multi_enum);
 
-    multi_enum.unSet(TestEnum::FOUR);
+    multi_enum.unset(TestEnum::FOUR);
     ASSERT_EQ(1 << 1 | 1 << 3, multi_enum);
 
-    multi_enum.unSet(TestEnum::FIVE);
+    multi_enum.unset(TestEnum::FIVE);
     ASSERT_EQ(1 << 1 | 1 << 3, multi_enum);
 }
 

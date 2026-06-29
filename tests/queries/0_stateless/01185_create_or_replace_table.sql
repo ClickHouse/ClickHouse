@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-parallel
+-- Tags: no-ordinary-database
 
 drop table if exists t1;
 

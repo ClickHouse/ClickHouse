@@ -1,38 +1,38 @@
 #pragma once
 
-#include <Storages/IStorage.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Processors/Sources/ShellCommandSource.h>
-#include <Storages/ExecutableSettings.h>
 
 
 namespace DB
 {
+struct ExecutableSettings;
 
 /**
  * This class represents table engine for external executable files.
  * Executable storage that will start process for read.
  * ExecutablePool storage maintain pool of processes and take process from pool for read.
  */
-class StorageExecutable final : public IStorage
+class StorageExecutable final : public StorageWithCommonVirtualColumns
 {
 public:
     StorageExecutable(
         const StorageID & table_id,
         const String & format,
         const ExecutableSettings & settings,
-        const std::vector<ASTPtr> & input_queries,
+        const VectorWithMemoryTracking<ASTPtr> & input_queries,
         const ColumnsDescription & columns,
-        const ConstraintsDescription & constraints);
+        const ConstraintsDescription & constraints,
+        const String & comment);
 
-    String getName() const override
-    {
-        if (settings.is_executable_pool)
-            return "ExecutablePool";
-        else
-            return "Executable";
-    }
+    ~StorageExecutable() override;
 
-    void read(
+    String getName() const override;
+
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & /*storage_snapshot*/,
@@ -43,8 +43,8 @@ public:
         size_t threads) override;
 
 private:
-    ExecutableSettings settings;
-    std::vector<ASTPtr> input_queries;
+    std::unique_ptr<ExecutableSettings> settings;
+    VectorWithMemoryTracking<ASTPtr> input_queries;
     LoggerPtr log;
     std::unique_ptr<ShellCommandSourceCoordinator> coordinator;
 };

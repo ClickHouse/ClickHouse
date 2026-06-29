@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/format.h>
 #include <Common/memcpySmall.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <algorithm>
@@ -40,10 +41,10 @@ struct FormatStringImpl
     template <bool has_column_string, bool has_column_fixed_string>
     static void format(
         String pattern,
-        const std::vector<const ColumnString::Chars *> & data,
-        const std::vector<const ColumnString::Offsets *> & offsets,
-        [[maybe_unused]] /* Because sometimes !has_column_fixed_string */ const std::vector<size_t> & fixed_string_N,
-        const std::vector<std::optional<String>> & constant_strings,
+        const VectorWithMemoryTracking<const ColumnString::Chars *> & data,
+        const VectorWithMemoryTracking<const ColumnString::Offsets *> & offsets,
+        [[maybe_unused]] /* Because sometimes !has_column_fixed_string */ const VectorWithMemoryTracking<size_t> & fixed_string_N,
+        const VectorWithMemoryTracking<std::optional<String>> & constant_strings,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
@@ -56,7 +57,7 @@ struct FormatStringImpl
 
         /// Vector of substrings of pattern that will be copied to the answer, not string view because of escaping and iterators invalidation.
         /// These are exactly what is between {} tokens, for `Hello {} world {}` we will have [`Hello `, ` world `, ``].
-        std::vector<String> substrings;
+        VectorWithMemoryTracking<String> substrings;
 
         Format::init(pattern, argument_number, constant_strings, index_positions, substrings);
 
@@ -65,7 +66,7 @@ struct FormatStringImpl
         for (String & str : substrings)
         {
             /// To use memcpySmallAllowReadWriteOverflow15 for substrings we should allocate a bit more to each string.
-            /// That was chosen due to performance issues.
+            /// That was chosen due to performance reasons.
             if (!str.empty())
                 str.reserve(str.size() + right_padding);
             final_size += str.size();
@@ -74,17 +75,8 @@ struct FormatStringImpl
         /// The substring number is repeated input_rows_times.
         final_size *= input_rows_count;
 
-        /// Strings without null termination.
         for (size_t i = 1; i < substrings.size(); ++i)
-        {
             final_size += data[index_positions[i - 1]]->size();
-            /// Fixed strings do not have zero terminating character.
-            if (offsets[index_positions[i - 1]])
-                final_size -= input_rows_count;
-        }
-
-        /// Null termination characters.
-        final_size += input_rows_count;
 
         res_data.resize(final_size);
         res_offsets.resize(input_rows_count);
@@ -109,7 +101,7 @@ struct FormatStringImpl
                         if (!has_column_fixed_string || offset_ptr)
                         {
                             arg_offset = (*offset_ptr)[i - 1];
-                            size = (*offset_ptr)[i] - arg_offset - 1;
+                            size = (*offset_ptr)[i] - arg_offset;
                         }
                     }
 
@@ -128,17 +120,10 @@ struct FormatStringImpl
                     offset += substrings[j].size();
                 }
             }
-            res_data[offset] = '\0';
-            ++offset;
             res_offsets[i] = offset;
         }
 
-        /*
-         * Invariant of `offset == final_size` must be held.
-         *
-         * if (offset != final_size)
-         *    abort();
-         */
+        chassert(offset == final_size);
     }
 };
 

@@ -1,3 +1,4 @@
+set enable_analyzer = 1;
 -- { echoOn }
 Select sum(number + 1) from numbers(10);
 Select sum(1 + number) from numbers(10);
@@ -23,11 +24,12 @@ CREATE TABLE test_table
     decimal32 Decimal32(5),
 ) ENGINE=MergeTree ORDER BY uint64;
 
-INSERT INTO test_table VALUES (1, 1.1, 1.11);
-INSERT INTO test_table VALUES (2, 2.2, 2.22);
-INSERT INTO test_table VALUES (3, 3.3, 3.33);
-INSERT INTO test_table VALUES (4, 4.4, 4.44);
-INSERT INTO test_table VALUES (5, 5.5, 5.55);
+-- Use Float64 numbers divisible by 1/16 (or some other small power of two), so that their sum doesn't depend on summation order.
+INSERT INTO test_table VALUES (1, 1.125, 1.11);
+INSERT INTO test_table VALUES (2, 2.250, 2.22);
+INSERT INTO test_table VALUES (3, 3.375, 3.33);
+INSERT INTO test_table VALUES (4, 4.500, 4.44);
+INSERT INTO test_table VALUES (5, 5.625, 5.55);
 
 -- { echoOn }
 SELECT sum(uint64 + 1 AS i) from test_table where i > 0;
@@ -74,22 +76,22 @@ EXPLAIN SYNTAX (SELECT sum(1 - uint64 AS i) j from test_table where i > 0 having
 EXPLAIN SYNTAX (SELECT sum((1 AS m) - (uint64 AS n)) j from test_table where m > 0 and n > 0 having j < 0);
 EXPLAIN SYNTAX (SELECT sum(((1 AS m) - (uint64 AS n)) AS i) j from test_table where m > 0 and n > 0 and i < 0 having j < 0);
 
-SELECT sum(uint64 + 2.11) From test_table;
-SELECT sum(2.11 + uint64) From test_table;
-SELECT sum(uint64 - 2.11) From test_table;
-SELECT sum(2.11 - uint64) From test_table;
-SELECT sum(uint64) + 2.11 * count(uint64) From test_table;
-SELECT 2.11 * count(uint64) + sum(uint64) From test_table;
-SELECT sum(uint64) - 2.11 * count(uint64) From test_table;
-SELECT 2.11 * count(uint64) - sum(uint64) From test_table;
-EXPLAIN SYNTAX (SELECT sum(uint64 + 2.11) From test_table);
-EXPLAIN SYNTAX (SELECT sum(2.11 + uint64) From test_table);
-EXPLAIN SYNTAX (SELECT sum(uint64 - 2.11) From test_table);
-EXPLAIN SYNTAX (SELECT sum(2.11 - uint64) From test_table);
-EXPLAIN SYNTAX (SELECT sum(uint64) + 2.11 * count(uint64) From test_table);
-EXPLAIN SYNTAX (SELECT 2.11 * count(uint64) + sum(uint64) From test_table);
-EXPLAIN SYNTAX (SELECT sum(uint64) - 2.11 * count(uint64) From test_table);
-EXPLAIN SYNTAX (SELECT 2.11 * count(uint64) - sum(uint64) From test_table);
+SELECT sum(uint64 + 2.125) From test_table;
+SELECT sum(2.125 + uint64) From test_table;
+SELECT sum(uint64 - 2.125) From test_table;
+SELECT sum(2.125 - uint64) From test_table;
+SELECT sum(uint64) + 2.125 * count(uint64) From test_table;
+SELECT 2.125 * count(uint64) + sum(uint64) From test_table;
+SELECT sum(uint64) - 2.125 * count(uint64) From test_table;
+SELECT 2.125 * count(uint64) - sum(uint64) From test_table;
+EXPLAIN SYNTAX (SELECT sum(uint64 + 2.125) From test_table);
+EXPLAIN SYNTAX (SELECT sum(2.125 + uint64) From test_table);
+EXPLAIN SYNTAX (SELECT sum(uint64 - 2.125) From test_table);
+EXPLAIN SYNTAX (SELECT sum(2.125 - uint64) From test_table);
+EXPLAIN SYNTAX (SELECT sum(uint64) + 2.125 * count(uint64) From test_table);
+EXPLAIN SYNTAX (SELECT 2.125 * count(uint64) + sum(uint64) From test_table);
+EXPLAIN SYNTAX (SELECT sum(uint64) - 2.125 * count(uint64) From test_table);
+EXPLAIN SYNTAX (SELECT 2.125 * count(uint64) - sum(uint64) From test_table);
 
 SELECT sum(uint64 + 2) From test_table;
 SELECT sum(2 + uint64) From test_table;

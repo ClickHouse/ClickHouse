@@ -61,7 +61,7 @@ ROBOT_TOKEN = None  # type: Optional[Token]
 
 
 def get_best_robot_token(tokens_path: str = "/github-tokens") -> str:
-    global ROBOT_TOKEN
+    global ROBOT_TOKEN  # pylint:disable=global-statement
     if ROBOT_TOKEN is not None:
         return ROBOT_TOKEN.value
     client = boto3.client("ssm", region_name="us-east-1")

@@ -23,6 +23,7 @@ SELECT
 FROM raw;
 
 INSERT INTO raw VALUES ('3', '3'), ('42', '42');
+
 SELECT name, num FROM parsed_eph;
 
 DROP VIEW parse_mv_eph;

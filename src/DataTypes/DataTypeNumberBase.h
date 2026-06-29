@@ -29,29 +29,32 @@ public:
 
     Field getDefault() const override;
 
-    MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn() const final;
+    MutableColumnPtr createUninitializedColumnWithSize(size_t size) const final;
 
     bool isParametric() const override { return false; }
-    bool haveSubtypes() const override { return false; }
+    bool haveSubtypes() const final { return false; }
 
-    bool shouldAlignRightInPrettyFormats() const override
+    bool shouldAlignRightInPrettyFormats() const final
     {
         /// Just a number, without customizations. Counterexample: IPv4.
         return !custom_serialization;
     }
 
-    bool textCanContainOnlyValidUTF8() const override { return true; }
-    bool isComparable() const override { return true; }
-    bool isValueRepresentedByNumber() const override { return true; }
-    bool isValueRepresentedByInteger() const override;
-    bool isValueRepresentedByUnsignedInteger() const override;
-    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
-    bool haveMaximumSizeOfValue() const override { return true; }
-    size_t getSizeOfValueInMemory() const override { return sizeof(T); }
+    bool textCanContainOnlyValidUTF8() const final { return true; }
+    bool isComparable() const final { return true; }
+    bool isValueRepresentedByNumber() const final { return true; }
+    bool isValueRepresentedByInteger() const final;
+    bool isValueRepresentedByUnsignedInteger() const final;
+    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const final { return true; }
+    bool haveMaximumSizeOfValue() const final { return true; }
+    size_t getSizeOfValueInMemory() const final { return sizeof(T); }
     bool isCategorial() const override { return isValueRepresentedByInteger(); }
-    bool canBeInsideLowCardinality() const override { return true; }
+    bool canBeInsideLowCardinality() const final { return true; }
 
-    SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationNumber<T>>(); }
+    void updateHashImpl(SipHash &) const override { /* For numeric types, the type ID is sufficient */ }
+
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return SerializationNumber<T>::create(); }
 };
 
 /// Prevent implicit template instantiation of DataTypeNumberBase for common numeric types
@@ -68,6 +71,7 @@ extern template class DataTypeNumberBase<Int32>;
 extern template class DataTypeNumberBase<Int64>;
 extern template class DataTypeNumberBase<Int128>;
 extern template class DataTypeNumberBase<Int256>;
+extern template class DataTypeNumberBase<BFloat16>;
 extern template class DataTypeNumberBase<Float32>;
 extern template class DataTypeNumberBase<Float64>;
 

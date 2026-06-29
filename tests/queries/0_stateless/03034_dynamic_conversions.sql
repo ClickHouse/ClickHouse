@@ -3,7 +3,7 @@ set allow_experimental_variant_type=1;
 set use_variant_as_common_type=1;
 
 select number::Dynamic as d, dynamicType(d) from numbers(3);
-select number::Dynamic(max_types=1) as d, dynamicType(d) from numbers(3);
+select number::Dynamic(max_types=0) as d, dynamicType(d) from numbers(3);
 select number::Dynamic::UInt64 as v from numbers(3);
 select number::Dynamic::String as v from numbers(3);
 select number::Dynamic::Date as v from numbers(3);
@@ -12,13 +12,13 @@ select number::Dynamic::Variant(UInt64, String) as v, variantType(v) from number
 select (number % 2 ? NULL : number)::Dynamic as d, dynamicType(d) from numbers(3);
 
 select multiIf(number % 4 == 0, number, number % 4 == 1, 'str_' || toString(number), number % 4 == 2, range(number), NULL)::Dynamic as d, dynamicType(d) from numbers(6);
+select multiIf(number % 4 == 0, number, number % 4 == 1, 'str_' || toString(number), number % 4 == 2, range(number), NULL)::Dynamic(max_types=0) as d, dynamicType(d) from numbers(6);
 select multiIf(number % 4 == 0, number, number % 4 == 1, 'str_' || toString(number), number % 4 == 2, range(number), NULL)::Dynamic(max_types=1) as d, dynamicType(d) from numbers(6);
 select multiIf(number % 4 == 0, number, number % 4 == 1, 'str_' || toString(number), number % 4 == 2, range(number), NULL)::Dynamic(max_types=2) as d, dynamicType(d) from numbers(6);
-select multiIf(number % 4 == 0, number, number % 4 == 1, 'str_' || toString(number), number % 4 == 2, range(number), NULL)::Dynamic(max_types=3) as d, dynamicType(d) from numbers(6);
 
 select number::Dynamic(max_types=2)::Dynamic(max_types=3) as d from numbers(3);
 select number::Dynamic(max_types=2)::Dynamic(max_types=1) as d from numbers(3);
-select multiIf(number % 4 == 0, number, number % 4 == 1, 'str_' || toString(number), number % 4 == 2, range(number), NULL)::Dynamic(max_types=3)::Dynamic(max_types=2) as d, dynamicType(d) from numbers(6);
+select multiIf(number % 4 == 0, number, number % 4 == 1, 'str_' || toString(number), number % 4 == 2, range(number), NULL)::Dynamic(max_types=2)::Dynamic(max_types=1) as d, dynamicType(d) from numbers(6);
 select multiIf(number % 4 == 0, number, number % 4 == 1, toDate(number), number % 4 == 2, range(number), NULL)::Dynamic(max_types=4)::Dynamic(max_types=3) as d, dynamicType(d) from numbers(6);
 
 

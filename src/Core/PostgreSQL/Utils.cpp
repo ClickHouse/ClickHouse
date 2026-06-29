@@ -1,4 +1,4 @@
-#include "Utils.h"
+#include <Core/PostgreSQL/Utils.h>
 
 #if USE_LIBPQXX
 
@@ -8,7 +8,7 @@
 namespace postgres
 {
 
-ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, String user, String password)
+ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, String user, String password, UInt64 timeout)
 {
     DB::WriteBufferFromOwnString out;
     out << "dbname=" << DB::quote << dbname
@@ -16,7 +16,7 @@ ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, S
         << " port=" << port
         << " user=" << DB::quote << user
         << " password=" << DB::quote << password
-        << " connect_timeout=2";
+        << " connect_timeout=" << timeout;
     return {out.str(), host + ':' + DB::toString(port)};
 }
 
@@ -29,7 +29,7 @@ String formatNameForLogs(const String & postgres_database_name, const String & p
 {
     /// Logger for StorageMaterializedPostgreSQL - both db and table names.
     /// Logger for PostgreSQLReplicationHandler and Consumer - either both db and table names or only db name.
-    assert(!postgres_database_name.empty());
+    chassert(!postgres_database_name.empty());
     if (postgres_table_name.empty())
         return postgres_database_name;
     return postgres_database_name + '.' + postgres_table_name;

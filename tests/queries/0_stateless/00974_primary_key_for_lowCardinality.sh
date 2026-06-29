@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS lowString;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS string;"
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 create table lowString
 (
 a LowCardinality(String),
@@ -18,7 +18,7 @@ ENGINE = MergeTree()
 PARTITION BY toYYYYMM(b)
 ORDER BY (a)"
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 create table string
 (
 a String,

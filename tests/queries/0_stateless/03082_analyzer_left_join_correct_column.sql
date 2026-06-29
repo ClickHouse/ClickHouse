@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/39634
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 CREATE TABLE test1
 (
     `pk` String,

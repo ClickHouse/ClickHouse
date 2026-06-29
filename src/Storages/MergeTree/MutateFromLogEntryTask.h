@@ -1,7 +1,5 @@
 #pragma once
 
-#include <pcg_random.hpp>
-
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MutateTask.h>
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
@@ -9,7 +7,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/randomSeed.h>
 
 namespace DB
 {
@@ -27,11 +24,19 @@ public:
             storage_,
             selected_entry_,
             task_result_callback_)
-        , rng(randomSeed())
         {}
 
 
     Priority getPriority() const override { return priority; }
+
+    void cancel() noexcept override
+    {
+        if (mutate_task)
+            mutate_task->cancel();
+
+        if (new_part)
+            new_part->removeIfNeeded();
+    }
 
 private:
 
@@ -51,6 +56,7 @@ private:
 
     MergeTreePartInfo new_part_info;
     MutationCommandsConstPtr commands;
+    Strings mutation_ids_for_log;
 
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
     std::optional<ZeroCopyLock> zero_copy_lock;
@@ -60,7 +66,6 @@ private:
     FutureMergedMutatedPartPtr future_mutated_part{nullptr};
 
     MutateTaskPtr mutate_task;
-    pcg64 rng;
 };
 
 

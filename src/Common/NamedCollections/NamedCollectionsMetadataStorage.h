@@ -3,7 +3,7 @@
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -23,19 +23,21 @@ public:
 
     bool removeIfExists(const std::string & collection_name);
 
-    void update(const ASTAlterNamedCollectionQuery & query);
+    MutableNamedCollectionPtr update(const ASTAlterNamedCollectionQuery & query);
 
     void shutdown();
 
     /// Return true if update was made
     bool waitUpdate();
 
-    bool supportsPeriodicUpdate() const;
+    bool isReplicated() const;
 
 private:
     class INamedCollectionsStorage;
     class LocalStorage;
+    class LocalStorageEncrypted;
     class ZooKeeperStorage;
+    class ZooKeeperStorageEncrypted;
 
     std::shared_ptr<INamedCollectionsStorage> storage;
 
@@ -45,7 +47,7 @@ private:
 
     ASTCreateNamedCollectionQuery readCreateQuery(const std::string & collection_name) const;
 
-    void writeCreateQuery(const ASTCreateNamedCollectionQuery & query, bool replace = false);
+    void writeCreateQuery(const String & collection_name, const String & create_statement, bool replace = false);
 };
 
 

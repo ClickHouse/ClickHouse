@@ -2,6 +2,7 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
+#include <fmt/ranges.h>
 
 namespace DB
 {

@@ -1,6 +1,7 @@
 import time
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -80,3 +81,6 @@ def test_replica_always_download(started_cluster):
 
     assert int(node1_parts) < 10
     assert int(node2_parts) < 10
+
+    node1.query_with_retry("DROP TABLE test_table SYNC")
+    node2.query_with_retry("DROP TABLE test_table SYNC")

@@ -1,12 +1,10 @@
 #pragma once
-
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Backups/BackupIO_Default.h>
 #include <Disks/DiskType.h>
-#include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 
 
 namespace DB
@@ -17,7 +15,8 @@ class BackupReaderAzureBlobStorage : public BackupReaderDefault
 {
 public:
     BackupReaderAzureBlobStorage(
-        const StorageAzureConfiguration & configuration_,
+        const AzureBlobStorage::ConnectionParams & connection_params_,
+        const String & blob_path_,
         bool allow_azure_native_copy,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
@@ -27,7 +26,7 @@ public:
 
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
-    std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) override;
 
     void copyFileToDisk(
         const String & path_in_backup,
@@ -39,17 +38,19 @@ public:
 
 private:
     const DataSourceDescription data_source_description;
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
-    StorageAzureConfiguration configuration;
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> client;
+    AzureBlobStorage::ConnectionParams connection_params;
+    String blob_path;
     std::unique_ptr<AzureObjectStorage> object_storage;
-    std::shared_ptr<const AzureObjectStorageSettings> settings;
+    std::shared_ptr<const AzureBlobStorage::RequestSettings> settings;
 };
 
 class BackupWriterAzureBlobStorage : public BackupWriterDefault
 {
 public:
     BackupWriterAzureBlobStorage(
-        const StorageAzureConfiguration & configuration_,
+        const AzureBlobStorage::ConnectionParams & connection_params_,
+        const String & blob_path_,
         bool allow_azure_native_copy,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
@@ -69,12 +70,8 @@ public:
         UInt64 length) override;
 
     void copyFileFromDisk(
-        const String & path_in_backup,
-        DiskPtr src_disk,
-        const String & src_path,
-        bool copy_encrypted,
-        UInt64 start_pos,
-        UInt64 length) override;
+        const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
+        override;
 
     void copyFile(const String & destination, const String & source, size_t size) override;
 
@@ -86,10 +83,11 @@ private:
     void removeFilesBatch(const Strings & file_names);
 
     const DataSourceDescription data_source_description;
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
-    StorageAzureConfiguration configuration;
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> client;
+    AzureBlobStorage::ConnectionParams connection_params;
+    String blob_path;
     std::unique_ptr<AzureObjectStorage> object_storage;
-    std::shared_ptr<const AzureObjectStorageSettings> settings;
+    std::shared_ptr<const AzureBlobStorage::RequestSettings> settings;
 };
 
 }

@@ -1,5 +1,8 @@
+#include <Core/UUID.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <IO/WriteHelpers.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 
 #include <filesystem>
@@ -51,14 +54,16 @@ String TemporaryFileOnDisk::getAbsolutePath() const
 
 TemporaryFileOnDisk::~TemporaryFileOnDisk()
 {
+    auto component_guard = Coordination::setCurrentComponent("TemporaryFileOnDisk::~TemporaryFileOnDisk");
     try
     {
         if (!disk || relative_path.empty())
             return;
 
-        if (!disk->exists(relative_path))
+        if (!disk->existsFileOrDirectory(relative_path))
         {
-            LOG_WARNING(getLogger("TemporaryFileOnDisk"), "Temporary path '{}' does not exist in '{}'", relative_path, disk->getPath());
+            if (show_warning_if_removed)
+                LOG_WARNING(getLogger("TemporaryFileOnDisk"), "Temporary path '{}' does not exist in '{}'", relative_path, disk->getPath());
             return;
         }
 

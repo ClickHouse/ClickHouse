@@ -11,6 +11,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./parts.lib
 . "$CURDIR"/parts.lib
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --apply_mutations_on_fly 0"
+
 function reset_table()
 {
     table=${1:-"tt"}

@@ -1,12 +1,13 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Poco/Data/SessionPool.h>
 #include <Poco/URI.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
-#include "DictionaryStructure.h"
-#include "ExternalQueryBuilder.h"
-#include "IDictionarySource.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
+#include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/InvalidateQueryResponse.h>
 
 
 namespace Poco
@@ -26,7 +27,6 @@ namespace DB
 class XDBCDictionarySource final : public IDictionarySource, WithContext
 {
 public:
-
     struct Configuration
     {
         const std::string db;
@@ -50,13 +50,13 @@ public:
     XDBCDictionarySource(const XDBCDictionarySource & other);
     XDBCDictionarySource & operator=(const XDBCDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
-    QueryPipeline loadUpdatedAll() override;
+    BlockIO loadUpdatedAll() override;
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -84,7 +84,7 @@ private:
     Block sample_block;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
-    mutable std::string invalidate_query_response;
+    mutable InvalidateQueryResponse invalidate_query_response;
 
     BridgeHelperPtr bridge_helper;
     Poco::URI bridge_url;

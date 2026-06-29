@@ -1,4 +1,4 @@
-#include "MetricsTransmitter.h"
+#include <MetricsTransmitter.h>
 
 #include <Common/AsynchronousMetrics.h>
 
@@ -51,8 +51,7 @@ MetricsTransmitter::~MetricsTransmitter()
 
 void MetricsTransmitter::run()
 {
-    const std::string thread_name = "MetrTx" + std::to_string(interval_seconds);
-    setThreadName(thread_name.c_str());
+    setThreadName(ThreadName::METRICS_TRANSMITTER);
 
     const auto get_next_time = [](size_t seconds)
     {

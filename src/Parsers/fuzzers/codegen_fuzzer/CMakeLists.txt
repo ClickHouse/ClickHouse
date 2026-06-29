@@ -39,12 +39,13 @@ set(CMAKE_INCLUDE_CURRENT_DIR TRUE)
 
 clickhouse_add_executable(codegen_select_fuzzer ${FUZZER_SRCS})
 
-set_source_files_properties("${PROTO_SRCS}" "out.cpp" PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier")
+set_source_files_properties("${PROTO_SRCS}" "out.cpp" PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt -Wno-used-but-marked-unused -Wno-unreachable-code-return -Wno-nullability-extension -Wno-missing-prototypes")
 
 # contrib/libprotobuf-mutator/src/libfuzzer/libfuzzer_macro.h:143:44: error: no newline at end of file [-Werror,-Wnewline-eof]
-target_compile_options (codegen_select_fuzzer PRIVATE -Wno-newline-eof)
+# The DEFINE_BINARY_PROTO_FUZZER macro expands to functions (LLVMFuzzerCustomMutator, etc.) without prior declarations.
+target_compile_options (codegen_select_fuzzer PRIVATE -Wno-newline-eof -Wno-missing-prototypes)
 
 target_link_libraries(protoc ch_contrib::fuzzer)
 
 target_include_directories(codegen_select_fuzzer SYSTEM BEFORE PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
-target_link_libraries(codegen_select_fuzzer PRIVATE ch_contrib::protobuf_mutator ch_contrib::protoc dbms)
+target_link_libraries(codegen_select_fuzzer PRIVATE ch_contrib::protobuf_mutator ch_contrib::protoc clickhouse_functions dbms)

@@ -1,0 +1,26 @@
+<clickhouse>
+    <path>/var/lib/clickhouse/</path>
+    <logger>
+        <clickhouse-disks>/clickhouse-disks.log</clickhouse-disks>
+    </logger>
+    <storage_configuration>
+        <disks>
+            <plainRewritableDisk>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>plain_rewritable</metadata_type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <endpoint_subpath>rewr_xd</endpoint_subpath>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </plainRewritableDisk>
+        </disks>
+        <policies>
+            <plain_rewritable>
+                <volumes>
+                    <main><disk>plainRewritableDisk</disk></main>
+                </volumes>
+            </plain_rewritable>
+        </policies>
+    </storage_configuration>
+</clickhouse>

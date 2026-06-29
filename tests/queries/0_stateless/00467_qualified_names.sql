@@ -24,11 +24,15 @@ SELECT system.one.* FROM one;
 SELECT system.one.dummy FROM `one` AS `t`;
 SELECT system.one.* FROM one AS `t`;
 
+USE {CLICKHOUSE_DATABASE:Identifier};
+
 DROP TABLE IF EXISTS nested;
 CREATE TABLE nested (nest Nested(a UInt8, b String)) ENGINE = Memory;
 INSERT INTO nested VALUES ([1, 2], ['hello', 'world']);
 SELECT nest.a, nest.b, nested.`nest`.`a`, nested.nest.b, t.nest.a, t.nest.b, t.* FROM nested AS t;
 DROP TABLE nested;
+
+USE system;
 
 SELECT number FROM numbers(2);
 SELECT t.number FROM numbers(2) t;

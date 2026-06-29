@@ -1,0 +1,12 @@
+-- { echoOn }
+SELECT a, b, all FROM order_by_all ORDER BY all SETTINGS enable_order_by_all = 0, allow_experimental_parallel_reading_from_replicas=0;
+B	3	10
+D	1	20
+A	2	30
+C	\N	40
+SELECT a, b, all FROM order_by_all ORDER BY all SETTINGS enable_order_by_all = 0, allow_experimental_parallel_reading_from_replicas=1;
+B	3	10
+D	1	20
+A	2	30
+C	\N	40
+DROP TABLE order_by_all SYNC;

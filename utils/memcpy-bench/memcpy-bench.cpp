@@ -22,6 +22,11 @@
 
 #include <boost/program_options.hpp>
 
+/// Include them one by one so we can test different implementations
+#define SZ_USE_HASWELL 1
+#define SZ_USE_SKYLAKE 1
+#define SZ_USE_ICE 1
+#include <stringzilla/memory.h>
 
 template <typename F, typename MemcpyImpl>
 void NO_INLINE loop(uint8_t * dst, uint8_t * src, size_t size, F && chunk_size_distribution, MemcpyImpl && impl)
@@ -70,7 +75,7 @@ uint64_t test(uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size
                     iteration % 2 ? &dst[begin] : &src[begin],
                     end - begin,
                     [rng = RNG(), &generator]() mutable { return generator(rng); },
-                    std::forward<MemcpyImpl>(impl));
+                    std::forward<MemcpyImpl>(impl));  /// NOLINT(bugprone-use-after-move,hicpp-invalid-access-moved)
             }
         });
     }
@@ -119,9 +124,6 @@ static void * memcpy_trivial(void * __restrict dst_, const void * __restrict src
 
     return ret;
 }
-
-extern "C" void * memcpy_jart(void * dst, const void * src, size_t size);
-extern "C" void MemCpy(void * dst, const void * src, size_t size);
 
 void * memcpy_fast_sse(void * dst, const void * src, size_t size);
 void * memcpy_fast_avx(void * dst, const void * src, size_t size);
@@ -188,7 +190,8 @@ static void * memcpySSE2Unrolled2(void * __restrict destination, const void * __
     }
 
     // medium size copy
-    __m128i c0, c1;
+    __m128i c0;
+    __m128i c1;
 
     for (; size >= 32; size -= 32)
     {
@@ -227,7 +230,10 @@ static void * memcpySSE2Unrolled4(void * __restrict destination, const void * __
     }
 
     // medium size copy
-    __m128i c0, c1, c2, c3;
+    __m128i c0;
+    __m128i c1;
+    __m128i c2;
+    __m128i c3;
 
     for (; size >= 64; size -= 64)
     {
@@ -271,7 +277,14 @@ static void * memcpySSE2Unrolled8(void * __restrict destination, const void * __
     }
 
     // medium size copy
-    __m128i c0, c1, c2, c3, c4, c5, c6, c7;
+    __m128i c0;
+    __m128i c1;
+    __m128i c2;
+    __m128i c3;
+    __m128i c4;
+    __m128i c5;
+    __m128i c6;
+    __m128i c7;
 
     for (; size >= 128; size -= 128)
     {
@@ -317,7 +330,14 @@ memcpy_my_medium_sse(uint8_t * __restrict & dst, const uint8_t * __restrict & sr
     }
 
     /// Aligned unrolled copy.
-    __m128i c0, c1, c2, c3, c4, c5, c6, c7;
+    __m128i c0;
+    __m128i c1;
+    __m128i c2;
+    __m128i c3;
+    __m128i c4;
+    __m128i c5;
+    __m128i c6;
+    __m128i c7;
 
     while (size >= 128)
     {
@@ -358,7 +378,14 @@ void memcpy_my_medium_avx(uint8_t * __restrict & __restrict dst, const uint8_t *
         size -= padding;
     }
 
-    __m256i c0, c1, c2, c3, c4, c5, c6, c7;
+    __m256i c0;
+    __m256i c1;
+    __m256i c2;
+    __m256i c3;
+    __m256i c4;
+    __m256i c5;
+    __m256i c6;
+    __m256i c7;
 
     while (size >= 256)
     {
@@ -530,7 +557,14 @@ tail:
             }
 
             /// Aligned unrolled copy.
-            __m128i c0, c1, c2, c3, c4, c5, c6, c7;
+            __m128i c0;
+            __m128i c1;
+            __m128i c2;
+            __m128i c3;
+            __m128i c4;
+            __m128i c5;
+            __m128i c6;
+            __m128i c7;
 
             while (size >= 128)
             {
@@ -617,7 +651,14 @@ static uint8_t * memcpy_my2(uint8_t * __restrict dst, const uint8_t * __restrict
         }
 
         /// Aligned unrolled copy.
-        __m128i c0, c1, c2, c3, c4, c5, c6, c7;
+        __m128i c0;
+        __m128i c1;
+        __m128i c2;
+        __m128i c3;
+        __m128i c4;
+        __m128i c5;
+        __m128i c6;
+        __m128i c7;
 
         while (size >= 128)
         {
@@ -792,6 +833,79 @@ static uint8_t * memcpy_my2(uint8_t * __restrict dst, const uint8_t * __restrict
     return ret;
 }
 
+__attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,bmi2"))) void *
+ch_memcpy_avx512(void * __restrict dst_, const void * __restrict src_, size_t size)
+{
+    char * __restrict dst = reinterpret_cast<char * __restrict>(dst_);
+    const char * __restrict src = reinterpret_cast<const char * __restrict>(src_);
+    void * ret = dst;
+
+
+    if (size < 64)
+    {
+    tail_64:
+        auto mask = _bzhi_u64(0xFFFFFFFFFFFFFFFFull, size);
+        _mm512_mask_storeu_epi8(dst, mask, _mm512_maskz_loadu_epi8(mask, src));
+    }
+    else if (size < (512 + 64)) [[likely]]
+    {
+    tail_512:
+#pragma nounroll
+        while (size > 64)
+        {
+            size -= 64;
+            __m512i c0 = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(src));
+            _mm512_storeu_si512((reinterpret_cast<__m512i *>(dst) + 0), c0);
+            src += 64;
+            dst += 64;
+        }
+
+        goto tail_64;
+    }
+    else
+    {
+        /// Align destination to 64 bytes boundary.
+        size_t padding = (64 - (reinterpret_cast<size_t>(dst) & 63)) & 63;
+        if (padding)
+        {
+            size -= padding;
+            auto mask = _bzhi_u64(0xFFFFFFFFFFFFFFFFull, padding);
+            _mm512_mask_storeu_epi8(dst, mask, _mm512_maskz_loadu_epi8(mask, src));
+            dst += padding;
+            src += padding;
+        }
+
+        do
+        {
+            size -= 512;
+            __m512i c0 = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(src) + 0);
+            __m512i c1 = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(src) + 1);
+            __m512i c2 = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(src) + 2);
+            __m512i c3 = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(src) + 3);
+            __m512i c4 = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(src) + 4);
+            __m512i c5 = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(src) + 5);
+            __m512i c6 = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(src) + 6);
+            __m512i c7 = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(src) + 7);
+            _mm512_store_si512((reinterpret_cast<__m512i *>(dst) + 0), c0);
+            _mm512_store_si512((reinterpret_cast<__m512i *>(dst) + 1), c1);
+            _mm512_store_si512((reinterpret_cast<__m512i *>(dst) + 2), c2);
+            _mm512_store_si512((reinterpret_cast<__m512i *>(dst) + 3), c3);
+            _mm512_store_si512((reinterpret_cast<__m512i *>(dst) + 4), c4);
+            _mm512_store_si512((reinterpret_cast<__m512i *>(dst) + 5), c5);
+            _mm512_store_si512((reinterpret_cast<__m512i *>(dst) + 6), c6);
+            _mm512_store_si512((reinterpret_cast<__m512i *>(dst) + 7), c7);
+
+            src += 512;
+            dst += 512;
+        } while (size >= 512);
+
+        goto tail_512;
+    }
+
+    return ret;
+}
+
+
 extern "C" void * __memcpy_erms(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
 extern "C" void * __memcpy_sse2_unaligned(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
 extern "C" void * __memcpy_ssse3(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
@@ -803,20 +917,34 @@ extern "C" void * __memcpy_avx512_unaligned_erms(void * __restrict destination, 
 extern "C" void * __memcpy_avx512_no_vzeroupper(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
 
 
+void * sz_copy_haswell_cast(void * __restrict destination, const void * __restrict source, size_t size)
+{
+    void * dst = destination;
+    sz_copy_haswell(static_cast<sz_ptr_t>(destination), static_cast<sz_cptr_t>(source), size);
+    return dst;
+}
+
+void * sz_copy_skylake_cast(void * __restrict destination, const void * __restrict source, size_t size)
+{
+    void * dst = destination;
+    sz_copy_skylake(static_cast<sz_ptr_t>(destination), static_cast<sz_cptr_t>(source), size);
+    return dst;
+}
+
 #define VARIANT(N, NAME) \
     if (memcpy_variant == (N)) \
         return test(dst, src, size, iterations, num_threads, std::forward<F>(generator), NAME, #NAME);
+
 
 template <typename F>
 uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size_t num_threads, F && generator)
 {
     memcpy_type memcpy_libc_old = reinterpret_cast<memcpy_type>(dlsym(RTLD_NEXT, "memcpy"));
 
-    VARIANT(1, memcpy)
+    VARIANT(1, memcpy) /// Current ClickHouse memcpy
     VARIANT(2, memcpy_trivial)
     VARIANT(3, memcpy_libc_old)
     VARIANT(4, memcpy_erms)
-    VARIANT(5, MemCpy)
     VARIANT(6, memcpySSE2)
     VARIANT(7, memcpySSE2Unrolled2)
     VARIANT(8, memcpySSE2Unrolled4)
@@ -825,6 +953,7 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
     VARIANT(11, memcpy_fast_avx)
     VARIANT(12, memcpy_my)
     VARIANT(13, memcpy_my2)
+    VARIANT(14, ch_memcpy_avx512)
 
     VARIANT(21, __memcpy_erms)
     VARIANT(22, __memcpy_sse2_unaligned)
@@ -835,6 +964,9 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
     VARIANT(27, __memcpy_avx512_unaligned)
     VARIANT(28, __memcpy_avx512_unaligned_erms)
     VARIANT(29, __memcpy_avx512_no_vzeroupper)
+
+    VARIANT(30, sz_copy_haswell_cast)
+    VARIANT(31, sz_copy_skylake_cast)
 
     return 0;
 }
@@ -934,7 +1066,7 @@ clickhouse-local --structure '
 
     /// Fill src with some pattern for validation.
     for (size_t i = 0; i < size; ++i)
-        src[i] = i;
+        src[i] = static_cast<uint8_t>(i);
 
     /// Fill dst to avoid page faults.
     memset(dst.get(), 0, size);
@@ -956,8 +1088,9 @@ clickhouse-local --structure '
     }
     else
     {
-        std::cout << ": " << num_threads << " threads, " << "size: " << size << ", distribution " << generator_variant
-            << ", processed in " << (elapsed_ns / 1e9) << " sec, " << (size * iterations * 1.0 / elapsed_ns) << " GB/sec\n";
+        std::cout << ": " << num_threads << " threads, " << "size: " << size << ", distribution " << generator_variant << ", processed in "
+                  << (static_cast<double>(elapsed_ns) / 1e9) << " sec, "
+                  << (static_cast<double>(size * iterations) / static_cast<double>(elapsed_ns)) << " GB/sec\n";
     }
 
     return 0;

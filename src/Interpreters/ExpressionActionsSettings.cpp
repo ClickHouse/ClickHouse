@@ -5,23 +5,30 @@
 
 namespace DB
 {
-
-ExpressionActionsSettings ExpressionActionsSettings::fromSettings(const Settings & from, CompileExpressions compile_expressions)
+namespace Setting
 {
-    ExpressionActionsSettings settings;
-    settings.can_compile_expressions = from.compile_expressions;
-    settings.min_count_to_compile_expression = from.min_count_to_compile_expression;
-    settings.max_temporary_columns = from.max_temporary_columns;
-    settings.max_temporary_non_const_columns = from.max_temporary_non_const_columns;
-    settings.compile_expressions = compile_expressions;
-    settings.short_circuit_function_evaluation = from.short_circuit_function_evaluation;
-
-    return settings;
+    extern const SettingsBool compile_expressions;
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
+    extern const SettingsUInt64 max_temporary_columns;
+    extern const SettingsUInt64 max_temporary_non_const_columns;
+    extern const SettingsUInt64 min_count_to_compile_expression;
+    extern const SettingsBool enable_lazy_columns_replication;
 }
 
-ExpressionActionsSettings ExpressionActionsSettings::fromContext(ContextPtr from, CompileExpressions compile_expressions)
+ExpressionActionsSettings::ExpressionActionsSettings(const Settings & from, CompileExpressions compile_expressions_)
 {
-    return fromSettings(from->getSettingsRef(), compile_expressions);
+    can_compile_expressions = from[Setting::compile_expressions];
+    min_count_to_compile_expression = from[Setting::min_count_to_compile_expression];
+    max_temporary_columns = from[Setting::max_temporary_columns];
+    max_temporary_non_const_columns = from[Setting::max_temporary_non_const_columns];
+    compile_expressions = compile_expressions_;
+    short_circuit_function_evaluation = from[Setting::short_circuit_function_evaluation];
+    enable_lazy_columns_replication = from[Setting::enable_lazy_columns_replication];
+}
+
+ExpressionActionsSettings::ExpressionActionsSettings(ContextPtr from, CompileExpressions compile_expressions_)
+    : ExpressionActionsSettings(from->getSettingsRef(), compile_expressions_)
+{
 }
 
 }

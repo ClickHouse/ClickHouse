@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 import os
 import sys
-from scipy import stats
-import pandas as pd
+
 import numpy as np
+import pandas as pd
+from scipy import stats
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))
@@ -19,7 +20,13 @@ def test_and_check(name, a, b, t_stat, p_value):
     )
     client.query(
         "INSERT INTO mann_whitney VALUES {};".format(
-            ", ".join(["({},{}), ({},{})".format(i, 0, j, 1) for i, j in zip(a, b)])
+            ", ".join(["({},{})".format(i, 0) for i in a])
+        )
+    )
+
+    client.query(
+        "INSERT INTO mann_whitney VALUES {};".format(
+            ", ".join(["({},{})".format(i, 1) for i in b])
         )
     )
 
@@ -59,6 +66,15 @@ def test_mann_whitney():
     test_and_check("mannWhitneyUTest('greater')", rvs1, rvs2, s, p)
 
 
+def test_mann_whitney_skew():
+    rvs1 = [1]
+    rvs2 = [0, 2, 4]
+    s, p = stats.mannwhitneyu(rvs1, rvs2, alternative="two-sided")
+    test_and_check("mannWhitneyUTest", rvs1, rvs2, s, p)
+    test_and_check("mannWhitneyUTest('two-sided')", rvs1, rvs2, s, p)
+
+
 if __name__ == "__main__":
     test_mann_whitney()
+    test_mann_whitney_skew()
     print("Ok.")

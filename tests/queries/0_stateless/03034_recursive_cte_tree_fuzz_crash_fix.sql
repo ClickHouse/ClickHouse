@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET enable_global_with_statement=1;
 SET session_timezone = 'Etc/UTC';
 
@@ -44,7 +44,7 @@ SELECT * FROM
     )
     SELECT * FROM q LIMIT 32
 )
-ORDER BY id ASC, parent_department DESC, name ASC;
+ORDER BY id ASC, parent_department DESC, name ASC SETTINGS max_threads = 1;
 
 DROP TABLE department__fuzz_1;
 DROP TABLE department__fuzz_3;

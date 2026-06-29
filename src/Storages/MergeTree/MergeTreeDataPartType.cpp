@@ -1,7 +1,7 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 

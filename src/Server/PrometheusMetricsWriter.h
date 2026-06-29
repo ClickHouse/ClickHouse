@@ -1,44 +1,43 @@
 #pragma once
 
-#include <string>
-
-#include <Common/AsynchronousMetrics.h>
-#include <Common/ProfileEvents.h>
-#include <IO/WriteBuffer.h>
-
-#include <Poco/Util/AbstractConfiguration.h>
+#include <memory>
+#include <Common/HistogramMetrics.h>
+#include <Common/DimensionalMetrics.h>
 
 
 namespace DB
 {
+class AsynchronousMetrics;
+class WriteBuffer;
 
 /// Write metrics in Prometheus format
 class PrometheusMetricsWriter
 {
 public:
-    PrometheusMetricsWriter(
-        const Poco::Util::AbstractConfiguration & config, const std::string & config_name,
-        const AsynchronousMetrics & async_metrics_);
-
-    virtual void write(WriteBuffer & wb) const;
-
     virtual ~PrometheusMetricsWriter() = default;
 
-protected:
-    const AsynchronousMetrics & async_metrics;
-    const bool send_events;
-    const bool send_metrics;
-    const bool send_asynchronous_metrics;
-    const bool send_errors;
+    virtual void writeMetrics(WriteBuffer & wb) const;
+    virtual void writeAsynchronousMetrics(WriteBuffer & wb, const AsynchronousMetrics & async_metrics) const;
+    virtual void writeEvents(WriteBuffer & wb) const;
+    virtual void writeErrors(WriteBuffer & wb) const;
+    virtual void writeHistogramMetrics(WriteBuffer & wb) const;
+    virtual void writeDimensionalMetrics(WriteBuffer & wb) const;
+    virtual void writeInfo(WriteBuffer & wb) const;
+
+    static void writeHistogramMetric(WriteBuffer & wb, const HistogramMetrics::MetricFamily & family);
+    static void writeDimensionalMetric(WriteBuffer & wb, const DimensionalMetrics::MetricFamily & family);
 };
+
 
 class KeeperPrometheusMetricsWriter : public PrometheusMetricsWriter
 {
-    using PrometheusMetricsWriter::PrometheusMetricsWriter;
-
-    void write(WriteBuffer & wb) const override;
+public:
+    void writeMetrics(WriteBuffer & wb) const override;
+    void writeAsynchronousMetrics(WriteBuffer & wb, const AsynchronousMetrics & async_metrics) const override;
+    void writeEvents(WriteBuffer & wb) const override;
+    void writeErrors(WriteBuffer & wb) const override;
+    void writeHistogramMetrics(WriteBuffer & wb) const override;
+    void writeDimensionalMetrics(WriteBuffer & wb) const override;
 };
-
-using PrometheusMetricsWriterPtr = std::shared_ptr<PrometheusMetricsWriter>;
 
 }

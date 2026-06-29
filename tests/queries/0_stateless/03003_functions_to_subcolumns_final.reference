@@ -1,0 +1,25 @@
+3
+2
+SELECT __table1.`arr.size0` AS `length(arr)`
+FROM default.t_length_1 AS __table1
+WHERE __table1.`arr.size0` IN (
+    SELECT __table1.arr_length AS arr_length
+    FROM default.t_length_2 AS __table1
+)
+2
+SELECT __table1.`arr.size0` AS `length(arr)`
+FROM default.t_length_1 AS __table1
+WHERE __table1.`arr.size0` IN (
+    SELECT __table1.arr_length AS arr_length
+    FROM default.t_length_2 AS __table1
+    FINAL
+)
+2
+SELECT length(__table1.arr) AS `length(arr)`
+FROM default.t_length_1 AS __table1
+FINAL
+WHERE length(__table1.arr) IN (
+    SELECT __table1.arr_length AS arr_length
+    FROM default.t_length_2 AS __table1
+    FINAL
+)

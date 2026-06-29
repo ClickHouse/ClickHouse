@@ -1,0 +1,125 @@
+--------- tMM ----------------------------
+select uniqExact(_part), count() from tMM where toDate(d)=toDate('2020-09-15');
+0	0
+Selected 0/6 parts by partition key, 0 parts by primary key, 0/0 marks by primary key, 0 marks to read from 0 ranges
+
+select uniqExact(_part), count() from tMM where toDate(d)=toDate('2020-09-01');
+2	2880
+Selected 2/6 parts by partition key, 2 parts by primary key, 2/2 marks by primary key, 2 marks to read from 2 ranges
+
+select uniqExact(_part), count() from tMM where toDate(d)=toDate('2020-10-15');
+1	1440
+Selected 1/6 parts by partition key, 1 parts by primary key, 1/1 marks by primary key, 1 marks to read from 1 ranges
+
+select uniqExact(_part), count() from tMM where toDate(d)='2020-09-15';
+0	0
+Selected 0/6 parts by partition key, 0 parts by primary key, 0/0 marks by primary key, 0 marks to read from 0 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d)=202009;
+2	10000
+Selected 2/6 parts by partition key, 2 parts by primary key, 2/2 marks by primary key, 2 marks to read from 2 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMMDD(d)=20200816;
+2	2880
+Selected 2/6 parts by partition key, 2 parts by primary key, 2/2 marks by primary key, 2 marks to read from 2 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMMDD(d)=20201015;
+1	1440
+Selected 1/6 parts by partition key, 1 parts by primary key, 1/1 marks by primary key, 1 marks to read from 1 ranges
+
+select uniqExact(_part), count() from tMM where toDate(d)='2020-10-15';
+1	1440
+Selected 1/6 parts by partition key, 1 parts by primary key, 1/1 marks by primary key, 1 marks to read from 1 ranges
+
+select uniqExact(_part), count() from tMM where d >= '2020-09-01 00:00:00' and d<'2020-10-15 00:00:00';
+3	15000
+Selected 3/6 parts by partition key, 3 parts by primary key, 3/3 marks by primary key, 3 marks to read from 3 ranges
+
+select uniqExact(_part), count() from tMM where d >= '2020-01-16 00:00:00' and d < toDateTime('2021-08-17 00:00:00', 'Asia/Istanbul');
+6	30000
+Selected 6/6 parts by partition key, 6 parts by primary key, 6/6 marks by primary key, 6 marks to read from 6 ranges
+
+select uniqExact(_part), count() from tMM where d >= '2020-09-16 00:00:00' and d < toDateTime('2020-10-01 00:00:00', 'Asia/Istanbul');
+0	0
+Selected 0/6 parts by partition key, 0 parts by primary key, 0/0 marks by primary key, 0 marks to read from 0 ranges
+
+select uniqExact(_part), count() from tMM where d >= '2020-09-12 00:00:00' and d < '2020-10-16 00:00:00';
+2	6440
+Selected 2/6 parts by partition key, 2 parts by primary key, 2/2 marks by primary key, 2 marks to read from 2 ranges
+
+select uniqExact(_part), count() from tMM where toStartOfDay(d) >= '2020-09-12 00:00:00';
+2	10000
+Selected 2/6 parts by partition key, 2 parts by primary key, 2/2 marks by primary key, 2 marks to read from 2 ranges
+
+select uniqExact(_part), count() from tMM where toStartOfDay(d) = '2020-09-01 00:00:00';
+2	2880
+Selected 2/6 parts by partition key, 2 parts by primary key, 2/2 marks by primary key, 2 marks to read from 2 ranges
+
+select uniqExact(_part), count() from tMM where toStartOfDay(d) = '2020-10-01 00:00:00';
+1	1440
+Selected 1/6 parts by partition key, 1 parts by primary key, 1/1 marks by primary key, 1 marks to read from 1 ranges
+
+select uniqExact(_part), count() from tMM where toStartOfDay(d) >= '2020-09-15 00:00:00' and d < '2020-10-16 00:00:00';
+2	6440
+Selected 2/6 parts by partition key, 2 parts by primary key, 2/2 marks by primary key, 2 marks to read from 2 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d) between 202009 and 202010;
+4	20000
+Selected 4/6 parts by partition key, 4 parts by primary key, 4/4 marks by primary key, 4 marks to read from 4 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d) between 202009 and 202009;
+2	10000
+Selected 2/6 parts by partition key, 2 parts by primary key, 2/2 marks by primary key, 2 marks to read from 2 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d) between 202009 and 202010 and toStartOfDay(d) = '2020-10-01 00:00:00';
+1	1440
+Selected 1/6 parts by partition key, 1 parts by primary key, 1/1 marks by primary key, 1 marks to read from 1 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d) >= 202009 and toStartOfDay(d) < '2020-10-02 00:00:00';
+3	11440
+Selected 3/6 parts by partition key, 3 parts by primary key, 3/3 marks by primary key, 3 marks to read from 3 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d) > 202009 and toStartOfDay(d) < '2020-10-02 00:00:00';
+1	1440
+Selected 1/6 parts by partition key, 1 parts by primary key, 1/1 marks by primary key, 1 marks to read from 1 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d)+1 > 202009 and toStartOfDay(d) < '2020-10-02 00:00:00';
+3	11440
+Selected 3/6 parts by partition key, 3 parts by primary key, 3/3 marks by primary key, 3 marks to read from 3 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d)+1 > 202010 and toStartOfDay(d) < '2020-10-02 00:00:00';
+1	1440
+Selected 1/6 parts by partition key, 1 parts by primary key, 1/1 marks by primary key, 1 marks to read from 1 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d)+1 > 202010;
+2	10000
+Selected 2/6 parts by partition key, 2 parts by primary key, 2/2 marks by primary key, 2 marks to read from 2 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d-1)+1 = 202010;
+3	9999
+Selected 3/6 parts by partition key, 3 parts by primary key, 3/3 marks by primary key, 3 marks to read from 3 ranges
+
+select uniqExact(_part), count() from tMM where toStartOfMonth(d) >= '2020-09-15';
+2	10000
+Selected 2/6 parts by partition key, 2 parts by primary key, 2/2 marks by primary key, 2 marks to read from 2 ranges
+
+select uniqExact(_part), count() from tMM where toStartOfMonth(d) >= '2020-09-01';
+4	20000
+Selected 4/6 parts by partition key, 4 parts by primary key, 4/4 marks by primary key, 4 marks to read from 4 ranges
+
+select uniqExact(_part), count() from tMM where toStartOfMonth(d) >= '2020-09-01' and toStartOfMonth(d) < '2020-10-01';
+2	10000
+Selected 2/6 parts by partition key, 2 parts by primary key, 2/2 marks by primary key, 2 marks to read from 2 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d-1)+1 = 202010;
+2	9999
+Selected 2/3 parts by partition key, 2 parts by primary key, 2/2 marks by primary key, 2 marks to read from 2 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d)+1 > 202010;
+1	10000
+Selected 1/3 parts by partition key, 1 parts by primary key, 1/1 marks by primary key, 1 marks to read from 1 ranges
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d) between 202009 and 202010;
+2	20000
+Selected 2/3 parts by partition key, 2 parts by primary key, 2/2 marks by primary key, 2 marks to read from 2 ranges
+

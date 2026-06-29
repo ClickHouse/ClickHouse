@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/IAST.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <base/types.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -23,9 +22,9 @@ struct ReplicatedMergeTreeTableMetadata
 
     String date_column;
     String sampling_expression;
-    UInt64 index_granularity;
+    UInt64 index_granularity{};
     /// Merging related params
-    int merging_params_mode;
+    int merging_params_mode{};
     int merge_params_version = REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS;
     String sign_column;
     String version_column;
@@ -40,13 +39,24 @@ struct ReplicatedMergeTreeTableMetadata
     String projections;
     String constraints;
     String ttl_table;
-    UInt64 index_granularity_bytes;
+    UInt64 index_granularity_bytes{};
 
     ReplicatedMergeTreeTableMetadata() = default;
     explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);
 
     void read(ReadBuffer & in);
-    static ReplicatedMergeTreeTableMetadata parse(const String & s);
+    /// Pure deserialization without any backward-compatibility normalization.
+    static ReplicatedMergeTreeTableMetadata parseRaw(const String & s);
+    /// Parse and normalize: removes implicit indices from `skip_indices` for backward
+    /// compatibility with older replicas (before 25.12) that stored them in Keeper.
+    /// `columns` must match the column set described by the same metadata source as `s`
+    /// (e.g. entry.columns_str for ALTER entries), not necessarily the current table columns.
+    static ReplicatedMergeTreeTableMetadata parseAndNormalize(
+        const String & s,
+        const ColumnsDescription & columns,
+        bool add_minmax_index_for_numeric_columns,
+        bool add_minmax_index_for_string_columns,
+        ContextPtr context);
 
     void write(WriteBuffer & out) const;
     String toString() const;
@@ -77,16 +87,35 @@ struct ReplicatedMergeTreeTableMetadata
                 && !ttl_table_changed && !constraints_changed;
         }
 
-        StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
+        StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, const VirtualColumnsDescription & virtuals, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
     };
 
-    void checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const;
+    bool checkEquals(
+        const ReplicatedMergeTreeTableMetadata & from_zk,
+        const ColumnsDescription & columns,
+        const VirtualColumnsDescription & virtuals,
+        const std::string & table_name_for_error_message,
+        ContextPtr context,
+        bool check_index_granularity = true,
+        bool strict_check = true,
+        LoggerPtr logger = nullptr) const;
 
-    Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const;
+    Diff checkAndFindDiff(
+        const ReplicatedMergeTreeTableMetadata & from_zk,
+        const ColumnsDescription & columns,
+        const VirtualColumnsDescription & virtuals,
+        const std::string & table_name_for_error_message,
+        ContextPtr context,
+        bool check_index_granularity = true) const;
 
 private:
-
-    void checkImmutableFieldsEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const;
+    void checkImmutableFieldsEquals(
+        const ReplicatedMergeTreeTableMetadata & from_zk,
+        const ColumnsDescription & columns,
+        const VirtualColumnsDescription & virtuals,
+        const std::string & table_name_for_error_message,
+        ContextPtr context,
+        bool check_index_granularity = true) const;
 
     bool index_granularity_bytes_found_in_zk = false;
 };

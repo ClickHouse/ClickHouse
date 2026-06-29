@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <logger>
         <level>trace</level>
         <log>/var/log/clickhouse-server/log.log</log>
@@ -8,4 +8,4 @@
         <stderr>/var/log/clickhouse-server/stderr.log</stderr>
         <stdout>/var/log/clickhouse-server/stdout.log</stdout>
     </logger>
-</yandex>
+</clickhouse>

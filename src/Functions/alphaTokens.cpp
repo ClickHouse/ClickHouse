@@ -19,11 +19,11 @@ using Pos = const char *;
 class SplitByAlphaImpl
 {
 private:
-    Pos pos;
-    Pos end;
+    Pos pos{};
+    Pos end{};
     std::optional<size_t> max_splits;
-    size_t splits;
-    bool max_substrings_includes_remaining_string;
+    size_t splits{};
+    bool max_substrings_includes_remaining_string{};
 
 public:
     static constexpr auto name = "alphaTokens";
@@ -99,7 +99,31 @@ using FunctionSplitByAlpha = FunctionTokens<SplitByAlphaImpl>;
 
 REGISTER_FUNCTION(SplitByAlpha)
 {
-    factory.registerFunction<FunctionSplitByAlpha>();
+    FunctionDocumentation::Description description = R"(
+Selects substrings of consecutive bytes from the ranges `a-z` and `A-Z` and returns an array of the selected substrings.
+)";
+    FunctionDocumentation::Syntax syntax = "alphaTokens(s[, max_substrings])";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "The string to split.", {"String"}},
+        {"max_substrings", "Optional. When `max_substrings > 0`, the number of returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.", {"Int64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of selected substrings of `s`.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT alphaTokens('abca1abc');",
+        R"(
+┌─alphaTokens('abca1abc')─┐
+│ ['abca','abc']          │
+└─────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionSplitByAlpha>(documentation);
     factory.registerAlias("splitByAlpha", FunctionSplitByAlpha::name);
 }
 

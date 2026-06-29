@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-
 # Tags: use-vectorscan, no-fasttest, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-
-USER_FILES_PATH=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
 mkdir -p $USER_FILES_PATH/test_02504
 
@@ -30,7 +27,7 @@ cat > "$yaml" <<EOL
       version: '10'
 EOL
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 drop dictionary if exists regexp_dict1;
 create dictionary regexp_dict1
 (
@@ -72,7 +69,7 @@ cat > "$yaml" <<EOL
       lucky: 'abcde'
 EOL
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 system reload dictionary regexp_dict1; -- { serverError 489 }
 "
 
@@ -82,7 +79,7 @@ cat > "$yaml" <<EOL
   version: '\1'
 EOL
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 system reload dictionary regexp_dict1; -- { serverError 318 }
 "
 
@@ -95,7 +92,7 @@ cat > "$yaml" <<EOL
   version: '\2.\3'
 EOL
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 system reload dictionary regexp_dict1;
 select dictGet('regexp_dict1', ('name', 'version'), 'Mozilla/5.0 (BB10; Touch) AppleWebKit/537.3+ (KHTML, like Gecko) Version/10.0.9.388 Mobile Safari/537.3+');
 select dictGet('regexp_dict1', ('name', 'version'), 'Mozilla/5.0 (PlayBook; U; RIM Tablet OS 1.0.0; en-US) AppleWebKit/534.8+ (KHTML, like Gecko) Version/0.0.1 Safari/534.8+');
@@ -110,7 +107,7 @@ cat > "$yaml" <<EOL
   col_array: '[1,2,3,-1,-2,-3]'
 EOL
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 create dictionary regexp_dict2
 (
     regexp String,
@@ -150,7 +147,7 @@ cat > "$yaml" <<EOL
 EOL
 
 # dictGetAll
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 drop dictionary if exists regexp_dict3;
 create dictionary regexp_dict3
 (
@@ -195,7 +192,7 @@ cat > "$yaml" <<EOL
   tag: 'Documentation'
 EOL
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 drop dictionary if exists regexp_dict3;
 create dictionary regexp_dict3
 (
@@ -255,7 +252,7 @@ cat > "$yaml" <<EOL
   pattern: '(?-i)hello.*world'
 EOL
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 drop dictionary if exists regexp_dict4;
 create dictionary regexp_dict4
 (
@@ -294,7 +291,7 @@ select dictGetAll('regexp_dict4', 'pattern', 'HELLO WORLD');
 select dictGetAll('regexp_dict4', 'pattern', 'HELLO\nWORLD');
 "
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 drop dictionary regexp_dict1;
 drop dictionary regexp_dict2;
 drop dictionary regexp_dict3;

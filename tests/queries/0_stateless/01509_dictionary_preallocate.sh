@@ -11,11 +11,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #   [1]: https://github.com/ClickHouse/ClickHouse/pull/23979
 #   [2]: https://github.com/ClickHouse/ClickHouse/pull/45388
 #
-# This is a backward compatiblity test that you can create dictionary with
+# This is a backward compatibility test that you can create dictionary with
 # PREALLOCATE attribute (and also for the history/greppability, that it was
 # such).
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     DROP TABLE IF EXISTS data_01509;
     DROP DICTIONARY IF EXISTS dict_01509;
     CREATE TABLE data_01509

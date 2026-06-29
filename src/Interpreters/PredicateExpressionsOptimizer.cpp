@@ -1,5 +1,6 @@
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExtractExpressionInfoVisitor.h>
 #include <Interpreters/PredicateRewriteVisitor.h>
@@ -14,6 +15,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
+    extern const SettingsBool enable_optimize_predicate_expression;
+    extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
+}
 
 namespace ErrorCodes
 {
@@ -23,9 +30,9 @@ namespace ErrorCodes
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
     ContextPtr context_, const TablesWithColumns & tables_with_columns_, const Settings & settings)
     : WithContext(context_)
-    , enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression)
-    , enable_optimize_predicate_expression_to_final_subquery(settings.enable_optimize_predicate_expression_to_final_subquery)
-    , allow_push_predicate_when_subquery_contains_with(settings.allow_push_predicate_when_subquery_contains_with)
+    , enable_optimize_predicate_expression(settings[Setting::enable_optimize_predicate_expression])
+    , enable_optimize_predicate_expression_to_final_subquery(settings[Setting::enable_optimize_predicate_expression_to_final_subquery])
+    , allow_push_predicate_when_subquery_contains_with(settings[Setting::allow_push_predicate_when_subquery_contains_with])
     , tables_with_columns(tables_with_columns_)
 {
 }
@@ -176,7 +183,7 @@ bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelect
     {
         ASTPtr res = predicates[0];
         for (size_t index = 1; index < predicates.size(); ++index)
-            res = makeASTFunction("and", res, predicates[index]);
+            res = makeASTOperator("and", res, predicates[index]);
 
         return res;
     };
@@ -214,7 +221,7 @@ bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelect
     if (!where_predicates.empty())
     {
         auto moved_predicate = reduce_predicates(where_predicates);
-        moved_predicate = select_query.where() ? makeASTFunction("and", select_query.where(), moved_predicate) : moved_predicate;
+        moved_predicate = select_query.where() ? makeASTOperator("and", select_query.where(), moved_predicate) : moved_predicate;
         select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(moved_predicate));
     }
 

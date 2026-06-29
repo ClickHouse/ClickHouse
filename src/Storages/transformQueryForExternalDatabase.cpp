@@ -1,5 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
@@ -13,12 +14,17 @@
 #include <IO/WriteBufferFromString.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
-
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
+
+#include <queue>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool external_table_strict_query;
+}
 
 namespace ErrorCodes
 {
@@ -49,17 +55,17 @@ public:
         std::string name = node->getColumnName();
         if (block_with_constants.has(name))
         {
-            auto result = block_with_constants.getByName(name);
+            const auto & result = block_with_constants.getByName(name);
             if (!isColumnConst(*result.column))
                 return;
 
             if (result.column->isNullAt(0))
             {
-                node = std::make_shared<ASTLiteral>(Field());
+                node = make_intrusive<ASTLiteral>(Field());
             }
             else if (isNumber(result.type))
             {
-                node = std::make_shared<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
+                node = make_intrusive<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
             }
             else
             {
@@ -69,7 +75,7 @@ public:
 
                 WriteBufferFromOwnString out;
                 result.type->getDefaultSerialization()->serializeText(inner_column, 0, out, FormatSettings());
-                node = std::make_shared<ASTLiteral>(out.str());
+                node = make_intrusive<ASTLiteral>(out.str());
             }
         }
     }
@@ -86,14 +92,14 @@ struct ReplaceLiteralToExprVisitorData
             for (auto & argument : func.arguments->children)
             {
                 auto * literal_expr = typeid_cast<ASTLiteral *>(argument.get());
-                UInt64 value;
+                UInt64 value = 0;
                 if (literal_expr && literal_expr->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
                 {
                     /// 1 -> 1=1, 0 -> 1=0.
                     if (value)
-                        argument = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
+                        argument = makeASTOperator("equals", make_intrusive<ASTLiteral>(1), make_intrusive<ASTLiteral>(1));
                     else
-                        argument = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
+                        argument = makeASTOperator("equals", make_intrusive<ASTLiteral>(1), make_intrusive<ASTLiteral>(0));
                 }
             }
         }
@@ -187,6 +193,50 @@ bool isCompatible(ASTPtr & node)
             if (!isCompatible(expr))
                 return false;
 
+        /// When the parser's fast-path literal conversion produces
+        /// `ASTLiteral(Tuple)` as the IN set (e.g. `(id, name) IN ((1, 'a'))`
+        /// parsed as `in(tuple(id, name), ASTLiteral(Tuple{1, 'a'}))`),
+        /// we must wrap it in a function with empty name so that it
+        /// formats with an extra pair of parentheses: `((1, 'a'))`.
+        /// Without this, `ASTLiteral(Tuple)` formats as `(1, 'a')` and the
+        /// IN clause becomes `IN (1, 'a')` — which MySQL misinterprets
+        /// as two separate scalar values instead of one tuple.
+        ///
+        /// We only do this when:
+        /// 1. The LHS of IN is a multi-column tuple (`ASTFunction("tuple")`).
+        ///    For scalar IN like `id IN (1, 2)`, the `ASTLiteral(Tuple{1, 2})`
+        ///    is a flat list of values and must NOT be wrapped.
+        /// 2. The tuple literal represents a single row (its elements are
+        ///    plain values, not nested tuples). For multi-row sets like
+        ///    `(id, name) IN ((1, 'a'), (2, 'b'))` the literal is
+        ///    `Tuple{Tuple{1, 'a'}, Tuple{2, 'b'}}` which already formats
+        ///    with the correct nested parentheses.
+        if ((name == "in" || name == "notIn") && function->arguments->children.size() == 2)
+        {
+            const auto & lhs = function->arguments->children[0];
+            const auto * lhs_func = lhs->as<ASTFunction>();
+            bool lhs_is_tuple = lhs_func && lhs_func->name == "tuple";
+
+            if (lhs_is_tuple)
+            {
+                auto & rhs = function->arguments->children[1];
+                if (const auto * rhs_literal = rhs->as<ASTLiteral>())
+                {
+                    if (rhs_literal->value.getType() == Field::Types::Tuple)
+                    {
+                        const auto & tup = rhs_literal->value.safeGet<Tuple>();
+                        bool is_single_row = !tup.empty()
+                            && tup[0].getType() != Field::Types::Tuple;
+                        if (is_single_row)
+                            rhs = makeASTFunction("", rhs);
+                    }
+                }
+            }
+        }
+
+        /// It should be formatted in the operator form.
+        function->setIsOperator(true);
+
         return true;
     }
 
@@ -198,7 +248,7 @@ bool isCompatible(ASTPtr & node)
             auto tuple_value = literal->value.safeGet<Tuple>();
             if (tuple_value.size() == 1)
             {
-                node = makeASTFunction("", std::make_shared<ASTLiteral>(tuple_value[0]));
+                node = makeASTFunction("", make_intrusive<ASTLiteral>(tuple_value[0]));
                 return true;
             }
         }
@@ -288,17 +338,18 @@ String transformQueryForExternalDatabaseImpl(
     LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
-    ContextPtr context)
+    ContextPtr context,
+    std::optional<size_t> limit)
 {
-    bool strict = context->getSettingsRef().external_table_strict_query;
+    bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
 
-    auto select = std::make_shared<ASTSelectQuery>();
+    auto select = make_intrusive<ASTSelectQuery>();
 
     select->replaceDatabaseAndTable(database, table);
 
-    auto select_expr_list = std::make_shared<ASTExpressionList>();
+    auto select_expr_list = make_intrusive<ASTExpressionList>();
     for (const auto & name : used_columns)
-        select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(name));
+        select_expr_list->children.push_back(make_intrusive<ASTIdentifier>(name));
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
 
@@ -321,7 +372,7 @@ String transformQueryForExternalDatabaseImpl(
 
         if (isCompatible(original_where))
         {
-            select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
+            select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
         }
         else if (strict)
         {
@@ -331,7 +382,7 @@ String transformQueryForExternalDatabaseImpl(
         {
             if (function->name == "and" || function->name == "tuple")
             {
-                auto new_function_and = makeASTFunction("and");
+                auto new_function_and = makeASTOperator("and");
                 std::queue<const ASTFunction *> predicates;
                 predicates.push(function);
 
@@ -363,28 +414,32 @@ String transformQueryForExternalDatabaseImpl(
     }
 
     auto * literal_expr = typeid_cast<ASTLiteral *>(original_where.get());
-    UInt64 value;
+    UInt64 value = 0;
     if (literal_expr && literal_expr->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
     {
         /// WHERE 1 -> WHERE 1=1, WHERE 0 -> WHERE 1=0.
         if (value)
-            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
+            original_where = makeASTOperator("equals", make_intrusive<ASTLiteral>(1), make_intrusive<ASTLiteral>(1));
         else
-            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
+            original_where = makeASTOperator("equals", make_intrusive<ASTLiteral>(1), make_intrusive<ASTLiteral>(0));
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
     }
 
+    if (limit)
+        select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(*limit));
+
     ASTPtr select_ptr = select;
     dropAliases(select_ptr);
-
+    IdentifierQuotingRule identifier_quoting_rule = IdentifierQuotingRule::Always;
     WriteBufferFromOwnString out;
     IAST::FormatSettings settings(
-            out, /*one_line*/ true, /*hilite*/ false,
-            /*always_quote_identifiers*/ identifier_quoting_style != IdentifierQuotingStyle::None,
-            /*identifier_quoting_style*/ identifier_quoting_style, /*show_secrets_*/ true,
-            /*literal_escaping_style*/ literal_escaping_style);
+        /*one_line=*/true,
+        /*identifier_quoting_rule=*/identifier_quoting_rule,
+        /*identifier_quoting_style=*/identifier_quoting_style,
+        /*show_secrets_=*/true,
+        /*literal_escaping_style=*/literal_escaping_style);
 
-    select->format(settings);
+    select->format(out, settings);
 
     return out.str();
 }
@@ -399,7 +454,8 @@ String transformQueryForExternalDatabase(
     LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
-    ContextPtr context)
+    ContextPtr context,
+    std::optional<size_t> limit)
 {
     if (!query_info.syntax_analyzer_result)
     {
@@ -414,7 +470,7 @@ String transformQueryForExternalDatabase(
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "No column names for query '{}' to external table '{}.{}'",
                             query_info.query_tree->formatASTForErrorMessage(), database, table);
 
-        auto clone_query = getASTForExternalDatabaseFromQueryTree(query_info.query_tree);
+        auto clone_query = getASTForExternalDatabaseFromQueryTree(context, query_info.query_tree, query_info.table_expression);
 
         return transformQueryForExternalDatabaseImpl(
             clone_query,
@@ -424,7 +480,8 @@ String transformQueryForExternalDatabase(
             literal_escaping_style,
             database,
             table,
-            context);
+            context,
+            limit);
     }
 
     auto clone_query = query_info.query->clone();
@@ -436,7 +493,8 @@ String transformQueryForExternalDatabase(
         literal_escaping_style,
         database,
         table,
-        context);
+        context,
+        limit);
 }
 
 }

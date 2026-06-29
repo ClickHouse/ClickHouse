@@ -1,8 +1,15 @@
 #pragma once
+
+#include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
+
+#include <Common/VectorWithMemoryTracking.h>
+
+#include <unordered_map>
 
 namespace DB
 {
+class Block;
 
 /// Processor with N inputs and N outputs. Only moves data from i-th input to i-th output as is.
 /// Some ports are delayed. Delayed ports are processed after other outputs are all finished.
@@ -11,11 +18,11 @@ namespace DB
 class DelayedPortsProcessor final : public IProcessor
 {
 public:
-    DelayedPortsProcessor(const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty = false);
+    DelayedPortsProcessor(SharedHeader header, size_t num_ports, const VectorWithMemoryTracking<UInt64> & delayed_ports, bool assert_main_ports_empty = false);
 
     String getName() const override { return "DelayedPorts"; }
 
-    Status prepare(const PortNumbers &, const PortNumbers &) override;
+    Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:
 
@@ -33,7 +40,8 @@ private:
     size_t num_finished_outputs = 0;
     size_t num_finished_main_inputs = 0;
 
-    std::vector<size_t> output_to_pair;
+    std::unordered_map<const InputPort *, size_t> input_port_to_pair;
+    std::unordered_map<const OutputPort *, size_t> output_port_to_pair;
     bool are_inputs_initialized = false;
 
     bool processPair(PortsPair & pair);

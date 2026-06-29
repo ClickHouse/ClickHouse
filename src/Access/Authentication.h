@@ -2,6 +2,7 @@
 
 #include <Access/AuthenticationData.h>
 #include <Common/Exception.h>
+#include <Interpreters/ClientInfo.h>
 #include <base/types.h>
 
 
@@ -19,13 +20,22 @@ class SettingsChanges;
 /// TODO: Try to move this checking to Credentials.
 struct Authentication
 {
+
+    enum class CredentialsCheckResult : UInt8
+    {
+        Fail,
+        NeedSecondFactor,
+        Success
+    };
+
     /// Checks the credentials (passwords, readiness, etc.)
     /// If necessary, makes a request to external authenticators and fills in the session settings if they were
     /// returned by the authentication server
-    static bool areCredentialsValid(
+    static CredentialsCheckResult areCredentialsValid(
         const Credentials & credentials,
-        const AuthenticationData & auth_data,
+        const AuthenticationData & authentication_method,
         const ExternalAuthenticators & external_authenticators,
+        const ClientInfo & client_info,
         SettingsChanges & settings);
 
     // A signaling class used to communicate requirements for credentials.
@@ -35,6 +45,9 @@ struct Authentication
     public:
         explicit Require(const String & realm_);
         const String & getRealm() const;
+
+        Require * clone() const override { return new Require(*this); }
+        void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 
     private:
         const String realm;

@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <max_concurrent_queries_for_user>1</max_concurrent_queries_for_user>
+        </default>
+    </profiles>
+</clickhouse>

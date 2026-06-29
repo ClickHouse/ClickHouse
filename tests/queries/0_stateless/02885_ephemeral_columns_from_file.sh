@@ -9,7 +9,7 @@ $CLICKHOUSE_LOCAL -q "select * from file('$CLICKHOUSE_TEST_UNIQUE_NAME.jsonl', a
 $CLICKHOUSE_LOCAL -q "select * from file('$CLICKHOUSE_TEST_UNIQUE_NAME.jsonl', auto, 'x UInt64 Alias y, y UInt64')" 2>&1 | grep -c "BAD_ARGUMENTS"
 $CLICKHOUSE_LOCAL -q "select * from file('$CLICKHOUSE_TEST_UNIQUE_NAME.jsonl', auto, 'x UInt64 Materialized 42, y UInt64')" 2>&1 | grep -c "BAD_ARGUMENTS"
 
-$CLICKHOUSE_LOCAL -n -q "
+$CLICKHOUSE_LOCAL -q "
     create table test (x UInt64 Ephemeral, y UInt64 default x + 1) engine=Memory;
     insert into test (x, y) select * from file('$CLICKHOUSE_TEST_UNIQUE_NAME.jsonl');
     select * from test;

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-ubsan, no-fasttest
-
+# Tags: no-ubsan, no-fasttest, no-parallel-replicas
+# no-parallel-replicas: ORDER BY ALL is missing, but this test doesn't add additional value with parallel replicas enabled, so skip it
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh

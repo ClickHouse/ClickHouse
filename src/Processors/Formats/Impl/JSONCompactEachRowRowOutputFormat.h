@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <IO/WriteBuffer.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 #include <Formats/FormatSettings.h>
@@ -10,22 +8,26 @@
 namespace DB
 {
 
+class Block;
+class WriteBuffer;
+
 /** The stream for outputting data in JSON format, by JSON array per line.
   */
-class JSONCompactEachRowRowOutputFormat final : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
+class JSONCompactEachRowRowOutputFormat : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
 {
 public:
     JSONCompactEachRowRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const FormatSettings & settings_,
         bool with_names_,
-        bool with_types_,
-        bool yield_strings_);
+        bool with_types_);
 
     String getName() const override { return "JSONCompactEachRowRowOutputFormat"; }
 
-private:
+    bool supportsSpecialSerializationKinds() const override { return settings.allow_special_serialization_kinds; }
+
+protected:
     void writePrefix() override;
 
     void writeTotals(const Columns & columns, size_t row_num) override;
@@ -38,16 +40,12 @@ private:
 
     void resetFormatterImpl() override;
 
-    bool supportTotals() const override { return true; }
-    void consumeTotals(Chunk) override;
-
     void writeLine(const std::vector<String> & values);
 
     FormatSettings settings;
     bool with_names;
     bool with_types;
-    bool yield_strings;
-
     WriteBuffer * ostr;
 };
+
 }

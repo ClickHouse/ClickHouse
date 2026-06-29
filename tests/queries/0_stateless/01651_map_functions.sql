@@ -1,3 +1,5 @@
+SET use_variant_as_common_type = 0;
+
 -- Map(String, String)
 drop table if exists table_map;
 create table table_map (a Map(String, String), b String, c Array(String), d Array(String)) engine = Memory;
@@ -67,12 +69,20 @@ select mapFromArrays(['aa', 'bb'], [4, 5, 6]); -- { serverError SIZES_OF_ARRAYS_
 select mapFromArrays([[1,2], [3,4]], [4, 5, 6]); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 select mapFromArrays(['a', 2], [4, 5]); -- { serverError NO_COMMON_TYPE}
 select mapFromArrays([1, 2], [4, 'a']); -- { serverError NO_COMMON_TYPE}
+select mapFromArrays(['aa', 'bb'], map('a', 4)); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+select mapFromArrays([1,null]::Array(Nullable(UInt8)), [3,4]); -- { serverError BAD_ARGUMENTS }
 
 select mapFromArrays(['aa', 'bb'], map('a', 4, 'b', 5));
 select mapFromArrays(['aa', 'bb'], materialize(map('a', 4, 'b', 5))) from numbers(2);
 
-select mapFromArrays(map('a', 4, 'b', 4), ['aa', 'bb']) from numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select mapFromArrays(['aa', 'bb'], map('a', 4)); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
-
 select mapFromArrays([toLowCardinality(1), toLowCardinality(2)], [4, 5]);
 select mapFromArrays([toLowCardinality(1), toLowCardinality(2)], materialize([4, 5])) from numbers(2);
+
+select mapFromArrays([1,2], [3,4]);
+select mapFromArrays([1,2]::Array(Nullable(UInt8)), [3,4]);
+select mapFromArrays([1,2], [3,4]) as x, mapFromArrays(x, ['a', 'b']);
+
+select mapFromArrays(map(1, 'a', 2, 'b'), array('c', 'd'));
+select mapFromArrays(materialize(map(1, 'a', 2, 'b')), array('c', 'd'));
+select mapFromArrays(map(1, 'a', 2, 'b'), materialize(array('c', 'd')));
+select mapFromArrays(materialize(map(1, 'a', 2, 'b')), materialize(array('c', 'd')));

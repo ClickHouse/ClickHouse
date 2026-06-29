@@ -2,19 +2,19 @@
     <named_collections>
         <mysql1>
             <user>root</user>
-            <password>clickhouse</password>
+            <password>ClickHouse_MySQL_P@ssw0rd</password>
             <host>mysql80</host>
             <port>3306</port>
             <database>test_database</database>
         </mysql1>
         <mysql2>
             <user>postgres</user>
-            <password>mysecretpassword</password>
+            <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
             <host>postgres1</host>
         </mysql2>
         <mysql3>
             <user>root</user>
-            <password>clickhouse</password>
+            <password>ClickHouse_MySQL_P@ssw0rd</password>
             <host>mysql80</host>
             <port>1111</port>
             <database>clickhouse</database>

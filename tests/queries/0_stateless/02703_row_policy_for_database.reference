@@ -1,20 +1,20 @@
 -- row policies for database
-  -- SHOW CREATE POLICY db1_02703 ON db1_02703.*
-CREATE ROW POLICY db1_02703 ON db1_02703.* FOR SELECT USING 1 TO ALL
-  -- SHOW CREATE POLICY ON db1_02703.*
-CREATE ROW POLICY db1_02703 ON db1_02703.* FOR SELECT USING 1 TO ALL
-CREATE ROW POLICY tbl1_02703 ON db1_02703.`table` FOR SELECT USING 1 TO ALL
-  -- SHOW CREATE POLICY ON db1_02703.`*`
+  -- SHOW CREATE POLICY default ON default.*
+CREATE ROW POLICY default_db_policy ON default.* FOR SELECT USING 1 TO ALL
+  -- SHOW CREATE POLICY ON default.*
+CREATE ROW POLICY default_db_policy ON default.* FOR SELECT USING 1 TO ALL
+CREATE ROW POLICY default_tb_policy ON default.`table` FOR SELECT USING 1 TO ALL
+  -- SHOW CREATE POLICY ON default.`*`
 R1, R2: (x == 1) OR (x == 2)
 1
 2
 Check system.query_log
 SELECT \'-- row policies for database\';	[]
-SELECT \'  -- SHOW CREATE POLICY db1_02703 ON db1_02703.*\';	[]
-SELECT \'  -- SHOW CREATE POLICY ON db1_02703.*\';	[]
-SELECT \'  -- SHOW CREATE POLICY ON db1_02703.`*`\';	[]
+SELECT \'  -- SHOW CREATE POLICY default ON default.*\';	[]
+SELECT \'  -- SHOW CREATE POLICY ON default.*\';	[]
+SELECT \'  -- SHOW CREATE POLICY ON default.`*`\';	[]
 SELECT \'R1, R2: (x == 1) OR (x == 2)\';	[]
-SELECT * FROM 02703_rqtable_default;	['`02703_filter_11_db` ON default.*','`02703_filter_11` ON default.`02703_rqtable_default`']
+SELECT * FROM 02703_rqtable_default;	['default_filter_11_db_policy ON default.*','default_filter_11_policy ON default.`02703_rqtable_default`']
 SELECT \'Check system.query_log\';	[]
   -- CREATE DATABASE-LEVEL POLICY IN CURRENT DATABASE
-CREATE ROW POLICY db2_02703 ON db1_02703.* TO u1_02703
+CREATE ROW POLICY db2_02703 ON default.* TO user_default

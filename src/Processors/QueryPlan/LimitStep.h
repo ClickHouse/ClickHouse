@@ -10,7 +10,7 @@ class LimitStep : public ITransformingStep
 {
 public:
     LimitStep(
-        const DataStream & input_stream_,
+        const SharedHeader & input_header_,
         size_t limit_, size_t offset_,
         bool always_read_till_end_ = false, /// Read all data even if limit is reached. Needed for totals.
         bool with_ties_ = false, /// Limit with ties.
@@ -23,6 +23,9 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    size_t getLimit() const { return limit; }
+    size_t getOffset() const { return offset; }
+
     size_t getLimitForSorting() const
     {
         if (limit > std::numeric_limits<UInt64>::max() - offset)
@@ -32,11 +35,21 @@ public:
     }
 
     bool withTies() const { return with_ties; }
+    bool alwaysReadTillEnd() const { return always_read_till_end; }
+
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+    bool hasCorrelatedExpressions() const override { return false; }
+
+    bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
-    void updateOutputStream() override
+    void updateOutputHeader() override
     {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+        output_header = input_headers.front();
     }
 
     size_t limit;

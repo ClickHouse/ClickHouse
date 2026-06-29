@@ -36,6 +36,7 @@ pub unsafe extern "C" fn prql_to_sql_impl(
         target: Target::Sql(Some(Dialect::ClickHouse)),
         signature_comment: false,
         color: false,
+        display: prqlc::DisplayOptions::Plain,
     };
 
     if let Ok(sql_str) = prqlc::compile(&query_str, &opts) {

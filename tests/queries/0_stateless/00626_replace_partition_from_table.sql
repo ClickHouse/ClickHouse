@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS dst;
 
 CREATE TABLE src (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;
-CREATE TABLE dst (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;
+CREATE TABLE dst (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS merge_selector_base=1000;
 
 SELECT 'Initial';
 INSERT INTO src VALUES (0, '0', 1);
@@ -27,7 +27,11 @@ SELECT count(), sum(d) FROM dst;
 
 SELECT 'REPLACE empty';
 ALTER TABLE src DROP PARTITION 1;
-ALTER TABLE dst REPLACE PARTITION 1 FROM src;
+-- The setting opt-in below preserves the legacy behavior of `REPLACE PARTITION` from an
+-- empty source, silently dropping the destination partition. Issue #23727 made this a
+-- per-query opt-in to prevent accidental data loss; this test continues to exercise the
+-- intentional-clear use case.
+ALTER TABLE dst REPLACE PARTITION 1 FROM src SETTINGS allow_replace_partition_from_empty_source = 1;
 SELECT count(), sum(d) FROM dst;
 
 
@@ -53,12 +57,16 @@ DROP TABLE src;
 CREATE TABLE src (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;
 INSERT INTO src VALUES (1, '0', 1);
 INSERT INTO src VALUES (1, '1', 1);
+INSERT INTO src VALUES (2, '2', 1);
+INSERT INTO src VALUES (3, '3', 1);
 
 SYSTEM STOP MERGES dst;
-INSERT INTO dst VALUES (1, '1', 2);
+INSERT INTO dst VALUES (1, '1', 2), (1, '2', 0);
 ALTER TABLE dst ATTACH PARTITION 1 FROM src;
 SELECT count(), sum(d) FROM dst;
 
+ALTER TABLE dst ATTACH PARTITION ALL FROM src;
+SELECT count(), sum(d) FROM dst;
 
 SELECT 'OPTIMIZE';
 SELECT count(), sum(d), uniqExact(_part) FROM dst;

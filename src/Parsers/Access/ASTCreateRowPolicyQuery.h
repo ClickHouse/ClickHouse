@@ -37,22 +37,25 @@ public:
     bool or_replace = false;
     String storage_name;
 
-    std::shared_ptr<ASTRowPolicyNames> names;
+    boost::intrusive_ptr<ASTRowPolicyNames> names;
     String new_short_name;
 
     std::optional<bool> is_restrictive;
     std::vector<std::pair<RowPolicyFilterType, ASTPtr>> filters; /// `nullptr` means set to NONE.
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateRowPolicyQuery>(clone()); }
 
     void replaceCurrentUserTag(const String & current_user_name) const;
     void replaceEmptyDatabase(const String & current_database) const;
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
+
 }

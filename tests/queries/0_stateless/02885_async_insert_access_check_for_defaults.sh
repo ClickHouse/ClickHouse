@@ -8,7 +8,7 @@ restricted_user=${CLICKHOUSE_DATABASE}_restricted_user_$RANDOM$RANDOM
 # The 'restricted_user' will not have access to the dictionary 'dict',
 # so they shouldn't be able to insert to a table with DEFAULT dictGet(dict, ...)
 
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP USER IF EXISTS ${restricted_user};
 DROP TABLE IF EXISTS table_with_default;
 DROP DICTIONARY IF EXISTS dict;
@@ -50,7 +50,7 @@ $CLICKHOUSE_CLIENT --user "${restricted_user}" --query "INSERT INTO table_with_d
 $CLICKHOUSE_CLIENT --user "${restricted_user}" --async_insert=1 --query "INSERT INTO table_with_default (key) VALUES (6)"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM table_with_default WHERE key IN [5, 6] ORDER BY key"
 
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP USER ${restricted_user};
 DROP TABLE table_with_default;
 DROP DICTIONARY dict;

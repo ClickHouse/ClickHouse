@@ -8,7 +8,7 @@ db=${CLICKHOUSE_DATABASE}
 user1="user1_03006_${db}_$RANDOM"
 user2="user2_03006_${db}_$RANDOM"
 
-${CLICKHOUSE_CLIENT} --multiquery <<EOF
+${CLICKHOUSE_CLIENT} <<EOF
 DROP DATABASE IF EXISTS $db;
 CREATE DATABASE $db;
 CREATE USER $user1, $user2;

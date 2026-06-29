@@ -4,7 +4,7 @@ CREATE TEMPORARY TABLE t_proj
     `id` UInt64,
     PROJECTION p
     (
-        SELECT 
+        SELECT
             id,
             t
         ORDER BY toStartOfDay(t)

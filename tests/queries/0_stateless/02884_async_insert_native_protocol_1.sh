@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_async_insert_native_1;
     CREATE TABLE t_async_insert_native_1 (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
 "
@@ -22,19 +21,19 @@ echo '{"id": 1, "s": "aaa"}' \
     | $CLICKHOUSE_CLIENT $async_insert_options -q 'INSERT INTO t_async_insert_native_1 FORMAT JSONEachRow {"id": 2, "s": "bbb"}' 2>&1 \
     | grep -o "NOT_IMPLEMENTED"
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT sum(length(entries.bytes)) FROM system.asynchronous_inserts
     WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_async_insert_native_1';
 
-    SYSTEM FLUSH ASYNC INSERT QUEUE;
+    SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_native_1;
 
     SELECT * FROM t_async_insert_native_1 ORDER BY id;
 
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS asynchronous_insert_log;
 
     SELECT status, rows, data_kind, format
     FROM system.asynchronous_insert_log
-    WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_async_insert_native_1'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = '$CLICKHOUSE_DATABASE' AND table = 't_async_insert_native_1'
     ORDER BY event_time_microseconds;
 
     DROP TABLE t_async_insert_native_1;

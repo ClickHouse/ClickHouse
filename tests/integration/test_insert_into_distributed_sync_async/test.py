@@ -5,9 +5,9 @@ from contextlib import contextmanager
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from helpers.test_tools import TSV
-from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException, QueryTimeoutExceedException
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 

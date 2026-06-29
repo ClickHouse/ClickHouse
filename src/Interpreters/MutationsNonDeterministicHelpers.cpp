@@ -1,10 +1,13 @@
-#include "Parsers/IAST_fwd.h"
+#include <Core/Block.h>
+#include <Parsers/IAST_fwd.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/MutationCommands.h>
+#include <Columns/IColumn.h>
+#include <Core/Settings.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
@@ -14,6 +17,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool mutations_execute_nondeterministic_on_initiator;
+    extern const SettingsBool mutations_execute_subqueries_on_initiator;
+    extern const SettingsUInt64 mutations_max_literal_size_to_replace;
+}
 
 namespace
 {
@@ -120,7 +129,7 @@ public:
         Block scalar{{std::move(column), type, "_constant"}};
         if (worthConvertingScalarToLiteral(scalar, data.max_literal_size))
         {
-            auto literal = std::make_unique<ASTLiteral>(std::move(field));
+            auto literal = make_intrusive<ASTLiteral>(std::move(field));
             ast = addTypeConversionToAST(std::move(literal), type->getName());
         }
     }
@@ -138,19 +147,22 @@ FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const Muta
     {
         case MutationCommand::UPDATE:
         {
-            auto update_assignments_ast = command.ast->as<const ASTAlterCommand &>().update_assignments->clone();
+            auto alter = command.ast();
+            auto update_assignments_ast = alter->update_assignments->clone();
             FirstNonDeterministicFunctionFinder(finder_data).visit(update_assignments_ast);
 
             if (finder_data.result.nondeterministic_function_name)
                 return finder_data.result;
 
-            /// Currently UPDATE and DELETE both always have predicates so we can use fallthrough
-            [[fallthrough]];
+            ASTPtr predicate_ast(alter->predicate);
+            FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
+            return finder_data.result;
         }
 
         case MutationCommand::DELETE:
         {
-            auto predicate_ast = command.predicate->clone();
+            auto alter = command.ast();
+            ASTPtr predicate_ast(alter->predicate);
             FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
             return finder_data.result;
         }
@@ -165,8 +177,7 @@ FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const Muta
 ASTPtr replaceNonDeterministicToScalars(const ASTAlterCommand & alter_command, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    if (!settings.mutations_execute_subqueries_on_initiator
-        && !settings.mutations_execute_nondeterministic_on_initiator)
+    if (!settings[Setting::mutations_execute_subqueries_on_initiator] && !settings[Setting::mutations_execute_nondeterministic_on_initiator])
         return nullptr;
 
     auto query = alter_command.clone();
@@ -196,29 +207,28 @@ ASTPtr replaceNonDeterministicToScalars(const ASTAlterCommand & alter_command, C
         }
     };
 
-    if (settings.mutations_execute_subqueries_on_initiator)
+    if (settings[Setting::mutations_execute_subqueries_on_initiator])
     {
         Scalars scalars;
         Scalars local_scalars;
 
         ExecuteScalarSubqueriesVisitor::Data data{
             WithContext{context},
-            /*subquery_depth=*/ 0,
+            /*subquery_depth=*/0,
             scalars,
             local_scalars,
-            /*only_analyze=*/ false,
-            /*is_create_parameterized_view=*/ false,
-            /*replace_only_to_literals=*/ true,
-            settings.mutations_max_literal_size_to_replace};
+            /*only_analyze=*/false,
+            /*is_create_parameterized_view=*/false,
+            /*replace_only_to_literals=*/true,
+            settings[Setting::mutations_max_literal_size_to_replace]};
 
         ExecuteScalarSubqueriesVisitor visitor(data);
         visit(visitor);
     }
 
-    if (settings.mutations_execute_nondeterministic_on_initiator)
+    if (settings[Setting::mutations_execute_nondeterministic_on_initiator])
     {
-        ExecuteNonDeterministicConstFunctionsVisitor::Data data{
-            context, settings.mutations_max_literal_size_to_replace};
+        ExecuteNonDeterministicConstFunctionsVisitor::Data data{context, settings[Setting::mutations_max_literal_size_to_replace]};
 
         ExecuteNonDeterministicConstFunctionsVisitor visitor(data);
         visit(visitor);

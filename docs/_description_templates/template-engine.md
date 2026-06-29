@@ -4,13 +4,13 @@
 -   Relations with other engines if they exist.
 
 ## Creating a Database {#creating-a-database}
-``` sql
+```sql
     CREATE DATABASE ...
 ```
 or
 
 ## Creating a Table {#creating-a-table}
-``` sql
+```sql
     CREATE TABLE ...
 ```
 
@@ -43,17 +43,13 @@ The example must show usage and use cases. The following text contains the recom
 
 Input table:
 
-``` text
+```text
 ```
 
-Query:
-
-``` sql
+```sql title="Query"
 ```
 
-Result:
-
-``` text
+```text title="Response"
 ```
 
 Follow up with any text to clarify the example.

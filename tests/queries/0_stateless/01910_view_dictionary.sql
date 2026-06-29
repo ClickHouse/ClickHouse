@@ -34,7 +34,7 @@ CREATE DICTIONARY flat_dictionary
     value_ru String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' PASSWORD '' TABLE 'dictionary_source_view'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' PASSWORD '' TABLE 'dictionary_source_view'))
 LIFETIME(MIN 1 MAX 1000)
 LAYOUT(FLAT());
 
@@ -45,5 +45,5 @@ FROM numbers(3);
 
 DROP TABLE dictionary_source_en;
 DROP TABLE dictionary_source_ru;
-DROP TABLE dictionary_source_view;
 DROP DICTIONARY flat_dictionary;
+DROP TABLE dictionary_source_view;

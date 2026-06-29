@@ -21,18 +21,18 @@
   (open! [this test node]
     (assoc
      (assoc this
-            :conn (zk-connect node 9181 30000))
+            :conn (zk-connect node 9181 30000 (:with-auth test)))
      :nodename node))
 
   (setup! [this test]
     (chu/exec-with-retries 30 (fn []
-      (zk-create-if-not-exists conn root-path ""))))
+      (zk-create-if-not-exists conn root-path "" :with-acl (:with-auth test)))))
 
   (invoke! [this test op]
     (case (:f op)
       :enqueue (try
                  (do
-                   (zk-create conn (concat-path root-path (:value op)) "")
+                   (zk-create conn (concat-path root-path (:value op)) "" :with-acl (:with-auth test))
                    (assoc op :type :ok))
                  (catch Exception _ (assoc op :type :info, :error :connect-error)))
       :dequeue

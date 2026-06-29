@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/61238
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 WITH
 (SELECT number FROM system.numbers LIMIT 1) as w1,

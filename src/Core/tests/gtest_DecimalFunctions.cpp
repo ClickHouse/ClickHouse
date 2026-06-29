@@ -57,7 +57,7 @@ void testGetFractional(const DecimalUtilsSplitAndCombineTestParam & param)
                   param.scale));
 }
 
-// Unfortunately typed parametrized tests () are not supported in this version of gtest, so I have to emulate by hand.
+// Unfortunately typed parameterized tests () are not supported in this version of gtest, so I have to emulate by hand.
 TEST_P(DecimalUtilsSplitAndCombineTest, splitDecimal32)
 {
     testSplit<Decimal32>(GetParam());
@@ -122,7 +122,7 @@ class DecimalUtilsSplitAndCombineForDateTime64Test : public ::testing::TestWithP
 {};
 
 
-// Unfortunately typed parametrized tests () are not supported in this version of gtest, so I have to emulate by hand.
+// Unfortunately typed parameterized tests () are not supported in this version of gtest, so I have to emulate by hand.
 TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, splitDateTime64)
 {
     testSplit<DateTime64>(GetParam());

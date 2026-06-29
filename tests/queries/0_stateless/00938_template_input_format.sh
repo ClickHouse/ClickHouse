@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
-
 # shellcheck disable=SC2016,SC2028
+# Tags: no-parallel-replicas
+# no-parallel-replicas: FORMAT JSON returns additional entries
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+
+CURDIR=$CURDIR/${CLICKHOUSE_DATABASE}
+mkdir -p $CURDIR
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS template1";
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS template2";

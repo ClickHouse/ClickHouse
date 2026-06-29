@@ -1,7 +1,7 @@
 -- Tags: no-replicated-database
 -- https://github.com/ClickHouse/ClickHouse/issues/58500
 
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 drop table if exists t;
 

@@ -1,7 +1,7 @@
 -- Tags: long, no-fasttest
 
 -- The result slightly differs but it's ok since `uniqueTheta` is an approximate function.
-set max_bytes_before_external_group_by = 0;
+set max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 
 SELECT 'uniqTheta';
 

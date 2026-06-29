@@ -1,0 +1,2 @@
+WITH x -> toString(x) AS lambda_1 SELECT arrayMap(lambda_1 AS lambda_2, [1, 2, 3]), arrayMap(lambda_2, ['1', '2', '3']) WHERE lambda_2 SETTINGS enable_analyzer = 0; -- { serverError UNEXPECTED_EXPRESSION }
+WITH x -> toString(x) AS lambda_1 SELECT arrayMap(lambda_1 AS lambda_2, [1, 2, 3]), arrayMap(lambda_2, ['1', '2', '3']) WHERE lambda_2 SETTINGS enable_analyzer = 1; -- { serverError UNKNOWN_IDENTIFIER }

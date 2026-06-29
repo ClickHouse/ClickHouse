@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/23053
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 DROP TABLE IF EXISTS repl_tbl;
 
 CREATE TEMPORARY TABLE repl_tbl

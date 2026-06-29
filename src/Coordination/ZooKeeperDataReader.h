@@ -1,9 +1,18 @@
 #pragma once
 #include <string>
-#include <Coordination/KeeperStorage.h>
+#include <memory>
+
+namespace Poco
+{
+class Logger;
+}
+
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 namespace DB
 {
+
+class KeeperStorage;
 
 void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::string & snapshot_path, LoggerPtr log);
 

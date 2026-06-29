@@ -22,7 +22,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     cd "$test_dir" || exit 1
 
     stderr=$(mktemp -t clickhouse.XXXXXX)
-    $CLICKHOUSE_SERVER_BINARY -- --logger.stderr="$stderr" 2>/dev/null
+    # It will fail to start because the port is already in use
+    $CLICKHOUSE_SERVER_BINARY -- --listen_host "${CLICKHOUSE_HOST}" --tcp_port "$CLICKHOUSE_PORT_TCP" --logger.stderr="$stderr" 2>/dev/null
     # -s -- check that stderr was created and is not empty
     test -s "$stderr" || exit 2
     rm "$stderr"

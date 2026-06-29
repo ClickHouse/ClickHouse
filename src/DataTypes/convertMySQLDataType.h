@@ -2,8 +2,7 @@
 
 #include <string>
 #include <Core/MultiEnum.h>
-#include <Parsers/IAST.h>
-#include "IDataType.h"
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {

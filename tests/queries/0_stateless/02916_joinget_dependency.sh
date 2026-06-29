@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # We test the dependency on the DROP
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     DROP TABLE IF EXISTS Sub_distributed;
     DROP TABLE IF EXISTS Sub;
     DROP TABLE IF EXISTS Mapping;
@@ -20,7 +20,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE Mapping;
 " 2>&1 | grep -cm1 "HAVE_DEPENDENT_OBJECTS"
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     DROP TABLE Sub_distributed;
     DROP TABLE Sub;
     DROP TABLE Mapping;

@@ -6,19 +6,19 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-$CLICKHOUSE_LOCAL --multiquery <<END
+$CLICKHOUSE_LOCAL <<END
     SELECT * FROM format(JSONEachRow, 'x Bool', '{"x": 1}');
     SELECT * FROM format(JSONEachRow, 'x Bool', '{"x": null}');
 END
 
-$CLICKHOUSE_LOCAL --multiquery <<END 2>&1 | rg -Fc "'w' character"
+$CLICKHOUSE_LOCAL <<END 2>&1 | rg -Fc "'w' character"
     SELECT * FROM format(JSONEachRow, 'x Bool', '{"x": wtf}');
 END
 
-$CLICKHOUSE_LOCAL --multiquery <<END 2>&1 | rg -Fc "expected 'false'"
+$CLICKHOUSE_LOCAL <<END 2>&1 | rg -Fc "expected 'false'"
     SELECT * FROM format(JSONEachRow, 'x Bool', '{"x": ftw}');
 END
 
-$CLICKHOUSE_LOCAL --multiquery <<END 2>&1 | rg -Fc "'{' character"
+$CLICKHOUSE_LOCAL <<END 2>&1 | rg -Fc "'{' character"
     SELECT * FROM format(JSONEachRow, 'x Bool', '{"x": {}}');
 END

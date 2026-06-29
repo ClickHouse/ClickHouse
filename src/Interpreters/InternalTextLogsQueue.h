@@ -1,8 +1,7 @@
 #pragma once
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Common/OvercommitTracker.h>
-#include <Common/re2.h>
 #include <Core/Block.h>
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/re2.h>
 
 namespace DB
 {

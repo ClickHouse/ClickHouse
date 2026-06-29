@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 QUERY_ID="${CLICKHOUSE_DATABASE}_read_with_cancel"
 
-$CLICKHOUSE_CLIENT -n --query_id="$QUERY_ID" --query="SELECT sum(number * 0) FROM numbers(10000000000) SETTINGS partial_result_on_first_cancel=true;" &
+$CLICKHOUSE_CLIENT --max_rows_to_read 0 --query_id="$QUERY_ID" --query="SELECT sum(number * 0) FROM numbers(10000000000) SETTINGS partial_result_on_first_cancel=true;" &
 pid=$!
 
 for _ in {0..60}

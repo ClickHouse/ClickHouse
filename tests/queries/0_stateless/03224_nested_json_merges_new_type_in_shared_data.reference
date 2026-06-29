@@ -1,0 +1,22 @@
+Array(JSON(max_dynamic_types=16, max_dynamic_paths=2))	true
+Int64	false
+Array(JSON(max_dynamic_types=16, max_dynamic_paths=2))	false
+Int64	false
+['c']
+['d']
+Array(JSON(max_dynamic_types=16, max_dynamic_paths=2))	false
+Int64	false
+['c']
+['d']
+Int64	true
+None	false
+Int64	true
+None	false
+Array(JSON(max_dynamic_types=16, max_dynamic_paths=2))	false
+Int64	false
+['c']
+['d']
+Int64	false
+None	false
+Int64	false
+None	false

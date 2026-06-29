@@ -24,15 +24,15 @@ $CLICKHOUSE_CLIENT --query "GRANT TABLE ENGINE ON MergeTree TO $user"
 
 $CLICKHOUSE_CLIENT --user $user --password hello --query "CREATE TEMPORARY TABLE table_merge_tree_02561(name String) ENGINE = MergeTree() ORDER BY name"
 
-$CLICKHOUSE_CLIENT --user $user --password hello --query "CREATE TEMPORARY TABLE table_file_02561(name String) ENGINE = File(TabSeparated)" 2>&1 | grep -F "Not enough privileges. To execute this query, it's necessary to have the grant TABLE ENGINE ON File" > /dev/null && echo "OK"
+$CLICKHOUSE_CLIENT --user $user --password hello --query "CREATE TEMPORARY TABLE table_file_02561(name String) ENGINE = File(TabSeparated)" 2>&1 | grep -F "Not enough privileges." > /dev/null && echo "OK"
 
-$CLICKHOUSE_CLIENT --query "GRANT FILE ON *.* TO $user"
+$CLICKHOUSE_CLIENT --query "GRANT READ, WRITE ON File TO $user"
 
 $CLICKHOUSE_CLIENT --user $user --password hello --query "CREATE TEMPORARY TABLE table_file_02561(name String) ENGINE = File(TabSeparated)"
 
-$CLICKHOUSE_CLIENT --user $user --password hello --query "CREATE TEMPORARY TABLE table_url_02561(name String) ENGINE = URL('http://127.0.0.1:8123?query=select+12', 'RawBLOB')" 2>&1 | grep -F "Not enough privileges. To execute this query, it's necessary to have the grant TABLE ENGINE ON URL" > /dev/null && echo "OK"
+$CLICKHOUSE_CLIENT --user $user --password hello --query "CREATE TEMPORARY TABLE table_url_02561(name String) ENGINE = URL('http://127.0.0.1:8123?query=select+12', 'RawBLOB')" 2>&1 | grep -F "Not enough privileges." > /dev/null && echo "OK"
 
-$CLICKHOUSE_CLIENT --query "GRANT URL ON *.* TO $user"
+$CLICKHOUSE_CLIENT --query "GRANT READ, WRITE ON URL TO $user"
 
 $CLICKHOUSE_CLIENT --user $user --password hello --query "CREATE TEMPORARY TABLE table_url_02561(name String) ENGINE = URL('http://127.0.0.1:8123?query=select+12', 'RawBLOB')"
 

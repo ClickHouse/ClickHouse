@@ -6,5 +6,5 @@
 
 namespace DB
 {
-    CurrentMetrics::Metric getAttachedCounterForStorage(const StoragePtr & storage);
+    std::vector<CurrentMetrics::Metric> getAttachedCountersForStorage(const StoragePtr & storage);
 }

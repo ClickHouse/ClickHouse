@@ -10,13 +10,14 @@
 2022-09-01 12:23:34	42
 2023-09-01 12:23:34	42
 -- MV
-2022-09-01 12:00:00	42
+2022-09-01 12:00:00	84
+2023-09-01 12:00:00	42
 -- Original issue with deduplicate_blocks_in_dependent_materialized_views = 1 AND max_insert_delayed_streams_for_parallel_write > 1
 -- Landing
 2022-09-01 12:23:34	42
 2023-09-01 12:23:34	42
 -- MV
-2022-09-01 12:00:00	42
+2022-09-01 12:00:00	84
 2023-09-01 12:00:00	42
 -- Regression introduced in https://github.com/ClickHouse/ClickHouse/pull/54184
 -- Landing (Agg/Replacing)MergeTree

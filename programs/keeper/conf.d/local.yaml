@@ -1,0 +1,9 @@
+logger:
+    log:
+        "@remove": remove
+    errorlog:
+        "@remove": remove
+    console: 1
+keeper_server:
+    log_storage_path: ./logs
+    snapshot_storage_path: ./snapshots

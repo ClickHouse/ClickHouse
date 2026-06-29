@@ -1,0 +1,4 @@
+CREATE TABLE default.example_mt\n(\n    `id` UInt32,\n    `data` LowCardinality(UInt8)\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS async_insert = 1, index_granularity = 8192
+CREATE TABLE default.example_memory\n(\n    `id` UInt64,\n    `data` LowCardinality(UInt8)\n)\nENGINE = Memory\nSETTINGS max_rows_to_keep = 100
+CREATE TABLE default.example_set\n(\n    `id` UInt64,\n    `data` LowCardinality(UInt8)\n)\nENGINE = Set\nSETTINGS persistent = 1
+CREATE TABLE default.example_join\n(\n    `id` UInt64,\n    `data` LowCardinality(UInt8)\n)\nENGINE = Join(ANY, LEFT, id)\nSETTINGS persistent = 1

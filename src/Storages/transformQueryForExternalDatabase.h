@@ -21,6 +21,8 @@ class IAST;
   * and WHERE contains subset of (AND-ed) conditions from original query,
   * that contain only compatible expressions.
   *
+  * If limit is passed additionally apply LIMIT in result query.
+  *
   * Compatible expressions are comparisons of identifiers, constants, and logical operations on them.
   *
   * Throws INCORRECT_QUERY if external_table_strict_query (from context settings)
@@ -34,6 +36,7 @@ String transformQueryForExternalDatabase(
     LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
-    ContextPtr context);
+    ContextPtr context,
+    std::optional<size_t> limit = {});
 
 }

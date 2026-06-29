@@ -17,9 +17,9 @@ public:
 
     bool isCancelled() const { return *counter > 0; }
 
-    /// Temporarily blocks corresponding actions (while the returned object is alive)
+    /// Temporary blocks corresponding actions (while the returned object is alive)
     friend class ActionLock;
-    ActionLock cancel() { return ActionLock(*this); }
+    [[nodiscard]] ActionLock cancel() { return ActionLock(*this); }
 
     /// Cancel the actions forever.
     void cancelForever() { ++(*counter); }

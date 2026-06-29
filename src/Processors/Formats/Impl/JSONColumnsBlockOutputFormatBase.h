@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Formats/FormatSettings.h>
-#include <IO/WriteBuffer.h>
+#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 
 
 namespace DB
 {
 
+class Block;
 class WriteBuffer;
 
 /// Base class for Columnar JSON output formats.
@@ -16,13 +15,14 @@ class WriteBuffer;
 class JSONColumnsBlockOutputFormatBase : public OutputFormatWithUTF8ValidationAdaptor
 {
 public:
-    JSONColumnsBlockOutputFormatBase(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool validate_utf8);
+    JSONColumnsBlockOutputFormatBase(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, bool validate_utf8);
 
     String getName() const override { return "JSONColumnsBlockOutputFormatBase"; }
 
 protected:
     void consume(Chunk chunk) override;
     void writeSuffix() override;
+    void resetFormatterImpl() override;
 
     void writeChunk(Chunk & chunk);
     void writeColumn(const IColumn & column, const ISerialization & serialization);

@@ -69,6 +69,14 @@ SELECT 'Not equals with non existing key';
 SELECT * FROM bf_tokenbf_map_values_test WHERE map['K2'] != 'V2' SETTINGS force_data_skipping_indices='map_values_tokenbf';
 SELECT 'Not equals with non existing key and default value';
 SELECT * FROM bf_tokenbf_map_values_test WHERE map['K3'] != '';
+SELECT 'Equals with existing value';
+SELECT * FROM bf_tokenbf_map_values_test WHERE mapContainsValueLike(map, 'V0') SETTINGS force_data_skipping_indices='map_values_tokenbf';
+SELECT 'Equals with non existing value';
+SELECT * FROM bf_tokenbf_map_values_test WHERE mapContainsValueLike(map, 'V2') SETTINGS force_data_skipping_indices='map_values_tokenbf';
+SELECT 'Not equals with existing value';
+SELECT * FROM bf_tokenbf_map_values_test WHERE NOT mapContainsValueLike(map, 'V0') SETTINGS force_data_skipping_indices='map_values_tokenbf';
+SELECT 'Not equals with non existing value';
+SELECT * FROM bf_tokenbf_map_values_test WHERE NOT mapContainsValueLike(map, 'V2') SETTINGS force_data_skipping_indices='map_values_tokenbf';
 
 SELECT 'Map fixed full text bloom filter tokenbf mapKeys';
 
@@ -84,6 +92,15 @@ SELECT 'Not equals with non existing key';
 SELECT * FROM bf_tokenbf_map_values_test WHERE map_fixed['K2'] != 'V2' SETTINGS force_data_skipping_indices='map_fixed_values_tokenbf';
 SELECT 'Not equals with non existing key and default value';
 SELECT * FROM bf_tokenbf_map_values_test WHERE map_fixed['K3'] != '';
+
+SELECT 'Equals with existing value';
+SELECT * FROM bf_tokenbf_map_values_test WHERE mapContainsValueLike(map_fixed, 'V0%') SETTINGS force_data_skipping_indices='map_fixed_values_tokenbf';
+SELECT 'Equals with non existing value';
+SELECT * FROM bf_tokenbf_map_values_test WHERE mapContainsValueLike(map_fixed, 'V2%') SETTINGS force_data_skipping_indices='map_fixed_values_tokenbf';
+SELECT 'Not equals with existing value';
+SELECT * FROM bf_tokenbf_map_values_test WHERE NOT mapContainsValueLike(map_fixed, 'V0%') SETTINGS force_data_skipping_indices='map_fixed_values_tokenbf';
+SELECT 'Not equals with non existing value';
+SELECT * FROM bf_tokenbf_map_values_test WHERE NOT mapContainsValueLike(map_fixed, 'V2%') SETTINGS force_data_skipping_indices='map_fixed_values_tokenbf';
 
 DROP TABLE bf_tokenbf_map_values_test;
 

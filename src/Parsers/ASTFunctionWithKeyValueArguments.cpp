@@ -2,6 +2,7 @@
 
 #include <Poco/String.h>
 #include <Common/SipHash.h>
+#include <Common/maskURIPassword.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -15,41 +16,50 @@ String ASTPair::getID(char) const
 
 ASTPtr ASTPair::clone() const
 {
-    auto res = std::make_shared<ASTPair>(*this);
+    auto res = make_intrusive<ASTPair>(*this);
     res->children.clear();
     res->set(res->second, second->clone());
     return res;
 }
 
 
-void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(first) << " " << (settings.hilite ? hilite_none : "");
+    ostr << Poco::toUpper(first) << " ";
 
     if (second_with_brackets)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "(";
+        ostr << "(";
 
     if (!settings.show_secrets && (first == "password"))
     {
         /// Hide password in the definition of a dictionary:
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
-        settings.ostr << "'[HIDDEN]'";
+        ostr << "'[HIDDEN]'";
+    }
+    else if (!settings.show_secrets && (first == "uri"))
+    {
+        // Hide password from URI in the defention of a dictionary
+        WriteBufferFromOwnString temp_buf;
+        FormatSettings tmp_settings(settings.one_line);
+        FormatState tmp_state;
+        second->format(temp_buf, tmp_settings, tmp_state, frame);
+
+        maskURIPassword(&temp_buf.str());
+        ostr << temp_buf.str();
     }
     else
     {
-        second->formatImpl(settings, state, frame);
+        second->format(ostr, settings, state, frame);
     }
 
     if (second_with_brackets)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << ")";
-
-    settings.ostr << (settings.hilite ? hilite_none : "");
+        ostr << ")";
 }
 
 
 bool ASTPair::hasSecretParts() const
 {
-    return first == "password";
+    return (first == "password") || second->hasSecretParts();
 }
 
 
@@ -70,7 +80,7 @@ String ASTFunctionWithKeyValueArguments::getID(char delim) const
 
 ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 {
-    auto res = std::make_shared<ASTFunctionWithKeyValueArguments>(*this);
+    auto res = make_intrusive<ASTFunctionWithKeyValueArguments>(*this);
     res->children.clear();
 
     if (elements)
@@ -83,12 +93,11 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 }
 
 
-void ASTFunctionWithKeyValueArguments::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTFunctionWithKeyValueArguments::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(name) << (settings.hilite ? hilite_none : "") << (has_brackets ? "(" : "");
-    elements->formatImpl(settings, state, frame);
-    settings.ostr << (has_brackets ? ")" : "");
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    ostr << Poco::toUpper(name) << (has_brackets ? "(" : "");
+    elements->format(ostr, settings, state, frame);
+    ostr << (has_brackets ? ")" : "");
 }
 
 

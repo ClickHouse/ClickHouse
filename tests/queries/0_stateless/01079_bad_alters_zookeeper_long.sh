@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS table_for_bad_alters";
 
-$CLICKHOUSE_CLIENT -n --query "CREATE TABLE table_for_bad_alters (
+$CLICKHOUSE_CLIENT --query "CREATE TABLE table_for_bad_alters (
     key UInt64,
     value1 UInt8,
     value2 String
@@ -22,7 +22,17 @@ $CLICKHOUSE_CLIENT --query "ALTER TABLE table_for_bad_alters MODIFY COLUMN value
 
 sleep 2
 
-while [[ $($CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='0000000000' and database = '$CLICKHOUSE_DATABASE'" 2>&1) ]]; do
+counter=0 retries=60
+while [[ $counter -lt $retries ]]; do
+    output=$($CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='0000000000' and database = '$CLICKHOUSE_DATABASE'" 2>&1)
+    if [[ "$output" == *"finished"* ]]; then
+        break
+    fi
+    ((++counter))
+    sleep 1
+done
+
+while [[ $($CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue WHERE type='ALTER_METADATA' AND database = '$CLICKHOUSE_DATABASE'" 2>&1) ]]; do
     sleep 1
 done
 

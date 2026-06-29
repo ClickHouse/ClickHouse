@@ -15,7 +15,7 @@ class HTTPHeaderFilter
 public:
 
     void setValuesFromConfig(const Poco::Util::AbstractConfiguration & config);
-    void checkHeaders(const HTTPHeaderEntries & entries) const;
+    void checkAndNormalizeHeaders(HTTPHeaderEntries & entries) const;
 
 private:
     std::unordered_set<std::string> forbidden_headers;

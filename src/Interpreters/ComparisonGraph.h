@@ -1,15 +1,18 @@
 #pragma once
 
+#include <Core/Field.h>
 #include <Parsers/IAST_fwd.h>
-#include <Interpreters/TreeCNFConverter.h>
+#include <Parsers/IASTHash.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/CNFQueryAtomicFormula.h>
 
-#include <Analyzer/Passes/CNF.h>
+#include <Analyzer/Passes/CNFAtomicFormula.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 
-#include <type_traits>
-#include <unordered_map>
 #include <map>
+#include <set>
+#include <unordered_map>
 #include <vector>
 
 namespace DB
@@ -29,6 +32,68 @@ enum class ComparisonGraphCompareResult : uint8_t
 template <typename T>
 concept ComparisonGraphNodeType = std::same_as<T, ASTPtr> || std::same_as<T, QueryTreeNodePtr>;
 
+
+template <ComparisonGraphNodeType Node>
+struct GraphComponent
+{
+    static constexpr bool with_ast = std::same_as<Node, ASTPtr>;
+    using NodeContainer = std::conditional_t<with_ast, ASTs, QueryTreeNodes>;
+
+    /// Strongly connected component
+    struct EqualComponent
+    {
+        /// All these expressions are considered as equal.
+        NodeContainer nodes;
+        std::optional<size_t> constant_index;
+
+        bool hasConstant() const;
+        Node getConstant() const;
+        void buildConstants();
+    };
+
+    /// Edge (from, to, type) means that it's always true that @from <op> @to,
+    /// where @op is the operation of type @type.
+    ///
+    /// TODO: move to diff for int and double:
+    /// GREATER and GREATER_OR_EQUAL with +const or 0 --- ok
+    ///                        with -const --- not ok
+    /// EQUAL is ok only for 0
+    struct Edge
+    {
+        enum Type
+        {
+            GREATER,
+            GREATER_OR_EQUAL,
+            EQUAL,
+        };
+
+        Type type;
+        size_t to;
+    };
+
+    struct ASTHash
+    {
+        size_t operator() (const IASTHash & hash) const
+        {
+            return hash.low64;
+        }
+    };
+
+    static auto getHash(const Node & node)
+    {
+        if constexpr (with_ast)
+            return node->getTreeHash(/*ignore_aliases=*/ true);
+        else
+            return QueryTreeNodePtrWithHash{node};
+    }
+
+    using NodeHashToComponentContainer = std::conditional_t<with_ast, std::unordered_map<IASTHash, size_t, ASTHash>, QueryTreeNodePtrWithHashMap<size_t>>;
+    NodeHashToComponentContainer node_hash_to_component;
+    std::vector<EqualComponent> vertices;
+    std::vector<std::vector<Edge>> edges;
+};
+
+
 /*
  * Graph of relations between terms in constraints.
  * Allows to compare terms and get equal terms.
@@ -39,12 +104,13 @@ class ComparisonGraph
 public:
     static constexpr bool with_ast = std::same_as<Node, ASTPtr>;
     using NodeContainer = std::conditional_t<with_ast, ASTs, QueryTreeNodes>;
-    using CNF = std::conditional_t<with_ast, CNFQuery, Analyzer::CNF>;
+    using Formula = std::conditional_t<with_ast, CNFQueryAtomicFormula, Analyzer::CNFAtomicFormula>;
+    using Graph = GraphComponent<Node>;
 
     /// atomic_formulas are extracted from constraints.
     explicit ComparisonGraph(const NodeContainer & atomic_formulas, ContextPtr context = nullptr);
 
-    static ComparisonGraphCompareResult atomToCompareResult(const typename CNF::AtomicFormula & atom);
+    static ComparisonGraphCompareResult atomToCompareResult(const Formula & atom);
 
     ComparisonGraphCompareResult compare(const Node & left, const Node & right) const;
 
@@ -80,62 +146,6 @@ public:
     std::vector<NodeContainer> getVertices() const;
 
 private:
-    /// Strongly connected component
-    struct EqualComponent
-    {
-        /// All these expressions are considered as equal.
-        NodeContainer nodes;
-        std::optional<size_t> constant_index;
-
-        bool hasConstant() const;
-        Node getConstant() const;
-        void buildConstants();
-    };
-
-    /// Edge (from, to, type) means that it's always true that @from <op> @to,
-    /// where @op is the operation of type @type.
-    ///
-    /// TODO: move to diff for int and double:
-    /// GREATER and GREATER_OR_EQUAL with +const or 0 --- ok
-    ///                        with -const --- not ok
-    /// EQUAL is ok only for 0
-    struct Edge
-    {
-        enum Type
-        {
-            GREATER,
-            GREATER_OR_EQUAL,
-            EQUAL,
-        };
-
-        Type type;
-        size_t to;
-    };
-
-    struct Graph
-    {
-        struct ASTHash
-        {
-            size_t operator() (const IAST::Hash & hash) const
-            {
-                return hash.low64;
-            }
-        };
-
-        static auto getHash(const Node & node)
-        {
-            if constexpr (with_ast)
-                return node->getTreeHash(/*ignore_aliases=*/ true);
-            else
-                return QueryTreeNodePtrWithHash{node};
-        }
-
-        using NodeHashToComponentContainer = std::conditional_t<with_ast, std::unordered_map<IAST::Hash, size_t, ASTHash>, QueryTreeNodePtrWithHashMap<size_t>>;
-        NodeHashToComponentContainer node_hash_to_component;
-        std::vector<EqualComponent> vertices;
-        std::vector<std::vector<Edge>> edges;
-    };
-
     /// Receives graph, in which each vertex corresponds to one expression.
     /// Then finds strongly connected components and builds graph on them.
     static Graph buildGraphFromNodesGraph(const Graph & nodes_graph);
@@ -193,4 +203,8 @@ private:
     std::vector<ssize_t> node_const_upper_bound;
 };
 
+extern template struct GraphComponent<ASTPtr>;
+extern template struct GraphComponent<QueryTreeNodePtr>;
+extern template class ComparisonGraph<ASTPtr>;
+extern template class ComparisonGraph<QueryTreeNodePtr>;
 }

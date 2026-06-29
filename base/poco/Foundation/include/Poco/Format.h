@@ -232,7 +232,7 @@ void Foundation_API format(
     const Any & value10);
 
 
-void Foundation_API format(std::string & result, const std::string & fmt, const std::vector<Any> & values);
+void Foundation_API formatVector(std::string & result, const std::string & fmt, const std::vector<Any> & values);
 /// Supports a variable number of arguments and is used by
 /// all other variants of format().
 

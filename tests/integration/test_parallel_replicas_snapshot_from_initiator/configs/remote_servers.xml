@@ -1,0 +1,33 @@
+<clickhouse>
+    <remote_servers>
+        <parallel_replicas>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>node0</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node4</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node5</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </parallel_replicas>
+    </remote_servers>
+</clickhouse>

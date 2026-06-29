@@ -2,7 +2,8 @@
 
 #include <map>
 
-#include <Parsers/IAST.h>
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
@@ -15,21 +16,26 @@ struct ASTTableExpression;
 class ApplyWithSubqueryVisitor
 {
 public:
+    explicit ApplyWithSubqueryVisitor(ContextPtr context_);
+
     struct Data
     {
         std::map<String, ASTPtr> subqueries;
+        std::map<String, ASTPtr> literals;
     };
 
-    static void visit(ASTPtr & ast) { visit(ast, {}); }
-    static void visit(ASTSelectQuery & select) { visit(select, {}); }
-    static void visit(ASTSelectWithUnionQuery & select) { visit(select, {}); }
+    void visit(ASTPtr & ast) { visit(ast, {}); }
+    void visit(ASTSelectQuery & select) { visit(select, {}); }
+    void visit(ASTSelectWithUnionQuery & select) { visit(select, {}); }
 
 private:
-    static void visit(ASTPtr & ast, const Data & data);
-    static void visit(ASTSelectQuery & ast, const Data & data);
-    static void visit(ASTSelectWithUnionQuery & ast, const Data & data);
-    static void visit(ASTTableExpression & table, const Data & data);
-    static void visit(ASTFunction & func, const Data & data);
+    void visit(ASTPtr & ast, const Data & data);
+    void visit(ASTSelectQuery & ast, const Data & data);
+    void visit(ASTSelectWithUnionQuery & ast, const Data & data);
+    void visit(ASTTableExpression & table, const Data & data);
+    void visit(ASTFunction & func, const Data & data);
+
+    const bool use_analyzer;
 };
 
 }

@@ -7,9 +7,16 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
+
+#include <Core/Settings.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_uniq_to_count;
+}
 
 namespace
 {
@@ -35,7 +42,7 @@ NamesAndTypes extractProjectionColumnsForGroupBy(const QueryNode * query_node)
         const auto & projection_columns = query_node->getProjectionColumns();
         const auto & projection_nodes = query_node->getProjection().getNodes();
 
-        assert(projection_columns.size() == projection_nodes.size());
+        chassert(projection_columns.size() == projection_nodes.size());
 
         for (size_t i = 0; i < projection_columns.size(); i++)
         {
@@ -120,7 +127,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_uniq_to_count)
+        if (!getSettings()[Setting::optimize_uniq_to_count])
             return;
 
         auto * query_node = node->as<QueryNode>();
@@ -184,11 +191,8 @@ public:
         /// Replace uniq of initial query to count
         if (match_subquery_with_distinct() || match_subquery_with_group_by())
         {
-            AggregateFunctionProperties properties;
-            auto aggregate_function = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
-
             function_node->getArguments().getNodes().clear();
-            function_node->resolveAsAggregateFunction(std::move(aggregate_function));
+            resolveAggregateFunctionNodeByName(*function_node, "count");
         }
     }
 };

@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (x Int32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t1 VALUES (1), (2), (3);
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 SELECT t2.x FROM t1 JOIN t1 as t2 ON t1.x = t2.x GROUP BY t1.x; -- { serverError NOT_AN_AGGREGATE }
 SELECT t2.number FROM numbers(10) as t1 JOIN numbers(10) as t2 ON t1.number = t2.number GROUP BY t1.number; -- { serverError NOT_AN_AGGREGATE }
