@@ -144,7 +144,7 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
     const auto & index_task = index_read_tasks.at(index_for_step);
     const auto & index = index_task.index.index;
 
-    if (!index->getDeserializedFormat(data_part.checksums, index->getFileName(), &data_part.getDataPartStorage()))
+    if (!index->getDeserializedFormat(data_part.checksums, index->getFileName()))
         return nullptr;
 
     return &index_task;
