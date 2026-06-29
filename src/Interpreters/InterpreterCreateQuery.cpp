@@ -756,6 +756,29 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
         normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup);
 
+    /// For queries that populate the table immediately (CREATE ... AS SELECT, or a materialized/window
+    /// view with POPULATE), the table is created first and the data is inserted afterwards by an
+    /// INSERT SELECT (see fillTableIfNeeded). If the user lacks access to a table referenced by the
+    /// SELECT, that INSERT SELECT would fail only after the table has already been created, leaving an
+    /// empty orphan table behind (issue #26746: a retry then reports `TABLE_ALREADY_EXISTS` instead of
+    /// the access error). To prevent this, verify access to all referenced tables now, before the table
+    /// is created, by building a full query plan: in only_analyze mode subqueries in WHERE/IN/scalar
+    /// positions are not recursively planned, so their (column-aware) access checks would be skipped.
+    ///
+    /// This check must run for every isCreateQueryWithImmediateInsertSelect() form, regardless of whether
+    /// the columns are inferred from the SELECT or given explicitly. An explicit column list takes the
+    /// `create.columns_list` branch below, which never analyzes the SELECT, so doing this next to the
+    /// column inference would miss it; hence it lives here, before any branch.
+    if (create.isCreateQueryWithImmediateInsertSelect()
+        && getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        /// Use the same context and options as the subsequent INSERT SELECT (see fillTableIfNeeded), so
+        /// this check mirrors that query plan exactly and cannot introduce a failure mode that the insert
+        /// would not also hit - it only moves the access check before the table is created.
+        InterpreterSelectQueryAnalyzer(create.select->clone(), getContext(),
+            SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1)).getQueryPlan();
+    }
+
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
@@ -977,23 +1000,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         {
             SelectQueryOptions sample_block_options = SelectQueryOptions{}.analyze();
 
-            /// For queries that populate the table immediately (CREATE ... AS SELECT, or a materialized/window
-            /// view with POPULATE), the table is created first and the data is inserted afterwards by an
-            /// INSERT SELECT. If the user lacks access to a table referenced by the SELECT, that INSERT SELECT
-            /// would fail only after the table has already been created, leaving an empty orphan table behind
-            /// (issue #26746: a retry then reports `TABLE_ALREADY_EXISTS` instead of the access error).
-            /// To prevent this, verify access to all referenced tables now, before the table is created, by
-            /// building a full query plan: in only_analyze mode subqueries in WHERE/IN/scalar positions are
-            /// not recursively planned, so their (column-aware) access checks would otherwise be skipped.
-            if (create.isCreateQueryWithImmediateInsertSelect())
-            {
-                /// Use the same options as the subsequent INSERT SELECT (see fillTableIfNeeded), so this check
-                /// mirrors that query plan exactly and cannot introduce a failure mode that the insert would not
-                /// also hit - it only moves the access check before the table is created.
-                InterpreterSelectQueryAnalyzer(create.select->clone(), select_context,
-                    SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1)).getQueryPlan();
-            }
-            else
+            /// For an immediate INSERT SELECT, access to all referenced tables was already verified up-front
+            /// by the full query plan built at the top of this function (which is column-aware and also covers
+            /// WHERE/IN/scalar subqueries). For a plain view definition there is no such insert, so keep the
+            /// lighter FROM-position subquery access check here.
+            if (!create.isCreateQueryWithImmediateInsertSelect())
                 sample_block_options.checkSubqueryTableAccess();
 
             as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
