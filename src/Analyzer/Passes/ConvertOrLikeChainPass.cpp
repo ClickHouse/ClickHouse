@@ -77,6 +77,8 @@ struct PatternData
     String regexp;                      /// The regexp equivalent
     bool is_substring = false;          /// True if pattern is a pure substring match (%substring%)
     bool is_case_insensitive = false;   /// True if case-insensitive (ILIKE or (?i) prefix)
+    bool is_raw_regexp = false;         /// True if the regexp came verbatim from a `match()` call,
+                                        /// rather than being generated from a LIKE/ILIKE pattern.
 };
 
 /// Tracks information about patterns for a single identifier/expression
@@ -228,6 +230,26 @@ struct PatternInfo
         return true;
     }
 
+    /// Returns true if any pattern is a raw regexp taken verbatim from a `match()` call. Such a
+    /// regexp can use RE2 syntax that Vectorscan rejects under `HS_FLAG_UTF8` even when the bytes are
+    /// valid UTF-8 — for example `\C` ("match any byte"), which RE2 accepts but Vectorscan rejects
+    /// with `BAD_ARGUMENTS` ("\C is unsupported in UTF8"). `multiMatchAny` compiles through
+    /// Vectorscan, so emitting it for a chain that contains a raw `match()` regexp could turn a
+    /// previously-working query into an exception (`allRegexpsValidUTF8` does not catch this — the
+    /// pattern bytes are valid UTF-8). We therefore keep such chains on the combined-`match` (RE2) /
+    /// original path, which uses the same engine as the original `match()` and preserves behavior.
+    /// Regexps generated from LIKE/ILIKE patterns are produced by `likePatternToRegexp` from a
+    /// restricted grammar (literals, `.`, `.*`, escaped metacharacters, optional `(?i)`) that
+    /// Vectorscan always accepts, so they stay eligible for `multiMatchAny` (subject only to the
+    /// `allRegexpsValidUTF8` byte check).
+    bool hasRawRegexp() const
+    {
+        for (const auto & p : patterns)
+            if (p.is_raw_regexp)
+                return true;
+        return false;
+    }
+
     /// Returns true if no regexp contains an embedded NUL byte. Used to gate the combined-`match`
     /// fallback only. RE2's required-substring optimization truncates a lone regexp at the first NUL
     /// (so the original `match(s, 'a\0b')` already behaves like `match(s, 'a')`), but the combined
@@ -360,10 +382,13 @@ public:
             {
                 /// match() already has a regexp pattern - use as is.
                 /// A regexp can never be a pure substring, so it always falls through to the
-                /// combined `match` path; case-insensitivity flags inside the pattern (e.g.
-                /// `(?i)`, `(?mi:...)`) are preserved verbatim in the combined alternation.
+                /// `multiMatchAny`/combined-`match` path; case-insensitivity flags inside the pattern
+                /// (e.g. `(?i)`, `(?mi:...)`) are preserved verbatim. Mark it as a raw regexp so the
+                /// rewrite keeps it on the RE2 (`match`) path instead of `multiMatchAny`, which uses
+                /// Vectorscan and rejects RE2-only syntax such as `\C` — see `hasRawRegexp`.
                 data.regexp = pattern_str;
                 data.is_substring = false;
+                data.is_raw_regexp = true;
             }
             else
             {
@@ -454,7 +479,7 @@ public:
             }
             else if (!too_few_patterns && info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
             {
-                if (allow_hyperscan && info.allRegexpsValidUTF8() && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp()))
+                if (allow_hyperscan && !info.hasRawRegexp() && info.allRegexpsValidUTF8() && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp()))
                 {
                     /// Use `multiMatchAny` for non-substring patterns. It is significantly faster than
                     /// `match` with alternation because it can leverage Vectorscan/Hyperscan when available
@@ -464,7 +489,10 @@ public:
                     /// at execution time, and compiles patterns as UTF-8, so we pre-check those guards
                     /// and that all patterns are valid UTF-8; that way the rewrite cannot turn a
                     /// previously-working query into a `BAD_ARGUMENTS` / `CANNOT_COMPILE_REGEXP` /
-                    /// `HYPERSCAN_CANNOT_SCAN_TEXT` failure. An embedded NUL needs no guard here:
+                    /// `HYPERSCAN_CANNOT_SCAN_TEXT` failure. `hasRawRegexp` additionally keeps chains
+                    /// that contain a raw `match()` regexp off this path: Vectorscan rejects RE2-only
+                    /// syntax such as `\C` even when the bytes are valid UTF-8 (see `hasRawRegexp`).
+                    /// An embedded NUL needs no guard here:
                     /// `multiMatchAny` truncates a pattern at the first NUL exactly as the original
                     /// per-branch `match` does (both compile through a NUL-terminated path), so results
                     /// are preserved — only the combined-`match` fallback below differs (see there).
