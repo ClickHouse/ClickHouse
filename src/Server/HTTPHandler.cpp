@@ -16,6 +16,7 @@
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Parsers/Lexer.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -26,6 +27,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
 #include <Common/scope_guard_safe.h>
@@ -44,6 +46,7 @@
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
 #include <Poco/Net/HTTPMessage.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 #include <algorithm>
 #include <boost/algorithm/string/trim.hpp>
@@ -68,6 +71,7 @@ namespace Setting
     extern const SettingsBool http_wait_end_of_query;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsInt64 http_zlib_compression_level;
+    extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool send_progress_in_http_headers;
     extern const SettingsInt64 zstd_window_log_max;
@@ -76,7 +80,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_COMPILE_REGEXP;
 
     extern const int NO_ELEMENTS_IN_CONFIG;
 
@@ -88,40 +91,42 @@ namespace ErrorCodes
 
 namespace
 {
-bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
-    if (config.has("http_options_response"))
-    {
-        Strings config_keys;
-        config.keys("http_options_response", config_keys);
-        for (const std::string & config_key : config_keys)
-        {
-            if (config_key == "header" || config_key.starts_with("header["))
-            {
-                /// If there is empty header name, it will not be processed and message about it will be in logs
-                if (config.getString("http_options_response." + config_key + ".name", "").empty())
-                    LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
-                else
-                    response.add(config.getString("http_options_response." + config_key + ".name", ""),
-                                 config.getString("http_options_response." + config_key + ".value", ""));
+    if (!config.has("http_options_response"))
+        return;
 
-            }
+    Strings config_keys;
+    config.keys("http_options_response", config_keys);
+    for (const std::string & config_key : config_keys)
+    {
+        if (config_key == "header" || config_key.starts_with("header["))
+        {
+            /// If there is empty header name, it will not be processed and message about it will be in logs
+            if (config.getString("http_options_response." + config_key + ".name", "").empty())
+                LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
+            else
+                response.add(config.getString("http_options_response." + config_key + ".name", ""),
+                             config.getString("http_options_response." + config_key + ".value", ""));
+
         }
-        return true;
     }
-    return false;
 }
 
 /// Process options request. Useful for CORS.
 void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
-    /// If can add some headers from config
-    if (tryAddHTTPOptionHeadersFromConfig(response, config))
-    {
-        response.setKeepAlive(false);
-        response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
-        response.send();
-    }
+    /// Add extra response headers (e.g. for CORS) when an `http_options_response` section is configured.
+    addHTTPOptionHeadersFromConfig(response, config);
+
+    /// Always answer an OPTIONS request, even when there is nothing to add from the config. Otherwise the
+    /// connection is closed without any HTTP response and the client sees an empty reply. The default
+    /// `clickhouse-server` config ships an `http_options_response` section, but `clickhouse-local` (which
+    /// typically runs without a config) does not, so without this the web UI (`/play`) reports the
+    /// connection as broken — its `OPTIONS` health-check fails — even though queries work.
+    response.setKeepAlive(false);
+    response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
+    response.send();
 }
 }
 
@@ -190,7 +195,7 @@ void HTTPHandler::processQuery(
 {
     using namespace Poco::Net;
 
-    LOG_TRACE(log, "Request URI: {}", request.getURI());
+    LOG_TRACE(log, "Request URI: {}", maskSensitiveQueryParametersInURI(request.getURI()));
 
     if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
@@ -613,12 +618,38 @@ void HTTPHandler::processQuery(
         };
     }
 
+    QueryFlags query_flags;
+    /// Streaming `INSERT` needs the parser to stop at the end of the URL-provided query so the
+    /// request body stays intact for the input format. Only enable this when the URL query
+    /// alone already begins with an `INSERT` statement, otherwise we would break the legacy
+    /// behavior of splitting SQL text between the `query` parameter and the request body.
+    /// Leading whitespace and SQL comments are skipped so that forms like `/*trace*/ INSERT ...`
+    /// also take the streaming-safe parse path.
+    auto url_query_starts_with_insert = [&query]()
+    {
+        Lexer lexer(query.data(), query.data() + query.size());
+        Token token = lexer.nextToken();
+        while (!token.isSignificant() && !token.isEnd() && !token.isError())
+            token = lexer.nextToken();
+        if (token.type != TokenType::BareWord)
+            return false;
+        static constexpr std::string_view kw = "INSERT";
+        if (static_cast<size_t>(token.end - token.begin) != kw.size())
+            return false;
+        for (size_t j = 0; j < kw.size(); ++j)
+            if (toUpperIfAlphaASCII(token.begin[j]) != kw[j])
+                return false;
+        return true;
+    };
+    query_flags.parse_query_from_initial_buffer
+        = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
+
     executeQuery(
         std::move(in),
         *used_output.out_maybe_delayed_and_compressed,
         context,
         set_query_result,
-        QueryFlags{},
+        query_flags,
         {},
         handle_exception_in_output_format,
         query_finish_callback,
@@ -733,7 +764,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
-        thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
+        thread_trace_context->root_span.addAttribute(
+            "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
         thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
         thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
@@ -743,7 +775,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())
-            tryAddHTTPOptionHeadersFromConfig(response, server.config());
+            addHTTPOptionHeadersFromConfig(response, server.config());
 
         /// For keep-alive to work.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
@@ -872,14 +904,14 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const HTTPHandlerConnectionConfig & connection_config,
     const NameSet & receive_params_,
     const std::string & predefined_query_,
-    const CompiledRegexPtr & url_regex_,
-    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
+    const CompiledRegexPtr & url_regexp_,
+    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regexp_,
     const HTTPResponseHeaderSetup & http_response_headers_override_)
     : HTTPHandler(server_, connection_config, "PredefinedQueryHandler", http_response_headers_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
-    , url_regex(url_regex_)
-    , header_name_with_capture_regex(header_name_with_regex_)
+    , url_regexp(url_regexp_)
+    , header_name_with_capture_regexp(header_name_with_regexp_)
 {
 }
 
@@ -927,15 +959,18 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
         }
     };
 
-    if (url_regex)
+    if (url_regexp)
     {
         const auto & uri = request.getURI();
-        set_query_params(uri.data(), find_first_symbols<'?'>(uri.data(), uri.data() + uri.size()), url_regex);
+        set_query_params(uri.data(), find_first_symbols<'?'>(uri.data(), uri.data() + uri.size()), url_regexp);
     }
 
-    for (const auto & [header_name, regex] : header_name_with_capture_regex)
+    for (const auto & [header_name, regex] : header_name_with_capture_regexp)
     {
-        const auto & header_value = request.get(header_name);
+        /// Use a defaulted lookup like `headersFilter` does: a missing header is treated as an empty string.
+        /// A header regex can match the empty string, so the rule may match a request without that header,
+        /// and reading it here without a default would raise an exception after the rule has already matched.
+        const auto header_value = request.get(header_name, "");
         set_query_params(header_value.data(), header_value.data() + header_value.size(), regex);
     }
 
@@ -986,27 +1021,6 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     return factory;
 }
 
-static inline bool capturingNamedQueryParam(NameSet receive_params, const CompiledRegexPtr & compiled_regex)
-{
-    const auto & capturing_names = compiled_regex->NamedCapturingGroups();
-    return std::count_if(capturing_names.begin(), capturing_names.end(), [&](const auto & iterator)
-    {
-        return std::count_if(receive_params.begin(), receive_params.end(),
-            [&](const auto & param_name) { return param_name == iterator.first; });
-    });
-}
-
-static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
-{
-    auto compiled_regex = std::make_shared<const re2::RE2>(expression);
-
-    if (!compiled_regex->ok())
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile re2: {} for http handling rule, error: {}. "
-            "Look at https://github.com/google/re2/wiki/Syntax for reference.", expression, compiled_regex->error());
-
-    return compiled_regex;
-}
-
 HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
@@ -1021,24 +1035,11 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     boost::algorithm::trim(predefined_query);
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
-    std::unordered_map<String, CompiledRegexPtr> headers_name_with_regex;
-    Poco::Util::AbstractConfiguration::Keys headers_name;
-    config.keys(config_prefix + ".headers", headers_name);
-
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
 
-    for (const auto & header_name : headers_name)
-    {
-        auto expression = config.getString(config_prefix + ".headers." + header_name);
-
-        if (!startsWith(expression, "regex:"))
-            continue;
-
-        expression = expression.substr(6);
-        auto regex = getCompiledRegex(expression);
-        if (capturingNamedQueryParam(analyze_receive_params, regex))
-            headers_name_with_regex.emplace(std::make_pair(header_name, regex));
-    }
+    /// Regular expressions from the rule's url/headers whose named capturing groups are referenced by the query;
+    /// their captured values are passed to the query as parameters by PredefinedQueryHandler::customizeContext.
+    auto regexps = HTTPHandlerRegexpsWithNamedGroups::fromConfig(config, config_prefix, analyze_receive_params);
 
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
     if (!common_headers.empty())
@@ -1048,48 +1049,12 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
     }
 
-    std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
-
-    if (config.has(config_prefix + ".url"))
-    {
-        auto url_expression = config.getString(config_prefix + ".url");
-
-        if (startsWith(url_expression, "regex:"))
-            url_expression = url_expression.substr(6);
-
-        auto regex = getCompiledRegex(url_expression);
-        if (capturingNamedQueryParam(analyze_receive_params, regex))
-        {
-            auto creator = [
-                &server,
-                analyze_receive_params,
-                predefined_query,
-                regex,
-                headers_name_with_regex,
-                http_response_headers_override,
-                connection_config]
-                -> std::unique_ptr<PredefinedQueryHandler>
-            {
-                return std::make_unique<PredefinedQueryHandler>(
-                    server,
-                    connection_config,
-                    analyze_receive_params,
-                    predefined_query,
-                    regex,
-                    headers_name_with_regex,
-                    http_response_headers_override);
-            };
-            factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
-            factory->addFiltersFromConfig(config, config_prefix);
-            return factory;
-        }
-    }
-
     auto creator = [
         &server,
         analyze_receive_params,
         predefined_query,
-        headers_name_with_regex,
+        url_regexp = regexps.url_regexp,
+        headers_name_with_regexp = std::move(regexps.headers_name_with_regexp),
         http_response_headers_override,
         connection_config]
         -> std::unique_ptr<PredefinedQueryHandler>
@@ -1099,11 +1064,11 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
             connection_config,
             analyze_receive_params,
             predefined_query,
-            CompiledRegexPtr{},
-            headers_name_with_regex,
+            url_regexp,
+            headers_name_with_regexp,
             http_response_headers_override);
     };
-    factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
     return factory;
 }

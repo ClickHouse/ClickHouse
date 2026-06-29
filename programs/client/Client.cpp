@@ -3,6 +3,9 @@
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+
+/// musl defines stderr as (stderr) which is a self-referential macro
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
@@ -1067,13 +1070,14 @@ void Client::processConfig()
     }
     else
     {
-        echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 
         query_id = config().getString("query_id", "");
         if (!query_id.empty())
             client_context->setCurrentQueryId(query_id);
     }
+
+    setupEchoAndHighlightSettings();
 
     if (is_interactive || delayed_interactive)
     {
@@ -1358,8 +1362,7 @@ void Client::readArguments(
 }
 
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+int mainEntryClickHouseClient(int argc, char ** argv);
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

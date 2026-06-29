@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/removeUnusedColumns.h>
 
 #include <numeric>
 #include <Core/Names.h>
@@ -98,7 +99,7 @@ enum class RemoveChildrenOutputResult : UInt8
 };
 }
 
-bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
+static bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
 {
     return std::all_of(
         node.children.begin(),
@@ -173,7 +174,7 @@ struct ChildUpdateResult
     bool added_discarding_step = false;
 };
 
-ChildUpdateResult removeSingleChildOutput(
+static ChildUpdateResult removeSingleChildOutput(
     QueryPlan::Nodes & nodes,
     QueryPlan::Node & node,
     const size_t child_id,

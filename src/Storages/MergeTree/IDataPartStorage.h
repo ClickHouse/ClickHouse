@@ -13,6 +13,7 @@
 #include <optional>
 
 #include <boost/core/noncopyable.hpp>
+#include <Poco/Timestamp.h>
 
 namespace DB
 {
@@ -217,7 +218,7 @@ public:
         struct ReplicatedFileDescription
         {
             InputBufferGetter input_buffer_getter;
-            size_t file_size;
+            size_t file_size{};
         };
 
         std::map<String, ReplicatedFileDescription> files;

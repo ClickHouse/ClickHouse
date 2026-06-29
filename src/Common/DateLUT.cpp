@@ -197,17 +197,33 @@ const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
 {
     std::lock_guard lock(mutex);
 
-    auto it = impls.emplace(time_zone, nullptr).first;
-    if (!it->second)
-        it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(time_zone));
+    auto [it, inserted] = impls.emplace(time_zone, nullptr);
+    if (inserted)
+    {
+        try
+        {
+            it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(time_zone));
+        }
+        catch (...)
+        {
+            /// `DateLUTImpl` construction throws for an unknown time zone. Erase the just-inserted
+            /// empty slot; otherwise a stream of distinct invalid time zone names (which can come from
+            /// untrusted input, e.g. binary type decoding or `toDateTime(x, '<garbage>')`) would grow
+            /// this cache without bound, since entries are never evicted.
+            impls.erase(it);
+            throw;
+        }
+    }
 
     return *it->second;
 }
 
 DateLUT & DateLUT::getInstance()
 {
-    static DateLUT ret;
-    return ret;
+    /// Intentionally leaked: must outlive the asynchronous logger threads that may still
+    /// be formatting `LocalDateTime` values when other static destructors run.
+    static DateLUT * ret = new DateLUT;
+    return *ret;
 }
 
 ExtendedDayNum makeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num)

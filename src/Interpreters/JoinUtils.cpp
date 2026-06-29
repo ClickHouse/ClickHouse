@@ -16,11 +16,11 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/HashTable/Hash.h>
-#include <Common/WeakHash.h>
 
 #include <Core/BlockNameMap.h>
 
 #include <base/FnTraits.h>
+#include <algorithm>
 #include <ranges>
 
 namespace DB
@@ -298,7 +298,7 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
     return column->cloneEmpty();
 }
 
-ColumnPtr materializeColumn(const ColumnPtr & column)
+static ColumnPtr materializeColumn(const ColumnPtr & column)
 {
     return recursiveRemoveLowCardinality(removeSpecialRepresentations(column->convertToFullColumnIfConst()));
 }
@@ -332,6 +332,31 @@ Columns materializeColumns(const Block & block, const Names & names)
     for (const auto & column_name : names)
     {
         materialized.emplace_back(materializeColumn(block, column_name));
+    }
+
+    return materialized;
+}
+
+Columns materializeColumnsKeepLowCardinality(const Block & block, const Names & names)
+{
+    Columns materialized;
+    materialized.reserve(names.size());
+
+    for (const auto & column_name : names)
+    {
+        const auto & column = block.getByName(column_name).column;
+        ColumnPtr prepared = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+
+
+        /// Keep the dictionary only for non-nullable LowCardinality. A LowCardinality(Nullable(T))
+        /// key must be materialized so the join extracts its null map and skips NULL keys:
+        /// extractNestedColumnsAndNullMap does not look inside LowCardinality, and the
+        /// dictionary-aware key getter has no null-key path (a NULL must never join).
+        if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(prepared.get());
+            low_cardinality && low_cardinality->nestedIsNullable())
+            prepared = prepared->convertToFullColumnIfLowCardinality();
+
+        materialized.emplace_back(std::move(prepared));
     }
 
     return materialized;
@@ -480,7 +505,7 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     return left_type_strict->equals(*right_type_strict);
 }
 
-ColumnPtr castToBoolColumn(ColumnPtr column)
+static ColumnPtr castToBoolColumn(ColumnPtr column)
 {
     if (!typeid_cast<const ColumnUInt8 *>(column.get()))
     {
@@ -552,12 +577,11 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     size_t num_rows = block.rows();
     size_t num_cols = block.columns();
 
-    /// Use non-standard initial value so as not to degrade hash map performance inside shard that uses the same CRC32 algorithm.
-    WeakHash32 hash(num_rows);
+    PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & key_name : key_columns_names)
     {
         ColumnPtr key_col = materializeColumn(block, key_name);
-        hash.update(key_col->getWeakHash32());
+        key_col->computeHashInto(0, num_rows, hash.data(), false);
     }
     auto selector = hashToSelector(hash, sharder);
 

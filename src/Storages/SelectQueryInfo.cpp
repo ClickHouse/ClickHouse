@@ -60,6 +60,7 @@ void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const
     prewhere_actions.serialize(ctx.out, ctx.registry);
     writeStringBinary(prewhere_column_name, ctx.out);
     writeBinary(remove_prewhere_column, ctx.out);
+    writeBinary(need_filter, ctx.out);
 }
 
 PrewhereInfo PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
@@ -69,7 +70,7 @@ PrewhereInfo PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
     prewhere_info.prewhere_actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     readStringBinary(prewhere_info.prewhere_column_name, ctx.in);
     readBinary(prewhere_info.remove_prewhere_column, ctx.in);
-    prewhere_info.need_filter = true;
+    readBinary(prewhere_info.need_filter, ctx.in);
 
     return prewhere_info;
 }

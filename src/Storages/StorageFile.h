@@ -307,7 +307,7 @@ private:
     /// the format metadata cache (e.g. Parquet footer cache) is invalidated even
     /// for in-place rewrites within the same wall-clock second.
     std::optional<String> current_file_cache_version;
-    struct stat current_archive_stat;
+    struct stat current_archive_stat{};
     std::optional<String> filename_override;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;

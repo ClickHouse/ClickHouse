@@ -92,7 +92,7 @@ ExternalModelInfos CatBoostLibraryBridgeHelper::listModels()
 
     ExternalModelInfos result;
 
-    UInt64 num_rows;
+    UInt64 num_rows = 0;
     readIntBinary(num_rows, *buf);
 
     for (UInt64 i = 0; i < num_rows; ++i)
@@ -102,7 +102,7 @@ ExternalModelInfos CatBoostLibraryBridgeHelper::listModels()
         readStringBinary(info.model_path, *buf);
         readStringBinary(info.model_type, *buf);
 
-        UInt64 t;
+        UInt64 t = 0;
         readIntBinary(t, *buf);
         info.loading_start_time = std::chrono::system_clock::from_time_t(t);
 
@@ -170,7 +170,7 @@ size_t CatBoostLibraryBridgeHelper::getTreeCount()
                         })
                    .create(credentials);
 
-    size_t result;
+    size_t result = 0;
     readIntBinary(result, *buf);
     return result;
 }

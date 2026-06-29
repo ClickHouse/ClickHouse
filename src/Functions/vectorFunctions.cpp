@@ -619,7 +619,7 @@ public:
         const auto * first_interval = checkAndGetDataType<DataTypeInterval>(arguments[0].type.get());
         const auto * second_interval = checkAndGetDataType<DataTypeInterval>(arguments[1].type.get());
 
-        bool can_be_merged;
+        bool can_be_merged = false;
 
         if (first_interval)
         {
@@ -1156,7 +1156,7 @@ public:
         if (!isColumnConst(*p_column.column) && p_column.column->size() != 1)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
 
-        double p;
+        double p = 0;
         if (isFloat(p_column.column->getDataType()))
             p = p_column.column->getFloat64(0);
         else if (isUInt(p_column.column->getDataType()))
@@ -2073,7 +2073,7 @@ Returns the sum of the products of the corresponding elements.
         {"vector1", "First vector.", {"Array(T)", "Tuple(T)"}},
         {"vector2", "Second vector. Must be the same size as the first vector.", {"Array(T)", "Tuple(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_dotProduct = {"Returns the dot product of the two vectors.", {"(U)Int*", "Float*", "Decimal"}};
+    FunctionDocumentation::ReturnedValue returned_value_dotProduct = {"Returns the dot product of the two vectors. Two `BFloat16` arrays accumulate in and return `Float32`.", {"(U)Int*", "Float*", "Decimal"}};
     FunctionDocumentation::Examples examples_dotProduct = {
         {"Basic usage", "SELECT dotProduct((1, 2), (3, 4))", "11"}
     };

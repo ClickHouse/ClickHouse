@@ -1,0 +1,12 @@
+nested with LowCardinality(String)
+Array(Tuple(\n    name LowCardinality(String)))
+nested with LowCardinality(UInt32)
+Array(Tuple(\n    id LowCardinality(UInt32)))
+nested with Array(LowCardinality(String))
+Array(Tuple(\n    name Array(LowCardinality(String))))
+nested with mixed LowCardinality and plain columns
+Array(Tuple(\n    a LowCardinality(String),\n    b UInt32))
+nested with plain String (regression check)
+Array(Tuple(\n    name String))
+nested with empty arrays
+Array(Tuple(\n    name LowCardinality(String)))

@@ -214,7 +214,7 @@ Block NativeReader::read()
             /// in-memory state, it should be able to handle all possible serialization variants.
             auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations());
 
-            UInt8 has_custom;
+            UInt8 has_custom = 0;
             readBinary(has_custom, istr);
             if (has_custom)
                 info->deserializeFromKindsBinary(istr);

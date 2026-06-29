@@ -359,11 +359,11 @@ template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
 
 template <typename Cell>
-struct ZeroValueStorage<true, Cell>
+struct ZeroValueStorage<true, Cell> // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `zero_value_storage` is raw storage for placement new, only written when `has_zero` becomes true
 {
 private:
     bool has_zero = false;
-    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)];
 
 public:
     bool hasZero() const { return has_zero; }

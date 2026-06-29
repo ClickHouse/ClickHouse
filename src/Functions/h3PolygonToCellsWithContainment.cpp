@@ -325,8 +325,8 @@ private:
         VectorWithMemoryTracking<LatLng> mainLoopVerts;
         VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> holeVerts;
 
-        mutable GeoLoop mutableMainLoop;
-        mutable GeoPolygon mutablePolygon;
+        mutable GeoLoop mutableMainLoop{};
+        mutable GeoPolygon mutablePolygon{};
         mutable VectorWithMemoryTracking<GeoLoop> mutableHoles;
 
     public:

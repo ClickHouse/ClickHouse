@@ -14,24 +14,20 @@ namespace ErrorCodes
 }
 
 PackedFilesReader::PackedFilesReader(
-    DiskPtr disk_, const String & data_file_name_, const ReadSettings & read_settings_)
-    : disk(std::move(disk_)), data_file_name(data_file_name_)
+    const DiskPtr & disk, const String & data_file_name, const ReadSettings & read_settings)
+    : index(readIndex(*disk->readFile(data_file_name, read_settings.adjustBufferSize(4096))))
 {
-    auto in = disk->readFile(data_file_name, read_settings_.adjustBufferSize(4096));
-
-    index = readIndex(*in);
 }
 
-PackedFilesReader::PackedFilesReader(
-    DiskPtr disk_, const String & data_file_name_, const PackedFilesIO::Index & index_)
-    : disk(std::move(disk_)), data_file_name(data_file_name_), index(index_)
+PackedFilesReader::PackedFilesReader(PackedFilesIO::Index index_)
+    : index(std::move(index_))
 {
 }
 
 
 PackedFilesIO::Index PackedFilesReader::readIndex(ReadBuffer & in)
 {
-    UInt8 version;
+    UInt8 version = 0;
     readIntBinary(version, in);
 
     if (version > PackedFilesIO::VERSION)
@@ -39,13 +35,13 @@ PackedFilesIO::Index PackedFilesReader::readIndex(ReadBuffer & in)
             "Unknown format ({}) of packed data", std::to_string(version));
 
     PackedFilesIO::Index index;
-    size_t num_files;
+    size_t num_files = 0;
     readIntBinary(num_files, in);
 
     for (size_t i = 0; i < num_files; ++i)
     {
         String file_name;
-        PackedFilesIO::FileOffset offset;
+        PackedFilesIO::FileOffset offset{};
 
         readStringBinary(file_name, in);
         readIntBinary(offset.offset, in);
@@ -87,6 +83,8 @@ static ReadSettings patchSettings(ReadSettings settings)
 }
 
 std::unique_ptr<ReadBufferFromFileBase> PackedFilesReader::readFile(
+    const DiskPtr & disk,
+    const String & data_file_name,
     const String & file_name,
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const

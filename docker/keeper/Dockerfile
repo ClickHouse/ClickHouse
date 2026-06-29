@@ -38,7 +38,7 @@ RUN arch=${TARGETARCH:-amd64} \
 # lts / testing / prestable / etc
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
-ARG VERSION="26.5.1.882"
+ARG VERSION="26.6.1.1193"
 ARG PACKAGES="clickhouse-keeper"
 ARG DIRECT_DOWNLOAD_URLS=""
 
@@ -53,21 +53,37 @@ ARG DEFAULT_GID="101"
 RUN addgroup -S -g "${DEFAULT_GID}" clickhouse && \
     adduser -S -h "/var/lib/clickhouse" -s /bin/bash -G clickhouse -g "ClickHouse keeper" -u "${DEFAULT_UID}" clickhouse
 
+# Number of `wget` retries and delay between them, for resilience against
+# transient HTTP errors (e.g. `clickhouse-builds.s3.amazonaws.com` returning
+# `500 Internal Server Error` / `503 Service Unavailable` during builds).
+ARG WGET_RETRIES=5
+ARG WGET_RETRY_DELAY=1
+
 ARG TARGETARCH
 RUN arch=${TARGETARCH:-amd64} \
     && cd /tmp && rm -f /tmp/*tgz && rm -f /tmp/*tgz.sha512 |: \
+    && wget_with_retry() { \
+        local url="$1"; local attempt=1; \
+        while [ "$attempt" -le "${WGET_RETRIES}" ]; do \
+            if wget -c -q "$url"; then return 0; fi; \
+            echo "Attempt $attempt/${WGET_RETRIES} failed for $url, retrying in ${WGET_RETRY_DELAY}s..."; \
+            sleep "${WGET_RETRY_DELAY}"; \
+            attempt=$((attempt + 1)); \
+        done; \
+        echo "ERROR: Failed to download $url after ${WGET_RETRIES} attempts"; return 1; \
+    } \
     && if [ -n "${DIRECT_DOWNLOAD_URLS}" ]; then \
         echo "installing from provided urls with tgz packages: ${DIRECT_DOWNLOAD_URLS}" \
         && for url in $DIRECT_DOWNLOAD_URLS; do \
             echo "Get ${url}" \
-            && wget -c -q "$url" \
+            && wget_with_retry "$url" \
         ; done \
     else \
         for package in ${PACKAGES}; do \
             cd /tmp \
             && echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
-            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
-            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz.sha512" \
+            && wget_with_retry "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
+            && wget_with_retry "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz.sha512" \
         ; done \
     fi \
     && cat *.tgz.sha512 | sha512sum -c \

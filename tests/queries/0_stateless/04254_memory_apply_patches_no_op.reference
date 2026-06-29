@@ -1,0 +1,5 @@
+before:	4
+after parens:	4	[1,2,3,4]	['a','b','c','d']
+after bare:	4	[1,2,3,4]	['a','b','c','d']
+after deleted mask:	4	[1,2,3,4]	['a','b','c','d']
+after mixed:	4	[1,2,3,4]	['A','b','c','d']
