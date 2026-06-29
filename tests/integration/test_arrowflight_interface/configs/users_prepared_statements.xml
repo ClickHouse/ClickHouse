@@ -1,0 +1,10 @@
+<clickhouse>
+    <users>
+        <user_ps1>
+            <password>pass1</password>
+        </user_ps1>
+        <user_ps2>
+            <password>pass2</password>
+        </user_ps2>
+    </users>
+</clickhouse>

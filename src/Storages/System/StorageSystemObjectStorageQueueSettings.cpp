@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -30,8 +31,8 @@ ColumnsDescription StorageSystemObjectStorageQueueSettings<type>::getColumnsDesc
         {"description", std::make_shared<DataTypeString>(), "Setting description."},
         {"alterable",    std::make_shared<DataTypeUInt8>(),
             "Shows whether the current user can change the setting via ALTER TABLE MODIFY SETTING: "
-            "0 — Current user can change the setting, "
-            "1 — Current user can't change the setting."
+            "0 — Current user can't change the setting, "
+            "1 — Current user can change the setting."
         },
     };
 }
@@ -59,7 +60,7 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
     const bool show_tables_granted = access->isGranted(AccessType::SHOW_TABLES);
     if (show_tables_granted)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
         for (const auto & db : databases)
         {
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -78,3 +79,7 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
 template class StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>;
 template class StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>;
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>) }
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>) }

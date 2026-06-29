@@ -1,4 +1,5 @@
 #include <optional>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnsNumber.h>
@@ -28,7 +29,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+    extern const SettingsBool show_remote_databases_in_system_tables;
 }
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
@@ -74,8 +75,8 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     });
 
     storage_metadata.setColumns(description);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemColumns::createVirtuals()
@@ -93,7 +94,7 @@ namespace
 }
 
 
-class ColumnsSource : public ISource
+class ColumnsSource final : public ISource
 {
 public:
     ColumnsSource(
@@ -103,13 +104,14 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        ContextPtr context)
+        ContextPtr context_)
         : ISource(header_)
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
         , tables(std::move(tables_))
         , storages(std::move(storages_))
+        , context(std::move(context_))
         , client_info_interface(context->getClientInfo().interface)
         , total_tables(tables->size())
         , access(context->getAccess())
@@ -154,7 +156,7 @@ protected:
                     continue;
                 }
 
-                auto metadata_snapshot = storage->tryGetInMemoryMetadataPtr().value_or(std::make_shared<StorageInMemoryMetadata>());
+                const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
                 columns = metadata_snapshot->getColumns();
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
@@ -354,6 +356,7 @@ private:
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;
+    ContextPtr context;
     ClientInfo::Interface client_info_interface;
     size_t db_table_num = 0;
     size_t total_tables;
@@ -454,7 +457,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
         const auto & context = getContext();
         const auto & settings = context->getSettingsRef();
-        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
+        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
         for (const auto & [database_name, database] : databases)
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -544,3 +547,6 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemColumns) }

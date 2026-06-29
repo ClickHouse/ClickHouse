@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemProjections.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -48,8 +49,8 @@ StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
          std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
          "Projection settings."},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemProjections::createVirtuals()
@@ -60,7 +61,7 @@ VirtualColumnsDescription StorageSystemProjections::createVirtuals()
     return desc;
 }
 
-class ProjectionsSource : public ISource
+class ProjectionsSource final : public ISource
 {
 public:
     ProjectionsSource(
@@ -123,7 +124,7 @@ protected:
                 const auto table = tables_it->table();
                 if (!table)
                     continue;
-                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
+                const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (!metadata_snapshot)
                     continue;
                 const auto & projections = metadata_snapshot->getProjections();
@@ -280,7 +281,7 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -301,3 +302,6 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProjections) }

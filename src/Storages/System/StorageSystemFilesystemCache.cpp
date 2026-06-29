@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemFilesystemCache.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
@@ -10,21 +11,24 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileSegment.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Disks/IDisk.h>
+#if ENABLE_DISTRIBUTED_CACHE
+#include <DistributedCache/DistributedCacheCommon.h>
+#endif
 
 
 namespace DB
 {
 namespace
 {
-class SystemFilesystemCacheSource : public ISource, private WithContext
+class SystemFilesystemCacheSource final : public ISource, private WithContext
 {
 public:
     SystemFilesystemCacheSource(
@@ -250,8 +254,8 @@ StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & tab
         {"segment_type", std::make_shared<DataTypeString>(), "Type of the segment. Used to separate data files(`.json`, `.txt` and etc) from data file(`.bin`, mark files)."},
         {"file_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "File size of the file to which current file segment belongs"},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemFilesystemCache::createVirtuals()
@@ -273,7 +277,7 @@ void StorageSystemFilesystemCache::readImpl(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(storage_snapshot->virtual_columns->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     auto read_step = std::make_unique<ReadFromSystemFilesystemCache>(
         column_names,
         query_info,
@@ -285,3 +289,6 @@ void StorageSystemFilesystemCache::readImpl(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemFilesystemCache) }

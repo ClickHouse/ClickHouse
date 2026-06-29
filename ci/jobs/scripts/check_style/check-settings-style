@@ -26,7 +26,7 @@ ALL_DECLARATION_FILES=(
     "$ROOT_PATH/src/Databases/DatabaseReplicatedSettings.cpp"
     "$ROOT_PATH/src/IO/S3AuthSettings.cpp"
     "$ROOT_PATH/src/IO/S3RequestSettings.cpp"
-    "$ROOT_PATH/src/Interpreters/Cache/FileCacheSettings.cpp"
+    "$ROOT_PATH/src/Interpreters/FileCache/FileCacheSettings.cpp"
     "$ROOT_PATH/src/Processors/QueryPlan/QueryPlanSerializationSettings.cpp"
     "$ROOT_PATH/src/Storages/Distributed/DistributedSettings.cpp"
     "$ROOT_PATH/src/Storages/ExecutableSettings.cpp"

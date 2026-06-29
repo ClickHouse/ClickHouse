@@ -8,8 +8,6 @@
 
 #include <base/bit_cast.h>
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -493,7 +491,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
     }
@@ -501,7 +499,7 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
     {
         if constexpr (is_able_to_parallelize_merge)
             this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);
@@ -599,7 +597,7 @@ public:
         detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
     }
@@ -607,7 +605,7 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
     {
         if constexpr (is_able_to_parallelize_merge)
             this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);

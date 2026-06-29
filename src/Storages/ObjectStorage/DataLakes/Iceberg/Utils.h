@@ -1,7 +1,10 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_AVRO
+
 #include <string>
-#include <string_view>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 
@@ -12,8 +15,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
-#if USE_AVRO
-
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
@@ -21,7 +22,11 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+
+namespace avro
+{
+class GenericDatum;
+}
 
 namespace DB::Iceberg
 {
@@ -97,9 +102,29 @@ std::string normalizeUuid(const std::string & uuid);
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
 
+enum class FileCategory : uint8_t
+{
+    DATA_FILE,
+    POSITION_DELETE_FILE,
+    EQUALITY_DELETE_FILE,
+    MANIFEST_FILE,
+    MANIFEST_LIST,
+    METADATA_JSON,
+    STATISTICS_FILE,
+};
+
+FileCategory inspectFileCategory(const String & relative_path);
+
 KeyDescription getSortingKeyDescriptionFromMetadata(
     Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
+
+void forEachAvroEntry(
+    const String & filename,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    const String & logger_name,
+    std::function<void(const avro::GenericDatum &)> callback);
 }
 
 #endif

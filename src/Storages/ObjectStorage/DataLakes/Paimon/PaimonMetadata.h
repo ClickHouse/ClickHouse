@@ -3,25 +3,29 @@
 
 #if USE_AVRO
 
+#include <atomic>
+#include <mutex>
 #include <optional>
 #include <vector>
-#include <Core/Block.h>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableStateSnapshot.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonPersistentComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PartitionPruner.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include <Common/SharedMutex.h>
-#include <Common/SharedLockGuard.h>
 
 
 namespace DB
 {
+
+using namespace Paimon;
+
 class PaimonMetadata : public IDataLakeMetadata, private WithContext
 {
 public:
@@ -31,8 +35,8 @@ public:
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
         const DB::ContextPtr & context_,
-        const Poco::JSON::Object::Ptr & schema_json_object_,
-        PaimonTableClientPtr table_client_ptr_);
+        PaimonPersistentComponents persistent_components_,
+        PaimonTableClientPtr table_client_);
 
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,
@@ -52,46 +56,146 @@ public:
     {
     }
 
-    NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override;
+    const char * getName() const override { return name; }
 
-    bool operator==(const IDataLakeMetadata & other) const override
-    {
-        const auto * paimon_metadata = dynamic_cast<const PaimonMetadata *>(&other);
-        SharedLockGuard lock_shared(mutex);
-        SharedLockGuard lock_shared_other(paimon_metadata->mutex);
-        return paimon_metadata && table_schema == paimon_metadata->table_schema && snapshot == paimon_metadata->snapshot;
-    }
+    /// Get table schema from schema_processor (no heavy lock needed)
+    NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
+
+    /// Return the current PaimonTableState as a DataLakeTableStateSnapshot
+    /// for snapshot isolation (pins the exact state for query execution).
+    std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const override;
+
+    /// Build StorageInMemoryMetadata (columns, etc.) from a pinned PaimonTableState.
+    std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
+        const DataLakeTableStateSnapshot & state, ContextPtr local_context) const override;
+
+    /// Paimon schema can change across snapshots, so always reload for consistency.
+    bool shouldReloadSchemaForConsistency(ContextPtr local_context) const override;
+
+    /// Simplified comparison: only compare snapshot_id
+    bool operator==(const IDataLakeMetadata & other) const override;
 
     bool supportsUpdate() const override { return true; }
 
+    /// Update state using COW pattern, non-blocking for reads
     void update(const ContextPtr & local_context) override;
 
-    ObjectIterator
-    iterate(const ActionsDAG * /* filter_dag */,
+    /// Extract state from storage_metadata for snapshot isolation
+    /// For incremental read mode, this returns only new data since last committed snapshot
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
         FileProgressCallback callback,
-        size_t /* list_batch_size */,
-        StorageMetadataPtr /* storage_metadata */,
-        ContextPtr /* context */)
-        const override;
-    const char * getName() const override { return name; }
+        size_t list_batch_size,
+        StorageMetadataPtr storage_metadata,
+        ContextPtr query_context) const override;
+
+    /// Check if incremental read mode is enabled
+    bool isIncrementalReadEnabled() const;
+
+    /// Get the last committed snapshot ID from Keeper (for incremental read)
+    std::optional<Int64> getCommittedSnapshotId() const;
+
+    /// Commit snapshot after successful processing (for incremental read)
+    /// Note: in normal incremental mode, committed_snapshot is already advanced
+    /// inside iterate(). This method exists for manual overrides only.
+    void commitSnapshot(Int64 snapshot_id);
+
 private:
-    void updateState();
-    void checkSupportCofiguration();
+    enum class ManifestKind : UInt8
+    {
+        Base,
+        Delta,
+        Both,
+    };
 
-    mutable SharedMutex mutex;
-    std::optional<PaimonSnapshot> snapshot TSA_GUARDED_BY(mutex);
-    std::optional<PaimonTableSchema> table_schema TSA_GUARDED_BY(mutex);
-    std::vector<PaimonManifest> base_manifest TSA_GUARDED_BY(mutex);
-    std::vector<PaimonManifest> delta_manifest TSA_GUARDED_BY(mutex);
+    Strings collectDataFilesFromManifests(
+        const std::vector<PaimonTableStatePtr> & snapshots,
+        ManifestKind kind,
+        const std::optional<PartitionPruner> & partition_pruner,
+        bool deduplicate,
+        bool track_deletes) const;
+
+    /// Lock-free read of current state
+    PaimonTableStatePtr getCurrentState() const;
+
+    /// Load latest state from object storage (I/O outside of any lock)
+    PaimonTableStatePtr loadLatestState() const;
+
+    /// Load state for a specific snapshot ID
+    PaimonTableStatePtr loadStateForSnapshot(Int64 snapshot_id) const;
+
+    /// Get snapshots between from_snapshot (exclusive) and to_snapshot (inclusive).
+    /// If max_snapshots_to_load > 0, stop loading once the limit is reached.
+    /// If skip_compact is true, snapshots with commit_kind == "COMPACT" are excluded
+    /// (used by incremental read to avoid re-processing compacted data).
+    /// last_scanned_snapshot_id is set to the highest snapshot_id actually visited
+    /// (including skipped compact / missing ones), so the caller can advance the watermark
+    /// past gaps that produced no data files.
+    std::vector<PaimonTableStatePtr> getSnapshotsBetween(
+        Int64 from_snapshot_id,
+        Int64 to_snapshot_id,
+        UInt64 max_snapshots_to_load,
+        bool skip_compact,
+        std::optional<Int64> & last_scanned_snapshot_id) const;
+
+    /// Extract table state from storage_metadata
+    static PaimonTableStatePtr extractTableState(StorageMetadataPtr storage_metadata);
+
+    /// Get or load manifest file list (uses cache)
+    std::vector<PaimonManifestFileMeta> getManifestList(const String & manifest_list_path) const;
+
+    /// Get or load manifest content (uses cache)
+    PaimonManifest getManifest(const String & manifest_path, Int64 schema_id) const;
+
+    /// Validate configuration
+    void checkSupportedConfiguration() const;
+
+    /// Collect data files for incremental read (from committed snapshot to current)
+    Strings collectIncrementalDataFiles(
+        const PaimonTableStatePtr & state,
+        const std::optional<PartitionPruner> & partition_pruner,
+        UInt64 max_consume_snapshots,
+        std::optional<Int64> & last_consumed_snapshot_id) const;
+
+    /// Collect data files for a specific snapshot delta (session-level targeted read)
+    Strings collectDeltaFilesForSnapshot(
+        const PaimonTableStatePtr & state,
+        const std::optional<PartitionPruner> & partition_pruner) const;
+
+    /// Collect data files for full scan
+    Strings collectFullScanDataFiles(
+        const PaimonTableStatePtr & state,
+        const std::optional<PartitionPruner> & partition_pruner) const;
+
+    /// Background refresh task entry
+    void scheduleBackgroundRefresh();
+    void runBackgroundRefresh();
+
+
+    mutable std::shared_ptr<const PaimonTableState> current_state{nullptr};
+
+    /// Update mutex: only held briefly during state replacement
+    mutable std::mutex update_mutex;
+
+    /// Persistent components: thread-safe or immutable
+    PaimonPersistentComponents persistent_components;
+
+    PaimonTableClientPtr table_client;
+
     const ObjectStoragePtr object_storage;
-    LoggerPtr log;
-    PaimonTableClientPtr table_client_ptr;
-    Poco::JSON::Object::Ptr last_metadata_object TSA_GUARDED_BY(mutex);
-    String table_path;
 
+    LoggerPtr log;
 
     constexpr static String PARTITION_DEFAULT_VALUE = "__DEFAULT_PARTITION__";
+
+    /// Background refresh. `refresh_task` must be declared last so it is destroyed first:
+    /// ~BackgroundSchedulePoolTaskHolder calls deactivate() which synchronizes with runBackgroundRefresh()
+    /// before `refresh_interval_sec`, `refresh_in_progress`, and other members are destroyed.
+    size_t refresh_interval_sec = 0;
+    std::atomic_bool refresh_in_progress{false};
+    BackgroundSchedulePoolTaskHolder refresh_task;
 };
 
 }
+
 #endif

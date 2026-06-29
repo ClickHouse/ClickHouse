@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/BoolMask.h>
 
 #include <Common/SharedMutex.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
 
 
@@ -14,6 +15,7 @@ namespace DB
 {
 
 struct Range;
+using Ranges = VectorWithMemoryTracking<Range>;
 
 class Context;
 class IFunctionBase;
@@ -57,6 +59,9 @@ public:
 
     /// finishInsert and isCreated are thread-safe
     bool isCreated() const { return is_created.load(); }
+
+    /// Whether the set building was stopped early because of size limits with OverflowMode::BREAK.
+    bool isTruncated() const { return is_truncated.load(); }
 
     void checkIsCreated() const;
 
@@ -131,6 +136,9 @@ private:
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;
 
+    /// Whether the set was truncated due to overflow with OverflowMode::BREAK.
+    std::atomic<bool> is_truncated = false;
+
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
         const ColumnRawPtrs & key_columns,
@@ -202,8 +210,8 @@ public:
       */
     struct KeyTuplePositionMapping
     {
-        size_t tuple_index;
-        size_t key_index;
+        size_t tuple_index{};
+        size_t key_index{};
         std::vector<FunctionBasePtr> functions;
     };
 
@@ -213,7 +221,13 @@ public:
 
     bool hasMonotonicFunctionsChain() const;
 
-    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
+    BoolMask checkInRange(const Ranges & key_ranges, const DataTypes & data_types, bool single_point = false) const;
+
+    /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
+    /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
+    /// If some key column >= `key_col_to_sparse_pos`.size(), it is considered as not tracked.
+    /// See KeyCondition::checkInRange for explanation of relevant parameters.
+    BoolMask checkInRange(const std::vector<int> & key_col_to_sparse_pos, const Ranges & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point = false) const;
 
     const Columns & getOrderedSet() const { return ordered_set; }
 

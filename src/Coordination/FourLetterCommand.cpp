@@ -656,7 +656,7 @@ String YieldLeadershipCommand::run()
 
 #if USE_JEMALLOC
 
-void printToString(void * output, const char * data)
+static void printToString(void * output, const char * data)
 {
     std::string * output_data = reinterpret_cast<std::string *>(output);
     *output_data += std::string(data);

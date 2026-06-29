@@ -1,11 +1,13 @@
+#include <optional>
 #include <string>
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/CompressionMethod.h>
-#include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Storages/ColumnsDescription.h>
@@ -15,6 +17,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -23,13 +28,15 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Common/Exception.h>
 #include <Common/Logger.h>
 
-#if USE_AVRO
+#if USE_AVRO && !CLICKHOUSE_CLOUD
 
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::Iceberg
@@ -58,6 +65,7 @@ struct DataFilePlan
 
     Iceberg::IcebergPathFromMetadata patched_path;
     UInt64 new_records_count = 0;
+    UInt64 new_bytes_count = 0;
 };
 
 /// Plan of compaction consists of information about all data files and what delete files should be applied for them.
@@ -108,7 +116,7 @@ struct Plan
     } partition_encoder;
 };
 
-Plan getPlan(
+static Plan getPlan(
     IcebergHistory snapshots_info,
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
@@ -229,6 +237,21 @@ static void writeDataFiles(
     const String & write_format,
     CompressionMethod write_compression_method)
 {
+    ColumnMapperPtr column_mapper;
+    {
+        auto current_schema_id = initial_plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
+        auto schemas = initial_plan.initial_metadata_object->getArray(Iceberg::f_schemas);
+        for (size_t i = 0; i < schemas->size(); ++i)
+        {
+            auto schema_object = schemas->getObject(static_cast<UInt32>(i));
+            if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+            {
+                column_mapper = createColumnMapper(schema_object);
+                break;
+            }
+        }
+    }
+
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
         auto delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
@@ -268,8 +291,10 @@ static void writeDataFiles(
             DBMS_DEFAULT_BUFFER_SIZE,
             context->getWriteSettings());
 
-        auto output_format
-            = FormatFactory::instance().getOutputFormat(write_format, *write_buffer, *sample_block, context, format_settings);
+        FormatFilterInfoPtr output_format_filter_info
+            = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
+        auto output_format = FormatFactory::instance().getOutputFormat(
+            write_format, *write_buffer, *sample_block, context, format_settings, output_format_filter_info);
 
         while (true)
         {
@@ -292,10 +317,62 @@ static void writeDataFiles(
         output_format->flush();
         output_format->finalize();
         write_buffer->finalize();
+        auto file_bytes = write_buffer->count();
+        if (file_bytes == 0 && !data_file->patched_path.empty())
+        {
+            /// Some storage backends (e.g. Azure) don't track bytes in the write buffer.
+            /// Fall back to querying the actual object size.
+            auto obj_metadata = object_storage->getObjectMetadata(path_resolver.resolve(data_file->patched_path), /*with_tags=*/false);
+            file_bytes = obj_metadata.size_bytes;
+        }
+        data_file->new_bytes_count = file_bytes;
     }
 }
 
-void writeMetadataFiles(
+namespace
+{
+
+[[nodiscard]] std::optional<SnapshotSummaryUpdateAppend> tryGetAppendUpdate(const Iceberg::IcebergHistoryRecord & history_record)
+{
+    if (!history_record.snapshot_summary)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Missing summary, snapshot={}", history_record.snapshot_id);
+
+    const auto & summary = history_record.snapshot_summary;
+    switch (summary->getOperation())
+    {
+        case SnapshotSummaryOperation::APPEND:
+            return summary->getUpdate<SnapshotSummaryUpdateAppend>();
+        case SnapshotSummaryOperation::DELETE:
+            return std::nullopt;
+        case SnapshotSummaryOperation::OVERWRITE: {
+            const auto & update = summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>();
+            /// current compaction (OPTIME TABLE my_iceberg) supports only overwrites wich has only position delete files
+            if (update.added_files == 0 && (update.added_position_deletes == update.added_delete_files) && update.added_position_deletes != 0)
+                return std::nullopt;
+            [[fallthrough]];
+        }
+        case SnapshotSummaryOperation::REPLACE:
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported snapshot's operation type {}", summary->getOperation());
+    }
+};
+
+
+/// Current experimental compact implementation expects snapshots to be either appends or overwrites which has only position deletes
+/// Lets force this invariant
+void checkIfIcebergHistorySupported(const IcebergHistory & history)
+{
+    for (const auto & history_record : history)
+    {
+        auto append = tryGetAppendUpdate(history_record);
+        if (append && append->added_files == 0)
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS, "Found an append with 0 added_files, snapshot={}", history_record.snapshot_id);
+    }
+}
+
+}
+
+static void writeMetadataFiles(
     Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
 {
     auto log = getLogger("IcebergCompaction");
@@ -324,11 +401,13 @@ void writeMetadataFiles(
 
     for (const auto & history_record : plan.history)
     {
-        if (history_record.added_files == 0)
+        auto append = tryGetAppendUpdate(history_record);
+        if (!append)
         {
             new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
             continue;
         }
+
         Int32 total_records_count = 0;
         for (const auto & data_file : plan.snapshot_id_to_data_files[history_record.snapshot_id])
             total_records_count += data_file->new_records_count;
@@ -337,10 +416,10 @@ void writeMetadataFiles(
             plan.generator,
             generated_metadata_info.path,
             history_record.parent_id,
-            history_record.added_files,
+            append->added_files,
             total_records_count,
-            history_record.added_files_size,
-            history_record.num_partitions,
+            append->added_files_size,
+            append->num_partitions,
             0,
             0,
             history_record.snapshot_id,
@@ -358,6 +437,10 @@ void writeMetadataFiles(
         std::unordered_map<std::shared_ptr<ManifestFilePlan>, std::unordered_set<Iceberg::IcebergPathFromMetadata>> grouped_by_manifest_files_result;
         std::unordered_map<std::shared_ptr<ManifestFilePlan>, size_t> grouped_by_manifest_files_partitions;
         std::unordered_map<std::shared_ptr<ManifestFilePlan>, size_t> partition_values;
+
+        std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> patched_path_to_data_file;
+        for (const auto & [_, data_file] : plan.path_to_data_file)
+            patched_path_to_data_file[data_file->patched_path] = data_file;
 
         for (size_t i = 0; i < plan.partitions.size(); ++i)
         {
@@ -407,12 +490,30 @@ void writeMetadataFiles(
             if (!snapshot)
                 continue;
 
+            std::vector<Iceberg::IcebergPathFromMetadata> data_files_vec(data_filenames.begin(), data_filenames.end());
+            std::vector<UInt64> file_row_counts;
+            std::vector<UInt64> file_byte_counts;
+            for (const auto & path : data_files_vec)
+            {
+                if (auto it = patched_path_to_data_file.find(path); it != patched_path_to_data_file.end())
+                {
+                    file_row_counts.push_back(it->second->new_records_count);
+                    file_byte_counts.push_back(it->second->new_bytes_count);
+                }
+                else
+                {
+                    file_row_counts.push_back(0);
+                    file_byte_counts.push_back(0);
+                }
+            }
             generateManifestFile(
                 metadata_object,
                 partition_columns,
                 plan.partition_encoder.getPartitionValue(grouped_by_manifest_files_partitions[manifest_entry]),
-                ChunkPartitioner(fields_from_partition_spec, current_schema, context, sample_block_).getResultTypes(),
-                std::vector(data_filenames.begin(), data_filenames.end()),
+                ChunkPartitioner(fields_from_partition_spec, current_schema->getArray(Iceberg::f_fields), context, sample_block_).getResultTypes(),
+                data_files_vec,
+                file_row_counts,
+                file_byte_counts,
                 manifest_entry->statistics,
                 sample_block_,
                 snapshot,
@@ -437,7 +538,7 @@ void writeMetadataFiles(
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_list_renamings;
     for (size_t i = 0; i < plan.history.size(); ++i)
     {
-        if (plan.history[i].added_files == 0)
+        if (auto append = tryGetAppendUpdate(plan.history[i]); !append)
             continue;
 
         manifest_list_renamings[plan.history[i].manifest_list_path] = new_snapshots[i].manifest_list_path;
@@ -445,7 +546,7 @@ void writeMetadataFiles(
 
     for (size_t i = 0; i < plan.history.size(); ++i)
     {
-        if (plan.history[i].added_files == 0)
+        if (auto append = tryGetAppendUpdate(plan.history[i]); !append)
             continue;
 
         auto initial_manifest_list_name = plan.history[i].manifest_list_path;
@@ -500,7 +601,7 @@ void writeMetadataFiles(
     }
 }
 
-std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
+static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
 {
     auto metadata_files = listFiles(*object_storage, table_path, "metadata", "");
     auto data_files = listFiles(*object_storage, table_path, "data", "");
@@ -511,7 +612,7 @@ std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & 
     return metadata_files;
 }
 
-void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)
+static void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)
 {
     for (const auto & metadata_file : old_files)
     {
@@ -529,6 +630,8 @@ void compactIcebergTable(
     ContextPtr context_,
     const String & write_format)
 {
+    checkIfIcebergHistorySupported(snapshots_info);
+
     auto plan = getPlan(
         std::move(snapshots_info),
         data_lake_settings,
