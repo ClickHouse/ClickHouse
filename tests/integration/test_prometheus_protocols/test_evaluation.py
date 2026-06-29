@@ -1005,6 +1005,38 @@ def test_function_over_time():
     )
 
 
+def test_subquery_drops_stale_marker():
+    # An instant-selector subquery builds its grid via `last_over_time`, which keeps the latest sample at
+    # each step - including a Prometheus stale marker. Stale markers mean "no sample here", so Prometheus omits
+    # the step from the matrix instead of emitting it. The step at 110 (the stale marker) must be dropped, not
+    # surfaced as a `NaN` sample.
+    do_query_test(
+        "stale_counter_values[30s:10s]",
+        120,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "stale_counter_values", "case": "stale-nan"}, "values": [[100, "2"], [120, "1"]]}]}',
+        [
+            [
+                "[('__name__','stale_counter_values'),('case','stale-nan')]",
+                "[('1970-01-01 00:01:40.000',2),('1970-01-01 00:02:00.000',1)]",
+            ]
+        ],
+    )
+
+    # Stale markers are dropped while regular `NaN` samples remain visible: the step at 110 (stale marker) is
+    # omitted, but the regular `NaN` samples at 130 and 140 stay in the matrix.
+    do_query_test(
+        "stale_counter_values[60s:10s]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "stale_counter_values", "case": "stale-nan"}, "values": [[100, "2"], [120, "1"], [130, "NaN"], [140, "NaN"], [150, "3"]]}]}',
+        [
+            [
+                "[('__name__','stale_counter_values'),('case','stale-nan')]",
+                "[('1970-01-01 00:01:40.000',2),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',nan),('1970-01-01 00:02:20.000',nan),('1970-01-01 00:02:30.000',3)]",
+            ]
+        ],
+    )
+
+
 def test_literals():
     timestamp = 250
     do_query_test(
