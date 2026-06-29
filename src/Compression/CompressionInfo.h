@@ -50,6 +50,7 @@ enum class CompressionMethodByte : uint8_t
     GCD             = 0x9a,
     /// ZSTD_QPL        = 0x9b, /// Removed, don't reuse for another codec
     ALP             = 0x9c,
+    ByteStreamSplit = 0x9d,
 };
 
 }

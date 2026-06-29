@@ -462,6 +462,46 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
+#### ByteStreamSplit {#bytestreamsplit}
+
+<ExperimentalBadge/>
+
+`ByteStreamSplit(element_bytes)` — A preprocessing transform that improves compression of fixed-width columnar data by transposing the byte layout. Given N elements of W bytes each, all first bytes are grouped together, then all second bytes, and so on — producing W streams of N bytes each.
+
+For example, with W=4 (Float32) and 3 elements:
+
+```text
+Input  (row-major):  [A0 A1 A2 A3] [B0 B1 B2 B3] [C0 C1 C2 C3]
+Output (transposed): [A0 B0 C0] [A1 B1 C1] [A2 B2 C2] [A3 B3 C3]
+```
+
+Bytes at the same position within each element tend to have similar values — for example, the exponent bytes of `Float32` values are nearly identical across rows, and the high bytes of `IPv4` or `IPv6` addresses sharing a subnet are constant. Grouping these bytes together creates long runs of similar bytes that compress dramatically better when chained with `LZ4` or `ZSTD`.
+
+`element_bytes` is an optional positive integer specifying the element byte width (minimum 2, maximum 255). When omitted, the width is inferred from the column data type. If no type information is available, it defaults to 4.
+
+`ByteStreamSplit` is a data preparation codec, i.e. it cannot be used stand-alone and must be followed by a compression codec such as `LZ4` or `ZSTD`.
+
+The codec supports any fixed-size type with an element size between 2 and 255 bytes, including `Float32`, `Float64`, integer types, `IPv4`, `IPv6`, `UUID`, and `FixedString(N)` for N ≥ 2. It is also valid on composite types such as `Array(T)` where `T` has a fixed-size element representation — the transform is applied per substream, so the element data stream is transposed while the offsets stream goes through the chained compressor.
+
+:::note
+This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
+:::
+
+```sql
+SET allow_experimental_codecs = 1;
+
+CREATE TABLE split_example
+(
+    timestamp   DateTime,
+    temperature Float32    CODEC(ByteStreamSplit, LZ4),
+    pressure    Float64    CODEC(ByteStreamSplit, ZSTD),
+    client_ip   IPv4       CODEC(ByteStreamSplit, LZ4),
+    client_ipv6 IPv6       CODEC(ByteStreamSplit(16), LZ4)
+)
+ENGINE = MergeTree()
+ORDER BY timestamp
+```
+
 ### Encryption Codecs {#encryption-codecs}
 
 These codecs don't actually compress data, but instead encrypt data on disk. These are only available when an encryption key is specified by [encryption](/operations/server-configuration-parameters/settings#encryption) settings. Note that encryption only makes sense at the end of codec pipelines, because encrypted data usually can't be compressed in any meaningful way.
