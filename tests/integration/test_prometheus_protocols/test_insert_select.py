@@ -535,3 +535,55 @@ def test_select_where_timestamp_mixed_with_other_column_rejected():
     assert "NOT_IMPLEMENTED" in node.query_and_get_error(
         "SELECT count() FROM prometheus WHERE timestamp > toDateTime64(2000,3) OR metric_name = 'cpu'"
     )
+
+
+def test_select_tag_projection_uses_reduced_tags():
+    """When the query reads `tags` only as `tags['<key>']`, the `tags` column is built containing just those
+    keys (resolved directly from their source) instead of the full normalized Map. The result must match the
+    full reconstruction: a promoted tag comes from its column or, when absent, the Map; `__name__` from the
+    metric name; any other tag from the Map; a missing tag is the empty string."""
+    node.query("DROP TABLE IF EXISTS prom_proj SYNC")
+    node.query("CREATE TABLE prom_proj ENGINE=TimeSeries SETTINGS tags_to_columns={'job': 'job'}")
+    try:
+        node.query(
+            "INSERT INTO prom_proj (metric_name, tags, time_series) VALUES"
+            " ('cpu', {'job': 'api', 'host': 'h1'}, [(toDateTime64(1000,3),1.0)]),"
+            " ('mem', {'job': 'web', 'host': 'h2'}, [(toDateTime64(2000,3),2.0)])"
+        )
+        # A series whose `job` lives in the tags Map (empty `job` column), inserted into the inner table.
+        node.query(
+            "INSERT INTO FUNCTION timeSeriesTags(prom_proj) (metric_name, tags) VALUES"
+            " ('direct', {'job': 'batch', 'host': 'h3'})"
+        )
+
+        # Promoted tag: values from the column ('api','web') and from the Map ('batch').
+        assert node.query("SELECT DISTINCT tags['job'] FROM prom_proj ORDER BY tags['job']") == TSV([["api"], ["batch"], ["web"]])
+        # The metric name via the `__name__` key.
+        assert node.query("SELECT DISTINCT tags['__name__'] FROM prom_proj ORDER BY tags['__name__']") == TSV([["cpu"], ["direct"], ["mem"]])
+        # A non-promoted tag (only in the Map).
+        assert node.query("SELECT DISTINCT tags['host'] FROM prom_proj ORDER BY tags['host']") == TSV([["h1"], ["h2"], ["h3"]])
+        # A tag that doesn't exist -> empty string.
+        assert node.query("SELECT DISTINCT tags['missing'] FROM prom_proj") == TSV([[""]])
+        # Several keys at once plus a WHERE on one of them.
+        assert node.query(
+            "SELECT tags['job'], tags['host'] FROM prom_proj WHERE tags['job'] = 'api'"
+        ) == TSV([["api", "h1"]])
+    finally:
+        node.query("DROP TABLE IF EXISTS prom_proj SYNC")
+
+
+def test_select_whole_tags_still_reconstructs_full_map():
+    """When the query uses the whole `tags` Map (not just `tags['key']`), the full normalized reconstruction
+    is used, so the reduced-tags optimization doesn't change the result."""
+    node.query("DROP TABLE IF EXISTS prom_whole SYNC")
+    node.query("CREATE TABLE prom_whole ENGINE=TimeSeries SETTINGS tags_to_columns={'job': 'job'}")
+    try:
+        node.query(
+            "INSERT INTO prom_whole (metric_name, tags, time_series) VALUES"
+            " ('cpu', {'job': 'api', 'host': 'h1'}, [(toDateTime64(1000,3),1.0)])"
+        )
+        assert node.query("SELECT tags FROM prom_whole") == TSV([["{'__name__':'cpu','host':'h1','job':'api'}"]])
+        # `mapKeys` forces the full Map too.
+        assert node.query("SELECT mapKeys(tags) FROM prom_whole") == TSV([["['__name__','host','job']"]])
+    finally:
+        node.query("DROP TABLE IF EXISTS prom_whole SYNC")

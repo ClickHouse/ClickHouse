@@ -1,5 +1,9 @@
 #include <Storages/StorageTimeSeries.h>
 
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
@@ -27,6 +31,8 @@
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
+#include <optional>
+#include <set>
 #include <boost/algorithm/string.hpp>
 #include <base/EnumReflection.h>
 
@@ -548,6 +554,70 @@ VirtualColumnsDescription StorageTimeSeries::createVirtuals(const DataTypePtr & 
     return desc;
 }
 
+namespace
+{
+    bool isTagsColumnOf(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression)
+    {
+        const auto * column = node->as<ColumnNode>();
+        return column && column->getColumnName() == TimeSeriesColumnNames::Tags
+            && column->getColumnSource().get() == table_expression.get();
+    }
+
+    /// Recursively checks that every use of the storage's `tags` column is `arrayElement(tags, '<const>')`,
+    /// collecting the constant keys. Sets `all_uses_are_keyed = false` on any other use of `tags`.
+    void collectTagKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression,
+                        std::set<String> & keys, bool & all_uses_are_keyed)
+    {
+        if (!all_uses_are_keyed || !node)
+            return;
+
+        if (const auto * function = node->as<FunctionNode>(); function && function->getFunctionName() == "arrayElement")
+        {
+            const auto & arguments = function->getArguments().getNodes();
+            if (arguments.size() == 2 && isTagsColumnOf(arguments[0], table_expression))
+            {
+                const auto * key = arguments[1]->as<ConstantNode>();
+                if (key && key->getValue().getType() == Field::Types::String)
+                {
+                    keys.insert(key->getValue().safeGet<String>());
+                    return;  /// a keyed access — don't descend into the `tags` argument
+                }
+                all_uses_are_keyed = false;  /// arrayElement(tags, <non-const>) — key unknown
+                return;
+            }
+        }
+
+        if (isTagsColumnOf(node, table_expression))
+        {
+            all_uses_are_keyed = false;  /// `tags` used some other way (whole Map, mapKeys, ...)
+            return;
+        }
+
+        for (const auto & child : node->getChildren())
+        {
+            collectTagKeys(child, table_expression, keys, all_uses_are_keyed);
+            if (!all_uses_are_keyed)
+                return;
+        }
+    }
+
+    /// If the query reads the `tags` column only as `tags['<const key>']`, returns those keys so the read can
+    /// build a reduced `tags` column; otherwise returns nullopt (the full normalized Map must be built).
+    std::optional<std::vector<String>> collectProjectedTagKeys(const SelectQueryInfo & query_info)
+    {
+        if (!query_info.query_tree || !query_info.table_expression)
+            return {};
+
+        std::set<String> keys;
+        bool all_uses_are_keyed = true;
+        collectTagKeys(query_info.query_tree, query_info.table_expression, keys, all_uses_are_keyed);
+
+        if (!all_uses_are_keyed || keys.empty())
+            return {};
+        return std::vector<String>(keys.begin(), keys.end());
+    }
+}
+
 void StorageTimeSeries::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -558,7 +628,9 @@ void StorageTimeSeries::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto select_query = makeTimeSeriesReadQuery(*this, column_names, local_context, query_info.filter_actions_dag.get());
+    auto projected_tag_keys = collectProjectedTagKeys(query_info);
+    auto select_query = makeTimeSeriesReadQuery(
+        *this, column_names, local_context, query_info.filter_actions_dag.get(), projected_tag_keys);
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, /*is_subquery=*/false,
                                       query_info.settings_limit_offset_done);
     InterpreterSelectQueryAnalyzer interpreter(select_query, local_context, options, column_names);
