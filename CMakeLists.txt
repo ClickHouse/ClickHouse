@@ -408,6 +408,21 @@ option(ENABLE_THINLTO "Clang-specific link time optimization" OFF)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
+# CFI requires ThinLTO. Validate here, after ENABLE_THINLTO has been resolved by
+# the option() call above. sanitize.cmake is included earlier (before the option()
+# declaration) so the check must live here where ENABLE_THINLTO is fully defined.
+if (ENABLE_CFI AND NOT ENABLE_THINLTO)
+    message (FATAL_ERROR "ENABLE_CFI requires ENABLE_THINLTO. "
+        "CFI needs -flto=thin and -fwhole-program-vtables which are only applied "
+        "when ThinLTO is enabled. Current configuration has ENABLE_THINLTO=${ENABLE_THINLTO}.")
+endif ()
+
+if (ENABLE_CFI AND ENABLE_TESTS)
+    message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_TESTS. "
+        "ThinLTO (required by CFI) is disabled when building tests. "
+        "Build without tests (ENABLE_TESTS=0) to use CFI.")
+endif ()
+
 # We cannot afford to use LTO when compiling unit tests, and it's not enough
 # to only supply -fno-lto at the final linking stage. So we disable it
 # completely.
@@ -420,6 +435,26 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     if(LINKER_NAME MATCHES "lld")
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
     endif()
+
+    if (ENABLE_CFI)
+        # CFI checks: virtual dispatch type safety and bad downcasts via static_cast.
+        # cfi-icall is omitted because C function pointers in contrib libraries (compiled without
+        # CFI) would cause false positives. Start conservative; broaden after baseline is clean.
+        # cfi-vcall and cfi-derived-cast are C++-only checks; do not apply to C compilation.
+        #
+        # Use `-fvisibility=default` rather than the CFI-documented `hidden`: with hidden
+        # visibility the build succeeds (with `-Wunique-object-duplication` suppressed) but the
+        # resulting binary crashes with SIGSEGV before main runs, because inline-static singletons
+        # like `Context::global_context_instance` and `BaseSettings::unknown_settings` get
+        # duplicated per translation unit and singleton identity is broken. Validated empirically
+        # by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with signal 11.
+        # CFI vtable visibility is still satisfied for in-binary types because
+        # `-fwhole-program-vtables` and `-Wl,--lto-whole-program-visibility` (set above) cause
+        # the linker to treat all vtables as internal to the binary.
+        set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=default")
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
+    endif ()
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
