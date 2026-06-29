@@ -53,5 +53,30 @@ FROM numbers(1000);
 -- 8. The 'median' alias is registered.
 SELECT medianReq(100, 0.5)(number) BETWEEN 470 AND 530 FROM numbers(1000);
 
--- 9. The accuracy parameter is mandatory.
+-- 9. Small inputs: when the data fits within the sketch's accuracy budget no compaction happens,
+--    so REQ returns exact order statistics. Median of 0..10 is 5, of 0..100 is 50.
+SELECT quantileReq(1000, 0.5)(number) = 5 FROM numbers(11);
+SELECT quantileReq(1000, 0.5)(number) = 50 FROM numbers(101);
+
+-- 10. Asymmetric merge (1 row vs 999999 rows) — the merged tail quantile still honours the bound.
+SELECT abs(quantileReqMerge(1000, 0.999)(s) - 0.999 * 999999) / 999999 < 0.01
+FROM
+(
+    SELECT quantileReqState(1000, 0.999)(number) AS s FROM numbers(1)
+    UNION ALL
+    SELECT quantileReqState(1000, 0.999)(number) AS s FROM numbers(1, 999999)
+);
+
+-- 11. Three-way merge of disjoint partitions covering 0..999999 — still honours the bound.
+SELECT abs(quantileReqMerge(1000, 0.999)(s) - 0.999 * 999999) / 999999 < 0.01
+FROM
+(
+    SELECT quantileReqState(1000, 0.999)(number) AS s FROM numbers(400000)
+    UNION ALL
+    SELECT quantileReqState(1000, 0.999)(number) AS s FROM numbers(400000, 400000)
+    UNION ALL
+    SELECT quantileReqState(1000, 0.999)(number) AS s FROM numbers(800000, 200000)
+);
+
+-- 12. The accuracy parameter is mandatory.
 SELECT quantileReq(number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
