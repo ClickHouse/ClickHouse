@@ -1,0 +1,175 @@
+import os
+import sys
+
+import pytest
+
+# `strip_setting_from_query` lives next to the perf-test runner. `perf.py`
+# itself executes its whole body on import (argparse, scipy, a server
+# connection), so the scanner was factored into an import-safe sibling module
+# to make it testable in isolation.
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(__file__), "..", "..", "tests", "performance", "scripts"
+    ),
+)
+
+from perf_create_query_utils import strip_setting_from_query  # noqa: E402
+
+SETTING = "optimize_row_order_if_no_order_by"
+
+# Each case is (input CREATE TABLE, expected output after stripping SETTING).
+#
+# `strip_setting_from_query` is a correctness-critical baseline rewrite: when a
+# newly added MergeTree setting is missing on the older baseline server, the
+# perf harness removes it from the CREATE TABLE and retries so both sides of
+# the A/B comparison build the same table. A scanner-state regression here
+# would silently rewrite the baseline DDL while the PR side keeps the original,
+# invalidating the comparison instead of failing fast. The edge cases below are
+# exactly the parser-state bugs found while developing the scanner: first /
+# middle / last / only-setting cleanup, commas and the setting name inside
+# string / comment / bracket / brace literals, and trailing `AS SELECT` /
+# `COMMENT` clauses that terminate the SETTINGS clause.
+CASES = [
+    # Only setting: the whole SETTINGS clause (and its leading whitespace) goes.
+    (
+        "only_setting",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple()",
+    ),
+    # Only setting, terminated by a semicolon: the `;` is kept.
+    (
+        "only_setting_semicolon",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1;",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple();",
+    ),
+    # First of two: the setting and its trailing comma separator are removed.
+    (
+        "first_of_two",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1, index_granularity = 8192",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192",
+    ),
+    # Last of two: the setting and its preceding comma separator are removed.
+    (
+        "last_of_two",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, {SETTING} = 0",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192",
+    ),
+    # Middle of three: neighbours and their separators stay intact.
+    (
+        "middle_of_three",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, {SETTING} = 0, min_bytes_for_wide_part = 0",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0",
+    ),
+    # A comma inside a quoted value must not be mistaken for a setting separator.
+    (
+        "value_with_commas_in_string",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = 'a,b,c', {SETTING} = 1",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = 'a,b,c'",
+    ),
+    # Commas inside a bracketed (tuple) value of the following setting.
+    (
+        "value_tuple_brackets",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1, some_tuple_setting = (1, 2, 3)",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS some_tuple_setting = (1, 2, 3)",
+    ),
+    # Commas inside a brace (map) value of the preceding setting.
+    (
+        "value_brace_map",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS m = {{'x,y':1, 'z':2}}, {SETTING} = 1",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS m = {'x,y':1, 'z':2}",
+    ),
+    # `''` is an escaped quote inside a single-quoted value, not its end.
+    (
+        "escaped_quote_in_value",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS c = 'it''s, ok', {SETTING} = 1",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS c = 'it''s, ok'",
+    ),
+    # A block comment sitting in the comma separator must not orphan the comma.
+    (
+        "block_comment_separator",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192 /* sep */, {SETTING} = 1",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192 /* sep */",
+    ),
+    # A trailing `AS SELECT` terminates the SETTINGS clause and is preserved.
+    (
+        "trailing_as_select",
+        f"CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1 AS SELECT number AS a FROM numbers(10)",
+        "CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() AS SELECT number AS a FROM numbers(10)",
+    ),
+    # A trailing `COMMENT '...'` clause terminates the SETTINGS clause.
+    (
+        "trailing_comment_clause",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1 COMMENT 'my table'",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() COMMENT 'my table'",
+    ),
+    # First-of-two with a trailing clause: the clause stays, the other kept.
+    (
+        "trailing_as_select_first_of_two",
+        f"CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1, index_granularity = 8192 AS SELECT 1 AS a",
+        "CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192 AS SELECT 1 AS a",
+    ),
+    # The SETTINGS keyword is matched case-insensitively.
+    (
+        "case_insensitive_settings_kw",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() settings {SETTING} = 1, index_granularity = 8192",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() settings index_granularity = 8192",
+    ),
+]
+
+
+@pytest.mark.parametrize("case", CASES, ids=[c[0] for c in CASES])
+def test_strip_setting_exact_output(case):
+    _name, query, expected = case
+    assert strip_setting_from_query(query, SETTING) == expected
+
+
+@pytest.mark.parametrize("case", CASES, ids=[c[0] for c in CASES])
+def test_strip_setting_is_idempotent(case):
+    # After the setting is gone, stripping it again must be a no-op. This guards
+    # against a scanner that keeps eating characters when its target is absent.
+    _name, query, _expected = case
+    once = strip_setting_from_query(query, SETTING)
+    assert strip_setting_from_query(once, SETTING) == once
+
+
+def test_no_settings_clause_is_unchanged():
+    query = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a"
+    assert strip_setting_from_query(query, SETTING) == query
+
+
+def test_absent_setting_is_unchanged():
+    # The setting is not present, but another setting is: the query must be
+    # returned byte-for-byte so an unrelated baseline DDL is never rewritten.
+    query = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192"
+    assert strip_setting_from_query(query, SETTING) == query
+
+
+def test_setting_name_inside_comment_literal_is_preserved():
+    # The setting name appears both inside a column COMMENT literal and as the
+    # real setting. Only the real setting must be removed; the literal text
+    # (which mentions the setting and even a comma) is part of the table schema
+    # and must survive unchanged.
+    query = (
+        f"CREATE TABLE t (a UInt64 COMMENT 'set {SETTING} = 1 here, ok') "
+        f"ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1, index_granularity = 8192"
+    )
+    expected = (
+        f"CREATE TABLE t (a UInt64 COMMENT 'set {SETTING} = 1 here, ok') "
+        "ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192"
+    )
+    assert strip_setting_from_query(query, SETTING) == expected
+
+
+def test_settings_keyword_inside_comment_literal_is_not_matched():
+    # A literal containing the word `SETTINGS` before the real clause must not
+    # be picked up as the clause to edit.
+    query = (
+        f"CREATE TABLE t (a UInt64 COMMENT 'SETTINGS {SETTING} = 9') "
+        f"ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1"
+    )
+    expected = (
+        f"CREATE TABLE t (a UInt64 COMMENT 'SETTINGS {SETTING} = 9') "
+        "ENGINE = MergeTree ORDER BY tuple()"
+    )
+    assert strip_setting_from_query(query, SETTING) == expected
