@@ -347,7 +347,33 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
         info.cache_file_reader = open_cache_file(path);
     }
 
-    if (getFileSizeFromReadBuffer(*info.cache_file_reader) == 0)
+    const size_t cache_file_size = getFileSizeFromReadBuffer(*info.cache_file_reader);
+
+    /// A fully downloaded regular segment encodes its size in the file name (`<offset>_<size>`), and
+    /// startup metadata loading trusts that size without a `stat` (see `FileCache::loadMetadataForKey`).
+    /// If such a file was truncated outside ClickHouse, the segment is restored as fully `DOWNLOADED`
+    /// but the on-disk file is shorter than recorded. Detect that here -- the file is already open, so
+    /// reading its size needs no extra `stat` -- and treat it as a possible inconsistency rather than a
+    /// `LOGICAL_ERROR` (a corrupted cache must not surface as a server-bug-class exception). Discard the
+    /// broken segment with the same primitive `LockedKey::sync` uses for size mismatches; existing readers
+    /// keep their open descriptor, and the holder's destructor skips the now-`DETACHED` segment. On retry
+    /// the segment is gone, so it is re-fetched from the source. We restrict this to `DOWNLOADED` segments,
+    /// where `downloaded_size` is final, to avoid racing with a concurrent download that is still growing
+    /// the file. This covers the empty-file case (`cache_file_size == 0 < downloaded_size`) as well.
+    if (cache_file_size < file_segment.getDownloadedSize()
+        && file_segment.state() == FileSegment::State::DOWNLOADED)
+    {
+        if (auto locked_key = file_segment.getKeyMetadata()->tryLock())
+            locked_key->removeFileSegmentIfExists(file_segment.offset(), /* can_be_broken */true);
+
+        throw Exception(
+            ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Cache file {} is shorter than its recorded size ({} < {}); it was likely truncated outside "
+            "ClickHouse. Discarded the cache entry; the data will be re-fetched from the source on retry",
+            path, cache_file_size, file_segment.getDownloadedSize());
+    }
+
+    if (cache_file_size == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
 
     return info.cache_file_reader;

@@ -293,6 +293,108 @@ def test_cache_file_size_in_name(cluster, node_name):
 
 
 @pytest.mark.parametrize("node_name", ["node"])
+def test_cache_file_truncated_size_in_name(cluster, node_name):
+    """
+    A fully downloaded regular cache file is named `<offset>_<size>`, and startup metadata loading
+    trusts that size without a `stat`. If such a file is truncated outside ClickHouse, the segment is
+    restored as fully downloaded but the on-disk file is shorter than recorded. Reading it must not raise
+    a `LOGICAL_ERROR`: the broken cache entry is discarded and the data is re-fetched from the source.
+
+    This covers both a shorter-than-recorded file and a zero-length file.
+    """
+    node = cluster.instances[node_name]
+    node.query(
+        """
+        DROP TABLE IF EXISTS test_truncated_size_in_name SYNC;
+
+        CREATE TABLE test_truncated_size_in_name (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            name = 'truncated_size_in_name_test',
+            path = 'truncated_size_in_name_test',
+            disk = 'hdd_blob',
+            max_file_segment_size = '1Ki',
+            boundary_alignment = '1Ki',
+            max_size = '1Gi',
+            max_elements = 10000000);
+        """
+    )
+
+    wait_for_cache_initialized(node, "truncated_size_in_name_test")
+
+    node.query(
+        """
+        SYSTEM CLEAR FILESYSTEM CACHE;
+        INSERT INTO test_truncated_size_in_name SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
+        SELECT * FROM test_truncated_size_in_name FORMAT Null;
+        """
+    )
+    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+
+    expected_count = int(node.query("SELECT count() FROM test_truncated_size_in_name"))
+    expected_sum = node.query("SELECT sum(cityHash64(key, value)) FROM test_truncated_size_in_name").strip()
+
+    cache_path = node.query(
+        "SELECT cache_path FROM system.disks WHERE name = 'truncated_size_in_name_test'"
+    ).strip()
+
+    def list_suffixed_segment_files():
+        out = node.exec_in_container(
+            ["bash", "-c", f"find {cache_path} -type f -printf '%p %f %s\\n'"]
+        )
+        files = []
+        for line in out.splitlines():
+            full_path, name, size = line.rsplit(" ", 2)
+            if name == "status" or name.endswith("_temporary") or "_" not in name:
+                continue
+            files.append((full_path, int(size)))
+        return files
+
+    files = list_suffixed_segment_files()
+    # Need at least two segment files to exercise both the short and the zero-length cases.
+    assert len(files) >= 2, files
+
+    # The server must be stopped while we corrupt the files: a running server holds the segments open.
+    node.stop_clickhouse()
+
+    # Truncate one suffixed file to half its size (non-empty but shorter than recorded) and another
+    # to zero bytes. Their names still encode the full `<size>`, so startup trusts the larger size.
+    short_path, short_size = files[0]
+    zero_path, _ = files[1]
+    node.exec_in_container(["bash", "-c", f"truncate -s {max(short_size // 2, 1)} '{short_path}'"])
+    node.exec_in_container(["bash", "-c", f"truncate -s 0 '{zero_path}'"])
+
+    node.start_clickhouse()
+    wait_for_cache_initialized(node, "truncated_size_in_name_test")
+
+    # Reading must not raise a LOGICAL_ERROR. A broken segment surfaces a retryable CANNOT_READ_ALL_DATA
+    # and is discarded; the next read re-fetches it from the source. Retry until the query succeeds.
+    last_error = None
+    succeeded = False
+    for _ in range(20):
+        try:
+            node.query("SELECT * FROM test_truncated_size_in_name FORMAT Null")
+            succeeded = True
+            break
+        except Exception as e:
+            last_error = str(e)
+            assert "LOGICAL_ERROR" not in last_error, last_error
+            assert "Logical error" not in last_error, last_error
+
+    assert succeeded, f"query did not recover, last error: {last_error}"
+
+    # The data is intact after re-fetching the discarded segments from the source.
+    assert int(node.query("SELECT count() FROM test_truncated_size_in_name")) == expected_count
+    assert (
+        node.query("SELECT sum(cityHash64(key, value)) FROM test_truncated_size_in_name").strip()
+        == expected_sum
+    )
+    node.query("DROP TABLE test_truncated_size_in_name SYNC")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
 def test_bypass_cache_does_not_overread_non_last_segment(cluster, node_name):
     """
     Regression test for an over-read on the `REMOTE_FS_READ_BYPASS_CACHE` path.
