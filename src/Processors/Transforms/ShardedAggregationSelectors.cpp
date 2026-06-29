@@ -128,6 +128,24 @@ Columns gatherKeyColumns(const Columns & columns, const ColumnNumbers & key_posi
     return key_columns;
 }
 
+/// The whole 32-bit hash of the key columns. The single source of truth for the hash, so the input
+/// selector and the hot-state scatter route a key identically.
+PaddedPODArray<UInt32> computeKeyHash(const Columns & columns, const ColumnNumbers & key_positions, size_t num_rows)
+{
+    PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
+    for (auto position : key_positions)
+        columns[position]->computeHashInto(0, num_rows, hash.data(), false);
+    return hash;
+}
+
+/// Maps each row to its cold shard by mapping the whole key hash onto [0, num_cold) with `mapToRange`.
+/// Using the whole hash, rather than just its low bits, keeps keys from clustering into a few downstream
+/// hash-table buckets.
+void mapHashToColdShards(const PaddedPODArray<UInt32> & hash, size_t num_cold, IColumn::Selector & selector)
+{
+    mapToRange(hash.data(), hash.size(), static_cast<UInt32>(num_cold), selector.data());
+}
+
 }
 
 std::function<IColumn::Selector(const Columns &)>
@@ -141,18 +159,13 @@ makeInputHotColdSelector(HotKeyStatePtr state, ColumnNumbers key_positions, size
         if (num_rows == 0)
             return {};
 
-        PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
-        for (auto position : positions)
-            columns[position]->computeHashInto(0, num_rows, hash.data(), false);
+        const PaddedPODArray<UInt32> hash = computeKeyHash(columns, positions, num_rows);
 
         const Columns key_columns = gatherKeyColumns(columns, positions);
         detector->observe(hash, key_columns, num_rows, *state);
 
-        /// We assign each cold row to a shard by mapping its whole 32-bit hash onto the shard range with
-        /// `mapToRange`. Using the whole hash, rather than just its low bits, keeps keys from clustering
-        /// into a few downstream hash-table buckets.
         IColumn::Selector selector(num_rows);
-        mapToRange(hash.data(), num_rows, static_cast<UInt32>(num_cold), selector.data());
+        mapHashToColdShards(hash, num_cold, selector);
 
         /// Now override the hot rows to go to the hot shard (the last port).
         if (auto mask_column = state->buildHotMask(key_columns))
@@ -167,29 +180,18 @@ makeInputHotColdSelector(HotKeyStatePtr state, ColumnNumbers key_positions, size
     };
 }
 
-std::function<IColumn::Selector(const Columns &)> makeDivertSelector(HotKeyStatePtr state, ColumnNumbers key_positions)
+std::function<IColumn::Selector(const Columns &)> makeColdHashSelector(ColumnNumbers key_positions, size_t num_cold_shards)
 {
-    return [state, positions = std::move(key_positions)](const Columns & columns) -> IColumn::Selector
+    return [positions = std::move(key_positions), num_cold = num_cold_shards](const Columns & columns) -> IColumn::Selector
     {
         const size_t num_rows = columns.empty() ? 0 : columns.front()->size();
-
-        /// We default every row to the cold port (port 1), then below move the hot-key rows (the residue)
-        /// to port 0, which feeds the merger.
-        IColumn::Selector selector(num_rows, 1);
         if (num_rows == 0)
-            return selector;
+            return {};
 
-        const Columns key_columns = gatherKeyColumns(columns, positions);
+        const PaddedPODArray<UInt32> hash = computeKeyHash(columns, positions, num_rows);
 
-        /// Now override the hot rows to go to port 0, which feeds the merger.
-        if (auto mask_column = state->buildHotMask(key_columns))
-        {
-            const auto & mask = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
-            for (size_t i = 0; i < num_rows; ++i)
-                if (mask[i])
-                    selector[i] = 0;
-        }
-
+        IColumn::Selector selector(num_rows);
+        mapHashToColdShards(hash, num_cold, selector);
         return selector;
     };
 }
