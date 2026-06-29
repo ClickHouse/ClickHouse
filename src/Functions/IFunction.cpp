@@ -129,6 +129,15 @@ void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
         column.type = recursiveRemoveLowCardinality(column.type);
     }
 }
+
+size_t countLowCardinalityColumns(const ColumnsWithTypeAndName & args)
+{
+    size_t count = 0;
+    for (const auto & column : args)
+        if (checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
+            ++count;
+    return count;
+}
 }
 
 ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
@@ -471,8 +480,16 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
 
             const auto & dictionary_type = res_low_cardinality_type->getDictionaryType();
-            ColumnPtr indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-                columns_without_low_cardinality, can_be_executed_on_default_arguments, input_rows_count);
+
+            /// The dictionary fast-path shares the indexes of a single LowCardinality argument.
+            /// With more than one (a constant LowCardinality argument can arrive as a non-constant
+            /// column at runtime), materialize all of them to full instead.
+            ColumnPtr indexes;
+            if (countLowCardinalityColumns(columns_without_low_cardinality) > 1)
+                convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
+            else
+                indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
+                    columns_without_low_cardinality, can_be_executed_on_default_arguments, input_rows_count);
 
             size_t new_input_rows_count
                 = columns_without_low_cardinality.empty() ? input_rows_count : columns_without_low_cardinality.front().column->size();
