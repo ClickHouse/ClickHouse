@@ -112,7 +112,7 @@ public:
         this->data(place).add(static_cast<ResultT>(value), arena);
     }
 
-    void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void NO_SANITIZE_UNDEFINED mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = this->data(place);
         auto & rhs_elems = this->data(rhs);
@@ -291,6 +291,7 @@ AggregateFunctionPtr createAggregateFunctionMoving(
 }
 
 
+void registerAggregateFunctionMoving(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
@@ -377,7 +378,7 @@ groupArrayMovingAvg(window_size)(numbers_for_summing)
     FunctionDocumentation::Parameters parameters = {
         {"window_size", "Size of the calculation window. If left unspecified, the function takes the window size equal to the number of rows in the column.", {"UInt64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same size and type as the input data.", {"Array"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same size as the input data. For non-Decimal input, the array contains Float64 values. For Decimal input, the array contains Decimal values with the input scale.", {"Array"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
@@ -399,9 +400,9 @@ SELECT
 FROM t;
         )",
         R"(
-┌─I─────────┬─F───────────────────────────────────┬─D─────────────────────┐
-│ [0,0,1,3] │ [0.275,0.82500005,1.9250001,3.8675] │ [0.27,0.82,1.92,3.86] │
-└───────────┴─────────────────────────────────────┴───────────────────────┘
+┌─I────────────────────┬─F─────────────────────────────────────────────────────────────────────────────┬─D─────────────────────┐
+│ [0.25,0.75,1.75,3.5] │ [0.2750000059604645,0.8250000178813934,1.9250000417232513,3.8675000369548798] │ [0.27,0.82,1.92,3.86] │
+└──────────────────────┴───────────────────────────────────────────────────────────────────────────────┴───────────────────────┘
         )"
     },
     {
@@ -414,9 +415,9 @@ SELECT
 FROM t;
         )",
         R"(
-┌─I─────────┬─F────────────────────────────────┬─D─────────────────────┐
-│ [0,1,3,5] │ [0.55,1.6500001,3.3000002,6.085] │ [0.55,1.65,3.30,6.08] │
-└───────────┴──────────────────────────────────┴───────────────────────┘
+┌─I───────────────┬─F───────────────────────────────────────────────────────────────────────────┬─D─────────────────────┐
+│ [0.5,1.5,3,5.5] │ [0.550000011920929,1.6500000357627869,3.3000000715255737,6.085000038146973] │ [0.55,1.65,3.30,6.08] │
+└─────────────────┴─────────────────────────────────────────────────────────────────────────────┴───────────────────────┘
         )"
     }
     };

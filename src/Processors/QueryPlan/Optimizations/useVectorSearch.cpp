@@ -1,9 +1,11 @@
 #include <Columns/ColumnConst.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -13,6 +15,14 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+}
 
 namespace DB::QueryPlanOptimizations
 {
@@ -24,7 +34,7 @@ namespace DB::QueryPlanOptimizations
 ///     ORDER BY distance_function(vec, reference_vec), [...]
 ///     LIMIT N
 /// where
-/// - distance_function is function 'L2Distance' or 'cosineDistance',
+/// - distance_function is function 'L2Distance', 'cosineDistance', or 'dotProduct',
 /// - vec is a column of tab (*),
 /// - reference_vec is a literal of type Array(Float32/Float64)
 ///
@@ -131,16 +141,25 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     /// Extract distance_function
     const String & function_name = sort_column_node->function_base->getName();
     String distance_function;
-    if (function_name == "L2Distance" || function_name == "cosineDistance")
+    if (function_name == "L2Distance" || function_name == "cosineDistance" || function_name == "dotProduct")
         distance_function = function_name;
     else
+        return no_layers_updated;
+
+    /// Validate sort direction:
+    /// - L2Distance and cosineDistance require ascending sort order (smaller means more similar)
+    /// - dotProduct requires descending sort order (larger means more similar)
+    const int sort_direction = sort_description.front().direction;
+    if ((distance_function == "L2Distance" || distance_function == "cosineDistance") && sort_direction != 1)
+        return no_layers_updated;
+    if (distance_function == "dotProduct" && sort_direction != -1)
         return no_layers_updated;
 
     /// Extract stuff from the ORDER BY clause. It is expected to look like this: ORDER BY cosineDistance(vec1, [1.0, 2.0 ...])
     /// - The search column is 'vec1'.
     /// - The reference vector is [1.0, 2.0, ...].
     const ActionsDAG::NodeRawConstPtrs & sort_column_node_children = sort_column_node->children;
-    std::vector<Float64> reference_vector;
+    VectorWithMemoryTracking<Float64> reference_vector;
     String search_column;
 
     for (const auto * child : sort_column_node_children)
@@ -172,12 +191,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
                 continue;
 
             /// Read value from column
-            const ColumnPtr & column = child->column;
-            const auto * literal_column = typeid_cast<const ColumnConst *>(column.get());
-            if (!literal_column || literal_column->size() != 1)
-                continue;
-            Field field;
-            literal_column->get(0, field);
+            Field field = child->column->getField();
             Field::Types::Which field_type = field.getType();
             if (field_type != Field::Types::Array)
                 continue;
@@ -216,6 +230,13 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 
     if (!has_vector_similarity_index)
         return no_layers_updated;
+
+    /// The `_distance` column is an internal virtual column populated by the vector search optimization.
+    /// It must not be referenced directly in queries.
+    if (read_from_mergetree_step->isVectorColumnReplaced())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
+            "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
 
     /// All set for 2nd pass
     auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, additional_filters_present, true);
@@ -303,6 +324,13 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     if (!vector_search_parameters.has_value())
         return false;
 
+    /// The `_distance` column is an internal virtual column populated by the vector search optimization.
+    /// It must not be referenced directly in queries.
+    if (read_from_mergetree_step->isVectorColumnReplaced())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
+            "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
+
     /// The optimization is only possible if the index-analyis and query execution
     /// are both executed on the same node.
     if (read_from_mergetree_step->isParallelReadingFromReplicas())
@@ -312,12 +340,13 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     /// is slightly at odds with vector search optimizations. There are two optimizations in vector
     /// search -
     /// 1. Lookup the vector index and shortlist a handful of granules containing neighbours.
-    /// 2. The rescoring optimization goes even further and does not read the 'heavy' vector column at all and
-    ///    only sends the exact neighbour rows to the Sorting + Output step.
+    /// 2. Apply the candidate-row filter from the vector index before distance
+    ///    computation for rescoring queries, or use `_distance` from the index
+    ///    for non-rescoring queries.
     /// Thus, explicit or implicit PREWHERE after above two optimizations does not bring additional benefit. Also,
-    /// the PREWHERE filter implementation conflicts with rescoring optimization filter. If explicit PREWHERE is
-    /// requested, we turn the rescoring optimization off. If there is a WHERE clause and even with
-    /// optimize_move_to_prewhere = 1, we retain the rescoring optimization and disable the implicit PREWHERE
+    /// the PREWHERE filter implementation conflicts with the vector-search candidate-row filter. If explicit PREWHERE
+    /// is requested, we turn the vector-search optimization off. If there is a WHERE clause and even with
+    /// optimize_move_to_prewhere = 1, we retain vector-search optimization and disable the implicit PREWHERE
     /// optimization. (check optimizePrewhere.cpp)
     if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
         return false;
@@ -353,6 +382,17 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     ActionsDAG & expression = expression_step->getExpression();
 
     bool optimize_plan = !settings.vector_search_with_rescoring;
+    bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring;
+    if (optimize_plan)
+    {
+        /// If `_distance` is already requested explicitly, do not rewrite the
+        /// read step by adding `_distance` again. Keep the original distance
+        /// expression and let the reader populate the explicitly requested
+        /// virtual column from vector-search hints.
+        if (read_from_mergetree_step->isVectorColumnReplaced())
+            optimize_plan = false;
+    }
+
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
@@ -398,9 +438,8 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             /// Bug #85514: cosineDistance/L2Distance can have return types Float64 or Float32, depending on the
             /// input types but the "_distance" column is always of type Float32. Add a CAST if needed.
             ///
-            /// The sort column node will be removed first from the DAG, hence remember if a CAST is needed.
+            /// The sort column node will be removed first from the DAG, hence remember the datatype of final result
             const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column); /// "cosine/L2Distance(..., ...)"
-            const bool need_cast = !WhichDataType(sort_column_node->result_type).isFloat32();
             const auto result_type = sort_column_node->result_type;
 
             /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
@@ -408,7 +447,14 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
 
-            if (need_cast)
+            const bool need_sqrt = vector_search_parameters->distance_function == "L2Distance";
+            if (need_sqrt) /// usearch returns L2 squared distance to save repeated sqrt computations.
+            {
+                auto sqrt_function = FunctionFactory::instance().get("sqrt", read_from_mergetree_step->getContext());
+                distance_node = &expression.addFunction(sqrt_function, {distance_node}, {});
+            }
+
+            if (!distance_node->result_type->equals(*result_type))
                 distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance", nullptr);
 
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
@@ -448,9 +494,45 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
         new_step->setStepDescription(*expression_node->step);
         expression_node->step = std::move(new_step);
+
+        /// The SortingStep's input header must reflect the new ExpressionStep output header
+        /// (which now has _distance consumed and L2Distance(...) produced via ALIAS).
+        sorting_step->updateInputHeader(expression_node->step->getOutputHeader());
     }
 
-    return true;
+    if (apply_row_filter_for_rescoring)
+    {
+        auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
+        analyzed_result = analyzed_result ? analyzed_result : read_from_mergetree_step->selectRangesToRead();
+
+        bool can_apply_row_filter = analyzed_result != nullptr;
+        if (can_apply_row_filter)
+        {
+            for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
+            {
+                if (!part_with_ranges.ranges.empty() && !part_with_ranges.read_hints.vector_search_results.has_value())
+                {
+                    can_apply_row_filter = false;
+                    break;
+                }
+            }
+        }
+
+        if (can_apply_row_filter)
+        {
+            for (auto & part_with_ranges : analyzed_result->parts_with_ranges)
+            {
+                if (!part_with_ranges.ranges.empty())
+                    part_with_ranges.read_hints.use_vector_search_result_filter = true;
+            }
+        }
+        else
+        {
+            apply_row_filter_for_rescoring = false;
+        }
+    }
+
+    return optimize_plan || apply_row_filter_for_rescoring;
 }
 
 }

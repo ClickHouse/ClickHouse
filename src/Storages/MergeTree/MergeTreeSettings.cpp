@@ -267,6 +267,14 @@ namespace ErrorCodes
     DECLARE(Bool, escape_variant_subcolumn_filenames, true, R"(
     Escape special symbols in filenames created for subcolumns of Variant data type in Wide parts of MergeTree table. Needed for compatibility.
     )", 0) \
+    DECLARE(Bool, share_nested_offsets, true, R"(
+    When enabled (default), Array columns with dotted names that share a common prefix (e.g. n.a and n.b)
+    are treated as part of a Nested structure: they share a single offsets file on disk (e.g. n.size0),
+    and their array sizes are validated to be equal during INSERT.
+    When disabled, each Array column gets its own independent offset file, dotted names carry no special
+    semantics, and a scalar column may coexist with dotted Array columns sharing the same prefix
+    (e.g. n UInt32 alongside n.a Array(String)). This setting is immutable after table creation.
+    )", 0) \
     DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
     Serialization info version used when writing `serialization.json`.
     This setting is required for compatibility during cluster upgrades.
@@ -612,8 +620,10 @@ namespace ErrorCodes
     - `0` (disable deduplication).
 
     A deduplication mechanism is used, similar to replicated tables (see
-    [replicated_deduplication_window](#replicated_deduplication_window) setting).
-    The hash sums of the created parts are written to a local file on a disk.
+    [replicated_deduplication_window](#replicated_deduplication_window) setting), including the
+    `insert_deduplication_version` granularity (whole inserted block under the default
+    `new_unified_hash`, per created part under the legacy versions). The hash sums are written to
+    a local file on a disk rather than to ClickHouse Keeper.
     )", 0) \
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, R"(
     Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
@@ -661,6 +671,26 @@ namespace ErrorCodes
     ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
     ```
     )", 0) \
+    DECLARE(NonZeroUInt64, text_index_dictionary_block_size, 512, R"(
+    Default dictionary block size for text indexes.
+    Can be overridden by explicit `dictionary_block_size` index argument.
+    )", 0) \
+    DECLARE(Bool, text_index_dictionary_block_frontcoding_compression, true, R"(
+    Default front-coding compression for text index dictionary blocks.
+    Can be overridden by explicit `dictionary_block_frontcoding_compression` index argument.
+    )", 0) \
+    DECLARE(NonZeroUInt64, text_index_posting_list_block_size, 1048576, R"(
+    Default posting list block size for text indexes (rows).
+    Can be overridden by explicit `posting_list_block_size` index argument.
+    )", 0) \
+    DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
+    Default posting list codec for text indexes.
+    Can be overridden by explicit `posting_list_codec` index argument.
+    )", 0) \
+    DECLARE(Bool, allow_experimental_text_index_positions, false, R"(
+    Allow creating text indexes with the experimental `positions` argument which
+    stores token positions to support exact phrase matching.
+    )", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in
@@ -835,6 +865,13 @@ namespace ErrorCodes
     The maximum uncompressed size of data in all patch parts in bytes.
     If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
     0 - unlimited.
+    )", 0) \
+    DECLARE(Bool, compress_per_column_in_compact_parts, true, R"(
+    Controls the physical layout of Compact parts. If true (default), each column in a granule
+    starts a new compressed block, allowing ClickHouse to skip reading unnecessary columns
+    from disk. If false, all columns within a granule are packed into the same compressed block,
+    improving compression ratio but requiring more data to be decompressed during reads.
+    This is beneficial for workloads that always read all columns (e.g. projections).
     )", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
@@ -1101,17 +1138,20 @@ namespace ErrorCodes
     - Any positive integer.
     - 0 (disable deduplication)
 
-    The `Insert` command creates one or more blocks (parts). For
-    [insert deduplication](../../engines/table-engines/mergetree-family/replication.md),
-    when writing into replicated tables, ClickHouse writes the hash sums of the
-    created parts into ClickHouse Keeper. Hash sums are stored only for the most
-    recent `replicated_deduplication_window` blocks. The oldest hash sums are
-    removed from ClickHouse Keeper.
+    For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md),
+    when writing into replicated tables, ClickHouse writes deduplication hash sums into
+    ClickHouse Keeper. Hash sums are stored only for the most recent
+    `replicated_deduplication_window` blocks. The oldest hash sums are removed from
+    ClickHouse Keeper.
 
-    A large number for `replicated_deduplication_window` slows down `Inserts`
-    because more entries need to be compared. The hash sum is calculated from
-    the composition of the field names and types and the data of the inserted
-    part (stream of bytes).
+    Under the default `insert_deduplication_version = new_unified_hash` the hash sum covers the
+    whole inserted block, so an insert is deduplicated only when its entire data matches a
+    previous insert (a retry), not per individual part. Under the legacy `old_separate_hashes` /
+    `compatible_double_hashes` the hash sum is instead calculated per created part, from the
+    composition of the field names and types and the data of that part (stream of bytes).
+
+    A large number for `replicated_deduplication_window` slows down `Inserts` because more
+    entries need to be compared.
     )", 0) \
     DECLARE(UInt64, replicated_deduplication_window_seconds, 60 * 60 /* one hour */, R"(
     The number of seconds after which the hash sums of the inserted blocks are
@@ -1147,6 +1187,12 @@ namespace ErrorCodes
     down `Async Inserts` because it needs to compare more entries.
     The hash sum is calculated from the composition of the field names and types
     and the data of the insert (stream of bytes).
+
+    This setting applies only under `insert_deduplication_version = old_separate_hashes` or
+    `compatible_double_hashes`, which keep async-insert hashes in a separate `async_blocks`
+    directory. Under the default `new_unified_hash`, async inserts share the unified
+    `deduplication_hashes` directory with sync inserts and are governed by
+    `replicated_deduplication_window` / `replicated_deduplication_window_seconds` instead.
     )", 0) \
     DECLARE(UInt64, replicated_deduplication_window_seconds_for_async_inserts, 7 * 24 * 60 * 60 /* one week */, R"(
     The number of seconds after which the hash sums of the async inserts are
@@ -1164,6 +1210,10 @@ namespace ErrorCodes
 
     The time is relative to the time of the most recent record, not to the wall
     time. If it's the only record it will be stored forever.
+
+    Like `replicated_deduplication_window_for_async_inserts`, this applies only under
+    `insert_deduplication_version = old_separate_hashes` / `compatible_double_hashes`; under the
+    default `new_unified_hash`, async inserts use `replicated_deduplication_window_seconds`.
     )", 0) \
     DECLARE(Milliseconds, async_block_ids_cache_update_wait_ms, 100, R"(
     How long each insert iteration will wait for async_block_ids_cache update
@@ -1499,8 +1549,8 @@ namespace ErrorCodes
     Only available in ClickHouse Cloud.
     )", 0) \
     DECLARE(UInt64, shared_merge_tree_range_for_merge_window_size, 10, R"(
-    Time to keep a locally merged part without starting a new merge containing
-    this part. Gives other replicas a chance fetch the part and start this merge.
+    Window size (in block numbers) used to distribute merge assignment across
+    replicas. Parts within the same window are assigned to the same replicas.
     Only available in ClickHouse Cloud
     )", 0) \
     DECLARE(Bool, shared_merge_tree_use_too_many_parts_count_from_virtual_parts, 0, R"(
@@ -1519,11 +1569,24 @@ namespace ErrorCodes
     If enabled all the replicas try to fetch part in memory data (like primary
     key, partition info and so on) from other replicas where it already exists.
     )", 0) \
+    DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup, false, R"(
+    If enabled all the replicas try to fetch part in memory data (like primary
+    key, partition info and so on) on startup from other replicas where it already exists.
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
     How often replica will try to reload it's flags according to background schedule.
     )", 0) \
-    DECLARE(Seconds, shared_merge_tree_replica_set_max_lifetime_seconds, 300, R"(
-    How often replicas will try to update replica set in background.
+    DECLARE(Seconds, shared_merge_tree_replica_set_max_lifetime_seconds, 1800, R"(
+    How often replicas will try to update replica set in background. Next run is jittered
+    uniformly in [0, value] seconds. Exception: value = 0 does not follow that contract;
+    the implementation applies a minimum of 200 ms, so the next run is jittered in [0, 200] ms.
+    )", 0) \
+    DECLARE(Seconds, shared_merge_tree_inactive_replica_cutoff_seconds, 0, R"(
+    For how long an inactive replica is still taken into account by the background cleanup
+    (`OutdatedPartsQuorumThread`): while a replica has been inactive for less than this many seconds,
+    it still holds back removal of outdated parts and truncation of finished mutations. A value of 0
+    means use the default of two ZooKeeper session timeouts.
+    Only in ClickHouse Cloud
     )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
@@ -1604,6 +1667,13 @@ namespace ErrorCodes
     DECLARE(Bool, allow_suspicious_indices, false, R"(
     Reject primary/secondary indexes and sorting keys with identical expressions
     )", 0) \
+    DECLARE(Bool, allow_tuple_element_aggregation, false, R"(
+    When enabled, individual elements within Tuple columns participate in
+    aggregation during merge in SummingMergeTree, AggregatingMergeTree, and
+    CoalescingMergeTree. Nested Tuples are expanded recursively so that all
+    leaf elements are aggregated independently. This setting is immutable
+    and must be specified at table creation time.
+    )", 0) \
     DECLARE(Bool, compatibility_allow_sampling_expression_not_in_primary_key, false, R"(
     Allow to create a table with sampling expression not in primary key. This is
     needed only to temporarily allow to run the server with wrong tables for
@@ -1680,6 +1750,14 @@ namespace ErrorCodes
     DECLARE(UInt64, concurrent_part_removal_threshold, 100, R"(
     Activate concurrent part removal (see 'max_part_removal_threads') only if
     the number of inactive data parts is at least this.
+    )", 0) \
+    DECLARE(UInt64, concurrent_part_removal_threshold_for_remote_disk, 16, R"(
+    Same as `concurrent_part_removal_threshold`, but used when at least one
+    part being removed is stored on a remote disk. The default is lower
+    because each part removal on remote storage typically requires a network
+    round-trip (e.g. one HTTP `DELETE` per part on object storage), so a
+    serial removal of even 100 parts can stall a `DROP TABLE` for tens of
+    seconds.
     )", 0) \
     DECLARE(UInt64, zero_copy_concurrent_part_removal_max_split_times, 5, R"(
     Max recursion depth for splitting independent Outdated parts ranges into
@@ -1838,7 +1916,14 @@ namespace ErrorCodes
     Enable persisting column _block_number for each row.
     )", 0, allow_experimental_block_number_column) \
     DECLARE(Bool, enable_block_offset_column, false, R"(
-    Persists virtual column `_block_number` on merges.
+    Persists virtual column `_block_offset` on merges.
+    )", 0) \
+    DECLARE(MergeTreePartMinMaxIndexColumns, part_minmax_index_columns, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY, R"(
+    Selects which columns the per-part min-max index covers. Each value enables an additional group of columns on top of the previous one.
+
+    Possible values:
+    - `partition_key_only` — only the partition-key columns are tracked.
+    - `with_block_number_offset` — partition-key columns plus the persisted `_block_number` and `_block_offset` virtual columns. Enables part-level pruning by these columns.
     )", 0) \
     DECLARE(Bool, add_minmax_index_for_numeric_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all numeric columns
@@ -1850,10 +1935,52 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
     )", 0) \
-    DECLARE(String, auto_statistics_types, "", R"(
-    Comma-separated list of statistics types to calculate automatically on all suitable columns.
-    Supported statistics types: tdigest, countmin, minmax, uniq.
+    DECLARE(Bool, add_minmax_index_for_block_number_column, false, R"(
+    When enabled, an implicit min-max (skipping) index is added for the persistent virtual column `_block_number`.
+    Requires `enable_block_number_column = 1` to take effect. The index is built only during merges,
+    not during inserts: at insert time the block number is provisional and would index a constant.
     )", 0) \
+    DECLARE(Bool, add_minmax_index_for_block_offset_column, false, R"(
+    When enabled, an implicit min-max (skipping) index is added for the persistent virtual column `_block_offset`.
+    Requires `enable_block_offset_column = 1` to take effect. The index is built only during merges,
+    not during inserts.
+    )", 0) \
+    DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
+    Comma-separated list of statistics types to calculate automatically on all suitable columns.
+    Supported statistics types: basic, tdigest, countmin, minmax, uniq.
+    )", 0) \
+    DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
+    Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
+    chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
+    archive per part instead of being written as a separate `skp_idx_<name>.idx2` / `.mrk2`
+    file. Substreams larger than this stay in the legacy per-file layout. The decision is
+    made independently per substream at write time, so a single part can have small indices
+    (e.g. `minmax`) packed and large ones (e.g. a heavy `bloom_filter`) per-file. Set to 0
+    to disable packing entirely (default).
+
+    Each skip-index substream actually consists of a data file and a marks file; both buffer
+    in memory up to the threshold before the spill decision is made. So peak memory while
+    writing scales with `2 * packed_skip_index_max_bytes * (number of substreams that stay
+    below the threshold)`.
+
+    Full-text indices are not supported by this setting and are never packed.
+
+    Packing reduces inode pressure when many skip indices are defined on a table (for example
+    with `add_minmax_index_for_numeric_columns`).
+
+    The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
+    substreams from inside it transparently. Changing this setting affects newly written parts
+    only; existing parts retain whatever layout they had at write time.
+
+    Known limitation: `system.data_skipping_indices.data_uncompressed_bytes` and
+    `system.parts.secondary_indices_uncompressed_bytes` report the compressed size for packed
+    substreams (the archive index doesn't store uncompressed sizes). This is cosmetic in
+    monitoring with one functional consequence:
+    `distributed_index_analysis_min_indexes_bytes_to_activate` compares against
+    `data_uncompressed`, so a packed index that compresses well (`set` or `bloom_filter` over
+    strings) may not cross the activation threshold even if the real uncompressed size would.
+    The fallback is the normal query plan, not a wrong result.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
     the partition or sorting key.
@@ -1862,7 +1989,7 @@ namespace ErrorCodes
     When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
     the partition or sorting key.
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
+    DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, true, R"(
     Enables writing attributes into virtual parts and committing blocks in keeper
     )", 0) \
     DECLARE(Bool, shared_merge_tree_activate_coordinated_merges_tasks, false, R"(
@@ -1870,11 +1997,12 @@ namespace ErrorCodes
     shared_merge_tree_enable_coordinated_merges=0 because this will populate merge coordinator
     statistics and help with cold start.
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
+    DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, true, R"(
     Enables coordinated merges strategy
     )", 0) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
-    Number of merge entries that coordinator should prepare and distribute across workers
+    DECLARE(UInt64Auto, shared_merge_tree_merge_coordinator_merges_prepare_count, Field("auto"), R"(
+    Number of merge entries that coordinator should prepare and distribute across workers.
+    When set to 'auto', equals the max number of merge tasks allowed on a single replica multiplied by the number of active replicas.
     )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
     How often merge coordinator should sync with zookeeper to take fresh metadata
@@ -1967,36 +2095,6 @@ namespace ErrorCodes
     Possible values:
     - `true`
     - `false`
-    )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_reverse_key, false, R"(
-    Enables support for descending sort order in MergeTree sorting keys. This
-    setting is particularly useful for time series analysis and Top-N queries,
-    allowing data to be stored in reverse chronological order to optimize query
-    performance.
-
-    With `allow_experimental_reverse_key` enabled, you can define descending sort
-    orders within the `ORDER BY` clause of a MergeTree table. This enables the
-    use of more efficient `ReadInOrder` optimizations instead of `ReadInReverseOrder`
-    for descending queries.
-
-    **Example**
-
-    ```sql
-    CREATE TABLE example
-    (
-    time DateTime,
-    key Int32,
-    value String
-    ) ENGINE = MergeTree
-    ORDER BY (time DESC, key)  -- Descending order on 'time' field
-    SETTINGS allow_experimental_reverse_key = 1;
-
-    SELECT * FROM example WHERE key = 'xxx' ORDER BY time DESC LIMIT 10;
-    ```
-
-    By using `ORDER BY time DESC` in the query, `ReadInOrder` is applied.
-
-    **Default Value:** false
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_commit_order_projection, false, R"(
     Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
@@ -2153,6 +2251,19 @@ namespace ErrorCodes
     DECLARE(Bool, table_readonly, false, R"(
     If set to true, the table is in read-only mode. Any attempts to insert data or modify the table will fail.
     )", 0) \
+    DECLARE(Bool, materialize_projections_on_insert, true, R"(
+    When enabled, INSERTs create new parts with projections.
+    Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection)
+    or during merges with [materialize_projections_on_merge](/operations/settings/merge-tree-settings.md/#materialize_projections_on_merge).
+    )", 0) \
+    DECLARE(Bool, materialize_projections_on_merge, false, R"(
+    When enabled, a merge rebuilds a projection that is missing from all of its source parts (for example because they were
+    inserted with `materialize_projections_on_insert = 0`), so the merged part has the projection.
+
+    Merges still only combine parts that share the same set of projections. To backfill a projection to all existing parts,
+    use an explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection). Projections
+    are also created during INSERTs with [materialize_projections_on_insert](/operations/settings/merge-tree-settings.md/#materialize_projections_on_insert).
+    )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)
@@ -2188,6 +2299,7 @@ namespace ErrorCodes
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period_random_add, 10) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
@@ -2200,7 +2312,7 @@ namespace ErrorCodes
 
 // clang-format on
 
-DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
+DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MERGETREE_SETTINGS_SUPPORTED_TYPES)
 
 /** Settings for the MergeTree family of engines.
   * Could be loaded from config or from a CREATE TABLE query (SETTINGS clause).
@@ -2208,10 +2320,21 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
+    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
+
+    /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
+    /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
+    /// by a real derived-to-base static_cast (offsets are stored relative to `Data`, not Impl).
+#define IMPL_SUBSCRIPT_OP_(CLASS_NAME, TYPE) \
+    const SettingField##TYPE & operator[](CLASS_NAME##TYPE t) const \
+    { return BaseSettings::operator[](t); } \
+    SettingField##TYPE & operator[](CLASS_NAME##TYPE t) \
+    { return BaseSettings::operator[](t); }
+    MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, IMPL_SUBSCRIPT_OP_)
+#undef IMPL_SUBSCRIPT_OP_
 };
 
 static void validateTableDisk(const DiskPtr & disk)
@@ -2225,9 +2348,9 @@ static void validateTableDisk(const DiskPtr & disk)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for {}", disk_object_storage->getStructure());
 }
 
-IMPLEMENT_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
 
-void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
+void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     if (storage_def.settings)
     {
@@ -2250,7 +2373,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 
                     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
                     {
-                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_attach);
+                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata);
                         LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
                         value = disk_name;
                     }
@@ -2270,7 +2393,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
                 else if (name == "table_disk")
                     table_disk = value.safeGet<bool>();
 
-                if (!is_attach && found_disk_setting && found_storage_policy_setting)
+                if (!is_loading_from_existing_metadata && found_disk_setting && found_storage_policy_setting)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -2304,13 +2427,13 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
     if (std::find_if(changes.begin(), changes.end(),                                                          \
                   [](const SettingChange & c) { return c.name == #NAME; })                                    \
             == changes.end())                                                                                 \
-        changes.push_back(SettingChange{#NAME, (NAME).value});
+        changes.push_back(SettingChange{#NAME, (*this)[MergeTreeSetting::NAME].value});
 
     APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(ADD_IF_ABSENT)
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
 {
     if (!allow_experimental || !allow_beta)
     {
@@ -2339,7 +2462,14 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
     }
 
 
-    if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks)
+    /// Skip these checks when the background pool was auto-lowered by the low-memory heuristic
+    /// AND the corresponding table-level threshold is at its default. On small systems the pool
+    /// may be tuned below the default thresholds, and we do not want to fail table creation in
+    /// that mode. However, if the operator explicitly overrides one of these thresholds at the
+    /// table level, the check must still fire so a misconfiguration that would silently disable
+    /// mutations or merge sizing is caught early.
+    if ((*this)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_mutation] > background_pool_tasks
+        && !(background_pool_auto_lowered && !(*this)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_mutation].changed))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_mutation' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -2347,11 +2477,12 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because mutations cannot work with these settings.",
-            number_of_free_entries_in_pool_to_execute_mutation.value,
+            (*this)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_mutation].value,
             background_pool_tasks);
     }
 
-    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge > background_pool_tasks)
+    if ((*this)[MergeTreeSetting::number_of_free_entries_in_pool_to_lower_max_size_of_merge] > background_pool_tasks
+        && !(background_pool_auto_lowered && !(*this)[MergeTreeSetting::number_of_free_entries_in_pool_to_lower_max_size_of_merge].changed))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_lower_max_size_of_merge' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -2359,11 +2490,12 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
-            number_of_free_entries_in_pool_to_lower_max_size_of_merge.value,
+            (*this)[MergeTreeSetting::number_of_free_entries_in_pool_to_lower_max_size_of_merge].value,
             background_pool_tasks);
     }
 
-    if (number_of_free_entries_in_pool_to_execute_optimize_entire_partition > background_pool_tasks)
+    if ((*this)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition] > background_pool_tasks
+        && !(background_pool_auto_lowered && !(*this)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition].changed))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_optimize_entire_partition' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -2371,115 +2503,132 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
-            number_of_free_entries_in_pool_to_execute_optimize_entire_partition.value,
+            (*this)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition].value,
             background_pool_tasks);
     }
 
     // Zero index_granularity is nonsensical.
-    if (index_granularity < 1)
+    if ((*this)[MergeTreeSetting::index_granularity] < 1)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "index_granularity: value {} makes no sense",
-            index_granularity.value);
+            (*this)[MergeTreeSetting::index_granularity].value);
+    }
+
+    if ((*this)[MergeTreeSetting::shared_merge_tree_range_for_merge_window_size] < 1)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "shared_merge_tree_range_for_merge_window_size: value {} makes no sense",
+            (*this)[MergeTreeSetting::shared_merge_tree_range_for_merge_window_size].value);
     }
 
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
     // If index_granularity_bytes is not disabled i.e > 0 b, then always ensure that it's greater than
     // min_index_granularity_bytes. This is mainly a safeguard against accidents whereby a really low
     // index_granularity_bytes SETTING of 1b can create really large parts with large marks.
-    if (index_granularity_bytes > 0 && index_granularity_bytes < min_index_granularity_bytes)
+    if ((*this)[MergeTreeSetting::index_granularity_bytes] > 0 && (*this)[MergeTreeSetting::index_granularity_bytes] < (*this)[MergeTreeSetting::min_index_granularity_bytes])
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "index_granularity_bytes: {} is lower than specified min_index_granularity_bytes: {}",
-            index_granularity_bytes.value,
-            min_index_granularity_bytes.value);
+            (*this)[MergeTreeSetting::index_granularity_bytes].value,
+            (*this)[MergeTreeSetting::min_index_granularity_bytes].value);
     }
 
     // If min_bytes_to_rebalance_partition_over_jbod is not disabled i.e > 0 b, then always ensure that
     // it's not less than min_bytes_to_rebalance_partition_over_jbod. This is a safeguard to avoid tiny
     // parts to participate JBOD balancer which will slow down the merge process.
-    if (min_bytes_to_rebalance_partition_over_jbod > 0
-        && min_bytes_to_rebalance_partition_over_jbod < max_bytes_to_merge_at_max_space_in_pool / 1024)
+    if ((*this)[MergeTreeSetting::min_bytes_to_rebalance_partition_over_jbod] > 0
+        && (*this)[MergeTreeSetting::min_bytes_to_rebalance_partition_over_jbod] < (*this)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool] / 1024)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "min_bytes_to_rebalance_partition_over_jbod: {} is lower than specified max_bytes_to_merge_at_max_space_in_pool / 1024: {}",
-            min_bytes_to_rebalance_partition_over_jbod.value,
-            max_bytes_to_merge_at_max_space_in_pool / 1024);
+            (*this)[MergeTreeSetting::min_bytes_to_rebalance_partition_over_jbod].value,
+            (*this)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool] / 1024);
     }
 
-    if (max_cleanup_delay_period < cleanup_delay_period)
+    if ((*this)[MergeTreeSetting::max_cleanup_delay_period] < (*this)[MergeTreeSetting::cleanup_delay_period])
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of max_cleanup_delay_period setting ({}) must be greater than the value of cleanup_delay_period setting ({})",
-            max_cleanup_delay_period.value, cleanup_delay_period.value);
+            (*this)[MergeTreeSetting::max_cleanup_delay_period].value, (*this)[MergeTreeSetting::cleanup_delay_period].value);
     }
 
-    if (max_merge_selecting_sleep_ms < merge_selecting_sleep_ms)
+    if ((*this)[MergeTreeSetting::max_merge_selecting_sleep_ms] < (*this)[MergeTreeSetting::merge_selecting_sleep_ms])
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of max_merge_selecting_sleep_ms setting ({}) must be greater than the value of merge_selecting_sleep_ms setting ({})",
-            max_merge_selecting_sleep_ms.value, merge_selecting_sleep_ms.value);
+            (*this)[MergeTreeSetting::max_merge_selecting_sleep_ms].value, (*this)[MergeTreeSetting::merge_selecting_sleep_ms].value);
     }
 
-    if (merge_selecting_sleep_slowdown_factor < 1.f)
+    if ((*this)[MergeTreeSetting::merge_selecting_sleep_slowdown_factor] < 1.f)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
-            merge_selecting_sleep_slowdown_factor.value);
+            (*this)[MergeTreeSetting::merge_selecting_sleep_slowdown_factor].value);
     }
 
     static constexpr UInt64 max_allowed_buckets = 256;
 
-    if (max_buckets_in_map > max_allowed_buckets)
+    if ((*this)[MergeTreeSetting::max_buckets_in_map] > max_allowed_buckets)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of max_buckets_in_map setting ({}) exceeds the maximum allowed value of {}",
-            max_buckets_in_map.value,
+            (*this)[MergeTreeSetting::max_buckets_in_map].value,
             max_allowed_buckets);
     }
 
-    if (!std::isfinite(map_buckets_coefficient) || map_buckets_coefficient <= 0)
+    if (!std::isfinite((*this)[MergeTreeSetting::map_buckets_coefficient]) || (*this)[MergeTreeSetting::map_buckets_coefficient] <= 0)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of map_buckets_coefficient setting ({}) must be positive and finite",
-            map_buckets_coefficient.value);
+            (*this)[MergeTreeSetting::map_buckets_coefficient].value);
     }
 
-    if (object_shared_data_buckets_for_compact_part > max_allowed_buckets)
+    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] > max_allowed_buckets)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_compact_part setting ({}) exceeds the maximum allowed value of {}",
-            object_shared_data_buckets_for_compact_part.value,
+            (*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part].value,
             max_allowed_buckets);
     }
 
-    if (object_shared_data_buckets_for_wide_part > max_allowed_buckets)
+    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part] > max_allowed_buckets)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_wide_part setting ({}) exceeds the maximum allowed value of {}",
-            object_shared_data_buckets_for_wide_part.value,
+            (*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part].value,
             max_allowed_buckets);
     }
 
-    if (zero_copy_merge_mutation_min_parts_size_sleep_before_lock != 0
-        && zero_copy_merge_mutation_min_parts_size_sleep_before_lock < zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock)
+    if ((*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock] != 0
+        && (*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock] < (*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock])
     {
         throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of zero_copy_merge_mutation_min_parts_size_sleep_before_lock setting ({}) cannot be less than"
                 " the value of zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock ({})",
-                zero_copy_merge_mutation_min_parts_size_sleep_before_lock.value,
-                zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock.value);
+                (*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock].value,
+                (*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock].value);
+    }
+
+    if ((*this)[MergeTreeSetting::part_minmax_index_columns] >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
+    {
+        if (!(*this)[MergeTreeSetting::enable_block_number_column])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_number_column' to be enabled");
+
+        if (!(*this)[MergeTreeSetting::enable_block_offset_column])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
 }
 
@@ -2504,15 +2653,6 @@ void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
     }
 }
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MergeTreeSettings##TYPE NAME = &MergeTreeSettingsImpl ::NAME;
-
-namespace MergeTreeSetting
-{
-    LIST_OF_MERGE_TREE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)  /// NOLINT(misc-use-internal-linkage)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
-
 MergeTreeSettings::MergeTreeSettings() : impl(std::make_unique<MergeTreeSettingsImpl>())
 {
 }
@@ -2521,10 +2661,7 @@ MergeTreeSettings::MergeTreeSettings(const MergeTreeSettings & settings) : impl(
 {
 }
 
-MergeTreeSettings::MergeTreeSettings(MergeTreeSettings && settings) noexcept
-    : impl(std::make_unique<MergeTreeSettingsImpl>(std::move(*settings.impl)))
-{
-}
+MergeTreeSettings::MergeTreeSettings(MergeTreeSettings && settings) noexcept = default;
 
 MergeTreeSettings::~MergeTreeSettings() = default;
 
@@ -2596,9 +2733,9 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
     }
 }
 
-std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
+VectorWithMemoryTracking<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
 {
-    std::vector<std::string_view> setting_names;
+    VectorWithMemoryTracking<std::string_view> setting_names;
     for (const auto & setting : impl->all())
     {
         setting_names.emplace_back(setting.getName());
@@ -2606,9 +2743,38 @@ std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
     return setting_names;
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
+std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
 {
-    impl->loadFromQuery(storage_def, context, is_attach);
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = MergeTreeSettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    return alias_names;
+}
+
+std::string_view MergeTreeSettings::getDescription(std::string_view name) const
+{
+    return impl->getDescription(name);
+}
+
+std::string_view MergeTreeSettings::getTypeName(std::string_view name) const
+{
+    return impl->getTypeName(name);
+}
+
+String MergeTreeSettings::getDefaultValueString(std::string_view name) const
+{
+    return impl->getDefaultValueString(name);
+}
+
+SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
+{
+    return impl->getTier(name);
+}
+
+void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
+{
+    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
@@ -2635,13 +2801,13 @@ void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::U
 bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) const
 {
     return (
-        (impl->min_rows_to_fsync_after_merge && input_rows >= impl->min_rows_to_fsync_after_merge)
-        || (impl->min_compressed_bytes_to_fsync_after_merge && input_bytes >= impl->min_compressed_bytes_to_fsync_after_merge));
+        ((*this)[MergeTreeSetting::min_rows_to_fsync_after_merge] && input_rows >= (*this)[MergeTreeSetting::min_rows_to_fsync_after_merge])
+        || ((*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge] && input_bytes >= (*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge]));
 }
 
-void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta);
+    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta, background_pool_auto_lowered);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
@@ -2782,7 +2948,11 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_numeric_columns"
         || name == "add_minmax_index_for_string_columns"
         || name == "add_minmax_index_for_temporal_columns"
+        || name == "add_minmax_index_for_block_number_column"
+        || name == "add_minmax_index_for_block_offset_column"
         || name == "table_disk"
+        || name == "allow_tuple_element_aggregation"
+        || name == "share_nested_offsets"
     ;
 }
 

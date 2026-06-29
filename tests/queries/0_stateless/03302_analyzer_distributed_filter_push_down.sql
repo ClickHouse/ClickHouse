@@ -1,5 +1,6 @@
 -- Tags: no-random-merge-tree-settings
 -- add_minmax_index_for_numeric_columns=0: Different plan
+SET explain_query_plan_default = 'legacy';
 
 set enable_analyzer=1;
 set serialize_query_plan = 0;
@@ -11,6 +12,7 @@ set query_plan_optimize_prewhere=1;
 set optimize_move_to_prewhere=1;
 set optimize_skip_unused_shards=0;
 set enable_parallel_blocks_marshalling = 1; -- EXPLAIN output includes BlocksMarshalling node when enabled
+set query_plan_remove_unused_columns = 1; -- filter-only columns (e.g. x in prewhere) must be removed from output
 
 select '============ #66878';
 

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -33,6 +34,7 @@ namespace Setting
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
+    extern const SettingsUInt64 predicate_statistics_sample_rate;
 }
 
 namespace MergeTreeSetting
@@ -58,6 +60,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeMapBucketsStrategy map_buckets_strategy;
     extern const MergeTreeSettingsFloat map_buckets_coefficient;
     extern const MergeTreeSettingsUInt64 map_buckets_min_avg_size;
+    extern const MergeTreeSettingsBool compress_per_column_in_compact_parts;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -70,13 +73,17 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     bool save_marks_in_cache_,
     bool save_primary_index_in_memory_,
     bool blocks_are_granules_size_)
-    : min_compress_block_size((*storage_settings)[MergeTreeSetting::min_compress_block_size] ? (*storage_settings)[MergeTreeSetting::min_compress_block_size] : global_settings[Setting::min_compress_block_size])
-    , max_compress_block_size((*storage_settings)[MergeTreeSetting::max_compress_block_size] ? (*storage_settings)[MergeTreeSetting::max_compress_block_size] : global_settings[Setting::max_compress_block_size])
+    : min_compress_block_size(std::min<size_t>(
+        (*storage_settings)[MergeTreeSetting::min_compress_block_size] ? (*storage_settings)[MergeTreeSetting::min_compress_block_size] : global_settings[Setting::min_compress_block_size],
+        MAX_COMPRESS_BLOCK_SIZE))
+    , max_compress_block_size(std::min<size_t>(
+        (*storage_settings)[MergeTreeSetting::max_compress_block_size] ? (*storage_settings)[MergeTreeSetting::max_compress_block_size] : global_settings[Setting::max_compress_block_size],
+        MAX_COMPRESS_BLOCK_SIZE))
     , marks_compression_codec((*storage_settings)[MergeTreeSetting::marks_compression_codec])
-    , marks_compress_block_size((*storage_settings)[MergeTreeSetting::marks_compress_block_size])
+    , marks_compress_block_size(std::min<size_t>((*storage_settings)[MergeTreeSetting::marks_compress_block_size], MAX_COMPRESS_BLOCK_SIZE))
     , compress_primary_key((*storage_settings)[MergeTreeSetting::compress_primary_key])
     , primary_key_compression_codec((*storage_settings)[MergeTreeSetting::primary_key_compression_codec])
-    , primary_key_compress_block_size((*storage_settings)[MergeTreeSetting::primary_key_compress_block_size])
+    , primary_key_compress_block_size(std::min<size_t>((*storage_settings)[MergeTreeSetting::primary_key_compress_block_size], MAX_COMPRESS_BLOCK_SIZE))
     , can_use_adaptive_granularity(can_use_adaptive_granularity_)
     , rewrite_primary_key(rewrite_primary_key_)
     , save_marks_in_cache(save_marks_in_cache_)
@@ -92,11 +99,12 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , object_shared_data_buckets(isCompactPart(data_part) ? (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] : (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_wide_part])
     , max_buckets_in_map((*storage_settings)[MergeTreeSetting::max_buckets_in_map])
     , map_buckets_strategy((*storage_settings)[MergeTreeSetting::map_buckets_strategy])
-    , map_buckets_coefficient((*storage_settings)[MergeTreeSetting::map_buckets_coefficient])
+    , map_buckets_coefficient(static_cast<double>((*storage_settings)[MergeTreeSetting::map_buckets_coefficient]))
     , map_buckets_min_avg_size((*storage_settings)[MergeTreeSetting::map_buckets_min_avg_size])
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , min_columns_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
+    , compress_per_column_in_compact_parts((*storage_settings)[MergeTreeSetting::compress_per_column_in_compact_parts])
 {
 }
 
@@ -122,6 +130,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit];
     result.enable_analyzer = settings[Setting::allow_experimental_analyzer];
     result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
+    result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
     return result;
 }
 

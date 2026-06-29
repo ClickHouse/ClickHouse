@@ -2,7 +2,6 @@
 
 #include <string>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <filesystem>
 #include <variant>
@@ -18,9 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
-#include <Common/ThreadPool.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/threadPoolCallbackRunner.h>
 
 #include <Disks/DirectoryIterator.h>
 #include <Disks/DiskType.h>
@@ -76,6 +73,9 @@ using AuthMethod = std::variant<
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
     std::shared_ptr<AzureBlobStorage::StaticCredential>>;
+
+
+struct ConnectionParams;
 }
 
 #endif
@@ -90,6 +90,8 @@ class Client;
 namespace DB
 {
 
+class ReadPipeline;
+
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
@@ -103,6 +105,7 @@ using ObjectAttributes = std::map<std::string, std::string>;
 struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
+    bool is_size_known = true;
     Poco::Timestamp last_modified;
     std::string etag;
     ObjectAttributes tags;
@@ -211,7 +214,26 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const = 0;
+        std::optional<size_t> read_hint = {},
+        bool use_external_buffer = false,
+        bool restrict_seek = false) const = 0;
+
+    /// Populate a `ReadPipeline` with the source and any stages this storage needs.
+    ///
+    /// The "source" is the bottom layer of the read-buffer chain — a descriptor
+    /// (not an actual buffer) that tells `ReadPipeline::build()` how to construct
+    /// the base `ReadBufferFromFileBase`. For object storages the descriptor is
+    /// `ObjectStorageSource { storage, read_hint }`; later stages (disk cache,
+    /// gather, async-prefetch, decryption) wrap around the buffer it produces.
+    ///
+    /// Default: sets the source to this storage. `CachedObjectStorage` overrides
+    /// to delegate to the inner storage and adds the disk cache stage.
+    virtual void prepareRead(
+        ObjectStoragePtr storage,
+        const StoredObjects & objects,
+        const ReadSettings & read_settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const;
 
     /// Read small object into memory and return it as string
     /// Also contain consistent object metadata if available in this object storage.
@@ -313,10 +335,16 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
 
+    virtual const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
+    }
+
     virtual AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
+
 #endif
 
 #if USE_AWS_S3
@@ -327,6 +355,13 @@ public:
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
 
+    /// Invokes the catalog-vended credentials refresh callback (e.g. for Glue / Unity / REST
+    /// data-lake tables) and atomically swaps the internal S3 client to one signed with the
+    /// fresh credentials. Returns true if the callback was present and a new client was
+    /// installed. Used by delta-kernel's `ExpiredToken` recovery path, which bypasses the
+    /// `ReadBufferFromS3` / `getObjectMetadata` error handlers that normally invoke this.
+    virtual bool tryRefreshCredentialsViaCallback() { return false; }
+
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     /// Assign tag on objects
     virtual void tagObjects(const StoredObjects &, const std::string &, const std::string &)
@@ -334,6 +369,10 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The method 'tagObjects' is only implemented for S3 and Azure storages");
     }
 #endif
+
+    /// Returns the inner (unwrapped) object storage for decorator types such as `CachedObjectStorage`.
+    /// Returns nullptr for non-decorator types, meaning this storage is already the base.
+    virtual ObjectStoragePtr getUnderlying() { return nullptr; }
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

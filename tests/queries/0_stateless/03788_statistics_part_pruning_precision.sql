@@ -1,5 +1,6 @@
 -- This test validates that Field-based MinMax statistics can precisely prune parts
 -- for large integers (beyond 2^53), high-precision Decimals, and Float64 values.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_stats_exceeds;
 
@@ -21,6 +22,7 @@ SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
+SET materialize_statistics_on_insert = 1;
 
 -- =============================================================================
 -- Case 1: UInt64 with values >= 2^53

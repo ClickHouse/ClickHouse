@@ -12,19 +12,20 @@ endif()
 
 set(ISAL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/isa-l")
 
-# The YASM and NASM assembers are somewhat mutually compatible. ISAL specifically needs NASM. If only YASM is installed, then check_language(ASM_NASM)
-# below happily finds YASM, leading to weird errors at build time. Therefore, do an explicit check for NASM here.
+# ISAL specifically needs NASM (the YASM assembler is partially compatible but produces
+# weird build errors). Use an explicit `find_program` to locate NASM and feed the result
+# directly into `CMAKE_ASM_NASM_COMPILER` instead of probing via `check_language`.
 find_program(NASM_PATH NAMES nasm)
 if (NOT NASM_PATH)
     message(FATAL_ERROR "Please install NASM from 'https://www.nasm.us/' because NASM compiler can not be found!")
 endif ()
 
-include(CheckLanguage)
-check_language(ASM_NASM)
-if(NOT CMAKE_ASM_NASM_COMPILER)
-    message(FATAL_ERROR "Please install NASM from 'https://www.nasm.us/' because NASM compiler can not be found!")
-endif()
-
+set(CMAKE_ASM_NASM_COMPILER "${NASM_PATH}")
+# Skip CMake's compiler verification step for ASM_NASM. The verification path
+# in `CMakeTestASM_NASMCompiler.cmake` can fall back to `try_compile`, which is
+# blocked project-wide by `cmake/block_build_time_checks.cmake`. NASM was already
+# located by `find_program` above, so the compiler is known to work.
+set(CMAKE_ASM_NASM_COMPILER_WORKS TRUE)
 enable_language(ASM_NASM)
 
 set(ISAL_C_SRC

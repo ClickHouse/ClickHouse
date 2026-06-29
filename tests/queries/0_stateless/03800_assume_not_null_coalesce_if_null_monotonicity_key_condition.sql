@@ -2,6 +2,8 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
+SET explain_query_plan_default = 'legacy';
+
 -- { echoOn }
 
 DROP VIEW IF EXISTS view_ifnull;
@@ -10,7 +12,6 @@ DROP VIEW IF EXISTS view_assume;
 DROP TABLE IF EXISTS test;
 
 SET session_timezone = 'UTC';
-SET query_plan_merge_expressions = 1; -- pin to avoid EXPLAIN output changes from randomization
 
 CREATE TABLE test
 (
