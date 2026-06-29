@@ -9,9 +9,9 @@
 namespace DB
 {
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
-/// This queue is used to poll descriptors. Generally, just a wrapper over epoll.
+/// This queue is used to poll descriptors. Generally, just a wrapper over epoll (kqueue on macOS).
 class PollingQueue
 {
 public:
