@@ -17,7 +17,7 @@ namespace DB
 class ReadBuffer;
 class ArrowColumnToCHColumn;
 
-class ArrowBlockInputFormat : public IInputFormat
+class ArrowBlockInputFormat final : public IInputFormat
 {
 public:
     ArrowBlockInputFormat(ReadBuffer & in_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_);
@@ -60,7 +60,7 @@ private:
     std::atomic<int> is_stopped{0};
 };
 
-class ArrowSchemaReader : public ISchemaReader
+class ArrowSchemaReader final : public ISchemaReader
 {
 public:
     ArrowSchemaReader(ReadBuffer & in_, bool stream_, const FormatSettings & format_settings_);

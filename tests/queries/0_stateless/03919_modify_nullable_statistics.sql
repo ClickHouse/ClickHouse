@@ -1,5 +1,6 @@
 drop table if exists t_stat_nullable_1 sync;
 drop table if exists t_stat_nullable_2 sync;
+SET materialize_statistics_on_insert = 1;
 
 create table t_stat_nullable_1(A Int64, B String, C String)
 Engine = ReplicatedMergeTree('/clickhouse/{database}/tables/t_stat_nullable', '1')

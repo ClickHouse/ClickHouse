@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemErrors.h>
 #include <Interpreters/Context.h>
@@ -90,3 +91,6 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemErrors) }

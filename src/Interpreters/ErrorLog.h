@@ -2,7 +2,6 @@
 
 #include <Interpreters/PeriodicLog.h>
 #include <Common/ErrorCodes.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 

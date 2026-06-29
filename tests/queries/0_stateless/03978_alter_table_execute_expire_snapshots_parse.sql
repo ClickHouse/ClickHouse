@@ -1,3 +1,5 @@
+-- Tags: no-replicated-database
+
 -- Parsing: expire_snapshots with positional timestamp (legacy syntax)
 SELECT formatQuerySingleLine('ALTER TABLE t EXECUTE expire_snapshots(\'2024-06-01 00:00:00\')');
 SELECT formatQuerySingleLine('ALTER TABLE db.t EXECUTE expire_snapshots(\'2024-06-01 00:00:00\')');
@@ -43,9 +45,9 @@ ALTER TABLE test_execute_03978 EXECUTE compact(); -- { serverError NOT_IMPLEMENT
 ALTER TABLE test_execute_03978 EXECUTE unknown_command(); -- { serverError NOT_IMPLEMENTED }
 
 -- Runtime: multiple EXECUTE commands in a single ALTER are rejected
-ALTER TABLE test_execute_03978 EXECUTE cmd1(), EXECUTE cmd2(); -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE test_execute_03978 EXECUTE cmd1(), EXECUTE cmd2(); -- { serverError QUERY_IS_PROHIBITED }
 
--- Runtime: EXECUTE cannot be combined with other ALTER commands
+-- Execute commands can be combined with alters and mutations but not partition commands
 ALTER TABLE test_execute_03978 ADD COLUMN y UInt32, EXECUTE cmd(); -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE test_execute_03978;

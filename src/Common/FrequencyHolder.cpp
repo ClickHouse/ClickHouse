@@ -2,10 +2,7 @@
 
 #if USE_NLP
 
-/// Embedded SQL definitions
-///
-/// Note: CMake doesn't recognize changes in #embed-ed files. If you change any of these files, you will need to
-/// make a scratch build.
+/// Embedded NLP data
 constexpr unsigned char resource_charset_zst[] =
 {
 #embed "../../contrib/nlp-data/charset.zst"
@@ -47,8 +44,8 @@ void FrequencyHolder::loadEncodingsFrequency()
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded charset frequencies");
 
     String line;
-    UInt16 bigram;
-    Float64 frequency;
+    UInt16 bigram = 0;
+    Float64 frequency = 0;
     String charset_name;
 
     auto buf = std::make_unique<ReadBufferFromMemory>(resource);
@@ -105,7 +102,7 @@ void FrequencyHolder::loadEmotionalDict()
 
     String line;
     String word;
-    Float64 tonality;
+    Float64 tonality = 0;
     size_t count = 0;
 
     auto buf = std::make_unique<ReadBufferFromMemory>(resource);

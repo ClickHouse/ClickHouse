@@ -75,7 +75,9 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const override;
+        std::optional<size_t> read_hint = {},
+        bool use_external_buffer = false,
+        bool restrict_seek = false) const override;
 
     SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
         const StoredObject & object,
@@ -149,6 +151,8 @@ public:
 
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
+
+    bool tryRefreshCredentialsViaCallback() override;
 
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }

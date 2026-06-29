@@ -31,16 +31,16 @@ class Validator:
                     f"Setting ENABLED_WORKFLOWS has non-existing workflow file [{file}]",
                 )
 
-        if Settings.USE_CUSTOM_GH_AUTH:
+        if Settings.USE_CUSTOM_GH_AUTH and not Settings.GH_AUTH_LAMBDA_NAME:
             cls.evaluate_check_simple(
-                Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY,
-                f"Setting SECRET_GH_APP_ID and SECRET_GH_APP_PEM_KEY must be provided with USE_CUSTOM_GH_AUTH == True",
+                Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY and Settings.SECRET_GH_APP_INSTALLATION_ID,
+                "Setting SECRET_GH_APP_ID, SECRET_GH_APP_PEM_KEY and SECRET_GH_APP_INSTALLATION_ID must be provided with USE_CUSTOM_GH_AUTH == True",
             )
 
         workflows = _get_workflows(_for_validation_check=True)
         for workflow in workflows:
             print(f"Validating workflow [{workflow.name}]")
-            if Settings.USE_CUSTOM_GH_AUTH and workflow.enable_report:
+            if Settings.USE_CUSTOM_GH_AUTH and not Settings.GH_AUTH_LAMBDA_NAME and workflow.enable_report:
                 secret = workflow.get_secret(Settings.SECRET_GH_APP_ID)
                 cls.evaluate_check(
                     bool(secret),
@@ -51,6 +51,12 @@ class Validator:
                 cls.evaluate_check(
                     bool(secret),
                     f"Secret [{Settings.SECRET_GH_APP_PEM_KEY}] must be configured for workflow",
+                    workflow.name,
+                )
+                secret = workflow.get_secret(Settings.SECRET_GH_APP_INSTALLATION_ID)
+                cls.evaluate_check(
+                    bool(secret),
+                    f"Secret [{Settings.SECRET_GH_APP_INSTALLATION_ID}] must be configured for workflow",
                     workflow.name,
                 )
 
@@ -168,40 +174,40 @@ class Validator:
                         and Settings.DOCKER_BUILD_AMD_RUNS_ON
                         and Settings.DOCKER_BUILD_ARM_RUNS_ON
                         != Settings.DOCKER_BUILD_AMD_RUNS_ON,
-                        f"Settings: DOCKER_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON, DOCKER_BUILD_AMD_RUNS_ON must be provided and be different CPU architecture machines",
+                        "Settings: DOCKER_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON, DOCKER_BUILD_AMD_RUNS_ON must be provided and be different CPU architecture machines",
                     )
                 else:
                     cls.evaluate_check(
                         Settings.DOCKER_MERGE_RUNS_ON,
-                        f"DOCKER_BUILD_AND_MERGE_RUNS_ON settings must be defined if workflow has dockers",
+                        "DOCKER_BUILD_AND_MERGE_RUNS_ON settings must be defined if workflow has dockers",
                         workflow_name=workflow.name,
                     )
 
             if workflow.set_latest_for_docker_merged_manifest:
                 cls.evaluate_check(
                     workflow.enable_dockers_manifest_merge,
-                    f".set_latest_for_docker_merged_manifest workflow setting is applicable with .enable_dockers_manifest_merge=True",
+                    ".set_latest_for_docker_merged_manifest workflow setting is applicable with .enable_dockers_manifest_merge=True",
                     workflow_name=workflow.name,
                 )
 
             if workflow.enable_open_issues_check:
                 cls.evaluate_check(
                     workflow.enable_report,
-                    f".enable_open_issues_check workflow setting is applicable with .enable_report=True",
+                    ".enable_open_issues_check workflow setting is applicable with .enable_report=True",
                     workflow_name=workflow.name,
                 )
 
             if workflow.enable_report:
                 assert (
-                    Settings.HTML_S3_PATH
-                ), f"HTML_S3_PATH Setting must be defined if enable_html=True, workflow [{workflow.name}]"
+                    Settings.S3_REPORT_BUCKET
+                ), f"S3_REPORT_BUCKET Setting must be defined if enable_html=True, workflow [{workflow.name}]"
                 assert (
                     Settings.S3_BUCKET_TO_HTTP_ENDPOINT
                 ), f"S3_BUCKET_TO_HTTP_ENDPOINT Setting must be defined if enable_html=True, workflow [{workflow.name}]"
                 assert (
-                    Settings.HTML_S3_PATH.split("/")[0]
+                    Settings.S3_REPORT_BUCKET.split("/")[0]
                     in Settings.S3_BUCKET_TO_HTTP_ENDPOINT
-                ), f"S3_BUCKET_TO_HTTP_ENDPOINT Setting must include bucket name [{Settings.HTML_S3_PATH}] from HTML_S3_PATH, workflow [{workflow.name}]"
+                ), f"S3_BUCKET_TO_HTTP_ENDPOINT Setting must include bucket name [{Settings.S3_REPORT_BUCKET}] from S3_REPORT_BUCKET, workflow [{workflow.name}]"
 
             if workflow.enable_cache:
                 for artifact in workflow.artifacts or []:
@@ -223,7 +229,7 @@ class Validator:
             if workflow.enable_open_issues_check:
                 cls.evaluate_check(
                     workflow.enable_merge_ready_status,
-                    f".enable_open_issues_check workflow setting is applicable with .enable_merge_ready_status=True",
+                    ".enable_open_issues_check workflow setting is applicable with .enable_merge_ready_status=True",
                     workflow_name=workflow.name,
                 )
 
@@ -384,7 +390,7 @@ class Validator:
         if check_ok:
             return
         else:
-            print(f"ERROR: Validation failed:")
+            print("ERROR: Validation failed:")
             for message in messages:
                 print(" ||  " + message)
             raise

@@ -106,7 +106,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                 for (const auto & name : related_columns)
                 {
                     const IColumn & column = *chunk.getColumns()[getInputPort().getHeader().getPositionByName(name)];
-                    assert(row_idx < column.size());
+                    chassert(row_idx < column.size());
 
                     if (!first)
                         column_values_msg.append(", ");

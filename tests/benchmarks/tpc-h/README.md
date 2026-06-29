@@ -1,7 +1,7 @@
 # Notes
 
 ## Q11
-The `FRACTION` parameter in the `HAVING` clause is defined as `0.0001 / SF` (spec section 2.4.11.3). The current query uses `0.0001`, which is correct for SF = 1. For other scale factors, adjust accordingly, e.g. `0.00001` for SF = 10, `0.000001` for SF = 100.
+The `FRACTION` parameter in the `HAVING` clause is defined as `0.0001 / SF` (spec section 2.4.11.3). `query_11.sql` uses `0.0001` (SF = 1), `query_11_sf10.sql` uses `0.00001` (SF = 10). For other scale factors, adjust accordingly.
 
 # List of known problems
 ## Q6

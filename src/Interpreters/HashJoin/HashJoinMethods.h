@@ -8,9 +8,15 @@
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
+#include <base/types.h>
 
 namespace DB
 {
+
+/// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
+/// Returns the threshold (in bytes) above which prefetching is enabled in JOIN.
+size_t getMinBytesForPrefetchInJoin();
+
 /// Inserting an element into a hash table of the form `key -> reference to a string`, which will then be used by JOIN.
 template <typename HashMap, typename KeyGetter>
 struct Inserter
@@ -97,7 +103,7 @@ public:
 
 private:
     template <typename KeyGetter, bool is_asof_join>
-    static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes);
+    static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {});
 
     template <typename KeyGetter, typename HashMap, typename Selector>
     static void insertFromBlockImplTypeCase(
@@ -119,7 +125,8 @@ private:
         AddedColumns & added_columns,
         const ScatteredBlock::Selector & selector,
         HashJoin::Type type,
-        JoinStuff::JoinUsedFlags & used_flags);
+        JoinStuff::JoinUsedFlags & used_flags,
+        HashJoin::RightTableData::KeyRange key_range);
 
     template <typename KeyGetter, typename Map, typename AddedColumns>
     static size_t joinRightColumnsSwitchNullability(

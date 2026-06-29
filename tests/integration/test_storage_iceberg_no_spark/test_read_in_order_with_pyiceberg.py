@@ -29,7 +29,7 @@ def load_catalog_impl(started_cluster):
         **{
             "uri": base_url_local_raw,
             "type": "rest",
-            "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
+            "s3.endpoint": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
             "s3.access-key-id": minio_access_key,
             "s3.secret-access-key": minio_secret_key,
         },
@@ -46,7 +46,7 @@ def create_table(
     return catalog.create_table(
         identifier=f"{namespace}.{table}",
         schema=schema,
-        location=f"s3://warehouse-rest/data",
+        location="s3://warehouse-rest/data",
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
@@ -57,7 +57,7 @@ def create_clickhouse_iceberg_database(
     settings = {
         "catalog_type": "rest",
         "warehouse": "demo",
-        "storage_endpoint": "http://minio:9000/warehouse-rest",
+        "storage_endpoint": "http://minio1:9001/warehouse-rest",
     }
 
     settings.update(additional_settings)

@@ -29,6 +29,11 @@ struct JSONExtractInsertSettings
     /// Use partial match instead of full to skip paths using regular expressions specified
     /// in JSON data type using SKIP REGEXP.
     bool use_partial_match_to_skip_paths_by_regexp = true;
+    /// If true, fractional JSON DOUBLE values (e.g. `3.14`) and STRING values that parse
+    /// as non-integral floats (e.g. `"3.14"`) are not silently truncated to integer types.
+    /// Used inside `VariantNode` so that `Variant(IntT, FloatT)` picks the float member
+    /// for fractional values instead of silently dropping the fractional part.
+    bool no_int_truncation_from_double = false;
 };
 
 template <typename JSONParser>
@@ -48,6 +53,6 @@ template <typename JSONParser>
 void jsonElementToString(const typename JSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 
 template <typename JSONParser, typename NumberType>
-bool tryGetNumericValueFromJSONElement(NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
+bool tryGetNumericValueFromJSONElement(NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, String & error);
 
 }

@@ -114,7 +114,7 @@ MetadataStoragePtr MetadataStorageFactory::create(
     return it->second(name, config, config_prefix, cluster, object_storages);
 }
 
-void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
+static void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("local", [](
         const std::string & name,
@@ -135,12 +135,14 @@ void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(local_object_storage, config, config_prefix);
         auto key_generator = local_object_storage->createKeyGenerator();
 
-        return std::make_shared<MetadataStorageFromDisk>(db_disk, std::move(key_compatibility_prefix), std::move(key_generator));
+        bool persistent_removal_log = config.getBool(config_prefix + ".persistent_removal_log", false);
+        size_t metadata_removal_log_compaction_threshold = config.getUInt64(config_prefix + ".metadata_removal_log_compaction_threshold", 1000);
+        return std::make_shared<MetadataStorageFromDisk>(db_disk, std::move(key_compatibility_prefix), std::move(key_generator), persistent_removal_log, metadata_removal_log_compaction_threshold);
     });
 }
 
 #if CLICKHOUSE_CLOUD
-void registerMetadataStorageFromKeeper(MetadataStorageFactory & factory)
+static void registerMetadataStorageFromKeeper(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("keeper", [](
         const std::string & name,
@@ -166,7 +168,7 @@ void registerMetadataStorageFromKeeper(MetadataStorageFactory & factory)
 }
 #endif
 
-void registerPlainMetadataStorage(MetadataStorageFactory & factory)
+static void registerPlainMetadataStorage(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("plain", [](
         const std::string & /* name */,
@@ -185,7 +187,7 @@ void registerPlainMetadataStorage(MetadataStorageFactory & factory)
     });
 }
 
-void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
+static void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("plain_rewritable", [](
         const std::string & /* name */,
@@ -203,7 +205,7 @@ void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
     });
 }
 
-void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & factory)
+static void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("web", [](
         const std::string & /* name */,
@@ -219,6 +221,8 @@ void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & fa
         return std::make_shared<MetadataStorageFromStaticFilesWebServer>(assert_cast<const WebObjectStorage &>(*local_object_storage));
     });
 }
+
+void registerMetadataStorages();
 
 void registerMetadataStorages()
 {

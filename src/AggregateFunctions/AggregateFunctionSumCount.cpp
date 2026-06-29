@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
@@ -119,6 +120,7 @@ createAggregateFunctionSumCount(const std::string & name, const DataTypes & argu
 
 }
 
+void registerAggregateFunctionSumCount(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSumCount(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_sumCount = R"(

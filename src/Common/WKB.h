@@ -5,7 +5,6 @@
 
 #include <IO/ReadBuffer.h>
 #include <Functions/geometryConverters.h>
-#include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <IO/WriteBuffer.h>
 
@@ -28,8 +27,13 @@ using GeometricObject = std::variant<
     Polygon<CartesianPoint>,
     MultiPolygon<CartesianPoint>>;
 
+/// Hard limit on WKB element counts that cannot be overridden by settings.
+static constexpr UInt32 MAX_WKB_GEOMETRY_ELEMENTS_HARD_LIMIT = 100'000'000;
+
 /// Documentation about WKB format: https://libgeos.org/specifications/wkb/
-GeometricObject parseWKBFormat(ReadBuffer & in_buffer);
+/// max_element_count limits the number of points/rings/polygons per geometry element.
+/// Use 0 for the hard-coded limit (100 million).
+GeometricObject parseWKBFormat(ReadBuffer & in_buffer, UInt32 max_element_count = 0);
 
 struct IWKBTransform
 {

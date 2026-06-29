@@ -1,3 +1,4 @@
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/WriteSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/PackedFilesWriter.h>
@@ -29,7 +30,16 @@ PackedFilesWriter::writeFile(const String & file_name)
     auto [it, inserted] = written_files.try_emplace(file_name);
 
     if (!inserted)
-        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", file_name);
+    {
+        String existing_files;
+        for (const auto & [name, _] : written_files)
+        {
+            if (!existing_files.empty()) existing_files += ", ";
+            existing_files += name;
+        }
+        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+            "File {} already exists in packed archive (existing files: [{}])", file_name, existing_files);
+    }
 
     it->second = std::make_shared<Data>();
     return std::make_unique<FakeWriteBufferFromFile>(file_name, it->second);
@@ -158,11 +168,11 @@ std::pair<PackedFilesIO::Index, bool> PackedFilesWriter::finalize(WriteBuffer & 
     writeIntBinary(PackedFilesIO::VERSION, out);
     writeIntBinary(num_files, out);
 
-    std::vector<String> ordered_file_names;
+    Strings ordered_file_names;
     ordered_file_names.reserve(num_files);
     /// Order files according to the hint.
     {
-        std::unordered_set<String> already_added_files;
+        UnorderedSetWithMemoryTracking<String> already_added_files;
         for (const auto & hinted_name : files_order_hint)
         {
             std::string found_file_name;

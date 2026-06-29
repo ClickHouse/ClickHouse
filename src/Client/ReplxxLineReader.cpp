@@ -159,7 +159,12 @@ public:
         }
         catch (const std::runtime_error & e)
         {
+            /// musl defines `stderr` as a recursive macro `(stderr)`,
+            /// which triggers `-Wdisabled-macro-expansion` when used as a function argument.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
             fmt::print(stderr, "{}", e.what());
+#pragma clang diagnostic pop
         }
     }
 
@@ -198,7 +203,7 @@ std::string replxx_now_ms_str()
 {
     std::chrono::milliseconds ms(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()));
     time_t t = ms.count() / 1000;
-    tm broken;
+    tm broken{};
     if (!localtime_r(&t, &broken))
         return {};
 
@@ -370,8 +375,15 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     auto commit_action = [this](char32_t code)
     {
         /// If we allow multiline and there is already something in the input, start a newline.
-        /// NOTE: Lexer is only available if we use highlighter.
-        if (highlighter && multiline && !replxx_last_is_delimiter)
+        /// Also, when bytes are still queued in the TTY (paste in progress without bracketed
+        /// paste support), fold the embedded newline into the same edit buffer instead of
+        /// committing a partial query and switching to the continuation prompt. This way the
+        /// whole paste lives in a single replxx edit buffer and arrow keys navigate across it.
+        /// The paste case does not depend on the highlighter: the `NEW_LINE` action only inserts
+        /// a newline into the edit buffer and does not use the lexer, so the paste stays under a
+        /// single prompt even with `--highlight 0`. The explicit `--multiline` continuation still
+        /// requires the highlighter, preserving the previous behavior.
+        if (!replxx_last_is_delimiter && ((highlighter && multiline) || hasInputData()))
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
         replxx_last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);

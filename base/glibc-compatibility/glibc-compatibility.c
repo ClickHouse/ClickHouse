@@ -427,6 +427,14 @@ int posix_spawn_file_actions_destroy(posix_spawn_file_actions_t *fa) {
 	return 0;
 }
 
+/// gettid was added in glibc 2.30. Use the raw syscall for compatibility with older systems.
+/// Rust's standard library (since ~nightly-2026) references gettid as a weak symbol;
+/// providing it here prevents pulling in GLIBC_2.30.
+pid_t gettid(void)
+{
+    return syscall(__NR_gettid);
+}
+
 #if defined (__cplusplus)
 }
 #endif

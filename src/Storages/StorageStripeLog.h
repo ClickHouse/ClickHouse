@@ -4,7 +4,8 @@
 #include <shared_mutex>
 
 #include <Core/Defines.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Formats/IndexForNativeFormat.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
@@ -20,7 +21,7 @@ using BackupPtr = std::shared_ptr<const IBackup>;
 /** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
-class StorageStripeLog final : public IStorage, public WithMutableContext
+class StorageStripeLog final : public StorageWithCommonVirtualColumns, public WithMutableContext
 {
 friend class StripeLogSource;
 friend class StripeLogSink;
@@ -39,6 +40,8 @@ public:
     ~StorageStripeLog() override;
 
     String getName() const override { return "StripeLog"; }
+
+    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,
@@ -63,6 +66,8 @@ public:
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+
+    static VirtualColumnsDescription createVirtuals();
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;

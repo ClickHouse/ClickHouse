@@ -15,7 +15,7 @@ public:
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    static std::vector<uint8_t> getCodecsBytesFromData(const char * source);
+    static VectorWithMemoryTracking<uint8_t> getCodecsBytesFromData(const char * source);
 
     void updateHash(SipHash & hash) const override;
 

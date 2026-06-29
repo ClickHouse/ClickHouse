@@ -74,8 +74,8 @@ public:
         LoadablePtr object;
         TimePoint loading_start_time;
         TimePoint last_successful_update_time;
-        size_t error_count;
-        Duration loading_duration;
+        size_t error_count{};
+        Duration loading_duration{};
         std::exception_ptr exception;
         std::shared_ptr<const ObjectConfig> config;
     };
@@ -104,6 +104,8 @@ public:
 
     /// Sets settings for periodic updates.
     void enablePeriodicUpdates(bool enable);
+
+    void joinLoadingThreads();
 
     /// Returns the status of the object.
     /// If the object has not been loaded yet then the function returns Status::NOT_LOADED.

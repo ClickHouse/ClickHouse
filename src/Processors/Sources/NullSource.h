@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class NullSource : public ISource
+class NullSource final : public ISource
 {
 public:
     explicit NullSource(SharedHeader header) : ISource(std::move(header)) {}
