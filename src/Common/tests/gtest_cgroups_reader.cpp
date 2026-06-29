@@ -171,6 +171,10 @@ TEST_P(CgroupsMemoryUsageObserverFixture, ReadMemoryUsageAndInactiveFileTest)
     auto reader = ICgroupsReader::createCgroupsReader(version, tmp_dir);
     auto result = reader->readMemoryUsageAndInactiveFile();
 
+    /// The usage reported here must match readMemoryUsage exactly: the latter delegates to this method,
+    /// so a single source of truth is guaranteed and the two values can never diverge.
+    ASSERT_EQ(result.usage, reader->readMemoryUsage());
+
     if (version == ICgroupsReader::CgroupsVersion::V1)
     {
         ASSERT_EQ(result.usage, 2232029184); /* rss */
@@ -178,7 +182,7 @@ TEST_P(CgroupsMemoryUsageObserverFixture, ReadMemoryUsageAndInactiveFileTest)
     }
     else
     {
-        ASSERT_EQ(result.usage, 11967193184); /* anon + sock + kernel */
+        ASSERT_EQ(result.usage, 10506210680); /* anon + sock + kernel - slab_reclaimable */
         ASSERT_EQ(result.inactive_file, 8693084160); /* inactive_file */
     }
 }

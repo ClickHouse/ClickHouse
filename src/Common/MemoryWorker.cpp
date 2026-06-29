@@ -138,25 +138,26 @@ struct CgroupsV1Reader : ICgroupsReader
 
     uint64_t readMemoryUsage() override
     {
-        std::lock_guard lock(mutex);
-        buf.rewind();
-        readMetricsFromStatFile(buf, metrics, {"rss"}, &warnings_printed);
-        auto it = metrics.find("rss");
-        return it != metrics.end() ? it->second : 0;
+        return readMemoryUsageAndInactiveFile().usage;
     }
 
     CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() override
     {
         std::lock_guard lock(mutex);
         buf.rewind();
-        auto all = readAllMetricsFromStatFile(buf);
-        CgroupsMemoryUsageAndInactive result;
-        if (auto it = all.find("rss"); it != all.end())
-            result.usage = it->second;
         /// Use total_inactive_file for cgroups v1 to get the hierarchical value
         /// (includes child cgroups), matching Kubernetes cadvisor behavior.
-        if (auto it = all.find("total_inactive_file"); it != all.end())
-            result.inactive_file = it->second;
+        readMetricsFromStatFile(buf, metrics, {"rss", "total_inactive_file"}, &warnings_printed);
+
+        auto get = [&](std::string_view key) -> uint64_t
+        {
+            auto it = metrics.find(key);
+            return it != metrics.end() ? it->second : 0;
+        };
+
+        CgroupsMemoryUsageAndInactive result;
+        result.usage = get("rss");
+        result.inactive_file = get("total_inactive_file");
         return result;
     }
 
@@ -180,40 +181,33 @@ struct CgroupsV2Reader : ICgroupsReader
 
     uint64_t readMemoryUsage() override
     {
-        std::lock_guard lock(mutex);
-        stat_buf.rewind();
-        readMetricsFromStatFile(
-            stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable"}, &warnings_printed);
-
-        auto get = [](const Metrics & m, std::string_view key) -> uint64_t
-        {
-            auto it = m.find(key);
-            return it != m.end() ? it->second : 0;
-        };
-
-        /// anon + sock: actual process memory.
-        /// kernel - slab_reclaimable: non-reclaimable kernel memory (pagetables, kernel_stack, slab_unreclaimable).
-        /// slab_reclaimable is excluded because the kernel reclaims it synchronously under memory pressure
-        /// before invoking the OOM killer, so it should not count against the application's memory budget.
-        uint64_t usage = get(metrics, "anon") + get(metrics, "sock");
-        uint64_t kernel = get(metrics, "kernel");
-        uint64_t slab_reclaimable = get(metrics, "slab_reclaimable");
-        if (kernel > slab_reclaimable)
-            usage += kernel - slab_reclaimable;
-        return usage;
+        return readMemoryUsageAndInactiveFile().usage;
     }
 
     CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() override
     {
         std::lock_guard lock(mutex);
         stat_buf.rewind();
-        auto all = readAllMetricsFromStatFile(stat_buf);
+        readMetricsFromStatFile(
+            stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable", "inactive_file"}, &warnings_printed);
+
+        auto get = [&](std::string_view key) -> uint64_t
+        {
+            auto it = metrics.find(key);
+            return it != metrics.end() ? it->second : 0;
+        };
+
+        /// anon + sock: actual process memory.
+        /// kernel - slab_reclaimable: non-reclaimable kernel memory (pagetables, kernel_stack, slab_unreclaimable).
+        /// slab_reclaimable is excluded because the kernel reclaims it synchronously under memory pressure
+        /// before invoking the OOM killer, so it should not count against the application's memory budget.
         CgroupsMemoryUsageAndInactive result;
-        for (const auto & key : {"anon", "sock", "kernel"})
-            if (auto it = all.find(key); it != all.end())
-                result.usage += it->second;
-        if (auto it = all.find("inactive_file"); it != all.end())
-            result.inactive_file = it->second;
+        result.usage = get("anon") + get("sock");
+        uint64_t kernel = get("kernel");
+        uint64_t slab_reclaimable = get("slab_reclaimable");
+        if (kernel > slab_reclaimable)
+            result.usage += kernel - slab_reclaimable;
+        result.inactive_file = get("inactive_file");
         return result;
     }
 
