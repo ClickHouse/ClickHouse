@@ -266,6 +266,7 @@ public:
     const String & getName() const { return name; }
 
     static void onSegmentEvicted(const FileSegment & segment);
+    static void onSegmentEvictedInTheBackground(const FileSegment & segment);
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
@@ -286,6 +287,11 @@ private:
     const double keep_current_size_to_max_ratio;
     const double keep_current_elements_to_max_ratio;
     const size_t keep_up_free_space_remove_batch;
+    const size_t keep_up_free_space_eviction_threads;
+
+    /// Removes (deletes from filesystem) eviction candidate batches without holding the cache lock.
+    /// Fed by `keep_up_free_space_ratio_task`, which collects candidates and frees their queue entries.
+    std::unique_ptr<ThreadPool> eviction_pool;
 
     // Use IFileCachePriority wrapper in order to separate data/system files into different segments.
     const bool use_split_cache;
@@ -421,6 +427,16 @@ private:
         IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
         Priority * query_priority,
         std::string & failure_reason);
+
+    /// How much still needs to be evicted to reach the desired free-space ratio, given the live
+    /// cache size and `in_flight` (already collected, awaiting removal). Null if nothing is needed.
+    std::unique_ptr<EvictionInfo> collectFreeSpaceEvictionInfo(
+        const CacheStateGuard::Lock & lock, size_t in_flight_size, size_t in_flight_elements);
+
+    /// Run one background eviction pass: this (collector) thread re-evaluates the target against the
+    /// live cache size, feeds batches to the `eviction_pool` removers (lock-free deletion), then
+    /// finalizes them. Sets `reschedule_ms` when the cache is too busy to proceed.
+    void freeSpaceRatioImpl(size_t & reschedule_ms);
 };
 
 }

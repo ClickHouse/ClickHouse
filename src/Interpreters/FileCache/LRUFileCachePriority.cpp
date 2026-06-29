@@ -396,7 +396,8 @@ LRUFileCachePriority::iterateImpl(
             continue;
         }
 
-        auto locked_key = entry.key_metadata->tryLock();
+        auto key_metadata = entry.key_metadata.lock();
+        auto locked_key = key_metadata ? key_metadata->tryLock() : nullptr;
         if (!locked_key)
         {
             /// locked_key == nullptr means that the cache key of
@@ -716,7 +717,6 @@ bool LRUFileCachePriority::tryIncreasePriority(
     auto lock = queue_guard.writeLock();
     const auto & entry = iterator.getEntry();
     chassert(entry->getState() == Entry::State::Active);
-    entry->hits += 1;
 
     auto it = dynamic_cast<const LRUFileCachePriority::LRUIterator &>(iterator).get();
     moveEvictionPosIfEqual(it, lock);

@@ -781,13 +781,14 @@ std::pair<NameSet, NameSet> TableJoin::getKeysForNullSafeComparion(const Columns
             const auto & left_key = clause.key_names_left[i];
             const auto & right_key = clause.key_names_right[i];
             auto lit = left_idx.find(left_key);
-            if (lit == left_idx.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find key {} in left columns [{}]",
-                                left_key, Block(left_sample_columns).dumpNames());
             auto rit = right_idx.find(right_key);
-            if (rit == right_idx.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find key {} in right columns [{}]",
-                                right_key, Block(right_sample_columns).dumpNames());
+            /// A key may be absent from the input columns when it is not a plain column but an
+            /// expression that is not materialized into the join input block (e.g. a scalar
+            /// subquery `(SELECT ...)` used as a join key with the old analyzer). There is nothing
+            /// to wrap here; leave the key as is and let the regular key validation produce a
+            /// proper NOT_FOUND_COLUMN_IN_BLOCK error, exactly as the non null-safe path does.
+            if (lit == left_idx.end() || rit == right_idx.end())
+                continue;
 
             if (!left_sample_columns[lit->second].type->isNullable() || !right_sample_columns[rit->second].type->isNullable())
                 continue;

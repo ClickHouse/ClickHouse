@@ -615,6 +615,14 @@ struct FormatSettings
         bool escape_special_characters = false;
     } markdown{};
 
+    enum class UnsupportedGeometryHandling { Throw, Null };
+
+    struct
+    {
+        UnsupportedGeometryHandling unsupported_geometry_handling = UnsupportedGeometryHandling::Throw;
+        bool validate_geometry = true;
+    } geojson{};
+
 };
 
 }

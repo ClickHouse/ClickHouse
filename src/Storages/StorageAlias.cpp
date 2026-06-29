@@ -14,6 +14,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -303,6 +304,39 @@ void StorageAlias::waitForMutation(const String & mutation_id, bool wait_for_ano
 void StorageAlias::setMutationCSN(const String & mutation_id, UInt64 csn)
 {
     getTargetTable()->setMutationCSN(mutation_id, csn);
+}
+
+namespace
+{
+
+/// Holds the resolved target StoragePtr alongside its task list
+struct AliasCheckTasks : IStorage::DataValidationTasksBase
+{
+    StoragePtr target;
+    IStorage::DataValidationTasksPtr inner;
+
+    AliasCheckTasks(StoragePtr target_, IStorage::DataValidationTasksPtr inner_)
+        : target(std::move(target_)), inner(std::move(inner_))
+    {
+        chassert(inner);
+    }
+
+    size_t size() const override { return inner->size(); }
+};
+
+}
+
+IStorage::DataValidationTasksPtr StorageAlias::getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context)
+{
+    auto target = getTargetTable(TargetAccess{query_context, AccessType::CHECK});
+    auto inner = target->getCheckTaskList(filter, query_context);
+    return std::make_shared<AliasCheckTasks>(std::move(target), std::move(inner));
+}
+
+std::optional<CheckResult> StorageAlias::checkDataNext(DataValidationTasksPtr & check_task_list)
+{
+    auto * tasks = assert_cast<AliasCheckTasks *>(check_task_list.get());
+    return tasks->target->checkDataNext(tasks->inner);
 }
 
 CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)
