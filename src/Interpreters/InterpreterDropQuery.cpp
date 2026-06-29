@@ -58,7 +58,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
-    extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_NOT_EMPTY;
 }
 
@@ -315,7 +315,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             context_->checkAccess(AccessType::TRUNCATE, table_id);
             if (table->isStaticStorage())
-                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+                throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
             table->checkTableCanBeDropped(context_);
 

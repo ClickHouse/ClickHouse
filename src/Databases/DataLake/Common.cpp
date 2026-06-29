@@ -88,7 +88,7 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, DB::ContextPtr 
         auto args = splitTypeArguments(inner);
 
         std::vector<String> field_names;
-        std::vector<DB::DataTypePtr> field_types;
+        DB::DataTypes field_types;
 
         for (const auto & arg : args)
         {

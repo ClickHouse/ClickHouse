@@ -72,7 +72,7 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 ## Aliases {#aliases}
 
-Table engine `Iceberg` is an alias to `IcebergS3` now.
+The `Iceberg` table engine auto-detects the storage backend from the `disk` setting and dispatches to `IcebergS3`, `IcebergAzure`, or `IcebergLocal` accordingly. When no `disk` is specified, it defaults to the `IcebergS3` implementation.
 
 ## Data types {#data-types}
 
