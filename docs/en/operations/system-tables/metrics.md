@@ -186,7 +186,10 @@ SELECT * FROM system.metrics LIMIT 10
 | **PartsTemporary** | The part is generating now, not in data_parts list |
 | **PartsWide** | Wide parts |
 | **PendingAsyncInsert** | Number of asynchronous inserts waiting for flush |
-| **PostgreSQLConnection** | Number of client connections using PostgreSQL protocol |
+| **PostgreSQLClientConnections** | Number of outgoing PostgreSQL client connections |
+| **PostgreSQLClientConnectionsIdle** | Number of outgoing PostgreSQL client connections with no active queries |
+| **PostgreSQLClientConnectionsInUse** | Number of outgoing PostgreSQL client connections with active queries |
+| **PostgreSQLConnection** | Number of incoming connections using PostgreSQL protocol |
 | **Query** | Number of executing queries |
 | **QueryPreempted** | Number of queries stopped and waiting due to 'priority' setting |
 | **QueryThread** | Number of query processing threads |

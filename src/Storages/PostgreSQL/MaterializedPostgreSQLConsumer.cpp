@@ -66,7 +66,8 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     , schema_as_a_part_of_table_name(schema_as_a_part_of_table_name_)
 {
     {
-        auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+        postgres::Connection::Lease conn_lease = connection->getLease();
+        auto tx = std::make_shared<pqxx::nontransaction>(conn_lease.getRef());
         current_lsn = advanceLSN(tx);
         tx->commit();
     }
@@ -745,7 +746,8 @@ void MaterializedPostgreSQLConsumer::updateLsn()
 {
     try
     {
-        auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+        postgres::Connection::Lease conn_lease = connection->getLease();
+        auto tx = std::make_shared<pqxx::nontransaction>(conn_lease.getRef());
         current_lsn = advanceLSN(tx);
         tables_to_sync.clear();
         tx->commit();
@@ -884,7 +886,8 @@ bool MaterializedPostgreSQLConsumer::consume()
     bool slot_empty = true;
     try
     {
-        auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+        postgres::Connection::Lease conn_lease = connection->getLease();
+        auto tx = std::make_shared<pqxx::nontransaction>(conn_lease.getRef());
 
         /// Read up to max_block_size rows changes (upto_n_changes parameter). It might return larger number as the limit
         /// is checked only after each transaction block.

@@ -106,7 +106,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 
 
 /// For the case of MaterializePosgreSQL database engine.
-/// It is used when nested ReplacingMergeeTree table has not yet be created by replication thread.
+/// It is used when nested ReplacingMergeTree table has not yet be created by replication thread.
 /// In this case this storage can't be used for read queries.
 StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
         const StorageID & table_id_,

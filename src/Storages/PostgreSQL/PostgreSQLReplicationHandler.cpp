@@ -319,7 +319,8 @@ void PostgreSQLReplicationHandler::assertInitialized() const
 void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
     postgres::Connection replication_connection(connection_info, /* replication */true);
-    pqxx::nontransaction tx(replication_connection.getRef());
+    postgres::Connection::Lease conn_lease = replication_connection.getLease();
+    pqxx::nontransaction tx(conn_lease.getRef());
     createPublicationIfNeeded(tx);
 
     /// List of nested tables (table_name -> nested_storage), which is passed to replication consumer.
@@ -451,7 +452,8 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializedPostgreSQL * storage, const String & table_name)
 {
     postgres::Connection connection(connection_info);
-    pqxx::nontransaction tx(connection.getRef());
+    postgres::Connection::Lease conn_lease = connection.getLease();
+    pqxx::nontransaction tx(conn_lease.getRef());
 
     auto table_structure = fetchTableStructure(tx, table_name);
     auto table_override = tryGetTableOverride(current_database_name, table_name);
@@ -462,7 +464,8 @@ ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializ
 StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection & connection, String & snapshot_name, const String & table_name,
                                                           StorageMaterializedPostgreSQL * materialized_storage)
 {
-    auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection.getRef());
+    postgres::Connection::Lease conn_lease = connection.getLease();
+    auto tx = std::make_shared<pqxx::ReplicationTransaction>(conn_lease.getRef());
 
     std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
     tx->exec(query_str);
@@ -871,7 +874,8 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
     bool publication_exists_before_startup = false;
 
     {
-        pqxx::nontransaction tx(connection.getRef());
+        postgres::Connection::Lease conn_lease = connection.getLease();
+        pqxx::nontransaction tx(conn_lease.getRef());
         publication_exists_before_startup = isPublicationExist(tx);
     }
 
@@ -924,7 +928,8 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                             doubleQuoteString(publication_name));
 
                 {
-                    pqxx::nontransaction tx(connection.getRef());
+                    postgres::Connection::Lease conn_lease = connection.getLease();
+                    pqxx::nontransaction tx(conn_lease.getRef());
                     result_tables = fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list);
                 }
             }
@@ -933,7 +938,8 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
             else
             {
                 {
-                    pqxx::work tx(connection.getRef());
+                    postgres::Connection::Lease conn_lease = connection.getLease();
+                    pqxx::work tx(conn_lease.getRef());
                     result_tables = fetchTablesFromPublication(tx);
                 }
 
@@ -992,7 +998,8 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
             /// that no replication took place. Publication will be created in
             /// startSynchronization method.
             {
-                pqxx::nontransaction tx(connection.getRef());
+                postgres::Connection::Lease conn_lease = connection.getLease();
+                pqxx::nontransaction tx(conn_lease.getRef());
                 result_tables = fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list);
 
                 std::string tables_string;
@@ -1160,7 +1167,8 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         StorageInfo nested_storage_info{ nullptr, {} };
 
         {
-            auto tx = std::make_shared<pqxx::nontransaction>(replication_connection.getRef());
+            postgres::Connection::Lease conn_lease = replication_connection.getLease();
+            auto tx = std::make_shared<pqxx::nontransaction>(conn_lease.getRef());
 
             if (isReplicationSlotExist(*tx, start_lsn, /* temporary */true))
                 dropReplicationSlot(*tx, /* temporary */true);
@@ -1178,7 +1186,8 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         }
 
         {
-            pqxx::nontransaction tx(replication_connection.getRef());
+            postgres::Connection::Lease conn_lease = replication_connection.getLease();
+            pqxx::nontransaction tx(conn_lease.getRef());
             addTableToPublication(tx, postgres_table_name);
         }
 
@@ -1209,7 +1218,8 @@ void PostgreSQLReplicationHandler::removeTableFromReplication(const String & pos
         postgres::Connection replication_connection(connection_info, /* replication */true);
 
         {
-            pqxx::nontransaction tx(replication_connection.getRef());
+            postgres::Connection::Lease conn_lease = replication_connection.getLease();
+            pqxx::nontransaction tx(conn_lease.getRef());
             removeTableFromPublication(tx, postgres_table_name);
         }
 
