@@ -358,6 +358,17 @@ set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 # Clang's default on Linux is `-fmath-errno` (errno-setting), so this is not already implied.
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-math-errno")
 
+# `-fno-math-errno` lets the compiler fold, hoist, and eliminate libm calls. That can remove the
+# last `src/`-side references to the single-precision libm functions, leaving their only references
+# in contrib objects (e.g. usearch, arrow) that are linked after our in-tree `glibc-compatibility`
+# math archive. Those references then bind to shared glibc's newer `@GLIBC_2.27` symbols, which the
+# compatibility check rejects (max allowed GLIBC version is 2.4 on amd64, 2.18 on aarch64). Force
+# our in-tree `musl` implementations to be pulled from the static archive so they preempt glibc,
+# in the same spirit as the explicit `memcpy` interposition in `clickhouse_add_executable` below.
+if (GLIBC_COMPATIBILITY)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,logf -Wl,-u,powf -Wl,-u,expf -Wl,-u,exp2f -Wl,-u,log2f")
+endif ()
+
 set (DEBUG_INFO_FLAGS "-g")
 if (DISABLE_ALL_DEBUG_SYMBOLS)
     set (DEBUG_INFO_FLAGS "-g0")
