@@ -18,6 +18,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/DatabasesCommon.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
@@ -475,6 +476,9 @@ void StorageMergeTree::alter(
     if (!query_settings[Setting::allow_suspicious_primary_key])
         MergeTreeData::verifySortingKey(new_metadata.sorting_key);
 
+    /// Check that the resulting metadata does not exceed max_query_size before mutating any in-memory state.
+    checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);
+
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
@@ -483,13 +487,13 @@ void StorageMergeTree::alter(
         if (statistics_changed)
             setInMemoryMetadata(new_metadata);
 
-        /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
+        /// Safe because the early max_query_size check already passed.
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }
     else if (commands.isCommentAlter())
     {
         setInMemoryMetadata(new_metadata);
-        /// It is safe to ignore exceptions here as only the comment changed, which is not validated in `alterTable`
+        /// Safe because the early max_query_size check already passed.
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }
     else
