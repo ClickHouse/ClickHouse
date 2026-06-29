@@ -286,6 +286,9 @@ const ArrowViewArray & checkedCastView(const arrow::Array & array, const String 
 /// because value_length(i) = offset[i+1] - offset[i], so the last element needs
 /// offset[length].  This must be checked before any call to value_offset(i) or
 /// GetView(i) to prevent an over-read of the offsets buffer.
+/// When length == 0, no offsets are accessed at all (every caller's iteration loop
+/// is skipped), so no bytes are required.  This accepts the 0-byte offsets buffers
+/// that Apache Arrow Java < 19.0.0 emits for empty String/Binary columns.
 template <typename ArrowBinaryArray>
 void checkBinaryOffsetsBuffer(const ArrowBinaryArray & chunk, const String & column_name)
 {
@@ -296,7 +299,9 @@ void checkBinaryOffsetsBuffer(const ArrowBinaryArray & chunk, const String & col
             column_name, chunk.length(), chunk.offset());
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
-    const size_t count_plus_one = static_cast<size_t>(chunk.offset()) + static_cast<size_t>(chunk.length()) + 1;
+    const size_t count_plus_one = chunk.length() > 0
+        ? static_cast<size_t>(chunk.offset()) + static_cast<size_t>(chunk.length()) + 1
+        : 0;
     size_t required = 0;
     if (unlikely(__builtin_mul_overflow(sizeof(typename ArrowBinaryArray::offset_type), count_plus_one, &required)))
         throw Exception(
@@ -2403,7 +2408,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
 {
     if (!status.ok())
-        throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
+        throwFromArrowStatus(status, ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}'", format_name, column_name);
 }
 
 static std::shared_ptr<arrow::DataType> unwrapArrowExtensionTypesRecursively(const std::shared_ptr<arrow::DataType> & type)
