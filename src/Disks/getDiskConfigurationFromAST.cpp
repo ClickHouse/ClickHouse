@@ -316,7 +316,7 @@ namespace
 /// `prefix`) is an S3 backend that resolved to credentials the AST did not prove explicit, and so must be
 /// downgraded to anonymous or rejected. Returns false for a non-S3 backend or one whose resolved auth is safe.
 bool resolvedS3BackendIsRestricted(
-    const Poco::Util::AbstractConfiguration & config, const String & prefix, const DynamicS3DiskCredentialInfo & info)
+    const Poco::Util::AbstractConfiguration & config, const String & prefix, bool is_root, const DynamicS3DiskCredentialInfo & info)
 {
     auto key = [&](const String & k) { return prefix + k; };
     auto is_s3_type = [](const String & t) { return t == "s3" || t.starts_with("s3_"); };
@@ -325,9 +325,6 @@ bool resolvedS3BackendIsRestricted(
     if (!resolved_backend_is_s3)
         return false;
 
-    /// Match the resolved auth mode to the form the AST proved. `gcp_oauth` mints a bearer token (server GCP
-    /// metadata unless a complete ADC triple is given); a `role_arn` assumes a role and needs an explicit base
-    /// key pair; otherwise the disk is safe only if it is explicitly anonymous or carries an explicit key pair.
     const bool resolved_wants_gcp_oauth = boost::iequals(config.getString(key("http_client"), ""), "gcp_oauth");
     const bool resolved_has_role_arn = !config.getString(key("role_arn"), "").empty();
     const bool resolved_has_key_pair
@@ -337,16 +334,31 @@ bool resolvedS3BackendIsRestricted(
         = config.has(key("use_environment_credentials")) && !config.getBool(key("use_environment_credentials"), true);
 
     bool safe = false;
-    if (resolved_wants_gcp_oauth)
-        safe = info.ast_has_explicit_gcp_adc;
-    else if (resolved_has_role_arn)
-        safe = info.ast_has_explicit_key_pair;
-    else if (resolved_has_key_pair)
-        safe = info.ast_has_explicit_key_pair;
-    else if (resolved_no_sign)
-        safe = info.ast_has_no_sign_request;
+    if (resolved_no_sign)
+    {
+        /// NOSIGN sends no credentials at all, so it is anonymous regardless of where it was configured. For the
+        /// root this still requires the AST itself to have proved NOSIGN (an `include` could otherwise inject it).
+        safe = is_root ? info.ast_has_no_sign_request : true;
+    }
+    else if (resolved_wants_gcp_oauth)
+    {
+        /// `gcp_oauth` mints a bearer token (server GCP metadata unless a complete ADC triple is given).
+        safe = is_root && info.ast_has_explicit_gcp_adc;
+    }
+    else if (resolved_has_role_arn || resolved_has_key_pair)
+    {
+        /// A `role_arn` assumes a role using an explicit base key pair; an explicit key pair is itself
+        /// credentials. These are trusted only when they came from the literal SQL of *this* backend. The AST
+        /// flags describe the disk root only, so a `locations.<name>` child whose key pair / role was resolved
+        /// from the `include` (or server config) is not vouched for by a key pair on the root wrapper.
+        safe = is_root && info.ast_has_explicit_key_pair;
+    }
     else if (resolved_use_env_off)
-        safe = info.ast_has_use_environment_credentials_off || info.ast_has_no_sign_request;
+    {
+        /// `use_environment_credentials = 0` with no key pair is anonymous. For the root the AST must have
+        /// proved it; a child resolving to it (no keys, no role, no gcp) is genuinely anonymous either way.
+        safe = is_root ? (info.ast_has_use_environment_credentials_off || info.ast_has_no_sign_request) : true;
+    }
     else
         safe = false; /// resolved relies on the default `use_environment_credentials = 1` (server credentials)
 
@@ -379,7 +391,7 @@ void validateResolvedS3DiskCredentials(
 
     std::vector<String> restricted_prefixes;
     for (const auto & prefix : prefixes)
-        if (resolvedS3BackendIsRestricted(config, prefix, info))
+        if (resolvedS3BackendIsRestricted(config, prefix, /* is_root */ prefix.empty(), info))
             restricted_prefixes.push_back(prefix);
 
     if (restricted_prefixes.empty())

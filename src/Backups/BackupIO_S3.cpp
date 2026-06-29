@@ -333,7 +333,14 @@ BackupReaderS3::BackupReaderS3(
     /// A backup named collection fully overrides the credential fields (so a URL-only collection stays
     /// anonymous); the explicit url/key form passes no override and keeps the server `<s3>` config values.
     if (named_collection_auth)
+    {
+        /// `updateIfChanged` cannot clear non-scalar fields, so under the restriction first drop the server
+        /// `<s3>`/endpoint request-auth material (headers/access headers and SSE-C/SSE-KMS keys); a URL-only
+        /// collection then stays anonymous and an explicit-key collection does not inherit the server SSE keys.
+        if (context_->shouldRestrictUserQueryS3Credentials())
+            s3_settings.auth_settings.clearServerManagedRequestAuth();
         s3_settings.auth_settings.updateIfChanged(*named_collection_auth);
+    }
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
@@ -441,7 +448,14 @@ BackupWriterS3::BackupWriterS3(
     /// A backup named collection fully overrides the credential fields (so a URL-only collection stays
     /// anonymous); the explicit url/key form passes no override and keeps the server `<s3>` config values.
     if (named_collection_auth)
+    {
+        /// `updateIfChanged` cannot clear non-scalar fields, so under the restriction first drop the server
+        /// `<s3>`/endpoint request-auth material (headers/access headers and SSE-C/SSE-KMS keys); a URL-only
+        /// collection then stays anonymous and an explicit-key collection does not inherit the server SSE keys.
+        if (context_->shouldRestrictUserQueryS3Credentials())
+            s3_settings.auth_settings.clearServerManagedRequestAuth();
         s3_settings.auth_settings.updateIfChanged(*named_collection_auth);
+    }
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;

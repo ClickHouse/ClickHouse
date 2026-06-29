@@ -424,6 +424,58 @@ def test_backup_explicit_keys_drop_inherited_gcp_oauth():
     node_with_server_gcp_oauth.query("DROP TABLE t_backup_gcp_inherit SYNC")
 
 
+def test_bare_url_s3_does_not_inherit_server_sse():
+    # The bare-URL `s3('url', key, secret)` form cannot supply request-auth material, so the server <s3>
+    # endpoint SSE-C key must not be inherited (it would be sent to the user-chosen endpoint). Reading a
+    # plaintext object with explicit keys must succeed; an inherited SSE-C key makes the GET fail.
+    url = "http://minio1:9001/root/sse_test/bare_url.tsv"
+    node.query(
+        f"INSERT INTO FUNCTION s3('{url}', '{minio_access_key}', '{minio_secret_key}', 'TSV', 'x UInt8') "
+        "SELECT 13 SETTINGS s3_truncate_on_insert = 1"
+    )
+    assert (
+        node_with_server_sse.query(
+            f"SELECT * FROM s3('{url}', '{minio_access_key}', '{minio_secret_key}', 'TSV', 'x UInt8')"
+        ).strip()
+        == "13"
+    )
+
+
+def test_backup_named_collection_does_not_inherit_server_sse():
+    # A backup named collection must not inherit the server <s3> SSE-C key: the backup objects are written
+    # without it, so the backup metadata object can be read back with plain keys. If the server SSE-C key leaked
+    # into the backup client, the objects would be encrypted with it and a plain GET would fail.
+    node_with_server_sse.query("DROP TABLE IF EXISTS t_backup_sse SYNC")
+    node_with_server_sse.query(
+        "CREATE TABLE t_backup_sse (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node_with_server_sse.query("INSERT INTO t_backup_sse SELECT 1")
+    node_with_server_sse.query("BACKUP TABLE t_backup_sse TO S3(nc_backup_sse, 'b1')")
+
+    # Read the backup metadata object back with plain keys (no SSE-C headers): succeeds only if it was written
+    # without the server SSE-C key.
+    node_with_server_sse.query(
+        "SELECT count() FROM s3('http://minio1:9001/root/sse_test/backup_pv1/b1/.backup', "
+        f"'{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
+    )
+
+    node_with_server_sse.query("DROP TABLE t_backup_sse SYNC")
+
+
+def test_dynamic_disk_include_locations_child_keys_not_vouched_by_root():
+    # A dummy explicit key pair on the disk root must not vouch for a `locations.<name>` S3 child whose
+    # credentials were resolved from the include/server config: the child's keys are not user-supplied SQL for
+    # that child. The post-include check validates credentials per resolved S3 backend, not from a root wrapper.
+    node_with_includes.query("DROP TABLE IF EXISTS t_loc_keys SYNC")
+    error = node_with_includes.query_and_get_error(
+        "CREATE TABLE t_loc_keys (x UInt8) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS disk = disk(type = object_storage, object_storage_type = local_blob_storage, "
+        "access_key_id = 'dummy_root', secret_access_key = 'dummy_root', include = 'evil_locations_with_keys')",
+        settings={"dynamic_disk_allow_include": 1},
+    )
+    assert "ACCESS_DENIED" in error or "must provide its credentials explicitly" in error, error
+
+
 def test_dynamic_disk_include_locations_child_is_restricted():
     # An `include` can inject a `locations.<name>` child object storage. A disk root that proves non-S3
     # (object_storage with local_blob_storage) bypasses the pre-resolution check, so the post-`include`

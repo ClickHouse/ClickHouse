@@ -726,6 +726,12 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = "";
         s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = "";
         s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
+
+        /// The bare-URL `s3(...)` form likewise cannot supply request-auth material, so the headers/access
+        /// headers and SSE-C/SSE-KMS keys here come from the server `<s3>`/endpoint config. Drop them so an
+        /// anonymous/NOSIGN request does not send the server's `Authorization` header or encryption keys to the
+        /// user-chosen endpoint.
+        s3_settings->auth_settings.clearServerManagedRequestAuth();
     }
 
     /// Re-apply user/profile/query-level settings on top, so they take priority over the global <s3> config section.

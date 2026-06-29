@@ -46,5 +46,10 @@
             <format>TSV</format>
             <structure>x UInt8</structure>
         </nc_sse_keys>
+        <nc_backup_sse>
+            <url>http://minio1:9001/root/sse_test/backup_pv1/</url>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+        </nc_backup_sse>
     </named_collections>
 </clickhouse>
