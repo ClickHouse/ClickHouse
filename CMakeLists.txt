@@ -359,14 +359,22 @@ set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-math-errno")
 
 # `-fno-math-errno` lets the compiler fold, hoist, and eliminate libm calls. That can remove the
-# last `src/`-side references to the single-precision libm functions, leaving their only references
-# in contrib objects (e.g. usearch, arrow) that are linked after our in-tree `glibc-compatibility`
-# math archive. Those references then bind to shared glibc's newer `@GLIBC_2.27` symbols, which the
+# last `src/`-side references to a libm function, leaving its only references in contrib objects
+# (e.g. usearch, arrow) that are linked after our in-tree `glibc-compatibility` math archive. Since
+# an archive member is pulled only to satisfy an already-undefined symbol, the in-tree object is
+# never extracted and the reference binds to shared glibc's newer symbol version, which the
 # compatibility check rejects (max allowed GLIBC version is 2.4 on amd64, 2.18 on aarch64). Force
 # our in-tree `musl` implementations to be pulled from the static archive so they preempt glibc,
 # in the same spirit as the explicit `memcpy` interposition in `clickhouse_add_executable` below.
+#
+# Both the single-precision functions (new glibc version `@GLIBC_2.27`) and the double-precision
+# ones (`@GLIBC_2.29`) are pinned. The doubles matter when `ENABLE_LLVM_LIBC_MATH=OFF`: in that
+# configuration llvm-libc does not provide them, so `exp`/`log`/`pow`/`exp2`/`log2` are available
+# only from the earlier `glibc-compatibility` archive and a later contrib reference can otherwise
+# bind to glibc's `@GLIBC_2.29` symbols above the floor. With llvm-libc on they are already pulled
+# from it, so the extra `-u` requests are harmless no-ops.
 if (GLIBC_COMPATIBILITY)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,logf -Wl,-u,powf -Wl,-u,expf -Wl,-u,exp2f -Wl,-u,log2f")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,logf -Wl,-u,powf -Wl,-u,expf -Wl,-u,exp2f -Wl,-u,log2f -Wl,-u,log -Wl,-u,pow -Wl,-u,exp -Wl,-u,exp2 -Wl,-u,log2")
 endif ()
 
 set (DEBUG_INFO_FLAGS "-g")
