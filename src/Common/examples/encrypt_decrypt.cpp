@@ -8,6 +8,7 @@
 #include <Common/HashiCorpVault.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <Examples/clickhouse_examples.h>
 
 
 /** This program encrypts or decrypts text values using a symmetric encryption codec like AES_128_GCM_SIV or AES_256_GCM_SIV.
@@ -44,12 +45,17 @@
   */
 
 
+namespace
+{
+
 /// Instance of EncryptDecryptApplication is needed in order to initialize Poco::Net::SSLManager for certificates loading
 class EncryptDecryptApplication : public Poco::Util::Application
 {
 };
 
-int main(int argc, char ** argv)
+}
+
+int mainEntryExampleEncryptDecrypt(int argc, char ** argv)
 {
     try
     {
@@ -71,7 +77,7 @@ int main(int argc, char ** argv)
         std::string value = argv[4];
 
         DB::ConfigProcessor config_processor(argv[1], false, true);
-        bool has_zk_includes;
+        bool has_zk_includes = {};
         DB::XMLDocumentPtr config_xml = config_processor.processConfig(&has_zk_includes);
         if (has_zk_includes)
         {

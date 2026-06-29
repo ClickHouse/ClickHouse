@@ -21,11 +21,16 @@ public:
         ProjectionDescription & result,
         const IAST * index_expr,
         const ColumnsDescription & columns,
-        ContextPtr query_context) const override;
+        const KeyDescription * partition_key,
+        const ContextPtr & query_context,
+        const MergeTreeSettings & projection_settings) const override;
 
-    Block
-    calculate(const ProjectionDescription & projection_desc, const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr)
-        const override;
+    Block calculate(
+        const ProjectionDescription & projection_desc,
+        const Block & block,
+        UInt64 starting_offset,
+        ContextPtr context,
+        const IColumnPermutation * perm_ptr) const override;
 };
 
 }

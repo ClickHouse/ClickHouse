@@ -2,14 +2,18 @@
 
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w -ffunction-sections -fdata-sections")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -ffunction-sections -fdata-sections")
+if (OS_LINUX)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -faddrsig")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -faddrsig")
+endif ()
 
-if (SANITIZE STREQUAL "undefined")
+if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     # 3rd-party libraries usually not intended to work with UBSan.
     add_compile_options(-fno-sanitize=undefined)
 endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
-
+set(WITH_COVERAGE OFF)
 # add_contrib cmake_folder[ base_folder1[, ...base_folderN]]
 function(add_contrib cmake_folder)
     if (ARGN)
@@ -49,6 +53,8 @@ add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (grpc-cmake grpc)
+add_contrib (compiler-rt-cmake llvm-project)
+add_contrib (libllvmlibc-cmake llvm-project)
 add_contrib (llvm-project-cmake llvm-project)
 
 enable_dummy_launchers_if_needed()
@@ -56,6 +62,8 @@ enable_heavy_build_check_if_needed()
 
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
+add_contrib (ipnsort-cmake ipnsort)
+add_contrib (driftsort-cmake driftsort)
 add_contrib (pocketfft-cmake pocketfft)
 add_contrib (crc32-vpmsum-cmake crc32-vpmsum)
 add_contrib (sparsehash-c11-cmake sparsehash-c11)
@@ -63,7 +71,7 @@ add_contrib (magic-enum-cmake magic_enum)
 add_contrib (boost-cmake boost)
 add_contrib (cctz-cmake cctz)
 add_contrib (consistent-hashing)
-add_contrib (dragonbox-cmake dragonbox)
+add_contrib (zmij-cmake zmij)
 add_contrib (vectorscan-cmake vectorscan)
 add_contrib (jemalloc-cmake jemalloc)
 add_contrib (libcpuid-cmake libcpuid)
@@ -72,6 +80,7 @@ add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
 add_contrib (murmurhash)
 add_contrib (replxx-cmake replxx)
+add_contrib (libpng-cmake libpng) # requires: zlib
 add_contrib (capnproto-cmake capnproto)
 add_contrib (yaml-cpp-cmake yaml-cpp)
 add_contrib (re2-cmake re2)
@@ -86,7 +95,8 @@ add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
 add_contrib (StringZilla-cmake StringZilla)
 # parquet/arrow/orc
-add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
+add_contrib (xsimd-cmake xsimd) # required by arrow's SIMD codepaths
+add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd
 add_contrib (avro-cmake avro) # requires: snappy
 add_contrib (openldap-cmake openldap)
 add_contrib (msgpack-c-cmake msgpack-c)
@@ -95,6 +105,7 @@ add_contrib (libarchive-cmake libarchive)
 add_contrib (corrosion-cmake corrosion)
 add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
 add_contrib (chdig-cmake chdig)
+add_contrib (wasmedge-cmake wasmedge)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -132,7 +143,7 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
-add_contrib (aklomp-base64-cmake aklomp-base64)
+add_contrib (base64-cmake base64)
 add_contrib (simdjson-cmake simdjson)
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
@@ -140,8 +151,7 @@ add_contrib (libuv-cmake libuv)
 add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
-add_contrib (curl-cmake curl)
-add_contrib (azure-cmake azure) # requires: curl
+add_contrib (azure-cmake azure)
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
@@ -164,7 +174,6 @@ add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
-add_contrib (incbin-cmake incbin)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
@@ -173,9 +182,10 @@ if (USE_MONGODB)
     add_contrib (mongo-cxx-driver-cmake mongo-cxx-driver) # requires: libmongoc, libbson
 endif()
 
+add_contrib (libstemmer-c-cmake libstemmer_c)
+
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
-    add_contrib (libstemmer-c-cmake libstemmer_c)
     add_contrib (wordnet-blast-cmake wordnet-blast)
     add_contrib (lemmagen-c-cmake lemmagen-c)
     add_contrib (cld2-cmake cld2)
@@ -221,6 +231,8 @@ add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobuf
 add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
 add_contrib (antlr4-grammars-cmake antlr4-grammars)
 
+add_contrib(simdcomp-cmake simdcomp)
+
 add_contrib (numactl-cmake numactl)
 
 # Google Cloud Cpp
@@ -245,6 +257,13 @@ add_contrib (sha3iuf-cmake SHA3IUF)
 add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
+
+add_contrib (libcotp-cmake libcotp)
+
+add_contrib (clickstack-cmake clickstack)
+
+add_contrib (librseq-cmake librseq)
+add_contrib (silk-cmake silk)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

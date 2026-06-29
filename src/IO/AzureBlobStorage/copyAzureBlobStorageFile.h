@@ -5,6 +5,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <base/types.h>
 #include <functional>
@@ -31,7 +32,8 @@ void copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
     const ReadSettings & read_settings,
     const std::optional<ObjectAttributes> & object_to_attributes,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
+    BlobStorageLogWriterPtr blob_storage_log = {});
 
 
 /// Copies data from any seekable source to AzureBlobStorage.
@@ -47,7 +49,8 @@ void copyDataToAzureBlobStorageFile(
     const String & dest_container_for_logging,
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
+    BlobStorageLogWriterPtr blob_storage_log = {});
 
 }
 

@@ -64,15 +64,15 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         {
             visit(child, new_data ? *new_data : data);
             auto * ast_with_elem = child->as<ASTWithElement>();
-            auto * ast_literal = child->as<ASTLiteral>();
-            if (ast_with_elem || ast_literal)
+            auto child_alias = child->tryGetAlias();
+            if (ast_with_elem || !child_alias.empty())
             {
                 if (!new_data)
                     new_data = data;
                 if (ast_with_elem)
                     new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
                 else
-                    new_data->literals[ast_literal->alias] = child;
+                    new_data->literals[child_alias] = child;
             }
         }
     }

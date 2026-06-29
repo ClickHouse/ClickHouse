@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnNullable.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
@@ -78,7 +79,7 @@ public:
             AggregateFunctionFactory::instance().get(getName(), NullsAction::EMPTY, {}, {}, properties), DataTypes{}, Array{});
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).count += data(rhs).count;
     }
@@ -125,7 +126,7 @@ bool AggregateFunctionCount::isCompilable() const
 {
     bool is_compilable = true;
     for (const auto & argument_type : argument_types)
-    is_compilable &= canBeNativeType(*argument_type);
+        is_compilable &= canBeNativeType(*argument_type);
 
     return is_compilable;
 }
@@ -251,6 +252,8 @@ AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, cons
 
 }
 
+void registerAggregateFunctionCount(AggregateFunctionFactory &);
+
 void registerAggregateFunctionCount(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -319,7 +322,7 @@ SELECT count(DISTINCT num) FROM t
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
 
-    factory.registerFunction("count", {createAggregateFunctionCount, properties, documentation}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("count", {createAggregateFunctionCount, documentation, properties}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

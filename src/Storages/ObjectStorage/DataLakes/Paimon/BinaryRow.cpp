@@ -96,7 +96,7 @@ T BinaryRow::getFixedSizeData(Int32 pos)
         }
         else
         {
-            t = Poco::ByteOrder::flipBytes(t);
+            t = static_cast<T>(Poco::ByteOrder::flipBytes(static_cast<char>(t)));
         }
     }
     return t;

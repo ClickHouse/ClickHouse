@@ -1,0 +1,161 @@
+-- Original Time aggregate functions test
+100:00:00
+03:27:33
+51:43:46
+-- Date type basic test
+2020-01-02
+Date
+-- Date32 type basic test
+2020-01-02
+Date32
+-- DateTime type basic test
+2020-01-01 00:00:01
+DateTime(\'UTC\')
+-- DateTime64 type basic test (scale 3)
+2020-01-01 00:00:00.001
+DateTime64(3, \'UTC\')
+-- Time type basic test
+02:00:00
+Time
+-- Time64 type basic test (scale 3)
+02:00:00.000
+Time64(3)
+-- Empty table tests (NaN -> 0/epoch)
+Row 1:
+──────
+avg(d):    1970-01-01
+avg(d32):  1970-01-01
+avg(dt):   1970-01-01 00:00:00
+avg(dt64): 1970-01-01 00:00:00.000
+avg(t):    00:00:00
+avg(t64):  00:00:00.000
+-- Single row tests
+2020-06-15
+2020-06-15
+2020-06-15 12:30:45
+2020-06-15 12:30:45.500
+12:30:45
+12:30:45.500
+-- Multiple identical values tests
+2020-06-15
+2020-06-15 12:30:45
+2020-06-15 12:30:45.123
+12:30:45
+12:30:45.123
+-- Rounding behavior tests
+-- Date rounding: 2020-01-01 (day 18262) and 2020-01-02 (day 18263) -> avg = 18262.5 -> rounds to 18262 (banker)
+2020-01-01
+-- Date exact avg: 2020-01-01, 2020-01-02, 2020-01-03 -> avg = day 18263 exactly
+2020-01-02
+-- DateTime rounding: second 0 and second 1 -> avg = 0.5 -> rounds to 0
+2020-01-01 00:00:00
+-- DateTime rounding: second 1 and second 2 -> avg = 1.5 -> rounds to 2 (banker)
+2020-01-01 00:00:02
+-- Time rounding tests
+00:00:00
+00:00:02
+-- DateTime64 rounding with subsecond precision
+2020-01-01 00:00:00.000
+-- Time64 rounding with subsecond precision
+00:00:00.000
+-- DateTime64/Time64 different scales
+2020-01-01 00:00:01
+DateTime64(0, \'UTC\')
+2020-01-01 00:00:00.000001
+DateTime64(6, \'UTC\')
+2020-01-01 00:00:00.000000000
+DateTime64(9, \'UTC\')
+02:00:00
+Time64(0)
+02:00:00.000000
+Time64(6)
+-- Boundary value tests
+-- Date boundary
+2035-07-02
+-- Date32 with pre-1970 dates
+2000-01-02
+-- DateTime boundary
+2035-01-01 00:00:00
+-- Time extended range
+50:00:00
+-- NULL handling tests
+Row 1:
+──────
+avg(d):    2020-01-02
+avg(d32):  2020-01-02
+avg(dt):   2020-01-01 00:00:01
+avg(dt64): 2020-01-01 00:00:00.001
+avg(t):    02:00:00
+avg(t64):  02:00:00.000
+Row 1:
+──────
+avgOrNull(d):    2020-01-02
+avgOrNull(d32):  2020-01-02
+avgOrNull(dt):   2020-01-01 00:00:01
+avgOrNull(dt64): 2020-01-01 00:00:00.001
+avgOrNull(t):    02:00:00
+avgOrNull(t64):  02:00:00.000
+\N
+-- avgIf conditional aggregation tests
+2020-01-02	2020-01-01 00:00:01	02:00:00
+1970-01-01
+-- GROUP BY tests
+A	2020-01-02	2020-01-01 00:00:01	02:00:00
+B	2020-06-16	2020-06-15 12:00:01	13:00:00
+-- Subquery tests
+2020-01-05
+2020-01-01 00:00:04
+00:00:04
+-- Large dataset tests
+2021-05-15
+2020-01-01 00:08:20
+-- Mixed aggregate functions
+Row 1:
+──────
+min(d):  2020-01-01
+max(d):  2020-01-05
+avg(d):  2020-01-03
+min(dt): 2020-01-01 00:00:00
+max(dt): 2020-01-01 00:00:04
+avg(dt): 2020-01-01 00:00:02
+min(t):  00:00:00
+max(t):  00:00:04
+avg(t):  00:00:02
+-- Window function tests
+2020-01-01	2020-01-01
+2020-01-02	2020-01-02
+2020-01-03	2020-01-03
+2020-01-04	2020-01-04
+2020-01-05	2020-01-05
+-- State merge tests
+2020-01-03
+2020-01-01 00:00:03
+-- Result type verification
+Date result type:	Date
+Date32 result type:	Date32
+DateTime result type:	DateTime(\'UTC\')
+DateTime64(3) result type:	DateTime64(3, \'UTC\')
+Time result type:	Time
+Time64(3) result type:	Time64(3)
+-- Expressions with avg results
+2020-01-03
+2020-01-01 00:00:02
+-- Comparison of avg results
+1	1
+1	1
+-- Timezone tests
+2020-01-01 00:00:01
+2020-01-01 00:00:00.001
+-- Precision edge cases
+2020-01-01 12:00:00.002
+12:00:00.002
+-- JIT disabled verification (should work correctly regardless)
+2020-02-20
+2020-01-01 00:00:50
+2020-01-01 00:00:49.500
+00:00:50
+00:00:49.500
+-- Negative Time values test
+01:00:00
+-- Materialized view state test
+2020-01-02	2020-01-01 00:00:01	02:00:00

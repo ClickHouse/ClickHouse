@@ -19,6 +19,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <cstring>
 #include <algorithm>
@@ -149,6 +150,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -156,7 +158,7 @@ namespace
 using namespace FunctionsLogicalDetail;
 
 using UInt8Container = ColumnUInt8::Container;
-using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
+using UInt8ColumnPtrs = VectorWithMemoryTracking<const ColumnUInt8 *>;
 
 
 MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, bool make_nullable)
@@ -185,7 +187,7 @@ bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 
     for (Int64 i = static_cast<Int64>(in.size()) - 1; i >= 0; --i)
     {
-        UInt8 x;
+        UInt8 x = 0;
 
         if (in[i]->onlyNull())
             x = func(Null());
@@ -306,7 +308,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
                         auto has_value = static_cast<UInt8>(column_data[i] != 0);
                         auto is_null = !!null_data[i];
 
-                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
+                        ternary_column_data[i] = static_cast<UInt8>(((has_value << 1) | is_null) & (1 << !is_null));
                     }
                 }
                 else
@@ -322,7 +324,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
                         auto has_value = ternary_column_data[i];
                         auto is_null = !!null_data[i];
 
-                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
+                        ternary_column_data[i] = static_cast<UInt8>(((has_value << 1) | is_null) & (1 << !is_null));
                     }
                 }
             }
@@ -335,7 +337,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
 
             for (size_t i = 0; i < size; ++i)
             {
-                ternary_column_data[i] = (column_data[i] != 0) << 1;
+                ternary_column_data[i] = static_cast<UInt8>((column_data[i] != 0) << 1);
             }
         }
         else
@@ -414,21 +416,12 @@ struct OperationApplier
     static void apply(Columns & in, ResultData & result_data, bool use_result_data_as_input = false)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
             if (!use_result_data_as_input)
                 doBatchedApplyAVX512BW<false>(in, result_data.data(), result_data.size());
             while (!in.empty())
                 doBatchedApplyAVX512BW<true>(in, result_data.data(), result_data.size());
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            if (!use_result_data_as_input)
-                doBatchedApplyAVX2<false>(in, result_data.data(), result_data.size());
-            while (!in.empty())
-                doBatchedApplyAVX2<true>(in, result_data.data(), result_data.size());
             return;
         }
 #endif
@@ -474,15 +467,9 @@ struct OperationApplier
 
 #if USE_MULTITARGET_CODE
     template <bool CarryResult, typename Columns, typename Result>
-    static void doBatchedApplyAVX512BW(Columns & in, Result * __restrict result_data, size_t size) AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE
+    static void doBatchedApplyAVX512BW(Columns & in, Result * __restrict result_data, size_t size) X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE
     {
         BATCH_BODY(doBatchedApplyAVX512BW)
-    }
-
-    template <bool CarryResult, typename Columns, typename Result>
-    static void doBatchedApplyAVX2(Columns & in, Result * __restrict result_data, size_t size) AVX2_FUNCTION_SPECIFIC_ATTRIBUTE
-    {
-        BATCH_BODY(doBatchedApplyAVX2)
     }
 #endif
 
@@ -502,12 +489,6 @@ struct OperationApplier<Op, OperationApplierImpl, 0>
 #if USE_MULTITARGET_CODE
     template <bool, typename Columns, typename Result>
     static void doBatchedApplyAVX512BW(Columns &, Result &, size_t)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
-    }
-
-    template <bool, typename Columns, typename Result>
-    static void doBatchedApplyAVX2(Columns &, Result &, size_t)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
     }
@@ -550,7 +531,7 @@ using FastApplierImpl =
 template <typename Op, typename Type, typename ... Types>
 struct TypedExecutorInvoker<Op, Type, Types ...>
 {
-    MULTITARGET_FUNCTION_AVX512BW_AVX2(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
     template <typename T, typename Result>
     static void
@@ -569,14 +550,9 @@ struct TypedExecutorInvoker<Op, Type, Types ...>
         if (const auto column = typeid_cast<const ColumnVector<Type> *>(&y))
         {
 #if USE_MULTITARGET_CODE
-            if (isArchSupported(TargetArch::AVX512BW))
+            if (isArchSupported(TargetArch::x86_64_v4))
             {
-                applyImplAVX512BW<T, Result>(x, *column, result);
-                return;
-            }
-            if (isArchSupported(TargetArch::AVX2))
-            {
-                applyImplAVX2<T, Result>(x, *column, result);
+                applyImpl_x86_64_v4<T, Result>(x, *column, result);
                 return;
             }
 #endif
@@ -671,6 +647,44 @@ ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
     return col_res;
 }
 
+}
+
+namespace FunctionsLogicalDetail
+{
+
+#if USE_EMBEDDED_COMPILER
+
+/// Cast LLVM value with type to ternary
+llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value)
+{
+    auto * result_type = llvm::Type::getInt8Ty(b.getContext());
+
+    if (from_type->isNullable())
+    {
+        auto * ternary_null = llvm::ConstantInt::get(result_type, 1);
+        auto * inner = nativeTernaryCast(b, removeNullable(from_type), b.CreateExtractValue(value, {0}));
+        auto * is_null = b.CreateExtractValue(value, {1});
+        return b.CreateSelect(is_null, ternary_null, inner);
+    }
+
+    auto * zero = llvm::Constant::getNullValue(value->getType());
+    auto * ternary_true = llvm::ConstantInt::get(result_type, 2);
+    auto * ternary_false = llvm::ConstantInt::get(result_type, 0);
+    if (value->getType()->isIntegerTy())
+        return b.CreateSelect(b.CreateICmpNE(value, zero), ternary_true, ternary_false);
+    else if (value->getType()->isFloatingPointTy())
+        return b.CreateSelect(b.CreateFCmpUNE(value, zero), ternary_true, ternary_false);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to ternary", from_type->getName());
+}
+
+/// Cast LLVM value with type to ternary
+llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const ValueWithType & value_with_type)
+{
+    return nativeTernaryCast(b, value_with_type.type, value_with_type.value);
+}
+
+#endif
 }
 
 template <typename Impl, typename Name>
@@ -772,7 +786,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (result_type->isNullable())
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
-    MaskInfo mask_info;
+    MaskInfo mask_info{};
     for (size_t i = 1; i <= arguments.size(); ++i)
     {
         if (inverted)
@@ -820,7 +834,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         /// arguments, and combine it with the remaining function column arguments, use them as the input of
         /// `exeucteShortCircuit` to calculate the final result.
         ColumnRawPtrs not_short_circuit_args;
-        std::vector<size_t> short_circuit_args_index;
+        VectorWithMemoryTracking<size_t> short_circuit_args_index;
         ColumnsWithTypeAndName new_args;
 
         for (size_t i = 0, n = args.size(); i < n; ++i)

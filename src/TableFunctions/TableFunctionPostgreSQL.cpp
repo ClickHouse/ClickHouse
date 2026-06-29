@@ -10,7 +10,6 @@
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
-#include <Common/parseRemoteDescription.h>
 #include <TableFunctions/registerTableFunctions.h>
 
 
@@ -100,7 +99,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
 
 void registerTableFunctionPostgreSQL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionPostgreSQL>();
+    factory.registerFunction<TableFunctionPostgreSQL>({});
 }
 
 }

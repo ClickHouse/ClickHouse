@@ -2,7 +2,6 @@ import time
 
 import pytest
 
-from helpers.client import CommandRequest, QueryTimeoutExceedException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -11,12 +10,14 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/conf.d/merge_tree.xml", "configs/conf.d/remote_servers.xml"],
+    user_configs=["configs/sync_insert.xml"],
     with_zookeeper=True,
     macros={"layer": 0, "shard": 0, "replica": 1},
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/conf.d/merge_tree.xml", "configs/conf.d/remote_servers.xml"],
+    user_configs=["configs/sync_insert.xml"],
     with_zookeeper=True,
     macros={"layer": 0, "shard": 0, "replica": 2},
 )
@@ -37,8 +38,9 @@ def started_cluster():
 def test_deduplication_window_in_seconds(started_cluster):
     node = node1
 
-    node1.query(
+    node.query(
         """
+        DROP TABLE IF EXISTS simple ON CLUSTER test_cluster SYNC;
         CREATE TABLE simple ON CLUSTER test_cluster (date Date, id UInt32)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/simple', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id"""
     )
@@ -56,7 +58,7 @@ def test_deduplication_window_in_seconds(started_cluster):
         if (
             TSV.toMat(
                 node.query(
-                    "SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/tables/0/simple/blocks'"
+                    "SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/tables/0/simple/deduplication_hashes'"
                 )
             )[0][0]
             <= "1"
@@ -69,5 +71,3 @@ def test_deduplication_window_in_seconds(started_cluster):
         "INSERT INTO simple VALUES (0, 0)"
     )  # Deduplication doesn't work here as the first hash node was deleted
     assert TSV.toMat(node.query("SELECT count() FROM simple"))[0][0] == "3"
-
-    node1.query("""DROP TABLE simple ON CLUSTER test_cluster""")

@@ -24,11 +24,11 @@ Negative OFFSET is supported: `OFFSET -n` skips the last `n` rows from the resul
 
 Fractional OFFSET is also supported: `OFFSET n` - if 0 < n < 1, then the first n * 100% of the result is skipped.
 
-Example:
+Example:  
     • `OFFSET 0.1` - skips the first 10% of the result.
 
-> **Note**
-> • The fraction must be a [Float64](../../data-types/float.md) number less than 1 and greater than zero.
+> **Note**  
+> • The fraction must be a [Float64](../../data-types/float.md) number less than 1 and greater than zero.  
 > • If a fractional number of rows results from the calculation, it is rounded up to the next whole number.
 
 The `FETCH` specifies the maximum number of rows that can be in the result of a query.
@@ -73,13 +73,11 @@ Input table:
 
 Usage of the `ONLY` option:
 
-```sql
+```sql title="Query"
 SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─a─┬─b─┐
 │ 2 │ 1 │
 │ 3 │ 4 │
@@ -89,13 +87,11 @@ Result:
 
 Usage of the `WITH TIES` option:
 
-```sql
+```sql title="Query"
 SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─a─┬─b─┐
 │ 2 │ 1 │
 │ 3 │ 4 │

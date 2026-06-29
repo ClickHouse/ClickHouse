@@ -29,6 +29,10 @@ struct ZooKeeperArgs
     /// hosts_string -- comma separated [secure://]host:port list
     ZooKeeperArgs(const String & hosts_string); /// NOLINT(google-explicit-constructor)
     ZooKeeperArgs() = default;
+    /// Memberwise comparison. ZooKeeper::configChanged uses it to compare args parsed from
+    /// config; any field below that is set out-of-band (server settings, runtime session state
+    /// such as last_zxid_seen) must be excluded from the comparison there, otherwise every
+    /// config reload spuriously recreates the session.
     bool operator == (const ZooKeeperArgs &) const = default;
 
     String zookeeper_name = "zookeeper";
@@ -53,9 +57,12 @@ struct ZooKeeperArgs
     UInt64 recv_sleep_ms = 0;
     bool use_compression = false;
     bool use_xid_64 = false;
+    bool pass_opentelemetry_tracing_context = false;
     bool prefer_local_availability_zone = false;
     bool availability_zone_autodetect = false;
     String password;
+
+    bool enforce_component_tracking = false;
 
     /// Linux nice value for the send and receive threads in ZooKeeper Client.
     Int32 send_receive_os_threads_nice_value = 0;

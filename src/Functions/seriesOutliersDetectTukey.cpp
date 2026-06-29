@@ -7,6 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/NaNUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <cmath>
 
 namespace DB
@@ -19,7 +20,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// Detects a possible anomaly in series using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences)
-class FunctionSeriesOutliersDetectTukey : public IFunction
+class FunctionSeriesOutliersDetectTukey final : public IFunction
 {
 public:
     static constexpr auto name = "seriesOutliersDetectTukey";
@@ -131,7 +132,7 @@ private:
         ColumnArray::ColumnOffsets::MutablePtr res_offsets = ColumnArray::ColumnOffsets::create();
         auto & res_offsets_data = res_offsets->getData();
 
-        std::vector<Float64> src_sorted;
+        VectorWithMemoryTracking<Float64> src_sorted;
 
         ColumnArray::Offset prev_src_offset = 0;
         for (auto src_offset : arr_offsets)
@@ -144,11 +145,11 @@ private:
             src_sorted.assign(src_vec.begin() + prev_src_offset, src_vec.begin() + src_offset);
             std::sort(src_sorted.begin(), src_sorted.end());
 
-            Float64 q1;
-            Float64 q2;
+            Float64 q1 = 0;
+            Float64 q2 = 0;
 
-            Float64 p1 = len * min_percentile;
-            if (p1 == static_cast<Int64>(p1))
+            Float64 p1 = static_cast<Float64>(len) * min_percentile;
+            if (p1 == static_cast<Float64>(static_cast<Int64>(p1)))
             {
                 size_t index = static_cast<size_t>(p1) - 1;
                 q1 = (src_sorted[index] + src_sorted[index + 1]) / 2;
@@ -159,8 +160,8 @@ private:
                 q1 = src_sorted[index];
             }
 
-            Float64 p2 = len * max_percentile;
-            if (p2 == static_cast<Int64>(p2))
+            Float64 p2 = static_cast<Float64>(len) * max_percentile;
+            if (p2 == static_cast<Float64>(static_cast<Int64>(p2)))
             {
                 size_t index = static_cast<size_t>(p2) - 1;
                 q2 = (src_sorted[index] + src_sorted[index + 1]) / 2;
@@ -178,7 +179,7 @@ private:
 
             for (ColumnArray::Offset j = prev_src_offset; j < src_offset; ++j)
             {
-                auto score = std::min((src_vec[j] - lower_fence), 0.0) + std::max((src_vec[j] - upper_fence), 0.0);
+                auto score = std::min((static_cast<Float64>(src_vec[j]) - lower_fence), 0.0) + std::max((static_cast<Float64>(src_vec[j]) - upper_fence), 0.0);
                 outlier_data.push_back(score);
             }
             res_offsets_data.push_back(outlier_data.size());

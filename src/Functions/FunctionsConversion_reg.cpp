@@ -1096,7 +1096,20 @@ SELECT toDate(20297)
     /// MySQL compatibility alias. Cannot be registered as alias,
     /// because we don't want it to be normalized to toDate in queries,
     /// otherwise CREATE DICTIONARY query breaks.
-    factory.registerFunction("DATE", &detail::FunctionToDate::create, {}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description_date = R"(
+Converts the argument to the Date data type. This is a MySQL compatibility alias for `toDate`. It behaves the same as `toDate`.
+    )";
+    FunctionDocumentation::Syntax syntax_date = "DATE(expr)";
+    FunctionDocumentation::Arguments arguments_date = {
+        {"expr", "The value to convert.", {"String", "UInt32", "Date", "DateTime"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_date = {"Returns a Date value.", {"Date"}};
+    FunctionDocumentation::Examples examples_date = {{"Basic usage", "SELECT DATE('2023-01-01')", "2023-01-01"}};
+    FunctionDocumentation::Category category_date = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation::IntroducedIn introduced_in_date = {21, 2};
+    FunctionDocumentation documentation_date = {description_date, syntax_date, arguments_date, {}, returned_value_date, examples_date, introduced_in_date, category_date};
+
+    factory.registerFunction("DATE", &detail::FunctionToDate::create, documentation_date, FunctionFactory::Case::Insensitive);
 
     /// toDate32 documentation
     FunctionDocumentation::Description description_toDate32 = R"(

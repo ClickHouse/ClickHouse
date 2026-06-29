@@ -3,12 +3,9 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -33,7 +30,7 @@ constexpr size_t time_shift = 22;
 
 }
 
-class FunctionSnowflakeIDToDateTime : public IFunction
+class FunctionSnowflakeIDToDateTime final : public IFunction
 {
 private:
     const bool allow_nonconst_timezone_arguments;
@@ -104,7 +101,7 @@ public:
 };
 
 
-class FunctionSnowflakeIDToDateTime64 : public IFunction
+class FunctionSnowflakeIDToDateTime64 final : public IFunction
 {
 private:
     const bool allow_nonconst_timezone_arguments;

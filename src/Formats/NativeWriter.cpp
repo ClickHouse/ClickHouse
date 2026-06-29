@@ -11,9 +11,9 @@
 #include <Formats/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
-#include <Columns/ColumnLazy.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -72,12 +72,6 @@ void NativeWriter::flush()
       * The same for compressed columns in-memory.
       */
     ColumnPtr full_column = column->convertToFullColumnIfConst()->decompress();
-
-    if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(full_column.get()))
-    {
-        const auto & columns = column_lazy->getColumns();
-        full_column = ColumnTuple::create(columns);
-    }
 
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
@@ -152,6 +146,10 @@ size_t NativeWriter::write(const Block & block)
         index_block.columns.resize(columns);
     }
 
+    /// Remove unreferenced data from replicated columns before serialization.
+    Columns compacted_columns = block.getColumns();
+    compactReplicatedColumns(compacted_columns);
+
     for (size_t i = 0; i < columns; ++i)
     {
         /// For the index.
@@ -165,6 +163,7 @@ size_t NativeWriter::write(const Block & block)
         }
 
         auto column = block.safeGetByPosition(i);
+        column.column = compacted_columns[i];
 
         /// Send data to old clients without low cardinality type.
         if (remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE))
@@ -199,15 +198,6 @@ size_t NativeWriter::write(const Block & block)
 
         /// Serialization. Dynamic, if client supports it.
         SerializationPtr serialization;
-        bool skip_writing = false;
-        if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(column.column.get()))
-        {
-            if (!column_lazy->getColumns().empty())
-                serialization = column_lazy->getDefaultSerialization();
-            else
-                skip_writing = true;
-        }
-        else
         {
             SerializationInfoPtr info;
             std::tie(serialization, info, column.column) = getSerializationAndColumn(client_revision, column);
@@ -220,7 +210,7 @@ size_t NativeWriter::write(const Block & block)
         }
 
         /// Data
-        if (!skip_writing && rows)    /// Zero items of data is always represented as zero number of bytes.
+        if (rows)    /// Zero items of data is always represented as zero number of bytes.
             writeData(*serialization, column.column, ostr, format_settings, 0, 0, client_revision);
 
         if (index)

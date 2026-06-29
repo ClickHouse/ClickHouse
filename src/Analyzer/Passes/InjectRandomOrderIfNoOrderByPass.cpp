@@ -7,6 +7,7 @@
 #include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -21,7 +22,7 @@ namespace Setting
 }
 
 /// Append ORDER BY rand() to an order-by list
-void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
+static void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
 {
     /// Build rand() node
     auto & function_factory = FunctionFactory::instance();
@@ -35,7 +36,7 @@ void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
 }
 
 /// Wrap query_root in new QueryNode that includes a random order by
-void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context)
+static void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context)
 {
     auto * query_node = query_root->as<QueryNode>();
 
@@ -45,10 +46,10 @@ void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context)
     query_node->clearProjectionColumns();
     query_node->setProjectionAliasesToOverride({unique_column_name});
     query_node->resolveProjectionColumns(subquery_projection_columns);
+    query_node->setIsSubquery(true);
 
     /// SELECT unique_column_name FROM query_node order by rand()
     auto new_root = std::make_shared<QueryNode>(Context::createCopy(context));
-    new_root->setIsSubquery(true);
     new_root->getJoinTree() = query_root;
     NameAndTypePair column{unique_column_name, subquery_projection_columns[0].type};
     new_root->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(column, query_root));

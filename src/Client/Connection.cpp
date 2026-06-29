@@ -15,6 +15,7 @@
 #include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
+#include <Client/sanitizeUntrustedServerString.h>
 #include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
@@ -43,6 +44,7 @@
 #include <Core/Types.h>
 #include "config.h"
 
+#include <base/scope_guard.h>
 #include <fmt/ranges.h>
 
 #if USE_SSL
@@ -58,6 +60,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event DistributedConnectionReconnectCount;
+    extern const Event DistributedConnectionConnectCount;
 }
 
 namespace DB
@@ -84,6 +87,8 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
+    extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 Connection::~Connection()
@@ -104,6 +109,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     const String & client_name_,
     Protocol::Compression compression_,
     Protocol::Secure secure_,
+    const String & tls_sni_override_,
     const String & bind_host_
 #if USE_JWT_CPP && USE_SSL
     , std::shared_ptr<JWTProvider> jwt_provider_
@@ -125,6 +131,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     , client_name(client_name_)
     , compression(compression_)
     , secure(secure_)
+    , tls_sni_override(tls_sni_override_)
     , bind_host(bind_host_)
     , log_wrapper(*this)
 {
@@ -142,6 +149,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     /// if connection was broken it is necessary to cancel it before reconnecting
     disconnect();
 
+    ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
@@ -158,6 +166,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
             have_more_addresses_to_connect = it != std::prev(addresses.end());
 
+            LOG_TRACE(log_wrapper.get(), "Connecting to {}:{} (using address {}, {}/{})", host, port, it->toString(), std::distance(addresses.begin(), it) + 1, addresses.size());
+
             if (isConnected())
                 disconnect();
 
@@ -169,7 +179,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
                 /// work we need to pass host name separately. It will be send into TLS Hello packet to let
                 /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
-                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
+                static_cast<Poco::Net::SecureStreamSocket *>(socket.get())
+                    ->setPeerHostName(tls_sni_override.empty() ? host : tls_sni_override);
                 /// we want to postpone SSL handshake until first read or write operation
                 /// so any errors during negotiation would be properly processed
                 static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
@@ -192,7 +203,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 {
                     Poco::Net::SocketAddress socket_address(bind_host, 0);
 
-                    static_cast<Poco::Net::StreamSocket*>(socket.get())->bind(socket_address, true);
+                    static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(socket_address, true);
                 }
             }
 
@@ -200,9 +211,14 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             {
                 if (async_callback)
                 {
+                    address_connect_timeout_expired = false;
                     socket->connectNB(*it);
                     while (!socket->poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
+                    {
                         async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
+                        if (address_connect_timeout_expired)
+                            throw Poco::TimeoutException("Connection timeout expired for address: " + it->toString());
+                    }
 
                     if (auto err = socket->impl()->socketError())
                         socket->impl()->error(err); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
@@ -215,42 +231,51 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 }
 
                 current_resolved_address = *it;
+                have_more_addresses_to_connect = false;
                 break;
             }
-            catch (DB::NetException &)
+            catch (DB::NetException & e)
             {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
             }
-            catch (Poco::Net::NetException &)
+            catch (Poco::Net::NetException & e)
             {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
             }
-            catch (Poco::TimeoutException &)
+            catch (Poco::TimeoutException & e)
             {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
             }
         }
 
-        socket->setReceiveTimeout(timeouts.receive_timeout);
-        socket->setSendTimeout(timeouts.send_timeout);
+        /// Use handshake timeout as send and receive timeout. Note that in the case of secure sockets,
+        /// these timeouts also apply to the TLS handshake. The TLS handshake is deferred until the
+        /// first send/receive operation (sendHello in our case).
+        socket->setReceiveTimeout(timeouts.handshake_timeout);
+        socket->setSendTimeout(timeouts.handshake_timeout);
         socket->setNoDelay(true);
         int tcp_keep_alive_timeout_in_sec = timeouts.tcp_keep_alive_timeout.totalSeconds();
         if (tcp_keep_alive_timeout_in_sec)
         {
             socket->setKeepAlive(true);
-            socket->setOption(IPPROTO_TCP,
-#if defined(TCP_KEEPALIVE)
-                TCP_KEEPALIVE
-#else
-                TCP_KEEPIDLE  // __APPLE__
+#if defined(TCP_KEEPIDLE)
+            // TCP_KEEPIDLE: Linux, illumos
+            // Note: Check TCP_KEEPIDLE first because illumos defines TCP_KEEPALIVE
+            // but doesn't implement it.
+            socket->setOption(IPPROTO_TCP, TCP_KEEPIDLE, tcp_keep_alive_timeout_in_sec);
+#elif defined(TCP_KEEPALIVE)
+            // TCP_KEEPALIVE: macOS
+            socket->setOption(IPPROTO_TCP, TCP_KEEPALIVE, tcp_keep_alive_timeout_in_sec);
 #endif
-                , tcp_keep_alive_timeout_in_sec);
         }
 
         in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
@@ -261,8 +286,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         connected = true;
         setDescription();
 
-        sendHello(timeouts.handshake_timeout);
-        receiveHello(timeouts.handshake_timeout);
+        sendHello();
+        receiveHello();
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
         {
@@ -321,6 +346,10 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
             server_name, server_version_major, server_version_minor, server_version_patch);
+
+        /// Now that the handshake is complete, use the regular timeouts
+        socket->setReceiveTimeout(timeouts.receive_timeout);
+        socket->setSendTimeout(timeouts.send_timeout);
     }
     catch (DB::NetException & e)
     {
@@ -402,7 +431,7 @@ void Connection::disconnect()
 }
 
 
-void Connection::sendHello([[maybe_unused]] const Poco::Timespan & handshake_timeout)
+void Connection::sendHello()
 {
     /** Disallow control characters in user controlled parameters
       *  to mitigate the possibility of SSRF.
@@ -455,7 +484,7 @@ void Connection::sendHello([[maybe_unused]] const Poco::Timespan & handshake_tim
         writeStringBinary(String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) + user, *out);
         writeStringBinary(password, *out);
 
-        performHandshakeForSSHAuth(handshake_timeout);
+        performHandshakeForSSHAuth();
     }
 #endif
 #if USE_JWT_CPP && USE_SSL
@@ -494,10 +523,8 @@ void Connection::sendAddendum()
 
 
 #if USE_SSH
-void Connection::performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout)
+void Connection::performHandshakeForSSHAuth()
 {
-    TimeoutSetter timeout_setter(*socket, handshake_timeout, handshake_timeout);
-
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
@@ -514,7 +541,7 @@ void Connection::performHandshakeForSSHAuth(const Poco::Timespan & handshake_tim
         else if (packet_type == Protocol::Server::Exception)
             receiveException()->rethrow();
         else
-            throwUnexpectedPacket(timeout_setter, packet_type, "SSHChallenge or Exception");
+            throwUnexpectedPacket(packet_type, "SSHChallenge or Exception");
     }
 
     writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
@@ -537,10 +564,8 @@ void Connection::performHandshakeForSSHAuth(const Poco::Timespan & handshake_tim
 #endif
 
 
-void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
+void Connection::receiveHello()
 {
-    TimeoutSetter timeout_setter(*socket, socket->getSendTimeout(), handshake_timeout);
-
     /// Receive hello packet.
     UInt64 packet_type = 0;
 
@@ -553,16 +578,23 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
     readVarUInt(packet_type, *in);
     if (packet_type == Protocol::Server::Hello)
     {
-        readStringBinary(server_name, *in);
+        readStringBinary(server_name, *in, DBMS_MAX_HELLO_STRING_SIZE);
+        sanitizeUntrustedServerString(server_name);
         readVarUInt(server_version_major, *in);
         readVarUInt(server_version_minor, *in);
         readVarUInt(server_revision, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
             readVarUInt(server_parallel_replicas_protocol_version, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
-            readStringBinary(server_timezone, *in);
+        {
+            readStringBinary(server_timezone, *in, DBMS_MAX_HELLO_STRING_SIZE);
+            sanitizeUntrustedServerString(server_timezone);
+        }
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
-            readStringBinary(server_display_name, *in);
+        {
+            readStringBinary(server_display_name, *in, DBMS_MAX_HELLO_STRING_SIZE);
+            sanitizeUntrustedServerString(server_display_name);
+        }
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
             readVarUInt(server_version_patch, *in);
         else
@@ -570,22 +602,33 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
         {
-            readStringBinary(proto_send_chunked_srv, *in);
-            readStringBinary(proto_recv_chunked_srv, *in);
+            /// These are tiny protocol tokens ("chunked" / "notchunked") compared in
+            /// `is_chunked`; cap them so a hostile server cannot force a large allocation.
+            readStringBinary(proto_send_chunked_srv, *in, DBMS_MAX_HELLO_STRING_SIZE);
+            readStringBinary(proto_recv_chunked_srv, *in, DBMS_MAX_HELLO_STRING_SIZE);
         }
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
         {
-            UInt64 rules_size;
+            UInt64 rules_size = 0;
             readVarUInt(rules_size, *in);
+            /// `rules_size` is server-controlled and feeds a `reserve`; reject absurd
+            /// values so a hostile server cannot force a huge allocation. The server
+            /// enforces the same cap at construction time (see TCPHandler::sendHello).
+            if (rules_size > DBMS_MAX_PASSWORD_COMPLEXITY_RULES)
+                throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+                    "Server declared {} password-complexity rules, maximum allowed is {}",
+                    rules_size, DBMS_MAX_PASSWORD_COMPLEXITY_RULES);
             password_complexity_rules.reserve(rules_size);
 
             for (size_t i = 0; i < rules_size; ++i)
             {
                 String original_pattern;
                 String exception_message;
-                readStringBinary(original_pattern, *in);
-                readStringBinary(exception_message, *in);
+                readStringBinary(original_pattern, *in, DBMS_MAX_HELLO_STRING_SIZE);
+                readStringBinary(exception_message, *in, DBMS_MAX_HELLO_STRING_SIZE);
+                sanitizeUntrustedServerString(original_pattern);
+                sanitizeUntrustedServerString(exception_message);
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
             }
         }
@@ -593,7 +636,7 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         {
             chassert(!nonce.has_value());
 
-            UInt64 read_nonce;
+            UInt64 read_nonce = 0;
             readIntBinary(read_nonce, *in);
             nonce.emplace(read_nonce);
         }
@@ -619,7 +662,7 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else
-        throwUnexpectedPacket(timeout_setter, packet_type, "Hello or Exception");
+        throwUnexpectedPacket(packet_type, "Hello or Exception");
 }
 
 void Connection::setDefaultDatabase(const String & database)
@@ -751,7 +794,7 @@ bool Connection::ping(const ConnectionTimeouts & timeouts)
         }
 
         if (pong != Protocol::Server::Pong)
-            throwUnexpectedPacket(timeout_setter, pong, "Pong");
+            throwUnexpectedPacket(pong, "Pong", &timeout_setter);
     }
     catch (const Poco::Exception & e)
     {
@@ -790,7 +833,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (response_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else if (response_type != Protocol::Server::TablesStatusResponse)
-        throwUnexpectedPacket(timeout_setter, response_type, "TablesStatusResponse");
+        throwUnexpectedPacket(response_type, "TablesStatusResponse", &timeout_setter);
 
     TablesStatusResponse response;
     response.read(*in, server_revision);
@@ -1017,7 +1060,18 @@ void Connection::sendQuery(
 void Connection::sendQueryPlan(const QueryPlan & query_plan)
 {
     writeVarUInt(Protocol::Client::QueryPlan, *out);
-    query_plan.serialize(*out, server_query_plan_serialization_version);
+
+    if (query_plan.isSerialized())
+    {
+        // Use cached serialization
+        auto serialized_data = query_plan.getSerializedData();
+        out->write(serialized_data.data(), serialized_data.size());
+    }
+    else
+    {
+        // Fallback: serialize on-the-fly
+        query_plan.serialize(*out, server_query_plan_serialization_version);
+    }
 }
 
 void Connection::sendCancel()
@@ -1063,15 +1117,6 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->throttle(out->count() - prev_bytes);
 }
 
-void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
-    writeVectorBinary(uuids, *out);
-    out->finishChunk();
-    out->next();
-}
-
-
 void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
@@ -1084,7 +1129,7 @@ void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTa
 void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
-    response.serialize(*out, server_parallel_replicas_protocol_version);
+    response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
     out->finishChunk();
     out->next();
 }
@@ -1143,19 +1188,19 @@ void Connection::sendScalarsData(Scalars & data)
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
-            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
-            static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
+            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()),
+            static_cast<double>(maybe_compressed_out_bytes) / static_cast<double>(out_bytes),
             ReadableSize(out_bytes),
-            ReadableSize(out_bytes / watch.elapsedSeconds()));
+            ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
-            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
+            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()));
 }
 
 namespace
@@ -1254,19 +1299,19 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
-            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
-            static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
+            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()),
+            static_cast<double>(maybe_compressed_out_bytes) / static_cast<double>(out_bytes),
             ReadableSize(out_bytes),
-            ReadableSize(out_bytes / watch.elapsedSeconds()));
+            ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
-            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
+            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()));
 }
 
 std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
@@ -1277,12 +1322,15 @@ std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
 
 bool Connection::poll(size_t timeout_microseconds)
 {
+    ensureConnected();
     return in->poll(timeout_microseconds);
 }
 
 
 bool Connection::hasReadPendingData() const
 {
+    if (!in)
+        return false;
     return last_input_packet_type.has_value() || in->hasBufferedData();
 }
 
@@ -1294,7 +1342,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 
     if (hasReadPendingData() || poll(timeout_microseconds))
     {
-        UInt64 packet_type;
+        UInt64 packet_type = 0;
         readVarUInt(packet_type, *in);
 
         last_input_packet_type.emplace(packet_type);
@@ -1311,16 +1359,27 @@ UInt64 Connection::receivePacketType()
     if (last_input_packet_type)
         return *last_input_packet_type;
 
-    UInt64 type;
+    ensureConnected();
+
+    UInt64 type = 0;
     readVarUInt(type, *in);
     return last_input_packet_type.emplace(type);
 }
 
+void Connection::ensureConnected() const
+{
+    /// We are trying to send something to already disconnected connection,
+    /// this means that we continue using Connection after exception.
+    if (!in)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection to {} is terminated", getDescription());
+}
 
 Packet Connection::receivePacket()
 {
     try
     {
+        ensureConnected();
+
         Packet res;
 
         /// Have we already read packet type?
@@ -1366,9 +1425,17 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::PartUUIDs:
-                readVectorBinary(res.part_uuids, *in);
+            {
+                // allow_experimental_query_deduplication is no longer supported, but an old server
+                // may still send this packet. Skip the obsolete, peer-controlled payload without
+                // materializing it (do not resize a vector to a peer-chosen size).
+                UInt64 num_part_uuids = 0;
+                readVarUInt(num_part_uuids, *in);
+                if (num_part_uuids > DEFAULT_MAX_STRING_SIZE)
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+                in->ignore(num_part_uuids * sizeof(UUID));
                 return res;
-
+            }
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
@@ -1385,7 +1452,10 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::TimezoneUpdate:
-                readStringBinary(server_timezone, *in);
+                /// Same cap + control-char sanitization as the handshake read; the field
+                /// reaches the client's terminal via the time-zone warning path.
+                readStringBinary(server_timezone, *in, DBMS_MAX_HELLO_STRING_SIZE);
+                sanitizeUntrustedServerString(server_timezone);
                 res.server_timezone = server_timezone;
                 return res;
 
@@ -1587,10 +1657,11 @@ InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement(
 }
 
 
-void Connection::throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected)
+void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected, TimeoutSetter * timeout_setter)
 {
     /// Reset timeout_setter before disconnect, because after disconnect socket will be invalid.
-    timeout_setter.reset();
+    if (timeout_setter)
+        timeout_setter->reset();
 
     /// Close connection, to avoid leaving it in an unsynchronised state.
     disconnect();
@@ -1618,6 +1689,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         std::string(DEFAULT_CLIENT_NAME),
         parameters.compression,
         parameters.security,
+        parameters.tls_sni_override,
         parameters.bind_host
 #if USE_JWT_CPP && USE_SSL
         , parameters.jwt_provider

@@ -25,10 +25,10 @@ def started_cluster():
 
 
 def wait_merged_part(table, part_name, retries=100):
-    q("OPTIMIZE TABLE {} FINAL".format(table))
     for i in range(retries):
+        q("OPTIMIZE TABLE {}".format(table))
         result = q(
-            "SELECT name FROM system.parts where table='{}' AND name='{}'".format(
+            "SELECT name FROM system.parts where table='{}' AND name='{}' AND active".format(
                 table, part_name
             )
         )
@@ -47,7 +47,7 @@ def test_make_clone_covered_by_broken_detached_dir_exists(started_cluster):
     )
 
     data_path = node1.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='test_make_clone_cvbdde'"
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='test_make_clone_cvbdde'"
     ).strip()
 
     q("INSERT INTO test_make_clone_cvbdde VALUES (0, 'hbl')")
@@ -64,7 +64,7 @@ def test_make_clone_covered_by_broken_detached_dir_exists(started_cluster):
     if not (wait_merged_part("test_make_clone_cvbdde", "all_0_3_3")):
         assert False, "Part all_0_3_3 doesn't appeared in system.parts"
 
-    res = str(instance.exec_in_container(["ls", data_path]).strip().split("\n"))
+    str(instance.exec_in_container(["ls", data_path]).strip().split("\n"))
 
     # broke the merged parts
     instance.exec_in_container(

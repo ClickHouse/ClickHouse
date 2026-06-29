@@ -9,7 +9,7 @@ create table test (id UInt64, json JSON(a UInt32), data String) engine=MergeTree
 7	{"a":5,"b":"str_5","c":[0,1,2,3,4,5,6]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC
+Sorting: __table1.`json.a` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -23,7 +23,7 @@ Sorting: json.a ASC
 2	{"a":0,"b":"str_2","c":[0,1]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC
+Sorting: __table1.`json.a` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -37,7 +37,7 @@ Sorting: json.a DESC
 5	{"a":5,"b":"str_6","c":[0,1,2,3,4]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: __table1.`json.a` ASC, CAST(__table1.`json.b`, \'String\'_String) ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -51,7 +51,7 @@ Sorting: json.a ASC
 2	{"a":0,"b":"str_2","c":[0,1]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: __table1.`json.a` DESC, CAST(__table1.`json.b`, \'String\'_String) ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -65,7 +65,7 @@ Sorting: json.a DESC
 7	{"a":5,"b":"str_5","c":[0,1,2,3,4,5,6]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: __table1.`json.a` ASC, CAST(__table1.`json.b`, \'String\'_String) DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -79,7 +79,7 @@ Sorting: json.a ASC
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: __table1.`json.a` DESC, CAST(__table1.`json.b`, \'String\'_String) DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -137,9 +137,10 @@ Indexes:
 PrimaryKey
 Keys:
 json.a
-Condition: (json.a in [0, 0])
+CAST(json.b, \'String\')
+Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/2
-Granules: 2/8
+Granules: 1/8
 Search Algorithm: binary search
 Ranges: 1
 1
@@ -153,7 +154,7 @@ Ranges: 1
 7	{"a":5,"b":"str_5","c":[0,1,2,3,4,5,6]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC
+Sorting: __table1.`json.a` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -167,7 +168,7 @@ Sorting: json.a ASC
 2	{"a":0,"b":"str_2","c":[0,1]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC
+Sorting: __table1.`json.a` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -181,7 +182,7 @@ Sorting: json.a DESC
 5	{"a":5,"b":"str_6","c":[0,1,2,3,4]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: __table1.`json.a` ASC, CAST(__table1.`json.b`, \'String\'_String) ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -195,7 +196,7 @@ Sorting: json.a ASC
 2	{"a":0,"b":"str_2","c":[0,1]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: __table1.`json.a` DESC, CAST(__table1.`json.b`, \'String\'_String) ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -209,7 +210,7 @@ Sorting: json.a DESC
 7	{"a":5,"b":"str_5","c":[0,1,2,3,4,5,6]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: __table1.`json.a` ASC, CAST(__table1.`json.b`, \'String\'_String) DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -223,7 +224,7 @@ Sorting: json.a ASC
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: __table1.`json.a` DESC, CAST(__table1.`json.b`, \'String\'_String) DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -253,9 +254,10 @@ Indexes:
 PrimaryKey
 Keys:
 json.a
-Condition: (json.a in [0, 0])
+CAST(json.b, \'String\')
+Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/1
-Granules: 2/8
+Granules: 1/8
 Search Algorithm: binary search
 Ranges: 1
 create table test (id UInt64, json JSON(a UInt32), data String) engine=MergeTree order by (json.a, json.b::String) settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10, vertical_merge_algorithm_min_rows_to_activate=1000000, index_granularity=1;
@@ -269,7 +271,7 @@ create table test (id UInt64, json JSON(a UInt32), data String) engine=MergeTree
 7	{"a":5,"b":"str_5","c":[0,1,2,3,4,5,6]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC
+Sorting: __table1.`json.a` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -283,7 +285,7 @@ Sorting: json.a ASC
 2	{"a":0,"b":"str_2","c":[0,1]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC
+Sorting: __table1.`json.a` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -297,7 +299,7 @@ Sorting: json.a DESC
 5	{"a":5,"b":"str_6","c":[0,1,2,3,4]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: __table1.`json.a` ASC, CAST(__table1.`json.b`, \'String\'_String) ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -311,7 +313,7 @@ Sorting: json.a ASC
 2	{"a":0,"b":"str_2","c":[0,1]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: __table1.`json.a` DESC, CAST(__table1.`json.b`, \'String\'_String) ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -325,7 +327,7 @@ Sorting: json.a DESC
 7	{"a":5,"b":"str_5","c":[0,1,2,3,4,5,6]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: __table1.`json.a` ASC, CAST(__table1.`json.b`, \'String\'_String) DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -339,7 +341,7 @@ Sorting: json.a ASC
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: __table1.`json.a` DESC, CAST(__table1.`json.b`, \'String\'_String) DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -397,9 +399,10 @@ Indexes:
 PrimaryKey
 Keys:
 json.a
-Condition: (json.a in [0, 0])
+CAST(json.b, \'String\')
+Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/2
-Granules: 2/8
+Granules: 1/8
 Search Algorithm: binary search
 Ranges: 1
 1
@@ -413,7 +416,7 @@ Ranges: 1
 7	{"a":5,"b":"str_5","c":[0,1,2,3,4,5,6]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC
+Sorting: __table1.`json.a` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -427,7 +430,7 @@ Sorting: json.a ASC
 2	{"a":0,"b":"str_2","c":[0,1]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC
+Sorting: __table1.`json.a` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -441,7 +444,7 @@ Sorting: json.a DESC
 5	{"a":5,"b":"str_6","c":[0,1,2,3,4]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: __table1.`json.a` ASC, CAST(__table1.`json.b`, \'String\'_String) ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -455,7 +458,7 @@ Sorting: json.a ASC
 2	{"a":0,"b":"str_2","c":[0,1]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: __table1.`json.a` DESC, CAST(__table1.`json.b`, \'String\'_String) ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -469,7 +472,7 @@ Sorting: json.a DESC
 7	{"a":5,"b":"str_5","c":[0,1,2,3,4,5,6]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: __table1.`json.a` ASC, CAST(__table1.`json.b`, \'String\'_String) DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -483,7 +486,7 @@ Sorting: json.a ASC
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: __table1.`json.a` DESC, CAST(__table1.`json.b`, \'String\'_String) DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -513,9 +516,10 @@ Indexes:
 PrimaryKey
 Keys:
 json.a
-Condition: (json.a in [0, 0])
+CAST(json.b, \'String\')
+Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/1
-Granules: 2/8
+Granules: 1/8
 Search Algorithm: binary search
 Ranges: 1
 create table test (id UInt64, json JSON(a UInt32), data String) engine=MergeTree order by (json.a, json.b::String) settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=1, vertical_merge_algorithm_min_rows_to_activate=1, index_granularity=1;
@@ -529,7 +533,7 @@ create table test (id UInt64, json JSON(a UInt32), data String) engine=MergeTree
 7	{"a":5,"b":"str_5","c":[0,1,2,3,4,5,6]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC
+Sorting: __table1.`json.a` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -543,7 +547,7 @@ Sorting: json.a ASC
 2	{"a":0,"b":"str_2","c":[0,1]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC
+Sorting: __table1.`json.a` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -557,7 +561,7 @@ Sorting: json.a DESC
 5	{"a":5,"b":"str_6","c":[0,1,2,3,4]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: __table1.`json.a` ASC, CAST(__table1.`json.b`, \'String\'_String) ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -571,7 +575,7 @@ Sorting: json.a ASC
 2	{"a":0,"b":"str_2","c":[0,1]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: __table1.`json.a` DESC, CAST(__table1.`json.b`, \'String\'_String) ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -585,7 +589,7 @@ Sorting: json.a DESC
 7	{"a":5,"b":"str_5","c":[0,1,2,3,4,5,6]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: __table1.`json.a` ASC, CAST(__table1.`json.b`, \'String\'_String) DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -599,7 +603,7 @@ Sorting: json.a ASC
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: __table1.`json.a` DESC, CAST(__table1.`json.b`, \'String\'_String) DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -657,9 +661,10 @@ Indexes:
 PrimaryKey
 Keys:
 json.a
-Condition: (json.a in [0, 0])
+CAST(json.b, \'String\')
+Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/2
-Granules: 2/8
+Granules: 1/8
 Search Algorithm: binary search
 Ranges: 1
 1
@@ -673,7 +678,7 @@ Ranges: 1
 7	{"a":5,"b":"str_5","c":[0,1,2,3,4,5,6]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC
+Sorting: __table1.`json.a` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -687,7 +692,7 @@ Sorting: json.a ASC
 2	{"a":0,"b":"str_2","c":[0,1]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC
+Sorting: __table1.`json.a` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -701,7 +706,7 @@ Sorting: json.a DESC
 5	{"a":5,"b":"str_6","c":[0,1,2,3,4]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: __table1.`json.a` ASC, CAST(__table1.`json.b`, \'String\'_String) ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -715,7 +720,7 @@ Sorting: json.a ASC
 2	{"a":0,"b":"str_2","c":[0,1]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) ASC
+Sorting: __table1.`json.a` DESC, CAST(__table1.`json.b`, \'String\'_String) ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -729,7 +734,7 @@ Sorting: json.a DESC
 7	{"a":5,"b":"str_5","c":[0,1,2,3,4,5,6]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a ASC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: __table1.`json.a` ASC, CAST(__table1.`json.b`, \'String\'_String) DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a ASC
@@ -743,7 +748,7 @@ Sorting: json.a ASC
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.json.a DESC, CAST(__table1.json.b, \'String\'_String) DESC
+Sorting: __table1.`json.a` DESC, CAST(__table1.`json.b`, \'String\'_String) DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: json.a DESC
@@ -773,8 +778,9 @@ Indexes:
 PrimaryKey
 Keys:
 json.a
-Condition: (json.a in [0, 0])
+CAST(json.b, \'String\')
+Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/1
-Granules: 2/8
+Granules: 1/8
 Search Algorithm: binary search
 Ranges: 1

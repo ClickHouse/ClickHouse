@@ -28,7 +28,7 @@ namespace
         UInt8 res = 0;
         for (int i = 0; i < 8; ++i)
         {
-            UInt8 rand8 = rand;
+            UInt8 rand8 = static_cast<UInt8>(rand);
             rand >>= 8;
             res <<= 1;
             res |= (rand8 < prob * (1u << 8));
@@ -48,7 +48,7 @@ namespace
     }
 
 
-class FunctionFuzzBits : public IFunction
+class FunctionFuzzBits final : public IFunction
 {
 public:
     static constexpr auto name = "fuzzBits";
@@ -121,7 +121,7 @@ public:
             auto col_to = ColumnFixedString::create(n);
             ColumnFixedString::Chars & chars_to = col_to->getChars();
 
-            size_t total_size;
+            size_t total_size = 0;
             if (common::mulOverflow(input_rows_count, n, total_size))
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 

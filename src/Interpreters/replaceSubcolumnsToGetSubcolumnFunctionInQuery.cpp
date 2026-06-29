@@ -20,7 +20,7 @@ void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAnd
         if (!column || !column->type->hasSubcolumn(subcolumn_name))
             return;
 
-        ast = makeASTFunction("getSubcolumn", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(subcolumn_name));
+        ast = makeASTFunction("getSubcolumn", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(subcolumn_name));
     }
     else if (auto * node = ast->as<ASTFunction>())
     {

@@ -22,8 +22,8 @@ void LogFrequencyLimiterImpl::log(Poco::Message && msg)
 
     time_t now = time(nullptr);
     size_t skipped_similar_messages = 0;
-    bool need_cleanup;
-    bool need_log;
+    bool need_cleanup = false;
+    bool need_log = false;
 
     {
         std::lock_guard lock(mutex);
@@ -90,7 +90,7 @@ LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, tim
     static const time_t cleanup_delay_s = 600;
     time_t cutoff_time = now - cleanup_delay_s; // entries older than this are stale
 
-    UInt128 name_hash = sipHash128(logger->name().c_str(), logger->name().size());
+    UInt64 name_hash = sipHash64(logger->name().c_str(), logger->name().size());
 
     std::lock_guard lock(mutex);
 
@@ -104,7 +104,7 @@ LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, tim
 
     auto register_as_first = [&]() TSA_REQUIRES(mutex)
     {
-        assert(allowed_count_ > 0);
+        chassert(allowed_count_ > 0);
         accepted = true;
         series_records[name_hash] = std::make_tuple(now, 1, 1);
     };

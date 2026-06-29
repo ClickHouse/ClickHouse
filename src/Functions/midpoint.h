@@ -6,6 +6,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Types.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -17,6 +18,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/castTypeToEither.h>
 
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 
 #include <base/TypeList.h>
@@ -34,7 +36,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-class FunctionMidpoint : public IFunction
+class FunctionMidpoint final : public IFunction
 {
 public:
     static constexpr auto name = "midpoint";
@@ -111,7 +113,7 @@ private:
     static void calculateForNumericType(
         auto & result_data,
         const Columns & input_columns,
-        const std::vector<const ColumnUInt8::Container *> & input_null_maps,
+        const VectorWithMemoryTracking<const ColumnUInt8::Container *> & input_null_maps,
         ColumnUInt8::Container & result_null_map_data,
         size_t input_rows_count)
     {
@@ -183,7 +185,7 @@ private:
     static void calculateForDecimalType(
         auto & result_data,
         const Columns & input_columns,
-        const std::vector<const ColumnUInt8::Container *> & input_null_maps,
+        const VectorWithMemoryTracking<const ColumnUInt8::Container *> & input_null_maps,
         ColumnUInt8::Container & result_null_map_data,
         size_t input_rows_count)
     {
@@ -252,7 +254,7 @@ private:
         Columns columns;
         columns.reserve(converted_columns.size());
 
-        std::vector<const ColumnUInt8::Container *> input_null_maps;
+        VectorWithMemoryTracking<const ColumnUInt8::Container *> input_null_maps;
         ColumnUInt8::MutablePtr result_null_map;
         ColumnUInt8::Container * result_null_map_data = nullptr;
 
@@ -454,9 +456,9 @@ class MidpointResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "midpoint";
-    static FunctionOverloadResolverPtr create(ContextPtr context)
+    static FunctionOverloadResolverPtr create(ContextPtr context_)
     {
-        return std::make_unique<MidpointResolver<SpecializedFunction>>(context);
+        return std::make_unique<MidpointResolver<SpecializedFunction>>(context_);
     }
 
     explicit MidpointResolver(ContextPtr context_)
@@ -486,7 +488,14 @@ public:
 
             if (!a0->isNullable() && !a1->isNullable())
             {
-                if (isNumber(a0) && isNumber(a1) && !isDecimal(a0) && !isDecimal(a1))
+                /// Only use the FunctionBinaryArithmetic fast-path when both argument
+                /// types are identical. Mixed types (e.g. Int64 + UInt64) can cause
+                /// the binary arithmetic's NumberTraits::ResultOfIf to produce a wider
+                /// result type (Int128) than what getLeastSupertype declared (Int64),
+                /// because getLeastSupertype may silently convert UInt64 literals that
+                /// fit into Int64. The generic FunctionMidpoint handles all type
+                /// combinations correctly by casting arguments to the result type first.
+                if (a0->equals(*a1) && isNumber(a0) && !isDecimal(a0))
                     return std::make_unique<FunctionToFunctionBaseAdaptor>(
                         SpecializedFunction::create(context), argument_types, return_type);
             }
@@ -503,7 +512,7 @@ public:
         return getLeastSupertype(types);
     }
 
-protected:
+private:
     ContextPtr context;
 };
 
