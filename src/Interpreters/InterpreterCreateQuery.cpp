@@ -1239,6 +1239,36 @@ namespace
             storage.settings->changes.insertSetting(change.name, change.value);
     }
 
+    /// Inherit the storage definition of the source table (in `CREATE TABLE x AS y <storage_clauses>` without
+    /// an explicit ENGINE) into the partial storage definition of the new table. The engine and every storage
+    /// clause (PARTITION BY, PRIMARY KEY, ORDER BY, SAMPLE BY, TTL, UNIQUE KEY) that was not explicitly
+    /// specified for the new table is taken from the source; explicitly specified clauses (and individual
+    /// SETTINGS) take precedence. This preserves the full inheritance of plain `CREATE TABLE x AS y` (engine,
+    /// keys, TTL, ...) while still allowing individual clauses and settings to be overridden, and it also
+    /// works when the source is a materialized view whose inherited engine lives in its inner storage.
+    void inheritStorageFromSource(ASTStorage & storage, const ASTStorage & source)
+    {
+        /// We only reach this for `CREATE TABLE x AS y <storage_clauses>` without an explicit ENGINE.
+        chassert(!storage.engine);
+        if (source.engine)
+            storage.set(storage.engine, source.engine->clone());
+
+        if (!storage.partition_by && source.partition_by)
+            storage.set(storage.partition_by, source.partition_by->clone());
+        if (!storage.primary_key && source.primary_key)
+            storage.set(storage.primary_key, source.primary_key->clone());
+        if (!storage.order_by && source.order_by)
+            storage.set(storage.order_by, source.order_by->clone());
+        if (!storage.sample_by && source.sample_by)
+            storage.set(storage.sample_by, source.sample_by->clone());
+        if (!storage.ttl_table && source.ttl_table)
+            storage.set(storage.ttl_table, source.ttl_table->clone());
+        if (!storage.unique_key && source.unique_key)
+            storage.set(storage.unique_key, source.unique_key->clone());
+
+        mergeStorageSettings(storage, source.settings);
+    }
+
     void setNullTableEngine(ASTStorage & storage)
     {
         storage.forEachPointerToChild([](IAST ** ptr, boost::intrusive_ptr<IAST> *)
@@ -1434,9 +1464,9 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             if (storage_def && storage_def->engine)
             {
                 /// `CREATE TABLE x AS y [storage_clauses]` without an explicit ENGINE: inherit the engine of `y`
-                /// and merge its settings under the explicitly specified ones (the latter take precedence).
-                create.storage->set(create.storage->engine, storage_def->engine->clone());
-                mergeStorageSettings(*create.storage, storage_def->settings);
+                /// together with every storage clause (keys, TTL, ...) that was not explicitly specified, and
+                /// merge its settings under the explicitly specified ones (the latter take precedence).
+                inheritStorageFromSource(*create.storage, *storage_def);
             }
             else
             {
