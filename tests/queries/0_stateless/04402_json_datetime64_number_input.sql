@@ -32,6 +32,19 @@ SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":1.703363853035e9}');
 SELECT '-- DateTime64(3): negative timestamp (before the epoch)';
 SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":-0.5}');
 
+SELECT '-- DateTime64(0): the Int64 ticks boundary is stored exactly, without wraparound';
+SELECT toInt64(t) FROM format(JSONEachRow, 't DateTime64(0)', '{"t":9223372036854775807}');
+SELECT toInt64(t) FROM format(JSONEachRow, 't DateTime64(0)', '{"t":-9223372036854775808}');
+
+SELECT '-- DateTime64: a value just outside the Int64 range is rejected, not silently wrapped';
+SELECT t FROM format(JSONEachRow, 't DateTime64(0)', '{"t":9223372036854775808}'); -- { serverError DECIMAL_OVERFLOW }
+SELECT t FROM format(JSONEachRow, 't DateTime64(0)', '{"t":-9223372036854775809}'); -- { serverError DECIMAL_OVERFLOW }
+SELECT t FROM format(Values, 't DateTime64(0)', '(9223372036854775808)'); -- { serverError DECIMAL_OVERFLOW }
+
+SELECT '-- DateTime64(3): the scale multiplication is range-checked too';
+SELECT toUnixTimestamp64Milli(t) FROM format(JSONEachRow, 't DateTime64(3)', '{"t":9223372036854775.807}');
+SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":9223372036854775808}'); -- { serverError DECIMAL_OVERFLOW }
+
 SELECT '-- DateTime64(3): a delimiter after the value is handled (more than one column)';
 SELECT * FROM format(JSONEachRow, 't DateTime64(3), n Int32', '{"t":1703363853.035,"n":7}');
 

@@ -19,6 +19,12 @@
 2023-12-23 20:37:33.035
 -- DateTime64(3): negative timestamp (before the epoch)
 1969-12-31 23:59:59.500
+-- DateTime64(0): the Int64 ticks boundary is stored exactly, without wraparound
+9223372036854775807
+-9223372036854775808
+-- DateTime64: a value just outside the Int64 range is rejected, not silently wrapped
+-- DateTime64(3): the scale multiplication is range-checked too
+9223372036854775807
 -- DateTime64(3): a delimiter after the value is handled (more than one column)
 2023-12-23 20:37:33.035	7
 -- DateTime64(3): try-path via Nullable and Variant

@@ -126,26 +126,46 @@ static inline bool tryReadText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, 
 /// An unquoted number in JSON or the Quoted format is a Unix timestamp (seconds since the epoch)
 /// with optional sub-second precision, e.g. `1703363853.035`. It is parsed as a decimal value at
 /// the column scale, exactly like `CAST`, `toDateTime64`, the `Values` format and the `Decimal`
-/// type (`DateTime64` is a `Decimal` underneath). One more digit than `Decimal`'s precision is
-/// allowed because a `DateTime64` spans the whole `Int64` range, so e.g. a 10-digit second count is
-/// valid even at scale 9. As with the previous `readIntText`, parsing stops at the first character
-/// that is not part of the number (e.g. the `,` or `}` that follows the value in JSON).
-static constexpr UInt32 datetime64_number_precision = std::numeric_limits<DateTime64::NativeType>::digits10 + 1;
+/// type (`DateTime64` is a `Decimal` underneath). As with the previous `readIntText`, parsing stops
+/// at the first character that is not part of the number (e.g. the `,` or `}` that follows the value
+/// in JSON).
+///
+/// The number is accumulated into a 128-bit temporary rather than directly into the `Int64` ticks of
+/// `DateTime64`. A `DateTime64` spans the whole `Int64` range, so an input near (or beyond) the
+/// `Int64` boundary would otherwise wrap around silently during accumulation; the wide temporary lets
+/// us range-check the final value and report `DECIMAL_OVERFLOW` instead. A 128-bit accumulator holds
+/// up to `max_precision<Decimal128>` (38) decimal digits, which covers the whole valid `DateTime64`
+/// range at every scale.
+static constexpr UInt32 datetime64_number_precision = DecimalUtils::max_precision<Decimal128>;
+
+/// Applies the `unread_scale` decimal places still pending after `readDecimalText` to scale the
+/// parsed `value` to ticks, then writes it into `x`. Returns false on overflow instead of throwing.
+static bool scaleAndStoreDateTime64(DateTime64 & x, Int128 value, UInt32 unread_scale)
+{
+    if (common::mulOverflow(value, DecimalUtils::scaleMultiplier<Int128>(unread_scale), value)
+        || value > std::numeric_limits<DateTime64::NativeType>::max()
+        || value < std::numeric_limits<DateTime64::NativeType>::min())
+        return false;
+    x.value = static_cast<DateTime64::NativeType>(value);
+    return true;
+}
 
 static void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
 {
+    Decimal128 tmp;
     UInt32 unread_scale = scale;
-    readDecimalText(istr, x, datetime64_number_precision, unread_scale);
-    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<DateTime64::NativeType>(unread_scale), x.value))
-        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow while parsing DateTime64");
+    readDecimalText(istr, tmp, datetime64_number_precision, unread_scale);
+    if (!scaleAndStoreDateTime64(x, tmp.value, unread_scale))
+        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric value is out of range for DateTime64");
 }
 
 static bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
 {
+    Decimal128 tmp;
     UInt32 unread_scale = scale;
-    if (!readDecimalText<DateTime64, bool>(istr, x, datetime64_number_precision, unread_scale, /*digits_only=*/false))
+    if (!readDecimalText<Decimal128, bool>(istr, tmp, datetime64_number_precision, unread_scale, /*digits_only=*/false))
         return false;
-    return !common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<DateTime64::NativeType>(unread_scale), x.value);
+    return scaleAndStoreDateTime64(x, tmp.value, unread_scale);
 }
 
 SerializationPtr SerializationDateTime64::create(UInt32 scale_, const TimezoneMixin & time_zone_)
