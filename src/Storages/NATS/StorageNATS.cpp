@@ -318,6 +318,7 @@ bool StorageNATS::subscribeConsumers()
     {
         try
         {
+            consumer->dropBuffered();
             consumer->subscribe();
             ++num_initialized;
         }

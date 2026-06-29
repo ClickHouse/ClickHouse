@@ -611,6 +611,66 @@ def test_commit_on_select_consumes_only_when_enabled(nats_cluster):
             )
 
 
+def test_direct_select_leftover_does_not_pollute_view(nats_cluster):
+    # A direct SELECT buffers JetStream messages (with their broker handles) in the consumer's local queue
+    # and, with commit_on_select=0, never acks them. If a view is attached afterwards, streaming reuses that
+    # consumer and must not reprocess those stale copies: acking a handle from the now-closed direct-read
+    # subscription crashes the server, and reprocessing duplicates rows once the broker also redelivers.
+    stream = "js_pollute_stream"
+    subject = "js_pollute_subject"
+    durable = "js_pollute_durable"
+    table = "nats_pollute"
+    n = 10
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=2)
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_stream = '{stream}',
+                     nats_consumer_name = '{durable}',
+                     nats_format = 'JSONEachRow',
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}';
+        """
+    )
+    jetstream_publish(nats_cluster, subject, 0, n)
+
+    # One direct read returns a single row (block size 1) and leaves the rest of the delivered burst
+    # buffered locally; retry until a read returns, confirming the burst was delivered.
+    for _ in range(40):
+        res = instance.query(
+            f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1",
+            ignore_error=True,
+        )
+        if res.strip():
+            break
+    assert jetstream_ack_pending(nats_cluster, stream, durable) == n
+
+    # Let the unacked messages pass ack_wait so the broker will redeliver them to the next subscription.
+    time.sleep(3)
+
+    # Attach a view: streaming reuses the same consumer, whose local queue still holds the stale copies.
+    instance.query(
+        f"""
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table};
+        """
+    )
+    wait_dst_count_at_least(table, n)
+    time.sleep(5)  # let any duplicate copies (stale + redelivery) finish landing before checking
+
+    # Every key must appear exactly once: stale local copies must not duplicate the broker's redelivery.
+    dups = instance.query(
+        f"SELECT key, count() FROM test.{table}_dst GROUP BY key HAVING count() > 1 ORDER BY key"
+    )
+    assert dups == "", f"stale direct-SELECT copies duplicated rows in the view: {dups}"
+
+
 def test_system_stop_all_background(nats_cluster):
     table = "nats_allbg"
     subject = "allbg_subject"
