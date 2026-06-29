@@ -641,7 +641,6 @@ Chunk ClusterMergingTransform::generate2D()
     }
 
     const Float64 d = cluster_distance;
-    const Float64 d_sq = d * d;
     const Float64 a = d / std::numbers::sqrt2;   /// Cell side; cell diagonal == d.
 
     /// Phase A: bucket each row into a cell of side `a`. Two rows in the same cell are
@@ -761,9 +760,13 @@ Chunk ClusterMergingTransform::generate2D()
             const auto & B = cells[cj];
 
             /// Axis-aligned BB early reject — no pair across cells can satisfy `d`.
+            /// Reject per-axis first, then confirm with `std::hypot`: `gap * gap`
+            /// can overflow to `+inf` for valid finite coordinates with a large `d`
+            /// (e.g. `d = 1e300`), and a squared comparison would then turn
+            /// `inf <= inf` into a false connection.
             Float64 gap_x = std::max({0.0, A.min_x - B.max_x, B.min_x - A.max_x});
             Float64 gap_y = std::max({0.0, A.min_y - B.max_y, B.min_y - A.max_y});
-            if (gap_x * gap_x + gap_y * gap_y > d_sq)
+            if (gap_x > d || gap_y > d || std::hypot(gap_x, gap_y) > d)
                 continue;
 
             bool connected = false;
@@ -775,7 +778,11 @@ Chunk ClusterMergingTransform::generate2D()
                 {
                     Float64 dxv = ax - x_vals[rb];
                     Float64 dyv = ay - y_vals[rb];
-                    if (dxv * dxv + dyv * dyv <= d_sq)
+                    /// Overflow-safe Euclidean test: reject per-axis first, then use
+                    /// `std::hypot`, which computes the distance without the
+                    /// `dxv * dxv` overflow to `+inf` that would merge points farther
+                    /// apart than `d` (e.g. `(0, 0)` and `(2e300, 0)` with `d = 1e300`).
+                    if (std::abs(dxv) <= d && std::abs(dyv) <= d && std::hypot(dxv, dyv) <= d)
                     {
                         connected = true;
                         break;
