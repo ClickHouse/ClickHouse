@@ -389,36 +389,29 @@ if __name__ == "__main__":
             # coverage even though the production binary may be unchanged, so for a
             # tests-only PR the per-file diff report is uninformative — we want to
             # show "which previously-uncovered code did these tests start to cover".
+            # Populate _changed_paths from the stored PR changed files written by
+            # store_data.py (BASE_COMMIT-relative, the actual PR diff). Do NOT parse
+            # changes.diff for this: changes.diff is anchored at FIRST_BASE_COMMIT
+            # (for genhtml line remapping), and when FIRST_BASE_COMMIT is older than
+            # BASE_COMMIT the file list includes unrelated master-side edits that
+            # would incorrectly flip _binary_unchanged=False.
             _changed_paths: set[str] = set()
-            _changes_diff = Path(TEMP_DIR) / "changes.diff"
-            if _changes_diff.exists():
+            _stored_files = Info().get_kv_data("changed_files") or []
+            if _stored_files:
+                _changed_paths = set(_stored_files)
+                print(f"Loaded {len(_changed_paths)} changed paths from stored PR data")
+            elif pr_number > 0 and base_commit_sha:
+                # Fall back to GitHub API with BASE_COMMIT when stored data is absent.
                 try:
-                    _file_re = re.compile(r"^(?:--- a/|\+\+\+ b/)(.+)$")
-                    with open(_changes_diff, encoding="utf-8", errors="replace") as _df:
-                        for _ln in _df:
-                            m = _file_re.match(_ln.rstrip("\n"))
-                            if m:
-                                _path = m.group(1)
-                                if _path != "/dev/null":
-                                    _changed_paths.add(_path)
+                    _gh_files = Shell.get_output(
+                        f"gh api repos/{repo_name}/compare/{base_commit_sha}...{current_commit_sha}"
+                        f" --jq '.files[].filename'",
+                        verbose=False,
+                    )
+                    _changed_paths = {p for p in _gh_files.splitlines() if p}
+                    print(f"Loaded {len(_changed_paths)} changed paths from GitHub API")
                 except Exception as _e:
-                    print(f"Warning: could not parse changes.diff for path detection: {_e}")
-            else:
-                # changes.diff is not written when generate_diff_coverage_report.sh
-                # exits early (no C/C++ files changed). Fall back to the GitHub API
-                # so that _binary_unchanged / _tests_changed are computed correctly
-                # for test-only and CI-only PRs.
-                if pr_number > 0 and base_commit_sha:
-                    try:
-                        _gh_files = Shell.get_output(
-                            f"gh api repos/{repo_name}/compare/{base_commit_sha}...{current_commit_sha}"
-                            f" --jq '.files[].filename'",
-                            verbose=False,
-                        )
-                        _changed_paths = {p for p in _gh_files.splitlines() if p}
-                        print(f"Loaded {len(_changed_paths)} changed paths from GitHub API (no changes.diff)")
-                    except Exception as _e:
-                        print(f"Warning: could not fetch changed files from GitHub API: {_e}")
+                    print(f"Warning: could not fetch changed files from GitHub API: {_e}")
 
             def _is_test_path(p: str) -> bool:
                 # Strict allowlist of paths containing runnable test
