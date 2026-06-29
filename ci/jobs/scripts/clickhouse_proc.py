@@ -536,31 +536,33 @@ profiles:
 
     def create_minio_log_tables(self):
         self.minio_setup_error = None
-        # create tables for minio log webhooks
-        res = Shell.check(
-            'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
-            verbose=True,
-        )
-        res = res and Shell.check(
-            'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
-            verbose=True,
-        )
-
-        res = res and Shell.check(
-            '/mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_server_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
-            verbose=True,
-            strict=True,
-        )
-        res = res and Shell.check(
-            '/mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_audit_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
-            verbose=True,
-            strict=True,
-        )
-        if not res:
-            self.minio_setup_error = (
-                "failed to create minio log tables / set clickminio webhook config"
-            )
-            return False
+        # Minio log setup is non-fatal (caller continues when this returns
+        # False). Every step MUST stay non-strict: a strict=True step would
+        # raise before we can record the reason and signal failure. Record the
+        # concrete failing sub-step so it reaches CIDB test_context_raw.
+        setup_steps = [
+            (
+                "create system.minio_audit_logs table",
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
+            ),
+            (
+                "create system.minio_server_logs table",
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
+            ),
+            (
+                "set clickminio logger_webhook config",
+                '/mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_server_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
+            ),
+            (
+                "set clickminio audit_webhook config",
+                '/mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_audit_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
+            ),
+        ]
+        for what, command in setup_steps:
+            if not Shell.check(command, verbose=True):
+                self.minio_setup_error = f"failed to {what}"
+                print(f"ERROR: Failed to {what}")
+                return False
 
         # Restart minio with a timeout to avoid hanging forever (see #97647).
         # If the restart hangs, kill minio and start it again.
