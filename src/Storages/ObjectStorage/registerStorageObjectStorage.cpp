@@ -2116,6 +2116,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
         },
         {
             .supports_settings = true,
+            .supports_sort_order = true, // for partition by
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
@@ -2293,6 +2294,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
         },
         {
             .supports_settings = true,
+            .supports_sort_order = true, // for partition by
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
@@ -2331,6 +2333,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
         },
         {
             .supports_settings = true,
+            .supports_sort_order = true, // for partition by
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
@@ -2368,6 +2371,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
         },
         {
             .supports_settings = true,
+            .supports_sort_order = true, // for partition by
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
