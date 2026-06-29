@@ -38,6 +38,65 @@ using AggregatedDataWithUInt16Key = FixedImplicitZeroHashMap<UInt16, AggregateDa
 using AggregatedDataWithUInt32Key = HashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 
+/** Cell for the special case when there are no aggregate functions (`GROUP BY` without aggregates,
+  * i.e. effectively `DISTINCT`). The Aggregator stores an `AggregateDataPtr` per key only to mark a
+  * cell as occupied (a `0x1` sentinel) and to satisfy generic code that binds `AggregateDataPtr &` to
+  * `getMapped`. We don't actually need per-key storage, so this cell keeps only the key (halving the
+  * cell footprint for `UInt64`: 8 bytes instead of 16) and routes `getMapped` to a per-thread dummy.
+  * The dummy is `thread_local` so the parallel two-level merge - where `dst` and `src` both resolve to
+  * the same dummy within a worker thread - is free of data races; with zero aggregate functions nothing
+  * meaningful is ever read from it.
+  */
+template <typename Key, typename Hash, typename TState = HashTableNoState>
+struct AggregatedDataVoidCell
+{
+    using State = TState;
+
+    using key_type = Key;
+    using value_type = Key;
+    using mapped_type = AggregateDataPtr;
+    using Mapped = AggregateDataPtr;
+
+    Key key;
+
+    AggregatedDataVoidCell() {} /// NOLINT
+    AggregatedDataVoidCell(const Key & key_, const State &) : key(key_) {}
+
+    static AggregateDataPtr & dummyMapped()
+    {
+        static thread_local AggregateDataPtr dummy = nullptr;
+        return dummy;
+    }
+
+    const Key & getKey() const { return key; }
+    AggregateDataPtr & getMapped() { return dummyMapped(); }
+    const AggregateDataPtr & getMapped() const { return dummyMapped(); }
+    const value_type & getValue() const { return key; }
+
+    static const Key & getKey(const value_type & value) { return value; } /// NOLINT(bugprone-return-const-ref-from-parameter)
+
+    bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
+
+    void setHash(size_t /*hash_value*/) {}
+    size_t getHash(const Hash & hash) const { return hash(key); }
+
+    bool isZero(const State & state) const { return isZero(key, state); }
+    static bool isZero(const Key & key_, const State & /*state*/) { return ZeroTraits::check(key_); }
+    void setZero() { ZeroTraits::set(key); }
+    static constexpr bool need_zero_value_storage = true;
+
+    void setMapped(const value_type & /*value*/) {}
+
+    void write(DB::WriteBuffer & wb) const         { DB::writeBinaryLittleEndian(key, wb); }
+    void writeText(DB::WriteBuffer & wb) const     { DB::writeDoubleQuoted(key, wb); }
+    void read(DB::ReadBuffer & rb)                 { DB::readBinaryLittleEndian(key, rb); }
+    void readText(DB::ReadBuffer & rb)             { DB::readDoubleQuoted(key, rb); }
+};
+
+using AggregatedDataWithUInt64KeyVoid = HashMapTable<UInt64, AggregatedDataVoidCell<UInt64, HashCRC32<UInt64>>, HashCRC32<UInt64>>;
+
 using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
 
 using AggregatedDataWithStringKey = HashMapWithSavedHash<std::string_view, AggregateDataPtr>;
@@ -47,6 +106,8 @@ using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256Hash
 
 using AggregatedDataWithUInt32KeyTwoLevel = TwoLevelHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
+
+using AggregatedDataWithUInt64KeyVoidTwoLevel = TwoLevelHashMapTable<UInt64, AggregatedDataVoidCell<UInt64, HashCRC32<UInt64>>, HashCRC32<UInt64>>;
 
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
 

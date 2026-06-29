@@ -35,6 +35,8 @@ template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithUInt8Key, fa
 template struct AggregationMethodOneNumber<UInt16, AggregatedDataWithUInt16Key, false>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>;
+template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoid, false>;
+template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoidTwoLevel, false>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>;

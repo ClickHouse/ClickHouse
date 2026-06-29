@@ -682,6 +682,12 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);
 
+    /// Special case of `GROUP BY` of a single UInt64 key with no aggregate functions (effectively `DISTINCT`):
+    /// use a void-mapped hash table that stores only keys (half the cell size, no dead `AggregateDataPtr` slot).
+    /// PROTOTYPE: gated by env var `CH_NO_VOID` so the same binary can A/B (set CH_NO_VOID=1 for the map baseline).
+    if (params.aggregates_size == 0 && method_chosen == AggregatedDataVariants::Type::key64 && !std::getenv("CH_NO_VOID"))
+        method_chosen = AggregatedDataVariants::Type::key64_void;
+
     /// TODO(ab): HashMethodSingleLowCardinalityColumn uses a hardcoded internal cache,
     /// which interferes with inline aggregation (e.g. for COUNT). This needs to be
     /// refactored to respect the `use_cache` setting.
