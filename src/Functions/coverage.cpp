@@ -34,7 +34,7 @@ enum class Kind : uint8_t
 /** If ClickHouse is built with coverage instrumentation (WITH_COVERAGE_DEPTH=1), returns arrays
   * of source files / line start numbers / line end numbers covered since the last reset.
   */
-class FunctionCoverageLines : public IFunction
+class FunctionCoverageLines final : public IFunction
 {
 private:
     Kind kind;
@@ -113,7 +113,7 @@ public:
 }
 
 /// Returns diagnostic info: (profile_data_records, covered_name_refs, coverage_map_size)
-class FunctionCoverageDiag : public IFunction
+class FunctionCoverageDiag final : public IFunction
 {
 public:
     String getName() const override { return "coverageDiag"; }
