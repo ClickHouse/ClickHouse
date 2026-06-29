@@ -5,7 +5,8 @@
 -- Pin settings necessary for two-level conversion to trigger.
 SET max_threads = 1;
 SET max_untracked_memory = 0;
-SET max_bytes_ratio_before_external_group_by = 0.5;
+SET max_bytes_before_external_group_by = 1000000000; -- Ensure conversion to two level is enabled even in single threaded cases.
+SET max_bytes_ratio_before_external_group_by = 0;
 SET group_by_two_level_threshold = 100000;
 SET group_by_two_level_threshold_bytes = 100000;
 
