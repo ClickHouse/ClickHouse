@@ -92,14 +92,6 @@
 03394_pr_insert_select
 03404_lazy_materialization_distributed
 
-# Test uses GNU-only tool behavior unavailable on BSD/macOS (hostname -i; zcat expecting .Z;
-# GNU grep escapes). Fixable by making the test portable.
-01854_HTTP_dict_decompression
-02205_HTTP_user_agent
-02233_HTTP_ranged
-02239_client_host_help
-04056_execute_as_format
-
 # Test env is missing a Python dep or helper binary here (numpy/pandas, lexer_test, ch symlink);
 # present on CI. Re-verify before unskipping.
 02294_anova_cmp

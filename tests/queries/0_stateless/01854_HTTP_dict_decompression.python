@@ -5,7 +5,6 @@ import gzip
 import lzma
 import os
 import socket
-import subprocess
 import sys
 import tempfile
 import threading
@@ -44,9 +43,9 @@ CLICKHOUSE_PORT_HTTP = os.environ.get("CLICKHOUSE_PORT_HTTP", "8123")
 #####################################################################################
 
 # IP-address of this host accessible from the outside world. Get the first one
-HTTP_SERVER_HOST = (
-    subprocess.check_output(["hostname", "-i"]).decode("utf-8").strip().split()[0]
-)
+# Bind the HTTP server to the host ClickHouse uses, taken from CLICKHOUSE_HOST (the canonical source)
+# and resolved to a numeric IP as is_ipv6 requires. Replaces the old `hostname -i` guess.
+HTTP_SERVER_HOST = socket.gethostbyname(os.environ.get("CLICKHOUSE_HOST", "127.0.0.1"))
 IS_IPV6 = is_ipv6(HTTP_SERVER_HOST)
 HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST, IS_IPV6)
 
