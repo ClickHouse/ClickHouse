@@ -284,6 +284,20 @@ function fuzz
     # the process is still present while the server is terminating and not
     # accepting the connections anymore.
 
+    # Default: the loop leaves this unset if it exhausts all retries via the
+    # "alive but busy" branches (TOO_MANY_SIMULTANEOUS_QUERIES /
+    # MEMORY_LIMIT_EXCEEDED / probe timeout); a dead server sets server_died=1
+    # and breaks. A receive/socket timeout means the server is alive but slow to
+    # answer (common right after a 30m ASAN fuzz run), not dead -- a dead server
+    # returns "Connection refused"/EOF instead -- so count repeated timeouts and
+    # only declare a hang once they persist, otherwise a single transient timeout
+    # turns a clean (exit 143) run into a bogus "server died" FAIL.
+    # BEGIN: server-liveness probe loop (exercised verbatim by
+    # ci/tests/test_fuzzer_liveness_loop.py)
+    server_died=0
+    timeouts=0
+    timeouts_max=12
+
     for _ in {1..100}
     do
         if clickhouse-client --receive_timeout=5 --query "SELECT 1" 2> err
@@ -295,12 +309,31 @@ function fuzz
             # SELECT * FROM remote('127.0.0.{1..255}', system, one)
             if grep -F 'TOO_MANY_SIMULTANEOUS_QUERIES' err
             then
-                # Give it some time to cool down
-                clickhouse-client --query "SHOW PROCESSLIST"
+                # Give it some time to cool down. The SHOW PROCESSLIST is only a
+                # diagnostic and runs under `set -e`; if the same overload rejects
+                # it, do not abort the script (that would skip the status.tsv
+                # write below and surface as a missing-status job ERROR).
+                clickhouse-client --query "SHOW PROCESSLIST" ||:
+                timeouts=0
                 sleep 1
             elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
             then
                 # Server is alive but at memory limit, give it time to reclaim
+                timeouts=0
+                sleep 1
+            elif grep -F 'Timeout exceeded while' err
+            then
+                # Alive but slow to answer: retry, and only treat it as a real
+                # hang once the timeouts persist (a dead server hits the branch
+                # below with "Connection refused"/EOF, not a timeout).
+                timeouts=$((timeouts + 1))
+                if [[ "$timeouts" -ge "$timeouts_max" ]]
+                then
+                    echo "Server live check: probe timed out $timeouts times, treating server as hung"
+                    cat err
+                    server_died=1
+                    break
+                fi
                 sleep 1
             else
                 echo "Server live check returns $?"
@@ -310,6 +343,7 @@ function fuzz
             fi
         fi
     done
+    # END: server-liveness probe loop
 
     # Stop the server in background so we can wait for the subshell to
     # finish in the foreground. We wait on server_bg_pid (the subshell running
