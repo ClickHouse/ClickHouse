@@ -646,12 +646,19 @@ public:
         PatchParts,
         DataMutations,
         AlterMutations,
+        MaskingPolicy,
     };
 
     static ColumnDefaultnessStatsUnavailableReason
     getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context, const MutationsSnapshotPtr & mutations_snapshot);
     ColumnDefaultnessStatsUnavailableReason getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const;
     static const char * columnDefaultnessStatsUnavailableReasonToString(ColumnDefaultnessStatsUnavailableReason reason);
+
+    /// True if an enabled masking policy applies to this table for the current user. Masking is
+    /// applied at read time as synthetic AlterConversions (see getAlterConversionsForPart) that
+    /// rewrite values but leave the on-disk defaultness stats untouched, so those stats can no
+    /// longer be trusted by the sparsity optimizations. Always false outside the Cloud build.
+    bool hasEnabledMaskingPolicies(const ContextPtr & query_context) const;
 
     /// Snapshot for MergeTree contains the current set of data parts
     /// and mutations required to be applied at the moment of the start of query.

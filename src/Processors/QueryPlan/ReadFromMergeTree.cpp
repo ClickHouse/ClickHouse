@@ -3521,6 +3521,10 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
 bool ReadFromMergeTree::supportsSparsityInfoOnDataRead() const
 {
     const auto & settings = context->getSettingsRef();
+    /// Masking rewrites values at read time, so on-disk sparse offsets can't be trusted to
+    /// prune granules at scan time either (see MergeTreeData::hasEnabledMaskingPolicies).
+    if (data.hasEnabledMaskingPolicies(context))
+        return false;
     return settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::DataRead && !query_info.isFinal()
         && !context->getCurrentTransaction() && query_info.query_tree && supportsPruningOnDataRead();
 }

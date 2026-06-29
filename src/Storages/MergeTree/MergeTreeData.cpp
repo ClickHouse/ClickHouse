@@ -9,6 +9,10 @@
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
+#if CLICKHOUSE_CLOUD
+#include <Access/ContextAccess.h>
+#include <Access/EnabledMaskingPolicies.h>
+#endif
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Utils.h>
@@ -6081,7 +6085,27 @@ MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_conte
     if (mutation_counters.num_alter > 0)
         return ColumnDefaultnessStatsUnavailableReason::AlterMutations;
 
+    /// Masking policies rewrite values at read time without touching `serialization.json`,
+    /// so the recorded `num_defaults` does not describe what the masked user reads.
+    if (hasEnabledMaskingPolicies(query_context))
+        return ColumnDefaultnessStatsUnavailableReason::MaskingPolicy;
+
     return ColumnDefaultnessStatsUnavailableReason::None;
+}
+
+bool MergeTreeData::hasEnabledMaskingPolicies(const ContextPtr & query_context) const
+{
+#if CLICKHOUSE_CLOUD
+    auto storage_id = getStorageID();
+    if (!storage_id.hasDatabase())
+        return false;
+    auto masking_policies = query_context->getAccess()->getEnabledMaskingPolicies();
+    return masking_policies && masking_policies->hasPolicies(storage_id.getDatabaseName(), storage_id.getTableName());
+#else
+    /// Masking policies only exist in the Cloud build.
+    (void)query_context;
+    return false;
+#endif
 }
 
 const char * MergeTreeData::columnDefaultnessStatsUnavailableReasonToString(ColumnDefaultnessStatsUnavailableReason reason)
@@ -6093,6 +6117,7 @@ const char * MergeTreeData::columnDefaultnessStatsUnavailableReasonToString(Colu
         case ColumnDefaultnessStatsUnavailableReason::PatchParts: return "table has patch parts";
         case ColumnDefaultnessStatsUnavailableReason::DataMutations: return "pending data mutations";
         case ColumnDefaultnessStatsUnavailableReason::AlterMutations: return "pending alter mutations";
+        case ColumnDefaultnessStatsUnavailableReason::MaskingPolicy: return "table has a masking policy";
     }
     UNREACHABLE();
 }

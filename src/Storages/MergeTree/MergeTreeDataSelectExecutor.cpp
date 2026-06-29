@@ -175,16 +175,24 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 namespace
 {
 
-/// True when pending mutations or transaction visibility make on-disk `num_defaults`
-/// stats unreliable for sparsity pruning / trivial-count rewrite on this query.
+/// True when pending mutations, transaction visibility, or read-time masking make on-disk
+/// `num_defaults` stats unreliable for sparsity pruning / trivial-count rewrite on this query.
 bool sparsityStatsUnsafeForQuery(
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
-    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot)
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const MergeTreeData & data)
 {
-    return query_info.isFinal()
+    if (query_info.isFinal()
         || MergeTreeData::getColumnDefaultnessStatsUnavailableReason(context, mutations_snapshot)
-        != MergeTreeData::ColumnDefaultnessStatsUnavailableReason::None;
+        != MergeTreeData::ColumnDefaultnessStatsUnavailableReason::None)
+        return true;
+
+    /// Masking rewrites values at read time, so on-disk stats can't be trusted (Cloud only).
+    if (data.hasEnabledMaskingPolicies(context))
+        return true;
+
+    return false;
 }
 
 }
@@ -848,13 +856,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
 {
     const auto & settings = context->getSettingsRef();
 
+    /// Nothing to prune; also lets us read the table off the first part below.
+    if (parts.empty())
+        return parts;
+
+    const MergeTreeData & data = parts.front().data_part->storage;
+
     /// Use the same defaultness-stats availability check as
     /// `MergeTreeData::getColumnDefaultnessStats`; `FINAL` and joined tables are
     /// additional query-shape constraints for pruning. Part-level pruning runs
     /// whenever the mode isn't `Off`; granule-level pruning runs in `Planning` /
     /// `DataRead` mode.
     if (settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::Off
-        || sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot)
+        || sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot, data)
         || queryHasJoinedTable(query_info.query_tree))
     {
         return parts;
@@ -949,7 +963,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
 
     /// `DataRead` mode defers granule analysis to scan time, so it skips this path.
     if (settings[Setting::use_sparsity_info_for_pruning] != SparsityPruningMode::Planning
-        || sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot)
+        || sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot, data)
         || queryHasJoinedTable(query_info.query_tree))
     {
         return parts;
