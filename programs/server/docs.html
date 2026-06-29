@@ -482,8 +482,10 @@
     let selected = -1;
     /// The id of the in-page section the user navigated to inside the open entity, if any.
     let current_section = '';
-    /// A lazily-loaded map from lower-cased entity name to {name, type}, used to turn relative
-    /// documentation links into in-app links when they point to another documented entity.
+    /// A lazily-loaded map from lower-cased entity name to the list of {name, type} entities that
+    /// share it, used to turn relative documentation links into in-app links when they point to
+    /// another documented entity. The value is a list because names are not unique across types
+    /// (e.g. `JSON` is both a data type and a format); a link is disambiguated by its target route.
     let all_names = null;
 
     /// Used to discard responses of queries that were superseded by a newer keystroke.
@@ -1041,6 +1043,42 @@
         return text.trim().toLowerCase().replace(/[^\w]+/g, '-').replace(/^-+|-+$/g, '');
     }
 
+    /// The entity type documented under each docs route section, used to disambiguate a link whose
+    /// target name exists under more than one type. Keyed by a path segment that appears in the href.
+    const DOCS_SECTION_TYPE = {
+        'data-types': 'Data Type',
+        'formats': 'Format',
+        'functions': 'Function',
+        'aggregate-functions': 'Aggregate Function',
+        'table-functions': 'Table Function',
+        'table-engines': 'Table Engine',
+        'database-engines': 'Database Engine',
+        'system-tables': 'System Table',
+    };
+
+    /// The documented entity type implied by a relative link's target route, or null when the route
+    /// carries no such hint. For example `/interfaces/formats/JSON` points at the `Format` named
+    /// `JSON`, not the `Data Type` of the same name.
+    function typeFromDocsHref(href) {
+        const path = href.split('#')[0].split('?')[0];
+        for (const seg of path.split('/'))
+            if (DOCS_SECTION_TYPE[seg]) return DOCS_SECTION_TYPE[seg];
+        return null;
+    }
+
+    /// Resolve a relative link's candidate `term` to a single documented entity, or null when it is
+    /// not documented or cannot be resolved unambiguously. A single same-named entity is used
+    /// directly; when several share the name (e.g. the `JSON` data type and the `JSON` format) the
+    /// link's target route disambiguates, and if it cannot, the link is left as an external docs link
+    /// rather than guessing the wrong entity.
+    function resolveDocEntity(term, href) {
+        const list = term && all_names ? all_names.get(term.toLowerCase()) : null;
+        if (!list || !list.length) return null;
+        if (list.length === 1) return list[0];
+        const type = typeFromDocsHref(href);
+        return (type && list.find(e => e.type === type)) || null;
+    }
+
     /// Rewrite the links inside a rendered document:
     ///   - in-page anchors (`#id`) navigate within the open entity;
     ///   - relative links to another documented entity open that entity in this app;
@@ -1064,8 +1102,7 @@
                 continue;
             }
 
-            const term = candidateTerm(a, href);
-            const entity = term && all_names ? all_names.get(term.toLowerCase()) : null;
+            const entity = resolveDocEntity(candidateTerm(a, href), href);
             if (entity) {
                 a.classList.add('doc-internal-link');
                 a.href = stateToHash({ q: $search.value.trim(), name: entity.name, type: entity.type, section: '' });
@@ -1088,6 +1125,36 @@
         return seg || null;
     }
 
+    /// Canonical docs route for a relative-link section directory. The embedded documentation links
+    /// across sections with repository-relative paths such as `../data-types/int-uint.md`, but the
+    /// docs site serves each section under a fixed route (data types live at `/sql-reference/data-types`),
+    /// so a relative path cannot just be appended to the docs root. Sections whose directory name is
+    /// unique in the docs tree are mapped to their route here; the leading segment of the cleaned
+    /// relative path is matched against it.
+    const DOCS_SECTION_ROUTE = {
+        'data-types': '/sql-reference/data-types',
+        'functions': '/sql-reference/functions',
+        'aggregate-functions': '/sql-reference/aggregate-functions',
+        'window-functions': '/sql-reference/window-functions',
+        'table-functions': '/sql-reference/table-functions',
+        'statements': '/sql-reference/statements',
+        'operators': '/sql-reference/operators',
+        'formats': '/interfaces/formats',
+        'system-tables': '/operations/system-tables',
+        'settings': '/operations/settings',
+        'server-configuration-parameters': '/operations/server-configuration-parameters',
+        'table-engines': '/engines/table-engines',
+        'database-engines': '/engines/database-engines',
+    };
+
+    /// Top-level docs route roots: when a link's leading segment is one of these it is already a full
+    /// route (only the docs base is prepended), even if it arrived through `../` segments.
+    const DOCS_ROUTE_ROOTS = new Set([
+        'sql-reference', 'operations', 'interfaces', 'engines', 'guides', 'development',
+        'cloud', 'integrations', 'getting-started', 'concepts', 'use-cases', 'whats-new',
+        'native-protocol', 'chdb', 'faq', 'tutorial', 'about-us',
+    ]);
+
     function toDocsURL(href) {
         const base = 'https://clickhouse.com/docs';
         /// The embedded documentation links to source files by their repository path, keeping the
@@ -1096,13 +1163,29 @@
         /// part only, preserving any `#fragment`/`?query` suffix.
         const [, path, suffix] = /^([^?#]*)(.*)$/.exec(href);
         const cleanPath = path.replace(/\.mdx?$/, '');
+
+        /// An absolute docs path is used as is.
         if (cleanPath.startsWith('/')) return base + cleanPath + suffix;
-        return base + '/' + cleanPath.replace(/^(\.\.?\/)+/, '') + suffix;
+
+        /// A relative path (`./x`, `../section/x`): its `../` segments cannot be resolved against the
+        /// docs root, because the page they come from lives under a section route. Drop the leading
+        /// `./`/`../` and resolve the first remaining segment to its canonical route when it names a
+        /// known section or is already a route root; otherwise fall back to the docs root.
+        const rel = cleanPath.replace(/^(\.\.?\/)+/, '');
+        const slash = rel.indexOf('/');
+        const head = slash === -1 ? rel : rel.slice(0, slash);
+        const tail = slash === -1 ? '' : rel.slice(slash); /// keeps its leading '/'
+        if (DOCS_ROUTE_ROOTS.has(head)) return base + '/' + rel + suffix;
+        if (DOCS_SECTION_ROUTE[head]) return base + DOCS_SECTION_ROUTE[head] + tail + suffix;
+        return base + '/' + rel + suffix;
     }
 
     /// Turn an inline `code` element into an in-app link when its text is a documented entity.
     function linkifyCode(code) {
-        const entity = all_names ? all_names.get(code.textContent.trim().toLowerCase()) : null;
+        /// A `Related:`/`Alias of` reference carries no target route, so only an unambiguous (single)
+        /// match is linkified; a name shared across types is left as plain inline code.
+        const list = all_names ? all_names.get(code.textContent.trim().toLowerCase()) : null;
+        const entity = list && list.length === 1 ? list[0] : null;
         if (!entity) return;
         const a = document.createElement('a');
         a.className = 'doc-internal-link';
@@ -1259,7 +1342,9 @@
                 if (!line) continue;
                 const row = JSON.parse(line);
                 const key = row.name.toLowerCase();
-                if (!map.has(key)) map.set(key, row);
+                let list = map.get(key);
+                if (!list) { list = []; map.set(key, list); }
+                list.push(row);
             }
         } catch (e) {
             console.log(e); /// Without this map, links simply fall back to clickhouse.com/docs.
