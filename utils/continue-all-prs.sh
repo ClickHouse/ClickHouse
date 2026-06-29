@@ -18,7 +18,8 @@ set -euo pipefail
 #   MERGED / CLOSED - the PR's state changed
 #   NO-CHANGE       - clean run, nothing pushed (e.g. already green / nothing to do)
 #   NEEDS-ATTENTION - clean run, nothing pushed, but still CONFLICTING: needs a
-#                     human decision (resolve a huge conflict, or close as obsolete)
+#                     human decision (resolve a huge conflict, or close as
+#                     obsolete). A comment is posted on the PR (once) to flag it.
 #   FAILED / TIMEOUT - the worker errored or hit the per-PR timeout
 # A clean `claude` exit does not by itself mean progress, so the status is based
 # on whether the PR head advanced rather than just the exit code.
@@ -352,6 +353,30 @@ cleanup()
 trap cleanup EXIT
 trap 'echo; banner "Interrupted, stopping..."; exit 130' INT TERM
 
+# Hidden marker so we comment at most once per PR (across rounds and runs).
+NEEDS_ATTENTION_MARKER='<!-- continue-all-prs: needs-attention -->'
+
+# Leave a comment on a PR that needs a human decision, unless we already did.
+# Prints one of: posted | exists | failed.
+post_needs_attention_comment()
+{
+    local number="$1" summary="$2" existing
+    existing=$(gh pr view "$number" --repo "$REPO" --json comments \
+        --jq '.comments[].body' 2>/dev/null || echo "")
+    if printf '%s' "$existing" | grep -qF "$NEEDS_ATTENTION_MARKER"; then
+        printf 'exists'
+        return 0
+    fi
+    if gh pr comment "$number" --repo "$REPO" --body "$NEEDS_ATTENTION_MARKER
+An automated \`/continue-pr\` pass could not advance this PR: it is still \`CONFLICTING\` and nothing was pushed, so it needs a manual decision - resolve the conflict against the base branch, or close it if it is obsolete.
+
+Summary from the automated pass: $summary" >/dev/null 2>&1; then
+        printf 'posted'
+    else
+        printf 'failed'
+    fi
+}
+
 process_pr()
 {
     local i="$1" wt="$2" number="$3" title="$4"
@@ -412,6 +437,15 @@ process_pr()
 
         status="$outcome; state=$pr_state mergeable=$pr_mergeable review=$pr_review"
         summary=$(summarize_log "$log")
+
+        # A PR that needs a human decision always gets a comment (posted once).
+        if [[ "$outcome" == NEEDS-ATTENTION ]]; then
+            case "$(post_needs_attention_comment "$number" "$summary")" in
+                posted) status+="; commented" ;;
+                exists) status+="; comment exists" ;;
+                *)      status+="; comment failed" ;;
+            esac
+        fi
     fi
 
     ts=$(date +%H:%M:%S)
