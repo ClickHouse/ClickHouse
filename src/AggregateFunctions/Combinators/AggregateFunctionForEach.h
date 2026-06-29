@@ -104,11 +104,18 @@ private:
                 throw;
             }
 
-            for (i = 0; i < old_size; ++i)
+            /// When nested_size_of_data == 0 (e.g. nothingState), arena.alignedAlloc(0)
+            /// may return the same address for new_state and old_state, so merge() would
+            /// be called with place == rhs, violating IAggregateFunction::merge invariant.
+            /// For zero-size states the merge is always a no-op, so skip it.
+            if (nested_size_of_data != 0)
             {
-                nested_func->merge(&new_state[i * nested_size_of_data],
-                        &old_state[i * nested_size_of_data],
-                        &arena);
+                for (i = 0; i < old_size; ++i)
+                {
+                    nested_func->merge(&new_state[i * nested_size_of_data],
+                            &old_state[i * nested_size_of_data],
+                            &arena);
+                }
             }
 
             state.array_of_aggregate_datas = new_state;
@@ -264,15 +271,21 @@ public:
         const AggregateFunctionForEachData & rhs_state = data(rhs);
         AggregateFunctionForEachData & state = ensureAggregateData(place, rhs_state.dynamic_array_size, *arena);
 
-        const char * rhs_nested_state = rhs_state.array_of_aggregate_datas;
-        char * nested_state = state.array_of_aggregate_datas;
-
-        for (size_t i = 0; i < state.dynamic_array_size && i < rhs_state.dynamic_array_size; ++i)
+        /// When nested_size_of_data == 0 all elements map to the same address, so
+        /// nested_func->merge would be called with place == rhs on every iteration.
+        /// The merge is a no-op for zero-size states, so skip the loop entirely.
+        if (nested_size_of_data != 0)
         {
-            nested_func->merge(nested_state, rhs_nested_state, arena);
+            const char * rhs_nested_state = rhs_state.array_of_aggregate_datas;
+            char * nested_state = state.array_of_aggregate_datas;
 
-            rhs_nested_state += nested_size_of_data;
-            nested_state += nested_size_of_data;
+            for (size_t i = 0; i < state.dynamic_array_size && i < rhs_state.dynamic_array_size; ++i)
+            {
+                nested_func->merge(nested_state, rhs_nested_state, arena);
+
+                rhs_nested_state += nested_size_of_data;
+                nested_state += nested_size_of_data;
+            }
         }
     }
 
