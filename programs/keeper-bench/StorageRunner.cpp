@@ -181,7 +181,6 @@ void StorageRunner::setupStorage()
     settings->loadFromConfig("storage.coordination_settings", *config_ptr);
     keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper=*/true, settings);
     keeper_context->setLocalLogsPreprocessed();
-    keeper_context->setRocksDBOptions();
     keeper_context->setServerState(DB::KeeperContext::Phase::RUNNING);
 
     storage = std::make_unique<Storage>(tick_time_ms, /*superdigest=*/"", keeper_context);

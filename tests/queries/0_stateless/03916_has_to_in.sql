@@ -6,6 +6,8 @@ SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS tab;
 
+SET explain_query_plan_default = 'legacy';
+
 CREATE TABLE tab
 (
     id UInt32,

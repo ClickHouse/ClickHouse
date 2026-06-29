@@ -595,6 +595,14 @@ MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings 
 }
 
 
+/// Reference (don't copy) zero-length STR/BIN payloads: msgpack copies them via
+/// memcpy(dst, null, 0), which is UB under the nonnull attribute. The empty payload
+/// is never dereferenced during schema inference.
+static bool msgpackReferenceEmptyData(msgpack::type::object_type, size_t size, void *)
+{
+    return size == 0;
+}
+
 msgpack::object_handle MsgPackSchemaReader::readObject()
 {
     if (buf.eof())
@@ -609,7 +617,9 @@ msgpack::object_handle MsgPackSchemaReader::readObject()
         offset = 0;
         try
         {
-            object_handle = msgpack::unpack(buf.position(), buf.buffer().end() - buf.position(), offset);
+            object_handle = msgpack::unpack(
+                buf.position(), buf.buffer().end() - buf.position(), offset,
+                msgpackReferenceEmptyData, nullptr, msgpack::unpack_limit());
             need_more_data = false;
         }
         catch (msgpack::insufficient_bytes &)
@@ -777,7 +787,7 @@ ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data
 
 Writing to a file ".msgpk":
 
-```sql
+```bash
 $ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
 $ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
 $ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;

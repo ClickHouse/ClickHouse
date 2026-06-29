@@ -3,6 +3,9 @@
 #include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <Common/NetException.h>
+#include <Poco/Net/NetException.h>
+#include <exception>
 #include <thread>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -14,6 +17,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/HTTPCommon.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 namespace ProfileEvents
@@ -31,7 +35,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_ai_functions;
-    extern const SettingsString ai_function_credentials;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
@@ -45,7 +48,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -71,23 +73,19 @@ String sanitizeTextForAI(std::string_view input)
 
 FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context(context_)
 {
-    const auto & settings = getContext()->getSettingsRef();
-    if (!settings[Setting::allow_experimental_ai_functions])
+    if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
-
-    credentials_collection_name = settings[Setting::ai_function_credentials];
 }
 
-FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection(const ContextPtr & context, const String & collection_name)
+FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection(const ContextPtr & context, const ColumnPtr & first_arg)
 {
-    AINamedCollectionConfig config;
-    config.collection_name = collection_name;
+    const auto * col_const = typeid_cast<const ColumnConst *>(first_arg.get());
+    if (!col_const)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument to AI function must be a named collection (constant String)");
 
-    if (config.collection_name.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "AI functions require credentials: set the `ai_function_credentials` setting to the name of a named collection "
-            "containing the provider configuration (`provider`, `endpoint`, `model`, ...)");
+    AINamedCollectionConfig config;
+    config.collection_name = col_const->getValue<String>();
 
     context->checkAccess(AccessType::NAMED_COLLECTION, config.collection_name);
 
@@ -120,9 +118,49 @@ UInt64 FunctionBaseAI::computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 att
     return delay_ms;
 }
 
-FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig() const
+bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr eptr)
 {
-    auto base = resolveAINamedCollection(getContext(), credentials_collection_name);
+    /// Catch order matters: more derived exception types must come first.
+    try
+    {
+        std::rethrow_exception(eptr);
+    }
+    catch (const AIProviderHTTPException & e)
+    {
+        return isRetriableHTTPError(e.getHTTPStatus());
+    }
+    catch (const NetException &)
+    {
+        /// ClickHouse-level network error (e.g. a DNS failure raised by the HTTP connection pool).
+        return true;
+    }
+    catch (const Poco::Net::NetException &)
+    {
+        /// Connection refused/reset, TLS connect failure, or an unreachable advertised address.
+        return true;
+    }
+    catch (const Poco::TimeoutException &)
+    {
+        /// Connect or receive timeout.
+        return true;
+    }
+    catch (const Poco::IOException & e)
+    {
+        /// Write-side transient I/O failure, e.g. a broken pipe (`EPIPE`) when the peer resets the
+        /// connection mid-request. Out-of-file-descriptors (`EMFILE`) is not retriable.
+        return e.code() != POCO_EMFILE;
+    }
+    catch (...)
+    {
+        /// Ok: any other exception is a deterministic argument/usage error (malformed provider
+        /// response, bad configuration, JSON parse failure, …) — retrying would only repeat it.
+        return false;
+    }
+}
+
+FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTypeAndName & arguments) const
+{
+    auto base = resolveAINamedCollection(getContext(), arguments[0].column);
 
     ResolvedConfig config;
     config.provider = std::move(base.provider);
@@ -158,7 +196,7 @@ float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & argument
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    auto config = resolveConfig();
+    auto config = resolveConfig(arguments);
 
     /// Row-independent validation must run before the zero-row fast path so malformed constant
     /// arguments fail consistently regardless of source size.
@@ -230,6 +268,12 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
+            /// Enforce the API-call quota before every provider request, including retries, so a flaky
+            /// endpoint can't dispatch more than `ai_function_max_api_calls_per_query` requests per query.
+            /// Kept outside the `try` so a `throw_on_quota_exceeded` throw is not caught by the retry handler.
+            if (quota.checkQuotas())
+                break;
+
             try
             {
                 AIRequest ai_request;
@@ -254,21 +298,16 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 success = true;
                 break;
             }
-            catch (const Exception & e)
+            catch (...)
             {
-                if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+                /// Retry transient failures (network errors, provider-side HTTP errors) like the
+                /// `url` table function does; deterministic errors are surfaced immediately.
+                if (attempt < max_retries && isRetriableProviderError(std::current_exception()))
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));
                     continue;
                 }
 
-                if (!throw_on_error)
-                    break;
-
-                throw;
-            }
-            catch (...) /// Handle non-DB exceptions (e.g. Poco network/JSON errors) for throw_on_error semantics
-            {
                 if (!throw_on_error)
                     break;
 

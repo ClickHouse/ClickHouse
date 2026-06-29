@@ -16,7 +16,7 @@ private:
 
     /* Nested tuple serialization that handles all the FixedString columns */
     SerializationPtr nested;
-    /* Size of the vector element: 16, 32, 64 */
+    /* Size of the vector element: 8, 16, 32, 64 */
     size_t element_size;
     /* Number of elements in the vector */
     size_t dimension;

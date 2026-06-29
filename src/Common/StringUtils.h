@@ -350,6 +350,9 @@ inline bool isValidIdentifier(std::string_view str)
             && toLowerIfAlphaASCII(str[3]) == 'l');
 }
 
-std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
+/// Returns {fixed_prefix, is_perfect_prefix, is_exact}.
+/// `is_exact` is true when the pattern has no wildcard at all and is therefore equivalent to an exact match
+/// of `fixed_prefix` (e.g. 'a\%b' is exact and matches only 'a%b'); in that case the prefix is always returned.
+std::tuple<String, bool, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
 
 String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix);
