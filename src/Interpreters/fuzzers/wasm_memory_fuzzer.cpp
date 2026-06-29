@@ -2,6 +2,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
+#include <Common/StopToken.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/WebAssembly/WasmEngine.h>
 #include <Interpreters/WebAssembly/WasmTypes.h>
@@ -61,7 +62,8 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
 
     const std::string_view wasm_bytes(
         reinterpret_cast<const char *>(kMinimalWasm), sizeof(kMinimalWasm));
-    wasm_module = engine->compileModule("wasm_memory_fuzzer", wasm_bytes);
+    /// The module carries no code (only a memory section), so fuel accounting is unnecessary.
+    wasm_module = engine->compileModule("wasm_memory_fuzzer", wasm_bytes, FuelMode::Disabled);
 
     return 0;
 }
@@ -93,11 +95,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         memcpy(&ptr_val, data, 4);
         memcpy(&size_val, data + 4, 4);
 
-        WasmModule::Config cfg;
+        WasmModule::Config cfg(FuelMode::Disabled); /// no instruction budget needed (no code)
         cfg.memory_limit = 64 * 1024; /// 1 page (64 KiB) — matches kMinimalWasm
-        cfg.fuel_limit = 0;           /// no instruction budget needed (no code)
 
-        auto compartment = wasm_module->instantiate(cfg);
+        auto compartment = wasm_module->instantiate(cfg, StopToken{});
 
         /// This call must throw (or return a valid in-bounds span) — it must
         /// never return an out-of-bounds span regardless of ptr_val + size_val

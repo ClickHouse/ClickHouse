@@ -73,15 +73,16 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 #endif
 
         /// Attempt to compile the fuzzer-supplied bytes as a WASM module.
-        auto module = engine->compileModule("fuzzer_module", wasm_bytes);
+        /// Fuel accounting is enabled so a fuzzer-supplied `(start)` function cannot loop forever.
+        auto module = engine->compileModule("fuzzer_module", wasm_bytes, FuelMode::Enabled);
 
         /// Instantiate with conservative resource limits to prevent infinite loops
         /// and excessive memory use inside guest code.
-        WasmModule::Config cfg;
+        WasmModule::Config cfg(FuelMode::Enabled);
         cfg.memory_limit = 16 * 1024 * 1024; /// 16 MiB guest memory
         cfg.fuel_limit = 1'000'000;            /// limit guest instructions
 
-        auto compartment = module->instantiate(cfg);
+        auto compartment = module->instantiate(cfg, StopToken{});
 
         /// Try to call common entry-point exports if they exist.
         /// Both calls are wrapped individually so one failing does not skip the other.
