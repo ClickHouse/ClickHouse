@@ -15,7 +15,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int UNSUPPORTED_JOIN_KEYS;
 extern const int LOGICAL_ERROR;
 }
 
