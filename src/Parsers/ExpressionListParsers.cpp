@@ -2048,7 +2048,7 @@ public:
         if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             return false;
 
-        auto predict = std::make_shared<ASTPredictQuery>();
+        auto predict = make_intrusive<ASTPredictQuery>();
         predict->model_name = model_name;
         predict->table_name = table_name;
 

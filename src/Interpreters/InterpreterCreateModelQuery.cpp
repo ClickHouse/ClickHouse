@@ -89,7 +89,7 @@ BlockIO InterpreterCreateModelQuery::execute()
         StorageID table_id{context->getCurrentDatabase(), table_name};
         StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, context);
 
-        const auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+        const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
         if (!metadata_snapshot->columns.hasPhysical(target_name))
             throw Exception(
@@ -109,7 +109,7 @@ BlockIO InterpreterCreateModelQuery::execute()
     while (executor.pull(block)) {
         for (size_t row = 0; row < block.rows(); ++row) {
             Features features;
-            Target target;
+            Target target = 0;
 
             for (const auto& column: block.getColumnsWithTypeAndName())
             {
@@ -141,6 +141,7 @@ BlockIO InterpreterCreateModelQuery::execute()
     return {};
 }
 
+void registerInterpreterCreateModelQuery(InterpreterFactory & factory);
 void registerInterpreterCreateModelQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

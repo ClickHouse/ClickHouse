@@ -10,7 +10,7 @@ namespace DB
 
 bool ParserPredictQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto model = std::make_shared<ASTPredictQuery>();
+    auto model = make_intrusive<ASTPredictQuery>();
 
     ParserKeyword s_predict(Keyword::PREDICT);
     ParserKeyword s_model(Keyword::MODEL);

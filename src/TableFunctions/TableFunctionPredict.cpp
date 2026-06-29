@@ -10,6 +10,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Models/ModelRegistry.h>
 #include <Columns/ColumnsNumber.h>
 #include <Storages/StorageValues.h>

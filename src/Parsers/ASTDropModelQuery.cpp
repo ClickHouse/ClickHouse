@@ -7,7 +7,7 @@ namespace DB
 
 ASTPtr ASTDropModelQuery::clone() const
 {
-    auto res = std::make_shared<ASTDropModelQuery>(*this);
+    auto res = make_intrusive<ASTDropModelQuery>(*this);
     res->children.clear();
 
     res->model_name = model_name->clone();
@@ -18,10 +18,9 @@ ASTPtr ASTDropModelQuery::clone() const
 
 void ASTDropModelQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "DROP MODEL ";
+    ostr << "DROP MODEL ";
     if (if_exists)
         ostr << "IF EXISTS ";
-    ostr << (settings.hilite ? hilite_none : "");
     model_name->format(ostr, settings, state, frame);
 }
 

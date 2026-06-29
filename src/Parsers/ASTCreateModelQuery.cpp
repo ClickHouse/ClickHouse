@@ -13,14 +13,17 @@ String ASTCreateModelQuery::getID(char delim) const
 
 ASTPtr ASTCreateModelQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateModelQuery>(*this);
+    auto res = make_intrusive<ASTCreateModelQuery>(*this);
     res->children.clear();
 
     res->algorithm = algorithm->clone();
     res->children.push_back(res->algorithm);
 
-    res->options = options->clone();
-    res->children.push_back(res->options);
+    if (options)
+    {
+        res->options = options->clone();
+        res->children.push_back(res->options);
+    }
 
     res->target = target->clone();
     res->children.push_back(res->target);
@@ -35,21 +38,23 @@ void ASTCreateModelQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     frame.need_parens = false;
 
-    ostr << (format_settings.hilite ? hilite_keyword : "") << "CREATE MODEL " << (format_settings.hilite ? hilite_none : "");
+    ostr << "CREATE MODEL ";
     model_name->format(ostr, format_settings, state, frame);
 
-    ostr << (format_settings.hilite ? hilite_keyword : "") << "ALGORITHM " << (format_settings.hilite ? hilite_none : "");
+    ostr << " ALGORITHM ";
     algorithm->format(ostr, format_settings, state, frame);
 
-    ostr << (format_settings.hilite ? hilite_keyword : "") << "OPTIONS" << (format_settings.hilite ? hilite_none : "");
-    ostr << " (";
-    options->format(ostr, format_settings, state, frame);
-    ostr << " )";
+    if (options)
+    {
+        ostr << " OPTIONS (";
+        options->format(ostr, format_settings, state, frame);
+        ostr << ")";
+    }
 
-    ostr << (format_settings.hilite ? hilite_keyword : "") << "TARGET " << (format_settings.hilite ? hilite_none : "");
+    ostr << " TARGET ";
     target->format(ostr, format_settings, state, frame);
 
-    ostr << (format_settings.hilite ? hilite_keyword : "") << "FROM TABLE" << (format_settings.hilite ? hilite_none : "");
+    ostr << " FROM TABLE ";
     table_name->format(ostr, format_settings, state, frame);
 }
 

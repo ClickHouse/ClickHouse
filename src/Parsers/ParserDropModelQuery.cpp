@@ -9,7 +9,7 @@ namespace DB
 
 bool ParserDropModelQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto drop_model_query = std::make_shared<ASTDropModelQuery>();
+    auto drop_model_query = make_intrusive<ASTDropModelQuery>();
 
     ParserKeyword s_drop(Keyword::DROP);
     ParserKeyword s_model(Keyword::MODEL);

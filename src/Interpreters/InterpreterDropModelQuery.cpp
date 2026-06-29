@@ -24,6 +24,7 @@ BlockIO InterpreterDropModelQuery::execute()
     return {};
 }
 
+void registerInterpreterDropModelQuery(InterpreterFactory & factory);
 void registerInterpreterDropModelQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

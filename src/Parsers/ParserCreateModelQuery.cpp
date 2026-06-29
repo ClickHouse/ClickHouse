@@ -11,7 +11,7 @@ namespace DB
 
 bool ParserCreateModelQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto model = std::make_shared<ASTCreateModelQuery>();
+    auto model = make_intrusive<ASTCreateModelQuery>();
 
     ParserKeyword s_create(Keyword::CREATE);
     ParserKeyword s_model(Keyword::MODEL);

@@ -13,7 +13,7 @@ String ASTPredictQuery::getID(char delim) const
 
 ASTPtr ASTPredictQuery::clone() const
 {
-    auto res = std::make_shared<ASTPredictQuery>(*this);
+    auto res = make_intrusive<ASTPredictQuery>(*this);
     res->children.clear();
 
     res->model_name = model_name->clone();
@@ -29,16 +29,16 @@ void ASTPredictQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & form
 {
     frame.need_parens = false;
 
-    ostr << (format_settings.hilite ? hilite_function : "") << "PREDICT " << (format_settings.hilite ? hilite_none : "");
+    ostr << "PREDICT ";
 
     ostr << "(";
 
-    ostr << (format_settings.hilite ? hilite_keyword : "") << "MODEL " << (format_settings.hilite ? hilite_none : "");
+    ostr << "MODEL ";
     model_name->format(ostr, format_settings, state, frame);
 
     ostr << ", ";
 
-    ostr << (format_settings.hilite ? hilite_keyword : "") << "TABLE " << (format_settings.hilite ? hilite_none : "");
+    ostr << "TABLE ";
     table_name->format(ostr, format_settings, state, frame);
 
     ostr << ")";
