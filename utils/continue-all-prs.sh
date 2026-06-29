@@ -11,13 +11,23 @@ set -euo pipefail
 # worker becomes free first, so the work is distributed evenly regardless of how
 # long each PR takes.
 #
-# Output is intentionally terse: one line when a PR is assigned to a worker and
-# one line when it finishes (with the PR's status afterwards). The per-PR lines
-# are colored with a 24-bit (truecolor) color derived from a hash of the PR
-# number, using the same YCbCr scheme ClickHouse uses to color its log messages
-# (see base/base/terminalColors.cpp). The full `/continue-pr` transcript of each
-# PR is written to a per-PR log file under tmp/continue-all-prs/ instead of the
-# terminal.
+# Output is intentionally terse: one line when a PR is assigned to a worker, and
+# when it finishes a status line plus a one-to-two sentence summary of what was
+# done. The finish status is one of:
+#   PUSHED          - the worker pushed new commits (the PR head advanced)
+#   MERGED / CLOSED - the PR's state changed
+#   NO-CHANGE       - clean run, nothing pushed (e.g. already green / nothing to do)
+#   NEEDS-ATTENTION - clean run, nothing pushed, but still CONFLICTING: needs a
+#                     human decision (resolve a huge conflict, or close as obsolete)
+#   FAILED / TIMEOUT - the worker errored or hit the per-PR timeout
+# A clean `claude` exit does not by itself mean progress, so the status is based
+# on whether the PR head advanced rather than just the exit code.
+#
+# The per-PR lines are colored with a 24-bit (truecolor) color derived from a
+# hash of the PR number, using the same YCbCr scheme ClickHouse uses to color
+# its log messages (see base/base/terminalColors.cpp). The full `/continue-pr`
+# transcript of each PR is written to a per-PR log file under
+# tmp/continue-all-prs/ instead of the terminal.
 #
 # Usage:
 #   utils/continue-all-prs.sh [--workers N] [options]
@@ -161,6 +171,38 @@ emit()
 }
 
 banner() { echo "${S}$*${R}"; }
+
+# Distill a one-to-two sentence summary of what the worker did from its log.
+# In plain `--print` mode `claude` writes only its final message to the log, so
+# the opening of that message is a natural summary. We take the first one or two
+# sentences, but when those are conversational filler ("I've completed ...") we
+# fall back to the first markdown header instead, since `/continue-pr` usually
+# titles its conclusion there (e.g. "## PR #N is obsolete ...").
+summarize_log()
+{
+    local f="$1" clean sent hdr s
+    [[ -s "$f" ]] || { printf '(no output)'; return 0; }
+
+    clean=$(sed -e 's/\x1b\[[0-9;]*m//g' "$f")
+
+    sent=$(printf '%s' "$clean" | tr '\n\t' '  ' \
+        | sed -E -e 's/[#>*`]+/ /g' -e 's/  +/ /g' -e 's/^ +//' -e 's/ +$//' \
+        | sed -E 's/^(([^.!?]*[.!?]){1,2}).*/\1/')
+
+    hdr=$(printf '%s' "$clean" | grep -m1 -E '^#{1,6}[[:space:]]+' \
+        | sed -E 's/^#{1,6}[[:space:]]+//; s/[[:space:]]+$//' || true)
+
+    if [[ -n "$hdr" ]] && printf '%s' "$sent" \
+        | grep -qiE '^(I have|I.ve|Here is|Here.s|Done|Sure|Okay|OK|Let me|I.ll|I will|I.m|Alright|Got it)'; then
+        s="$hdr"
+    else
+        s="$sent"
+    fi
+
+    [[ -n "$s" ]] || s="$hdr"
+    (( ${#s} > 240 )) && s="${s:0:237}..."
+    [[ -n "$s" ]] && printf '%s' "$s" || printf '(no summary)'
+}
 
 # Warn once if 24-bit colors are unlikely to render under screen/tmux.
 maybe_color_hint()
@@ -313,7 +355,8 @@ trap 'echo; banner "Interrupted, stopping..."; exit 130' INT TERM
 process_pr()
 {
     local i="$1" wt="$2" number="$3" title="$4"
-    local color ts log ec outcome prstate status mark
+    local color ts log ec outcome status mark summary
+    local before_sha after pr_state pr_mergeable pr_review after_sha pushed
 
     color=$(pr_color_seq "$number")
     ts=$(date +%H:%M:%S)
@@ -322,33 +365,58 @@ process_pr()
     if (( DRY_RUN )); then
         sleep $(( (RANDOM % 3) + 1 + (number % 3) ))
         outcome="DRY-RUN"
+        mark=".. "
         status="DRY-RUN (not processed)"
+        summary="(dry run)"
     else
+        # PR head before the work, so we can tell whether the worker actually
+        # pushed anything (a clean `claude` exit does NOT imply progress: the
+        # /continue-pr skill exits 0 when it finds nothing to do, or when it
+        # punts an outward-facing decision such as closing an obsolete PR).
+        before_sha=$(gh pr view "$number" --repo "$REPO" --json headRefOid \
+            --jq '.headRefOid' 2>/dev/null || echo "")
+
         log="$LOGDIR/pr-$number.log"
         ec=0
         ( cd "$wt" && timeout "$TIMEOUT" claude --dangerously-skip-permissions --print \
             "/continue-pr https://github.com/$REPO/pull/$number" </dev/null ) \
             > "$log" 2>&1 || ec=$?
 
-        if   (( ec == 124 )); then outcome="TIMEOUT"
-        elif (( ec != 0 ));   then outcome="FAILED(exit $ec)"
-        else                       outcome="OK"
-        fi
-
         # Detach HEAD so the PR branch isn't held by this worktree, letting a
         # different worker check it out in a later round.
         git -C "$wt" checkout --detach -q 2>/dev/null || true
 
-        prstate=$(gh pr view "$number" --repo "$REPO" \
-            --json state,mergeable,reviewDecision \
-            --jq '"\(.state) mergeable=\(.mergeable) review=\(.reviewDecision // "NONE")"' \
-            2>/dev/null || echo "state=unknown")
-        status="$outcome; $prstate"
+        after=$(gh pr view "$number" --repo "$REPO" \
+            --json state,mergeable,reviewDecision,headRefOid \
+            --jq '"\(.state)\t\(.mergeable)\t\(.reviewDecision // "NONE")\t\(.headRefOid)"' \
+            2>/dev/null || printf 'UNKNOWN\tUNKNOWN\tNONE\t')
+        IFS=$'\t' read -r pr_state pr_mergeable pr_review after_sha <<< "$after"
+
+        pushed=0
+        if [[ -n "$before_sha" && -n "$after_sha" && "$before_sha" != "$after_sha" ]]; then
+            pushed=1
+        fi
+
+        # Classify the outcome. A clean exit is split into PUSHED (made
+        # progress) vs NO-CHANGE (nothing pushed); NO-CHANGE while still
+        # CONFLICTING means the PR needs a human decision (e.g. resolve a huge
+        # conflict, or close as obsolete) -> flagged NEEDS-ATTENTION, not OK.
+        if   (( ec == 124 )); then              outcome="TIMEOUT";          mark="XX "
+        elif (( ec != 0 ));   then              outcome="FAILED(exit $ec)"; mark="XX "
+        elif [[ "$pr_state" == MERGED ]]; then  outcome="MERGED";           mark="OK "
+        elif [[ "$pr_state" == CLOSED ]]; then  outcome="CLOSED";           mark="OK "
+        elif (( pushed ));    then              outcome="PUSHED";           mark="OK "
+        elif [[ "$pr_mergeable" == CONFLICTING ]]; then outcome="NEEDS-ATTENTION"; mark="!! "
+        else                                    outcome="NO-CHANGE";        mark=".. "
+        fi
+
+        status="$outcome; state=$pr_state mergeable=$pr_mergeable review=$pr_review"
+        summary=$(summarize_log "$log")
     fi
 
     ts=$(date +%H:%M:%S)
-    case "$outcome" in OK|DRY-RUN) mark="OK " ;; *) mark="XX " ;; esac
     emit "$color" "$ts  $mark  worker $i  FINISHED  PR #$number  $title  --  $status"
+    emit "$color" "            ^- $summary"
 }
 
 worker()
