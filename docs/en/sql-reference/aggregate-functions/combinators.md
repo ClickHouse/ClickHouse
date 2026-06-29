@@ -299,6 +299,62 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
+## -Sparkbar {#-sparkbar}
+
+Divides data into buckets by the first argument (the x-axis key) and applies an aggregate function independently to the values in each bucket. The per-bucket results are rendered as a Unicode sparkbar string. The nested aggregate function must return a numeric type (`Int*`, `UInt*`, `Float*`, or `Decimal`).
+
+```sql
+<aggFunction>Sparkbar([<aggFunction_params>,] width, min_x, max_x)(x, <aggFunction_args>)
+```
+
+**Parameters**
+
+- `aggFunction_params` (optional) — Parameters forwarded to the nested aggregate function (e.g. the quantile level in `quantileSparkbar(0.9, width, min_x, max_x)(x, value)`). Place them before `width`.
+- `width` — Number of buckets. Must be in the range `[2, 1024]`.
+- `min_x` — Start of the x-axis range (inclusive).
+- `max_x` — End of the x-axis range (inclusive). Must be strictly greater than `min_x`.
+
+**Arguments**
+
+- `x` — The x-axis column used to determine the bucket for each row. Supported types: `UInt8`–`UInt64`, `Int8`–`Int64`, `Date`, `Date32`, `DateTime`, `DateTime64`, `Enum`, `Interval`.
+- `aggFunction_args` — Arguments forwarded to the nested aggregate function (all arguments except `x`).
+
+**Returned value**
+
+- A `String` of up to `width` characters representing the relative magnitude of each bucket. Each character is one of the Unicode block characters `▁▂▃▄▅▆▇█`, or a space for empty/zero-valued buckets. If all buckets are empty or zero, an empty string is returned.
+
+Like the [`sparkbar`](/sql-reference/aggregate-functions/reference/sparkbar) function, only strictly positive nested results are rendered: a bucket whose nested aggregate result is `NaN` or less than or equal to zero is shown as a blank space. As a consequence, `-Sparkbar` is intended for non-negative magnitudes (such as `count`, `uniq`, or `sum` over non-negative values); aggregate functions that can produce negative results (such as `min` or `sum` over signed values) will render their non-positive buckets as blanks.
+
+**Example**
+
+```sql
+SELECT sumSparkbar(5, toDate('2023-01-01'), toDate('2023-01-05'))(toDate('2023-01-01') + number, toFloat64(number + 1))
+FROM numbers(5)
+```
+
+```text
+┌─sumSparkbar(5, '2023-01-01', '2023-01-05')(plus(toDate('2023-01-01'), number), plus(toFloat64(number), 1))─┐
+│ ▁▂▅▇█                                                                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT
+    countSparkbar(12, toDate('2023-01-01'), toDate('2023-12-31'))(EventDate) AS events_by_month
+FROM hits
+```
+
+```sql
+-- Compare unique visitors per month for a set of URLs
+SELECT
+    URL,
+    uniqSparkbar(12, toDate('2023-01-01'), toDate('2023-12-31'))(EventDate, UserID) AS unique_visitors
+FROM hits
+GROUP BY URL
+ORDER BY uniq(UserID) DESC
+LIMIT 10
+```
+
 ## -ArgMin {#-argmin}
 
 The suffix -ArgMin can be appended to the name of any aggregate function. In this case, the aggregate function accepts an additional argument, which should be any comparable expression. The aggregate function processes only the rows that have the minimum value for the specified extra expression.
