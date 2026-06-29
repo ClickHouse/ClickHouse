@@ -419,14 +419,26 @@ def main():
             # of failing on "branch already exists".
             Shell.check(f"git checkout -B {pr_branch}", strict=True)
             Shell.check("git add -A", strict=True)
-            Shell.check(
-                f"git commit -m {shlex.quote(commit_msg)}",
-                strict=True,
-            )
-            Shell.check(
-                f"git push --force https://x-access-token:$GH_TOKEN@github.com/ClickHouse/ClickHouse.git {pr_branch}",
-                strict=True,
-            )
+            # If the changelog PR was already merged on a previous run, master
+            # (and this branch, freshly checked out from it) already contain the
+            # generated files, so there is nothing to commit — `git commit`
+            # would fail with "nothing to commit". Only commit and push when
+            # there are staged changes; the already-merged PR is then picked up
+            # by the existing-PR lookup below, which skips `gh pr create`.
+            if Shell.check("git diff --cached --quiet"):
+                print(
+                    "No changelog/version changes to commit — already up to date,"
+                    " skipping commit/push"
+                )
+            else:
+                Shell.check(
+                    f"git commit -m {shlex.quote(commit_msg)}",
+                    strict=True,
+                )
+                Shell.check(
+                    f"git push --force https://x-access-token:$GH_TOKEN@github.com/ClickHouse/ClickHouse.git {pr_branch}",
+                    strict=True,
+                )
 
             with tempfile.NamedTemporaryFile(
                 mode="w", delete=False, suffix=".txt", encoding="utf-8"
