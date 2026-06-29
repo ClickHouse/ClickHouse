@@ -45,6 +45,7 @@ WHERE event_date >= yesterday()
   AND view_name = concatWithSeparator('.', currentDatabase(), 'mv_04365_gcm')
   AND view_query LIKE '%[HIDDEN]%'
   AND view_query NOT LIKE '%0123456789abcdef0123456789abcdef%'
+  AND view_query NOT LIKE '%0123456789ab%'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
