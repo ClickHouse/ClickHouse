@@ -433,10 +433,14 @@ def test_azure_glob_scheherazade(cluster):
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     values = "(1, 1, 1)"
-    nights_per_job = 1001 // 30
+    # The glob pattern night_*/tale.csv is fully exercised across many distinct
+    # directories with far fewer than the original 1001 files; the absolute
+    # count only drives CPU cost (heavily amplified under coverage/sanitizers).
+    nights = 101
+    nights_per_job = max(1, nights // 30)
     jobs = []
     used_names = []
-    for night in range(0, 1001, nights_per_job):
+    for night in range(0, nights, nights_per_job):
 
         def add_tales(start, end):
             for i in range(start, end):
@@ -455,7 +459,7 @@ def test_azure_glob_scheherazade(cluster):
 
         jobs.append(
             threading.Thread(
-                target=add_tales, args=(night, min(night + nights_per_job, 1001))
+                target=add_tales, args=(night, min(night + nights_per_job, nights))
             )
         )
         jobs[-1].start()
@@ -469,7 +473,7 @@ def test_azure_glob_scheherazade(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', blob_path='night_*/tale.csv', format='CSV')",
     )
     query = "select count(), sum(column1), sum(column2), sum(column3) from test_glob_select_scheherazade"
-    assert azure_query(node, query).splitlines() == ["1001\t1001\t1001\t1001"]
+    assert azure_query(node, query).splitlines() == [f"{nights}\t{nights}\t{nights}\t{nights}"]
     azure_query(node, "DROP TABLE test_glob_select_scheherazade")
 
     drop_jobs = []

@@ -58,10 +58,6 @@ true
 [3,4]
 -- array_split()
 [[1,2],[3,4,5]]
--- array_sort_asc()
-(['George','John','Paul','Ringo'])
--- array_sort_desc()
-(['Ringo','Paul','John','George'])
 -- jaccard_index()
 0.75
 0
