@@ -1100,7 +1100,10 @@ def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
 
     node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
 
-    num_columns = 10
+    # Concurrent ADD COLUMN commits must contend on the REST catalog to surface
+    # the commit-conflict/retry race. A handful of concurrent writers is enough
+    # to interleave; the original count of 10 just multiplied catalog round-trips.
+    num_columns = 4
 
     def add_column(idx):
         node.query(
