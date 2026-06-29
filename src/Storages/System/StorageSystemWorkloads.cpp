@@ -1,7 +1,7 @@
 #include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
-#include <Parsers/queryToString.h>
 #include <Storages/System/StorageSystemWorkloads.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
@@ -22,15 +22,17 @@ ColumnsDescription StorageSystemWorkloads::getColumnsDescription()
 
 void StorageSystemWorkloads::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const auto & storage = context->getWorkloadEntityStorage();
-    const auto & workload_names = storage.getAllEntityNames(WorkloadEntityType::Workload);
-    for (const auto & workload_name : workload_names)
+    /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
+    auto storage = context->getWorkloadEntityStoragePtr();
+    const auto & entities = storage->getAllEntities();
+    for (const auto & [name, ast] : entities)
     {
-        auto ast = storage.get(workload_name);
-        auto & workload = typeid_cast<ASTCreateWorkloadQuery &>(*ast);
-        res_columns[0]->insert(workload_name);
-        res_columns[1]->insert(workload.getWorkloadParent());
-        res_columns[2]->insert(queryToString(ast));
+        if (auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(ast.get()))
+        {
+            res_columns[0]->insert(name);
+            res_columns[1]->insert(workload->getWorkloadParent());
+            res_columns[2]->insert(ast->formatForLogging());
+        }
     }
 }
 
@@ -47,3 +49,6 @@ void StorageSystemWorkloads::restoreDataFromBackup(RestorerFromBackup & /*restor
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemWorkloads) }

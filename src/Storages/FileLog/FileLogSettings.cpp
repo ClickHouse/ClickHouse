@@ -31,21 +31,8 @@ namespace ErrorCodes
     FILELOG_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS)
-
-struct FileLogSettingsImpl : public BaseSettings<FileLogSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) FileLogSettings##TYPE NAME = &FileLogSettingsImpl ::NAME;
-
-namespace FileLogSetting
-{
-LIST_OF_FILELOG_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS, FILELOG_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS, FileLogSettings, FileLogSetting)
 
 FileLogSettings::FileLogSettings() : impl(std::make_unique<FileLogSettingsImpl>())
 {
@@ -55,10 +42,7 @@ FileLogSettings::FileLogSettings(const FileLogSettings & settings) : impl(std::m
 {
 }
 
-FileLogSettings::FileLogSettings(FileLogSettings && settings) noexcept
-    : impl(std::make_unique<FileLogSettingsImpl>(std::move(*settings.impl)))
-{
-}
+FileLogSettings::FileLogSettings(FileLogSettings && settings) noexcept = default;
 
 FileLogSettings::~FileLogSettings() = default;
 
@@ -81,16 +65,16 @@ void FileLogSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }
 
     /// Check that batch size is not too high (the same as we check setting max_block_size).
     constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
-    if (impl->poll_max_batch_size > max_sane_block_rows_size)
+    if ((*impl)[FileLogSetting::poll_max_batch_size] > max_sane_block_rows_size)
         throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: 'poll_max_batch_size' value is too high ({})", impl->poll_max_batch_size);
+            ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: 'poll_max_batch_size' value is too high ({})", (*impl)[FileLogSetting::poll_max_batch_size].value);
 }
 
 bool FileLogSettings::hasBuiltin(std::string_view name)

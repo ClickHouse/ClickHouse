@@ -74,24 +74,26 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    MergeTreeIndexConditionBloomFilter(const ActionsDAG * filter_actions_dag, ContextPtr context_, const Block & header_, size_t hash_functions_);
+    MergeTreeIndexConditionBloomFilter(const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_);
 
     bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const override
     {
         if (const auto & bf_granule = typeid_cast<const MergeTreeIndexGranuleBloomFilter *>(granule.get()))
-            return mayBeTrueOnGranule(bf_granule);
+            return mayBeTrueOnGranule(bf_granule, update_partial_result_disjuntion_fn);
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Requires bloom filter index granule.");
     }
+
+    std::string getDescription() const override { return ""; }
 
 private:
     const Block & header;
     const size_t hash_functions;
     std::vector<RPNElement> rpn;
 
-    bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule) const;
+    bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
@@ -139,15 +141,16 @@ class MergeTreeIndexBloomFilter final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexBloomFilter(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         size_t bits_per_row_,
         size_t hash_functions_);
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
 
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
 private:
     size_t bits_per_row;

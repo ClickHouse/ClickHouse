@@ -1,0 +1,304 @@
+basic UInt64 key: m_uint.key_1
+a
+
+
+basic UInt64 key: m_uint[1]
+a
+
+
+basic UInt64 key: m_uint.key_2
+b
+x
+
+basic UInt64 key: m_uint[2]
+b
+x
+
+basic UInt64 key: m_uint.key_4
+
+y
+
+basic UInt64 key: m_uint[4]
+
+y
+
+basic UInt64 key: m_uint.key_999
+
+
+
+basic UInt64 key: m_uint[999]
+
+
+
+basic UInt64 key: m_uint.key_1, m_uint.key_4
+a	
+	y
+	
+basic UInt64 key: m_uint[1], m_uint[4]
+a	
+	y
+	
+basic Int32 key: m_int.key_-1
+neg
+
+
+basic Int32 key: m_int[-1]
+neg
+
+
+basic Int32 key: m_int.key_0
+zero
+
+
+basic Int32 key: m_int[0]
+zero
+
+
+basic Int32 key: m_int.key_1
+pos
+
+
+basic Int32 key: m_int[1]
+pos
+
+
+basic Int32 key: m_int.key_-100
+
+x
+
+basic Int32 key: m_int[-100]
+
+x
+
+basic Date key: m_date.key_2024-01-01
+10
+30
+0
+basic Date key: m_date[toDate(\'2024-01-01\')]
+10
+30
+0
+basic Date key: m_date.key_2024-06-15
+20
+0
+0
+basic Date key: m_date[toDate(\'2024-06-15\')]
+20
+0
+0
+basic Date key: m_date.key_2099-12-31
+0
+0
+0
+basic Date key: m_date[toDate(\'2099-12-31\')]
+0
+0
+0
+basic UUID key: m_uuid.key_550e8400-e29b-41d4-a716-446655440000
+1
+10
+0
+basic UUID key: m_uuid[toUUID(\'550e8400-e29b-41d4-a716-446655440000\')]
+1
+10
+0
+basic UUID key: m_uuid.key_6ba7b810-9dad-11d1-80b4-00c04fd430c8
+2
+0
+0
+basic UUID key: m_uuid[toUUID(\'6ba7b810-9dad-11d1-80b4-00c04fd430c8\')]
+2
+0
+0
+basic IPv4 key: m_ipv4.key_192.168.1.1
+100
+300
+0
+basic IPv4 key: m_ipv4[toIPv4(\'192.168.1.1\')]
+100
+300
+0
+basic IPv4 key: m_ipv4.key_10.0.0.1
+200
+0
+0
+basic IPv4 key: m_ipv4[toIPv4(\'10.0.0.1\')]
+200
+0
+0
+basic IPv4 key: m_ipv4.key_127.0.0.1
+0
+0
+0
+basic IPv4 key: m_ipv4[toIPv4(\'127.0.0.1\')]
+0
+0
+0
+basic FixedString key: m_fs.key_abc
+1
+10
+0
+basic FixedString key: m_fs[\'abc\']
+1
+10
+0
+basic FixedString key: m_fs.key_def
+2
+0
+0
+basic FixedString key: m_fs[\'def\']
+2
+0
+0
+basic FixedString key: m_fs.key_zzz
+0
+0
+0
+basic FixedString key: m_fs[\'zzz\']
+0
+0
+0
+basic LowCardinality(String) key: m_lc.key_foo
+1
+10
+0
+basic LowCardinality(String) key: m_lc[\'foo\']
+1
+10
+0
+basic LowCardinality(String) key: m_lc.key_bar
+2
+0
+0
+basic LowCardinality(String) key: m_lc[\'bar\']
+2
+0
+0
+basic LowCardinality(String) key: m_lc.key_missing
+0
+0
+0
+basic LowCardinality(String) key: m_lc[\'missing\']
+0
+0
+0
+with_buckets UInt64 key: m_uint.key_1
+a
+
+
+with_buckets UInt64 key: m_uint[1]
+a
+
+
+with_buckets UInt64 key: m_uint.key_4
+
+y
+
+with_buckets UInt64 key: m_uint[4]
+
+y
+
+with_buckets UInt64 key: m_uint.key_1, m_uint.key_4
+a	
+	y
+	
+with_buckets UInt64 key: m_uint[1], m_uint[4]
+a	
+	y
+	
+with_buckets Int32 key: m_int.key_-1
+neg
+
+
+with_buckets Int32 key: m_int[-1]
+neg
+
+
+with_buckets Int32 key: m_int.key_0
+zero
+
+
+with_buckets Int32 key: m_int[0]
+zero
+
+
+with_buckets Date key: m_date.key_2024-01-01
+10
+30
+0
+with_buckets Date key: m_date[toDate(\'2024-01-01\')]
+10
+30
+0
+with_buckets Date key: m_date.key_2024-06-15
+20
+0
+0
+with_buckets Date key: m_date[toDate(\'2024-06-15\')]
+20
+0
+0
+with_buckets UUID key: m_uuid.key_550e8400-e29b-41d4-a716-446655440000
+1
+10
+0
+with_buckets UUID key: m_uuid[toUUID(\'550e8400-e29b-41d4-a716-446655440000\')]
+1
+10
+0
+with_buckets UUID key: m_uuid.key_6ba7b810-9dad-11d1-80b4-00c04fd430c8
+2
+0
+0
+with_buckets UUID key: m_uuid[toUUID(\'6ba7b810-9dad-11d1-80b4-00c04fd430c8\')]
+2
+0
+0
+with_buckets IPv4 key: m_ipv4.key_192.168.1.1
+100
+300
+0
+with_buckets IPv4 key: m_ipv4[toIPv4(\'192.168.1.1\')]
+100
+300
+0
+with_buckets IPv4 key: m_ipv4.key_10.0.0.1
+200
+0
+0
+with_buckets IPv4 key: m_ipv4[toIPv4(\'10.0.0.1\')]
+200
+0
+0
+with_buckets FixedString key: m_fs.key_abc
+1
+10
+0
+with_buckets FixedString key: m_fs[\'abc\']
+1
+10
+0
+with_buckets FixedString key: m_fs.key_def
+2
+0
+0
+with_buckets FixedString key: m_fs[\'def\']
+2
+0
+0
+with_buckets LowCardinality(String) key: m_lc.key_foo
+1
+10
+0
+with_buckets LowCardinality(String) key: m_lc[\'foo\']
+1
+10
+0
+with_buckets LowCardinality(String) key: m_lc.key_baz
+0
+20
+0
+with_buckets LowCardinality(String) key: m_lc[\'baz\']
+0
+20
+0

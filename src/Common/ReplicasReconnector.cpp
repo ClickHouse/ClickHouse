@@ -2,6 +2,7 @@
 #include <Core/ServerSettings.h>
 #include <Common/ReplicasReconnector.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -19,9 +20,10 @@ namespace ServerSetting
 }
 
 ReplicasReconnector::ReplicasReconnector(ContextPtr context)
-    : task_handle(context->getSchedulePool().createTask("ReplicasReconnector", [this]{ run(); }))
+    : task_handle(context->getSchedulePool().createTask(StorageID::createEmpty(), "ReplicasReconnector", [this]{ run(); }))
     , log(getLogger("ReplicasReconnector"))
 {
+    instance_ptr = this;
 }
 
 ReplicasReconnector::~ReplicasReconnector()
@@ -36,9 +38,7 @@ std::unique_ptr<ReplicasReconnector> ReplicasReconnector::init(ContextPtr contex
     if (instance_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicas reconnector is already initialized.");
 
-    std::unique_ptr<ReplicasReconnector> ret(new ReplicasReconnector(context));
-    instance_ptr = ret.get();
-    return ret;
+    return std::unique_ptr<ReplicasReconnector>(new ReplicasReconnector(context));
 }
 
 ReplicasReconnector & ReplicasReconnector::instance()

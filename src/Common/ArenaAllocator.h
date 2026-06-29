@@ -15,7 +15,7 @@ public:
         return arena->alloc(size);
     }
 
-    static void * realloc(void * buf, size_t old_size, size_t new_size, Arena * arena)
+    static void * realloc(void * buf, const size_t old_size, const size_t new_size, Arena * arena)
     {
         char const * data = reinterpret_cast<char *>(buf);
 
@@ -78,25 +78,25 @@ protected:
 };
 
 
-/// Switches to ordinary Allocator after REAL_ALLOCATION_TRESHOLD bytes to avoid fragmentation and trash in Arena.
-template <size_t REAL_ALLOCATION_TRESHOLD = 4096, typename TRealAllocator = Allocator<false>, typename TArenaAllocator = ArenaAllocator, size_t alignment = 0>
+/// Switches to ordinary Allocator after REAL_ALLOCATION_THRESHOLD bytes to avoid fragmentation and trash in Arena.
+template <size_t REAL_ALLOCATION_THRESHOLD = 4096, typename TRealAllocator = Allocator<false>, typename TArenaAllocator = ArenaAllocator, size_t alignment = 0>
 class MixedArenaAllocator : private TRealAllocator
 {
 public:
 
     void * alloc(size_t size, Arena * arena)
     {
-        return (size < REAL_ALLOCATION_TRESHOLD) ? TArenaAllocator::alloc(size, arena) : TRealAllocator::alloc(size, alignment);
+        return (size < REAL_ALLOCATION_THRESHOLD) ? TArenaAllocator::alloc(size, arena) : TRealAllocator::alloc(size, alignment);
     }
 
     void * realloc(void * buf, size_t old_size, size_t new_size, Arena * arena)
     {
         // Invariant should be maintained: new_size > old_size
 
-        if (new_size < REAL_ALLOCATION_TRESHOLD)
+        if (new_size < REAL_ALLOCATION_THRESHOLD)
             return TArenaAllocator::realloc(buf, old_size, new_size, arena);
 
-        if (old_size >= REAL_ALLOCATION_TRESHOLD)
+        if (old_size >= REAL_ALLOCATION_THRESHOLD)
             return TRealAllocator::realloc(buf, old_size, new_size, alignment);
 
         void * new_buf = TRealAllocator::alloc(new_size, alignment);
@@ -106,7 +106,7 @@ public:
 
     void free(void * buf, size_t size)
     {
-        if (size >= REAL_ALLOCATION_TRESHOLD)
+        if (size >= REAL_ALLOCATION_THRESHOLD)
             TRealAllocator::free(buf, size);
     }
 
@@ -118,45 +118,7 @@ protected:
 };
 
 
-template <size_t alignment, size_t REAL_ALLOCATION_TRESHOLD = 4096>
-using MixedAlignedArenaAllocator = MixedArenaAllocator<REAL_ALLOCATION_TRESHOLD, Allocator<false>, AlignedArenaAllocator<alignment>, alignment>;
-
-
-template <size_t N = 64, typename Base = ArenaAllocator>
-class ArenaAllocatorWithStackMemory : public Base
-{
-    char stack_memory[N];
-
-public:
-
-    void * alloc(size_t size, Arena * arena)
-    {
-        return (size > N) ? Base::alloc(size, arena) : stack_memory;
-    }
-
-    void * realloc(void * buf, size_t old_size, size_t new_size, Arena * arena)
-    {
-        /// Was in stack_memory, will remain there.
-        if (new_size <= N)
-            return buf;
-
-        /// Already was big enough to not fit in stack_memory.
-        if (old_size > N)
-            return Base::realloc(buf, old_size, new_size, arena);
-
-        /// Was in stack memory, but now will not fit there.
-        void * new_buf = Base::alloc(new_size, arena);
-        memcpy(new_buf, buf, old_size);
-        return new_buf;
-    }
-
-    void free(void * /*buf*/, size_t /*size*/) {}
-
-protected:
-    static constexpr size_t getStackThreshold()
-    {
-        return N;
-    }
-};
+template <size_t alignment, size_t REAL_ALLOCATION_THRESHOLD = 4096>
+using MixedAlignedArenaAllocator = MixedArenaAllocator<REAL_ALLOCATION_THRESHOLD, Allocator<false>, AlignedArenaAllocator<alignment>, alignment>;
 
 }

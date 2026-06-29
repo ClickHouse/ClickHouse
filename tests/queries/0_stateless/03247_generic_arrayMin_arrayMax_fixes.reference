@@ -15,7 +15,7 @@ SELECT arrayMin(x1 -> x1 * -1, [1,2,3]);
 DROP TABLE IF EXISTS test_aggregation_array;
 CREATE TABLE test_aggregation_array (x Array(Int)) ENGINE=MergeTree() ORDER by tuple();
 INSERT INTO test_aggregation_array VALUES ([1,2,3,4,5,6]), ([]), ([1,2,3]);
-SELECT [arrayMin(x1 -> (x1 * materialize(-1)), [toNullable(toUInt256(0)), materialize(4)])], arrayMin([arrayMin([0])]) FROM test_aggregation_array GROUP BY arrayAvg([1]), [0, toUInt256(8)] WITH CUBE SETTINGS allow_experimental_analyzer = 1;
+SELECT [arrayMin(x1 -> (x1 * materialize(-1)), [toNullable(toUInt256(0)), materialize(4)])], arrayMin([arrayMin([0])]) FROM test_aggregation_array GROUP BY arrayAvg([1]), [0, toUInt256(8)] WITH CUBE SETTINGS enable_analyzer = 1;
 [-4]	0
 [-4]	0
 [-4]	0

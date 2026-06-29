@@ -27,6 +27,8 @@ public:
     bool isFromImmutableFile() const override { return getInternalBackupEntry()->isFromImmutableFile(); }
     bool isFromRemoteFile() const override { return getInternalBackupEntry()->isFromRemoteFile(); }
     String getRemotePath() const override { return getInternalBackupEntry()->getRemotePath(); }
+    String getEndpointURI() const override { return getInternalBackupEntry()->getEndpointURI(); }
+    String getNamespace() const override { return getInternalBackupEntry()->getNamespace(); }
     String getFilePath() const override { return getInternalBackupEntry()->getFilePath(); }
     DiskPtr getDisk() const override { return getInternalBackupEntry()->getDisk(); }
     bool isReference() const override { return getInternalBackupEntry()->isReference(); }

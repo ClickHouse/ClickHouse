@@ -1,8 +1,9 @@
 ---
+description: 'Documentation for the GROUPING aggregate function.'
 slug: /sql-reference/aggregate-functions/grouping_function
+title: 'GROUPING'
+doc_type: 'reference'
 ---
-
-# GROUPING
 
 ## GROUPING {#grouping}
 
@@ -109,7 +110,6 @@ GROUP BY
 2 rows in set. Elapsed: 0.277 sec. 
 ```
 
-
 ```sql
 SELECT
     distro, 
@@ -129,7 +129,6 @@ GROUP BY
 
 2 rows in set. Elapsed: 0.352 sec. 
 ```
-
 
 ```sql
 SELECT

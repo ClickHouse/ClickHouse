@@ -23,8 +23,8 @@ ${CLICKHOUSE_CLIENT} --query "
 # Mutation query may return before the entry is added to part log.
 # So, we may have to retry the flush of logs until all entries are actually flushed.
 for _ in {1..10}; do
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
-    res=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.part_log WHERE database = currentDatabase() AND table = 't_mutate_skip_part' AND event_type = 'MutatePart'")
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS part_log"
+    res=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_mutate_skip_part' AND event_type = 'MutatePart'")
 
     if [[ $res -eq 4 ]]; then
         break
@@ -34,12 +34,12 @@ for _ in {1..10}; do
 done
 
 ${CLICKHOUSE_CLIENT} --query "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS part_log;
 
     -- If part is skipped in mutation and hardlinked then read_rows must be 0.
     SELECT part_name, read_rows
     FROM system.part_log
-    WHERE database = currentDatabase() AND table = 't_mutate_skip_part' AND event_type = 'MutatePart'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_mutate_skip_part' AND event_type = 'MutatePart'
     ORDER BY part_name;
 
     DROP TABLE IF EXISTS t_mutate_skip_part;

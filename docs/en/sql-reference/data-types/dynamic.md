@@ -1,27 +1,22 @@
 ---
-slug: /sql-reference/data-types/dynamic
+description: 'Documentation for the Dynamic data type in ClickHouse, which can store
+  values of different types in a single column'
+sidebar_label: 'Dynamic'
 sidebar_position: 62
-sidebar_label: Dynamic
+slug: /sql-reference/data-types/dynamic
+title: 'Dynamic'
+doc_type: 'guide'
 ---
-import BetaBadge from '@theme/badges/BetaBadge';
-
-# Dynamic
-
-<BetaBadge/>
 
 This type allows to store values of any type inside it without knowing all of them in advance.
 
 To declare a column of `Dynamic` type, use the following syntax:
 
-``` sql
+```sql
 <column_name> Dynamic(max_types=N)
 ```
 
 Where `N` is an optional parameter between `0` and `254` indicating how many different data types can be stored as separate subcolumns inside a column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). If this limit is exceeded, all values with new types will be stored together in a special shared data structure in binary form. Default value of `max_types` is `32`.
-
-:::note
-The Dynamic data type is a beta feature. To use it, set `enable_dynamic_type = 1`.
-:::
 
 ## Creating Dynamic {#creating-dynamic}
 
@@ -45,7 +40,7 @@ SELECT d, dynamicType(d) FROM test;
 Using CAST from ordinary column:
 
 ```sql
-SELECT 'Hello, World!'::Dynamic as d, dynamicType(d);
+SELECT 'Hello, World!'::Dynamic AS d, dynamicType(d);
 ```
 
 ```text
@@ -57,7 +52,7 @@ SELECT 'Hello, World!'::Dynamic as d, dynamicType(d);
 Using CAST from `Variant` column:
 
 ```sql
-SET enable_variant_type = 1, use_variant_as_common_type = 1;
+SET use_variant_as_common_type = 1;
 SELECT multiIf((number % 3) = 0, number, (number % 3) = 1, range(number + 1), NULL)::Dynamic AS d, dynamicType(d) FROM numbers(3)
 ```
 
@@ -68,7 +63,6 @@ SELECT multiIf((number % 3) = 0, number, (number % 3) = 1, range(number + 1), NU
 │ ᴺᵁᴸᴸ  │ None           │
 └───────┴────────────────┘
 ```
-
 
 ## Reading Dynamic nested types as subcolumns {#reading-dynamic-nested-types-as-subcolumns}
 
@@ -127,7 +121,7 @@ Example:
 ```sql
 CREATE TABLE test (d Dynamic) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
-SELECT dynamicType(d) from test;
+SELECT dynamicType(d) FROM test;
 ```
 
 ```text
@@ -146,7 +140,7 @@ There are 4 possible conversions that can be performed with `Dynamic` column.
 ### Converting an ordinary column to a Dynamic column {#converting-an-ordinary-column-to-a-dynamic-column}
 
 ```sql
-SELECT 'Hello, World!'::Dynamic as d, dynamicType(d);
+SELECT 'Hello, World!'::Dynamic AS d, dynamicType(d);
 ```
 
 ```text
@@ -195,7 +189,7 @@ SELECT d::Nullable(Float64) FROM test;
 ```sql
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('String'), ([1, 2, 3]);
-SELECT v::Dynamic as d, dynamicType(d) from test; 
+SELECT v::Dynamic AS d, dynamicType(d) FROM test; 
 ```
 
 ```text
@@ -453,7 +447,6 @@ INSERT INTO test VALUES (42), (43), ('str_1');
 SELECT d, dynamicType(d) FROM test;
 ```
 
-
 ```text
 ┌─d─────┬─dynamicType(d)─┐
 │ 42    │ Int64          │
@@ -506,6 +499,35 @@ SELECT d, d.Int64 + 1 AS res, toTypeName(res) FROM test;
 │ [1,2] │ ᴺᵁᴸᴸ │ Nullable(Int64) │
 │ [3,4] │ ᴺᵁᴸᴸ │ Nullable(Int64) │
 └───────┴──────┴─────────────────┘
+```
+
+### Type mismatch behavior {#dynamic-type-mismatch-behavior}
+
+The setting `dynamic_throw_on_type_mismatch` controls what happens when a function is applied to a `Dynamic` column and the actual stored type of a row is incompatible with the function:
+
+- `true` (default) — throw an exception (`ILLEGAL_TYPE_OF_ARGUMENT`) on the first incompatible row.
+- `false` — return `NULL` for incompatible rows and keep the result for compatible rows.
+
+**Example:**
+
+```sql
+CREATE TABLE test (d Dynamic) ENGINE = Memory;
+INSERT INTO test VALUES ('world'), (123), (456);
+
+-- Default (throw on mismatch): length() does not accept integers, so the query throws.
+SELECT length(d) FROM test;  -- throws ILLEGAL_TYPE_OF_ARGUMENT
+
+-- With throw disabled: incompatible rows return NULL.
+SET dynamic_throw_on_type_mismatch = false;
+SELECT d, length(d) FROM test ORDER BY d::String NULLS LAST;
+```
+
+```text
+┌─d─────┬─length(d)─┐
+│ world │         5 │
+│ 123   │      ᴺᵁᴸᴸ │
+│ 456   │      ᴺᵁᴸᴸ │
+└───────┴───────────┘
 ```
 
 ## Using Dynamic type in ORDER BY and GROUP BY {#using-dynamic-type-in-order-by-and-group-by}
@@ -575,7 +597,7 @@ SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in
 ```
 
 ```sql
-SELECT d, dynamicType(d) FROM test GROUP by d SETTINGS allow_suspicious_types_in_group_by=1;
+SELECT d, dynamicType(d) FROM test GROUP BY d SETTINGS allow_suspicious_types_in_group_by=1;
 ```
 
 ```text
@@ -632,7 +654,7 @@ In this case ClickHouse chooses what types will remain as separate subcolumns af
 Let's see an example of such merge. First, let's create a table with `Dynamic` column, set the limit of different data types to `3` and insert values with `5` different types:
 
 ```sql
-CREATE TABLE test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree ORDER BY id;
+CREATE TABLE test (id UInt64, d Dynamic(max_types=3)) ENGINE=MergeTree ORDER BY id;
 SYSTEM STOP MERGES test;
 INSERT INTO test SELECT number, number FROM numbers(5);
 INSERT INTO test SELECT number, range(number) FROM numbers(4);

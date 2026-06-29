@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <Common/NaNUtils.h>
 #include <Common/PODArray.h>
+#include <base/extended_types.h>
 #include <base/sort.h>
 #include <base/types.h>
 
@@ -20,6 +21,18 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+/// Interpolation delta `b - a` as Float64. Integral Value subtracts in Int128 (the widest
+/// integral Value is (U)Int64, so the difference is exact and cannot overflow) before casting;
+/// floating Value subtracts in Float64.
+template <typename Value>
+static inline Float64 quantileExactInterpolationDelta(const Value & a, const Value & b)
+{
+    if constexpr (is_integer<Value>)
+        return static_cast<Float64>(static_cast<Int128>(b) - static_cast<Int128>(a));
+    else
+        return static_cast<Float64>(b) - static_cast<Float64>(a);
 }
 
 
@@ -93,7 +106,7 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
     {
         if (!array.empty())
         {
-            size_t n = level < 1 ? static_cast<size_t>(level * array.size()) : (array.size() - 1);
+            size_t n = level < 1 ? static_cast<size_t>(level * static_cast<Float64>(array.size())) : (array.size() - 1);
             ::nth_element(array.begin(), array.begin() + n, array.end());  /// NOTE: You can think of the radix-select algorithm.
             return array[n];
         }
@@ -112,7 +125,7 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
             {
                 auto level = levels[indices[i]];
 
-                size_t n = level < 1 ? static_cast<size_t>(level * array.size()) : (array.size() - 1);
+                size_t n = level < 1 ? static_cast<size_t>(level * static_cast<Float64>(array.size())) : (array.size() - 1);
                 ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
                 result[indices[i]] = array[n];
                 prev_n = n;
@@ -141,7 +154,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
             if (level == 0. || level == 1.)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "QuantileExactExclusive cannot interpolate for the percentiles 1 and 0");
 
-            Float64 h = level * (array.size() + 1);
+            Float64 h = level * static_cast<Float64>(array.size() + 1);
             auto n = static_cast<size_t>(h);
 
             if (n >= array.size())
@@ -152,7 +165,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
             ::nth_element(array.begin(), array.begin() + n - 1, array.end());
             auto * nth_elem = std::min_element(array.begin() + n, array.end());
 
-            return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
+            return static_cast<Float64>(array[n - 1]) + (h - static_cast<Float64>(n)) * quantileExactInterpolationDelta(array[n - 1], *nth_elem);
         }
 
         return std::numeric_limits<Float64>::quiet_NaN();
@@ -169,7 +182,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
                 if (level == 0. || level == 1.)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "QuantileExactExclusive cannot interpolate for the percentiles 1 and 0");
 
-                Float64 h = level * (array.size() + 1);
+                Float64 h = level * static_cast<Float64>(array.size() + 1);
                 auto n = static_cast<size_t>(h);
 
                 if (n >= array.size())
@@ -181,7 +194,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
                     ::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
                     auto * nth_elem = std::min_element(array.begin() + n, array.end());
 
-                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
+                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - static_cast<Float64>(n)) * quantileExactInterpolationDelta(array[n - 1], *nth_elem);
                     prev_n = n - 1;
                 }
             }
@@ -206,7 +219,7 @@ struct QuantileExactInclusive : public QuantileExact<Value>
     {
         if (!array.empty())
         {
-            Float64 h = level * (array.size() - 1) + 1;
+            Float64 h = level * static_cast<Float64>(array.size() - 1) + 1;
             auto n = static_cast<size_t>(h);
 
             if (n >= array.size())
@@ -216,7 +229,7 @@ struct QuantileExactInclusive : public QuantileExact<Value>
             ::nth_element(array.begin(), array.begin() + n - 1, array.end());
             auto * nth_elem = std::min_element(array.begin() + n, array.end());
 
-            return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
+            return static_cast<Float64>(array[n - 1]) + (h - static_cast<Float64>(n)) * quantileExactInterpolationDelta(array[n - 1], *nth_elem);
         }
 
         return std::numeric_limits<Float64>::quiet_NaN();
@@ -231,7 +244,7 @@ struct QuantileExactInclusive : public QuantileExact<Value>
             {
                 auto level = levels[indices[i]];
 
-                Float64 h = level * (array.size() - 1) + 1;
+                Float64 h = level * static_cast<Float64>(array.size() - 1) + 1;
                 auto n = static_cast<size_t>(h);
 
                 if (n >= array.size())
@@ -243,7 +256,8 @@ struct QuantileExactInclusive : public QuantileExact<Value>
                     ::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
                     auto * nth_elem = std::min_element(array.begin() + n, array.end());
 
-                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * (static_cast<Float64>(*nth_elem) - array[n - 1]);
+                    result[indices[i]] = static_cast<Float64>(array[n - 1])
+                        + (h - static_cast<Float64>(n)) * quantileExactInterpolationDelta(array[n - 1], *nth_elem);
                     prev_n = n - 1;
                 }
             }
@@ -288,7 +302,7 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
                 // else quantile is the nth index of the sorted array obtained by multiplying
                 // level and size of array. Example if level = 0.1 and size of array is 10,
                 // then return array[1].
-                n = level < 1 ? static_cast<size_t>(level * array.size()) : (array.size() - 1);
+                n = level < 1 ? static_cast<size_t>(level * static_cast<Float64>(array.size())) : (array.size() - 1);
             }
             ::nth_element(array.begin(), array.begin() + n, array.end());
             return array[n];
@@ -323,7 +337,7 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
                 {
                     // else quantile is the nth index of the sorted array obtained by multiplying
                     // level and size of array. Example if level = 0.1 and size of array is 10.
-                    n = level < 1 ? static_cast<size_t>(level * array.size()) : (array.size() - 1);
+                    n = level < 1 ? static_cast<size_t>(level * static_cast<Float64>(array.size())) : (array.size() - 1);
                 }
                 ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
                 result[indices[i]] = array[n];
@@ -362,7 +376,7 @@ struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Val
             {
                 // else quantile is the nth index of the sorted array obtained by multiplying
                 // level and size of array. Example if level = 0.1 and size of array is 10.
-                n = level < 1 ? static_cast<size_t>(level * array.size()) : (array.size() - 1);
+                n = level < 1 ? static_cast<size_t>(level * static_cast<Float64>(array.size())) : (array.size() - 1);
             }
             ::nth_element(array.begin(), array.begin() + n, array.end());
             return array[n];
@@ -390,7 +404,7 @@ struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Val
                 {
                     // else quantile is the nth index of the sorted array obtained by multiplying
                     // level and size of array. Example if level = 0.1 and size of array is 10.
-                    n = level < 1 ? static_cast<size_t>(level * array.size()) : (array.size() - 1);
+                    n = level < 1 ? static_cast<size_t>(level * static_cast<Float64>(array.size())) : (array.size() - 1);
                 }
                 ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
                 result[indices[i]] = array[n];

@@ -65,7 +65,7 @@ struct PerformanceStatistics
         ///  when there is no statistical significant difference between them.
         double sigma() const
         {
-            return mean() / sqrt(adjustedCount());
+            return mean() / adjustedCount();
         }
 
         void update(double seconds, double bytes)
@@ -81,17 +81,17 @@ struct PerformanceStatistics
             /// If there is a variant with not enough statistics, always choose it.
             /// And in that case prefer variant with less number of invocations.
 
-            if (adjustedCount() < 2)
+            if (adjustedCount() < NUM_INVOCATIONS_TO_THROW_OFF)
                 return adjustedCount() - 1;
             return std::normal_distribution<>(mean(), sigma())(stat_rng);
         }
     };
 
     /// Number of different algorithms to select from.
-    static constexpr size_t NUM_ELEMENTS = 5;
+    static constexpr size_t NUM_ELEMENTS = 3;
 
     /// Cold invocations may be affected by additional memory latencies. Don't take first invocations into account.
-    static constexpr double NUM_INVOCATIONS_TO_THROW_OFF = 2;
+    static constexpr double NUM_INVOCATIONS_TO_THROW_OFF = 1;
 
     /// How to select method to run.
     /// -1 - automatically, based on statistics (default);
@@ -134,30 +134,5 @@ bool decompress(
     size_t source_size,
     size_t dest_size,
     PerformanceStatistics & statistics);
-
-
-/** Obtain statistics about LZ4 block useful for development.
-  */
-struct StreamStatistics
-{
-    size_t num_tokens = 0;
-    size_t sum_literal_lengths = 0;
-    size_t sum_match_lengths = 0;
-    size_t sum_match_offsets = 0;
-    size_t count_match_offset_less_8 = 0;
-    size_t count_match_offset_less_16 = 0;
-    size_t count_match_replicate_itself = 0;
-
-    void literal(size_t length);
-    void match(size_t length, size_t offset);
-
-    void print() const;
-};
-
-void statistics(
-    const char * const source, /// NOLINT
-    char * const dest, /// NOLINT
-    size_t dest_size,
-    StreamStatistics & stat);
 
 }

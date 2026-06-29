@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/CurrentThread.h>
 #include <Common/RWLock.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
@@ -74,6 +75,8 @@ public:
 
     void optimizeUnlocked();
 
+    using StorageWithCommonVirtualColumns::read;
+
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -83,12 +86,12 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     Block getRightSampleBlock() const
     {
-        auto metadata_snapshot = getInMemoryMetadataPtr();
+        auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
         Block block = metadata_snapshot->getSampleBlock();
         convertRightBlock(block);
         return block;

@@ -32,24 +32,32 @@ ${CLICKHOUSE_CLIENT} -q """
     INSERT INTO t1_local SELECT * FROM numbers_mt(1e6);
 """
 
-max_insert_threads=9
+max_insert_threads=8
+
+# The pipeline shape depends on the exact thread count;
+# disable the free-memory limiter (max_threads_min_free_memory_per_thread,
+# max_insert_threads_min_free_memory_per_thread) to keep `max_insert_threads`
+# at the requested value regardless of concurrent memory pressure.
+# Without these flags the test is flaky on `per_test_coverage` and other
+# memory-constrained builds. See PR #100383.
+NO_MEM_THROTTLE='--max_threads_min_free_memory_per_thread=0 --max_insert_threads_min_free_memory_per_thread=0'
 
 echo "inserting into a remote table from local with concurrency equal to max_insert_threads"
-${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" -q """
+${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" $NO_MEM_THROTTLE -q """
     EXPLAIN PIPELINE
     INSERT INTO t3_dist
     SELECT * FROM t1_local;
 """ | grep -v EmptySink | grep -c Sink
 
 echo "inserting into a remote table from remote with concurrency max_insert_threads"
-${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" --parallel_distributed_insert_select 0 -q """
+${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" $NO_MEM_THROTTLE --parallel_distributed_insert_select 0 -q """
     EXPLAIN PIPELINE
     INSERT INTO t3_dist
     SELECT * FROM t3_dist;
 """ | grep -v EmptySink | grep -c Sink
 
 echo "inserting into a remote table from remote (reading with parallel replicas) with concurrency max_insert_threads"
-${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" --enable_parallel_replicas 2 --cluster_for_parallel_replicas 'parallel_replicas' --max_parallel_replicas 3 -q """
+${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" $NO_MEM_THROTTLE --enable_parallel_replicas 2 --cluster_for_parallel_replicas 'parallel_replicas' --max_parallel_replicas 3 -q """
     EXPLAIN PIPELINE
     INSERT INTO t3_dist
     SELECT * FROM t4_pr;

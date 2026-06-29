@@ -1,5 +1,4 @@
 #include <Common/typeid_cast.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -149,7 +148,7 @@ ASTPtr makeOnExpression(const std::vector<ASTPtr> & expressions)
     for (const auto & ast : expressions)
         arguments.emplace_back(ast->clone());
 
-    return makeASTFunction("and", std::move(arguments));
+    return makeASTOperator("and", std::move(arguments));
 }
 
 std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
@@ -193,7 +192,7 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
             if (!join->children.empty())
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "CROSS JOIN has {} expressions: [{}, ...]",
-                    join->children.size(), queryToString(join->children[0]));
+                    join->children.size(), join->children[0]->formatWithSecretsOneLine());
         }
     }
 
@@ -205,7 +204,17 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
 
 bool CrossToInnerJoinMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
-    return !node->as<ASTSubquery>();
+    if (node->as<ASTSubquery>())
+        return false;
+
+    /// Do not descend into table expressions — they may contain
+    /// table functions like view(SELECT ... JOIN ...) whose inner
+    /// ASTSelectQuery has a different set of tables and must not be
+    /// processed by this visitor.
+    if (node->as<ASTTableExpression>())
+        return false;
+
+    return true;
 }
 
 void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)
@@ -241,7 +250,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
             if (joined.tableJoin()->kind != JoinKind::Cross)
                 continue;
 
-            String query_before = queryToString(*joined.tableJoin());
+            String query_before = joined.tableJoin()->formatWithSecretsOneLine();
             bool rewritten = false;
             const auto & expr_it = asts_to_join_on.find(i);
             if (expr_it != asts_to_join_on.end())
@@ -249,7 +258,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
                 ASTPtr on_expr = makeOnExpression(expr_it->second);
                 if (rewritten = joined.rewriteCrossToInner(on_expr); rewritten)
                 {
-                    LOG_DEBUG(getLogger("CrossToInnerJoin"), "Rewritten '{}' to '{}'", query_before, queryToString(*joined.tableJoin()));
+                    LOG_DEBUG(getLogger("CrossToInnerJoin"), "Rewritten '{}' to '{}'", query_before, joined.tableJoin()->formatForLogging());
                 }
             }
 
@@ -263,7 +272,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
                     "Please, try to simplify WHERE section "
                     "or set the setting `cross_to_inner_join_rewrite` to 1 to allow slow CROSS JOIN for this case "
                     "(cannot rewrite '{} WHERE {}' to INNER JOIN)",
-                    query_before, queryToString(select.where()));
+                    query_before, select.where()->formatForErrorMessage());
             }
         }
     }

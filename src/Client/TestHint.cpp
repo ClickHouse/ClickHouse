@@ -7,6 +7,8 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
+#include <fmt/ranges.h>
+
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
@@ -16,8 +18,7 @@ namespace DB::ErrorCodes
 namespace DB
 {
 
-TestHint::TestHint(const String & query_)
-    : query(query_)
+TestHint::TestHint(const std::string_view & query)
 {
     // Don't parse error hints in leading comments, because it feels weird.
     // Leading 'echo' hint is OK.
@@ -141,7 +142,7 @@ void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
                     continue;
                 if (token.type == TokenType::Number)
                 {
-                    int code;
+                    int code = 0;
                     auto [p, ec] = std::from_chars(token.begin, token.end, code);
                     if (p == token.begin)
                         throw DB::Exception(

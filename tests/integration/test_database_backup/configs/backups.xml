@@ -9,7 +9,7 @@
                 <type>s3_plain</type>
                 <endpoint>http://minio1:9001/root/data/disks/disk_s3_plain/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </backup_disk_s3_plain>
             <backup_disk_object_storage_local_plain>
                 <type>object_storage</type>

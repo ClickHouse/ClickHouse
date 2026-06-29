@@ -4,7 +4,7 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Backups/BackupIO_Default.h>
 #include <Disks/DiskType.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 
 
 namespace DB
@@ -70,12 +70,8 @@ public:
         UInt64 length) override;
 
     void copyFileFromDisk(
-        const String & path_in_backup,
-        DiskPtr src_disk,
-        const String & src_path,
-        bool copy_encrypted,
-        UInt64 start_pos,
-        UInt64 length) override;
+        const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
+        override;
 
     void copyFile(const String & destination, const String & source, size_t size) override;
 

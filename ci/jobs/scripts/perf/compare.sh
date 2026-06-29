@@ -14,11 +14,13 @@ LEFT_SERVER_PORT=9001
 LEFT_SERVER_KEEPER_PORT=9181
 LEFT_SERVER_KEEPER_RAFT_PORT=9234
 LEFT_SERVER_INTERSERVER_PORT=9009
+LEFT_SERVER_HTTP_PORT=8123
 # patched version
 RIGHT_SERVER_PORT=19001
 RIGHT_SERVER_KEEPER_PORT=19181
 RIGHT_SERVER_KEEPER_RAFT_PORT=19234
 RIGHT_SERVER_INTERSERVER_PORT=19009
+RIGHT_SERVER_HTTP_PORT=18123
 
 # abort_conf   -- abort if some options is not recognized
 # abort        -- abort if something is not right in the env (i.e. per-cpu arenas does not work)
@@ -27,18 +29,25 @@ RIGHT_SERVER_INTERSERVER_PORT=19009
 #                 _SC_NPROCESSORS_ONLN/_SC_NPROCESSORS_CONF/sched_getaffinity
 export MALLOC_CONF="abort_conf:true,abort:true,narenas:$(nproc --all)"
 
+# jemalloc allocation sampling rate (lg2 of the average byte interval between
+# samples) for the per-query profiler used in the dedicated profile runs.
+# Lower than the 512 KiB (19) default: we profile single queries in isolation,
+# so we need a denser profile to get useful JemallocSample flamegraphs.
+# Must match CHServer.JEMALLOC_PROFILER_SAMPLING_RATE in performance_tests.py.
+JEMALLOC_PROFILER_SAMPLING_RATE=16
+
 function wait_for_server # port, pid
 {
     for _ in {1..60}
     do
-        if clickhouse-client --port "$1" --query "select 1" || ! kill -0 "$2"
+        if clickhouse-client --port "$1" --receive_timeout=5 --query "select 1" || ! kill -0 "$2"
         then
             break
         fi
         sleep 1
     done
 
-    if ! clickhouse-client --port "$1" --query "select 1"
+    if ! clickhouse-client --port "$1" --receive_timeout=5 --query "select 1"
     then
         echo "Cannot connect to ClickHouse server at $1"
         return 1
@@ -123,12 +132,46 @@ function configure
 
     cp -al db0/ right/db/
     cp -R coordination0 right/coordination
+
+    # Symlink user_files from the repository into both servers' user_files directories
+    if [ -d "$script_dir/../../../../tests/performance/user_files" ]; then
+        for f in "$script_dir/../../../../tests/performance/user_files"/*; do
+            [ -e "$f" ] || continue
+            ln -sf "$(readlink -f "$f")" left/db/user_files/
+            ln -sf "$(readlink -f "$f")" right/db/user_files/
+        done
+    fi
+}
+
+# addressToLine resolves a frame to "file:line" only where DWARF covers
+# ClickHouse code. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS): the symbol
+# table remains (addressToSymbol works) but there is no line info, so the patched
+# (right) binary symbolizes differently from the reference (left, master) build
+# and flamegraph tooling cannot match the frames. A ".debug_info" section is not
+# a reliable signal (Rust crates emit one even under -g0), so probe how many
+# system.stack_trace frames resolve to a line on each binary and strip the
+# reference only when the patched binary resolves far fewer. Merge-to-master
+# resolves comparably on both and is left untouched.
+function match_reference_debug_info
+{
+    local left right left_lines right_lines
+    left=$(readlink -f left/clickhouse-server)
+    right=$(readlink -f right/clickhouse-server)
+    # Running clickhouse also decompresses the self-extracting binary in place.
+    local probe="select countIf(addressToLine(arrayJoin(trace)) like '%:%') from system.stack_trace"
+    left_lines=$("$left" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    right_lines=$("$right" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    if [ "$(( ${right_lines:-0} * 4 ))" -lt "${left_lines:-0}" ]; then
+        strip --strip-debug "$left"
+    fi
 }
 
 function restart
 {
     while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
     echo all killed
+
+    match_reference_debug_info
 
     set -m # Spawn servers in their own process groups
 
@@ -141,11 +184,16 @@ function restart
         --user_files_path left/db/user_files
         --top_level_domains_path "$(left_or_right left top_level_domains)"
         --tcp_port $LEFT_SERVER_PORT
+        # The perf-comparison config removes <http_port>; re-enable it on the
+        # command line (a documented config override) with a distinct port per
+        # server, so that shell-script tests can talk to the server over HTTP.
+        --http_port $LEFT_SERVER_HTTP_PORT
         --keeper_server.tcp_port $LEFT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $LEFT_SERVER_KEEPER_RAFT_PORT
         --keeper_server.storage_path left/coordination
         --zookeeper.node.port $LEFT_SERVER_KEEPER_PORT
         --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
+        --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
     left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
@@ -161,11 +209,13 @@ function restart
         --user_files_path right/db/user_files
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --tcp_port $RIGHT_SERVER_PORT
+        --http_port $RIGHT_SERVER_HTTP_PORT
         --keeper_server.tcp_port $RIGHT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $RIGHT_SERVER_KEEPER_RAFT_PORT
         --keeper_server.storage_path right/coordination
         --zookeeper.node.port $RIGHT_SERVER_KEEPER_PORT
         --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
+        --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
     right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
@@ -309,9 +359,9 @@ function run_tests
     do
         echo "$current_test of $total_tests tests complete" > status.txt
         # Check that both servers are alive, and restart them if they die.
-        clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
+        clickhouse-client --port $LEFT_SERVER_PORT --receive_timeout=5 --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; }
-        clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1 format Null" \
+        clickhouse-client --port $RIGHT_SERVER_PORT --receive_timeout=5 --query "select 1 format Null" \
             || { echo $test_name >> right-server-died.log ; restart ; }
 
         test_name=$(basename "$test" ".xml")
@@ -336,6 +386,11 @@ function run_tests
             argv=(
                 --host localhost localhost
                 --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT"
+                # Binary paths and HTTP ports are used by shell-script tests
+                # (<query type="shell">), e.g. clickhouse-local startup and HTTP
+                # reads. They are parallel to --host/--port (left, then right).
+                --binary left/clickhouse right/clickhouse
+                --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT"
                 --runs "$CHPC_RUNS"
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
@@ -405,8 +460,8 @@ function get_profiles
 
     # Just check that the servers are alive so that we return a proper exit code.
     # We don't consistently check the return codes of the above background jobs.
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select 1"
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1"
+    clickhouse-client --port $LEFT_SERVER_PORT --receive_timeout=5 --query "select 1"
+    clickhouse-client --port $RIGHT_SERVER_PORT --receive_timeout=5 --query "select 1"
 }
 
 # Build and analyze randomization distribution for all queries.
@@ -477,7 +532,12 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
         with (select groupUniqArrayArray(mapKeys(ProfileEvents)) from query_logs) as all_names
             select arrayReduce('sumMapState', [(all_names, arrayMap(x->0::Nullable(Float64), all_names))])
         ) as all_metrics
-    select test, query_index, version, query_id,
+    -- Take version/query_id from query_runs, the preserved side of the RIGHT JOIN.
+    -- For SQL queries the query_log always matches, so this is the same value;
+    -- but shell-script queries (<query type="shell">) have no query_log row, and
+    -- the unqualified columns would otherwise default to query_logs' 0/'' and
+    -- collapse both servers' runs onto version 0.
+    select test, query_index, query_runs.version version, query_runs.query_id query_id,
         (finalizeAggregation(
             arrayReduce('sumMapMergeState',
                 [
@@ -585,10 +645,7 @@ unset IFS
 # --memsuspend:
 #
 #   If the available memory falls below 2 * size, GNU parallel will suspend some of the running jobs.
-
-#TODO: check why parallel hangs locally
 parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
-#bash analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
@@ -616,65 +673,6 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
     order by test, query_index, metric_name
     ;
 " 2> >(tee -a analyze/errors.log 1>&2)
-
-# Fetch historical query variability thresholds from the CI database
-if [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
-then
-    set +x # Don't show password in the log
-    client=(clickhouse-client
-        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
-        # so I have to extract host and port with clickhouse-local. I tried to use
-        # Poco URI parser to support this in the client, but it's broken and can't
-        # parse host:port.
-        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
-        --secure
-        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
-        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
-        --config "right/config/client_config.xml"
-        --date_time_input_format=best_effort)
-
-
-# Precision is going to be 1.5 times worse for PRs, because we run the queries
-# less times. How do I know it? I ran this:
-# SELECT quantilesExact(0., 0.1, 0.5, 0.75, 0.95, 1.)(p / m)
-# FROM
-# (
-#     SELECT
-#         quantileIf(0.95)(stat_threshold, pr_number = 0) AS m,
-#         quantileIf(0.95)(stat_threshold, (pr_number != 0) AND (abs(diff) < stat_threshold)) AS p
-#     FROM query_metrics_v2
-#     WHERE (event_date > (today() - toIntervalMonth(1))) AND (metric = 'client_time')
-#     GROUP BY
-#         test,
-#         query_index,
-#         query_display_name
-#     HAVING count(*) > 100
-# )
-#
-# The file can be empty if the server is inaccessible, so we can't use
-# TSVWithNamesAndTypes.
-#
-    "${client[@]}" --query "
-            select test, query_index,
-                quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
-                quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
-                query_display_name
-            from query_metrics_v2
-            -- We use results at least one week in the past, so that the current
-            -- changes do not immediately influence the statistics, and we have
-            -- some time to notice that something is wrong.
-            where event_date between now() - interval 1 month - interval 1 week
-                    and now() - interval 1 week
-                and metric = 'client_time'
-                and pr_number = 0
-            group by test, query_index, query_display_name
-            having count(*) > 100
-            " > analyze/historical-thresholds.tsv
-    set -x
-else
-    touch analyze/historical-thresholds.tsv
-fi
-
 }
 
 # Analyze results
@@ -720,13 +718,21 @@ create view query_metric_stats as
 create table report_thresholds engine File(TSVWithNamesAndTypes, 'report/thresholds.tsv')
     as select
         query_display_names.test test, query_display_names.query_index query_index,
-        ceil(greatest(0.1, historical_thresholds.max_diff,
+        -- The floors (0.15 for 'changed', 0.25 for 'unstable') are the minimum
+        -- relative difference we treat as a real change. They are intentionally
+        -- above the level of run-to-run noise observed on CI runners: micro
+        -- benchmarks routinely swing by 10-15% between two binaries because of
+        -- machine noise (noisy neighbours, frequency scaling) and code-layout
+        -- artifacts (function alignment/inlining shifts) unrelated to the tested
+        -- change. For historically noisier queries the learned thresholds
+        -- (1.5 * historical p99) are larger and take over.
+        ceil(greatest(0.15, historical_thresholds.max_diff,
             test_thresholds.report_threshold), 2) changed_threshold,
-        ceil(greatest(0.2, historical_thresholds.max_stat_threshold,
+        ceil(greatest(0.25, historical_thresholds.max_stat_threshold,
             test_thresholds.report_threshold + 0.1), 2) unstable_threshold,
         query_display_names.query_display_name query_display_name
     from query_display_names
-    left join file('analyze/historical-thresholds.tsv', TSV,
+    left join file('./historical-thresholds.tsv', TSV,
         'test text, query_index int, max_diff float, max_stat_threshold float,
             query_display_name text') historical_thresholds
     on query_display_names.test = historical_thresholds.test
@@ -873,8 +879,7 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 --
 create view test_runs as
     select test,
-        -- Default to 7 runs if there are only 'short' queries in the test, and
-        -- we can't determine the number of runs.
+        -- Default to 7 runs if we can't determine the number of runs.
         if((ceil(median(t.runs), 0) as r) != 0, r, 7) runs
     from (
         select
@@ -973,14 +978,29 @@ create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
     ;
 
 -- new report for all queries with all metrics (no page yet)
+-- The trailing changed_threshold/unstable_threshold columns are the per-query
+-- thresholds computed in report_thresholds above (the 0.15/0.25 floors raised
+-- by historical and per-test thresholds). They are exported so downstream
+-- consumers (e.g. .claude/tools/fetch_perf_report.py) can classify queries
+-- with the same effective thresholds as the CI gate instead of only the floor
+-- constants. They are appended at the end to keep the existing column
+-- positions stable for older consumers.
 create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.tsv') as
     select metric_name, left, right, diff,
         floor(left > right ? left / right : right / left, 3),
-        stat_threshold, test, query_index, query_display_name
+        stat_threshold,
+        query_metric_stats.test test, query_metric_stats.query_index query_index,
+        query_display_names.query_display_name query_display_name,
+        report_thresholds.changed_threshold changed_threshold,
+        report_thresholds.unstable_threshold unstable_threshold
     from query_metric_stats
     left join query_display_names
         on query_metric_stats.test = query_display_names.test
             and query_metric_stats.query_index = query_display_names.query_index
+    left join report_thresholds
+        on query_display_names.test = report_thresholds.test
+            and query_display_names.query_index = report_thresholds.query_index
+            and query_display_names.query_display_name = report_thresholds.query_display_name
     order by test, query_index;
 " 2> >(tee -a report/errors.log 1>&2)
 
@@ -1043,14 +1063,30 @@ create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes,
 create view trace_log as select *
     from file('$version-trace-log.tsv', TSVWithNamesAndTypes);
 
-create view addresses_src as select addr,
-        -- Some functions change name between builds, e.g. '__clone' or 'clone' or
-        -- even '__GI__clone@@GLIBC_2.32'. This breaks differential flame graphs, so
-        -- filter them out here.
-        [name, 'clone.S (filtered by script)', 'pthread_cond_timedwait (filtered by script)']
-            -- this line is a subscript operator of the above array
-            [1 + multiSearchFirstIndex(name, ['clone.S', 'pthread_cond_timedwait'])] name
-    from file('$version-addresses.tsv', TSVWithNamesAndTypes);
+create view addresses_src as
+    -- Keep only the demangled symbol, dropping the 'file:line#'/'clickhouse#'
+    -- prefix. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS), so addressToLine has
+    -- no DWARF and the prefix degrades to the binary basename ('clickhouse#...'),
+    -- while master keeps 'file:line#'. A symbol-only name is identical on both,
+    -- so per-side and differential flamegraphs stay comparable. A name has at most
+    -- one '#' (demangled C++ symbols contain none). The clone.S filter runs first
+    -- because it matches on the file part: the symbol itself ('__clone'/'clone')
+    -- varies between builds, while dozens of unrelated symbols contain 'clone'.
+    --
+    -- Also drop the '.llvm.<hash>' suffix LLVM appends to internalized local
+    -- symbols under LTO: the hash differs between builds, so it would split the
+    -- same function into two frames.
+    select addr, replaceRegexpOne(splitByChar('#', name)[-1], '[.]llvm[.][0-9]+', '') name
+    from (
+        select addr,
+            -- Some functions change name between builds, e.g. '__clone' or 'clone'
+            -- or even '__GI__clone@@GLIBC_2.32'. This breaks differential flame
+            -- graphs, so filter them out here.
+            [name, 'clone.S (filtered by script)', 'pthread_cond_timedwait (filtered by script)']
+                -- this line is a subscript operator of the above array
+                [1 + multiSearchFirstIndex(name, ['clone.S', 'pthread_cond_timedwait'])] name
+        from file('$version-addresses.tsv', TSVWithNamesAndTypes)
+    );
 
 create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
@@ -1080,15 +1116,30 @@ create table stacks engine File(TSV, 'report/stacks.$version.tsv') as
             ),
             ';'
         ) readable_trace,
-        count() c
+        -- Allocation samples are weighted by bytes; CPU/Real samples by count.
+        multiIf(trace_type in ('MemorySample', 'JemallocSample'), toUInt64(sum(size)), count()) c
     from trace_log
     join unstable_query_runs using query_id
+    -- Drop deallocation samples: their stack is the free site, not the
+    -- allocation site, so they cannot be folded with the matching allocation.
+    where size >= 0
     group by test, query_index, trace_type, trace
     order by test, query_index, trace_type, trace
     ;
 " 2> >(tee -a report/errors.log 1>&2) &
 done
 wait
+
+# Allocation profiles (MemorySample/JemallocSample) fold byte totals rather
+# than sample counts, so flamegraph.pl must label and color them as memory.
+function flamegraph_opts # trace_type
+{
+    case "$1" in
+        MemorySample | JemallocSample)
+            echo "--countname=bytes --color=mem"
+            ;;
+    esac
+}
 
 # Create per-query flamegraphs
 touch report/query-files.txt
@@ -1098,7 +1149,13 @@ do
     for query in $(cut -d'	' -f1-4 "report/stacks.$version.tsv" | sort | uniq)
     do
         query_file=$(echo "$query" | cut -c-120 | sed 's/[/	]/_/g')
-        echo "$query_file" >> report/query-files.txt
+        trace_type=$(echo "$query" | cut -d'	' -f3)
+        printf '%s\t%s\n' "$query_file" "$trace_type" >> report/query-files.txt
+
+        # Allocation traces (MemorySample/JemallocSample) are sparse, so a query
+        # may have samples on only one side. difffolded.pl below still needs both
+        # inputs, so make the missing side an empty folded file.
+        touch "report/tmp/$query_file.stacks.left.tsv" "report/tmp/$query_file.stacks.right.tsv"
 
         # Build separate .svg flamegraph for each query.
         # -F is somewhat unsafe because it might match not the beginning of the
@@ -1107,19 +1164,21 @@ do
             | cut -f 5- \
             | sed 's/\t/ /g' \
             | tee "report/tmp/$query_file.stacks.$version.tsv" \
-            | ~/fg/flamegraph.pl --hash > "$query_file.$version.svg" &
+            | flamegraph.pl --hash $(flamegraph_opts "$trace_type") > "$query_file.$version.svg" &
     done
 done
 wait
 unset IFS
 
-# Create differential flamegraphs.
-while IFS= read -r query_file
+# Create differential flamegraphs. Frames are symbol-only (addresses_src strips
+# the file:line/clickhouse prefix), so the two sides line up despite the PR side
+# lacking DWARF.
+while IFS=$'\t' read -r query_file trace_type
 do
-    ~/fg/difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
+    difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
             "report/tmp/$query_file.stacks.right.tsv" \
         | tee "report/tmp/$query_file.stacks.diff.tsv" \
-        | ~/fg/flamegraph.pl > "$query_file.diff.svg" &
+        | flamegraph.pl $(flamegraph_opts "$trace_type") > "$query_file.diff.svg" &
 done < report/query-files.txt
 wait
 
@@ -1149,8 +1208,20 @@ do
         # "socket.timeout: timed out".
         rg --no-filename --max-count=2 -i '\(Exception\|Error\):[^:]' "$log" \
             || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
-            || head -2 "$log"
+            || head -10 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
+done
+
+# Shell-script queries (<query type="shell">) report a failure on a server by
+# emitting a `run-error` line to stdout (the per-test *-err.log is not always
+# available at report time). Fold those into run-errors.tsv as well, in the
+# 'test<tab>error' shape the Run Errors table and CIDB expect, so a shell test
+# that failed on one server is reported instead of silently disappearing.
+for test_file in *-raw.tsv
+do
+    test_name=$(basename "$test_file" "-raw.tsv")
+    sed -n "s/^run-error\t\([0-9]*\)\t\([0-9]*\)\t/$test_name\tquery \1 server \2: /p" \
+        < "$test_file" >> run-errors.tsv ||:
 done
 }
 
@@ -1232,7 +1303,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         fromUnixTimestamp($CHPC_CHECK_START_TIMESTAMP) check_start_time,
         test_name :: LowCardinality(String) AS test_name ,
         test_status :: LowCardinality(String) AS test_status,
-        test_duration_ms :: UInt64 AS test_duration_ms,
+        test_duration_ms :: Float64 AS test_duration_ms,
         report_url,
         $PR_TO_TEST = 0
             ? 'https://github.com/ClickHouse/ClickHouse/commit/$SHA_TO_TEST'
@@ -1251,120 +1322,54 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         union all
             select
                 test || ' #' || toString(query_index) || '::' || test_desc_.1 test_name,
-                'slower' test_status,
+                multiIf(
+                    changed_fail != 0 and diff > 0, 'slower',
+                    unstable_fail != 0, 'unstable',
+                    'success'
+                ) test_status,
                 test_desc_.2*1e3 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#changes-in-performance.' || test || '.' || toString(query_index) report_url
+                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/'
+                    || multiIf(
+                        changed_fail != 0 and diff > 0, 'report.html#changes-in-performance.',
+                        unstable_fail != 0, 'report.html#unstable-queries.',
+                        'report.html#all-queries.'
+                    )
+                    || test || '.' || toString(query_index) report_url
             from queries
             array join map('old', left, 'new', right) as test_desc_
-            where changed_fail != 0 and diff > 0
-        union all
-            select
-                test || ' #' || toString(query_index) || '::' || test_desc_.1 test_name,
-                'unstable' test_status,
-                test_desc_.2*1e3 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#unstable-queries.' || test || '.' || toString(query_index) report_url
-            from queries
-            array join map('old', left, 'new', right) as test_desc_
-            where unstable_fail != 0
     )
 ;
     "
 
-    if ! [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
-    then
-        echo Database for test results is not specified, will not upload them.
-        return 0
-    fi
-
-    set +x # Don't show password in the log
-    client=(clickhouse-client
-        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
-        # so I have to extract host and port with clickhouse-local. I tried to use
-        # Poco URI parser to support this in the client, but it's broken and can't
-        # parse host:port.
-        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
-        --secure
-        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
-        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
-        --config "right/config/client_config.xml"
-        --date_time_input_format=best_effort)
-
-    # CREATE TABLE IF NOT EXISTS query_metrics_v2 (
-    #     `event_date` Date,
-    #     `event_time` DateTime,
-    #     `pr_number` UInt32,
-    #     `old_sha` String,
-    #     `new_sha` String,
-    #     `test` LowCardinality(String),
-    #     `query_index` UInt32,
-    #     `query_display_name` String,
-    #     `metric` LowCardinality(String),
-    #     `old_value` Float64,
-    #     `new_value` Float64,
-    #     `diff` Float64,
-    #     `stat_threshold` Float64
-    # ) ENGINE = ReplicatedMergeTree
-    # ORDER BY event_date
-
-    # CREATE TABLE IF NOT EXISTS run_attributes_v1 (
-    #     `old_sha` String,
-    #     `new_sha` String,
-    #     `metric` LowCardinality(String),
-    #     `metric_value` String
-    # ) ENGINE = ReplicatedMergeTree
-    # ORDER BY (old_sha, new_sha)
-
-    "${client[@]}" --query "
-            insert into query_metrics_v2
-            select
-                toDate(event_time) event_date,
-                toDateTime('$(cd right/ch && git show -s --format=%ci "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
-                $PR_TO_TEST pr_number,
-                '$REF_SHA' old_sha,
-                '$SHA_TO_TEST' new_sha,
-                test,
-                query_index,
-                query_display_name,
-                metric_name as metric,
-                old_value,
-                new_value,
-                diff,
-                stat_threshold
-            from input('metric_name text, old_value float, new_value float, diff float,
-                    ratio_display_text text, stat_threshold float,
-                    test text, query_index int, query_display_name text')
-            format TSV
-" < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
-
     # Upload some run attributes. I use this weird form because it is the same
     # form that can be used for historical data when you only have compare.log.
-    cat compare.log \
-        | sed -n '
-            s/.*Model name:[[:space:]]\+\(.*\)$/metric	lscpu-model-name	\1/p;
-            s/.*L1d cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1d-cache	\1/p;
-            s/.*L1i cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1i-cache	\1/p;
-            s/.*L2 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l2-cache	\1/p;
-            s/.*L3 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l3-cache	\1/p;
-            s/.*left_sha=\(.*\)$/old-sha	\1/p;
-            s/.*right_sha=\(.*\)/new-sha	\1/p' \
-        | awk '
-            BEGIN { FS = "\t"; OFS = "\t" }
-            /^old-sha/ { old_sha=$2 }
-            /^new-sha/ { new_sha=$2 }
-            /^metric/ { print old_sha, new_sha, $2, $3 }' \
-        | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
+#    cat compare.log \
+#        | sed -n '
+#            s/.*Model name:[[:space:]]\+\(.*\)$/metric	lscpu-model-name	\1/p;
+#            s/.*L1d cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1d-cache	\1/p;
+#            s/.*L1i cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1i-cache	\1/p;
+#            s/.*L2 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l2-cache	\1/p;
+#            s/.*L3 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l3-cache	\1/p;
+#            s/.*left_sha=\(.*\)$/old-sha	\1/p;
+#            s/.*right_sha=\(.*\)/new-sha	\1/p' \
+#        | awk '
+#            BEGIN { FS = "\t"; OFS = "\t" }
+#            /^old-sha/ { old_sha=$2 }
+#            /^new-sha/ { new_sha=$2 }
+#            /^metric/ { print old_sha, new_sha, $2, $3 }' \
+#        | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
 
     # Grepping numactl results from log is too crazy, I'll just call it again.
-    "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
-$REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
-$REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
-EOF
+#    "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
+#$REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
+#$REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
+#EOF
+#
+#    # Also insert some data about the check into the CI checks table.
+#    "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
+#        < ci-checks.tsv
 
-    # Also insert some data about the check into the CI checks table.
-    "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
-        < ci-checks.tsv
-
-    set -x
+#    set -x
 }
 
 # Check that local and client are in PATH
@@ -1441,9 +1446,9 @@ case "$stage" in
     time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
     time "$script_dir/report.py" > report.html
     ;&
-#"upload_results")
-#    time upload_results ||:
-#    ;&
+"upload_results")
+    time upload_results ||:
+    ;&
 esac
 
 # Print some final debug info to help debug Weirdness, of which there is plenty.

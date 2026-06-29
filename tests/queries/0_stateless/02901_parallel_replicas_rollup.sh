@@ -6,18 +6,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function were_parallel_replicas_used ()
 {
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 
     # Not using current_database = '$CLICKHOUSE_DATABASE' as nested parallel queries aren't run with it
     $CLICKHOUSE_CLIENT --query "
         SELECT
             initial_query_id,
-            concat('Used parallel replicas: ', (countIf(initial_query_id != query_id) != 0)::bool::String) as used
+            'Used parallel replicas: ' || (ProfileEvents['ParallelReplicasUsedCount'] > 0)::bool::String
         FROM system.query_log
-    WHERE event_date >= yesterday()
-      AND initial_query_id = '$1'
-    GROUP BY initial_query_id
-    ORDER BY min(event_time_microseconds) ASC
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND query_id = '$1' AND type = 'QueryFinish'
     FORMAT TSV"
 }
 
@@ -29,6 +27,7 @@ $CLICKHOUSE_CLIENT \
   --query_id "${query_id}" \
   --max_parallel_replicas 3 \
   --cluster_for_parallel_replicas "test_cluster_one_shard_three_replicas_localhost" \
+  --automatic_parallel_replicas_mode 0 \
   --enable_parallel_replicas 1 \
   --parallel_replicas_for_non_replicated_merge_tree 1 \
   --parallel_replicas_min_number_of_rows_per_replica 0 \
@@ -67,6 +66,7 @@ $CLICKHOUSE_CLIENT \
   --query_id "${query_id}" \
   --max_parallel_replicas 3 \
   --cluster_for_parallel_replicas "test_cluster_one_shard_three_replicas_localhost" \
+  --automatic_parallel_replicas_mode 0 \
   --enable_parallel_replicas 1 \
   --parallel_replicas_for_non_replicated_merge_tree 1 \
   --parallel_replicas_min_number_of_rows_per_replica 0 \

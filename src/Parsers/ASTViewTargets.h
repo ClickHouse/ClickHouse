@@ -2,17 +2,23 @@
 
 #include <Parsers/IAST.h>
 #include <Interpreters/StorageID.h>
+#include <Core/UUID.h>
 
 
 namespace DB
 {
+class ASTColumns;
 class ASTStorage;
-enum class Keyword : size_t;
 
 /// Information about target tables (external or inner) of a materialized view or a window view or a TimeSeries table.
 /// See ASTViewTargets for more details.
 struct ViewTarget
 {
+    ~ViewTarget();
+    ViewTarget();
+    ViewTarget(const ViewTarget & other);
+    ViewTarget & operator=(const ViewTarget & other);
+
     enum Kind
     {
         /// If `kind == ViewTarget::To` then `ViewTarget` contains information about the "TO" table of a materialized view or a window view:
@@ -25,8 +31,8 @@ struct ViewTarget
         ///     CREATE WINDOW VIEW db.wv_name {INNER ENGINE inner_engine} AS SELECT ...
         Inner,
 
-        /// The "data" table for a TimeSeries table, contains time series.
-        Data,
+        /// The "samples" table for a TimeSeries table, contains samples.
+        Samples,
 
         /// The "tags" table for a TimeSeries table, contains identifiers for each combination of a metric name and tags (labels).
         Tags,
@@ -34,6 +40,8 @@ struct ViewTarget
         /// The "metrics" table for a TimeSeries table, contains general information (metadata) about metrics.
         Metrics,
     };
+
+    explicit ViewTarget(Kind kind_);
 
     Kind kind = To;
 
@@ -48,13 +56,14 @@ struct ViewTarget
 
     /// Table engine of the target table, if it's inner.
     /// That engine can be seen for example after "ENGINE" in a statement like CREATE MATERIALIZED VIEW ... ENGINE ...
-    std::shared_ptr<ASTStorage> inner_engine;
+    ASTPtr inner_engine;
+
+    /// Column list for the inner table (only for inner targets, not external ones).
+    ASTPtr inner_columns; /// points to ASTColumns
+
+    /// Table's AST with query parameters
+    ASTPtr table_ast;
 };
-
-/// Converts ViewTarget::Kind to a string.
-std::string_view toString(ViewTarget::Kind kind);
-void parseFromString(ViewTarget::Kind & out, std::string_view str);
-
 
 /// Information about all target tables (external or inner) of a view.
 ///
@@ -69,6 +78,12 @@ class ASTViewTargets : public IAST
 {
 public:
     std::vector<ViewTarget> targets;
+
+    /// Manipulates AST of the target table which has query parameters in its definition
+    void setTableASTWithQueryParams(ViewTarget::Kind kind, const ASTPtr & table_);
+    bool hasTableASTWithQueryParams(ViewTarget::Kind kind) const;
+    ASTPtr getTableASTWithQueryParams(ViewTarget::Kind kind);
+    void resetTableASTWithQueryParams(ViewTarget::Kind kind);
 
     /// Sets the StorageID of the target table, if it's not inner.
     /// That storage ID can be seen for example after "TO" in a statement like CREATE MATERIALIZED VIEW ... TO ...
@@ -91,9 +106,13 @@ public:
 
     /// Sets the table engine of the target table, if it's inner.
     /// That engine can be seen for example after "ENGINE" in a statement like CREATE MATERIALIZED VIEW ... ENGINE ...
-    void setInnerEngine(ViewTarget::Kind kind, ASTPtr storage_def);
-    std::shared_ptr<ASTStorage> getInnerEngine(ViewTarget::Kind kind) const;
-    std::vector<std::shared_ptr<ASTStorage>> getInnerEngines() const;
+    void setInnerEngine(ViewTarget::Kind kind, ASTPtr new_inner_engine);
+    ASTStorage * getInnerEngine(ViewTarget::Kind kind) const;
+    std::vector<ASTStorage *> getInnerEngines() const;
+
+    /// Sets the column list for the inner target table.
+    void setInnerColumns(ViewTarget::Kind kind, ASTPtr new_inner_columns);
+    ASTColumns * getInnerColumns(ViewTarget::Kind kind) const;
 
     /// Returns a list of all kinds of views in this ASTViewTargets.
     std::vector<ViewTarget::Kind> getKinds() const;
@@ -110,14 +129,9 @@ public:
     void formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const;
     static void formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame);
 
-    /// Helper functions for class ParserViewTargets. Returns a prefix keyword matching a specified target kind.
-    static std::optional<Keyword> getKeywordForTableID(ViewTarget::Kind kind);
-    static std::optional<Keyword> getKeywordForInnerUUID(ViewTarget::Kind kind);
-    static std::optional<Keyword> getKeywordForInnerStorage(ViewTarget::Kind kind);
-
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-    void forEachPointerToChild(std::function<void(void**)> f) override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
 };
 
 }

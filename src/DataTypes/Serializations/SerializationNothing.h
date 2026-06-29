@@ -5,11 +5,16 @@
 namespace DB
 {
 
-class SerializationNothing : public SimpleTextSerialization
+class SerializationNothing final : public SimpleTextSerialization
 {
 private:
     [[noreturn]] static void throwNoSerialization();
+    SerializationNothing() = default;
+
 public:
+    static UInt128 getHash();
+    static SerializationPtr create();
+
     void serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const override                       { throwNoSerialization(); }
     void deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const override                            { throwNoSerialization(); }
     void serializeBinary(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override             { throwNoSerialization(); }
@@ -20,7 +25,7 @@ public:
 
     /// These methods read and write zero bytes just to allow to figure out size of column.
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const override;
 };
 
 }

@@ -1,9 +1,9 @@
 #pragma once
 
 #include <absl/container/inlined_vector.h>
-#include <set>
 #include <algorithm>
 #include <memory>
+#include <set>
 
 #include <Core/Defines.h>
 #include <Parsers/IAST_fwd.h>
@@ -16,22 +16,38 @@
 namespace DB
 {
 
+struct LiteralTokenMap;
+
 namespace ErrorCodes
 {
     extern const int TOO_DEEP_RECURSION;
     extern const int LOGICAL_ERROR;
 }
 
+/// Highlight types for syntax highlighting of parsed queries.
+/// APPLY_FOR_HIGHLIGHTS lists the publicly visible types (used in the output of `highlightQuery`).
+/// string_like and string_regexp are internal types used by the parser before expansion.
+#define APPLY_FOR_HIGHLIGHTS(M) \
+    M(none) \
+    M(keyword) \
+    M(identifier) \
+    M(function) \
+    M(alias) \
+    M(substitution) \
+    M(number) \
+    M(string) \
+    M(string_escape) \
+    M(string_metacharacter)
+
 enum class Highlight : uint8_t
 {
-    none = 0,
-    keyword,
-    identifier,
-    function,
-    alias,
-    substitution,
-    number,
-    string,
+#define M(NAME) NAME,
+    APPLY_FOR_HIGHLIGHTS(M)
+#undef M
+    /// These two are used internally by the parser to mark LIKE/REGEXP string ranges.
+    /// They are expanded into string/string_escape/string_metacharacter by `expandHighlights`.
+    string_like,
+    string_regexp,
 };
 
 struct HighlightedRange
@@ -46,6 +62,11 @@ struct HighlightedRange
     }
 };
 
+/// Expand string_like and string_regexp ranges into character-level sub-ranges
+/// with string, string_escape, and string_metacharacter highlight types.
+/// Other ranges are passed through unchanged.
+std::vector<HighlightedRange> expandHighlights(const std::set<HighlightedRange> & highlights);
+
 
 /** Collects variants, how parser could proceed further at rightmost position.
   * Also collects a mapping of parsed ranges for highlighting,
@@ -58,6 +79,12 @@ struct Expected
 
     bool enable_highlighting = false;
     std::set<HighlightedRange> highlights;
+
+    /// Optional map for capturing literal token positions during parsing.
+    /// Used by ValuesBlockInputFormat for ConstantExpressionTemplate construction
+    /// and for LIKE/REGEXP syntax highlighting.
+    /// The caller must allocate and manage the map's lifetime.
+    LiteralTokenMap * literal_token_map = nullptr;
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
@@ -104,6 +131,18 @@ public:
 
         Pos(TokenIterator token_iterator_, uint32_t max_depth_, uint32_t max_backtracks_)
             : TokenIterator(token_iterator_), max_depth(max_depth_), max_backtracks(max_backtracks_)
+        {
+        }
+
+        /// Construct a new Pos over different Tokens, inheriting depth/backtrack
+        /// counters and limits from an existing Pos. Use this when re-tokenizing
+        /// a sub-expression so that the overall recursion depth is preserved.
+        Pos(Tokens & tokens_, const Pos & inherit_from)
+            : TokenIterator(tokens_)
+            , depth(inherit_from.depth)
+            , max_depth(inherit_from.max_depth)
+            , backtracks(inherit_from.backtracks)
+            , max_backtracks(inherit_from.max_backtracks)
         {
         }
 

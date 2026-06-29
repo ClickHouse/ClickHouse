@@ -3,6 +3,7 @@
 #include "config.h"
 #if USE_PROMETHEUS_PROTOBUFS
 
+#include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <prompb/remote.pb.h>
@@ -27,7 +28,7 @@ public:
 
 private:
     std::shared_ptr<StorageTimeSeries> time_series_storage;
-    Poco::LoggerPtr log;
+    LoggerPtr log;
 };
 
 }

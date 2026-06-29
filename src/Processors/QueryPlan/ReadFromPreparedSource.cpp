@@ -2,12 +2,34 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+
+
+#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 query_plan_max_step_description_length;
+}
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
+
 ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
-    : ISourceStep(pipe_.getHeader())
+    : ISourceStep(pipe_.getSharedHeader())
     , pipe(std::move(pipe_))
 {
 }
@@ -30,10 +52,49 @@ ReadFromStorageStep::ReadFromStorageStep(
     , context(std::move(context_))
     , query_info(query_info_)
 {
-    setStepDescription(storage->getName());
+    auto description = storage->getName();
+    setStepDescription(description, context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 
     for (const auto & processor : pipe.getProcessors())
         processor->setStorageLimits(query_info.storage_limits);
+}
+
+void ReadFromStorageStep::serialize(Serialization & ctx) const
+{
+    /// Not a logical error: a caller (e.g. the distributed-plan serializability check) may probe an
+    /// unsupported plan, and a logical error would abort debug/fuzzer builds instead of being handled.
+    if (storage->getName() != "SystemOne")
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ReadFromStorageStep serialization is implemented only for StorageSystemOne, got: {}", storage->getName());
+
+    writeStringBinary(storage->getName(), ctx.out);
+}
+
+bool ReadFromStorageStep::isSerializable() const
+{
+    return storage && storage->getName() == "SystemOne";
+}
+
+std::unique_ptr<IQueryPlanStep> ReadFromStorageStep::deserialize(Deserialization & ctx)
+{
+    String storage_name;
+    readStringBinary(storage_name, ctx.in);
+    if (storage_name != "SystemOne")
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromStorageStep deserialization is implemented only for StorageSystemOne, got: {}", storage_name);
+
+    /// "Fake" system.one represented by a chunk with single row
+    auto column = DataTypeUInt8().createColumnConst(1, 0u)->convertToFullColumnIfConst();
+    Chunk chunk({ std::move(column) }, 1);
+
+    auto source = std::make_shared<SourceFromSingleChunk>(ctx.output_header, std::move(chunk));
+    source->addTotalRowsApprox(1);
+
+    return std::make_unique<ReadFromPreparedSource>(Pipe(source));
+}
+
+void registerReadFromStorageStep(QueryPlanStepRegistry & registry);
+void registerReadFromStorageStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("ReadFromStorage", ReadFromStorageStep::deserialize);
 }
 
 }

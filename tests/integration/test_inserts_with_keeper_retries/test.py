@@ -10,7 +10,6 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -18,6 +17,7 @@ node1 = cluster.add_instance(
     main_configs=["configs/storage_conf.xml"],
     with_zookeeper=True,
     with_minio=True,
+    with_remote_database_disk=False,  # The tests stop Keeper connections, some queries will not work with the remote disk.
 )
 
 

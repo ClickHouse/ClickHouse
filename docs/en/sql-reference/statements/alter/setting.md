@@ -1,17 +1,18 @@
 ---
-slug: /sql-reference/statements/alter/setting
+description: 'Documentation for Table Settings Manipulations'
+sidebar_label: 'SETTING'
 sidebar_position: 38
-sidebar_label: SETTING
+slug: /sql-reference/statements/alter/setting
+title: 'Table Settings Manipulations'
+doc_type: 'reference'
 ---
-
-# Table Settings Manipulations
 
 There is a set of queries to change table settings. You can modify settings or reset them to default values. A single query can change several settings at once.
 If a setting with the specified name does not exist, then the query raises an exception.
 
 **Syntax**
 
-``` sql
+```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
 ```
 

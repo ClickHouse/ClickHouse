@@ -1,12 +1,13 @@
+#include <Functions/generateSnowflakeID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsRandom.h>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ServerUUID.h>
-#include <Common/Logger.h>
+#include <Core/UUID.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
-#include "base/types.h"
+#include <base/types.h>
 
 namespace DB
 {
@@ -110,7 +111,7 @@ SnowflakeIdRange getRangeOfAvailableIds(const SnowflakeId & available, uint64_t 
     }
 
     /// 3. `end = begin + input_rows_count`
-    SnowflakeId end;
+    SnowflakeId end{};
     const uint64_t seq_nums_in_current_timestamp_left = (max_machine_seq_num - begin.machine_seq_num + 1);
     if (input_rows_count >= seq_nums_in_current_timestamp_left)
         /// if sequence numbers in current timestamp is not enough for rows --> depending on how many elements input_rows_count overflows, forward timestamp by at least 1 tick
@@ -132,7 +133,7 @@ struct Data
     SnowflakeId reserveRange(uint64_t machine_id, size_t input_rows_count)
     {
         uint64_t available_snowflake_id = lowest_available_snowflake_id.load();
-        SnowflakeIdRange range;
+        SnowflakeIdRange range{};
         do
         {
             range = getRangeOfAvailableIds(toSnowflakeId(available_snowflake_id), machine_id, input_rows_count);
@@ -147,7 +148,14 @@ struct Data
 
 }
 
-class FunctionGenerateSnowflakeID : public IFunction
+uint64_t generateSnowflakeID()
+{
+    Data data;
+    SnowflakeId snowflake_id = data.reserveRange(getMachineId(), 1);
+    return fromSnowflakeId(snowflake_id);
+}
+
+class FunctionGenerateSnowflakeID final : public IFunction
 {
 public:
     static constexpr auto name = "generateSnowflakeID";
@@ -216,17 +224,67 @@ public:
 
 REGISTER_FUNCTION(GenerateSnowflakeID)
 {
-    FunctionDocumentation::Description description = R"(Generates a Snowflake ID. The generated Snowflake ID contains the current Unix timestamp in milliseconds (41 + 1 top zero bits), followed by a machine id (10 bits), and a counter (12 bits) to distinguish IDs within a millisecond. For any given timestamp (unix_ts_ms), the counter starts at 0 and is incremented by 1 for each new Snowflake ID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to 0. Function generateSnowflakeID guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.)";
-    FunctionDocumentation::Syntax syntax = "generateSnowflakeID([expression, [machine_id]])";
-    FunctionDocumentation::Arguments arguments = {
-        {"expression", "The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored. Optional."},
-        {"machine_id", "A machine ID, the lowest 10 bits are used. Optional."}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = "A value of type UInt64";
-    FunctionDocumentation::Examples examples = {{"no_arguments", "SELECT generateSnowflakeID()", "7201148511606784000"}, {"with_machine_id", "SELECT generateSnowflakeID(1)", "7201148511606784001"}, {"with_expression_and_machine_id", "SELECT generateSnowflakeID('some_expression', 1)", "7201148511606784002"}};
-    FunctionDocumentation::Category category = {"UUIDs"};
+    /// generateSnowflakeID documentation
+    FunctionDocumentation::Description description = R"(
+Generates a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID).
 
-    factory.registerFunction<FunctionGenerateSnowflakeID>({description, syntax, arguments, returned_value, examples, category});
+Function `generateSnowflakeID` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
+
+See section ["Snowflake ID generation"](#snowflake-id-generation) for implementation details.
+    )";
+    FunctionDocumentation::Syntax syntax = "generateSnowflakeID([expr, [machine_id]])";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional."},
+        {"machine_id", "A machine ID, the lowest 10 bits are used. [Int64](../data-types/int-uint.md). Optional."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the Snowflake ID.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE tab (id UInt64)
+ENGINE = MergeTree()
+ORDER BY tuple();
+
+INSERT INTO tab SELECT generateSnowflakeID();
+
+SELECT * FROM tab;
+        )",
+        R"(
+┌──────────────────id─┐
+│ 7199081390080409600 │
+└─────────────────────┘
+        )"
+    },
+    {
+        "Multiple Snowflake IDs generated per row",
+        R"(
+SELECT generateSnowflakeID(1), generateSnowflakeID(2);
+        )",
+        R"(
+┌─generateSnowflakeID(1)─┬─generateSnowflakeID(2)─┐
+│    7199081609652224000 │    7199081609652224001 │
+└────────────────────────┴────────────────────────┘
+        )"
+    },
+    {
+        "With expression and a machine ID",
+        R"(
+SELECT generateSnowflakeID('expr', 1);
+        )",
+        R"(
+┌─generateSnowflakeID('expr', 1)─┐
+│            7201148511606784002 │
+└────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGenerateSnowflakeID>(documentation);
+
 }
 
 }

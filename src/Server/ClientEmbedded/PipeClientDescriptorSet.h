@@ -1,7 +1,5 @@
 #pragma once
 
-#if defined(OS_LINUX)
-
 #include <Server/ClientEmbedded/IClientDescriptorSet.h>
 #include <boost/iostreams/device/file_descriptor.hpp>
 #include <boost/iostreams/stream.hpp>
@@ -24,10 +22,6 @@ public:
     {
         output_stream << std::unitbuf;
         output_stream_err << std::unitbuf;
-
-        /// The embedded client cannot get any additional data from the SSH client
-        /// in case if we are executing the request without opening PTY.
-        pipe_in.close(Poco::Pipe::CLOSE_WRITE);
     }
 
     DescriptorSet getDescriptorsForClient() override
@@ -49,6 +43,11 @@ public:
         pipe_err.close(Poco::Pipe::CLOSE_READ);
     }
 
+    void closeStdIn() override
+    {
+        pipe_in.close(Poco::Pipe::CLOSE_WRITE);
+    }
+
     bool isPty() const override { return false; }
 
     ~PipeClientDescriptorSet() override = default;
@@ -68,5 +67,3 @@ private:
 };
 
 }
-
-#endif

@@ -1,5 +1,6 @@
 #include <iomanip>
 
+#include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -34,39 +35,34 @@ String ASTInsertQuery::getTable() const
 
 void ASTInsertQuery::setDatabase(const String & name)
 {
-    if (name.empty())
-        database.reset();
-    else
-        database = std::make_shared<ASTIdentifier>(name);
+    reset(database);
+    if (!name.empty())
+        set(database, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTInsertQuery::setTable(const String & name)
 {
-    if (name.empty())
-        table.reset();
-    else
-        table = std::make_shared<ASTIdentifier>(name);
+    reset(table);
+    if (!name.empty())
+        set(table, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
-    ostr << (settings.hilite ? hilite_keyword : "") << "INSERT INTO ";
+    ostr << "INSERT INTO" << " ";
     if (table_function)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "FUNCTION ";
+        ostr << "FUNCTION" << " ";
         table_function->format(ostr, settings, state, frame);
         if (partition_by)
         {
-            ostr << " PARTITION BY ";
+            ostr << " " << "PARTITION BY" << " ";
             partition_by->format(ostr, settings, state, frame);
         }
     }
     else if (table_id)
     {
-        ostr << (settings.hilite ? hilite_none : "")
-                      << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
+        ostr << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
     }
     else
     {
@@ -90,21 +86,21 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     if (infile)
     {
         ostr
-            << (settings.hilite ? hilite_keyword : "")
-            << " FROM INFILE "
-            << (settings.hilite ? hilite_none : "")
-            << quoteString(infile->as<ASTLiteral &>().value.safeGet<std::string>());
+            << " "
+            << "FROM INFILE"
+
+            << " " << quoteString(infile->as<ASTLiteral &>().value.safeGet<std::string>());
         if (compression)
             ostr
-                << (settings.hilite ? hilite_keyword : "")
-                << " COMPRESSION "
-                << (settings.hilite ? hilite_none : "")
-                << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
+                << " "
+                << "COMPRESSION"
+
+                << " " << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
     }
 
     if (settings_ast)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+        ostr << settings.nl_or_ws << "SETTINGS" << " ";
         settings_ast->format(ostr, settings, state, frame);
     }
 
@@ -123,20 +119,32 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     if (select)
     {
         ostr << delim;
+        /// Disable FROM-first syntax to avoid parsing ambiguity with INSERT ... FROM INFILE.
+        /// Only affects the immediate SELECT, not nested subqueries.
+        bool was_disable_from_first_syntax = frame.disable_from_first_syntax;
+        frame.disable_from_first_syntax = true;
         select->format(ostr, settings, state, frame);
-    }
+        frame.disable_from_first_syntax = was_disable_from_first_syntax;
 
-    if (!select)
+        /// For INSERT ... SELECT ... FROM input('...') FORMAT Values,
+        /// the FORMAT clause must be preserved in the formatted output.
+        if (!format.empty())
+        {
+            ostr << delim
+                << "FORMAT" << " " << format;
+        }
+    }
+    else
     {
         if (!format.empty())
         {
             ostr << delim
-                          << (settings.hilite ? hilite_keyword : "") << "FORMAT " << (settings.hilite ? hilite_none : "") << format;
+                << "FORMAT" << " " << format;
         }
         else if (!infile)
         {
             ostr << delim
-                          << (settings.hilite ? hilite_keyword : "") << "VALUES" << (settings.hilite ? hilite_none : "");
+                << "VALUES";
         }
     }
 }
@@ -163,7 +171,7 @@ static void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function
         if (table_function_ast->name == "input")
         {
             if (input_function)
-                throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "You can use 'input()' function only once per request.");
+                throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "You can use the `input` function only once in a query.");
             input_function = ast;
         }
     }
