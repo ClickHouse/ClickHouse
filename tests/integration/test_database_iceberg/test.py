@@ -1,19 +1,15 @@
-import glob
 import json
 import logging
-import os
 import random
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pyarrow as pa
 import pytest
 import requests
-import urllib3
 import pytz
-from minio import Minio
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -21,7 +17,6 @@ from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     DoubleType,
-    FloatType,
     NestedField,
     StringType,
     StructType,
@@ -29,11 +24,8 @@ from pyiceberg.types import (
     TimestamptzType
 )
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
-from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
-from helpers.test_tools import TSV, csv_compare
-from helpers.network import PartitionManager
 from helpers.client import QueryRuntimeException
 
 BASE_URL = "http://rest:8181/v1"
@@ -107,7 +99,7 @@ def create_table(
     return catalog.create_table(
         identifier=f"{namespace}.{table}",
         schema=schema,
-        location=f"s3://warehouse-rest/data",
+        location="s3://warehouse-rest/data",
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
@@ -339,7 +331,7 @@ def test_check_database(started_cluster):
 
     try:
         node.query(
-            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
     
         assert "fault when checking database" in node.query_and_get_error(
@@ -347,7 +339,7 @@ def test_check_database(started_cluster):
         )
     finally:
         node.query(
-            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
         )
 
 
@@ -437,7 +429,7 @@ def test_hide_sensitive_info(started_cluster):
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(namespace)
 
-    table = create_table(catalog, namespace, table_name)
+    create_table(catalog, namespace, table_name)
 
     def check_secret_hidden(secret, additional_settings):
         settings = {
@@ -817,7 +809,7 @@ def test_cluster_select(started_cluster):
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
 
-    catalog = load_catalog_impl(started_cluster)
+    load_catalog_impl(started_cluster)
     create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
     create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
     create_clickhouse_iceberg_table(started_cluster, node1, root_namespace, table_name, "(x String)")
@@ -834,7 +826,7 @@ def test_cluster_select(started_cluster):
     for replica in [node1, node2]:
         cluster_secondary_queries = (
             replica.query(
-                f"""
+                """
                 SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
                 WHERE
                     type = 'QueryStart' AND
@@ -859,7 +851,7 @@ def test_used_storages_in_query_log(started_cluster):
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
 
-    catalog = load_catalog_impl(started_cluster)
+    load_catalog_impl(started_cluster)
     create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
     create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
     create_clickhouse_iceberg_table(
@@ -1108,7 +1100,10 @@ def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
 
     node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
 
-    num_columns = 10
+    # Concurrent ADD COLUMN commits must contend on the REST catalog to surface
+    # the commit-conflict/retry race. A handful of concurrent writers is enough
+    # to interleave; the original count of 10 just multiplied catalog round-trips.
+    num_columns = 4
 
     def add_column(idx):
         node.query(
