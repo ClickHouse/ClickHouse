@@ -154,7 +154,7 @@ Clears the cache of S3 clients.
 
 ## SYSTEM PREWARM MARK CACHE {#prewarm-mark-cache}
 
-Loads the marks of a table into the [mark cache](#drop-mark-cache).
+Loads the marks of a table into the [mark cache](#drop-mark-cache). Secondary-index marks are also loaded into the [index mark cache](#drop-index-mark-cache).
 
 ```sql
 SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
@@ -181,7 +181,7 @@ SYSTEM DROP DISK METADATA CACHE <disk_name>
 Reconciles ClickHouse's in-memory state of the filesystem cache with the cache files actually present on disk, and returns the `cache_name`, `path` and downloaded `size` of each cached file segment. An optional cache name limits the operation to a single cache.
 
 ```sql
-SYSTEM SYNC FILESYSTEM CACHE [<cache_name>]
+SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
 ```
 
 ## SYSTEM CLEAR|DROP DISTRIBUTED CACHE {#drop-distributed-cache}
