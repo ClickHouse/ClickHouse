@@ -1499,6 +1499,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             /// Keep constant projections as ColumnConst so this analyze-only header matches real
             /// execution (which emits a ColumnConst). Otherwise the header may diverge for an unused
             /// constant column and break parallel-replicas reading.
+            ///
+            /// A projection is constant not only when it is a folded ConstantNode but also when it
+            /// evaluates to a constant column at runtime (e.g. identity(0): identity is not suitable
+            /// for constant folding, so it stays a FunctionNode, yet it returns its constant argument
+            /// unchanged). Build the projection expression with no source columns and, if it references
+            /// none, evaluate it through the same updateHeader path real planning uses; keep the result
+            /// only when it is a ColumnConst.
             const QueryTreeNodes * projection_nodes = nullptr;
             if (query_node)
                 projection_nodes = &query_node->getProjection().getNodes();
@@ -1509,8 +1516,20 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 const auto & projection_column = projection_columns[i];
                 ColumnPtr column;
                 if (projection_nodes && i < projection_nodes->size())
-                    if (const auto * constant_node = (*projection_nodes)[i]->as<ConstantNode>())
-                        column = projection_column.type->createColumnConst(0, constant_node->getValue());
+                {
+                    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+                    auto [projection_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+                        (*projection_nodes)[i], {}, planner_context, empty_correlated_columns_set);
+                    /// Only constant expressions can be evaluated here: anything referencing a source
+                    /// column adds an INPUT and updateHeader would fail without the missing column.
+                    if (!correlated_subtrees.notEmpty() && projection_dag.getInputs().empty()
+                        && projection_dag.getOutputs().size() == 1)
+                    {
+                        auto evaluated = projection_dag.updateHeader({}).safeGetByPosition(0).column;
+                        if (evaluated && isColumnConst(*evaluated))
+                            column = projection_column.type->createColumnConst(0, (*evaluated)[0]);
+                    }
+                }
 
                 if (column)
                     source_header.insert(ColumnWithTypeAndName(column, projection_column.type, projection_column.name));

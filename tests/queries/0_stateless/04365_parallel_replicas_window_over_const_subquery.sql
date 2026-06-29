@@ -15,6 +15,11 @@ SELECT DISTINCT count(*) OVER () FROM (SELECT 0 FROM t_window_const);
 SELECT DISTINCT count(*) OVER () FROM (SELECT 0 AS c, s FROM t_window_const);
 SELECT DISTINCT count(*) OVER (), 1 AS a, 'z' AS b FROM (SELECT 0, 5 FROM t_window_const);
 
+-- The projection is constant at runtime but not folded into a ConstantNode: identity is not
+-- suitable for constant folding, yet it returns its constant argument unchanged (a ColumnConst).
+SELECT DISTINCT count(*) OVER () FROM (SELECT identity(0) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT identity(0) AS c, s FROM t_window_const);
+
 -- UNION ALL subquery: each branch is delegated to the replicas as a plain projection
 -- (SELECT 0 FROM t) while the Union/Window run on the coordinator, so the window is not
 -- pushed into a const-projecting mergeable-state read and the header cannot diverge here.
