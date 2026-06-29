@@ -5,6 +5,25 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
+# This test is a manual reproduction, not an automatic regression test, so it is skipped in CI.
+#
+# It replays the exact AST-fuzzer scenario, but the kernel OOM it asserts cannot fire deterministically
+# in the integration harness: there the docker `mem_limit` is NOT enforced as a hard cgroup `memory.max`
+# (docker-in-docker, --cgroupns=host), so the workload never crosses a hard limit and the test only burns
+# its 600s timeout. It would also pass on a foreground-query OOM rather than a merge-driven one, so it is
+# not a faithful merge-memory signal either.
+#
+# The deterministic regression - that a merge's `peak_memory_usage` exceeds the per-query
+# `max_memory_usage` - is covered by the stateless test
+# `0_stateless/04402_merge_memory_unbounded_by_query_limit.sql`. The reliable kernel-OOM reproduction
+# (creating a real enforced cgroup) lives next to this file in `manual_cgroup_oom_repro.py`. Run this
+# module manually by removing the skip below on a host where the OOM can actually fire.
+pytestmark = pytest.mark.skip(
+    reason="Manual reproduction: the kernel OOM is not deterministic in the docker-in-docker harness "
+    "(docker mem_limit is not a hard cgroup memory.max). The deterministic regression is the stateless "
+    "test 04402_merge_memory_unbounded_by_query_limit; the reliable OOM repro is manual_cgroup_oom_repro.py."
+)
+
 cluster = ClickHouseCluster(__file__)
 
 # Large memory-limited container with swap disabled (memswap_limit == mem_limit) so that, as on the
