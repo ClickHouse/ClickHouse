@@ -14,11 +14,12 @@ namespace DB
   * rather than by vector element. For example, with Float32 vectors, there are 32 groups (one for each bit),
   * and each group contains the corresponding bit from all vector elements.
   *
-  * This column is designed to store the output of the transposeBits() function calls, which convert one float within
+  * This column is designed to store the output of the transposeBits() function calls, which convert one element within
   * a regular array into this bit-transposed format. Currently supported numeric types include:
   * - Float64 (64 bit groups)
   * - Float32 (32 bit groups)
   * - BFloat16 (16 bit groups)
+  * - Int8 (8 bit groups)
   *
   * Internal structure:
   * - For a Float32 array, the underlying storage is a tuple of 32 FixedString columns
