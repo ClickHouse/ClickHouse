@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import tempfile
 from typing import List, Tuple
 
@@ -130,6 +131,10 @@ def main():
 
     dry_run_flag = "--dry-run" if args.dry_run else ""
     original_branch = Shell.get_output("git rev-parse --abbrev-ref HEAD", strict=True)
+    # Per-run GNUPGHOME for the signing key (set when the GPG import step runs);
+    # removed by the cleanup step so the private key never persists on a reused
+    # runner.
+    gnupg_home = None
 
     # Export the robot token once for the whole job (the legacy workflow set it
     # as a job-level `env: GH_TOKEN`). Commands then reference `$GH_TOKEN` instead
@@ -225,20 +230,39 @@ def main():
             workdir=REPO_PATH,
         )
 
+        def _write_secret_file(path: str, content: str) -> None:
+            # These hold R2 package-publishing credentials; create them 0600 so
+            # they are not exposed to other users/processes on a (reused)
+            # self-hosted runner, regardless of the umask. They are removed by
+            # the cleanup step at the end of the job.
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write(content)
+            os.chmod(path, 0o600)
+
         def write_r2_auth():
-            r2_auth_test = _R2_AUTH_TEST_SECRET.get_value()
-            with open(os.path.expanduser("~/.r2_auth_test"), "w") as f:
-                f.write(r2_auth_test)
+            _write_secret_file(
+                os.path.expanduser("~/.r2_auth_test"), _R2_AUTH_TEST_SECRET.get_value()
+            )
             if not args.dry_run:
-                r2_auth_prod = _R2_AUTH_PROD_SECRET.get_value()
-                with open(os.path.expanduser("~/.r2_auth"), "w") as f:
-                    f.write(r2_auth_prod)
+                _write_secret_file(
+                    os.path.expanduser("~/.r2_auth"), _R2_AUTH_PROD_SECRET.get_value()
+                )
 
         step(
             name="Write R2 Auth Config",
             command=write_r2_auth,
             workdir=REPO_PATH,
         )
+
+        # Import the signing key into a per-run GNUPGHOME (0700) rather than the
+        # runner user's default keyring, and export it so reprepro signing in
+        # the export steps uses the same home. The directory is deleted by the
+        # cleanup step, so the private key does not persist for later jobs on a
+        # reused runner.
+        gnupg_home = tempfile.mkdtemp(prefix="release-gnupg-")
+        os.chmod(gnupg_home, 0o700)
+        os.environ["GNUPGHOME"] = gnupg_home
 
         def import_gpg_key():
             import base64
@@ -685,6 +709,24 @@ def main():
                 f"python3 ./ci/jobs/create_release.py --post-status"
                 f" {dry_run_flag}".strip()
             ],
+            workdir=REPO_PATH,
+        )
+    )
+
+    # Always remove the publishing credentials and the signing-key home so they
+    # do not persist for a later job on a reused self-hosted runner.
+    def cleanup_credentials():
+        for name in ("~/.r2_auth", "~/.r2_auth_test"):
+            path = os.path.expanduser(name)
+            if os.path.exists(path):
+                os.remove(path)
+        if gnupg_home:
+            shutil.rmtree(gnupg_home, ignore_errors=True)
+
+    results.append(
+        Result.from_commands_run(
+            name="Clean Up Credentials",
+            command=cleanup_credentials,
             workdir=REPO_PATH,
         )
     )
