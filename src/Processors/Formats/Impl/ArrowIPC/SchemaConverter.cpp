@@ -613,6 +613,16 @@ buildField(
                 /// plus a trailing `null`-typed child that NULL rows refer to.
                 const auto & variant_type = assert_cast<const DataTypeVariant &>(*t);
                 const auto & variants = variant_type.getVariants();
+                /// An Arrow dense-union type id is a signed int8 and the trailing NULL child uses id
+                /// `variants.size()`, so a Variant with more than 127 alternatives cannot be represented.
+                /// Reject it here, during schema construction: the schema is written before any batch is
+                /// encoded, so an empty result (which never reaches the encoder) is rejected too, instead
+                /// of silently emitting a union schema with out-of-range type ids.
+                if (variants.size() > 127)
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Native Arrow IPC writer does not support a Variant with {} alternatives (maximum is 127)",
+                        variants.size());
                 /// `Variant` is a dictionary boundary: a nested `LowCardinality` variant is written as
                 /// plain values (matching the encoder), so the children get an empty plan.
                 for (const auto & variant : variants)
