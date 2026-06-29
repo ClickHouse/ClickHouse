@@ -7,6 +7,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnQBit.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -46,8 +47,21 @@ public:
         return is_suitable_for_short_circuit_arguments_execution;
     }
 
+    /// Whether the Impl opts into handling the QBit data type (returns a constant equal to the vector dimension).
+    static constexpr bool supportsQBit()
+    {
+        if constexpr (requires { Impl::supports_qbit; })
+            return Impl::supports_qbit;
+        return false;
+    }
+
     String getSignatureString() const override
     {
+        /// `QBit` is accepted only by Impls that opt in (e.g. `length`): there the result is a
+        /// constant equal to the vector dimension, but its type is still the numeric `ResultType`,
+        /// so the same `-> ResultType` return applies and the dimension constant is produced in `executeImpl`.
+        if constexpr (supportsQBit())
+            return "(String | FixedString | Array | Map | UUID | IPv4 | IPv6 | QBit) -> " + DataTypeNumber<ResultType>{}.getName();
         return "(String | FixedString | Array | Map | UUID | IPv4 | IPv6) -> " + DataTypeNumber<ResultType>{}.getName();
     }
 
@@ -103,6 +117,17 @@ public:
             Impl::vectorFixedToVector(col_fixed->getChars(), col_fixed->getN(), vec_res, input_rows_count);
 
             return col_res;
+        }
+        if constexpr (supportsQBit())
+        {
+            if (const ColumnQBit * col_qbit = checkAndGetColumn<ColumnQBit>(column.get()))
+            {
+                ResultType res = 0;
+                if (input_rows_count)
+                    Impl::qbitToConstant(col_qbit->getDimension(), res);
+
+                return result_type->createColumnConst(col_qbit->size(), toField(res));
+            }
         }
         if (const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(column.get()))
         {
