@@ -682,11 +682,25 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);
 
-    /// Special case of `GROUP BY` of a single UInt64 key with no aggregate functions (effectively `DISTINCT`):
-    /// use a void-mapped hash table that stores only keys (half the cell size, no dead `AggregateDataPtr` slot).
+    /// Special case of `GROUP BY` of fixed-width keys with no aggregate functions (effectively `DISTINCT`):
+    /// use a void-mapped hash table that stores only keys (no dead `AggregateDataPtr` slot, e.g. 16 -> 8 bytes
+    /// per cell for UInt64, 32 -> 16 for keys128). Covers single numbers (key32/key64) and packed fixed keys
+    /// (keys32/keys64/keys128/keys256); string, nullable and LowCardinality keys are not covered yet.
     /// PROTOTYPE: gated by env var `CH_NO_VOID` so the same binary can A/B (set CH_NO_VOID=1 for the map baseline).
-    if (params.aggregates_size == 0 && method_chosen == AggregatedDataVariants::Type::key64 && !std::getenv("CH_NO_VOID"))
-        method_chosen = AggregatedDataVariants::Type::key64_void;
+    if (params.aggregates_size == 0 && !std::getenv("CH_NO_VOID"))
+    {
+        using Type = AggregatedDataVariants::Type;
+        switch (method_chosen)
+        {
+            case Type::key32:   method_chosen = Type::key32_void;   break;
+            case Type::key64:   method_chosen = Type::key64_void;   break;
+            case Type::keys32:  method_chosen = Type::keys32_void;  break;
+            case Type::keys64:  method_chosen = Type::keys64_void;  break;
+            case Type::keys128: method_chosen = Type::keys128_void; break;
+            case Type::keys256: method_chosen = Type::keys256_void; break;
+            default: break;
+        }
+    }
 
     /// TODO(ab): HashMethodSingleLowCardinalityColumn uses a hardcoded internal cache,
     /// which interferes with inline aggregation (e.g. for COUNT). This needs to be

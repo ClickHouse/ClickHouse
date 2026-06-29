@@ -35,7 +35,9 @@ template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithUInt8Key, fa
 template struct AggregationMethodOneNumber<UInt16, AggregatedDataWithUInt16Key, false>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyVoid, false>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoid, false>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyVoidTwoLevel, false>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoidTwoLevel, false>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>;
@@ -184,6 +186,15 @@ template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32Key>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64Key>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256>;
+/// Void-mapped variants for `GROUP BY` without aggregate functions.
+template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyVoid>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyVoid>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128Void>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256Void>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyVoidTwoLevel>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyVoidTwoLevel>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128VoidTwoLevel>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256VoidTwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyTwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyTwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>;

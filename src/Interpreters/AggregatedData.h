@@ -95,6 +95,11 @@ struct AggregatedDataVoidCell
     void readText(DB::ReadBuffer & rb)             { DB::readDoubleQuoted(key, rb); }
 };
 
+/// Void-mapped single-level maps (no per-key `AggregateDataPtr`). Selected for `GROUP BY` without
+/// aggregate functions. The UInt32 and UInt64 maps back several `AggregationMethod` instantiations:
+/// the UInt64 map is shared by `key32`/`key64` (`AggregationMethodOneNumber`) and `keys64`
+/// (`AggregationMethodKeysFixed`); the UInt32 map backs `keys32`; the wide maps back `keys128`/`keys256`.
+using AggregatedDataWithUInt32KeyVoid = HashMapTable<UInt32, AggregatedDataVoidCell<UInt32, HashCRC32<UInt32>>, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyVoid = HashMapTable<UInt64, AggregatedDataVoidCell<UInt64, HashCRC32<UInt64>>, HashCRC32<UInt64>>;
 
 using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
@@ -104,9 +109,13 @@ using AggregatedDataWithStringKey = HashMapWithSavedHash<std::string_view, Aggre
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
+using AggregatedDataWithKeys128Void = HashMapTable<UInt128, AggregatedDataVoidCell<UInt128, UInt128HashCRC32>, UInt128HashCRC32>;
+using AggregatedDataWithKeys256Void = HashMapTable<UInt256, AggregatedDataVoidCell<UInt256, UInt256HashCRC32>, UInt256HashCRC32>;
+
 using AggregatedDataWithUInt32KeyTwoLevel = TwoLevelHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 
+using AggregatedDataWithUInt32KeyVoidTwoLevel = TwoLevelHashMapTable<UInt32, AggregatedDataVoidCell<UInt32, HashCRC32<UInt32>>, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyVoidTwoLevel = TwoLevelHashMapTable<UInt64, AggregatedDataVoidCell<UInt64, HashCRC32<UInt64>>, HashCRC32<UInt64>>;
 
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
@@ -115,6 +124,9 @@ using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<std::st
 
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
+
+using AggregatedDataWithKeys128VoidTwoLevel = TwoLevelHashMapTable<UInt128, AggregatedDataVoidCell<UInt128, UInt128HashCRC32>, UInt128HashCRC32>;
+using AggregatedDataWithKeys256VoidTwoLevel = TwoLevelHashMapTable<UInt256, AggregatedDataVoidCell<UInt256, UInt256HashCRC32>, UInt256HashCRC32>;
 
 /** Variants with better hash function, using more than 32 bits for hash.
   * Using for merging phase of external aggregation, where number of keys may be far greater than 4 billion,
