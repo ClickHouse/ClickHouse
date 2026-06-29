@@ -5,14 +5,14 @@
             <my_rule_1>
                 <url>/write</url>
                 <handler>
-                    <type>remote_write</type>
+                    <type>write</type>
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_1>
             <my_rule_2>
                 <url>/read</url>
                 <handler>
-                    <type>remote_read</type>
+                    <type>read</type>
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_2>
@@ -20,7 +20,7 @@
             <my_rule_3>
                 <url>/read_auth_ok</url>
                 <handler>
-                    <type>remote_read</type>
+                    <type>read</type>
                     <table>default.prometheus</table>
                     <user>default</user>
                 </handler>
@@ -29,45 +29,45 @@
             <my_rule_4>
                 <url>/read_auth_fail</url>
                 <handler>
-                    <type>remote_read</type>
+                    <type>read</type>
                     <table>default.prometheus</table>
                     <user>no_such_user</user>
                 </handler>
             </my_rule_4>
 
-            <!-- Query API endpoints -->
+            <!-- Query and metadata endpoints of the Prometheus HTTP API -->
             <my_rule_5>
                 <url>/api/v1/query</url>
                 <handler>
-                    <type>query_api</type>
+                    <type>query</type>
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_5>
             <my_rule_6>
                 <url>/api/v1/query_range</url>
                 <handler>
-                    <type>query_api</type>
+                    <type>query</type>
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_6>
             <my_rule_7>
                 <url>/api/v1/series</url>
                 <handler>
-                    <type>query_api</type>
+                    <type>query</type>
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_7>
             <my_rule_8>
                 <url>/api/v1/labels</url>
                 <handler>
-                    <type>query_api</type>
+                    <type>query</type>
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_8>
             <my_rule_9>
                 <url>/api/v1/label/*/values</url>
                 <handler>
-                    <type>query_api</type>
+                    <type>query</type>
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_9>
@@ -75,7 +75,7 @@
             <my_rule_10>
                 <!-- This handler sets no database and no table, so both database and table names
                      come from the query parameters. -->
-                <url>/api/v1/query_dynamic_table</url>
+                <url>/dynamic_table/api/v1/query</url>
                 <handler>
                     <type>query_api</type>
                 </handler>
@@ -83,7 +83,7 @@
 
             <my_rule_11>
                 <!-- This handler sets only database, so the table name comes from the query parameters. -->
-                <url>/api/v1/query_dynamic_table_and_fixed_db</url>
+                <url>/dynamic_table_and_fixed_db/api/v1/query</url>
                 <handler>
                     <type>query_api</type>
                     <database>default</database>
