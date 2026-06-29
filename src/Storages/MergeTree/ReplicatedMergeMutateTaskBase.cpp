@@ -16,6 +16,7 @@ namespace DB
 {
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool fetch_merged_part_within_region_only;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
     extern const MergeTreeSettingsUInt64 zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock;
     extern const MergeTreeSettingsUInt64 zero_copy_merge_mutation_min_parts_size_sleep_before_lock;
@@ -166,11 +167,11 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
     };
 
 
-    auto execute_fetch = [&] (bool need_to_check_missing_part) -> bool
+    auto execute_fetch = [&] (bool need_to_check_missing_part, bool fetch_within_region_only) -> bool
     {
         try
         {
-            if (storage.executeFetch(entry, need_to_check_missing_part))
+            if (storage.executeFetch(entry, need_to_check_missing_part, fetch_within_region_only))
                 return remove_processed_entry();
         }
         catch (...)
@@ -200,7 +201,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 
             /// Avoid rescheduling, execute fetch here, in the same thread.
             if (!prepare_result.prepared_successfully)
-                return execute_fetch(prepare_result.need_to_check_missing_part_in_fetch);
+                return execute_fetch(prepare_result.need_to_check_missing_part_in_fetch, (*storage.getSettings())[MergeTreeSetting::fetch_merged_part_within_region_only]);
 
             state = State::NEED_EXECUTE_INNER_MERGE;
             return true;
@@ -226,7 +227,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
         case State::NEED_FINALIZE :
         {
             if (!finalize(part_log_writer))
-                return execute_fetch(/* need_to_check_missing = */true);
+                return execute_fetch(/* need_to_check_missing = */true, false);
 
             return remove_processed_entry();
         }

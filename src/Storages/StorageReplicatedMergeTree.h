@@ -28,6 +28,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeGeoReplicationController.h>
 #include <Storages/RenamingRestrictions.h>
 #include <Storages/TableZnodeInfo.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -42,6 +43,7 @@
 
 #include <atomic>
 #include <expected>
+#include <span>
 #include <pcg_random.hpp>
 
 
@@ -371,6 +373,15 @@ public:
     using ShutdownDeadline = std::chrono::time_point<std::chrono::system_clock>;
     void waitForUniquePartsToBeFetchedByOtherReplicas(ShutdownDeadline shutdown_deadline);
 
+    struct GetReplicasResult
+    {
+        Strings all_replicas;
+        std::span<String> replicas_same_region;
+        std::span<String> replicas_not_same_region;
+    };
+
+    GetReplicasResult getAllReplicasInPath(const String & zk_path);
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -395,6 +406,7 @@ private:
     friend class MergeFromLogEntryTask;
     friend class MutateFromLogEntryTask;
     friend class ReplicatedMergeMutateTaskBase;
+    friend class ReplicatedMergeTreeGeoReplicationController;
 
     using MergeStrategyPicker = ReplicatedMergeTreeMergeStrategyPicker;
     using LogEntry = ReplicatedMergeTreeLogEntry;
@@ -543,6 +555,9 @@ private:
     std::set<String> last_broken_disks;
 
     std::mutex existing_zero_copy_locks_mutex;
+
+    /// For geo-aware fetching
+    ReplicatedMergeTreeGeoReplicationController geo_replication_controller;
 
     struct ZeroCopyLockDescription
     {
@@ -697,7 +712,7 @@ private:
     /// NOTE: Attention! First of all tries to find covering part on other replica
     /// and set it into entry.actual_new_part_name. After that tries to fetch this new covering part.
     /// If fetch was not successful, clears entry.actual_new_part_name.
-    bool executeFetch(LogEntry & entry, bool need_to_check_missing_part=true);
+    bool executeFetch(LogEntry & entry, bool need_to_check_missing_part, bool only_fetch_within_region);
 
     bool executeReplaceRange(LogEntry & entry);
     void executeClonePartFromShard(const LogEntry & entry);
@@ -768,9 +783,8 @@ private:
 
     /** Returns an empty string if no one has a part.
       */
-    String findReplicaHavingPart(const String & part_name, bool active);
-    static String findReplicaHavingPart(const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_);
-
+    String findReplicaHavingPart(const std::span<String> & replicas, LogEntry & entry, bool active = true);
+    String findReplicaHavingPart(const String & part_name, bool active = true);
     bool checkReplicaHavePart(const String & replica, const String & part_name);
     bool checkIfDetachedPartExists(const String & part_name);
     bool checkIfDetachedPartitionExists(const String & partition_name);
@@ -780,9 +794,9 @@ private:
       * If found, returns replica name and set 'entry->actual_new_part_name' to name of found largest covering part.
       * If not found, returns empty string.
       */
-    String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
+    String findReplicaHavingCoveringPart(const std::span<String> & replicas, LogEntry & entry, bool active = true);
     bool findReplicaHavingCoveringPart(const String & part_name, bool active);
-    String findReplicaHavingCoveringPartImplLowLevel(LogEntry * entry, const String & part_name, String & found_part_name, bool active);
+    String findReplicaHavingCoveringPartImplLowLevel(const std::span<String> & replicas, LogEntry * entry, const String & part_name, String & found_part_name, bool active);
     static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, LoggerPtr log_);
 
     /** Download the specified part from the specified replica.
@@ -991,7 +1005,6 @@ private:
         const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node, Coordination::Requests & requests,
         int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
-
 
     bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name) override;
 

@@ -16,6 +16,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeGeoReplicationController.h>
 #include <Storages/MutationCommands.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
@@ -36,6 +37,9 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+    extern const MergeTreeSettingsBool fetch_covered_part_within_region_only;
+    extern const MergeTreeSettingsBool fetch_merged_part_within_region_only;
+    extern const MergeTreeSettingsSeconds geo_replication_control_leader_wait;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 replicated_max_mutations_in_one_entry;
@@ -1563,6 +1567,12 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
             covered_entries_to_wait->push_back(future_part_elem.second);
             continue;
         }
+        else if (shouldRespectEntryOrder(entry) && !future_part.isFakeDropRangePart() && future_part.contains(result_part))
+        {
+            /// Because we don't allow fast-forward, `future_part` entries will fail because it depends on `result_part` entry
+            /// So we can let the entry run
+            continue;
+        }
 
         constexpr auto fmt_string = "Not executing log entry {} for part {} "
                                     "because it is not disjoint with part {} that is currently executing.";
@@ -1972,6 +1982,18 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             return false;
     }
 
+    if (entry.wait_for_fetching_from_same_region > 0) /// Waiting state
+    {
+        auto extra_wait = entry.last_attempt_time + (*storage.getSettings())[MergeTreeSetting::geo_replication_control_leader_wait].totalSeconds() - time(nullptr);
+        if (extra_wait > 0)
+        {
+            constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} "
+                    "because the region leader may not be ready yet (waiting for more {} second)";
+            LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name, extra_wait);
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -2133,9 +2155,9 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
         if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, committing_blocks, lock))
         {
             entry = *it;
-            /// We gave a chance for the entry, move it to the tail of the queue, after that
-            /// we move it to the end of the queue.
-            queue.splice(queue.end(), queue, it);
+            /// We gave a chance for the entry move it to the end of the queue.
+            if (!shouldRespectEntryOrder(*entry))
+                queue.splice(queue.end(), queue, it);
             break;
         }
 
@@ -2890,6 +2912,17 @@ void ReplicatedMergeTreeQueue::notifySubscribersOnPartialShutdown()
     std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
         subscriber_callback(queue_size, nullptr);
+}
+
+bool ReplicatedMergeTreeQueue::shouldRespectEntryOrder(const LogEntry & entry) const
+{
+    /// If the geo replication is enabled and we're not allowed to fetch merged parts and covered parts, we should respect
+    /// the relative order of data manipulation entries
+    return (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART || entry.type == LogEntry::MERGE_PARTS
+            || entry.type == LogEntry::MUTATE_PART)
+        && storage.geo_replication_controller.isValid()
+        && (*storage.getSettings())[MergeTreeSetting::fetch_covered_part_within_region_only]
+        && (*storage.getSettings())[MergeTreeSetting::fetch_merged_part_within_region_only];
 }
 
 ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()

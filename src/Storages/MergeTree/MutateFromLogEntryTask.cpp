@@ -30,6 +30,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool detach_not_byte_identical_parts;
+    extern const MergeTreeSettingsBool fetch_merged_part_within_region_only;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 prefer_fetch_merged_part_size_threshold;
     extern const MergeTreeSettingsSeconds prefer_fetch_merged_part_time_threshold;
@@ -106,7 +107,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     {
         /// If entry is old enough, and have enough size, and some replica has the desired part,
         /// then prefer fetching from replica.
-        String replica = storage.findReplicaHavingPart(entry.new_part_name, true);    /// NOTE excessive ZK requests for same data later, may remove.
+        auto get_result = storage.getAllReplicasInPath(storage.getZooKeeperPath());
+        String replica = storage.findReplicaHavingPart(
+            (*storage_settings_ptr)[MergeTreeSetting::fetch_merged_part_within_region_only] ? get_result.replicas_same_region : get_result.all_replicas,
+            entry);
         if (!replica.empty())
         {
             LOG_DEBUG(log, "Prefer to fetch {} from replica {}", entry.new_part_name, replica);

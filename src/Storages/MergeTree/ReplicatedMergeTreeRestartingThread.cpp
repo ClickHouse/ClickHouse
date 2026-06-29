@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -173,6 +174,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     setNotReadonly();
 
+
     /// Start queue processing
     storage.background_operations_assignee.start();
     storage.background_streaming_assignee.start();
@@ -183,6 +185,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.cleanup_thread.start();
     storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
+    storage.geo_replication_controller.start();
 
     if (storage.getContext()->getServerSettings()[ServerSetting::insert_deduplication_version].value != InsertDeduplicationVersions::OLD_SEPARATE_HASHES)
         storage.deduplication_hashes_cache.start();

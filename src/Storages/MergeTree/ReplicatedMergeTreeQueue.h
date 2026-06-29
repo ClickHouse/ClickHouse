@@ -296,6 +296,9 @@ private:
         std::optional<time_t> min_unprocessed_insert_time_changed,
         std::optional<time_t> max_processed_insert_time_changed) const;
 
+    /// Whether the entry should not be reorder after execution
+    bool shouldRespectEntryOrder(const LogEntry & entry) const;
+
     bool isIntersectingWithDropReplaceIntent(
         const LogEntry & entry,
         const String & part_name, String & out_reason, std::unique_lock<SharedMutex> & /*state_mutex lock*/) const;
