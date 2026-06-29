@@ -324,15 +324,17 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility:
 #       stress tests may leave behind intentionally-broken mutations that retry after the upgrade restart and log
-#       a CANNOT_PARSE_TEXT error. The Stress test runs the fuzzer (randomized queries) before this stage, so the
-#       failing string literal and target type are arbitrary (e.g. 'a', 'b', 'Hello', 'x', or any fuzzer-generated
-#       value) and an exact-literal allow-list can never be complete. Instead these are matched by error CLASS in
-#       the secondary pipe: a CANNOT_PARSE_TEXT raised on a background-mutation executor
-#       (MutatePlainMergeTreeTask / MutateFromLogEntryTask / MergeTreeBackgroundExecutor), regardless of the value
-#       or type. This filter does not broaden the existing query-error suppression: user-initiated parse errors
-#       carry the `} <Error> TCPHandler:` / `} <Error> executeQuery:` prefix and are already dropped by the
-#       fixed-string entries above, so this class filter only adds the background-executor CANNOT_PARSE_TEXT
-#       lines, which lack that prefix.
+#       an error from the background mutation. These come in two benign classes: CANNOT_PARSE_TEXT (a MODIFY
+#       COLUMN / mutation casts unconvertible String data to a numeric type) and FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+#       (an UPDATE expression calls throwIf, e.g. 02597_column_update_tricky_expression_and_replication). The
+#       Stress test runs the fuzzer (randomized queries) before this stage, so the failing literal and target type
+#       are arbitrary (e.g. 'a', 'b', 'Hello', 'x', or any fuzzer-generated value) and an exact-literal allow-list
+#       can never be complete. Instead these are matched by error CLASS in the secondary pipe: one of those two
+#       error codes raised on a background-mutation executor (MutatePlainMergeTreeTask / MutateFromLogEntryTask /
+#       MergeTreeBackgroundExecutor), regardless of the value or type. This filter does not broaden the existing
+#       query-error suppression: user-initiated errors carry the `} <Error> TCPHandler:` / `} <Error> executeQuery:`
+#       prefix and are already dropped by the fixed-string entries above, so this class filter only adds the
+#       background-executor lines, which lack that prefix.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
@@ -475,7 +477,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
-    | grep -avE -e "(MutatePlainMergeTreeTask|MutateFromLogEntryTask|MergeTreeBackgroundExecutor).*Cannot parse string .* as .*CANNOT_PARSE_TEXT" \
+    | grep -avE -e "(MutatePlainMergeTreeTask|MutateFromLogEntryTask|MergeTreeBackgroundExecutor).*(Cannot parse string .* as .*CANNOT_PARSE_TEXT|FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
