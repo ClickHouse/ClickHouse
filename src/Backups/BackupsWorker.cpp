@@ -869,6 +869,15 @@ struct BackupsWorker::RestoreStarter
         restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
         restore_context->makeQueryContext();
 
+        /// `makeQueryContext` above reset `restore_context` to a fresh, empty `QueryPrivilegesInfo`. Account the
+        /// privileges checked while restoring (in `RestorerFromBackup::checkAccessForObjectsFoundInBackup` and
+        /// when creating databases/tables from the backup, all of which run on copies of `restore_context`) to the
+        /// original RESTORE query instead, so they appear in the `used_privileges`/`missing_privileges` columns of
+        /// `system.query_log`. `QueryPrivilegesInfo` has its own mutex and is not one of the context fields a
+        /// concurrent originating thread mutates, so sharing it does not reintroduce the data race that switching
+        /// the background workers off the live query context avoids.
+        restore_context->setQueryPrivilegesInfo(query_context->getQueryPrivilegesInfoPtr());
+
         backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_restore = restore_settings.internal;
