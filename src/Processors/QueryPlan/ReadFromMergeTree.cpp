@@ -2859,6 +2859,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
             const auto * output = query_info_.filter_actions_dag->getOutputs().front();
+            /// These exclusions come from skip-index (and primary-key) analysis, which can diverge
+            /// from the row-level predicate (e.g. a text index with a preprocessor). Store them
+            /// under a key salted with the effective skip-index profile so that only a query that
+            /// ran the same set of indexes consults them; a query that disabled skip indexes (or
+            /// ignored an index) reads its own profile's key and is not poisoned. See issue #108519.
+            const UInt64 profiled_condition_hash = MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(*condition_hash, settings);
             for (const auto & remaining_ranges : remaining)
             {
                 const auto & data_part = remaining_ranges.data_part;
@@ -2867,7 +2873,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 query_condition_cache->write(
                     data_part->storage.getStorageID().uuid,
                     part_name,
-                    *condition_hash,
+                    profiled_condition_hash,
                     output->result_name,
                     remaining_ranges.ranges,
                     data_part->index_granularity->getMarksCount(),

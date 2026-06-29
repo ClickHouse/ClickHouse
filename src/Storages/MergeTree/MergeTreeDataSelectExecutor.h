@@ -237,6 +237,14 @@ public:
         const ContextPtr & context,
         LoggerPtr log);
 
+    /// Salt a WHERE/PREWHERE condition hash with the query's effective skip-index profile
+    /// (use_skip_indexes and the set of indexes disabled via ignore_data_skipping_indices).
+    /// Skip-index-derived query condition cache exclusions are stored under this profiled hash
+    /// so that a query with a different profile (e.g. use_skip_indexes = 0) never consults a
+    /// verdict produced by an index it did not run. Computed identically on the write side
+    /// (ReadFromMergeTree) and the read side (filterPartsByQueryConditionCache).
+    static UInt64 getSkipIndexProfiledConditionHash(UInt64 condition_hash, const Settings & settings);
+
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.
     /// Also, update key condition with selected sampling range.

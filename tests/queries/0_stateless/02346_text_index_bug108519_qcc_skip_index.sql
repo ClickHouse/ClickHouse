@@ -1,31 +1,25 @@
 -- Tags: no-parallel-replicas
--- Tag no-parallel-replicas: this is a single-node text-index test; parallel replicas relocate
--- index analysis and are irrelevant to the QCC read-gate behavior under test.
+-- Tag no-parallel-replicas: this is a single-node test; parallel replicas relocate index
+-- analysis and the query condition cache writes, so the granule-level checks below do not apply.
 
--- Regression test for #108519: the query condition cache (QCC) was consulted by a query
--- that explicitly disabled skip indexes (use_skip_indexes = 0), even though the cached
--- verdict had been produced WITH a skip index. When the skip index legitimately diverges
--- from the row-level predicate (here a text index with a preprocessor that strips spaces),
--- the cached "no match" mark verdict is a false negative for the row-level predicate, so
--- the use_skip_indexes = 0 query dropped a granule it should have kept and under-counted.
+-- Regression test for #108519: the query condition cache (QCC) stored a skip-index-derived
+-- exclusion under the bare WHERE-condition hash, so a later query that ran a different set of
+-- skip indexes (use_skip_indexes = 0, or ignore_data_skipping_indices) consulted it. When the
+-- skip index legitimately diverges from the row-level predicate (here a text index with a
+-- preprocessor that strips spaces), the cached "no match" verdict is a false negative for the
+-- row-level predicate, so the second query dropped a granule it should have kept and under-counted.
 --
--- Ingredients, pinned per query so CI randomization cannot disable them:
---   * allow_experimental_full_text_index = 1   - the text index used as the trigger.
---   * allow_experimental_analyzer = 1           - QCC is analyzer-only.
---   * use_query_condition_cache = 1             - the cache that gets poisoned.
---   * use_skip_indexes_on_data_read = 0         - runs the text index at index-analysis
---                                                 time, so its dropped mark is persisted to
---                                                 the QCC under the bare WHERE hash.
--- The table uses a fresh per-test database (unique UUID), so the QCC starts empty for these
--- keys without a server-global SYSTEM DROP QUERY CONDITION CACHE (keeps the test parallel-safe).
+-- The fix keys skip-index-derived QCC entries by the effective skip-index profile, so they are
+-- only consulted by a query that ran the same indexes. Row-level entries keep the bare hash and
+-- stay readable under any profile (the pure-QCC learned-index case, checked at the end).
 
 SET allow_experimental_full_text_index = 1;
 SET allow_experimental_analyzer = 1;
 
 DROP TABLE IF EXISTS tab;
 
--- preprocessor strips spaces: row 'a b' is indexed as token 'ab', so the text index does
--- NOT match hasToken(s, 'a') even though the row-level predicate does (it splits on space).
+-- preprocessor strips spaces: row 'a b' is indexed as token 'ab', so the text index does NOT
+-- match hasToken(s, 'a') even though the row-level predicate does (it splits on space).
 CREATE TABLE tab
 (
     s String,
@@ -35,14 +29,13 @@ ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 
 INSERT INTO tab VALUES ('zzz'), ('a b');
 
--- Populate the QCC via the index path. The text index drops the 'a b' granule (false
--- negative), and that exclusion is cached under the WHERE-condition hash.
+-- Populate the QCC via the index path. The text index drops the 'a b' granule (false negative),
+-- and that exclusion is cached under the profiled (skip-index) key.
 SELECT 'index_path', count() FROM tab WHERE hasToken(s, 'a')
 SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0;
 
--- Same predicate with skip indexes disabled. This must NOT consult the skip-index-derived
--- cache entry. Correct row-level answer is 1 ('a b' contains token 'a'). Before the fix this
--- returned 0.
+-- Same predicate with skip indexes disabled must NOT consult the skip-index-derived entry.
+-- Correct row-level answer is 1 ('a b' contains token 'a'). Before the fix this returned 0.
 SELECT 'skip_indexes_off', count() FROM tab WHERE hasToken(s, 'a')
 SETTINGS use_query_condition_cache = 1, use_skip_indexes = 0;
 
@@ -50,15 +43,37 @@ SETTINGS use_query_condition_cache = 1, use_skip_indexes = 0;
 SELECT 'no_cache', count() FROM tab WHERE hasToken(s, 'a')
 SETTINGS use_query_condition_cache = 0, use_skip_indexes = 0;
 
--- Per-index opt-out (#108548 review): ignore_data_skipping_indices = 'idx' disables the named
--- index while use_skip_indexes stays true, so buildIndexes still leaves use_skip_indexes on
--- and the QCC read gate must instead bypass on the ignore list. Re-populate the QCC via the
--- index path, then rerun the same predicate ignoring 'idx'. Correct row-level answer is 1;
--- before the fix this consulted the skip-index-derived entry and returned 0.
+-- Re-populate via the index path, then rerun ignoring the named index. ignore_data_skipping_indices
+-- = 'idx' disables 'idx' while use_skip_indexes stays true, a different effective profile, so the
+-- skip-index entry must not be consulted. Correct answer is 1; before the fix this returned 0.
 SELECT 'index_path', count() FROM tab WHERE hasToken(s, 'a')
 SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0;
 
 SELECT 'ignore_index', count() FROM tab WHERE hasToken(s, 'a')
 SETTINGS use_query_condition_cache = 1, ignore_data_skipping_indices = 'idx';
 
+-- The skip-index path keeps pruning for a query with the same profile (the cached exclusion is
+-- still reused, so this stays 0). Confirms the profiled key did not disable skip-index caching.
+SELECT 'index_path_still_prunes', count() FROM tab WHERE hasToken(s, 'a')
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0;
+
 DROP TABLE tab;
+
+-- A row-level QCC entry (no skip index involved) must still be consulted when skip indexes are
+-- disabled: the fix only profiles skip-index-derived entries, so the pure-QCC learned-index case
+-- keeps working. Populate via the row-level WHERE path with use_skip_indexes = 0, then assert a
+-- granule was pruned on reuse via EXPLAIN. max_block_size = 8 makes each non-matching granule a
+-- fully filtered chunk so FilterTransform records it.
+DROP TABLE IF EXISTS rl;
+CREATE TABLE rl (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
+INSERT INTO rl SELECT number, number FROM numbers(1000);
+
+SELECT 'rowlevel_populate', count() FROM rl WHERE v = 500
+SETTINGS use_query_condition_cache = 1, use_skip_indexes = 0, max_block_size = 8, max_threads = 1;
+
+SELECT 'rowlevel_qcc_prunes', countIf(explain LIKE '%Granules: 1/125%') FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM rl WHERE v = 500
+    SETTINGS use_query_condition_cache = 1, use_skip_indexes = 0
+);
+
+DROP TABLE rl;

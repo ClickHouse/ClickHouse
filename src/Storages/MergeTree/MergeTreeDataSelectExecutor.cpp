@@ -37,6 +37,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1368,6 +1369,27 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
     return row_limits;
 }
 
+UInt64 MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(UInt64 condition_hash, const Settings & settings)
+{
+    SipHash hash;
+    hash.update(condition_hash);
+    hash.update(static_cast<UInt64>(settings[Setting::use_skip_indexes].value));
+
+    /// Different sets of ignored indexes can produce different skip-index exclusions for the same
+    /// predicate, so they must hash to different keys. parseIdentifiersOrStringLiteralsToSet matches
+    /// how buildIndexes interprets the setting; the names are sorted so the key is order-independent.
+    if (settings[Setting::ignore_data_skipping_indices].changed)
+    {
+        auto ignored = parseIdentifiersOrStringLiteralsToSet(settings[Setting::ignore_data_skipping_indices].toString(), settings);
+        std::vector<String> sorted_ignored(ignored.begin(), ignored.end());
+        std::sort(sorted_ignored.begin(), sorted_ignored.end());
+        for (const auto & name : sorted_ignored)
+            hash.update(name);
+    }
+
+    return hash.get64();
+}
+
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
@@ -1379,17 +1401,6 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
             || !settings[Setting::allow_experimental_analyzer]
-            /// A cached verdict can encode a skip-index-derived exclusion (e.g. with
-            /// use_skip_indexes_on_data_read=0 the index runs at analysis time and its
-            /// dropped marks are persisted under the bare WHERE-condition hash). The cache
-            /// key does not record which skip indexes were applied, so a query that turned
-            /// any of them off must not consult it: a skip index may legitimately diverge
-            /// from the row-level predicate (e.g. a text index with a preprocessor), and
-            /// reusing its verdict would drop a mark the predicate alone matches -> wrong
-            /// result. use_skip_indexes disables them globally; ignore_data_skipping_indices
-            /// disables named ones while use_skip_indexes stays true (see buildIndexes).
-            || !settings[Setting::use_skip_indexes]
-            || settings[Setting::ignore_data_skipping_indices].changed
             || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
@@ -1397,6 +1408,20 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         return;
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
+
+    /// Each condition is looked up under two keys (see the write sides):
+    ///   * the bare condition hash, holding row-level exclusions (FilterTransform,
+    ///     MergeTreeSelectProcessor, object storage) which are always sound; and
+    ///   * a hash salted with the query's effective skip-index profile
+    ///     (getSkipIndexProfiledConditionHash), holding the skip-index-analysis exclusions
+    ///     written by ReadFromMergeTree.
+    /// Skip-index exclusions can legitimately diverge from the row-level predicate (e.g. a text
+    /// index with a preprocessor), so they must only be consulted by a query that ran the same set
+    /// of indexes; salting the key with the profile guarantees a query with a different profile
+    /// (e.g. use_skip_indexes = 0, or ignore_data_skipping_indices) never reads them. The two
+    /// verdicts are merged: a mark may be skipped iff either verdict says it does not match. This
+    /// keeps the pure-QCC case (use_skip_indexes = 0 still reusing row-level entries) working while
+    /// preventing the skip-index poisoning of issue #108519.
 
     struct Stats
     {
@@ -1407,6 +1432,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     auto drop_mark_ranges = [&](const ActionsDAG::Node * dag)
     {
         UInt64 condition_hash = dag->getHash();
+        UInt64 profiled_condition_hash = getSkipIndexProfiledConditionHash(condition_hash, settings);
         Stats stats;
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {
@@ -1415,14 +1441,28 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
             const auto & data_part = part_with_ranges.data_part;
             auto storage_id = data_part->storage.getStorageID();
-            auto matching_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
-            if (!matching_marks_opt)
+            /// Row-level entries are sound under any profile; skip-index entries only under the
+            /// matching profile. Merge the two verdicts: a mark must be read iff both say so.
+            auto row_level_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
+            auto skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, profiled_condition_hash);
+            if (!row_level_marks_opt && !skip_index_marks_opt)
             {
                 ++it;
                 continue;
             }
 
-            auto & matching_marks = *matching_marks_opt;
+            QueryConditionCache::MatchingMarks matching_marks;
+            if (row_level_marks_opt && skip_index_marks_opt
+                && row_level_marks_opt->size() == skip_index_marks_opt->size())
+            {
+                matching_marks = std::move(*row_level_marks_opt);
+                for (size_t i = 0; i < matching_marks.size(); ++i)
+                    matching_marks[i] = matching_marks[i] && (*skip_index_marks_opt)[i];
+            }
+            else if (row_level_marks_opt)
+                matching_marks = std::move(*row_level_marks_opt);
+            else
+                matching_marks = std::move(*skip_index_marks_opt);
             MarkRanges ranges;
             const auto & part = it->data_part;
             size_t min_marks_for_seek = roundRowsOrBytesToMarks(
