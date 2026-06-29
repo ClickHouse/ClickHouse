@@ -1,7 +1,4 @@
 import requests
-from helpers.cluster import ClickHouseCluster
-import logging
-import time
 
 
 def send_post_request(cluster, path, payload, status_code=200):

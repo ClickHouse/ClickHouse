@@ -1,6 +1,6 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
-from .common import *
+from .common import vault_startup_command
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(

@@ -46,6 +46,8 @@ private:
         password = "";
         client_token = "";
         cert_name = "";
+        port = 0;
+        auth_method = HashiCorpVaultAuthMethod::Token;
 #if USE_SSL
         request_context = nullptr;
 #endif

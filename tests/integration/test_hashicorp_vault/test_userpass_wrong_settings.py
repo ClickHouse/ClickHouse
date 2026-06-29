@@ -1,7 +1,5 @@
-import pytest
-
 from helpers.cluster import ClickHouseCluster
-from .common import *
+from .common import vault_startup_command_userpass
 
 
 def start_clickhouse(config, users, err_msg):
