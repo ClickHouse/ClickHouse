@@ -60,109 +60,60 @@ def _download_extra_baselines(master_commits: list[str], first_base_commit: str)
     return found
 
 
-def _supplement_missing_profdata(master_commits: list[str]) -> None:
-    """Download profdata for test types skipped in this PR run from master.
+def _supplement_with_master_info(master_commits: list[str]) -> None:
+    """Supplement a partial llvm_coverage.info with a complete master baseline.
 
     When some coverage sub-jobs are skipped (binary unchanged, only one test
-    type changed), their profdata is absent from ci/tmp. Supplementing from
-    the most recent compatible master run ensures the coverage merge reflects
-    all test types. The binary is identical (test-only PR), so master profdata
-    is compatible. ALL supplemental files must come from the same master commit.
+    type changed), merge_llvm_coverage.sh produces a partial llvm_coverage.info
+    covering only the test types that ran. This function downloads the nearest
+    available complete master llvm_coverage.info and merges it in with lcov -a,
+    filling in the skipped test types.
 
-    URLs follow the pattern:
-      https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/<sha>/<dir>/<file>
-    Artifact dir names are lower-cased by praktika; profdata filenames preserve
-    the original casing from the job parameter (e.g. "AsyncInsert", "ParallelReplicas").
+    Working at the .info level (source file + line number) is safe even when the
+    nearest master .info comes from a slightly older commit: line numbers may drift
+    by a small amount for files edited between that commit and the master parent,
+    but this is localised and far safer than merging raw profdata from a different
+    binary (which can silently corrupt counter indices across the whole binary).
     """
-    # Complete mapping: artifact_dir (S3 key, lower-case) → profdata filename (original case).
-    ARTIFACT_MAP: dict[str, str] = {
-        # Functional tests — basic batches
-        "stateless_tests_amd_llvm_coverage_1_3": "ft-amd_llvm_coverage_1_3.profdata",
-        "stateless_tests_amd_llvm_coverage_2_3": "ft-amd_llvm_coverage_2_3.profdata",
-        "stateless_tests_amd_llvm_coverage_3_3": "ft-amd_llvm_coverage_3_3.profdata",
-        # Functional tests — special configs
-        "stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_databasereplicated_wasmedge_parallel":
-            "ft-amd_llvm_coverage_old_analyzer_s3_storage_DatabaseReplicated_WasmEdge_parallel.profdata",
-        "stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_databasereplicated_wasmedge_sequential":
-            "ft-amd_llvm_coverage_old_analyzer_s3_storage_DatabaseReplicated_WasmEdge_sequential.profdata",
-        "stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_parallel":
-            "ft-amd_llvm_coverage_ParallelReplicas_s3_storage_parallel.profdata",
-        "stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_sequential":
-            "ft-amd_llvm_coverage_ParallelReplicas_s3_storage_sequential.profdata",
-        "stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_parallel":
-            "ft-amd_llvm_coverage_AsyncInsert_s3_storage_parallel.profdata",
-        "stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_sequential":
-            "ft-amd_llvm_coverage_AsyncInsert_s3_storage_sequential.profdata",
-        # Integration tests
-        "integration_tests_amd_llvm_coverage_1_5": "it-amd_llvm_coverage_1_5.profdata",
-        "integration_tests_amd_llvm_coverage_2_5": "it-amd_llvm_coverage_2_5.profdata",
-        "integration_tests_amd_llvm_coverage_3_5": "it-amd_llvm_coverage_3_5.profdata",
-        "integration_tests_amd_llvm_coverage_4_5": "it-amd_llvm_coverage_4_5.profdata",
-        "integration_tests_amd_llvm_coverage_5_5": "it-amd_llvm_coverage_5_5.profdata",
-        # Unit tests
-        "unit_tests_amd_llvm_coverage": "unit-tests.profdata",
-    }
-
-    existing_files = {p.name for p in Path(TEMP_DIR).glob("*.profdata")}
-    if not existing_files:
-        print("No profdata files in ci/tmp — nothing to supplement")
+    pr_info = Path(TEMP_DIR) / "llvm_coverage.info"
+    if not pr_info.exists() or pr_info.stat().st_size == 0:
+        print("No llvm_coverage.info to supplement")
         return
 
-    missing: dict[str, str] = {
-        d: f for d, f in ARTIFACT_MAP.items() if f not in existing_files
-    }
-    if not missing:
-        return
-
-    print(f"Missing profdata for {len(missing)} artifact dir(s) — supplementing from master:")
-    for f in missing.values():
-        print(f"  {f}")
-
-    # All profdata artifacts are stored in clickhouse-builds (the build artifact
-    # bucket), not in clickhouse-test-reports (the report/log bucket). The URL
-    # pattern is identical to where the CI framework fetches them during the job.
-    BASE_URL = "https://clickhouse-builds.s3.amazonaws.com/REFs/master"
+    master_info_tmp = Path(TEMP_DIR) / "master_supplement.info"
+    found_sha = None
 
     for sha in master_commits:
-        # Probe ALL missing files to confirm this commit has every artifact we need.
-        # Using --spider is cheap (no download) and prevents wasting time on partial
-        # commits where some files exist but others don't.
-        all_present = True
-        for artifact_dir, filename in missing.items():
-            url = f"{BASE_URL}/{sha}/{artifact_dir}/{filename}"
-            check = Shell.get_output(f"wget --spider '{url}' 2>&1 || true", verbose=False)
-            if "200 OK" not in check:
-                all_present = False
-                break
-        if not all_present:
-            continue  # not all needed files exist for this commit
-
-        # All missing files must come from this same commit.
-        downloaded: list[str] = []
-        failed = False
-        for artifact_dir, filename in missing.items():
-            url  = f"{BASE_URL}/{sha}/{artifact_dir}/{filename}"
-            dest = Path(TEMP_DIR) / filename
-            rc   = Shell.run(f"wget --quiet '{url}' -O '{dest}'", verbose=True)
-            if rc == 0 and dest.exists() and dest.stat().st_size > 0:
-                downloaded.append(filename)
-            else:
-                dest.unlink(missing_ok=True)
-                failed = True
-                print(f"  Failed to download {filename} from master {sha[:12]} — trying next commit")
-                break
-
-        if failed:
-            # Clean up any partial downloads so the merge isn't corrupted.
-            for f in downloaded:
-                (Path(TEMP_DIR) / f).unlink(missing_ok=True)
+        url = f"{_S3_BASE_URL}/{sha}/llvm_coverage/llvm_coverage.info"
+        check = Shell.get_output(f"wget --spider '{url}' 2>&1 || true", verbose=False)
+        if "200 OK" not in check:
             continue
+        print(f"Downloading master baseline for supplement from {sha[:12]}...")
+        rc = Shell.run(f"wget --quiet '{url}' -O '{master_info_tmp}'", verbose=False)
+        if rc == 0 and master_info_tmp.exists() and master_info_tmp.stat().st_size > 0:
+            found_sha = sha
+            break
+        master_info_tmp.unlink(missing_ok=True)
 
-        print(f"Supplemented {len(downloaded)} profdata file(s) from master {sha[:12]}")
+    if not found_sha:
+        print("Warning: could not find a master baseline to supplement — coverage may be partial")
         return
 
-    for f in missing.values():
-        print(f"Warning: could not supplement missing profdata: {f}")
+    print(f"Supplementing llvm_coverage.info with master {found_sha[:12]} via lcov -a ...")
+    merged = Path(TEMP_DIR) / "llvm_coverage_supplemented.info"
+    rc = Shell.run(
+        f"lcov -a '{pr_info}' -a '{master_info_tmp}'"
+        f" --ignore-errors inconsistent,corrupt,unsupported"
+        f" -o '{merged}'",
+        verbose=True,
+    )
+    master_info_tmp.unlink(missing_ok=True)
+    if rc == 0 and merged.exists() and merged.stat().st_size > 0:
+        merged.replace(pr_info)
+        print("Supplement complete.")
+    else:
+        merged.unlink(missing_ok=True)
+        print("Warning: lcov -a supplement failed — keeping partial llvm_coverage.info")
 
 
 
@@ -370,17 +321,19 @@ if __name__ == "__main__":
         _is_non_binary_path_early(p) for p in _early_changed_paths
     )
 
-    # Supplement missing profdata only when the binary is provably unchanged.
-    # For a code-changing PR, missing profdata means a CI failure, not an
-    # intentional skip — merging master profdata with a different PR binary
-    # produces silently corrupted coverage. Skip supplementing in that case.
-    if not is_master_branch and _early_binary_unchanged:
-        _supplement_missing_profdata(master_track_commits)
-
     gen_report_res = Result.from_commands_run(
         name="Generate LLVM Coverage Report",
         command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
     )
+
+    # For binary-unchanged PRs where some test types were skipped, the merge
+    # above produced a partial llvm_coverage.info. Supplement it by downloading
+    # the nearest master llvm_coverage.info (already a complete FT+IT+unit merge)
+    # and combining with lcov -a. This replaces the old profdata-based supplement
+    # which was unsafe because raw profdata counter indices are binary-specific.
+    if not is_master_branch and _early_binary_unchanged:
+        _supplement_with_master_info(master_track_commits)
+
     # Compress and attach the full HTML report archive + files to the generate result.
     # Keeping files/assets inside the same sub-Result ensures upload_result_files_to_s3
     # computes common_root = llvm_coverage_html_report/, so relative links stay intact.
