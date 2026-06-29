@@ -1968,6 +1968,17 @@ void TCPHandler::receiveHello()
             LOG_WARNING(LogFrequencyLimiter(log, 10),
                         "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
         processClusterNameAndSalt();
+
+        /// Verify the cluster is configured with a secret before entering
+        /// interserver mode. Otherwise, the `USER_INTERSERVER_MARKER` would
+        /// let any client enter interserver mode and exercise pre-auth
+        /// protocol packets that rely on a `fake_interserver_context`.
+        /// `getCluster` throws `CLUSTER_DOESNT_EXIST` if the cluster is
+        /// unknown; we deliberately let it propagate.
+        if (server.context()->getCluster(cluster)->getSecret().empty())
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "Interserver authentication failed: cluster '{}' is not configured with a secret", cluster);
+
         return;
     }
 
