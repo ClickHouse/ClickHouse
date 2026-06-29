@@ -331,15 +331,19 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
 #       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
 # `Value passed to 'throwIf' function is non-zero` (`FUNCTION_THROW_IF_VALUE_IS_NON_ZERO`, Code: 395) is the same
-#       class of expected test-induced mutation error. It comes from `04341_broken_mutation_part_log_flush`, which
-#       runs an intentionally-failing `ALTER TABLE ... UPDATE x = x + throwIf(1)` async mutation to assert that the
-#       failed `MutatePart` part_log entry is flushed. After the upgrade restart the broken mutation is retried in
-#       the background and logged to `clickhouse-server.upgrade.log`. The table uses a plain `MergeTree`, so the
-#       error is emitted by `MutatePlainMergeTreeTask` rather than `MutateFromLogEntryTask` and is not covered by
-#       that exclusion. `throwIf` is a user-level function that only ever raises when a query explicitly calls it
-#       with a truthy argument, so the message can only originate from such a test, never from an upgrade
-#       incompatibility. The single substring also covers the wrapping `MergeTreeBackgroundExecutor` line, since
-#       both contain it.
+#       class of expected test-induced mutation error. It comes from tests that run an intentionally-failing
+#       `ALTER TABLE ... UPDATE <col> = <col> <op> throwIf(1)` async mutation:
+#       - 04341_broken_mutation_part_log_flush: plain `MergeTree`, so the error is emitted by
+#         `MutatePlainMergeTreeTask`, which is NOT covered by the `MutateFromLogEntryTask` exclusion above.
+#       - 02597_column_{update,delete,update_tricky_expression}_and_replication: `ReplicatedMergeTree`, where
+#         `MutateFromLogEntryTask` catches only the first line and the wrapping `MergeTreeBackgroundExecutor`
+#         line leaks.
+#       After the upgrade restart the broken mutation is retried in the background and logged to
+#       `clickhouse-server.upgrade.log`. `throwIf` is a user-level function that only ever raises when a query
+#       explicitly calls it with a truthy argument, so the message can only originate from such a test, never from
+#       an upgrade incompatibility. Matching the message itself (not the task type) covers all of the leaking
+#       lines - `MutatePlainMergeTreeTask`, `MutateFromLogEntryTask` and the wrapping `MergeTreeBackgroundExecutor`
+#       line - since each contains it.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
