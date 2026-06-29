@@ -102,8 +102,7 @@ void StorageObjectStorageConfiguration::initialize(
     bool with_table_structure,
     const StorageID * table_id,
     LoadingStrictnessLevel mode,
-    bool is_restore_from_backup,
-    bool is_attach_short_syntax)
+    bool is_restore_from_backup)
 {
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
@@ -131,12 +130,12 @@ void StorageObjectStorageConfiguration::initialize(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
         }
 
-        /// Reject only when the user is supplying a fresh definition. Skip metadata-replay
-        /// paths (short `ATTACH`, `FORCE_ATTACH` / `FORCE_RESTORE`, `RESTORE TABLE`) so pre-fix
-        /// metadata still loads after upgrade. Full-definition `ATTACH TABLE name FROM '<path>'
-        /// (cols) ENGINE = ...` still rejects, because the user is supplying a fresh definition.
-        if (!is_attach_short_syntax
-            && !isLoadingFromExistingMetadata(mode)
+        /// Reject only when the user supplies a fresh definition: a `CREATE TABLE`, or a table
+        /// function (which always loads with `CREATE`). Every `ATTACH` and server-startup replay
+        /// has `mode >= ATTACH` and reuses previously-validated metadata, so it must skip the check
+        /// for pre-fix tables to still load after upgrade. `RESTORE TABLE` loads with
+        /// `SECONDARY_CREATE` (which is `< ATTACH`), hence the explicit `is_restore_from_backup` guard.
+        if (mode < LoadingStrictnessLevel::ATTACH
             && !is_restore_from_backup
             && configuration_to_initialize.compression_method_user_provided)
         {

@@ -56,8 +56,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         false,
         &args.table_id,
         args.mode,
-        args.is_restore_from_backup,
-        args.query.attach_short_syntax);
+        args.is_restore_from_backup);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
