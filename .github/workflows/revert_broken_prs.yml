@@ -85,10 +85,16 @@ jobs:
             # Check merge commit for failures (check-runs). A failed API/jq query must not
             # look like "no failures" — that would let a broken merge be silently skipped —
             # so on error we log and skip only this candidate (it is retried on the next run).
+            #
+            # Only genuine failures count as failure signals: conclusion "failure" or
+            # "timed_out". Transient/benign conclusions (cancelled, action_required,
+            # startup_failure, stale) are NOT treated as failures — e.g. a scheduled job
+            # superseded by concurrency reports "cancelled" routinely, and that must never
+            # trigger a revert.
             if ! merge_failed_checks=$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100" \
               --paginate --jq '
               .check_runs[] |
-              select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled" or .conclusion == "action_required" or .conclusion == "startup_failure" or .conclusion == "stale") |
+              select(.conclusion == "failure" or .conclusion == "timed_out") |
               select((.name | startswith("Performance Comparison")) | not) |
               select((.name | startswith("libFuzzer")) | not) |
               select((.name | startswith("Nightly")) | not) |
@@ -139,7 +145,7 @@ jobs:
             echo "  Failures on merge commit:"
             echo "$merge_failures" | sed 's/^/    - /'
 
-            # Now check the original PR's head commit for failures or incomplete checks.
+            # Now check the original PR's head commit for the same failures.
             # Use the commit that was actually merged — the merge commit's second parent —
             # rather than the PR object's current `.head.sha`, which can move after merge if
             # the source branch advances, and would attribute the master failure to the wrong
@@ -158,14 +164,9 @@ jobs:
               select((.name | startswith("Nightly")) | not) |
               select((.name | startswith("ClickBench")) | not) |
               select(.name != "CH Inc sync" and .name != "Mergeable Check" and .name != "MasterCI" and .name != "SQLTest" and .name != "VectorSearchStress" and .name != "ClickHouse Keeper Jepsen") |
-              select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled" or .conclusion == "action_required" or .conclusion == "startup_failure" or .conclusion == "stale" or .status != "completed") |
+              select(.conclusion == "failure" or .conclusion == "timed_out") |
               (if .conclusion == "failure" then .name + " (failed)"
                elif .conclusion == "timed_out" then .name + " (timed_out)"
-               elif .conclusion == "cancelled" then .name + " (cancelled)"
-               elif .conclusion == "action_required" then .name + " (action_required)"
-               elif .conclusion == "startup_failure" then .name + " (startup_failure)"
-               elif .conclusion == "stale" then .name + " (stale)"
-               elif .status != "completed" then .name + " (incomplete)"
                else empty end)
             '); then
               echo "  WARNING: could not query check-runs for merged head $pr_head_sha, skipping candidate."
@@ -173,7 +174,7 @@ jobs:
               continue
             fi
 
-            # Check PR head for failed or pending commit statuses. Same as above.
+            # Check PR head for failed commit statuses. Same as above.
             if ! pr_failed_statuses=$(gh api "repos/$GH_REPO/commits/$pr_head_sha/status" --jq '
               .statuses[] |
               select((.context | startswith("Performance Comparison")) | not) |
@@ -181,10 +182,9 @@ jobs:
               select((.context | startswith("Nightly")) | not) |
               select((.context | startswith("ClickBench")) | not) |
               select(.context != "CH Inc sync" and .context != "Mergeable Check" and .context != "PR" and .context != "MasterCI" and .context != "SQLTest" and .context != "VectorSearchStress" and .context != "ClickHouse Keeper Jepsen") |
-              select(.state == "failure" or .state == "error" or .state == "pending") |
+              select(.state == "failure" or .state == "error") |
               (if .state == "failure" then .context + " (failed)"
                elif .state == "error" then .context + " (error)"
-               elif .state == "pending" then .context + " (pending)"
                else empty end)
             '); then
               echo "  WARNING: could not query commit statuses for merged head $pr_head_sha, skipping candidate."
@@ -213,15 +213,13 @@ jobs:
             echo "  Issues on PR head commit:"
             echo "$pr_issues" | sed 's/^/    - /'
 
-            # Require that the same check that failed on the merge commit also failed (or
-            # never completed) on the PR head. A failure on the PR head in an unrelated
-            # check does not prove the master failure came from this PR, so without an
-            # intersection we treat the master failure as flaky and skip. The PR head names
-            # carry a " (failed)"/" (timed_out)"/" (cancelled)"/" (action_required)"/
-            # " (startup_failure)"/" (stale)"/" (error)"/" (incomplete)"/" (pending)" suffix
-            # that we strip first.
+            # Require that the same check that failed on the merge commit also failed on the
+            # PR head. A failure on the PR head in an unrelated check does not prove the
+            # master failure came from this PR, so without an intersection we treat the
+            # master failure as flaky and skip. The PR head names carry a " (failed)"/
+            # " (timed_out)"/" (error)" suffix that we strip first.
             merge_failure_names=$(echo "$merge_failures" | sed '/^$/d' | sort -u)
-            pr_issue_names=$(echo "$pr_issues" | sed -E 's/ \((failed|timed_out|cancelled|action_required|startup_failure|stale|error|incomplete|pending)\)$//' | sed '/^$/d' | sort -u)
+            pr_issue_names=$(echo "$pr_issues" | sed -E 's/ \((failed|timed_out|error)\)$//' | sed '/^$/d' | sort -u)
             common_failures=$(comm -12 <(echo "$merge_failure_names") <(echo "$pr_issue_names"))
 
             if [ -z "$common_failures" ]; then
@@ -268,7 +266,7 @@ jobs:
           **Failed checks on the merge commit ($sha):**
           $failures_list
 
-          The same checks also failed or never completed on the original PR's head commit, confirming this is not a flaky failure:
+          The same checks also failed on the original PR's head commit, confirming this is not a flaky failure:
           $common_failures_list
 
           ### Changelog category (leave one):
