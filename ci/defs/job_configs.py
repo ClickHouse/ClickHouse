@@ -826,14 +826,17 @@ class JobConfigs:
         ),
     )
     # Builds the "before" unit_tests_dbms (merge-base + only the PR's unit-test file
-    # changes) in-job, so it needs the binary-builder image and submodules. The "after"
-    # binary is the prebuilt UNITTEST_AMD_ASAN_UBSAN artifact.
+    # changes) in-job, so it needs the binary-builder image and submodules. It does NOT
+    # require the PR's UNITTEST_AMD_ASAN_UBSAN artifact: the "touched tests pass on the
+    # PR binary" side is delegated to the regular `Unit tests (asan_ubsan)` job (see the
+    # module docstring), so this job is not gated behind `build_amd_asan_ubsan` and
+    # builds the "before" binary in parallel with the build matrix — matching the early
+    # start of the functional/integration bugfix validators.
     bugfix_validation_ut_job = Job.Config(
         name=JobNames.BUGFIX_VALIDATE_UT,
         runs_on=RunnerLabels.AMD_LARGE,
         command="python3 ./ci/jobs/unit_tests_bugfix_validation_job.py",
         run_in_docker=BINARY_DOCKER_COMMAND,
-        requires=[ArtifactNames.UNITTEST_AMD_ASAN_UBSAN],
         needs_submodules=True,
         timeout=3600 * 4,
         digest_config=Job.CacheDigestConfig(

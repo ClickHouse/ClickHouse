@@ -392,10 +392,10 @@ class JobNames:
     BUGFIX_VALIDATE_IT_AMD = "Bugfix validation (integration tests, amd64)"
     BUGFIX_VALIDATE_IT_ARM = "Bugfix validation (integration tests, aarch64)"
     # Unit-test (gtest) bugfix validation. Unlike the functional/integration
-    # validators above, this is a single AMD-only job (there is only an
-    # `UNITTEST_AMD_ASAN_UBSAN` artifact) that builds a merge-base "before"
-    # binary in-job and reports `OK`/`XFAIL`/`FAIL` directly, so it is not part
-    # of the per-arch aggregation in `new_tests_check.py`.
+    # validators above, this is a single AMD-only job: it builds a merge-base
+    # "before" `unit_tests_dbms` (AMD ASan+UBSan) in-job and reports
+    # `OK`/`XFAIL`/`FAIL` directly, so it is not part of the per-arch
+    # aggregation in `new_tests_check.py`.
     BUGFIX_VALIDATE_UT = "Bugfix validation (unit tests)"
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"

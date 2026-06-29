@@ -7,13 +7,19 @@ work for unit tests: gtest cases are compiled into `unit_tests_dbms`, so an old 
 does not contain the new tests.
 
 Instead, this job builds a "before" binary from the merge-base sources with ONLY the
-PR's unit-test file changes overlaid on top (the test, but not the fix), and then:
+PR's unit-test file changes overlaid on top (the test, but not the fix), and then
+runs the touched test suites on it — at least one must FAIL or crash (or the "before"
+binary must fail to build, which is the strongest possible proof that the test depends
+on the fix).
 
-  * runs the touched test suites on the PR's own binary (the prebuilt
-    `UNITTEST_AMD_ASAN_UBSAN` artifact) — they must all PASS, and
-  * runs the same suites on the "before" binary — at least one must FAIL or crash
-    (or the "before" binary must fail to build, which is the strongest possible proof
-    that the test depends on the fix).
+Like the functional/integration validators, this job only checks the "before" side.
+The complementary "the touched tests PASS on the PR binary" side is delegated to the
+regular `Unit tests (asan_ubsan)` job, which compiles and runs the full suite —
+including the new test — on the PR binary; a regression test that is itself broken
+makes that job red and blocks the PR.  Delegating it lets this job avoid requiring the
+PR's `UNITTEST_AMD_ASAN_UBSAN` artifact, so it is not gated behind `build_amd_asan_ubsan`
+and builds the "before" binary in parallel with the build matrix (it starts as early as
+the functional/integration validators, which only need `config_workflow` + dockers).
 
 See ci/jobs/functional_tests.py:invert_bugfix_validation_status for the analogous
 functional-test logic.
@@ -41,11 +47,8 @@ BEFORE_SRC_NORMALIZED = f"{REPO_NORMALIZED}/{BEFORE_SRC}"
 BEFORE_BUILD_NORMALIZED = f"{BEFORE_SRC_NORMALIZED}/build"
 BEFORE_BINARY = f"{BEFORE_SRC}/build/src/unit_tests_dbms"
 
-# The PR's own binary: the required UNITTEST_AMD_ASAN_UBSAN artifact is decompressed
-# by the runner to ci/tmp/unit_tests_dbms (compress_zst artifact, INPUT_DIR=ci/tmp).
-AFTER_BINARY = "./ci/tmp/unit_tests_dbms"
-
-# Build the "before" binary with the same config as the artifact we validate against.
+# Build the "before" binary with the same config the regular `Unit tests (asan_ubsan)`
+# job uses for the PR binary, so the two sides are compared under identical flags.
 BUILD_TYPE = BuildTypes.AMD_ASAN_UBSAN
 
 # gtest test-registration macros whose first argument is the test-suite name.
@@ -282,22 +285,7 @@ def main():
 
     results = []
 
-    # 4. Run the touched tests on the PR's own binary — they must all pass.
-    after_result = run_gtests(
-        AFTER_BINARY,
-        gtest_filter,
-        name="Touched unit tests on the PR binary (must pass)",
-    )
-    results.append(after_result)
-    if not after_result.is_ok():
-        finalize(
-            results,
-            "The touched unit tests do not pass on the PR's own binary — the regression "
-            "test itself is broken. Fix the test before bugfix validation can run.",
-        )
-        return
-
-    # 5. Build the "before" binary (merge-base + test files, without the fix).
+    # 4. Build the "before" binary (merge-base + test files, without the fix).
     pr_sha = Shell.get_output("git rev-parse HEAD").strip()
     merge_base = determine_merge_base(info)
     print(f"PR commit: {pr_sha}")
@@ -327,7 +315,7 @@ def main():
 
     results.append(build_result)
 
-    # 6. Run the touched tests on the "before" binary — at least one must fail/crash.
+    # 5. Run the touched tests on the "before" binary — at least one must fail/crash.
     before_result = run_gtests(
         BEFORE_BINARY,
         gtest_filter,

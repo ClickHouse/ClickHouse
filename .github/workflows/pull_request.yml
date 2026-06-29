@@ -1804,7 +1804,7 @@ jobs:
 
   bugfix_validation_unit_tests:
     runs-on: [self-hosted, pr-amd-large]
-    needs: [build_amd_asan_ubsan, build_arm_tidy, ci_tests, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVnZml4IHZhbGlkYXRpb24gKHVuaXQgdGVzdHMp') }}
     name: "Bugfix validation (unit tests)"
     outputs:
