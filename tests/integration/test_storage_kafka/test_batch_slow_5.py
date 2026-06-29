@@ -110,6 +110,8 @@ def test_formats_errors(kafka_cluster):
                             kafka_group_name = '{format_name}',
                             kafka_format = '{format_name}',
                             kafka_max_rows_per_message = 5,
+                            kafka_flush_interval_ms = 500,
+                            kafka_poll_timeout_ms = 200,
                             format_template_row='template_row.format',
                             format_regexp='id: (.+?)',
                             input_format_with_names_use_header=0,
