@@ -117,6 +117,10 @@ INSERT INTO tab VALUES
 SELECT '-- Phrase of only stop words normalizes to an empty phrase and matches nothing';
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'the the') SETTINGS query_plan_direct_read_from_text_index = 1;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'the the') SETTINGS query_plan_direct_read_from_text_index = 0;
+-- An OR keeps the granule alive so the empty phrase is evaluated directly (granule pruning no longer masks
+-- it); the empty phrase must still match nothing, so only id = 3 qualifies (not every row via direct read).
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'the the') OR id = 3 SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'the the') OR id = 3 SETTINGS query_plan_direct_read_from_text_index = 0;
 
 SELECT '-- Stop words between real tokens are removed, so cat dog matches across a dropped the';
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'cat dog') SETTINGS query_plan_direct_read_from_text_index = 1;

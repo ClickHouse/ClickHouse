@@ -21,6 +21,8 @@
 -- Phrase of only stop words normalizes to an empty phrase and matches nothing
 []
 []
+[3]
+[3]
 -- Stop words between real tokens are removed, so cat dog matches across a dropped the
 [2,3,4]
 [2,3,4]
