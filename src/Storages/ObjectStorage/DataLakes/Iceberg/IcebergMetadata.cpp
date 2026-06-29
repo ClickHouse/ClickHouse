@@ -224,7 +224,7 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
         persistent_components.metadata_compression_method,
         force_fetch_latest_metadata,
         ignore_explicit_metadata_file_path);
-    return getState(context, metadata_file_path, metadata_version);
+    return getState(context, metadata_file_path, metadata_version, compression_method);
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -536,12 +536,12 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>
-IcebergMetadata::getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const
+IcebergMetadata::getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version, CompressionMethod compression_method) const
 {
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
     auto metadata_object = getMetadataJSONObject(
-        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.table_uuid);
+        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);
 
     insertRowToLogTable(
         local_context,
