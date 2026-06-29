@@ -47,6 +47,13 @@ public:
     /// with object storage layer.
     virtual ffi::EngineBuilder * createBuilder() const = 0;
 
+    /// Make the table location ready to receive a brand-new table. The kernel's local
+    /// `object_store` backend rejects a table location whose root directory does not yet
+    /// exist (`get_engine_builder` fails with `InvalidTableLocationError`), so the local
+    /// helper creates it here. Object stores (S3/Azure) have no directories and need no
+    /// preparation, hence the default no-op.
+    virtual void prepareForTableCreation() const {}
+
     /// Hash of current credentials; override for providers with rotating sessions.
     virtual DB::UInt128 getCredentialsFingerprint() const { return {}; }
 

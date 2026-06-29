@@ -291,6 +291,10 @@ void WriteTransaction::createTable(const DB::NamesAndTypesList & schema, const D
             fmt::join(partition_columns, ", "));
     }
 
+    /// For the local filesystem the kernel refuses a table location whose root directory
+    /// does not yet exist; create it up front. No-op for object stores (S3/Azure).
+    kernel_helper->prepareForTableCreation();
+
     auto * engine_builder = kernel_helper->createBuilder();
     engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
 
