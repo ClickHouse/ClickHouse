@@ -634,7 +634,7 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFilesFromPartition(
     /// Without a filter there is nothing to prune by, so collect all files of the partition.
     if (filter_actions_dag && prune_level >= PruneLevel::Partition)
     {
-        std::vector<Range> ranges;
+        Ranges ranges;
         ranges.reserve(partition_names.size());
         for (size_t i = 0; i < partition_names.size(); ++i)
             ranges.emplace_back(fields[i]);
