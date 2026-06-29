@@ -256,6 +256,7 @@ private:
     std::optional<String> connection_name;
 
     bool round_robin;
+    bool comparison_mode = false;
     unsigned concurrency;
     unsigned max_concurrency;
     unsigned threads;
@@ -462,6 +463,10 @@ private:
             std::lock_guard lock(queries_per_connection_mutex);
             queries_per_connection.resize(connections.size(), 0);
         }
+
+        /// Student's T-test compares exactly two distributions, so enable the comparison
+        /// report only for two non-round-robin endpoints.
+        comparison_mode = !round_robin && connections.size() == 2;
     }
 
     void readQueries()
@@ -801,7 +806,8 @@ private:
 
         std::lock_guard lock(mutex);
         total_stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
-        t_test.add(info_index, duration);
+        if (comparison_mode)
+            t_test.add(info_index, duration);
     }
 
     void report(const MultiStats & infos, double seconds, size_t used_threads = 0)
@@ -878,7 +884,8 @@ private:
         print_percentile(99.9);
         print_percentile(99.99);
 
-        log << "\n" << t_test.compareAndReport(confidence).second << "\n";
+        if (comparison_mode)
+            log << "\n" << t_test.compareAndReport(confidence).second << "\n";
 
         log.next();
     }
