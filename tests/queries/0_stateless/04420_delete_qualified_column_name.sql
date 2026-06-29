@@ -21,18 +21,17 @@ SELECT * FROM test_delete_qualified ORDER BY id;
 
 DROP TABLE test_delete_qualified;
 
--- Case 2: DELETE with database.table.column qualification
-DROP DATABASE IF EXISTS test_delete_db_04039;
-CREATE DATABASE test_delete_db_04039;
+-- Case 2: DELETE with database.table.column qualification.
+-- Use the test's own (randomly named) database so the test is safe to run
+-- concurrently with itself, as the flaky check does.
+CREATE TABLE t_04420 (id Int32, value String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_04420 VALUES (1, 'a'), (2, 'b'), (3, 'c');
 
-CREATE TABLE test_delete_db_04039.t (id Int32, value String) ENGINE = MergeTree ORDER BY id;
-INSERT INTO test_delete_db_04039.t VALUES (1, 'a'), (2, 'b'), (3, 'c');
+DELETE FROM {CLICKHOUSE_DATABASE:Identifier}.t_04420 WHERE {CLICKHOUSE_DATABASE:Identifier}.t_04420.id = 1;
 
-DELETE FROM test_delete_db_04039.t WHERE test_delete_db_04039.t.id = 1;
-
-SELECT * FROM test_delete_db_04039.t ORDER BY id;
+SELECT * FROM t_04420 ORDER BY id;
 
 -- Case 3: Non-matching qualifier must NOT be stripped (should error)
-DELETE FROM test_delete_db_04039.t WHERE no_such_table.id = 3; -- { serverError UNKNOWN_IDENTIFIER }
+DELETE FROM t_04420 WHERE no_such_table.id = 3; -- { serverError UNKNOWN_IDENTIFIER }
 
-DROP DATABASE test_delete_db_04039;
+DROP TABLE t_04420;
