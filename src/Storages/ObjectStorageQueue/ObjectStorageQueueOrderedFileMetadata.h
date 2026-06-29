@@ -27,6 +27,9 @@ public:
         /// and re-acquired by another processor). Used for an atomic ownership check at commit.
         /// `-1` means "unknown" (ownership check disabled, e.g. on Keeper without `CheckStat`).
         int64_t lock_czxid = -1;
+        /// Wall-clock time (seconds since epoch) when this bucket lock was acquired, so we can
+        /// report how long it had been held when ownership is found to be lost.
+        Int64 lock_acquired_time = 0;
         std::string toString() const;
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
@@ -185,6 +188,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
         const std::string & bucket_lock_path_,
         const std::string & processor_info_,
         int64_t lock_czxid_,
+        Int64 lock_acquired_time_,
         LoggerPtr log_,
         const std::string & zookeeper_name_);
 

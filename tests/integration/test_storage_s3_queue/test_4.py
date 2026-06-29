@@ -563,6 +563,48 @@ def test_alter_deduplication_v2_guard(started_cluster):
     )
 
 
+def test_reset_deduplication_v2_guard(started_cluster):
+    # RESET SETTING re-derives the default (`deduplication_v2` -> true), which is just as unsafe as
+    # MODIFY, so it must require `s3queue_allow_unsafe_alter` too (it bypassed the guard before,
+    # because the reset setting is absent from the post-alter settings `checkAlterIsPossible` scans).
+    node1 = started_cluster.instances["instance"]
+
+    table_name = f"test_reset_dedup_guard_{uuid.uuid4().hex[:8]}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path, "deduplication_v2": 0},
+    )
+
+    def dedup_value():
+        return node1.query(
+            f"SELECT value FROM system.s3_queue_settings "
+            f"WHERE name = 'deduplication_v2' AND table = '{table_name}'"
+        ).strip()
+
+    assert dedup_value() == "0"
+
+    # Without the opt-in, RESET must be rejected (it would flip `deduplication_v2` back to default).
+    error = node1.query_and_get_error(
+        f"ALTER TABLE {table_name} RESET SETTING deduplication_v2"
+    )
+    assert "deduplication_v2" in error and "s3queue_allow_unsafe_alter" in error
+    assert dedup_value() == "0"
+
+    # With the explicit opt-in the reset goes through (back to the default `true`).
+    node1.query(
+        f"ALTER TABLE {table_name} RESET SETTING deduplication_v2",
+        settings={"s3queue_allow_unsafe_alter": 1},
+    )
+    assert dedup_value() == "1"
+
+
 @pytest.mark.skip(
     reason="tracked_files_limit = 1 triggers asserts, but this is unrealistic"
 )

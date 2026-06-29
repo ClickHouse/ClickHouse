@@ -1372,6 +1372,26 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
             }
         }
     }
+
+    /// `RESET SETTING` removes the setting from `new_settings`, so the loop above never sees it, but
+    /// `alter` re-derives the default and applies it. Re-deriving an unsafe setting (e.g.
+    /// `RESET deduplication_v2` -> default `true`) is as unsafe as modifying it, so it must obey the
+    /// same opt-in.
+    for (const auto & command : alter_commands)
+    {
+        for (const auto & reset_name : command.settings_resets)
+        {
+            if (reset_name == "deduplication_v2"
+                && !local_context->getSettingsRef()[Setting::s3queue_allow_unsafe_alter])
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Resetting `deduplication_v2` on an existing table can break deduplication and "
+                    "produce duplicate rows. Set `s3queue_allow_unsafe_alter = 1` if you understand "
+                    "the consequences");
+            }
+        }
+    }
 }
 
 void StorageObjectStorageQueue::alter(
