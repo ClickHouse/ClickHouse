@@ -58,7 +58,7 @@ def test_deduplication_window_in_seconds(started_cluster):
         if (
             TSV.toMat(
                 node.query(
-                    "SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/tables/0/simple/blocks'"
+                    "SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/tables/0/simple/deduplication_hashes'"
                 )
             )[0][0]
             <= "1"
