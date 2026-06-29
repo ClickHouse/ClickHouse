@@ -709,6 +709,19 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     response->AddHeader(header_name, header_value);
             }
 
+            /// Detect GCS decompressive transcoding: the object is gzip on disk
+            /// but GCS decoded it before serving. All three must hold:
+            ///   x-goog-stored-content-encoding: gzip  (stored as gzip)
+            ///   no Content-Encoding                   (server removed it after decoding)
+            ///   no Content-Length                      (server doesn't know decompressed size)
+            if (poco_response.has("x-goog-stored-content-encoding")
+                && poco_response.get("x-goog-stored-content-encoding") == "gzip"
+                && !poco_response.has("content-encoding")
+                && !poco_response.has("content-length"))
+            {
+                response->AddHeader("x-amz-meta-ch-decompressive-transcoding", "true");
+            }
+
             /// Request is successful but for some special requests we can have actual error message in body
             if (status_code >= SUCCESS_RESPONSE_MIN && status_code <= SUCCESS_RESPONSE_MAX && checkRequestCanReturn2xxAndErrorInBody(request))
             {

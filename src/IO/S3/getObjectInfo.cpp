@@ -80,6 +80,11 @@ namespace
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
 
+        /// Detect confirmed decompressive transcoding (set by PocoHTTPClient)
+        auto it = object_info.metadata.find("ch-decompressive-transcoding");
+        if (it != object_info.metadata.end() && it->second == "true")
+            object_info.is_server_side_decompressed = true;
+
         if (with_tags && result.GetTagCount() > 0)
             object_info.tags = getObjectTags(client, bucket, key, version_id);
 

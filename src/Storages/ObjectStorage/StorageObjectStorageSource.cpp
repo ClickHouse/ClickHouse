@@ -788,6 +788,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
+
+            /// Server already decompressed the data (e.g. GCS decompressive transcoding)
+            if (auto metadata = object_info->getObjectMetadata();
+                metadata && metadata->is_server_side_decompressed && !metadata->is_size_known)
+            {
+                compression_method = CompressionMethod::None;
+            }
+
             read_buf = createReadBuffer(object_info->relative_path_with_metadata, object_storage, context_, log);
         }
 

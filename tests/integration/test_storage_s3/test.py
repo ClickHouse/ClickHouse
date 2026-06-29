@@ -3290,6 +3290,7 @@ def test_gcs_decompressive_transcoding(started_cluster):
     )
     assert result.strip() == '{"id":1}\n{"id":2}\n{"id":3}'
 
+
 def test_query_condition_cache(started_cluster):
     instance = started_cluster.instances["dummy"]
     bucket = started_cluster.minio_bucket
@@ -3383,3 +3384,22 @@ def test_query_condition_cache(started_cluster):
 
     instance.query(f"DROP TABLE {table_name}")
 
+
+def test_gcs_decompressive_transcoding_gz(started_cluster):
+    """Same mock but with .log.gz extension. The server signals transcoding via
+    x-goog-stored-content-encoding: gzip + no Content-Encoding + no Content-Length,
+    so ClickHouse skips auto-decompression
+    See https://github.com/ClickHouse/ClickHouse/issues/47980"""
+    instance = started_cluster.instances["dummy"]
+
+    result = instance.query(
+        "SELECT count() FROM s3("
+        "'http://resolver:8084/bucket/data.log.gz', NOSIGN, 'LineAsString', 'line String')"
+    )
+    assert result.strip() == "3"
+
+    result = instance.query(
+        "SELECT * FROM s3("
+        "'http://resolver:8084/bucket/data.log.gz', NOSIGN, 'LineAsString', 'line String')"
+    )
+    assert result.strip() == '{"id":1}\n{"id":2}\n{"id":3}'
