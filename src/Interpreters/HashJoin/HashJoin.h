@@ -201,6 +201,14 @@ public:
 
     JoinKind getKind() const { return kind; }
     JoinStrictness getStrictness() const { return strictness; }
+
+    /// True iff this build would pop ("skip inserting") a stored block that produced no inserted row -
+    /// the `!flag_per_row && !is_inserted && !nullmap_stored_for_block` branch in `insertFromBlockImpl`.
+    /// That pop fires only for a one-row-per-key (`MapsOne`) INNER/LEFT build with no per-right-row
+    /// used-flags and no RIGHT/FULL not-joined bookkeeping. The deferred `ConcurrentHashJoin` build
+    /// uses this to decide whether a per-slot block with no kept row may be dropped instead of buffered
+    /// (so its early `max_bytes_in_join` guard matches the streaming build). See the definition.
+    bool buildPopsZeroInsertBlocks() const;
     const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
     ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }

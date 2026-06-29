@@ -229,10 +229,15 @@ private:
     /// `out_block_key_hashes`, when non-null, is filled with the raw scatter hashes of the source block's
     /// insertable rows (those a NULL key or the right-side ON condition would not exclude at insert time;
     /// see `selectDispatchBlock`), for the deferred build's distinct-key estimate. Not split per slot.
+    /// `out_has_kept_row`, when non-null, is filled with one flag per slot: whether any row routed to that
+    /// slot would be kept by the streaming build (NULL key or passing the right-side ON mask). The
+    /// deferred build uses it to skip buffering a per-slot block the streaming build would pop. An empty
+    /// returned vector means "every slot keeps a row" (skip nothing) - see `selectDispatchBlock`.
     ScatteredBlocks dispatchBlock(
         const Strings & key_columns_names,
         Block && from_block,
-        std::vector<UInt64> * out_block_key_hashes = nullptr);
+        std::vector<UInt64> * out_block_key_hashes = nullptr,
+        std::vector<UInt8> * out_has_kept_row = nullptr);
 };
 
 }
