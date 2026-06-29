@@ -109,8 +109,6 @@ private:
 
     bool withPartialContent() const;
 
-    bool isRetriableError(Poco::Net::HTTPResponse::HTTPStatus http_status) const noexcept;
-
     void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const;
 
     void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false) const;

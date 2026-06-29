@@ -63,26 +63,6 @@ namespace ErrorCodes
     extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
-bool ReadWriteBufferFromHTTP::isRetriableError(Poco::Net::HTTPResponse::HTTPStatus http_status) const noexcept
-{
-    static constexpr std::array non_retriable_errors{
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_IMPLEMENTED,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED};
-
-    if (std::any_of(non_retriable_errors.begin(), non_retriable_errors.end(),
-                    [&](const auto status) { return http_status == status; }))
-        return false;
-
-    if (custom_non_retryable_errors.contains(http_status))
-        return false;
-
-    return true;
-}
-
 std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::CallResult::transformToReadBuffer(size_t buf_size) &&
 {
     chassert(session);
@@ -351,7 +331,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         }
         catch (HTTPException & e)
         {
-            if (!isRetriableHTTPError(e.getHTTPStatus()))
+            if (!isRetriableHTTPError(e.getHTTPStatus()) || custom_non_retryable_errors.contains(e.getHTTPStatus()))
                 is_retriable = false;
 
             error_message = e.displayText();
