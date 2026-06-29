@@ -815,14 +815,14 @@ private:
     /// jobs instead of re-deriving the next gap from the coverage map. `interpretStep`
     /// dispatches on `steps[cursor]`; `maybeLaunchAhead` launches the schedule's `Remote`
     /// jobs at a frontier.
-    ChainedBuffers interpretStep(size_t position_phys, size_t to_read);
-    ChainedBuffers serveHitStep(const PlanSchedule::Step & step, size_t position_phys, size_t to_read);
-    ChainedBuffers serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read);
+    ChainedBuffers interpretStep(size_t position_phys);
+    ChainedBuffers serveHitStep(const PlanSchedule::Step & step, size_t position_phys);
+    ChainedBuffers serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys);
     /// Serve a populatable retrieve (one that fills a cache cell) from the committed cell -
     /// the cache is the buffer, so no in-memory bank is held. Drives the in-flight worker
     /// (or a foreground fallback) until the bottom cell covers the window, reads it back via
     /// `recreditCommittedPrefixes`, and promotes the served run up. A bypass gap keeps the bank.
-    ChainedBuffers serveRetrievePopulatable(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read);
+    ChainedBuffers serveRetrievePopulatable(const PlanSchedule::Step & step, size_t ri, size_t position_phys);
     /// Read-only: do the plan's held write buffers commit-cover the whole physical window?
     /// The read-only twin of `recreditCommittedPrefixes`'s coverage computation (no read, no stats).
     bool committedCellCovers(ByteRange window_phys) const;
@@ -831,10 +831,10 @@ private:
     /// via the worker's OWN target writers (`waitAndReadSiblingLed`). Accumulates into `out` /
     /// `covered`; the caller checks full coverage and falls back to a foreground fetch otherwise.
     void serveWindowFromCells(ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered, Stats & out_stats);
-    ChainedBuffers serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys, size_t to_read) const;
-    ChainedBuffers serveRetrieveForeground(size_t ri, size_t position_phys, size_t to_read);
+    ChainedBuffers serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys) const;
+    ChainedBuffers serveRetrieveForeground(size_t ri, size_t position_phys);
     void collectInFlightInto(size_t ri);
-    ChainedBuffers handleExtentOrReplan(size_t position_phys, size_t to_read);
+    ChainedBuffers handleExtentOrReplan(size_t position_phys);
     void maybeLaunchAhead();
     void launchRetrieve(size_t ri);
     bool depsSatisfied(size_t ri) const;
@@ -929,6 +929,16 @@ private:
         if (offset_map.hasUnknownSize())
             return reached_eof;
         return reached_eof || position >= totalSize();
+    }
+
+    /// The per-call read ceiling in LOGICAL bytes: bytes remaining to the read extent, or one
+    /// window when the source size is unknown. `> 0` iff there is room to read at the cursor.
+    /// (Was the `to_read` parameter.) Deliberately does NOT test `reached_eof`: the
+    /// `atEnd() && !machine` guard owns the no-machine EOF, so an in-flight machine's final
+    /// bytes are still collected after EOF latches.
+    size_t readCeiling() const
+    {
+        return offset_map.hasUnknownSize() ? clampToExtent(window_size) : clampToExtent(totalSize() - position);
     }
 
     // ─── Members ─────────────────────────────────────────────────────────

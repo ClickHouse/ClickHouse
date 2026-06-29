@@ -391,8 +391,6 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     /// prefetch waits) - the executor's direct contribution to query read latency.
     StatTimer work_timer(stats, Stats::WorkMicroseconds);
 
-    const size_t logical_size = totalSize();
-
     /// EOF return - but a machine launched before EOF can have its worker latch
     /// `reached_eof` via a short read on an unknown-size source while still holding
     /// the final bytes. Defer the EOF return until that machine is collected in the
@@ -407,20 +405,16 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     }
 
     const size_t position_phys = position + data_start_offset;
-    /// Pressure-free "is there anything left to read?" (the old `win_size > 0` guard,
-    /// minus the `effectiveWindowSize` memory-pressure query): clamp to the advertised
-    /// extent / file end. An unknown-size source has no known end here (EOF is latched
-    /// by a short read), so it reads up to the extent (or is effectively unbounded).
-    const size_t to_read = offset_map.hasUnknownSize()
-        ? clampToExtent(window_size)
-        : clampToExtent(logical_size - position);
 
     ChainedBuffers chain;
 
     /// Plan-first: build/refresh the geometry, then let the interpreter serve the
     /// cursor step - a resident run streamed from the held cache handle, or an
-    /// in-flight / synchronous gap fetch.
-    if (to_read > 0)
+    /// in-flight / synchronous gap fetch. `readCeiling()` is the pressure-free
+    /// "is there anything left to read?" guard (clamped to the advertised extent /
+    /// file end); an unknown-size source has no known end here (EOF is latched by a
+    /// short read), so it reads up to the extent (or is effectively unbounded).
+    if (readCeiling() > 0)
     {
         const bool at_plan_end = read_plan.geometry() && position_phys >= read_plan.geometry()->plan_end;
 
@@ -447,7 +441,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         }
     }
 
-    chain = interpretStep(position_phys, to_read);
+    chain = interpretStep(position_phys);
 
     stats.add(Stats::RequestedBytes, chain.range().size);
     position += chain.range().size;
@@ -2506,13 +2500,13 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
     }
 }
 
-ChainedBuffers ReaderExecutor::serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys, size_t to_read) const
+ChainedBuffers ReaderExecutor::serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys) const
 {
     /// All logical: `ready_bytes` and `position` are logical; the cursor step is physical,
     /// so shift its end by the header. No `ChainedBuffers` shift - only the bounds arithmetic.
     const size_t pos = position_phys - data_start_offset;
     const size_t step_end = step.output.end() - data_start_offset;
-    const size_t end = std::min({step_end, pos + to_read, st.ready_bytes.range().end()});
+    const size_t end = std::min({step_end, pos + readCeiling(), st.ready_bytes.range().end()});
     ChainedBuffers out = st.ready_bytes.slice(ByteRange{pos, end - pos});
     /// Release everything up to `end` (the served prefix + any skipped head) so the
     /// banked footprint stays ~one window.
@@ -2520,7 +2514,7 @@ ChainedBuffers ReaderExecutor::serveStepFromBanked(const PlanSchedule::Step & st
     return out;
 }
 
-ChainedBuffers ReaderExecutor::serveRetrieveForeground(size_t ri, size_t position_phys, size_t to_read)
+ChainedBuffers ReaderExecutor::serveRetrieveForeground(size_t ri, size_t position_phys)
 {
     const auto & r = read_plan.schedule.retrieves[ri];
     auto & st = read_plan.retrieve_status[ri];
@@ -2534,7 +2528,7 @@ ChainedBuffers ReaderExecutor::serveRetrieveForeground(size_t ri, size_t positio
     /// cached hole (`canContinue`) - or reopens past a hole at/above `min_bytes_for_seek`
     /// (the hole then filled down from the faster tier).
     const size_t step_end = read_plan.schedule.steps[read_plan.cursor].output.end();
-    const size_t want = std::min({to_read, step_end - position_phys, boundedReadSize(effectiveWindowSize(level))});
+    const size_t want = std::min({readCeiling(), step_end - position_phys, boundedReadSize(effectiveWindowSize(level))});
     if (want == 0)
         return {};
     ChainedBuffers w = syncGapRead(ByteRange{position_phys, want});  /// returns logical, banked directly
@@ -2546,7 +2540,7 @@ ChainedBuffers ReaderExecutor::serveRetrieveForeground(size_t ri, size_t positio
     /// launch skip never-fetched bytes. Advance only if this read extends the frontier.
     st.fetched = std::max(st.fetched, (position_phys - r.range.offset) + want);
     st.phase = RetrievePhase::Ready;
-    ChainedBuffers out = serveStepFromBanked(read_plan.schedule.steps[read_plan.cursor], st, position_phys, to_read);
+    ChainedBuffers out = serveStepFromBanked(read_plan.schedule.steps[read_plan.cursor], st, position_phys);
     /// As on the prefetch path: the sync fetch filled only the bottom tier, so push just the
     /// SERVED window up into the faster tiers on the serve front.
     if (!out.empty())
@@ -2554,12 +2548,12 @@ ChainedBuffers ReaderExecutor::serveRetrieveForeground(size_t ri, size_t positio
     return out;
 }
 
-ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read)
+ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys)
 {
     /// A populatable retrieve (it fills a cache cell) serves from the committed cell - the
     /// cache is the buffer. Only a bypass gap (no fillable tier, empty `into`) keeps the bank.
     if (!read_plan.schedule.retrieves[ri].into.empty())
-        return serveRetrievePopulatable(step, ri, position_phys, to_read);
+        return serveRetrievePopulatable(step, ri, position_phys);
 
     auto & st = read_plan.retrieve_status[ri];
     const size_t pos = position_phys - data_start_offset;  /// `ready_bytes` is logical
@@ -2572,9 +2566,9 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
         if (machineFor(ri))
             collectInFlightInto(ri);  /// wait, bank one window, advance the frontier
         else
-            return serveRetrieveForeground(ri, position_phys, to_read);  /// not prefetched: read it now
+            return serveRetrieveForeground(ri, position_phys);  /// not prefetched: read it now
     }
-    ChainedBuffers out = serveStepFromBanked(step, st, position_phys, to_read);
+    ChainedBuffers out = serveStepFromBanked(step, st, position_phys);
     /// The fetch filled only the bottom tier; push just the SERVED window up into the faster
     /// tiers here, so the pc fill trails the serve cursor (its own budget) rather than riding
     /// the fetch front's lead. `out` is logical; shift to physical for the cache coordinates.
@@ -2611,14 +2605,14 @@ bool ReaderExecutor::committedCellCovers(ByteRange window_phys) const
     return covered.subtract(window_phys).empty();
 }
 
-ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read)
+ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step & step, size_t ri, size_t position_phys)
 {
     const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
     /// One window of THIS step only (the bank path's bound): a bridged retrieve can span
     /// several steps, and reading past an embedded faster-tier hit would break the 1:1
     /// serve-to-schedule mapping.
     const size_t step_end = step.output.end();
-    const size_t want = std::min({to_read, step_end - position_phys, boundedReadSize(effectiveWindowSize(level))});
+    const size_t want = std::min({readCeiling(), step_end - position_phys, boundedReadSize(effectiveWindowSize(level))});
     if (want == 0)
         return {};
     const ByteRange window_phys{position_phys, want};
@@ -2658,7 +2652,7 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
     /// fallback is the only populatable path that still banks - transiently, one window.
     if (machineFor(ri))
         collectInFlightInto(ri);
-    return serveRetrieveForeground(ri, position_phys, to_read);
+    return serveRetrieveForeground(ri, position_phys);
 }
 
 void ReaderExecutor::serveWindowFromCells(
@@ -2707,18 +2701,18 @@ void ReaderExecutor::serveWindowFromCells(
     }
 }
 
-ChainedBuffers ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, size_t position_phys, size_t to_read)
+ChainedBuffers ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, size_t position_phys)
 {
     /// A resident step: stream it from the held cache buffers, bounded to the step (the
     /// maximal cross-tier resident run) and to one block. Reuses the resident serve path.
-    return serveCacheBlock(position_phys, std::min(to_read, step.output.end() - position_phys));
+    return serveCacheBlock(position_phys, std::min(readCeiling(), step.output.end() - position_phys));
 }
 
-ChainedBuffers ReaderExecutor::handleExtentOrReplan(size_t position_phys, size_t to_read)
+ChainedBuffers ReaderExecutor::handleExtentOrReplan(size_t position_phys)
 {
     /// The cursor ran past the materialized steps (or there is nothing to read). At a known
     /// end / the extent, this is EOF (empty chain). Otherwise re-plan from here and retry.
-    if (to_read == 0 || atEnd())
+    if (readCeiling() == 0 || atEnd())
         return {};
     if (!read_plan.geometry() || read_plan.cursor >= read_plan.schedule.steps.size())
     {
@@ -2727,19 +2721,19 @@ ChainedBuffers ReaderExecutor::handleExtentOrReplan(size_t position_phys, size_t
         if (read_plan.schedule.steps.empty())
             return {};
     }
-    return interpretStep(position_phys, to_read);
+    return interpretStep(position_phys);
 }
 
-ChainedBuffers ReaderExecutor::interpretStep(size_t position_phys, size_t to_read)
+ChainedBuffers ReaderExecutor::interpretStep(size_t position_phys)
 {
-    if (to_read == 0 || !read_plan.geometry() || read_plan.schedule.steps.empty()
+    if (readCeiling() == 0 || !read_plan.geometry() || read_plan.schedule.steps.empty()
         || read_plan.cursor >= read_plan.schedule.steps.size())
-        return handleExtentOrReplan(position_phys, to_read);
+        return handleExtentOrReplan(position_phys);
 
     const auto & step = read_plan.schedule.steps[read_plan.cursor];
     if (step.require_retrieve.has_value())
-        return serveRetrieveStep(step, *step.require_retrieve, position_phys, to_read);
-    return serveHitStep(step, position_phys, to_read);
+        return serveRetrieveStep(step, *step.require_retrieve, position_phys);
+    return serveHitStep(step, position_phys);
 }
 
 void ReaderExecutor::observeAndSchedule(size_t physical_start)
