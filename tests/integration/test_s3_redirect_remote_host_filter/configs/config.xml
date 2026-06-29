@@ -1,0 +1,10 @@
+<clickhouse>
+    <!-- Allow the initial S3 endpoint (the resolver) but NOT the 301 redirect target
+         (the resolver's raw IP address). A correctly-behaving server must reject the
+         redirect target via RemoteHostFilter instead of following it (SSRF). -->
+    <remote_url_allow_hosts>
+        <host>resolver:8080</host>
+    </remote_url_allow_hosts>
+    <!-- Keep retries low so the test fails fast. -->
+    <s3_retry_attempts>1</s3_retry_attempts>
+</clickhouse>

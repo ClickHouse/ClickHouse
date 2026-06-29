@@ -54,11 +54,12 @@ The following settings are supported:
 | `storage_endpoint`      | Endpoint URL for the underlying storage                                                       |
 | `oauth_server_uri`      | URI of the OAuth2 authorization server for authentication                                     |
 | `vended_credentials`    | Boolean indicating whether to use vended credentials from the catalog (supports AWS S3 and Azure ADLS Gen2) |
-| `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)                        |
-| `aws_secret_access_key` | AWS secret access key for S3/Glue access (if not using vended credentials)                    |
-| `region`                | AWS region for the service (e.g., `us-east-1`)                                                |
-| `dlf_access_key_id`     | Access key ID for DLF access                                                                  |
-| `dlf_access_key_secret` | Access key Secret for DLF access                                                              |
+| `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)                  |
+| `aws_secret_access_key` | AWS secret access key for S3/Glue access (if not using vended credentials)              |
+| `region`                | AWS region for the service (e.g., `us-east-1`)                                          |
+| `dlf_access_key_id`     | Access key ID for DLF access                                                            |
+| `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
+| `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
 | `namespaces`            | Comma-separated list of namespaces, implemented for catalog types: `rest`, `glue` and `unity` |
 
 ## Examples {#examples}
@@ -68,18 +69,18 @@ See below sections for examples of using the `DataLakeCatalog` engine:
 * [Unity Catalog](/use-cases/data-lake/unity-catalog)
 * [Glue Catalog](/use-cases/data-lake/glue-catalog)
 * OneLake Catalog
-  Can be used by enabling `allow_experimental_database_iceberg` or `allow_database_iceberg`.
+    Can be used by enabling `allow_experimental_database_iceberg` or `allow_database_iceberg`.
 ```sql
 CREATE DATABASE database_name
 ENGINE = DataLakeCatalog(catalog_endpoint)
 SETTINGS
-   catalog_type = 'onelake',
-   warehouse = warehouse,
-   onelake_tenant_id = tenant_id,
-   oauth_server_uri = server_uri,
-   auth_scope = auth_scope, 
-   onelake_client_id = client_id, 
-   onelake_client_secret = client_secret;
+    catalog_type = 'onelake',
+    warehouse = warehouse,
+    onelake_tenant_id = tenant_id,
+    oauth_server_uri = server_uri,
+    auth_scope = auth_scope,
+    onelake_client_id = client_id,
+    onelake_client_secret = client_secret;
 SHOW TABLES IN database_name;
 SELECT count() from database_name.table_name;
 ```

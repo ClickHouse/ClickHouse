@@ -65,6 +65,11 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
 
     if (status != SQLITE_OK)
     {
+        /// `sqlite3_open` allocates the connection handle even when it fails to open the database file
+        /// (the only exception being an out-of-memory condition, in which case the handle is left null).
+        /// The handle must be closed to avoid a memory leak, see https://www.sqlite.org/c3ref/open.html.
+        /// `sqlite3_close` is a harmless no-op when passed a null pointer.
+        sqlite3_close(tmp_sqlite_db);
         processSQLiteError(fmt::format("Cannot access sqlite database. Error status: {}. Message: {}",
                                        status, sqlite3_errstr(status)), throw_on_error);
         return nullptr;
