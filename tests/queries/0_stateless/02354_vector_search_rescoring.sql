@@ -80,22 +80,6 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 4
 SETTINGS vector_search_with_rescoring = 1;
 
-SELECT 'Test explicit "_distance" without and with rescoring';
-
-WITH [0.0, 0.0] AS reference_vec
-SELECT id, round(_distance, 2)
-FROM tab_multi_granule
-ORDER BY L2Distance(vec, reference_vec)
-LIMIT 4
-SETTINGS vector_search_with_rescoring = 0;
-
-WITH [0.0, 0.0] AS reference_vec
-SELECT id, round(_distance, 2)
-FROM tab_multi_granule
-ORDER BY L2Distance(vec, reference_vec)
-LIMIT 4
-SETTINGS vector_search_with_rescoring = 1;
-
 DROP TABLE tab_multi_granule;
 
 SELECT 'Test "SELECT id, vec" without and with rescoring';

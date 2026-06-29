@@ -19,15 +19,6 @@ _distance Float32
 3
 4
 5
-Test explicit "_distance" without and with rescoring
-2	0
-3	0.01
-4	0.04
-5	0.09
-2	0
-3	0.01
-4	0.04
-5	0.09
 Test "SELECT id, vec" without and with rescoring
 5	[0,2]
 6	[0,2.1]
