@@ -142,7 +142,7 @@ static DataTypesWithConstInfo getDataTypesWithConstInfoFromNodes(const ActionsDA
     types.reserve(nodes.size());
     for (const auto & child : nodes)
     {
-        bool is_const = child->column && isColumnConst(*child->column);
+        bool is_const = child->column != nullptr;
         types.push_back({child->result_type, is_const});
     }
     return types;

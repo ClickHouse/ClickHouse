@@ -243,7 +243,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             }
 
             /// Case 6.
-            if (typeid_cast<LimitByTransform *>(processor))
+            if (typeid_cast<LimitByTransform *>(processor) || typeid_cast<LimitBySortedStreamTransform *>(processor))
             {
                 processors.emplace_back(processor);
                 limit_candidates[limit_processor].push_back(limit_input_port);
@@ -772,10 +772,31 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns, c
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to convert header");
 
+    const auto & source_header = output->getHeader();
+
+    /// Prefer matching the source columns to the target structure by name, not by position.
+    /// This is used to read external dictionaries from a local ClickHouse source: the dictionary expects its
+    /// columns in keys-first order, but the source query may return them in a different order. Matching by name
+    /// reorders the columns correctly and keeps the local source consistent with the remote one, which already
+    /// matches by name (see `adaptBlockStructure` in `RemoteQueryExecutor`).
+    ///
+    /// Matching by name is only possible when every target column is present in the source by name. When the
+    /// source query does not name its columns to match the target (e.g. `SELECT 1, 1`), keep the historical
+    /// positional matching of a local dictionary source, so that such dictionaries continue to load.
+    auto match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
+    for (const auto & column : columns)
+    {
+        if (!source_header.has(column.name))
+        {
+            match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
+            break;
+        }
+    }
+
     auto converting = ActionsDAG::makeConvertingActions(
-        output->getHeader().getColumnsWithTypeAndName(),
+        source_header.getColumnsWithTypeAndName(),
         columns,
-        ActionsDAG::MatchColumnsMode::Position,
+        match_columns_mode,
         context);
 
     auto actions = std::make_shared<ExpressionActions>(std::move(converting));

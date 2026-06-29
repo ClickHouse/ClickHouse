@@ -586,7 +586,15 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
     NamesAndTypesList column_names_and_types;
-    bool make_columns_nullable = mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup
+
+    /// On a DDL worker (ON CLUSTER / Replicated database) the query was already normalized on the initiator.
+    /// Known limitation: with distributed_ddl_entry_format_version < NORMALIZE_CREATE_ON_INITIATOR_VERSION
+    /// the initiator does not normalize the query, and the transforms are wrongly skipped here too.
+    const bool already_normalized_on_initiator = context_->isDDLOrOnClusterInternal();
+
+    bool make_columns_nullable = mode < LoadingStrictnessLevel::SECONDARY_CREATE
+        && !already_normalized_on_initiator
+        && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
 
     for (const auto & ast : columns_ast.children)
@@ -704,7 +712,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
+    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
+        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
         res.flattenNested();
 
     if (res.getAllPhysical().empty())
@@ -1081,7 +1090,8 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
         if (to_table)
         {
-            all_output_columns = to_table->getInMemoryMetadataPtr(getContext(), false)->getSampleBlockInsertable().getNamesAndTypesList();
+            auto to_table_metadata = to_table->getInMemoryMetadataPtr(getContext(), false);
+            all_output_columns = to_table_metadata->getSampleBlockInsertable().getNamesAndTypesList();
             check_columns = true;
         }
     }
@@ -1861,7 +1871,8 @@ namespace
 
 void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context)
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(storage.getInMemoryMetadataPtr(context, false)->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
+    if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(metadata_snapshot->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Dynamic or JSON, "

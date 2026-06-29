@@ -865,16 +865,19 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             writeStringBinary(query_string, header_buf);
             context->getSettingsRef().write(header_buf);
 
+            /// `client_agent` is intentionally excluded from the embedded `ClientInfo` here and written
+            /// as a trailing header field below, so that older binaries draining these queue files read
+            /// the embedded `ClientInfo` in the old, append-compatible layout.
             if (OpenTelemetry::CurrentContext().isTraceEnabled())
             {
                 // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
                 auto client_info = context->getClientInfo();
                 client_info.client_trace_context = OpenTelemetry::CurrentContext();
-                client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+                client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_client_agent=*/ false);
             }
             else
             {
-                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_client_agent=*/ false);
             }
 
             writeVarUInt(block.rows(), header_buf);
@@ -891,6 +894,11 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             writeStringBinary(storage.cluster_name, header_buf);
             writeStringBinary(storage.getStorageID().getFullNameNotQuoted(), header_buf);
             writeStringBinary(storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName(), header_buf);
+
+            /// Trailing field: the detected AI coding agent of the initiating client.
+            /// Kept here (rather than inside the embedded `ClientInfo` above) so older binaries can
+            /// safely ignore it when draining queue files written by a newer binary.
+            writeStringBinary(context->getClientInfo().client_agent, header_buf);
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);

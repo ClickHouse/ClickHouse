@@ -27,6 +27,7 @@ namespace Poco::Net
 namespace ProfileEvents
 {
     extern const Event CannotRemoveEphemeralNode;
+    extern const Event ZooKeeperWatchTriggeredOther;
 }
 
 namespace CurrentMetrics
@@ -486,7 +487,11 @@ public:
     /// Wait for the node to disappear or return immediately if it doesn't exist.
     /// If condition is specified, it is used to return early (when condition returns false)
     /// The function returns true if waited and false if waiting was interrupted by condition.
-    bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
+    /// triggered_event identifies the subsystem owning the watch for profile-event accounting.
+    bool waitForDisappear(
+        const std::string & path,
+        const WaitCondition & condition = {},
+        ProfileEvents::Event triggered_event = ProfileEvents::ZooKeeperWatchTriggeredOther);
 
     /// Checks if a the ephemeral node exists. These nodes are removed automatically by ZK when the session ends
     /// If the node exists and its value is equal to fast_delete_if_equal_value it will remove it

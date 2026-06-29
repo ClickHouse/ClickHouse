@@ -2145,7 +2145,7 @@ We can inspect and query this file without specifying format or structure:
 :) desc file(data);
 ```
 
-```repsonse
+```response
 ┌─name─┬─type─────────────┐
 │ a    │ Nullable(Int64)  │
 │ b    │ Nullable(String) │

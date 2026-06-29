@@ -36,6 +36,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -60,6 +61,7 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueUnsuccessfulCommits;
     extern const Event ObjectStorageQueueInsertIterations;
     extern const Event ObjectStorageQueueProcessedRows;
+    extern const Event ZooKeeperWatchTriggeredObjectStorageQueue;
 }
 
 
@@ -831,9 +833,17 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
+
+    /// Propagate the background schedule pool task's query_id (e.g. `BgSchPool::<uuid>`) to the
+    /// insert into dependent tables. Without this, the insert pipeline runs with an empty query_id,
+    /// so the parts it writes are recorded with an empty query_id in `system.part_log` and the
+    /// part-writing messages in `system.text_log` cannot be correlated with the streaming task.
+    if (auto query_id = CurrentThread::getQueryId(); !query_id.empty())
+        queue_context->setCurrentQueryId(String(query_id));
 
     size_t min_insert_block_size_rows = 0;
     size_t min_insert_block_size_bytes = 0;
@@ -1289,7 +1299,8 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
         }
     }
 
-    StorageInMemoryMetadata old_metadata(*getInMemoryMetadataPtr(local_context, false));
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata old_metadata(*metadata_snapshot); /// NOLINT
     SettingsChanges * old_settings = nullptr;
     if (old_metadata.settings_changes)
     {
@@ -1362,7 +1373,8 @@ void StorageObjectStorageQueue::alter(
         auto table_id = getStorageID();
         auto alter_commands = normalizeAlterCommands(commands);
 
-        StorageInMemoryMetadata old_metadata(*getInMemoryMetadataPtr(local_context, false));
+        auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+        StorageInMemoryMetadata old_metadata(*metadata_snapshot); /// NOLINT
         SettingsChanges * old_settings = nullptr;
         if (old_metadata.settings_changes)
         {
@@ -1584,6 +1596,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         enable_hash_ring_filtering_copy = enable_hash_ring_filtering;
     }
 
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     return std::make_shared<FileIterator>(
         files_metadata,
         object_storage,
@@ -1591,7 +1604,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         getStorageID(),
         list_objects_batch_size_copy,
         predicate,
-        getInMemoryMetadataPtr(local_context, false)->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         hive_partition_columns_to_read_from_file_path,
         local_context,
         log,
@@ -1827,18 +1840,23 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
                 ///              when the node is first created.
                 std::string dummy_data;
                 Coordination::Stat dummy_stat{};
-                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, event);
+                Coordination::WatchCallbackPtrOrEventPtr labelled_event{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue};
+                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, labelled_event);
                 if (!node_exists)
-                    zk->existsWatch(processed_node_path, nullptr, event);
+                    zk->existsWatch(processed_node_path, nullptr, labelled_event);
             }
             else
             {
                 /// Unordered: each file gets its own processed node; watch for its creation.
-                zk->existsWatch(processed_node_path, nullptr, event);
+                zk->existsWatch(
+                    processed_node_path, nullptr,
+                    Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
             }
 
             /// Per-file failed node: watch for creation regardless of mode.
-            zk->existsWatch(failed_node_path, nullptr, event);
+            zk->existsWatch(
+                failed_node_path, nullptr,
+                Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
         });
 
         std::string failure_message;

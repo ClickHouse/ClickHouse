@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -140,8 +141,8 @@ static void addToNullableIfNeeded(
     if (outputs.empty())
     {
         auto column_type = std::make_shared<DataTypeUInt8>();
-        ColumnWithTypeAndName column(column_type->createColumnConst(0, 0), column_type, String(join_dummy_result_name));
-        const auto * node = &actions_dag->addColumn(std::move(column));
+        auto column = column_type->createColumnConst(0, 0);
+        const auto * node = &actions_dag->addColumn(std::move(column), column_type, String(join_dummy_result_name));
         actions_after_join.push_back(node);
         outputs.push_back(node);
     }
@@ -436,8 +437,8 @@ JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(
     if (required_nodes.empty())
     {
         auto column_type = std::make_shared<DataTypeUInt8>();
-        ColumnWithTypeAndName column(column_type->createColumnConst(0, 0), column_type, String(join_dummy_result_name));
-        const auto * node = &actions_dag.addColumn(std::move(column));
+        auto column = column_type->createColumnConst(0, 0);
+        const auto * node = &actions_dag.addColumn(std::move(column), column_type, String(join_dummy_result_name));
         new_actions_after_join.push_back(node);
         required_nodes.push_back(node);
         actions_dag.getOutputs().push_back(node);
@@ -624,7 +625,8 @@ static JoinActionRef toBoolIfNeeded(JoinActionRef condition)
         {
             JoinActionRef::AddFunction function_and(JoinConditionOperator::And);
             DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
-            const auto & rhs_node = dag.addColumn(ColumnWithTypeAndName(uint8_ty->createColumnConst(1, 1), uint8_ty, "true"));
+            auto rhs_column = uint8_ty->createColumnConst(0, 1);
+            const auto & rhs_node = dag.addColumn(std::move(rhs_column), uint8_ty, "true");
             nodes.push_back(&rhs_node);
             return function_and(dag, nodes);
         });
@@ -800,7 +802,10 @@ static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
     ColumnsWithTypeAndName columns;
     columns.reserve(actions_dag.getOutputs().size());
     for (const auto & node : actions_dag.getOutputs())
-        columns.emplace_back(node->column ? node->column : node->result_type->createColumn(), node->result_type, node->result_name);
+    {
+        ColumnPtr column = node->column ? ColumnPtr(node->column) : ColumnPtr(node->result_type->createColumn());
+        columns.emplace_back(std::move(column), node->result_type, node->result_name);
+    }
     return std::make_shared<const Block>(Block{columns});
 }
 
@@ -1108,12 +1113,12 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
         auto dt = std::make_shared<DataTypeUInt8>();
 
-        ColumnWithTypeAndName lhs_column(dt->createColumnConst(1, 1), dt, "__lhs_const");
-        JoinActionRef lhs(&actions_dag->addColumn(lhs_column), expression_actions);
+        auto lhs_column = dt->createColumnConst(0, 1);
+        JoinActionRef lhs(&actions_dag->addColumn(std::move(lhs_column), dt, "__lhs_const"), expression_actions);
         lhs.setSourceRelations(BitSet().set(0));
 
-        ColumnWithTypeAndName rhs_column(dt->createColumnConst(1, rhs_value), dt, "__rhs_const");
-        JoinActionRef rhs(&actions_dag->addColumn(rhs_column), expression_actions);
+        auto rhs_column = dt->createColumnConst(0, rhs_value);
+        JoinActionRef rhs(&actions_dag->addColumn(std::move(rhs_column), dt, "__rhs_const"), expression_actions);
         rhs.setSourceRelations(BitSet().set(1));
 
         join_expression.push_back(JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));

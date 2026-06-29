@@ -454,7 +454,12 @@ struct ConverterEnumAsString
 
 struct ConverterUUID
 {
-    using Statistics = StatisticsFixedStringRef;
+    /// Use ...Copy, not ...Ref: each batch reuses `swapped_buf` storage which can be reallocated
+    /// between successive `getBatch` calls (when `data_count` exceeds the current capacity, e.g.
+    /// after a low-density null run). Statistics that hold raw pointers into `swapped_buf` would
+    /// then dereference freed memory when merging the next page's stats — a heap-use-after-free.
+    /// `StatisticsFixedStringCopy` keeps min/max as inline 16-byte arrays, so no dangling refs.
+    using Statistics = StatisticsFixedStringCopy<sizeof(UUID), /*SIGNED=*/ false>;
 
     const ColumnVector<UUID> & column;
     PODArray<parquet::FixedLenByteArray> buf;

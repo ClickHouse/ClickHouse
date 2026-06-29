@@ -145,7 +145,7 @@ namespace DB
     static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
     {
         if (!status.ok())
-            throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column \"{}\": {}.", format_name, column_name, status.ToString());
+            throwFromArrowStatus(status, ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column \"{}\"", format_name, column_name);
     }
 
     template <typename ResultType>

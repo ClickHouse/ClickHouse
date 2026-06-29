@@ -38,6 +38,7 @@ namespace DB
     DECLARE(String, server_side_encryption_customer_key_base64, "", "", 0) \
     DECLARE(String, role_arn, "", "", 0) \
     DECLARE(String, role_session_name, "", "", 0) \
+    DECLARE(String, external_id, "", "", 0) \
     DECLARE(String, http_client, "", "", 0) \
     DECLARE(String, service_account, "", "", 0) \
     DECLARE(String, metadata_service, "", "", 0) \

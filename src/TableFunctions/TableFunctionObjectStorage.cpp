@@ -243,13 +243,16 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
 
     StoragePtr storage;
     const auto & query_settings = context->getSettingsRef();
-    const auto & client_info = context->getClientInfo();
 
     const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
+    /// Only use parallel replicas if the Cluster variant of this table function exists
+    /// (e.g. `s3Cluster` for `s3`). Table functions without a Cluster variant (e.g. `paimonLocal`)
+    /// cannot distribute work via task iterators, so distributing would just read all data on every replica.
     const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && query_settings[Setting::parallel_replicas_for_cluster_engines]
         && context->canUseTaskBasedParallelReplicas()
-        && !context->isDistributed();
+        && !context->isDistributed()
+        && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster");
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
@@ -270,10 +273,6 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         return storage;
     }
 
-    bool can_use_distributed_iterator =
-        client_info.collaborate_with_initiator &&
-        context->hasClusterFunctionReadTaskCallback();
-
     std::string disk_name;
     if constexpr (is_data_lake)
     {
@@ -288,6 +287,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     else
         current_object_storage = getObjectStorage(context, !is_insert_query);
 
+    /// Note: distributed_processing is always false for non-cluster table functions (s3, azure, etc.).
+    /// Cluster table functions (s3Cluster, etc.) handle distributed processing in their own getStorage() method.
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
         current_object_storage,
@@ -301,7 +302,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         /* catalog*/ nullptr,
         /* if_not_exists*/ false,
         /* is_datalake_query*/ false,
-        /* distributed_processing */ can_use_distributed_iterator,
+        /* distributed_processing */ false,
         /* partition_by */ partition_by,
         /* order_by */ nullptr,
         /* is_table_function */true);

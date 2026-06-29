@@ -88,6 +88,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 Connection::~Connection()
@@ -1116,15 +1117,6 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->throttle(out->count() - prev_bytes);
 }
 
-void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
-    writeVectorBinary(uuids, *out);
-    out->finishChunk();
-    out->next();
-}
-
-
 void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
@@ -1330,12 +1322,15 @@ std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
 
 bool Connection::poll(size_t timeout_microseconds)
 {
+    ensureConnected();
     return in->poll(timeout_microseconds);
 }
 
 
 bool Connection::hasReadPendingData() const
 {
+    if (!in)
+        return false;
     return last_input_packet_type.has_value() || in->hasBufferedData();
 }
 
@@ -1364,20 +1359,26 @@ UInt64 Connection::receivePacketType()
     if (last_input_packet_type)
         return *last_input_packet_type;
 
+    ensureConnected();
+
     UInt64 type = 0;
     readVarUInt(type, *in);
     return last_input_packet_type.emplace(type);
 }
 
+void Connection::ensureConnected() const
+{
+    /// We are trying to send something to already disconnected connection,
+    /// this means that we continue using Connection after exception.
+    if (!in)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection to {} is terminated", getDescription());
+}
 
 Packet Connection::receivePacket()
 {
     try
     {
-        /// We are trying to send something to already disconnected connection,
-        /// this means that we continue using Connection after exception.
-        if (!in)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection to {} is terminated", getDescription());
+        ensureConnected();
 
         Packet res;
 
@@ -1424,9 +1425,17 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::PartUUIDs:
-                readVectorBinary(res.part_uuids, *in);
+            {
+                // allow_experimental_query_deduplication is no longer supported, but an old server
+                // may still send this packet. Skip the obsolete, peer-controlled payload without
+                // materializing it (do not resize a vector to a peer-chosen size).
+                UInt64 num_part_uuids = 0;
+                readVarUInt(num_part_uuids, *in);
+                if (num_part_uuids > DEFAULT_MAX_STRING_SIZE)
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+                in->ignore(num_part_uuids * sizeof(UUID));
                 return res;
-
+            }
             case Protocol::Server::ReadTaskRequest:
                 return res;
 

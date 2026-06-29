@@ -193,6 +193,15 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
             return 0;
 
         const ActionsDAG & dag = expression_step->getExpression();
+        /// `arrayJoin` between `Sort` and `Join` changes the number of output rows
+        /// per input row. The soundness sketch assumes "every preserved-side row
+        /// produces at least one output row" and that the top-n of the sort output
+        /// corresponds to the top-n of the preserved side - both invariants break
+        /// when an `arrayJoin` above the join expands rows, because the n rows we
+        /// keep on the preserved side may expand into fewer (or zero) final rows.
+        /// See `#82279`.
+        if (dag.hasArrayJoin())
+            return 0;
         for (auto & sort_col : description)
         {
             const auto * out_node = dag.tryFindInOutputs(sort_col.column_name);

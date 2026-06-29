@@ -49,9 +49,6 @@ private:
     size_t ordinaryDistinctOnRange(IColumnFilter & filter, size_t range_begin, size_t range_end);
     inline void saveLatestKey(size_t row_pos);
     inline bool isLatestKeyFromPrevChunk(size_t row_pos) const;
-    inline bool isKey(size_t key_pos, size_t row_pos) const;
-    template<typename Predicate>
-    inline size_t getRangeEnd(size_t range_begin, size_t range_end, Predicate pred) const;
 
     template <typename Method>
     size_t buildFilterForRange(Method & method, IColumnFilter & filter, size_t range_begin, size_t range_end);
