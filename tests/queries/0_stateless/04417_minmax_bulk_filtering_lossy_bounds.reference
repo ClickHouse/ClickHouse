@@ -1,0 +1,3 @@
+decimal lower-scale index, higher-scale bound parity	1	4
+datetime64 lower-scale index, higher-scale bound parity	1	4
+float32 index, non-representable integer bound parity	1	4
