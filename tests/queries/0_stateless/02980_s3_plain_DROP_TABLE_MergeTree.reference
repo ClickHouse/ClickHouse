@@ -5,6 +5,7 @@ all_1_1_0
 
 /backups/ordinary_default/data/ordinary_default/data/all_1_1_0:
 checksums.txt
+column_compression_codecs.txt
 columns.txt
 columns_substreams.txt
 count.txt
@@ -20,6 +21,7 @@ all_1_1_0
 
 /backups/ordinary_default/data/ordinary_default/data/all_1_1_0:
 checksums.txt
+column_compression_codecs.txt
 columns.txt
 columns_substreams.txt
 count.txt
@@ -29,4 +31,3 @@ default_compression_codec.txt
 metadata_version.txt
 primary.cidx
 serialization.json
-
