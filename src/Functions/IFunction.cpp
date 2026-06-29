@@ -130,13 +130,22 @@ void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
     }
 }
 
-size_t countLowCardinalityColumns(const ColumnsWithTypeAndName & args)
+/// Whether the single-dictionary fast path in executeWithoutSparseColumns is applicable: at most
+/// one LowCardinality column and every other column constant. That path strips one LowCardinality
+/// column to its nested dictionary and shares its indexes for the result, resizing only the
+/// constant arguments to the dictionary size. A non-constant ordinary column or a second
+/// LowCardinality column cannot share those indexes, so the path must be skipped for it.
+bool canShareLowCardinalityDictionary(const ColumnsWithTypeAndName & args)
 {
-    size_t count = 0;
+    size_t num_low_cardinality = 0;
     for (const auto & column : args)
+    {
         if (checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
-            ++count;
-    return count;
+            ++num_low_cardinality;
+        else if (!isColumnConst(*column.column))
+            return false;
+    }
+    return num_low_cardinality <= 1;
 }
 }
 
@@ -481,11 +490,12 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
 
             const auto & dictionary_type = res_low_cardinality_type->getDictionaryType();
 
-            /// The dictionary fast-path shares the indexes of a single LowCardinality argument.
-            /// With more than one (a constant LowCardinality argument can arrive as a non-constant
-            /// column at runtime), materialize all of them to full instead.
+            /// getReturnType() chose a LowCardinality result type assuming the single-dictionary
+            /// fast path applies, but a constant argument can arrive as a non-constant column at
+            /// runtime and break that assumption. Fall back to full materialization when it no
+            /// longer holds.
             ColumnPtr indexes;
-            if (countLowCardinalityColumns(columns_without_low_cardinality) > 1)
+            if (!canShareLowCardinalityDictionary(columns_without_low_cardinality))
                 convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
             else
                 indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(

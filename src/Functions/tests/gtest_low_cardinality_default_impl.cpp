@@ -1,0 +1,189 @@
+#include <gtest/gtest.h>
+
+#include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
+
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnConst.h>
+
+using namespace DB;
+
+namespace
+{
+
+DataTypePtr stringType()
+{
+    return std::make_shared<DataTypeString>();
+}
+
+DataTypePtr lcStringType()
+{
+    return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+}
+
+ColumnPtr constString(const String & value, size_t rows)
+{
+    auto nested = ColumnString::create();
+    nested->insert(value);
+    return ColumnConst::create(std::move(nested), rows);
+}
+
+ColumnPtr fullString(const std::vector<String> & values)
+{
+    auto col = ColumnString::create();
+    for (const auto & v : values)
+        col->insert(v);
+    return col;
+}
+
+ColumnPtr lowCardinalityString(const std::vector<String> & values)
+{
+    auto col = lcStringType()->createColumn();
+    for (const auto & v : values)
+        col->insert(v);
+    return col;
+}
+
+String resultAt(const ColumnPtr & column, size_t row)
+{
+    Field field;
+    column->get(row, field);
+    return field.safeGet<String>();
+}
+
+/// Build concat over the given argument types and return its (resolver-decided) result type and
+/// the executable function. concat uses the default LowCardinality implementation.
+FunctionBasePtr buildConcat(const ContextPtr & context, const ColumnsWithTypeAndName & build_args)
+{
+    auto resolver = FunctionFactory::instance().get("concat", context);
+    return resolver->build(build_args);
+}
+
+}
+
+/// Regression for the default LowCardinality implementation in
+/// IExecutableFunction::executeWithoutSparseColumns: the single-dictionary fast path must be
+/// skipped (and all LowCardinality columns materialized to full) whenever the runtime arguments
+/// no longer match the invariant getReturnType() used to pick the LowCardinality result type
+/// (at most one LowCardinality argument, every other argument constant). Otherwise it aborts in
+/// checkFunctionArgumentSizes or replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes.
+class LowCardinalityDefaultImpl : public ::testing::Test
+{
+protected:
+    void SetUp() override
+    {
+        tryRegisterFunctions();
+        context = getContext().context;
+    }
+
+    ContextPtr context;
+};
+
+/// A single LowCardinality argument together with a NON-constant ordinary argument, while the
+/// declared result type is still LowCardinality. Reproduces the
+/// "Expected the argument ... to have 0 rows, but it has 1" abort during header evaluation.
+TEST_F(LowCardinalityDefaultImpl, SingleLowCardinalityWithNonConstOrdinaryHeaderEval)
+{
+    /// Build with (const String, LowCardinality(String)) so the result type is LowCardinality(String).
+    ColumnsWithTypeAndName build_args{
+        {constString("", 1), stringType(), "a"},
+        {nullptr, lcStringType(), "b"},
+    };
+    auto function = buildConcat(context, build_args);
+    ASSERT_TRUE(typeid_cast<const DataTypeLowCardinality *>(function->getResultType().get()));
+
+    /// Runtime: arg0 lost its constness (non-const empty String, size 0); arg1 empty LowCardinality.
+    /// input_rows_count = 0 emulates planner header evaluation.
+    ColumnsWithTypeAndName exec_args{
+        {ColumnString::create(), stringType(), "a"},
+        {lcStringType()->createColumn(), lcStringType(), "b"},
+    };
+    ColumnPtr res;
+    ASSERT_NO_THROW(res = function->execute(exec_args, function->getResultType(), 0, /*dry_run=*/true));
+    EXPECT_EQ(res->size(), 0u);
+    EXPECT_TRUE(typeid_cast<const ColumnLowCardinality *>(res.get()) || isColumnConst(*res));
+}
+
+/// Same invariant violation with real (non-zero) rows: a non-constant ordinary column alongside a
+/// single LowCardinality column must produce results identical to executing on fully materialized
+/// columns.
+TEST_F(LowCardinalityDefaultImpl, SingleLowCardinalityWithNonConstOrdinaryRealRows)
+{
+    ColumnsWithTypeAndName build_args{
+        {constString("", 1), stringType(), "a"},
+        {nullptr, lcStringType(), "b"},
+    };
+    auto function = buildConcat(context, build_args);
+    auto result_type = function->getResultType();
+    ASSERT_TRUE(typeid_cast<const DataTypeLowCardinality *>(result_type.get()));
+
+    ColumnsWithTypeAndName exec_args{
+        {fullString({"x", "y", "z"}), stringType(), "a"},
+        {lowCardinalityString({"1", "2", "3"}), lcStringType(), "b"},
+    };
+    ColumnPtr res;
+    ASSERT_NO_THROW(res = function->execute(exec_args, result_type, 3, /*dry_run=*/false));
+    ASSERT_EQ(res->size(), 3u);
+    EXPECT_EQ(resultAt(res, 0), "x1");
+    EXPECT_EQ(resultAt(res, 1), "y2");
+    EXPECT_EQ(resultAt(res, 2), "z3");
+}
+
+/// Two LowCardinality columns reaching the path while the result type is LowCardinality (a constant
+/// LowCardinality argument arriving as a non-constant column). Must not abort, and must produce
+/// results identical to full execution.
+TEST_F(LowCardinalityDefaultImpl, TwoLowCardinalityColumnsRealRows)
+{
+    /// Build with (const LowCardinality, LowCardinality) -> the constant LC is not counted as a full
+    /// LowCardinality column, so the result type is LowCardinality(String).
+    ColumnsWithTypeAndName build_args{
+        {ColumnConst::create(lowCardinalityString({"p"}), 1), lcStringType(), "a"},
+        {nullptr, lcStringType(), "b"},
+    };
+    auto function = buildConcat(context, build_args);
+    auto result_type = function->getResultType();
+    ASSERT_TRUE(typeid_cast<const DataTypeLowCardinality *>(result_type.get()));
+
+    /// Runtime: both arguments are non-constant LowCardinality.
+    ColumnsWithTypeAndName exec_args{
+        {lowCardinalityString({"p", "p", "q"}), lcStringType(), "a"},
+        {lowCardinalityString({"1", "2", "3"}), lcStringType(), "b"},
+    };
+    ColumnPtr res;
+    ASSERT_NO_THROW(res = function->execute(exec_args, result_type, 3, /*dry_run=*/false));
+    ASSERT_EQ(res->size(), 3u);
+    EXPECT_EQ(resultAt(res, 0), "p1");
+    EXPECT_EQ(resultAt(res, 1), "p2");
+    EXPECT_EQ(resultAt(res, 2), "q3");
+}
+
+/// The fast path must still be taken (and produce correct results) in the normal case: a single
+/// LowCardinality column with only constant other arguments.
+TEST_F(LowCardinalityDefaultImpl, SingleLowCardinalityWithConstOrdinaryFastPath)
+{
+    ColumnsWithTypeAndName build_args{
+        {constString("p", 1), stringType(), "a"},
+        {nullptr, lcStringType(), "b"},
+    };
+    auto function = buildConcat(context, build_args);
+    auto result_type = function->getResultType();
+    ASSERT_TRUE(typeid_cast<const DataTypeLowCardinality *>(result_type.get()));
+
+    ColumnsWithTypeAndName exec_args{
+        {constString("p", 3), stringType(), "a"},
+        {lowCardinalityString({"1", "2", "1"}), lcStringType(), "b"},
+    };
+    ColumnPtr res;
+    ASSERT_NO_THROW(res = function->execute(exec_args, result_type, 3, /*dry_run=*/false));
+    ASSERT_EQ(res->size(), 3u);
+    EXPECT_EQ(resultAt(res, 0), "p1");
+    EXPECT_EQ(resultAt(res, 1), "p2");
+    EXPECT_EQ(resultAt(res, 2), "p1");
+    /// Result must be a LowCardinality column (dictionary-encoded fast path).
+    EXPECT_TRUE(typeid_cast<const ColumnLowCardinality *>(res.get()));
+}
