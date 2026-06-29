@@ -523,28 +523,34 @@ void ArrowIPCBlockInputFormat::reinterpretFixedSizeBinary(ColumnWithTypeAndName 
         if (const auto * fixed = typeid_cast<const ColumnFixedString *>(nested.get()))
         {
             const size_t width = target.isInt256() || target.isUInt256() ? 32 : 16;
-            if (fixed->getN() == width)
+            /// Reject a fixed_size_binary whose width does not match the target integer (matching the library
+            /// reader's `fixed_len != sizeof(ValueType)` check). Otherwise the wrong-width FixedString falls
+            /// through to `castColumn`, which parses its raw bytes as text (e.g. a fixed_size_binary(1)
+            /// holding ASCII '1' would be accepted as Int128(1)).
+            if (fixed->getN() != width)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow fixed_size_binary of width {} cannot be read as {} (expected {})",
+                    fixed->getN(), target_no_null->getName(), width);
+            const size_t rows = fixed->size();
+            auto ints = target_no_null->createColumn();
+            auto copy = [&](auto & data) { data.resize(rows); if (rows) memcpy(data.data(), fixed->getChars().data(), rows * width); };
+            switch (target.idx)
             {
-                const size_t rows = fixed->size();
-                auto ints = target_no_null->createColumn();
-                auto copy = [&](auto & data) { data.resize(rows); if (rows) memcpy(data.data(), fixed->getChars().data(), rows * width); };
-                switch (target.idx)
-                {
-                    case TypeIndex::Int128: copy(assert_cast<ColumnVector<Int128> &>(*ints).getData()); break;
-                    case TypeIndex::UInt128: copy(assert_cast<ColumnVector<UInt128> &>(*ints).getData()); break;
-                    case TypeIndex::Int256: copy(assert_cast<ColumnVector<Int256> &>(*ints).getData()); break;
-                    default: copy(assert_cast<ColumnVector<UInt256> &>(*ints).getData()); break;
-                }
-                ColumnPtr result = std::move(ints);
-                DataTypePtr result_type = target_no_null;
-                if (null_map)
-                {
-                    result = ColumnNullable::create(result, null_map);
-                    result_type = std::make_shared<DataTypeNullable>(target_no_null);
-                }
-                column.column = std::move(result);
-                column.type = std::move(result_type);
+                case TypeIndex::Int128: copy(assert_cast<ColumnVector<Int128> &>(*ints).getData()); break;
+                case TypeIndex::UInt128: copy(assert_cast<ColumnVector<UInt128> &>(*ints).getData()); break;
+                case TypeIndex::Int256: copy(assert_cast<ColumnVector<Int256> &>(*ints).getData()); break;
+                default: copy(assert_cast<ColumnVector<UInt256> &>(*ints).getData()); break;
             }
+            ColumnPtr result = std::move(ints);
+            DataTypePtr result_type = target_no_null;
+            if (null_map)
+            {
+                result = ColumnNullable::create(result, null_map);
+                result_type = std::make_shared<DataTypeNullable>(target_no_null);
+            }
+            column.column = std::move(result);
+            column.type = std::move(result_type);
         }
     }
 }
