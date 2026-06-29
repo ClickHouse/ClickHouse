@@ -10563,6 +10563,13 @@ void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t part
     total_active_size_bytes.fetch_add(bytes);
     total_active_size_rows.fetch_add(rows);
     total_active_size_parts.fetch_add(parts);
+
+    /// A change to the membership of the active-part set advances the loop-free version folded into
+    /// `getModificationHash` (see the field declaration). Size-only updates (`parts == 0`, e.g. an
+    /// in-place byte/row adjustment) must not bump it, otherwise every such update would needlessly
+    /// invalidate the query cache for the table.
+    if (parts != 0)
+        active_parts_set_version.fetch_add(1);
 }
 
 void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)
@@ -11084,6 +11091,17 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
         if (key_ast)
             hash.update(key_ast->formatWithSecretsOneLine());
     }
+
+    /// Loop-free version. The active-part set hashed below repeats under an `A -> B -> A` transition: a
+    /// table at parts `{p1}` that accepts an insert (`{p1, p2}`) and then `DROP PART`s `p2` returns to an
+    /// identical `{p1}` with the same part info and checksums. Folding a per-lifetime counter that advances
+    /// on every active-part-set change (the insert and the drop each bump it) makes such a round trip
+    /// produce a different hash, so the query-cache / `REFRESH ... IF CHANGED` pre/post equality checks
+    /// cannot mistake "changed and changed back" for "never changed" and store a result that was actually
+    /// read from the transient state `B`. Sampled live here, which is exactly what those checks need (they
+    /// hash before and after the read): equal hashes then mean no active-part-set change happened in
+    /// between. See `active_parts_set_version`.
+    hash.update(active_parts_set_version.load());
 
     /// Data version: the set of active data parts. Each part is uniquely identified within a table
     /// incarnation by its (partition_id, min_block, max_block, level, mutation), which changes on every

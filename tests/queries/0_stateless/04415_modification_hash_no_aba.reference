@@ -1,0 +1,8 @@
+-- hash changed on insert (A != B)
+1
+-- hash changed on drop (B != A_again)
+1
+-- loop-free: the round trip did NOT reproduce the earlier hash (A != A_again)
+1
+-- loop-free across DETACH PARTITION too (D_A != D_A_again)
+1
