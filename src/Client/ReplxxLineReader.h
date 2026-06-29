@@ -2,6 +2,7 @@
 
 #include <span>
 
+#include <Client/Autocomplete.h>
 #include <Client/LineReader.h>
 #include <base/strong_typedef.h>
 #include <replxx.hxx>
@@ -44,6 +45,8 @@ public:
 
     /// Set text to be prepopulated in the next readLine call
     void setInitialText(const String & text) override;
+
+    void setCompletionCallbackWithAutoComplete(Suggest & suggest, Autocomplete & autocomplete);
 private:
     InputStatus readOneLine(const String & prompt) override;
     void addToHistory(const String & line) override;

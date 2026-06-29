@@ -1273,6 +1273,10 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
 
     if (have_error)
         processError(full_query);
+
+    if (!have_error && autocomplete)
+        autocomplete->addQuery(full_query);
+
     return !have_error;
 }
 
@@ -3187,6 +3191,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 if (have_error)
                     processError(full_query);
 
+                if (!have_error && autocomplete)
+                    autocomplete->addQuery(String(full_query));
+
                 // Stop processing queries if needed.
                 if (have_error && (buzz_house || !ignore_error))
                     return buzz_house || is_interactive;
@@ -4087,6 +4094,27 @@ void ClientBase::runInteractive()
             suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
     }
 
+    /// The transformer and the base Markov models predict even without server history, so the
+    /// autocomplete is constructed (and registered below) whenever the feature is enabled. When it
+    /// is disabled (`disable_autocomplete`, non-interactive, or an old server) it is left empty so
+    /// we do not pay for loading the embedded model nor register the completion callback.
+    if (load_autocomplete)
+    {
+        autocomplete.emplace();
+        /// Seed the autocomplete from query history only when connected to a server. In
+        /// clickhouse-local (and embedded clients) there is no persistent `system.query_log` to
+        /// query, so we skip seeding but still mark the model ready, otherwise `getPossibleNextWords`
+        /// would return nothing forever and the transformer/base Markov predictions would be lost.
+        ///
+        /// Note: `client_context` (not `global_context`) carries `query_kind = INITIAL_QUERY`, which
+        /// the server requires in a Query packet; using `global_context` here made the seeding query
+        /// fail with `Unexpected query kind in Query packet: 0`.
+        if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
+            autocomplete->load<Connection>(client_context, connection_parameters);
+        else
+            autocomplete->markLoaded();
+    }
+
     if (home_path.empty())
     {
         const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
@@ -4171,7 +4199,10 @@ void ClientBase::runInteractive()
         .err_fd = stderr_fd,
     };
 
-    lr = std::make_unique<ReplxxLineReader>(std::move(options));
+    auto replxx_lr = std::make_unique<ReplxxLineReader>(std::move(options));
+    if (autocomplete)
+        replxx_lr->setCompletionCallbackWithAutoComplete(*suggest, *autocomplete);
+    lr = std::move(replxx_lr);
 #else
     lr = LineReader(
         history_file,

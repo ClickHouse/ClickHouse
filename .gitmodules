@@ -399,3 +399,6 @@
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
 	url = https://github.com/xtensor-stack/xsimd
+[submodule "contrib/ggml"]
+	path = contrib/ggml
+	url = https://github.com/ggerganov/ggml

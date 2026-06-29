@@ -24,6 +24,7 @@ std::pair<std::string_view, MainFunc> examples[] =
     {"quantile-t-digest", mainEntryExampleQuantileTDigest},
     {"group_array_sorted", mainEntryExampleGroupArraySorted},
     {"test-connect", mainEntryExampleTestConnect},
+    {"preprocess-for-autocomplete", mainEntryExamplePreprocessForAutocomplete},
     {"zkutil_test_commands", mainEntryExampleZkutilTestCommands},
     {"zkutil_test_commands_new_lib", mainEntryExampleZkutilTestCommandsNewLib},
     {"zkutil_test_async", mainEntryExampleZkutilTestAsync},

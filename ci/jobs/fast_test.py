@@ -32,6 +32,8 @@ def clone_submodules():
         "contrib/libxml2",
         "contrib/fmtlib",
         "contrib/cctz",
+        # TODO: Possibly remove this lib from the fasttest.
+        "contrib/ggml",
         "contrib/libdivide",
         "contrib/double-conversion",
         "contrib/llvm-project",

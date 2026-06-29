@@ -1,5 +1,6 @@
 #include <Client/ClientBaseHelpers.h>
 #include <Client/ReplxxLineReader.h>
+#include <Client/Autocomplete.h>
 #include <base/errnoToString.h>
 
 #include <IO/ReadBufferFromFile.h>
@@ -23,6 +24,7 @@
 #include <fstream>
 #include <filesystem>
 #include <fmt/format.h>
+#include <replxx.hxx>
 #include <Common/quoteString.h>
 #include "config.h" // USE_SKIM
 
@@ -296,6 +298,39 @@ void ReplxxLineReader::setLastIsDelimiter(bool flag)
     replxx_last_is_delimiter = flag;
 }
 
+void ReplxxLineReader::setCompletionCallbackWithAutoComplete(Suggest & suggest, Autocomplete & autocomplete)
+{
+    using Replxx = replxx::Replxx;
+
+    auto suggestion_callback = [&autocomplete, &suggest, this] (const String & context, size_t context_size)
+    {
+        if (DB::Autocomplete::isLastCharSpace(context, word_break_characters))
+        {
+            /// After a word-break character (e.g. `FROM `, `db.`) ask the model first. When it has no
+            /// prediction (still loading, failed to load, or simply not confident) fall back to the
+            /// static `Suggest` completions (keywords, database/table/column names), so completion is
+            /// never worse than it was before autocomplete was enabled.
+            auto completions = autocomplete.getPossibleNextWords<Replxx::completions_t>(context, context_size, word_break_characters);
+            if (!completions.empty())
+                return completions;
+        }
+
+        return suggest.getCompletions(context, context_size, word_break_characters);
+    };
+
+    auto hints_callback = [&autocomplete, this](const String & context, size_t context_size, Replxx::Color& color)
+    {
+        color = replxx::color::rgb666(5, 5, 0);
+        if (DB::Autocomplete::isLastCharSpace(context, word_break_characters))
+            return autocomplete.getPossibleNextWords<Replxx::hints_t>(context, context_size, word_break_characters);
+
+        return Replxx::hints_t{};
+    };
+
+    rx.set_completion_callback(suggestion_callback);
+    rx.set_hint_callback(hints_callback);
+}
+
 ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     : LineReader
     (
@@ -353,12 +388,42 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         return suggest.getCompletions(context, context_size, word_break_characters);
     };
 
+    Replxx::key_press_handler_t cycle_forward_handler = [this](char32_t)
+    {
+        //std::cout << hintIndex << "\n";
+        rx.invoke(Replxx::ACTION::HINT_NEXT, 0);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    };
+
+    // Key handler for cycling hints backward
+    Replxx::key_press_handler_t cycle_backward_handler = [this](char32_t)
+    {
+        rx.invoke(Replxx::ACTION::HINT_PREVIOUS, 0);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    };
+
+    Replxx::key_press_handler_t complete_hint_handler = [this](char32_t)
+    {
+        rx.invoke(Replxx::ACTION::COMPLETE_LINE, 0);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    };
+
     rx.set_completion_callback(callback);
 
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
     rx.set_ignore_case(true);
     rx.set_indent_multiline(false);
+
+    rx.bind_key(Replxx::KEY::shift(Replxx::KEY::DOWN), cycle_forward_handler);
+
+    // Bind Ctrl + Left Arrow to cycle hints backward
+    rx.bind_key(Replxx::KEY::shift(Replxx::KEY::UP), cycle_backward_handler);
+
+    rx.bind_key(Replxx::KEY::shift(Replxx::KEY::RIGHT), complete_hint_handler);
+
+    rx.set_max_hint_rows(2);
+    rx.set_hint_delay(0);
 
     if (highlighter)
         rx.set_highlighter_callback(highlighter);
