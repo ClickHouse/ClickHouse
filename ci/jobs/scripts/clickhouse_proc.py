@@ -102,6 +102,10 @@ class ClickHouseProc:
         self.minio_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
+        # Concrete reason set by create_minio_log_tables() on failure, so the
+        # caller can persist the real detail (e.g. the clickminio restart status)
+        # into the step Result.info / CIDB instead of a generic note.
+        self.minio_setup_error = None
         self.debug_artifacts = []
         self.extra_tests_results = []
         self.logs = []
@@ -306,7 +310,8 @@ class ClickHouseProc:
         else:
             print(f"ClickHouse server NOT ready")
 
-        self._flush_system_logs()
+        # wait_ready() flushes system logs on its success path (pre-creating the
+        # system log tables once the server is listening).
         self.save_system_metadata_files_from_remote_database_disk()
         return res
 
@@ -522,18 +527,15 @@ profiles:
         if self.is_db_replicated and replica_num == 0:
             res = self.start(replica_num=1) and self.start(replica_num=2)
 
-        # Do not flush system logs here: callers run wait_ready() AFTER start(),
-        # so the server has the pid file but is not yet listening on the TCP port,
-        # and "system flush logs" fails with Code 210 (Connection refused). The
-        # result was discarded so it never failed the job, but it polluted every
-        # setup log and made triage look like a startup crash. The flush is a
-        # no-op here anyway (no tests have run yet); the meaningful flushes are in
-        # terminate() and start_light() (which flushes after its own wait_ready()).
+        # System logs are flushed in wait_ready() once the server is listening,
+        # not here: start()'s callers run wait_ready() afterwards, so a flush here
+        # races the TCP listener and fails with Code 210 (Connection refused).
         self.save_system_metadata_files_from_remote_database_disk()
 
         return res
 
     def create_minio_log_tables(self):
+        self.minio_setup_error = None
         # create tables for minio log webhooks
         res = Shell.check(
             'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
@@ -555,6 +557,9 @@ profiles:
             strict=True,
         )
         if not res:
+            self.minio_setup_error = (
+                "failed to create minio log tables / set clickminio webhook config"
+            )
             return False
 
         # Restart minio with a timeout to avoid hanging forever (see #97647).
@@ -611,6 +616,7 @@ profiles:
 
         res = "success" in status
         if not res:
+            self.minio_setup_error = f"failed to restart clickminio, status: {status}"
             print(f"ERROR: Failed to restart clickminio, status: {status}")
         return res
 
@@ -671,7 +677,16 @@ profiles:
             )
             return False
         if self.is_db_replicated and replica_num == 0:
-            return self.wait_ready(replica_num=1) and self.wait_ready(replica_num=2)
+            if not (self.wait_ready(replica_num=1) and self.wait_ready(replica_num=2)):
+                return False
+        if replica_num == 0:
+            # Flush system logs now that the server is ready and listening. This
+            # pre-creates the system log tables (system.query_log, etc.), which
+            # are otherwise not materialized until the first flush, so individual
+            # tests can read them without hitting "table does not exist". Doing it
+            # here (not in start()) avoids the Code 210 race against the TCP
+            # listener; the result is best-effort and does not gate readiness.
+            self._flush_system_logs()
         return True
 
     def _flush_system_logs(self):

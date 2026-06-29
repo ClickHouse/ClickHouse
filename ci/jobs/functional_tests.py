@@ -649,15 +649,15 @@ def main():
                     info.add_workflow_warning("Failed to start log export")
                     print("Failed to start log export")
             # MinIO log tables are non-fatal (tests still run without the
-            # webhook log tables), so keep going - but record the failure and
-            # the minio restart status (printed by create_minio_log_tables) so
-            # broken minio restarts are visible in test_context_raw rather than
-            # silently collapsing into the umbrella.
+            # webhook log tables), so keep going - but record the concrete
+            # failure reason (the real clickminio restart status, carried out of
+            # create_minio_log_tables via CH.minio_setup_error) so broken minio
+            # restarts are visible in test_context_raw rather than silently
+            # collapsing into the umbrella.
             if not CH.create_minio_log_tables():
                 info.add_workflow_warning("Failed to create minio log tables")
-                note = (
-                    "SETUP WARNING: failed to create minio log tables / restart "
-                    "clickminio (non-fatal, see clickminio restart status above)"
+                note = "SETUP WARNING: " + (
+                    CH.minio_setup_error or "failed to create minio log tables"
                 )
                 print(note)
                 # Keep it for the persisted Result too: on the success path
@@ -858,6 +858,7 @@ def main():
                     # inverter reports that false failure as a successful bug
                     # reproduction.
                     reprepared = CH.create_minio_log_tables()
+                    reprepare_error = CH.minio_setup_error
                     if reprepared and has_stateful_tests:
                         reprepared = (
                             CH.prepare_stateful_data(
@@ -866,12 +867,19 @@ def main():
                             )
                             and CH.insert_system_zookeeper_config()
                         )
+                        if not reprepared:
+                            reprepare_error = "failed to re-prepare stateful data"
                     if not reprepared:
+                        info_text = (
+                            "Failed to re-prepare the test environment "
+                            f"after switching to the {bugfix_bt} binary"
+                        )
+                        if reprepare_error:
+                            info_text += f" ({reprepare_error})"
                         setup_error = Result(
                             name=f"Environment setup ({bugfix_bt})",
                             status=Result.Status.ERROR,
-                            info="Failed to re-prepare the test environment "
-                            f"after switching to the {bugfix_bt} binary",
+                            info=info_text,
                         )
                         setup_error.set_label(bugfix_bt)
                         test_result.results.append(setup_error)
