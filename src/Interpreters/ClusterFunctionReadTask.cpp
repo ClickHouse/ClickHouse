@@ -44,6 +44,18 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
     file_bucket_info = object->file_bucket_info;
+
+    /// Capture the generation the coordinator saw (notably the ETag) so the worker can pin its read
+    /// to it. For the bucket-splitting path the metadata was already refreshed when the coordinator
+    /// read the object to compute bucket boundaries; for other paths it stays empty and the worker
+    /// fetches metadata itself.
+    if (auto object_metadata = object->getObjectMetadata())
+    {
+        etag = object_metadata->etag;
+        size_bytes = object_metadata->size_bytes;
+        is_size_known = object_metadata->is_size_known;
+        last_modified_epoch_us = static_cast<UInt64>(object_metadata->last_modified.epochMicroseconds());
+    }
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::string & path_)
@@ -74,6 +86,20 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     }
     object->data_lake_metadata = data_lake_metadata;
     object->file_bucket_info = file_bucket_info;
+
+    /// Pin the worker's read to the generation the coordinator saw at split time: reconstruct the
+    /// object metadata (notably the ETag) so `createReadBuffer` validates every ranged GET against it
+    /// instead of re-fetching the current - possibly overwritten - generation. Only when an ETag was
+    /// actually captured; otherwise leave the metadata empty so the worker fetches it itself, as before.
+    if (!etag.empty())
+    {
+        ObjectMetadata object_metadata;
+        object_metadata.etag = etag;
+        object_metadata.size_bytes = size_bytes;
+        object_metadata.is_size_known = is_size_known;
+        object_metadata.last_modified = Poco::Timestamp(static_cast<Poco::Timestamp::TimeVal>(last_modified_epoch_us));
+        object->setObjectMetadata(object_metadata);
+    }
 
     return object;
 }
@@ -129,6 +155,14 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
             writeVarUInt(0, out);
         }
     }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_OBJECT_METADATA)
+    {
+        writeStringBinary(etag, out);
+        writeVarUInt(size_bytes, out);
+        writeVarUInt(is_size_known ? UInt64(1) : UInt64(0), out);
+        writeVarUInt(last_modified_epoch_us, out);
+    }
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -181,6 +215,16 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             iceberg_info = Iceberg::IcebergObjectSerializableInfo{};
             iceberg_info->deserializeForClusterFunctionProtocol(in, protocol_version);
         }
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_OBJECT_METADATA)
+    {
+        readStringBinary(etag, in);
+        readVarUInt(size_bytes, in);
+        UInt64 is_size_known_flag = 0;
+        readVarUInt(is_size_known_flag, in);
+        is_size_known = is_size_known_flag != 0;
+        readVarUInt(last_modified_epoch_us, in);
     }
 }
 
