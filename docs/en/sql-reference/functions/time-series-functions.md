@@ -6,8 +6,6 @@ title: 'Functions for working with time series'
 doc_type: 'reference'
 ---
 
-# Time series functions
-
 The functions below are designed to be used with `timeSeries*()` aggregate functions like
 [`timeSeriesInstantRateToGrid`](../aggregate-functions/reference/timeSeriesInstantRateToGrid.md),
 [`timeSeriesLastToGrid`](../aggregate-functions/reference/timeSeriesResampleToGridWithStaleness.md),

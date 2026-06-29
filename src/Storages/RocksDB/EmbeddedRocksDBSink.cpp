@@ -4,6 +4,8 @@
 
 #include <rocksdb/utilities/db_ttl.h>
 
+#include <Common/SharedLockGuard.h>
+
 
 namespace DB
 {
@@ -11,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ROCKSDB_ERROR;
+extern const int TABLE_IS_DROPPED;
 }
 
 EmbeddedRocksDBSink::EmbeddedRocksDBSink(StorageEmbeddedRocksDB & storage_, const StorageMetadataPtr & metadata_snapshot_)
@@ -49,9 +52,14 @@ void EmbeddedRocksDBSink::consume(Chunk & chunk)
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
     }
 
-    status = storage.rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
-    if (!status.ok())
-        throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+    {
+        SharedLockGuard lock(storage.rocksdb_ptr_mx);
+        if (!storage.rocksdb_ptr)
+            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
+        status = storage.rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
+        if (!status.ok())
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+    }
 }
 
 }

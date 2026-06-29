@@ -1,5 +1,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <IO/Operators.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/WindowTransform.h>
@@ -98,8 +99,8 @@ void WindowStep::describeActions(FormatSettings & settings) const
             {
                 settings.out << ", ";
             }
-
-            settings.out << window_description.partition_by[i].column_name;
+            const auto & column_name = window_description.partition_by[i].column_name;
+            settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column_name, settings.pretty_names) : column_name);
         }
     }
     if (!window_description.partition_by.empty()
@@ -109,8 +110,8 @@ void WindowStep::describeActions(FormatSettings & settings) const
     }
     if (!window_description.order_by.empty())
     {
-        settings.out << "ORDER BY "
-            << dumpSortDescription(window_description.order_by);
+        settings.out << "ORDER BY ";
+        dumpSortDescription(window_description.order_by, settings);
     }
     settings.out << ")\n";
 
@@ -118,7 +119,8 @@ void WindowStep::describeActions(FormatSettings & settings) const
     {
         settings.out << prefix << (i == 0 ? "Functions: "
                                           : "           ");
-        settings.out << window_functions[i].column_name << "\n";
+        const auto & column_name = window_functions[i].column_name;
+        settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column_name, settings.pretty_names) : column_name) << "\n";
     }
 }
 

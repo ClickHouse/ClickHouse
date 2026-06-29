@@ -1,14 +1,12 @@
 #pragma once
 
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/SystemLog.h>
 #include <Common/setThreadName.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TraceSender.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -50,7 +48,7 @@ struct TraceLogElement
     ProfileEvents::Count increment{};
 
     /// Instrumentation values
-    UInt64 instrumented_point_id;
+    UInt64 instrumented_point_id{};
     Int32 function_id = -1;
     String function_name{};
     String handler{};

@@ -22,9 +22,9 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO t_orc_v3 (c0) SELECT 'b';
 "
 
-# This should not crash with input_format_parquet_use_native_reader_v3 = 1.
+# This should not crash (the native Parquet reader is always used).
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT c0 FROM icebergLocal('${ICEBERG_TABLE_PATH}', 'ORC', 'c0 String') ORDER BY c0 SETTINGS input_format_parquet_use_native_reader_v3 = 1;
+    SELECT c0 FROM icebergLocal('${ICEBERG_TABLE_PATH}', 'ORC', 'c0 String') ORDER BY c0;
 "
 
 # Cleanup

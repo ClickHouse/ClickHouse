@@ -164,6 +164,9 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (pos == row_size)
         return false;
 
+    if (row[pos].isNaN() || row[pos].isInf())
+        return false;
+
     if (next_original_row[pos].isNaN() || next_original_row[pos].isInf())
         return false;
 

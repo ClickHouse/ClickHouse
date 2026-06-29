@@ -8,9 +8,9 @@ doc_type: 'reference'
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
-# system.warnings
-
 <SystemTableCloud/>
+
+## Description {#description}
 
 This table shows warnings about the ClickHouse server.
 Warnings of the same type are combined into a single warning.
@@ -29,22 +29,18 @@ The table can be configured with these settings:
 - [max_named_collection_num_to_warn](../server-configuration-parameters/settings.md#max_named_collection_num_to_warn)
 - [resource_overload_warnings](/operations/settings/server-overload#resource-overload-warnings)
 
-Columns:
+## Columns {#columns}
 
 - `message` ([String](../../sql-reference/data-types/string.md)) — Warning message.
 - `message_format_string` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — The format string used to format the message.
 
-**Example**
+## Example {#example}
 
-Query:
-
-```sql
+```sql title="Query"
  SELECT * FROM system.warnings LIMIT 2 \G;
 ```
 
-Result:
-
-```text
+```text title="Response"
 Row 1:
 ──────
 message:               The number of active parts is more than 10.

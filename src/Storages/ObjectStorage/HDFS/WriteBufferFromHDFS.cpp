@@ -128,6 +128,8 @@ void WriteBufferFromHDFS::sync()
 
 void WriteBufferFromHDFS::finalizeImpl()
 {
+    WriteBufferFromFileBase::finalizeImpl();
+
     if (blob_log)
     {
         blob_log->addEvent(

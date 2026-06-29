@@ -6,8 +6,6 @@ title: 'Server overload'
 doc_type: 'reference'
 ---
 
-# Server overload
-
 ## Overview {#overview}
 
 Sometimes server can become overloaded due to different reasons. In order to determine the current CPU overload,

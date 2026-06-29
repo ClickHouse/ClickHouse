@@ -26,7 +26,7 @@ String MarkInCompressedFile::toStringWithRows(size_t rows_num) const
 // Write a range of bits in a bit-packed array.
 // The array must be overallocated by one element.
 // The bit range must be pre-filled with zeros.
-void writeBits(UInt64 * dest, size_t bit_offset, UInt64 value)
+static void writeBits(UInt64 * dest, size_t bit_offset, UInt64 value)
 {
     size_t mod = bit_offset % 64;
     dest[bit_offset / 64] |= value << mod;
@@ -35,7 +35,7 @@ void writeBits(UInt64 * dest, size_t bit_offset, UInt64 value)
 }
 
 // The array must be overallocated by one element.
-UInt64 readBits(const UInt64 * src, size_t bit_offset, size_t num_bits)
+static UInt64 readBits(const UInt64 * src, size_t bit_offset, size_t num_bits)
 {
     size_t mod = bit_offset % 64;
     UInt64 value = src[bit_offset / 64] >> mod;

@@ -1,0 +1,68 @@
+<test>
+    <!--
+      Microbenchmark isolating the per-row cost of the QBit distance functions.
+
+      Unlike qbit_l2_distance_*_memory.xml (dim=100, ORDER BY ... LIMIT, multi-threaded), this test is deliberately shaped so that almost 
+      all of the wall-clock time is spent inside the per-row distance kernel call, so changes to that call
+    -->
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>vector_size</name>
+            <values>
+                <value>8</value>
+            </values>
+        </substitution>
+
+        <substitution>
+            <name>elements</name>
+            <values>
+                <value>3000000</value>
+            </values>
+        </substitution>
+
+        <substitution>
+            <name>type</name>
+            <values>
+                <value>Float64</value>
+            </values>
+        </substitution>
+
+        <substitution>
+            <name>func</name>
+            <values>
+                <value>L2DistanceTransposed</value>
+                <value>cosineDistanceTransposed</value>
+            </values>
+        </substitution>
+
+        <substitution>
+            <name>p</name>
+            <values>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>DROP TABLE IF EXISTS tab_{type}</create_query>
+    <create_query>CREATE TABLE tab_{type} (id UInt32, vec QBit({type}, {vector_size})) ENGINE = Memory</create_query>
+    <create_query>INSERT INTO tab_{type} SELECT number + 1 AS id, arrayMap(i -> id + i, range({vector_size})) AS vec FROM numbers({elements})</create_query>
+
+    <query>
+        SELECT
+            sum({func}(vec, arrayMap(i -> to{type}(i + 1), range({vector_size})), {p}))
+          + sum({func}(vec, arrayMap(i -> to{type}(i + 2), range({vector_size})), {p}))
+          + sum({func}(vec, arrayMap(i -> to{type}(i + 3), range({vector_size})), {p}))
+          + sum({func}(vec, arrayMap(i -> to{type}(i + 4), range({vector_size})), {p}))
+          + sum({func}(vec, arrayMap(i -> to{type}(i + 5), range({vector_size})), {p}))
+          + sum({func}(vec, arrayMap(i -> to{type}(i + 6), range({vector_size})), {p}))
+          + sum({func}(vec, arrayMap(i -> to{type}(i + 7), range({vector_size})), {p}))
+          + sum({func}(vec, arrayMap(i -> to{type}(i + 8), range({vector_size})), {p}))
+        FROM tab_{type}
+    </query>
+
+    <drop_query>DROP TABLE tab_{type}</drop_query>
+</test>
