@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-async-insert, no-debug, no-fasttest, no-replicated-database
+# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-async-insert, no-debug, no-fasttest, no-replicated-database, no-llvm-coverage
 # no-fasttest: The test runs for 40 seconds
+# no-llvm-coverage: thread_cancel SIGKILLs instrumented clients mid-write, corrupting the shared
+#   profraw merge pool; survivors then print "LLVM Profile Error:" to stderr which insert_data's
+#   2>&1 folds into the diffed stdout (false "result differs"). Coverage from a kill-race is invalid anyway.
 # shellcheck disable=SC2009
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
