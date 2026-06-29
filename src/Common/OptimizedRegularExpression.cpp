@@ -7,6 +7,7 @@
 
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 
 constexpr size_t MIN_LENGTH_FOR_STRSTR = 3;
 constexpr size_t MAX_SUBPATTERNS = 1024;
@@ -580,12 +581,15 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     if (!is_trivial)
     {
         /// re2 patterns can be machine-generated and huge; bound them in error messages.
-        auto for_message = [](const std::string & re)
+        /// Truncate on a UTF-8 code point boundary so a multi-byte character is not cut in half.
+        auto for_message = [](const std::string & re) -> std::string
         {
-            static constexpr size_t max_len = 256;
-            if (re.size() <= max_len)
+            static constexpr size_t max_code_points = 256;
+            const size_t bytes = DB::UTF8::computeBytesBeforeCodePoint(
+                reinterpret_cast<const UInt8 *>(re.data()), re.size(), max_code_points);
+            if (bytes >= re.size())
                 return re;
-            return re.substr(0, max_len) + "... (truncated, " + std::to_string(re.size()) + " bytes total)";
+            return re.substr(0, bytes) + "... (truncated, " + std::to_string(re.size()) + " bytes total)";
         };
 
         /// Compile the re2 regular expression.
