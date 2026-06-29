@@ -35,6 +35,21 @@ CREATE TABLE t_cas ENGINE = Memory AS SELECT x FROM t_src;
 SET sort = '';
 SELECT count() FROM t_cas;
 
+SELECT '-- a repair SET is not rejected by construction-setting validation (page without limit)';
+-- Storing `page` without `limit` is invalid for a result query, but a `SET` must not be validated as
+-- if it were one: otherwise the repair `SET page = 0` is rejected (reading the still-stored page != 0,
+-- limit = 0) before InterpreterSetQuery can clear it.
+SET page = 2;
+SET page = 0;
+SELECT 'page repaired';
+
+SELECT '-- a repair SET clears a stored order/sort conflict without being rejected first';
+SET sort = 'x';
+SET order = 'x';
+SET sort = '';
+SET order = '';
+SELECT 'order/sort repaired';
+
 DROP TABLE t_cas;
 DROP TABLE t_dst;
 DROP TABLE t_src;

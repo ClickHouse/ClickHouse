@@ -1687,6 +1687,16 @@ static void applyQueryConstructionSettings(
         return;
     }
 
+    /// The construction settings shape a query's *result*, so they apply only to a result-producing
+    /// `SELECT` / `UNION` (the `EXPLAIN`-ed query is handled above; `INSERT … SELECT` / `CREATE … AS
+    /// SELECT` and other non-result queries are intentionally left untouched). Bail out for any other
+    /// query kind BEFORE validating or applying `page` / `order` / `sort`: otherwise a repair statement
+    /// such as `SET page = 0` — run while the session still carries `page` from a previous query —
+    /// would hit the `page requires limit` check below and fail before `InterpreterSetQuery` clears it.
+    auto * base_select = ast->as<ASTSelectWithUnionQuery>();
+    if (!base_select)
+        return;
+
     const auto & settings = context->getSettingsRef();
 
     /// `page` is sugar over `limit`/`offset`: `offset = limit * (page - 1)`.
@@ -1746,13 +1756,6 @@ static void applyQueryConstructionSettings(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings `sort` and `order` cannot be specified together.");
     if (order_expr.empty() && !sort_expr.empty())
         order_expr = convertSortToOrderBy(sort_expr);
-
-    /// Only a `SELECT` / `UNION` can be wrapped as a derived table. For any other query kind, leave
-    /// the AST unchanged. `INTO OUTFILE` and the other output options cannot live inside a subquery,
-    /// so they are popped up to the outer query below and shape the final (wrapped) result.
-    auto * base_select = ast->as<ASTSelectWithUnionQuery>();
-    if (!base_select)
-        return;
 
     /// `INTO OUTFILE`, `FORMAT`, `SETTINGS` and the `INTO OUTFILE` compression options are
     /// top-level-only output options; detach them from the base and re-attach them to the outer

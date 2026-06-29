@@ -7,3 +7,7 @@
 10
 -- a session SET sort does not block CREATE ... AS SELECT (table created, all 10 rows)
 10
+-- a repair SET is not rejected by construction-setting validation (page without limit)
+page repaired
+-- a repair SET clears a stored order/sort conflict without being rejected first
+order/sort repaired
