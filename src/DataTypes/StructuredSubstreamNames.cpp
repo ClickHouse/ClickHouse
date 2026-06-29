@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
@@ -64,6 +65,10 @@ String getPathPrefixInRange(const SubstreamPath & path, size_t begin_index, size
             stream_name += "." + toString(element.bucket);
         else if (element.type == Substream::MapBucketsInfo)
             stream_name += ".buckets_info";
+        else if (element.type == Substream::ObjectTypedPath)
+            stream_name += ".typed_path." + escapeForFileName(element.object_path_name);
+        else if (element.type == Substream::DynamicData)
+            stream_name += ".dynamic";
     }
     return stream_name;
 }
@@ -228,6 +233,10 @@ String getLegacySubstreamNameSuffix(
             stream_name += "." + toString(it->bucket);
         else if (it->type == Substream::MapBucketsInfo)
             stream_name += ".buckets_info";
+        else if (it->type == Substream::ObjectTypedPath)
+            stream_name += ".typed_path." + escapeForFileName(it->object_path_name);
+        else if (it->type == Substream::DynamicData)
+            stream_name += ".dynamic";
     }
 
     return stream_name;
@@ -271,6 +280,37 @@ bool needsStructuredSubstreamNames(const IDataType & type)
         }
     }
 
+    if (const auto * object = typeid_cast<const DataTypeObject *>(&type))
+    {
+        for (const auto & [path_name, path_type] : object->getTypedPaths())
+        {
+            if (needsStructuredSubstreamNames(*path_type))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+
+/// Check if a substream path contains a Nullable(Array(...)) pattern that requires
+/// structured naming, even when the static column type doesn't reveal it (e.g. Dynamic
+/// whose runtime variant contains Nullable(Array(...))).
+bool needsStructuredSubstreamNamesForPath(const SubstreamPath & path)
+{
+    /// Look for a NullMap that follows one or more ArrayElements (Nullable(Array) pattern),
+    /// or an ArraySizes after ArrayElements followed by NullMap. These patterns produce
+    /// ambiguous legacy names when multiple variants/paths share the same suffix.
+    bool has_array_elements = false;
+    for (size_t i = 0; i < path.size(); ++i)
+    {
+        if (path[i].type == Substream::ArrayElements)
+            has_array_elements = true;
+        else if (path[i].type == Substream::NullMap && has_array_elements)
+            return true;
+        else if (path[i].type == Substream::DynamicData)
+            has_array_elements = false;  /// Reset: we need ArrayElements after DynamicData
+    }
     return false;
 }
 

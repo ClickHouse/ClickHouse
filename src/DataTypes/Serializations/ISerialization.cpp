@@ -452,6 +452,10 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
     {
         stream_name += getStructuredSubstreamNameSuffix(path);
     }
+    else if (needsStructuredSubstreamNamesForPath(path))
+    {
+        stream_name += getStructuredSubstreamNameSuffix(path);
+    }
     else
     {
         stream_name += getNameForSubstreamPath(
@@ -496,6 +500,14 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
 String ISerialization::getSubstreamCacheKey(const SubstreamPath & path, bool encode_sparse_stream, const IDataType * column_type)
 {
     if (column_type && needsStructuredSubstreamNames(*column_type))
+    {
+        String key = getStructuredSubstreamNameSuffix(path);
+        if (!key.empty() && key[0] == '.')
+            key = key.substr(1);
+        if (!key.empty())
+            return key;
+    }
+    else if (needsStructuredSubstreamNamesForPath(path))
     {
         String key = getStructuredSubstreamNameSuffix(path);
         if (!key.empty() && key[0] == '.')

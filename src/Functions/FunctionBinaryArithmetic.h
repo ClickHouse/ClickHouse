@@ -2132,7 +2132,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         ColumnPtr right_element_null_map_column;
         const NullMap * right_element_null_map = nullptr;
-        if (right_nullmap && !detail::isArrayOrNullableArray(*args[1].type))
+        if (right_nullmap)
         {
             right_element_null_map_column = detail::replicateNullMapByOffsets(right_nullmap, left_offsets, input_rows_count);
             right_element_null_map = &assert_cast<const ColumnUInt8 &>(*right_element_null_map_column).getData();
@@ -3847,7 +3847,16 @@ public:
         if (!detail::hasNullableArrayArgument(arguments))
             return IFunctionOverloadResolver::build(arguments);
 
-        return buildImpl(arguments, getReturnTypePreservingNullableArrayTypes(arguments));
+        /// Strip LowCardinality from operands, matching the normalization that
+        /// IFunctionOverloadResolver::build / getReturnType would do on the default path.
+        ColumnsWithTypeAndName args_without_lc = arguments;
+        for (auto & arg : args_without_lc)
+        {
+            arg.column = recursiveRemoveLowCardinality(arg.column);
+            arg.type = recursiveRemoveLowCardinality(arg.type);
+        }
+
+        return buildImpl(args_without_lc, getReturnTypePreservingNullableArrayTypes(args_without_lc));
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
@@ -3938,7 +3947,7 @@ private:
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
+            data_types[i] = recursiveRemoveLowCardinality(arguments[i].type);
 
         return FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::getReturnTypeImplStatic(data_types, context);
     }
