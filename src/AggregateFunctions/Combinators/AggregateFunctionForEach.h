@@ -104,11 +104,17 @@ private:
                 throw;
             }
 
-            for (i = 0; i < old_size; ++i)
+            /// Zero-sized nested state (aggregate over Nothing): the zero-byte arena
+            /// allocation does not advance, so new_state aliases old_state. There is no
+            /// data to migrate, and merge() with aliasing source/destination is undefined.
+            if (nested_size_of_data != 0)
             {
-                nested_func->merge(&new_state[i * nested_size_of_data],
-                        &old_state[i * nested_size_of_data],
-                        &arena);
+                for (i = 0; i < old_size; ++i)
+                {
+                    nested_func->merge(&new_state[i * nested_size_of_data],
+                            &old_state[i * nested_size_of_data],
+                            &arena);
+                }
             }
 
             state.array_of_aggregate_datas = new_state;
