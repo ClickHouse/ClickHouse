@@ -72,7 +72,9 @@ void DistinctStep::updateLimitHint(UInt64 hint)
 
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (!pre_distinct)
+    /// When the input streams carry disjoint sets of the DISTINCT key values, each stream can be
+    /// deduplicated independently, so we keep the streams and skip merging them into a single one.
+    if (!pre_distinct && !skip_stream_merging)
         pipeline.resize(1);
 
     {
@@ -98,7 +100,9 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             }
 
             /// final distinct for sorted stream (sorting inside and among chunks)
-            if (pipeline.getNumStreams() != 1)
+            /// With skip_stream_merging every stream is an independently-sorted, disjoint partition,
+            /// so the per-stream sorted transforms below are correct without merging to a single stream.
+            if (pipeline.getNumStreams() != 1 && !skip_stream_merging)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "DistinctStep with in-order expects single input");
 
             if (distinct_sort_desc.size() < columns.size())
@@ -164,6 +168,9 @@ void DistinctStep::describeActions(FormatSettings & settings) const
     }
 
     settings.out << '\n';
+
+    if (skip_stream_merging)
+        settings.out << prefix << "Skip stream merging: 1\n";
 }
 
 void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -173,6 +180,8 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
         columns_array->add(column);
 
     map.add("Columns", std::move(columns_array));
+    if (skip_stream_merging)
+        map.add("Skip stream merging", true);
 }
 
 void DistinctStep::updateOutputHeader()

@@ -300,24 +300,12 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
         if (!array_join->isLeft())
             limit = 0;
 
-        const auto & array_joined_columns = array_join->getColumns();
-
         if (dag)
         {
-            std::unordered_set<std::string_view> keys_set(array_joined_columns.begin(), array_joined_columns.end());
-
             /// Remove array joined columns from outputs.
             /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
-            ActionsDAG::NodeRawConstPtrs outputs;
-            outputs.reserve(dag->getOutputs().size());
-
-            for (const auto & output : dag->getOutputs())
-            {
-                if (!keys_set.contains(output->result_name))
-                    outputs.push_back(output);
-            }
-
-            dag->getOutputs() = std::move(outputs);
+            const auto & array_joined_columns = array_join->getColumns();
+            dag->removeFromOutputs(NameSet(array_joined_columns.begin(), array_joined_columns.end()));
         }
     }
 }

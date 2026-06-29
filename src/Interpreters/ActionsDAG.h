@@ -220,6 +220,10 @@ public:
     /// Do not remove any inputs.
     void removeFromOutputs(const std::string & node_name);
 
+    /// Remove all outputs whose result name is in `node_names`. Unlike the single-name overload above,
+    /// names not present among the outputs are ignored (no throw), and unused actions are not pruned.
+    void removeFromOutputs(const NameSet & node_names);
+
     /// Remove actions that are not needed to compute output nodes.
     /// Returns true if any of the actions were removed.
     /// Outputs remain unchanged.

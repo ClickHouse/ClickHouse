@@ -1840,6 +1840,18 @@ void ActionsDAG::removeFromOutputs(const std::string & node_name)
     removeUnusedActions(/*allow_remove_inputs=*/false);
 }
 
+void ActionsDAG::removeFromOutputs(const NameSet & node_names)
+{
+    NodeRawConstPtrs new_outputs;
+    new_outputs.reserve(outputs.size());
+
+    for (const auto * output : outputs)
+        if (!node_names.contains(output->result_name))
+            new_outputs.push_back(output);
+
+    outputs = std::move(new_outputs);
+}
+
 ActionsDAG ActionsDAG::clone() const
 {
     std::unordered_map<const Node *, const Node *> old_to_new_nodes;

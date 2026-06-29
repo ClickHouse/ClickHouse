@@ -339,6 +339,7 @@ public:
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePortForAggregation();
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
+    bool requestOutputEachPartitionThroughSeparatePortForDistinct();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
@@ -546,6 +547,10 @@ private:
     ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }
 
     void logPredicateStatistics(const AnalysisResult & result) const;
+
+    /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY and DISTINCT.
+    enum class ProcessorKind : uint8_t { Aggregation, Distinct };
+    bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
 
     int getSortDirection() const;
     void updateSortDescription();
