@@ -35,6 +35,12 @@ SELECT * FROM sqlite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col
 
 Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`SQLite`](/engines/table-engines/integrations/sqlite) table engine.
 
+:::note
+The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized before being sent to SQLite. It must therefore be valid ClickHouse SQL. To pass SQLite-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to SQLite verbatim.
+
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from SQLite, put the filter inside the passed query. With [`external_table_strict_query = 1`](/operations/settings/settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+:::
+
 ## Example {#example}
 
 ```sql title="Query"

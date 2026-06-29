@@ -27,6 +27,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -57,8 +58,14 @@ private:
 };
 
 StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
+        ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
+    /// Reject the insert before constructing the storage, so that read-only query-backed sources do not contact
+    /// the external database for schema inference (which could run an expensive or volatile query) only to fail.
+    if (is_insert_query && configuration->table_or_query.isQuery())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Cannot INSERT into the 'postgresql' table function: it represents the result of a query passed to PostgreSQL, which is read-only");
+
     auto result = std::make_shared<StoragePostgreSQL>(
         StorageID(getDatabaseName(), table_name),
         connection_pool,
@@ -75,8 +82,12 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 }
 
 
-ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
+    if (is_insert_query && configuration->table_or_query.isQuery())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Cannot INSERT into the 'postgresql' table function: it represents the result of a query passed to PostgreSQL, which is read-only");
+
     return StoragePostgreSQL::getTableStructureFromData(connection_pool, configuration->table_or_query, configuration->schema, context);
 }
 

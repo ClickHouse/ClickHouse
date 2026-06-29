@@ -12,6 +12,8 @@ sqlite3 "$DB" 'CREATE TABLE t1(id INTEGER PRIMARY KEY, name TEXT, val REAL);'
 sqlite3 "$DB" "INSERT INTO t1 VALUES (1, 'a', 1.5), (2, 'b', 2.5), (3, 'c', 3.5), (4, 'd', 4.5);"
 sqlite3 "$DB" 'CREATE TABLE t2(id INTEGER, category TEXT);'
 sqlite3 "$DB" "INSERT INTO t2 VALUES (1, 'x'), (2, 'y'), (4, 'z');"
+sqlite3 "$DB" 'CREATE TABLE t3("Mixed Id" INTEGER, val TEXT);'
+sqlite3 "$DB" "INSERT INTO t3 VALUES (7, 'seven');"
 
 ${CLICKHOUSE_LOCAL} --multiquery "
 SELECT '-- baseline: table name still works';
@@ -36,6 +38,21 @@ CREATE TABLE engine_query ENGINE = SQLite('${DB}', query('SELECT id, name FROM t
 SELECT * FROM engine_query ORDER BY id;
 INSERT INTO engine_query VALUES (5, 'e'); -- { serverError INCORRECT_QUERY }
 DROP TABLE engine_query;
+
+SELECT '-- subquery form quotes identifiers in the target dialect';
+SELECT \"Mixed Id\", val FROM sqlite('${DB}', (SELECT \"Mixed Id\", val FROM t3));
+
+SELECT '-- external_table_strict_query: an outer filter is applied locally by default';
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) WHERE id = 1;
+
+SELECT '-- external_table_strict_query: an outer filter that cannot be pushed down is rejected';
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) WHERE id = 1 SETTINGS external_table_strict_query = 1; -- { serverError INCORRECT_QUERY }
+
+SELECT '-- external_table_strict_query: no outer filter is allowed';
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) SETTINGS external_table_strict_query = 1;
+
+SELECT '-- INSERT into a query-backed table function is rejected before schema inference';
+INSERT INTO TABLE FUNCTION sqlite('${DB}', query('SELECT id FROM nonexistent_table')) VALUES (1); -- { serverError INCORRECT_QUERY }
 "
 
 rm -f "$DB"

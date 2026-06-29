@@ -1101,6 +1101,35 @@ def test_postgres_query_passing(started_cluster):
     )
     node1.query("DROP TABLE pg_engine_query")
 
+    # The subquery form is re-serialized in the PostgreSQL dialect, so an identifier that needs quoting
+    # (here, one containing a space) is emitted with PostgreSQL double quotes and accepted by PostgreSQL.
+    # With ClickHouse-style backtick quoting (the previous behaviour) PostgreSQL would reject the query.
+    quoted_name = "test_query_passing_quoted"
+    cursor.execute(f'DROP TABLE IF EXISTS {quoted_name}')
+    cursor.execute(f'CREATE TABLE {quoted_name} (id integer, "weird name" text)')
+    cursor.execute(f"INSERT INTO {quoted_name} VALUES (1, 'quoted_value')")
+    started_cluster.postgres_conn.commit()
+    q_quoted = (
+        f'postgresql(\'{host}\', \'postgres\', '
+        f'(SELECT id, "weird name" FROM {quoted_name}), \'postgres\', \'{pg_pass}\')'
+    )
+    assert node1.query(f'SELECT "weird name" FROM {q_quoted} ORDER BY id').rstrip() == "quoted_value"
+    cursor.execute(f"DROP TABLE {quoted_name}")
+
+    # external_table_strict_query: an outer filter that cannot be pushed down into the passed query is
+    # applied locally by default, but rejected with INCORRECT_QUERY under external_table_strict_query = 1.
+    q_strict = f"postgresql('{host}', 'postgres', query('SELECT a, b FROM {table_name}'), 'postgres', '{pg_pass}')"
+    assert node1.query(f"SELECT count() FROM {q_strict} WHERE a = 1").rstrip() == "1"
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        f"SELECT count() FROM {q_strict} WHERE a = 1 SETTINGS external_table_strict_query = 1"
+    )
+
+    # INSERT into a query-backed table function is rejected with INCORRECT_QUERY before the storage is
+    # constructed, so the remote schema-inference query is never run against PostgreSQL.
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        f"INSERT INTO TABLE FUNCTION {q_strict} VALUES (1, 'x')"
+    )
+
     # Schema inference must preserve PostgreSQL type modifiers and array dimensions of the query result,
     # exactly as the plain table-name path does. In particular a wide numeric(78, 0) must be inferred as
     # Int256 (the typmod must be carried into format_type), and a multidimensional array must keep its

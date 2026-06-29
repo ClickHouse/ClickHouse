@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -56,8 +57,14 @@ private:
 };
 
 StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
+        ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
+    /// Reject the insert before constructing the storage, so that read-only query-backed sources do not run
+    /// schema inference (preparing the user's query against SQLite) only to fail.
+    if (is_insert_query && remote_table_or_query.isQuery())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Cannot INSERT into the 'sqlite' table function: it represents the result of a query passed to SQLite, which is read-only");
+
     auto storage = std::make_shared<StorageSQLite>(StorageID(getDatabaseName(), table_name),
                                          sqlite_db,
                                          database_path,
@@ -69,8 +76,12 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
 }
 
 
-ColumnsDescription TableFunctionSQLite::getActualTableStructure(ContextPtr /* context */, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionSQLite::getActualTableStructure(ContextPtr /* context */, bool is_insert_query) const
 {
+    if (is_insert_query && remote_table_or_query.isQuery())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Cannot INSERT into the 'sqlite' table function: it represents the result of a query passed to SQLite, which is read-only");
+
     return StorageSQLite::getTableStructureFromData(sqlite_db, remote_table_or_query);
 }
 
@@ -88,7 +99,8 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "SQLite database requires 2 arguments: database path, table name (or query)");
 
     /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
-    auto maybe_query = tryGetExternalDatabaseQuery(args[1], context);
+    auto maybe_query = tryGetExternalDatabaseQuery(
+        args[1], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::Regular);
     for (size_t i = 0; i < args.size(); ++i)
     {
         if (i == 1 && maybe_query)

@@ -1174,6 +1174,20 @@ def test_query_passing_table_function(started_cluster):
     )
     drop_mysql_table(conn, null_table)
 
+    # external_table_strict_query: an outer filter that cannot be pushed down into the passed query is
+    # applied locally by default, but rejected with INCORRECT_QUERY under external_table_strict_query = 1.
+    q_strict = f"mysql('mysql80:3306', 'clickhouse', query('SELECT id, name FROM {table_name}'), 'root', '{mysql_pass}')"
+    assert node1.query(f"SELECT count() FROM {q_strict} WHERE id = 1").rstrip() == "1"
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        f"SELECT count() FROM {q_strict} WHERE id = 1 SETTINGS external_table_strict_query = 1"
+    )
+
+    # INSERT into a query-backed table function is rejected with INCORRECT_QUERY before the storage is
+    # constructed, so the remote schema-inference query is never run against MySQL.
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        f"INSERT INTO TABLE FUNCTION {q_strict} (id, name) VALUES (1, 'x')"
+    )
+
     drop_mysql_table(conn, table_name)
     conn.close()
 

@@ -194,7 +194,9 @@ public:
         if (remote_table_or_query.isQuery())
         {
             /// The user-provided query is passed to PostgreSQL as is, wrapped into a subquery to project
-            /// only the required columns. Predicate and LIMIT pushdown are not applied in this case.
+            /// only the required columns. Predicate and LIMIT pushdown are not applied in this case, so
+            /// reject any outer filter under external_table_strict_query.
+            rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context);
             query = buildQueryForExternalDatabaseSubquery(
                 remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotes);
         }
@@ -658,7 +660,8 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
         }
 
         /// The 3rd argument is either a table name, or a query passed to PostgreSQL as is - `(SELECT ...)` or `query('SELECT ...')`.
-        auto maybe_query = tryGetExternalDatabaseQuery(engine_args[2], context);
+        auto maybe_query = tryGetExternalDatabaseQuery(
+            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
@@ -803,6 +806,12 @@ CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELEC
 ```
 
 This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`postgresql`](/sql-reference/table-functions/postgresql) table function.
+
+:::note
+The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the PostgreSQL dialect (PostgreSQL identifier quoting and string-literal escaping) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass PostgreSQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to PostgreSQL verbatim.
+
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from PostgreSQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/operations/settings/settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+:::
 
 `INSERT` queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.
 

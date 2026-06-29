@@ -49,10 +49,29 @@ String TableNameOrQuery::format() const
     return prefix + target;
 }
 
-std::optional<String> tryGetExternalDatabaseQuery(const ASTPtr & argument, const ContextPtr & context)
+std::optional<String> tryGetExternalDatabaseQuery(
+    const ASTPtr & argument,
+    const ContextPtr & context,
+    IdentifierQuotingStyle identifier_quoting_style,
+    LiteralEscapingStyle literal_escaping_style)
 {
     if (const auto * subquery = argument->as<ASTSubquery>())
-        return subquery->children.at(0)->formatWithSecretsOneLine();
+    {
+        /// The subquery is formatted back to SQL text in the dialect of the external database, so that
+        /// identifiers that require quoting (e.g. mixed case or containing spaces) and string literals are
+        /// emitted using the external database's quoting/escaping style rather than the ClickHouse one (which
+        /// would, for example, produce backtick-quoted identifiers that PostgreSQL rejects). `WhenNecessary`
+        /// keeps simple identifiers unquoted, exactly as a hand-written query would be.
+        WriteBufferFromOwnString out;
+        IAST::FormatSettings settings(
+            /*one_line=*/true,
+            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+            /*identifier_quoting_style=*/identifier_quoting_style,
+            /*show_secrets_=*/true,
+            /*literal_escaping_style=*/literal_escaping_style);
+        subquery->children.at(0)->format(out, settings);
+        return out.str();
+    }
 
     if (const auto * function = argument->as<ASTFunction>(); function && function->name == "query")
     {

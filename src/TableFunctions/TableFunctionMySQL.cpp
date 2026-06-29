@@ -38,6 +38,7 @@ namespace MySQLSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -101,8 +102,12 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     pool.emplace(createMySQLPoolWithFailover(*configuration, mysql_settings));
 }
 
-ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
+    if (is_insert_query && configuration->table_or_query.isQuery())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Cannot INSERT into the 'mysql' table function: it represents the result of a query passed to MySQL, which is read-only");
+
     return StorageMySQL::getTableStructureFromData(*pool, configuration->database, configuration->table_or_query, context);
 }
 
@@ -111,8 +116,14 @@ StoragePtr TableFunctionMySQL::executeImpl(
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription cached_columns,
-    bool /*is_insert_query*/) const
+    bool is_insert_query) const
 {
+    /// Reject the insert before constructing the storage, so that read-only query-backed sources do not contact
+    /// the external database for schema inference (which could run an expensive or volatile query) only to fail.
+    if (is_insert_query && configuration->table_or_query.isQuery())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Cannot INSERT into the 'mysql' table function: it represents the result of a query passed to MySQL, which is read-only");
+
     auto res = std::make_shared<StorageMySQL>(
         StorageID(getDatabaseName(), table_name),
         std::move(*pool),

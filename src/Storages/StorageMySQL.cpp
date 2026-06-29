@@ -148,7 +148,12 @@ void StorageMySQL::readImpl(
     storage_snapshot->check(column_names);
     String query;
     if (remote_table_or_query.isQuery())
+    {
+        /// The user-provided query is passed to MySQL as is; no outer predicate is pushed down into it, so
+        /// reject any outer filter under external_table_strict_query.
+        rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context_);
         query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::BackticksMySQL);
+    }
     else
         query = transformQueryForExternalDatabase(
             query_info,
@@ -383,7 +388,8 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
                             "'user', 'password'[, replace_query, 'on_duplicate_clause']).");
 
         /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
-        auto maybe_query = tryGetExternalDatabaseQuery(engine_args[2], context_);
+        auto maybe_query = tryGetExternalDatabaseQuery(
+            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
@@ -532,6 +538,12 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 ```
 
 This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/sql-reference/table-functions/mysql) table function.
+
+:::note
+The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the MySQL dialect (backtick identifier quoting) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass MySQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to MySQL verbatim.
+
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/operations/settings/settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+:::
 
 Supports multiple replicas that must be listed by `|`. For example:
 
