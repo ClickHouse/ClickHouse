@@ -83,6 +83,7 @@ bool QueryPlanCacheDependency::operator==(const QueryPlanCacheDependency & other
         && metadata_version == other.metadata_version
         && row_policy_hash == other.row_policy_hash
         && columns == other.columns
+        && columns_unknown == other.columns_unknown
         && is_view == other.is_view;
 }
 
@@ -312,6 +313,12 @@ Int64 computeSchemaHash(const StorageInMemoryMetadata & metadata)
     if (metadata.primary_key.expression_list_ast)
         hash.update(metadata.primary_key.expression_list_ast->formatForLogging());
 
+    /// `ASSUME` constraints rewrite predicates during analysis (`optimize_using_constraints`),
+    /// so a cached plan can bake in a simplification that a dropped or changed constraint would
+    /// invalidate. For storages whose `metadata_version` stays 0 this content hash is the only
+    /// guard, so the constraints must be part of it.
+    hash.update(metadata.constraints.toString());
+
     /// For views, the stored SELECT query is the part of the schema that matters most:
     /// the view body is inlined into cached plans, so a changed body must produce a
     /// different hash even when the output columns stay the same. Normal views store the
@@ -320,6 +327,15 @@ Int64 computeSchemaHash(const StorageInMemoryMetadata & metadata)
         hash.update(metadata.select.inner_query->formatForLogging());
     if (metadata.select.select_query)
         hash.update(metadata.select.select_query->formatForLogging());
+
+    /// The SQL security type and definer determine the context a view body executes under.
+    /// An invoker-view plan must not survive an `ALTER ... MODIFY SQL SECURITY DEFINER/NONE`
+    /// or a `MODIFY DEFINER`, even when the body and columns stay the same: the eligibility
+    /// re-check in validation rejects such an entry once these change the hash.
+    if (metadata.sql_security_type)
+        hash.update(static_cast<UInt8>(*metadata.sql_security_type));
+    if (metadata.definer)
+        hash.update(*metadata.definer);
 
     /// Mask to positive Int64 range to distinguish from metadata_version (small positive integers).
     return static_cast<Int64>(hash.get64() & 0x7FFFFFFFFFFFFFFF);

@@ -72,8 +72,15 @@ struct QueryPlanCacheDependency
     IASTHash row_policy_hash{};
 
     /// Columns the plan reads from this storage; rechecked for SELECT access on every hit.
-    /// Empty means no specific columns (e.g. a view dependency) - table-level access is checked.
+    /// Empty means no specific columns were read at this leaf (e.g. a `count()` over the table).
     Names columns;
+
+    /// True when the exact set of columns read from this storage is unknown because the storage
+    /// was discovered through the AST closure rather than a plan leaf: a view body, or a table
+    /// referenced only from a scalar subquery folded into a constant. Such a dependency requires
+    /// table-level `SELECT` on a hit, because a column-level recheck could pass while the baked
+    /// plan still reads a column whose grant was revoked after the entry was stored.
+    bool columns_unknown = false;
 
     /// True for view dependencies discovered through the AST closure (not read at runtime).
     bool is_view = false;

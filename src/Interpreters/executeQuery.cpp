@@ -1210,35 +1210,48 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     auto analyzer_interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(ast, planning_context, logical_plan_options);
     auto & logical_plan = analyzer_interpreter->getQueryPlan();
 
-    /// Store the plan if nothing about the query makes reuse unsafe.
+    /// The cacheable logical-plan execution path is only equivalent to normal execution for
+    /// queries that are actually eligible for the cache: it expands view bodies at plan time and
+    /// resolves their leaf reads under the invoker context, which is wrong for `SQL SECURITY
+    /// DEFINER`/`NONE` views, and it skips storage-specific planning shortcuts. If the query is
+    /// not eligible for caching, fall back to the normal interpreter (return nullptr) instead of
+    /// executing the cacheable plan, so cache-enabled execution can never change a query's result
+    /// or security context.
     if (!queryTreeIsEligibleForPlanCache(
             analyzer_interpreter->getQueryTree(), context, settings[Setting::query_plan_cache_allow_scalar_subqueries]))
     {
         LOG_DEBUG(getLogger("QueryPlanCache"),
             "Not caching plan: query uses non-deterministic functions or scalar subqueries (see query_plan_cache_allow_scalar_subqueries)");
+        return nullptr;
     }
-    else
+
+    auto dependencies = collectQueryPlanCacheDependencies(
+        logical_plan, ast, context, settings[Setting::query_plan_cache_allow_scalar_subqueries]);
+    if (!dependencies)
     {
-        if (auto dependencies = collectQueryPlanCacheDependencies(
-                logical_plan, ast, context, settings[Setting::query_plan_cache_allow_scalar_subqueries]))
-        {
-            try
-            {
-                QueryPlanCacheEntry entry;
-                entry.serialized_plan = serializeQueryPlanForCache(logical_plan);
-                entry.dependencies = std::move(*dependencies);
-                entry.used_row_policies = analyzer_interpreter->getPlanner().getUsedRowPolicies();
-                query_plan_cache->set(*key, std::move(entry), settings[Setting::query_plan_cache_size_in_bytes_quota]);
-            }
-            catch (const Exception & e)
-            {
-                /// Only swallow failures that mean "this plan cannot be cached but is still
-                /// executable" (a step type that does not implement serialization yet).
-                if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::INCORRECT_DATA)
-                    throw;
-                tryLogCurrentException("QueryPlanCache", "Failed to serialize plan for the cache");
-            }
-        }
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: query references an unsupported dependency (table function, "
+            "temporary/system/remote/Merge table, or a non-INVOKER view)");
+        return nullptr;
+    }
+
+    try
+    {
+        QueryPlanCacheEntry entry;
+        entry.serialized_plan = serializeQueryPlanForCache(logical_plan);
+        entry.dependencies = std::move(*dependencies);
+        entry.used_row_policies = analyzer_interpreter->getPlanner().getUsedRowPolicies();
+        query_plan_cache->set(*key, std::move(entry), settings[Setting::query_plan_cache_size_in_bytes_quota]);
+    }
+    catch (const Exception & e)
+    {
+        /// Only swallow failures that mean "this plan cannot be cached but is still executable"
+        /// (a step type that does not implement serialization yet). The plan is still eligible -
+        /// semantically safe to execute through the logical-plan path below - it just could not
+        /// be stored, so execution continues rather than falling back.
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::INCORRECT_DATA)
+            throw;
+        tryLogCurrentException("QueryPlanCache", "Failed to serialize plan for the cache");
     }
 
     /// Execute the logical plan by resolving storage reads against current snapshots -

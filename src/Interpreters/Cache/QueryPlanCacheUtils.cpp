@@ -39,8 +39,9 @@
 #include <Storages/StorageMerge.h>
 
 #include <algorithm>
+#include <map>
+#include <set>
 #include <stack>
-#include <unordered_set>
 
 namespace DB
 {
@@ -122,6 +123,42 @@ bool isAllowedSystemTable(const String & database, const String & table)
     return database == DatabaseCatalog::SYSTEM_DATABASE && table == "one";
 }
 
+/// Returns false if the storage's engine or view security makes the plan uncacheable. This is
+/// checked both when a dependency is recorded (`fillDependency`) and when a cache entry is
+/// validated on a hit (`validateQueryPlanCacheEntry`): in UUID-less databases a `DROP`/`CREATE`
+/// can swap in an unsupported engine (e.g. `Distributed`/`Merge`) or change a view's SQL
+/// security while leaving the schema content hash unchanged, which a plain hash comparison would
+/// miss, so the eligibility must be re-checked rather than trusted from store time.
+bool isStorageEligibleForPlanCache(const StoragePtr & storage, const StorageMetadataPtr & metadata)
+{
+    const auto & storage_id = storage->getStorageID();
+    const String & database = storage_id.getDatabaseName();
+    const String & table = storage_id.table_name;
+
+    if (database == DatabaseCatalog::TEMPORARY_DATABASE
+        || (database == DatabaseCatalog::SYSTEM_DATABASE && !isAllowedSystemTable(database, table))
+        || storage->isRemote()
+        || typeid_cast<const StorageMerge *>(storage.get()))
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"), "Not caching plan: dependency {}.{} is temporary, system, remote or Merge",
+            database, table);
+        return false;
+    }
+
+    /// A DEFINER view executes its body under the definer's rights; a NONE view executes it
+    /// under the global context. Either way the cached plan resolves the expanded view leaves
+    /// under the invoker context and cannot replay that overridden security context, so only
+    /// `INVOKER` views (and views with no explicit security, which default to invoker) are
+    /// eligible.
+    if (storage->isView() && metadata->sql_security_type && *metadata->sql_security_type != SQLSecurityType::INVOKER)
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"), "Not caching plan: view {}.{} is not SQL SECURITY INVOKER", database, table);
+        return false;
+    }
+
+    return true;
+}
+
 /// Fills a dependency record from a resolved storage. Returns false if the storage makes the
 /// plan uncacheable.
 bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, const ContextPtr & context)
@@ -131,25 +168,10 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
     dep.table = storage_id.table_name;
     dep.uuid = storage_id.uuid;
 
-    if (dep.database == DatabaseCatalog::TEMPORARY_DATABASE
-        || (dep.database == DatabaseCatalog::SYSTEM_DATABASE && !isAllowedSystemTable(dep.database, dep.table))
-        || storage->isRemote()
-        || typeid_cast<const StorageMerge *>(storage.get()))
-    {
-        LOG_DEBUG(getLogger("QueryPlanCache"), "Not caching plan: dependency {}.{} is temporary, system, remote or Merge",
-            dep.database, dep.table);
-        return false;
-    }
-
     auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
 
-    /// A DEFINER view executes its body under another user's rights; the cached plan would
-    /// have to replay that user's access context, which the cache does not model.
-    if (storage->isView() && metadata->sql_security_type && *metadata->sql_security_type == SQLSecurityType::DEFINER)
-    {
-        LOG_DEBUG(getLogger("QueryPlanCache"), "Not caching plan: view {}.{} has SQL SECURITY DEFINER", dep.database, dep.table);
+    if (!isStorageEligibleForPlanCache(storage, metadata))
         return false;
-    }
 
     dep.metadata_version = getMetadataVersionOrSchemaHash(metadata);
     dep.row_policy_hash = getRowPolicyHash(context, dep.database, dep.table);
@@ -204,11 +226,11 @@ public:
 
     bool collect(const IAST & ast, const String & default_database)
     {
-        return collectImpl(ast, default_database, /*in_set_or_table_position=*/ false);
+        return collectImpl(ast, default_database, /*in_set_or_table_position=*/ false, /*inside_scalar_subquery=*/ false);
     }
 
 private:
-    bool collectImpl(const IAST & ast, const String & default_database, bool in_set_or_table_position)
+    bool collectImpl(const IAST & ast, const String & default_database, bool in_set_or_table_position, bool inside_scalar_subquery)
     {
         if (const auto * table_expression = ast.as<ASTTableExpression>())
         {
@@ -218,7 +240,7 @@ private:
                 return false;
             }
             if (table_expression->database_and_table_name)
-                if (!visitTableIdentifier(*table_expression->database_and_table_name, default_database))
+                if (!visitTableIdentifier(*table_expression->database_and_table_name, default_database, inside_scalar_subquery))
                     return false;
 
             /// Subqueries in FROM are re-executed on every run.
@@ -241,8 +263,10 @@ private:
             if (isSetFunction(function->name) && function->arguments && function->arguments->children.size() == 2)
             {
                 const auto & args = function->arguments->children;
-                return collectImpl(*args[0], default_database, /*in_set_or_table_position=*/ false)
-                    && collectImpl(*args[1], default_database, /*in_set_or_table_position=*/ true);
+                /// The set (right) side is re-executed each run and its tables become plan leaves
+                /// in the IN-subquery sub-plan, so they are not folded; keep `inside_scalar_subquery`.
+                return collectImpl(*args[0], default_database, /*in_set_or_table_position=*/ false, inside_scalar_subquery)
+                    && collectImpl(*args[1], default_database, /*in_set_or_table_position=*/ true, inside_scalar_subquery);
             }
 
             in_set_or_table_position = false;
@@ -251,12 +275,18 @@ private:
         {
             /// A subquery outside FROM / IN position is a scalar subquery: it is evaluated
             /// during analysis and its result is baked into the plan as a constant.
-            if (!in_set_or_table_position && !allow_scalar_subqueries)
+            if (!in_set_or_table_position)
             {
-                LOG_DEBUG(getLogger("QueryPlanCache"),
-                    "Not caching plan: query or view body uses a scalar subquery "
-                    "(see query_plan_cache_allow_scalar_subqueries)");
-                return false;
+                if (!allow_scalar_subqueries)
+                {
+                    LOG_DEBUG(getLogger("QueryPlanCache"),
+                        "Not caching plan: query or view body uses a scalar subquery "
+                        "(see query_plan_cache_allow_scalar_subqueries)");
+                    return false;
+                }
+                /// Tables read inside this subquery are folded into a constant and have no plan
+                /// leaf, so their exact columns cannot be recovered later.
+                inside_scalar_subquery = true;
             }
             in_set_or_table_position = false;
         }
@@ -268,13 +298,13 @@ private:
         }
 
         for (const auto & child : ast.children)
-            if (!collectImpl(*child, default_database, in_set_or_table_position))
+            if (!collectImpl(*child, default_database, in_set_or_table_position, inside_scalar_subquery))
                 return false;
 
         return true;
     }
 
-    bool visitTableIdentifier(const IAST & identifier_ast, const String & default_database)
+    bool visitTableIdentifier(const IAST & identifier_ast, const String & default_database, bool inside_scalar_subquery)
     {
         const auto * identifier = identifier_ast.as<ASTTableIdentifier>();
         if (!identifier)
@@ -291,24 +321,36 @@ private:
             return true;
 
         const auto & resolved_id = storage->getStorageID();
-        if (!visited.insert(resolved_id.getFullTableName()).second)
+        /// Visit each storage once per scalar/non-scalar context. The same table read both inside
+        /// a scalar subquery (folded, columns unknown) and in an ordinary position (a plan leaf
+        /// with known columns) must contribute both occurrences, so that the merge in
+        /// `collectQueryPlanCacheDependencies` unions them and the unknown flag wins. Keying only
+        /// on the table name would let traversal order decide which flag survives.
+        if (!visited.insert({resolved_id.getFullTableName(), inside_scalar_subquery}).second)
             return true;
 
         QueryPlanCacheDependency dep;
         if (!fillDependency(dep, storage, context))
             return false;
+        /// A table reached only through a scalar subquery is folded into a constant during
+        /// analysis: it has no plan leaf, so its exact columns are unknown and a hit must recheck
+        /// table-level SELECT. Tables in ordinary positions - including regular view bodies - are
+        /// expanded into plan leaves whose precise columns `collectPlanDependencies` records, so
+        /// they keep `columns_unknown = false` and the merge below preserves their column set.
+        dep.columns_unknown = inside_scalar_subquery;
         dependencies.push_back(std::move(dep));
 
         /// Recurse into view bodies: nested views and their tables are dependencies too.
         /// Names inside a view body resolve against the view's own database.
         /// Normal views store their body in `select.inner_query`; materialized views in
-        /// `select.select_query`.
+        /// `select.select_query`. A view referenced from a scalar subquery is itself folded, so
+        /// propagate `inside_scalar_subquery` into its body.
         if (storage->isView())
         {
             auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
             const auto & view_query = metadata->select.inner_query ? metadata->select.inner_query : metadata->select.select_query;
             if (view_query)
-                if (!collectImpl(*view_query, resolved_id.getDatabaseName(), /*in_set_or_table_position=*/ false))
+                if (!collectImpl(*view_query, resolved_id.getDatabaseName(), /*in_set_or_table_position=*/ false, inside_scalar_subquery))
                     return false;
         }
 
@@ -318,7 +360,8 @@ private:
     const ContextPtr & context;
     std::vector<QueryPlanCacheDependency> & dependencies;
     bool allow_scalar_subqueries = false;
-    std::unordered_set<String> visited;
+    /// (full table name, was reached inside a scalar subquery) - see `visitTableIdentifier`.
+    std::set<std::pair<String, bool>> visited;
 };
 
 /// Collects dependencies from the logical plan's leaf `ReadFromTable` steps,
@@ -494,24 +537,47 @@ std::optional<std::vector<QueryPlanCacheDependency>> collectQueryPlanCacheDepend
             return {};
     }
 
-    /// Deduplicate by (database, table). Plan dependencies are collected first and carry
-    /// the columns actually read; keep the first occurrence.
-    std::sort(dependencies.begin(), dependencies.end(),
-        [](const auto & lhs, const auto & rhs)
-        {
-            if (lhs.database != rhs.database)
-                return lhs.database < rhs.database;
-            if (lhs.table != rhs.table)
-                return lhs.table < rhs.table;
-            /// Entries with columns sort first so that dedup keeps them.
-            return lhs.columns.size() > rhs.columns.size();
-        });
-    dependencies.erase(
-        std::unique(dependencies.begin(), dependencies.end(),
-            [](const auto & lhs, const auto & rhs) { return lhs.database == rhs.database && lhs.table == rhs.table; }),
-        dependencies.end());
+    /// Merge dependencies that refer to the same (database, table). A storage can appear more
+    /// than once - a self-join reads it through two plan leaves, and a table can be read both in
+    /// the outer plan and inside a subquery or view body. The column requirements of every
+    /// occurrence must be combined: keeping only one (as a plain dedup would) could drop a column
+    /// that the cached plan still reads, letting a hit pass the access recheck after that
+    /// column's grant was revoked. Unioning the column sets, and treating any occurrence with
+    /// unknown columns as requiring table-level access, keeps the recheck at least as strict as
+    /// normal planning.
+    std::map<std::pair<String, String>, QueryPlanCacheDependency> merged;
+    for (auto & dep : dependencies)
+    {
+        auto [it, inserted] = merged.try_emplace({dep.database, dep.table}, std::move(dep));
+        if (inserted)
+            continue;
 
-    return dependencies;
+        auto & target = it->second;
+        /// uuid / metadata_version / row_policy_hash are identical across occurrences of the
+        /// same storage; only the access-relevant fields differ and must be combined.
+        target.columns_unknown = target.columns_unknown || dep.columns_unknown;
+        target.is_view = target.is_view || dep.is_view;
+        target.columns.insert(target.columns.end(), dep.columns.begin(), dep.columns.end());
+    }
+
+    std::vector<QueryPlanCacheDependency> result;
+    result.reserve(merged.size());
+    for (auto & [_, dep] : merged)
+    {
+        if (dep.columns_unknown)
+        {
+            /// Columns are rechecked at the table level; the partial column list is meaningless.
+            dep.columns.clear();
+        }
+        else
+        {
+            std::sort(dep.columns.begin(), dep.columns.end());
+            dep.columns.erase(std::unique(dep.columns.begin(), dep.columns.end()), dep.columns.end());
+        }
+        result.push_back(std::move(dep));
+    }
+
+    return result;
 }
 
 bool validateQueryPlanCacheEntry(const QueryPlanCacheEntry & entry, const ContextPtr & context)
@@ -527,6 +593,14 @@ bool validateQueryPlanCacheEntry(const QueryPlanCacheEntry & entry, const Contex
             return false;
 
         auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
+
+        /// Re-check engine and view-security eligibility. In UUID-less databases a `DROP`/`CREATE`
+        /// can replace a table with the same columns but an unsupported engine, or change a view's
+        /// SQL security, while the schema content hash stays equal; without this re-check a hit
+        /// could execute against a storage that a miss would have refused to cache.
+        if (!isStorageEligibleForPlanCache(storage, metadata))
+            return false;
+
         if (getMetadataVersionOrSchemaHash(metadata) != dep.metadata_version)
             return false;
 
@@ -544,15 +618,25 @@ void checkAccessForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, const Co
         if (isAllowedSystemTable(dep.database, dep.table))
             continue;
 
+        /// Columns are unknown (a view body or a scalar-subquery table discovered through the
+        /// AST closure): the baked plan may read any column, so a column-level recheck is not
+        /// enough - require table-level SELECT, matching the strictest access normal planning
+        /// could demand for this storage.
+        if (dep.columns_unknown)
+        {
+            context->checkAccess(AccessType::SELECT, dep.database, dep.table);
+            continue;
+        }
+
         if (!dep.columns.empty())
         {
             context->checkAccess(AccessType::SELECT, StorageID{dep.database, dep.table}, dep.columns);
             continue;
         }
 
-        /// No specific columns recorded (views, tables referenced only from scalar
-        /// subqueries): require SELECT on at least one column, mirroring the access
-        /// semantics of `SELECT count()`.
+        /// No specific columns recorded and they are known (e.g. a `count()` over the table):
+        /// require SELECT on at least one column, mirroring the access semantics of
+        /// `SELECT count()`.
         auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{dep.database, dep.table}, context);
         if (!storage)
             continue;
