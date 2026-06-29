@@ -483,7 +483,15 @@ public:
         ngram_to_index.emplace(key_holder, it, inserted);
 
         if (inserted)
-            it->getMapped() = static_cast<UInt32>(ngram_to_index.size() - 1);
+        {
+            const size_t new_index = ngram_to_index.size() - 1;
+            if (new_index > std::numeric_limits<UInt32>::max())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "NaiveBayes: the number of distinct n-grams exceeds the supported maximum of {}",
+                    std::numeric_limits<UInt32>::max());
+            it->getMapped() = static_cast<UInt32>(new_index);
+        }
 
         return it->getMapped();
     }
@@ -649,6 +657,14 @@ private:
         double alpha,
         double log_alpha)
     {
+        /// `ngram_offsets` holds UInt32 offsets into `class_deltas`, whose size never exceeds the number of
+        /// observations. Reject a source that would overflow those offsets rather than wrap them.
+        if (observations.size() > std::numeric_limits<UInt32>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "NaiveBayes: the number of n-gram/class observations exceeds the supported maximum of {}",
+                std::numeric_limits<UInt32>::max());
+
         ::sort(observations.begin(), observations.end());
 
         ngram_offsets.resize(vocabulary_size + 1);
