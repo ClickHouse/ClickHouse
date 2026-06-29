@@ -76,7 +76,7 @@ def set_default_configs():
 @pytest.fixture(scope="function", autouse=True)
 def clear_workloads_and_resources(set_default_configs):
     node.query(
-        f"""
+        """
         drop workload if exists production;
         drop workload if exists development;
         drop workload if exists admin;
@@ -125,7 +125,7 @@ def check_profile_event_for_query(workload, profile_event, amount=1):
 
 def test_s3_resource_request_granularity():
     node.query(
-        f"""
+        """
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE), value String CODEC(NONE)) engine=MergeTree() order by key settings min_bytes_for_wide_part=1e9, storage_policy='s3';
     """
@@ -137,35 +137,35 @@ def test_s3_resource_request_granularity():
 
     writes_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/admin'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/admin'"
         ).strip()
     )
     write_bytes_before = int(
         node.query(
-            f"select dequeued_cost from system.scheduler where resource='network_write' and path='/prio/admin'"
+            "select dequeued_cost from system.scheduler where resource='network_write' and path='/prio/admin'"
         ).strip()
     )
     write_budget_before = int(
         node.query(
-            f"select budget from system.scheduler where resource='network_write' and path='/prio/admin'"
+            "select budget from system.scheduler where resource='network_write' and path='/prio/admin'"
         ).strip()
     )
     node.query(
-        f"insert into data select number, randomString(10000000) from numbers(5) SETTINGS workload='admin'"
+        "insert into data select number, randomString(10000000) from numbers(5) SETTINGS workload='admin'"
     )
     writes_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/admin'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/admin'"
         ).strip()
     )
     write_bytes_after = int(
         node.query(
-            f"select dequeued_cost from system.scheduler where resource='network_write' and path='/prio/admin'"
+            "select dequeued_cost from system.scheduler where resource='network_write' and path='/prio/admin'"
         ).strip()
     )
     write_budget_after = int(
         node.query(
-            f"select budget from system.scheduler where resource='network_write' and path='/prio/admin'"
+            "select budget from system.scheduler where resource='network_write' and path='/prio/admin'"
         ).strip()
     )
 
@@ -180,39 +180,39 @@ def test_s3_resource_request_granularity():
     check_profile_event_for_query("admin", "SchedulerIOWriteRequests", write_requests)
     check_profile_event_for_query("admin", "SchedulerIOWriteBytes", write_bytes)
 
-    node.query(f"optimize table data final")
+    node.query("optimize table data final")
 
     reads_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/admin'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/admin'"
         ).strip()
     )
     read_bytes_before = int(
         node.query(
-            f"select dequeued_cost from system.scheduler where resource='network_read' and path='/prio/admin'"
+            "select dequeued_cost from system.scheduler where resource='network_read' and path='/prio/admin'"
         ).strip()
     )
     read_budget_before = int(
         node.query(
-            f"select budget from system.scheduler where resource='network_read' and path='/prio/admin'"
+            "select budget from system.scheduler where resource='network_read' and path='/prio/admin'"
         ).strip()
     )
     node.query(
-        f"select count() from data where not ignore(*) SETTINGS workload='admin'"
+        "select count() from data where not ignore(*) SETTINGS workload='admin'"
     )
     reads_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/admin'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/admin'"
         ).strip()
     )
     read_bytes_after = int(
         node.query(
-            f"select dequeued_cost from system.scheduler where resource='network_read' and path='/prio/admin'"
+            "select dequeued_cost from system.scheduler where resource='network_read' and path='/prio/admin'"
         ).strip()
     )
     read_budget_after = int(
         node.query(
-            f"select budget from system.scheduler where resource='network_read' and path='/prio/admin'"
+            "select budget from system.scheduler where resource='network_read' and path='/prio/admin'"
         ).strip()
     )
 
@@ -352,7 +352,7 @@ def test_s3_disk_move_partition_resource_scheduling():
 
 def test_s3_disk():
     node.query(
-        f"""
+        """
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
     """
@@ -380,19 +380,19 @@ def test_s3_disk():
 
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/admin'"
+            "select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/admin'"
         )
         == "1\n"
     )
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/fair/dev'"
+            "select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/fair/dev'"
         )
         == "1\n"
     )
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/fair/prod'"
+            "select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/fair/prod'"
         )
         == "1\n"
     )
@@ -417,19 +417,19 @@ def test_s3_disk():
 
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/admin'"
+            "select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/admin'"
         )
         == "1\n"
     )
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/fair/dev'"
+            "select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/fair/dev'"
         )
         == "1\n"
     )
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/fair/prod'"
+            "select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/fair/prod'"
         )
         == "1\n"
     )
@@ -437,7 +437,7 @@ def test_s3_disk():
 
 def test_merge_workload():
     node.query(
-        f"""
+        """
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
     """
@@ -445,28 +445,28 @@ def test_merge_workload():
 
     reads_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/merges'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/merges'"
         ).strip()
     )
     writes_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/merges'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/merges'"
         ).strip()
     )
 
-    node.query(f"insert into data select * from numbers(1e4)")
-    node.query(f"insert into data select * from numbers(2e4)")
-    node.query(f"insert into data select * from numbers(3e4)")
-    node.query(f"optimize table data final")
+    node.query("insert into data select * from numbers(1e4)")
+    node.query("insert into data select * from numbers(2e4)")
+    node.query("insert into data select * from numbers(3e4)")
+    node.query("optimize table data final")
 
     reads_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/merges'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/merges'"
         ).strip()
     )
     writes_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/merges'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/merges'"
         ).strip()
     )
 
@@ -476,7 +476,7 @@ def test_merge_workload():
 
 def test_merge_workload_override():
     node.query(
-        f"""
+        """
         drop table if exists prod_data;
         drop table if exists dev_data;
         create table prod_data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3', merge_workload='prod_merges';
@@ -486,52 +486,52 @@ def test_merge_workload_override():
 
     prod_reads_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_merges'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_merges'"
         ).strip()
     )
     prod_writes_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_merges'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_merges'"
         ).strip()
     )
     dev_reads_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_merges'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_merges'"
         ).strip()
     )
     dev_writes_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_merges'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_merges'"
         ).strip()
     )
 
-    node.query(f"insert into prod_data select * from numbers(1e4)")
-    node.query(f"insert into prod_data select * from numbers(2e4)")
-    node.query(f"insert into prod_data select * from numbers(3e4)")
-    node.query(f"insert into dev_data select * from numbers(1e4)")
-    node.query(f"insert into dev_data select * from numbers(2e4)")
-    node.query(f"insert into dev_data select * from numbers(3e4)")
-    node.query(f"optimize table prod_data final")
-    node.query(f"optimize table dev_data final")
+    node.query("insert into prod_data select * from numbers(1e4)")
+    node.query("insert into prod_data select * from numbers(2e4)")
+    node.query("insert into prod_data select * from numbers(3e4)")
+    node.query("insert into dev_data select * from numbers(1e4)")
+    node.query("insert into dev_data select * from numbers(2e4)")
+    node.query("insert into dev_data select * from numbers(3e4)")
+    node.query("optimize table prod_data final")
+    node.query("optimize table dev_data final")
 
     prod_reads_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_merges'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_merges'"
         ).strip()
     )
     prod_writes_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_merges'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_merges'"
         ).strip()
     )
     dev_reads_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_merges'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_merges'"
         ).strip()
     )
     dev_writes_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_merges'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_merges'"
         ).strip()
     )
 
@@ -543,37 +543,37 @@ def test_merge_workload_override():
 
 def test_mutate_workload():
     node.query(
-        f"""
+        """
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
     """
     )
 
-    node.query(f"insert into data select * from numbers(1e4)")
-    node.query(f"optimize table data final")
+    node.query("insert into data select * from numbers(1e4)")
+    node.query("optimize table data final")
 
     reads_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/mutations'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/mutations'"
         ).strip()
     )
     writes_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/mutations'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/mutations'"
         ).strip()
     )
 
-    node.query(f"alter table data update key = 1 where key = 42")
-    node.query(f"optimize table data final")
+    node.query("alter table data update key = 1 where key = 42")
+    node.query("optimize table data final")
 
     reads_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/mutations'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/mutations'"
         ).strip()
     )
     writes_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/mutations'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/mutations'"
         ).strip()
     )
 
@@ -583,7 +583,7 @@ def test_mutate_workload():
 
 def test_mutation_workload_override():
     node.query(
-        f"""
+        """
         drop table if exists prod_data;
         drop table if exists dev_data;
         create table prod_data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3', mutation_workload='prod_mutations';
@@ -591,55 +591,55 @@ def test_mutation_workload_override():
     """
     )
 
-    node.query(f"insert into prod_data select * from numbers(1e4)")
-    node.query(f"optimize table prod_data final")
-    node.query(f"insert into dev_data select * from numbers(1e4)")
-    node.query(f"optimize table dev_data final")
+    node.query("insert into prod_data select * from numbers(1e4)")
+    node.query("optimize table prod_data final")
+    node.query("insert into dev_data select * from numbers(1e4)")
+    node.query("optimize table dev_data final")
 
     prod_reads_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_mutations'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_mutations'"
         ).strip()
     )
     prod_writes_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_mutations'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_mutations'"
         ).strip()
     )
     dev_reads_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_mutations'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_mutations'"
         ).strip()
     )
     dev_writes_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_mutations'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_mutations'"
         ).strip()
     )
 
-    node.query(f"alter table prod_data update key = 1 where key = 42")
-    node.query(f"optimize table prod_data final")
-    node.query(f"alter table dev_data update key = 1 where key = 42")
-    node.query(f"optimize table dev_data final")
+    node.query("alter table prod_data update key = 1 where key = 42")
+    node.query("optimize table prod_data final")
+    node.query("alter table dev_data update key = 1 where key = 42")
+    node.query("optimize table dev_data final")
 
     prod_reads_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_mutations'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_mutations'"
         ).strip()
     )
     prod_writes_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_mutations'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_mutations'"
         ).strip()
     )
     dev_reads_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_mutations'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_mutations'"
         ).strip()
     )
     dev_writes_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_mutations'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_mutations'"
         ).strip()
     )
 
@@ -651,7 +651,7 @@ def test_mutation_workload_override():
 
 def test_merge_workload_change():
     node.query(
-        f"""
+        """
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
     """
@@ -671,10 +671,10 @@ def test_merge_workload_change():
             ).strip()
         )
 
-        node.query(f"insert into data select * from numbers(1e4)")
-        node.query(f"insert into data select * from numbers(2e4)")
-        node.query(f"insert into data select * from numbers(3e4)")
-        node.query(f"optimize table data final")
+        node.query("insert into data select * from numbers(1e4)")
+        node.query("insert into data select * from numbers(2e4)")
+        node.query("insert into data select * from numbers(3e4)")
+        node.query("optimize table data final")
 
         reads_after = int(
             node.query(
@@ -693,7 +693,7 @@ def test_merge_workload_change():
 
 def test_mutation_workload_change():
     node.query(
-        f"""
+        """
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
     """
@@ -702,8 +702,8 @@ def test_mutation_workload_change():
     for env in ["prod", "dev"]:
         update_workloads_config(mutation_workload=f"{env}_mutations")
 
-        node.query(f"insert into data select * from numbers(1e4)")
-        node.query(f"optimize table data final")
+        node.query("insert into data select * from numbers(1e4)")
+        node.query("optimize table data final")
 
         reads_before = int(
             node.query(
@@ -716,8 +716,8 @@ def test_mutation_workload_change():
             ).strip()
         )
 
-        node.query(f"alter table data update key = 1 where key = 42")
-        node.query(f"optimize table data final")
+        node.query("alter table data update key = 1 where key = 42")
+        node.query("optimize table data final")
 
         reads_after = int(
             node.query(
@@ -736,7 +736,7 @@ def test_mutation_workload_change():
 
 def test_create_workload():
     node.query(
-        f"""
+        """
         create resource io_write (write disk s3_no_resource);
         create resource io_read (read disk s3_no_resource);
         create workload all settings max_bytes_inflight = 1000000 for io_write, max_bytes_inflight = 2000000 for io_read;
@@ -749,43 +749,43 @@ def test_create_workload():
     def do_checks():
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/admin/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/admin/%' and type='fifo'"
             )
             == "2\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/admin' and type='unified' and priority=0"
+                "select count() from system.scheduler where path ilike '%/admin' and type='workload' and priority=0"
             )
             == "2\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/production/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/production/%' and type='fifo'"
             )
             == "2\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/production' and type='unified' and weight=9"
+                "select count() from system.scheduler where path ilike '%/production' and type='workload' and weight=9"
             )
             == "2\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
             )
             == "2\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/all/%' and type='inflight_limit' and resource='io_write' and max_cost=1000000"
+                "select count() from system.scheduler where path ilike '%/all/%' and type='inflight_limit' and resource='io_write' and max_cost=1000000"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/all/%' and type='inflight_limit' and resource='io_read' and max_cost=2000000"
+                "select count() from system.scheduler where path ilike '%/all/%' and type='inflight_limit' and resource='io_read' and max_cost=2000000"
             )
             == "1\n"
         )
@@ -862,14 +862,14 @@ def test_workload_hierarchy_changes():
 
 def test_resource_read_and_write():
     node.query(
-        f"""
+        """
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
     """
     )
 
     node.query(
-        f"""
+        """
         create resource io_write (write disk s3_no_resource);
         create resource io_read (read disk s3_no_resource);
         create workload all settings max_bytes_inflight = 1000000;
@@ -901,19 +901,19 @@ def test_resource_read_and_write():
 
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/admin/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/admin/%' and type='fifo'"
         )
         == "1\n"
     )
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/development/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/development/%' and type='fifo'"
         )
         == "1\n"
     )
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/production/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/production/%' and type='fifo'"
         )
         == "1\n"
     )
@@ -938,19 +938,19 @@ def test_resource_read_and_write():
 
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/admin/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/admin/%' and type='fifo'"
         )
         == "1\n"
     )
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/development/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/development/%' and type='fifo'"
         )
         == "1\n"
     )
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/production/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/production/%' and type='fifo'"
         )
         == "1\n"
     )
@@ -958,33 +958,33 @@ def test_resource_read_and_write():
 
 def test_resource_any_disk():
     node.query(
-        f"""
+        """
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
     """
     )
 
     node.query(
-        f"""
+        """
         create resource io (write any disk, read any disk);
         create workload all settings max_bytes_inflight = 1000000;
     """
     )
 
-    node.query(f"insert into data select * from numbers(1e5) settings workload='all'")
+    node.query("insert into data select * from numbers(1e5) settings workload='all'")
 
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='fifo'"
         )
         == "1\n"
     )
 
-    node.query(f"select sum(key*key) from data settings workload='all'")
+    node.query("select sum(key*key) from data settings workload='all'")
 
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='fifo'"
         )
         == "1\n"
     )
@@ -1099,24 +1099,24 @@ def test_workload_entity_keeper_storage():
 
 def test_throw_on_unknown_workload():
     node.query(
-        f"""
+        """
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
     """
     )
 
     node.query(
-        f"""
+        """
         create resource io (write any disk, read any disk);
         create workload all settings max_bytes_inflight = 1000000;
     """
     )
 
-    node.query(f"insert into data select * from numbers(1e5)")
+    node.query("insert into data select * from numbers(1e5)")
 
     assert (
         node.query(
-            f"select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='fifo'"
         )
         == "0\n"
     )
@@ -1124,7 +1124,7 @@ def test_throw_on_unknown_workload():
     update_workloads_config(throw_on_unknown_workload="true")
 
     try:
-        node.query(f"insert into data select * from numbers(1e5)")
+        node.query("insert into data select * from numbers(1e5)")
         assert False, "Exception have to be thrown"
     except Exception as ex:
         assert "RESOURCE_ACCESS_DENIED" in str(ex)
