@@ -1152,7 +1152,7 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesPreprocessedTailAboveS
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest test("./logs");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb", "./logs");
+    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./logs");
     DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
@@ -1202,7 +1202,7 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesEphemeralTailForCloseP
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest test("./logs");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb", "./logs");
+    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./logs");
     DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
