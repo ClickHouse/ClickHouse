@@ -8,6 +8,7 @@
 #include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <string_view>
 #include <unordered_map>
@@ -43,7 +44,9 @@ class WriteBuffer;
 
 /// List of available types supported in Settings object (!= MergeTreeSettings, MySQLSettings, etc)
 #define COMMON_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+    M(CLASS_NAME, AggregateFunctionInputFormat) \
     M(CLASS_NAME, ArrowCompression) \
+    M(CLASS_NAME, ArrowFlightDescriptorType) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, BoolAuto) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
@@ -60,15 +63,24 @@ class WriteBuffer;
     M(CLASS_NAME, DistributedProductMode) \
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
+    M(CLASS_NAME, ExplainQueryPlanDefault) \
     M(CLASS_NAME, Float) \
+    M(CLASS_NAME, FloatAuto) \
+    M(CLASS_NAME, GeoJSONUnsupportedGeometryHandling) \
+    M(CLASS_NAME, IcebergMetadataLogLevel) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int32) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, JoinStrictness) \
+    M(CLASS_NAME, JemallocProfileFormat) \
     M(CLASS_NAME, LightweightMutationProjectionMode) \
+    M(CLASS_NAME, LightweightDeleteMode) \
+    M(CLASS_NAME, AlterUpdateMode) \
+    M(CLASS_NAME, UpdateParallelMode) \
     M(CLASS_NAME, LoadBalancing) \
     M(CLASS_NAME, LocalFSReadMethod) \
     M(CLASS_NAME, LogQueriesType) \
@@ -92,18 +104,29 @@ class WriteBuffer;
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, SetOperationMode) \
     M(CLASS_NAME, ShortCircuitFunctionEvaluation) \
+    M(CLASS_NAME, S3UriStyle) \
     M(CLASS_NAME, SQLSecurityType) \
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
+    M(CLASS_NAME, TextIndexPostingListApplyMode) \
     M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, TotalsMode) \
     M(CLASS_NAME, TransactionsWaitCSNMode) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
-    M(CLASS_NAME, URI)
+    M(CLASS_NAME, URI) \
+    M(CLASS_NAME, VectorSearchFilterStrategy) \
+    M(CLASS_NAME, GeoToH3ArgumentOrder) \
+    M(CLASS_NAME, ObjectStorageGranularityLevel) \
+    M(CLASS_NAME, DecorrelationJoinKind) \
+    M(CLASS_NAME, JoinOrderAlgorithm) \
+    M(CLASS_NAME, DeduplicateInsertSelectMode) \
+    M(CLASS_NAME, DeduplicateInsertMode) \
+    M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy)
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)
+
 struct Settings
 {
     Settings();
@@ -120,6 +143,9 @@ struct Settings
     bool has(std::string_view name) const;
     bool isChanged(std::string_view name) const;
     SettingsTierType getTier(std::string_view name) const;
+    std::string_view getDescription(std::string_view name) const;
+    std::string_view getTypeName(std::string_view name) const;
+    String getDefaultValueString(std::string_view name) const;
 
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;
@@ -127,14 +153,15 @@ struct Settings
     void set(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
 
-    std::vector<String> getHints(const String & name) const;
+    VectorWithMemoryTracking<String> getHints(const String & name) const;
     String toString() const;
 
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
-    std::vector<std::string_view> getAllRegisteredNames() const;
-    std::vector<std::string_view> getChangedAndObsoleteNames() const;
-    std::vector<std::string_view> getUnchangedNames() const;
+    VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
+    VectorWithMemoryTracking<std::string_view> getAllAliasNames() const;
+    VectorWithMemoryTracking<std::string_view> getChangedAndObsoleteNames() const;
+    VectorWithMemoryTracking<std::string_view> getUnchangedNames() const;
 
     void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToMapColumn(IColumn * column, bool changed_only = true) const;

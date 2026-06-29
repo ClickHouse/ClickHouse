@@ -222,17 +222,18 @@ private:
     UInt8 ALWAYS_INLINE read(UInt8 value_l, UInt8 value_r) const
     {
         /// The cell overlaps two bytes.
-        return ((value_l >> offset_l) & ((1 << (8 - offset_l)) - 1))
-            | ((value_r & ((1 << offset_r) - 1)) << (8 - offset_l));
+        return static_cast<UInt8>(
+            ((value_l >> offset_l) & ((1 << (8 - offset_l)) - 1))
+             | ((value_r & ((1 << offset_r) - 1)) << (8 - offset_l)));
     }
 
-    size_t index_l;
-    size_t offset_l;
-    size_t index_r;
-    size_t offset_r;
+    size_t index_l{};
+    size_t offset_l{};
+    size_t index_r{};
+    size_t offset_r{};
 
-    UInt8 * content_l;
-    UInt8 * content_r;
+    UInt8 * content_l{};
+    UInt8 * content_r{};
 
     /// Checks
     static_assert((content_width > 0) && (content_width < 8), "Invalid parameter value");

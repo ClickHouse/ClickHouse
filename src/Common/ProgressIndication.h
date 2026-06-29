@@ -1,17 +1,15 @@
 #pragma once
 
 #include <IO/Progress.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/EventRateMeter.h>
 
 #include <iostream>
 #include <mutex>
-#include <queue>
 #include <unistd.h>
 #include <unordered_map>
-#include <unordered_set>
 
 namespace DB
 {
@@ -25,6 +23,7 @@ struct ThreadEventData
     UInt64 user_ms      = 0;
     UInt64 system_ms    = 0;
     UInt64 memory_usage = 0;
+    UInt64 temp_data_on_disk_usage = 0;
 
     // -1 used as flag 'is not shown for old servers'
     Int64 peak_memory_usage = -1;
@@ -72,7 +71,7 @@ public:
     void setFileProgressCallback(ContextMutablePtr context, WriteBufferFromFileDescriptor & message, std::mutex & message_mutex);
 
     /// How much seconds passed since query execution start.
-    double elapsedSeconds() const { return getElapsedNanoseconds() / 1e9; }
+    double elapsedSeconds() const { return static_cast<double>(getElapsedNanoseconds()) / 1e9; }
 
     struct MemoryUsage
     {
@@ -82,6 +81,15 @@ public:
     };
 
     MemoryUsage getMemoryUsage() const;
+
+    struct TempDataOnDiskUsage
+    {
+        UInt64 total = 0;
+        UInt64 max = 0;
+    };
+
+    /// Total amount of temporary data on disk used by the query across all hosts and the maximum per host (in bytes).
+    TempDataOnDiskUsage getTempDataOnDiskUsage() const;
 
     void updateThreadEventData(HostToTimesMap & new_hosts_data);
 

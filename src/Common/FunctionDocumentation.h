@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Common/VersionNumber.h>
-#include <string>
+#include <base/types.h>
+#include <source_location>
 #include <vector>
 
 
@@ -17,7 +18,7 @@ namespace DB
   * - the documentation can be extracted by external tools such as SQL editors
   *   in machine-readable form and presented in human readable form;
   * - the documentation can be generated in various formats;
-  * - it is easy to generate a documentation with information about the version when the feature appeared or changed;
+  * - it is easy to generate documentation with information about the version when the feature appeared or changed;
   * - it is easy to point to the source code from the documentation;
   * - it is easy to point to the tests that covered every component, and order the tests by relevance;
   * - it is easy to point to the authors of every feature;
@@ -42,24 +43,33 @@ namespace DB
   */
 struct FunctionDocumentation
 {
-    using Description = std::string;
+    using Description = String;
 
-    using Syntax = std::string;
+    using Syntax = String;
 
     struct Argument
     {
-        std::string name;
-        std::string description;
+        String name;                     /// E.g. "y"
+        String description;              /// E.g. "The divisor."
+        std::vector<String> types = {};  /// E.g. {"(U)Int*", "Float*"}
+                                         /// Default initialized only during a transition period, see 'argumentsAsString'.
     };
-    using Arguments = std::vector<Argument>;
 
-    using ReturnedValue = std::string;
+    using Arguments = std::vector<Argument>;  /// For all functions
+    using Parameters = std::vector<Argument>; /// For aggregate functions
+
+    struct ReturnedValue
+    {
+        String description;              /// E.g. "Returns the remainder of the division."
+        std::vector<String> types = {};  /// E.g. {"Float32"}
+                                         /// Default initialized only during a transition period
+    };
 
     struct Example
     {
-        std::string name;
-        std::string query;
-        std::string result;
+        String name;
+        String query;
+        String result;
     };
     using Examples = std::vector<Example>;
 
@@ -72,6 +82,7 @@ struct FunctionDocumentation
         Unknown,
 
         /// Regular functions
+        AI,
         Arithmetic,
         Array,
         Bit,
@@ -79,14 +90,16 @@ struct FunctionDocumentation
         Comparison,
         Conditional,
         DateAndTime,
+        Decimal,
         Dictionary,
         Dynamic,
         Distance,
         EmbeddedDictionary,
         Geo,
+        GeoPolygon,
         Encoding,
         Encryption,
-        File,
+        Financial,
         Hash,
         IPAddress,
         Introspection,
@@ -96,8 +109,10 @@ struct FunctionDocumentation
         Map,
         Mathematical,
         NLP,
-        Nullable,
+        Null,
+        NumericIndexedVector,
         Other,
+        QBit,
         RandomNumber,
         Rounding,
         StringReplacement,
@@ -114,25 +129,46 @@ struct FunctionDocumentation
         UniqTheta,
         Variant,
 
-        /// Table functions
+        /// Internal utility functions, not documented in the user docs
+        Internal,
+
+        /// Other types of functions
+        AggregateFunction,
         TableFunction
     };
 
-    using Related = std::vector<std::string>;
+    using Related = std::vector<String>;
 
     /// TODO Fields with {} initialization are optional. We should make all fields non-optional.
     Description description;                      /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
     Syntax syntax {};                             /// E.g. "position(haystack, needle)"
-    Arguments arguments {};                       /// E.g. ["haystack — String in which the search is performed. String.", "needle — Substring to be searched. String."]
-    ReturnedValue returned_value {};              /// E.g. "Starting position in bytes and counting from 1, if the substring was found."
+    Arguments arguments {};                       /// E.g. {{"haystack", "String in which the search is performed.", {"String"}}, {"needle", "Substring to be searched.", {"String"}}}
+    Parameters parameters {};                     /// E.g. {{"level"}, "The quantile level. 0.5 is the median.", {"Float*"}}
+    ReturnedValue returned_value {};              /// E.g. {"Starting position in bytes and counting from 1, if the substring was found.", {"(U)Int*"}}
     Examples examples {};                         ///
     IntroducedIn introduced_in {VERSION_UNKNOWN}; /// E.g. {25, 5}
-    Category category;                            /// E.g. Category::DatesAndTimes
+    Category category{};                            /// E.g. Category::DatesAndTimes
 
-    std::string argumentsAsString() const;
-    std::string examplesAsString() const;
-    std::string introducedInAsString() const;
-    std::string categoryAsString() const;
+    /// The source file where this documentation is defined. Captured automatically at the construction site (the
+    /// function registration), so it points to the source code that documents the function; do not set it explicitly.
+    /// The path is as produced by the compiler; `system.documentation` exposes it relative to the repository root.
+    /// NOTE: this only works when the object is initialized at its construction site, i.e. with aggregate/designated
+    /// initialization (`FunctionDocumentation doc{...}`) or value-initialization (`FunctionDocumentation doc{}`).
+    /// A default-initialized object (`FunctionDocumentation doc;`, without braces) records this header instead, so
+    /// always use braces when building the documentation field by field afterwards.
+    const char * source = std::source_location::current().file_name();
+
+    String syntaxAsString() const;
+    String argumentsAsString() const;
+    String parametersAsString() const;
+    String returnedValueAsString() const;
+    String examplesAsString() const;
+    String introducedInAsString() const;
+    String categoryAsString() const;
+
+    /// Use as a placeholder for internal functions that have no public documentation
+    static FunctionDocumentation INTERNAL_FUNCTION_DOCS;
+
 };
 
 }

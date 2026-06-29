@@ -1,7 +1,7 @@
 from helpers.cluster import ClickHouseCluster
 
 
-def test_startup_scripts():
+def test_enable_username_access_type():
     cluster = ClickHouseCluster(__file__)
 
     node = cluster.add_instance(
@@ -17,11 +17,12 @@ def test_startup_scripts():
         cluster.start()
         node.query("CREATE USER foobar")
         node.query("GRANT CREATE USER ON * TO foobar")
+        node.query("GRANT SET DEFINER ON * TO foobar")
         assert (
-                node.query(
+                sorted(node.query(
                     "SHOW GRANTS FOR foobar"
-                )
-                == "GRANT CREATE USER ON *.* TO foobar\n"
+                ).strip().split('\n'))
+                == ["GRANT CREATE USER ON *.* TO foobar", "GRANT SET DEFINER ON * TO foobar"]
         )
         node.query("DROP USER foobar")
     finally:

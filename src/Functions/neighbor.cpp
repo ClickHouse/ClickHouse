@@ -35,7 +35,7 @@ namespace
 // | c1 | c2 |
 // | 10 | 20 |
 // | 20 | 0  |
-class FunctionNeighbor : public IFunction
+class FunctionNeighbor final : public IFunction
 {
 public:
     static constexpr auto name = "neighbor";
@@ -220,7 +220,67 @@ public:
 
 REGISTER_FUNCTION(Neighbor)
 {
-    factory.registerFunction<FunctionNeighbor>();
+    FunctionDocumentation::Description description = R"(
+Returns a value from a column at a specified offset from the current row.
+This function is deprecated and error-prone because it operates on the physical order of data blocks which may not correspond to the logical order expected by users.
+Consider using proper window functions instead.
+
+The function can be enabled by setting `allow_deprecated_error_prone_window_functions = 1`.
+)";
+    FunctionDocumentation::Syntax syntax = "neighbor(column, offset[, default_value])";
+    FunctionDocumentation::Arguments arguments = {
+        {"column", "The source column.", {"Any"}},
+        {"offset", "The offset from the current row. Positive values look forward, negative values look backward.", {"Integer"}},
+        {"default_value", "Optional. The value to return if the offset goes beyond the data bounds. If not specified, uses the default value for the column type.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a value from the specified offset, or default if out of bounds.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
+            )",
+            R"(
+┌─number─┬─neighbor(number, 2)─┐
+│      0 │                   2 │
+│      1 │                   3 │
+│      2 │                   4 │
+│      3 │                   5 │
+│      4 │                   6 │
+│      5 │                   7 │
+│      6 │                   8 │
+│      7 │                   9 │
+│      8 │                   0 │
+│      9 │                   0 │
+└────────┴─────────────────────┘
+            )"
+        },
+        {
+            "With default value",
+            R"(
+SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
+            )",
+            R"(
+┌─number─┬─neighbor(number, 2, 999)─┐
+│      0 │                        2 │
+│      1 │                        3 │
+│      2 │                        4 │
+│      3 │                        5 │
+│      4 │                        6 │
+│      5 │                        7 │
+│      6 │                        8 │
+│      7 │                        9 │
+│      8 │                      999 │
+│      9 │                      999 │
+└────────┴──────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionNeighbor>(documentation);
 }
 
 }

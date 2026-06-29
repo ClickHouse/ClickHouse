@@ -1,6 +1,8 @@
 #pragma once
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/CacheLine.h>
+#include <Common/SharedMutex.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/defines.h>
 
@@ -12,15 +14,11 @@
 #include <memory>
 #include <variant>
 
-namespace rocksdb
-{
-struct Options;
-}
-
 namespace DB
 {
 
 class KeeperDispatcher;
+enum SnapshotVersion : uint8_t;
 
 struct CoordinationSettings;
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
@@ -62,24 +60,24 @@ public:
     std::vector<DiskPtr> getOldSnapshotDisks() const;
     void setSnapshotDisk(DiskPtr disk);
 
+    /// Test-only: set the latest-snapshot storage alone (`setSnapshotDisk` overwrites both).
+    void setLatestSnapshotDisk(DiskPtr disk);
+
     DiskPtr getStateFileDisk() const;
     void setStateFileDisk(DiskPtr disk);
 
     const std::unordered_map<std::string, std::string> & getSystemNodesWithData() const;
     const KeeperFeatureFlags & getFeatureFlags() const;
+    SnapshotVersion getWriteSnapshotVersion() const;
 
     void dumpConfiguration(WriteBufferFromOwnString & buf) const;
 
     constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
 
-    void setRocksDBDisk(DiskPtr disk);
-    DiskPtr getTemporaryRocksDBDisk() const;
-
-    void setRocksDBOptions(std::shared_ptr<rocksdb::Options> rocksdb_options_ = nullptr);
-    std::shared_ptr<rocksdb::Options> getRocksDBOptions() const { return rocksdb_options; }
-
     UInt64 getKeeperMemorySoftLimit() const { return memory_soft_limit; }
     void updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config);
+
+    void updateSettings(CoordinationSettingsPtr new_settings);
 
     bool setShutdownCalled();
     const auto & isShutdownCalled() const
@@ -97,20 +95,28 @@ public:
     /// returns true if the log is committed, false if timeout happened
     bool waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms);
 
+    /// Settings that were loaded on startup. Can be used for non-hot-reloadable settings.
+    /// Returns a reference that remains valid for the lifetime of KeeperContext.
+    const CoordinationSettings & getFixedCoordinationSettings() const;
+
+    /// Settings that reflect hot-reloaded config changes.
+    /// Only settings marked with HOT_RELOAD flag are updated.
+    /// The returned reference is valid only until the next call to this function in the same thread.
+    /// A little slower than getFixedCoordinationSettings(), but not by much, can be used in hot loops.
+    /// Do not retain the returned reference; use the value immediately or copy it.
     const CoordinationSettings & getCoordinationSettings() const;
 
-    int64_t getPrecommitSleepMillisecondsForTesting() const
-    {
-        return precommit_sleep_ms_for_testing;
-    }
+    int64_t getPrecommitSleepMillisecondsForTesting() const;
 
-    double getPrecommitSleepProbabilityForTesting() const
-    {
-        chassert(precommit_sleep_probability_for_testing >= 0 && precommit_sleep_probability_for_testing <= 1);
-        return precommit_sleep_probability_for_testing;
-    }
+    double getPrecommitSleepProbabilityForTesting() const;
+
+    bool shouldBlockACL() const;
+    void setBlockACL(bool block_acl_);
 
     bool isOperationSupported(Coordination::OpNum operation) const;
+
+    bool shouldLogRequests() const;
+    void setLogRequests(bool log_requests_);
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -118,7 +124,6 @@ private:
     void initializeFeatureFlags(const Poco::Util::AbstractConfiguration & config);
     void initializeDisks(const Poco::Util::AbstractConfiguration & config);
 
-    Storage getRocksDBPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
@@ -141,14 +146,11 @@ private:
 
     std::shared_ptr<DiskSelector> disk_selector;
 
-    Storage rocksdb_storage;
     Storage log_storage;
     Storage latest_log_storage;
     Storage snapshot_storage;
     Storage latest_snapshot_storage;
     Storage state_file_storage;
-
-    std::shared_ptr<rocksdb::Options> rocksdb_options;
 
     std::vector<std::string> old_log_disk_names;
     std::vector<std::string> old_snapshot_disk_names;
@@ -172,7 +174,14 @@ private:
     int64_t precommit_sleep_ms_for_testing = 0;
     double precommit_sleep_probability_for_testing = 0.0;
 
-    CoordinationSettingsPtr coordination_settings;
+    alignas(DB::CH_CACHE_LINE_SIZE) std::atomic<uint64_t> settings_version;
+    alignas(DB::CH_CACHE_LINE_SIZE) mutable SharedMutex settings_mutex;
+    CoordinationSettingsPtr fixed_settings; // immutable
+    CoordinationSettingsPtr dynamic_settings; // hot-reloaded on config file change
+
+    bool block_acl = false;
+
+    std::atomic<bool> log_requests = false;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

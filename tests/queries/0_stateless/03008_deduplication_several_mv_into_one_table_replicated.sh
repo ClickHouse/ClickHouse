@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-flaky-check
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-flaky-check, no-msan
 # Tag no-flaky-check -- not compatible with ThreadFuzzer
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -47,6 +47,7 @@ for insert_method in "InsertSelect" "InsertValues"; do
                                 --deduplicate-dst-table $deduplicate_dst_table \
                                 --insert-unique-blocks $insert_unique_blocks \
                                 --get-logs false \
+                                --debug-on-fail True \
                             )
                         " && echo OK || echo FAIL
                     done

@@ -3,6 +3,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 #include <optional>
 
@@ -67,7 +68,7 @@ using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
 AdditionalShardFilterGenerator
 getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context, const ColumnsDescription & columns);
 
-bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & context);
+bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context);
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
 ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query_plan);
 
@@ -76,7 +77,7 @@ ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query
 /// (currently SELECT, DESCRIBE).
 void executeQuery(
     QueryPlan & query_plan,
-    const Block & header,
+    SharedHeader header,
     QueryProcessingStage::Enum processed_stage,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
@@ -99,9 +100,11 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
-    const Block & header,
+    SharedHeader header,
     QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
+    QueryTreeNodePtr query_tree,
+    PlannerContextPtr planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
     QueryPlanStepPtr read_from_merge_tree);
@@ -131,7 +134,7 @@ void executeQueryWithParallelReplicasCustomKey(
     const ColumnsDescription & columns,
     const StorageSnapshotPtr & snapshot,
     QueryProcessingStage::Enum processed_stage,
-    const Block & header,
+    SharedHeader header,
     ContextPtr context);
 
 void executeQueryWithParallelReplicasCustomKey(

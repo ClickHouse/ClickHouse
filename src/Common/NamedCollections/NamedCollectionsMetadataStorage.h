@@ -3,6 +3,7 @@
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {

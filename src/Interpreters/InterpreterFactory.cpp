@@ -1,10 +1,12 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTCheckDatabaseQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
@@ -15,6 +17,7 @@
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTParallelWithQuery.h>
+#include <Parsers/ASTHypotheticalIndexQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -38,11 +41,13 @@
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTCreateModelQuery.h>
 #include <Parsers/ASTDropModelQuery.h>
+#include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
@@ -55,6 +60,7 @@
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/Access/ASTShowPrivilegesQuery.h>
+#include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/ASTDescribeCacheQuery.h>
 
 #include <Interpreters/InterpreterFactory.h>
@@ -63,9 +69,9 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/Context.h>
 
 #include <Parsers/ASTSystemQuery.h>
-#include <Parsers/ASTExternalDDLQuery.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
@@ -75,6 +81,7 @@ namespace ProfileEvents
 {
     extern const Event Query;
     extern const Event InitialQuery;
+    extern const Event InitialSelectQuery;
     extern const Event QueriesWithSubqueries;
     extern const Event SelectQuery;
     extern const Event InsertQuery;
@@ -111,7 +118,11 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 {
     ProfileEvents::increment(ProfileEvents::Query);
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
         ProfileEvents::increment(ProfileEvents::InitialQuery);
+         if (!query || query->as<ASTSelectQuery>() || query->as<ASTSelectWithUnionQuery>())
+            ProfileEvents::increment(ProfileEvents::InitialSelectQuery);
+    }
     /// SELECT and INSERT query will handle QueriesWithSubqueries on their own.
     if (!(query->as<ASTSelectQuery>() ||
         query->as<ASTSelectWithUnionQuery>() ||
@@ -235,7 +246,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTExplainQuery>())
     {
         const auto kind = query->as<ASTExplainQuery>()->getKind();
-        if (kind == ASTExplainQuery::ParsedAST || kind == ASTExplainQuery::AnalyzedSyntax)
+        if (kind == ASTExplainQuery::ParsedAST)
             context->setSetting("allow_experimental_analyzer", false);
 
         interpreter_name = "InterpreterExplainQuery";
@@ -252,7 +263,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterAlterNamedCollectionQuery";
     }
-    else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>())
+    else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>() || query->as<ASTCheckDatabaseQuery>())
     {
         interpreter_name = "InterpreterCheckQuery";
     }
@@ -283,6 +294,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTCreateRowPolicyQuery>())
     {
         interpreter_name = "InterpreterCreateRowPolicyQuery";
+    }
+    else if (query->as<ASTCreateMaskingPolicyQuery>())
+    {
+        interpreter_name = "InterpreterCreateMaskingPolicyQuery";
     }
     else if (query->as<ASTCreateSettingsProfileQuery>())
     {
@@ -328,15 +343,11 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterShowPrivilegesQuery";
     }
-    else if (query->as<ASTExternalDDLQuery>())
-    {
-        interpreter_name = "InterpreterExternalDDLQuery";
-    }
     else if (query->as<ASTTransactionControl>())
     {
         interpreter_name = "InterpreterTransactionControlQuery";
     }
-    else if (query->as<ASTCreateFunctionQuery>())
+    else if (query->as<ASTCreateSQLFunctionQuery>() || query->as<ASTCreateWasmFunctionQuery>())
     {
         interpreter_name = "InterpreterCreateFunctionQuery";
     }
@@ -372,6 +383,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterDropIndexQuery";
     }
+    else if (query->as<ASTHypotheticalIndexQuery>())
+    {
+        interpreter_name = "InterpreterHypotheticalIndexQuery";
+    }
     else if (query->as<ASTBackupQuery>())
     {
         interpreter_name = "InterpreterBackupQuery";
@@ -379,6 +394,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTDeleteQuery>())
     {
         interpreter_name = "InterpreterDeleteQuery";
+    }
+    else if (query->as<ASTUpdateQuery>())
+    {
+        interpreter_name = "InterpreterUpdateQuery";
     }
     else if (query->as<ASTParallelWithQuery>())
     {
@@ -391,6 +410,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTDropModelQuery>())
     {
         interpreter_name = "InterpreterDropModelQuery";
+    }
+    else if (query->as<ASTExecuteAsQuery>())
+    {
+        interpreter_name = "InterpreterExecuteAsQuery";
     }
 
     if (!interpreters.contains(interpreter_name))

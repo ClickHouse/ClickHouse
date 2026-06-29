@@ -6,10 +6,10 @@
 namespace DB
 {
 
-class ApplySquashingTransform : public ExceptionKeepingTransform
+class ApplySquashingTransform final : public ExceptionKeepingTransform
 {
 public:
-    explicit ApplySquashingTransform(const Block & header);
+    explicit ApplySquashingTransform(SharedHeader header);
 
     String getName() const override { return "ApplySquashingTransform"; }
 

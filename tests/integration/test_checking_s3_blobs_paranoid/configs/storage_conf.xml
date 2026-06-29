@@ -43,4 +43,11 @@
     <merge_tree>
         <storage_policy>s3</storage_policy>
     </merge_tree>
+
+    <!-- increase for concurrency test -->
+    <background_schedule_pool_size>512</background_schedule_pool_size>
+    <background_pool_size>16</background_pool_size>
+    <max_thread_pool_size>10000</max_thread_pool_size>
+    <thread_pool_queue_size>10000</thread_pool_queue_size>
+
 </clickhouse>

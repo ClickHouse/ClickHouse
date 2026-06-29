@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class StreamInQueryResultCacheTransform : public ISimpleTransform
+class StreamInQueryResultCacheTransform final : public ISimpleTransform
 {
 public:
     StreamInQueryResultCacheTransform(

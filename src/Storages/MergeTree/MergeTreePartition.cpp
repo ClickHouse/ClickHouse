@@ -14,7 +14,6 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
-#include <base/hex.h>
 #include <Core/Block.h>
 
 
@@ -199,11 +198,51 @@ namespace
             hash.update(x);
         }
     };
+
+    /// During INSERT, partition values are extracted from columns via `column->get()`,
+    /// which produces UInt64 Fields for Bool columns (ColumnUInt8 → NearestFieldType → UInt64).
+    /// But the query path (ALTER TABLE DROP/DETACH/ATTACH PARTITION) uses `convertFieldToType`,
+    /// which faithfully produces Bool-typed Fields. Since `LegacyFieldVisitorHash` hashes
+    /// Bool (type tag 28) differently from UInt64 (type tag 1), partition IDs won't match.
+    /// We cannot change the INSERT path or the hash without breaking existing partition IDs on disk,
+    /// so normalize Bool → UInt64 recursively to cover Tuple/Array/Map containers.
+    void normalizeBoolFields(Field & field)
+    {
+        if (field.getType() == Field::Types::Bool)
+        {
+            field = field.safeGet<UInt64>();
+        }
+        else if (field.getType() == Field::Types::Tuple)
+        {
+            auto & tuple = field.safeGet<Tuple>();
+            for (auto & elem : tuple)
+                normalizeBoolFields(elem);
+        }
+        else if (field.getType() == Field::Types::Array)
+        {
+            auto & array = field.safeGet<Array>();
+            for (auto & elem : array)
+                normalizeBoolFields(elem);
+        }
+        else if (field.getType() == Field::Types::Map)
+        {
+            auto & map = field.safeGet<Map>();
+            for (auto & elem : map)
+                normalizeBoolFields(elem);
+        }
+    }
+}
+
+MergeTreePartition::MergeTreePartition(Row value_) : value(std::move(value_))
+{
+    for (auto & field : value)
+        normalizeBoolFields(field);
 }
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
-    return getID(storage.getInMemoryMetadataPtr()->getPartitionKey().sample_block);
+    auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    return getID(storage_metadata_snapshot->getPartitionKey().sample_block);
 }
 
 /// NOTE: This ID is used to create part names which are then persisted in ZK and as directory names on the file system.
@@ -230,18 +269,20 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
         }
     }
 
-    String result;
-
     if (are_all_integral)
     {
+        String result;
         FieldVisitorToString to_string_visitor;
+
         for (size_t i = 0; i < value.size(); ++i)
         {
             if (i > 0)
                 result += '-';
 
             if (typeid_cast<const DataTypeDate *>(partition_key_sample.getByPosition(i).type.get()))
-                result += toString(DateLUT::serverTimezoneInstance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
+                result += toString(
+                    DateLUT::serverTimezoneInstance().toNumYYYYMMDD(
+                        DayNum(static_cast<DayNum::UnderlyingType>(value[i].safeGet<UInt64>()))));
             else if (typeid_cast<const DataTypeIPv4 *>(partition_key_sample.getByPosition(i).type.get()))
                 result += toString(value[i].safeGet<IPv4>().toUnderType());
             else
@@ -259,15 +300,7 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
     for (const Field & field : value)
         applyVisitor(hashing_visitor, field);
 
-    const auto hash_data = getSipHash128AsArray(hash);
-    const auto hash_size = hash_data.size();
-    result.resize(hash_size * 2);
-    for (size_t i = 0; i < hash_size; ++i)
-        if constexpr (std::endian::native == std::endian::big)
-            writeHexByteLowercase(hash_data[hash_size - 1 - i], &result[2 * i]);
-        else
-            writeHexByteLowercase(hash_data[i], &result[2 * i]);
-    return result;
+    return getSipHash128AsHexString(hash);
 }
 
 std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partition_id, const Block & partition_key_sample)
@@ -316,7 +349,7 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
         {
             case DATE:
             {
-                UInt32 date_yyyymmdd;
+                UInt32 date_yyyymmdd = 0;
                 readText(date_yyyymmdd, buf);
                 constexpr UInt32 min_yyyymmdd = 10000000;
                 constexpr UInt32 max_yyyymmdd = 99999999;
@@ -330,14 +363,14 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
             }
             case UNSIGNED:
             {
-                UInt64 value;
+                UInt64 value = 0;
                 readText(value, buf);
                 res.emplace_back(value);
                 break;
             }
             case SIGNED:
             {
-                Int64 value;
+                Int64 value = 0;
                 readText(value, buf);
                 res.emplace_back(value);
                 break;
@@ -364,12 +397,7 @@ void MergeTreePartition::serializeText(StorageMetadataPtr metadata_snapshot, Wri
     size_t key_size = partition_key_sample.columns();
 
     // In some cases we create empty parts and then value is empty.
-    if (value.empty())
-    {
-        writeCString("tuple()", out);
-        return;
-    }
-    if (key_size == 0)
+    if (key_size == 0 || value.empty())
     {
         writeCString("tuple()", out);
     }
@@ -435,7 +463,7 @@ std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(
 
 std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block & partition_key_sample, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const
 {
-    if (!partition_key_sample)
+    if (partition_key_sample.empty())
         return nullptr;
 
     auto out = data_part_storage.writeFile("partition.dat", 4096, settings);
@@ -482,6 +510,14 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
 NamesAndTypesList MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
 {
     auto adjusted_partition_key = adjustPartitionKey(metadata_snapshot, context);
+    /// Materialize subcolumns that the partition key expression needs.
+    /// The block may contain only parent columns (e.g. a Tuple or JSON column),
+    /// while the expression requires individual subcolumns as separate inputs.
+    for (const auto & required_column : adjusted_partition_key.expression->getRequiredColumns())
+    {
+        if (!block.has(required_column))
+            block.insert(block.getSubcolumnByName(required_column));
+    }
     adjusted_partition_key.expression->execute(block);
     return adjusted_partition_key.sample_block.getNamesAndTypesList();
 }
@@ -498,7 +534,7 @@ KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr &
     /// calculated according to previous version - `moduloLegacy`.
     if (KeyDescription::moduloToModuloLegacyRecursive(ast_copy))
     {
-        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, context);
+        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, metadata_snapshot->virtuals, context);
         return adjusted_partition_key;
     }
 

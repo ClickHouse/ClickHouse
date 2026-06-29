@@ -5,6 +5,9 @@
 namespace DB
 {
 
+using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
+using NodeMap = std::unordered_map<const ActionsDAG::Node *, bool>;
+
 /// This structure stores a node mapping from one DAG to another.
 /// The rule is following:
 /// * Input nodes are mapped by name.
@@ -43,7 +46,15 @@ struct MatchedTrees
     using Matches = std::unordered_map<const ActionsDAG::Node *, Match>;
 };
 
-MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity = true);
+/// `max_size_for_sets_from_tuple_to_compare` bounds the cost of comparing `IN`-clause sets
+/// (`ColumnSet` wrapping a `FutureSetFromTuple`) by content hash. Zero disables content-hash
+/// comparison for such sets entirely — two sets are never considered equal. A non-zero value
+/// is the row-count limit above which both sets are treated as non-matching without hashing.
+MatchedTrees::Matches matchTrees(
+    const ActionsDAG::NodeRawConstPtrs & inner_dag,
+    const ActionsDAG & outer_dag,
+    bool check_monotonicity = true,
+    size_t max_size_for_sets_from_tuple_to_compare = 0);
 
 /// Update SortDescription (inplace) by applying ActionsDAG.
 ///
@@ -79,4 +90,27 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     const MatchedTrees::Matches & matches,
     const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes);
+
+bool isInjectiveFunction(const ActionsDAG::Node * node);
+
+/// Our objective is to replace injective function nodes in `actions` results with its children
+/// until only the irreducible subset of nodes remains. Against these set of nodes we will match partition key expression
+/// to determine if it maps all rows with the same value of group by key to the same partition.
+NodeSet removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG & actions);
+void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * node, NodeSet & irreducible, NodeSet & visited);
+
+/// Here we check that partition key expression is a deterministic function of the reduced set of group by key nodes.
+/// No need to explicitly check that each function is deterministic, because it is a guaranteed property of partition key expression (checked on table creation).
+/// So it is left only to check that each key node depends only on the allowed set of nodes (`irreducible_nodes`).
+/// `key_nodes` are the actual partition/sharding key output nodes — those produced by `findInOutputs` on the key's
+/// `column_names`, not the raw `partition_actions.getOutputs()`. The storage-level DAG keeps source columns in `getOutputs()`,
+/// but they're not key values and shouldn't be checked here. For example:
+///   - `PARTITION BY toYYYYMM(date)`:   `getOutputs() = [toYYYYMM(date), date]` but `key_nodes = [toYYYYMM(date)]`. The `date` INPUT is excluded — it is a source column the key reads, not a key value.
+///   - `PARTITION BY date`:             `getOutputs() = [date]` but `key_nodes = [date]`. The `date` INPUT *is* the key.
+/// In both cases, `key_nodes` comes from `findInOutputs(column_names)`.
+bool allOutputsDependsOnlyOnAllowedNodes(
+    const ActionsDAG::NodeRawConstPtrs & key_nodes, const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches);
+bool allOutputsDependsOnlyOnAllowedNodes(
+    const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches, const ActionsDAG::Node * node, NodeMap & visited);
+
 }

@@ -13,7 +13,7 @@ select
     merge_reason,
     part_name
 from system.part_log
-where
+where event_date >= yesterday() AND event_time >= now() - 600 AND
     database = currentDatabase() and
     table = 'data_02491' and
     table_uuid = table_uuid_

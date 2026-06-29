@@ -4,6 +4,7 @@ sidebar_label: 'MaterializedPostgreSQL'
 sidebar_position: 60
 slug: /engines/database-engines/materialized-postgresql
 title: 'MaterializedPostgreSQL'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -29,7 +30,7 @@ SET allow_experimental_database_materialized_postgresql=1
 ```
 :::
 
-## Creating a Database {#creating-a-database}
+## Creating a database {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -43,7 +44,7 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 - `user` — PostgreSQL user.
 - `password` — User password.
 
-## Example of Use {#example-of-use}
+## Example of use {#example-of-use}
 
 ```sql
 CREATE DATABASE postgres_db
@@ -55,7 +56,7 @@ SHOW TABLES FROM postgres_db;
 │ table1 │
 └────────┘
 
-SELECT * FROM postgresql_db.postgres_table;
+SELECT * FROM postgres_db.postgres_table;
 ```
 
 ## Dynamically adding new tables to replication {#dynamically-adding-table-to-replication}
@@ -124,7 +125,6 @@ SELECT * FROM database1.`schema2.table2`;
 ```
 
 Warning: for this case dots in table name are not allowed.
-
 
 ## Requirements {#requirements}
 
@@ -219,6 +219,13 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
 Use a unique replication consumer identifier for replication. Default: `0`.
 If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing to the same `PostgreSQL` table.
+
+### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
+
+Map the PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Date32` and `DateTime64`, which cover the wider value range of the PostgreSQL types. Default: `1`.
+If set to `0`, the narrower `Date` and `DateTime` types are used instead (values outside their range or with sub-second precision are not representable).
+
+This setting only controls the column types chosen by type inference when the nested tables are created, so it must be specified at `CREATE DATABASE` time. It cannot be changed afterwards with `ALTER DATABASE ... MODIFY SETTING` (the already created nested tables keep their fixed column types, and such a change is rejected); recreate the database to change it. It is not applicable to the `MaterializedPostgreSQL` table engine, where the column types are declared explicitly.
 
 ## Notes {#notes}
 

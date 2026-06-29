@@ -1,4 +1,4 @@
--- Tags: long, no-object-storage, no-asan
+-- Tags: long, no-object-storage, no-asan, no-msan
 
 SET joined_subquery_requires_alias = 0;
 
