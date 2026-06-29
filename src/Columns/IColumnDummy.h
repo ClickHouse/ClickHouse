@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-
+#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
@@ -11,7 +11,7 @@ class Arena;
 /** Base class for columns-constants that contain a value that is not in the `Field`.
   * Not a full-fledged column and is used in a special way.
   */
-class IColumnDummy : public IColumn
+class IColumnDummy : public IColumnHelper<IColumnDummy>
 {
 public:
     IColumnDummy() : s(0) {}
@@ -26,7 +26,11 @@ public:
     size_t byteSize() const override { return 0; }
     size_t byteSizeAt(size_t) const override { return 0; }
     size_t allocatedBytes() const override { return 0; }
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+#else
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+#endif
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
     }
@@ -35,10 +39,12 @@ public:
 
     Field operator[](size_t) const override;
     void get(size_t, Field &) const override;
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
     void insert(const Field &) override;
+    bool tryInsert(const Field &) override { return false; }
     bool isDefaultAt(size_t) const override;
 
-    StringRef getDataAt(size_t) const override
+    std::string_view getDataAt(size_t) const override
     {
         return {};
     }
@@ -48,33 +54,56 @@ public:
         ++s;
     }
 
-    StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const UInt8 *) const override;
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
+    std::string_view serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t /*n*/, SipHash & /*hash*/) const override
     {
     }
 
-    void updateWeakHash32(WeakHash32 & /*hash*/) const override
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
     {
+        /// A dummy column has a single fixed per-row hash (`WEAK_HASH32_INITIAL_VALUE`). The
+        /// non-initial path still combines that finalized value (like an empty ColumnTuple) so a
+        /// materialized dummy and a ColumnConst wrapper of it compose identically.
+        /// See IColumn::computeHashInto.
+        const size_t n = row_end - row_begin;
+        if (initial)
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
+        else
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = combineWeakHash32(WEAK_HASH32_INITIAL_VALUE, hash_out[i]);
     }
 
     void updateHashFast(SipHash & /*hash*/) const override
     {
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn &, size_t) override
+#else
+    void doInsertFrom(const IColumn &, size_t) override
+#endif
     {
         ++s;
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
+#else
+    void doInsertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
+#endif
     {
         s += length;
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override;
+
+    void filter(const Filter & filt) override;
 
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
@@ -92,14 +121,14 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
     double getRatioOfDefaultRows(double) const override;
     UInt64 getNumberOfDefaultRows() const override;
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override;
     void gather(ColumnGathererStream &) override;
 
-    void getExtremes(Field &, Field &) const override
+    void getExtremes(Field &, Field &, size_t, size_t) const override
     {
     }
 

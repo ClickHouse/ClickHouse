@@ -1,21 +1,33 @@
 #include <Common/Exception.h>
-#include <Common/Arena.h>
-#include <Common/SipHash.h>
-#include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
+#include <Common/SipHash.h>
+#include <Common/assert_cast.h>
+#include <Common/iota.h>
 
-#include <base/sort.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/TypeId.h>
 
+#include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
+
+
 #include <Processors/Transforms/ColumnGathererTransform.h>
+
+#include <base/TypeName.h>
+#include <base/sort.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -26,11 +38,35 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
 template <is_decimal T>
+const char * ColumnDecimal<T>::getFamilyName() const
+{
+    return TypeName<T>.data();
+}
+
+template <is_decimal T>
+TypeIndex ColumnDecimal<T>::getDataType() const
+{
+    return TypeToTypeIndex<T>;
+}
+
+template <is_decimal T>
+std::span<char> ColumnDecimal<T>::insertRawUninitialized(size_t count)
+{
+    size_t start = data.size();
+    data.resize(start + count);
+    return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
+}
+
+
+template <is_decimal T>
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
+#else
+int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int) const
+#endif
 {
     auto & other = static_cast<const Self &>(rhs_);
     const T & a = data[n];
@@ -42,56 +78,86 @@ int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) c
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                     PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                     int direction, int nan_direction_hint) const
+[[nodiscard]] Int64 ColumnDecimal<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int) const
 {
-    return this->template doCompareColumn<ColumnDecimal<T>>(static_cast<const Self &>(rhs), rhs_row_num, row_indexes,
-                                                         compare_results, direction, nan_direction_hint);
-}
+    auto & other = assert_cast<const Self &>(rhs);
+    const T * pa = &data[n];
+    const T * pb = &other.data[m];
 
-template <is_decimal T>
-bool ColumnDecimal<T>::hasEqualValues() const
-{
-    return this->template hasEqualValuesImpl<ColumnDecimal<T>>();
-}
-
-template <is_decimal T>
-StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
-{
-    constexpr size_t null_bit_size = sizeof(UInt8);
-    StringRef res;
-    char * pos;
-    if (null_bit)
+    if (scale == other.scale)
     {
-        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-        memcpy(pos, null_bit, null_bit_size);
-        if (*null_bit) return res;
-        pos += null_bit_size;
+        Int64 res = (*pa) > (*pb) ? 1 : ((*pa) < (*pb) ? -1 : 0);
+
+        if (res < 0)
+        {
+            const T * pa_end = data.data() + size();
+            ++pa;
+            for (; pa < pa_end && (*pa) < (*pb); ++pa)
+                --res;
+        }
+        else if (res > 0)
+        {
+            const T * pb_end = other.data.data() + other.size();
+            ++pb;
+            for (; pb < pb_end && (*pb) < (*pa); ++pb)
+                ++res;
+        }
+        return res;
     }
     else
     {
-        res.size = sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
+        Int64 res = decimalLess<T>(*pb, *pa, other.scale, scale) ? 1 : (decimalLess<T>(*pa, *pb, scale, other.scale) ? -1 : 0);
+
+        if (res < 0)
+        {
+            const T * pa_end = data.data() + size();
+            ++pa;
+            for (; pa < pa_end && decimalLess<T>(*pa, *pb, scale, other.scale); ++pa)
+                --res;
+        }
+        else if (res > 0)
+        {
+            const T * pb_end = other.data.data() + other.size();
+            ++pb;
+            for (; pb < pb_end && decimalLess<T>(*pb, *pa, other.scale, scale); ++pb)
+                ++res;
+        }
+        return res;
     }
-    memcpy(pos, &data[n], sizeof(T));
-    return res;
 }
 
 template <is_decimal T>
-const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
+size_t ColumnDecimal<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int) const
 {
-    data.push_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
+    if (begin >= end)
+        return begin;
+
+    const T * d = data.data();
+    const auto ref = d[begin].value;
+
+    /// A native integer comparison is cheap, so use a longer linear probe (the default is 8).
+    static constexpr size_t linear_probe = 16;
+    return findEqualRangeEndAssumeSorted(begin, end, linear_probe, [&](size_t i) { return d[i].value == ref; });
 }
 
 template <is_decimal T>
-const char * ColumnDecimal<T>::skipSerializedInArena(const char * pos) const
+Float64 ColumnDecimal<T>::getFloat64(size_t n) const
 {
-    return pos + sizeof(T);
+    return DecimalUtils::convertTo<Float64>(data[n], scale);
+}
+
+template <is_decimal T>
+void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
+{
+    T dec{};
+    readBinaryLittleEndian(dec, in);
+    data.push_back(std::move(dec));
+}
+
+template <is_decimal T>
+void ColumnDecimal<T>::skipSerializedInArena(ReadBuffer & in) const
+{
+    in.ignore(sizeof(T));
 }
 
 template <is_decimal T>
@@ -110,24 +176,33 @@ void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
+void ColumnDecimal<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
-    auto s = data.size();
+    hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
+}
 
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+/// Finalized per-row CRC32C hash of a decimal value (seeded with `WEAK_HASH32_INITIAL_VALUE`).
+/// Accesses `.value` directly to avoid `wide::integer` implicit-conversion constraints; `intHashCRC32`
+/// consumes the whole native word (folding 64-bit words for 128/256-bit decimals).
+template <is_decimal T>
+static inline UInt32 weakHashDecimalValue32(const T & v) noexcept
+{
+    return static_cast<UInt32>(intHashCRC32(v.value, WEAK_HASH32_INITIAL_VALUE));
+}
 
-    const T * begin = data.data();
-    const T * end = begin + s;
-    UInt32 * hash_data = hash.getData().data();
-
-    while (begin < end)
-    {
-        *hash_data = static_cast<UInt32>(intHashCRC32(*begin, *hash_data));
-        ++begin;
-        ++hash_data;
-    }
+template <is_decimal T>
+void ColumnDecimal<T>::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    /// CRC32C is a hardware dependency chain with no packed form, so SIMD multi-versioning
+    /// would not vectorise; keep a plain scalar loop. See IColumn::computeHashInto.
+    const T * src = data.data() + row_begin;
+    const size_t n = row_end - row_begin;
+    if (initial)
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = weakHashDecimalValue32(src[i]);
+    else
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = combineWeakHash32(weakHashDecimalValue32(src[i]), hash_out[i]);
 }
 
 template <is_decimal T>
@@ -158,13 +233,12 @@ void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection directio
     };
 
     size_t data_size = data.size();
-    res.resize(data_size);
+    res.resize_exact(data_size);
 
     if (limit >= data_size)
         limit = 0;
 
-    for (size_t i = 0; i < data_size; ++i)
-        res[i] = i;
+    iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
     if constexpr (is_arithmetic_v<NativeT> && !is_big_int_v<NativeT>)
     {
@@ -183,8 +257,7 @@ void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection directio
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (data_size >= 256 && data_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
-                for (size_t i = 0; i < data_size; ++i)
-                    res[i] = i;
+                iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
                 bool try_sort = false;
 
@@ -306,6 +379,30 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
 }
 
 template <is_decimal T>
+size_t ColumnDecimal<T>::estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const
+{
+    const size_t range_size = equal_range.size();
+    if (range_size <= 1)
+        return range_size;
+
+    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
+    HashSet<T> elements;
+    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    {
+        size_t permuted_i = permutation[i];
+        elements.insert(data[permuted_i]);
+    }
+    return elements.size();
+}
+
+template <is_decimal T>
+void ColumnDecimal<T>::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const
+{
+    if (options.notFull(name_buf))
+        name_buf << FieldVisitorToString()(data[n], scale);
+}
+
+template <is_decimal T>
 ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
     return permuteImpl(*this, perm, limit);
@@ -319,7 +416,7 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
     if (size > 0)
     {
         auto & new_col = static_cast<Self &>(*res);
-        new_col.data.resize(size);
+        new_col.data.resize_exact(size);
 
         size_t count = std::min(this->size(), size);
 
@@ -336,15 +433,29 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
 }
 
 template <is_decimal T>
+bool ColumnDecimal<T>::tryInsert(const Field & x)
+{
+    DecimalField<T> value;
+    if (!x.tryGet<DecimalField<T>>(value))
+        return false;
+    data.push_back(value);
+    return true;
+}
+
+template <is_decimal T>
 void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 {
-    T tmp;
+    T tmp{};
     memcpy(&tmp, src, sizeof(T));
     data.emplace_back(tmp);
 }
 
 template <is_decimal T>
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnDecimal<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const ColumnDecimal & src_vec = assert_cast<const ColumnDecimal &>(src);
 
@@ -370,7 +481,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
     Container & res_data = res->getData();
 
     if (result_size_hint)
-        res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
+        res_data.reserve_exact(result_size_hint > 0 ? result_size_hint : size);
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;
@@ -423,6 +534,66 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
 }
 
 template <is_decimal T>
+void ColumnDecimal<T>::filter(const IColumn::Filter & filt)
+{
+    size_t size = data.size();
+    if (size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
+
+    const UInt8 * filt_pos = filt.data();
+    const UInt8 * filt_end = filt_pos + size;
+    const T * data_pos = data.data();
+    T * res_data = data.data();
+    size_t res_size = 0;
+
+    /** A slightly more optimized version.
+    * Based on the assumption that often pieces of consecutive values
+    *  completely pass or do not pass the filter.
+    * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+    */
+    static constexpr size_t SIMD_BYTES = 64;
+    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+
+    while (filt_pos < filt_end_aligned)
+    {
+        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
+
+        if (0xffffffffffffffff == mask)
+        {
+            memmove(res_data + res_size, data_pos, SIMD_BYTES * sizeof(T));
+            res_size += SIMD_BYTES;
+        }
+        else
+        {
+            while (mask)
+            {
+                size_t index = std::countr_zero(mask);
+                res_data[res_size++] = data_pos[index];
+            #ifdef __BMI__
+                mask = _blsr_u64(mask);
+            #else
+                mask = mask & (mask-1);
+            #endif
+            }
+        }
+
+        filt_pos += SIMD_BYTES;
+        data_pos += SIMD_BYTES;
+    }
+
+    while (filt_pos < filt_end)
+    {
+        if (*filt_pos)
+            res_data[res_size++] = *data_pos;
+
+        ++filt_pos;
+        ++data_pos;
+    }
+
+    data.resize_assume_reserved(res_size);
+}
+
+template <is_decimal T>
 void ColumnDecimal<T>::expand(const IColumn::Filter & mask, bool inverted)
 {
     expandDataByMask<T>(data, mask, inverted);
@@ -442,33 +613,30 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
     auto res = this->create(0, scale);
-    if (0 == size)
+    if (size == 0 || offsets.back() == 0)
         return res;
 
     typename Self::Container & res_data = res->getData();
-    res_data.reserve(offsets.back());
+    res_data.resize_exact(offsets.back());
+
+    const T * src = data.data();
+    T * dst = res_data.data();
 
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
     {
-        size_t size_to_replicate = offsets[i] - prev_offset;
+        size_t count = offsets[i] - prev_offset;
         prev_offset = offsets[i];
 
-        for (size_t j = 0; j < size_to_replicate; ++j)
-            res_data.push_back(data[i]);
+        std::fill_n(dst, count, src[i]);
+        dst += count;
     }
 
     return res;
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
-}
-
-template <is_decimal T>
-ColumnPtr ColumnDecimal<T>::compress() const
+ColumnPtr ColumnDecimal<T>::compress(bool force_compression) const
 {
     const size_t data_size = data.size();
     const size_t source_size = data_size * sizeof(T);
@@ -477,7 +645,7 @@ ColumnPtr ColumnDecimal<T>::compress() const
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
+    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, force_compression);
 
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());
@@ -494,28 +662,35 @@ ColumnPtr ColumnDecimal<T>::compress() const
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
+void ColumnDecimal<T>::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    if (data.empty())
+    if (start >= end)
     {
         min = NearestFieldType<T>(T(0), scale);
         max = NearestFieldType<T>(T(0), scale);
         return;
     }
 
-    T cur_min = data[0];
-    T cur_max = data[0];
+    T cur_min = data[start];
+    T cur_max = data[start];
 
-    for (const T & x : data)
+    for (size_t i = start + 1; i < end; ++i)
     {
-        if (x < cur_min)
-            cur_min = x;
-        else if (x > cur_max)
-            cur_max = x;
+        if (data[i] < cur_min)
+            cur_min = data[i];
+        else if (data[i] > cur_max)
+            cur_max = data[i];
     }
 
     min = NearestFieldType<T>(cur_min, scale);
     max = NearestFieldType<T>(cur_max, scale);
+}
+
+template <is_decimal T>
+void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
+{
+    const auto & src_data = assert_cast<const Self &>(src).getData();
+    data[dst_pos] = src_data[src_pos];
 }
 
 template class ColumnDecimal<Decimal32>;
@@ -523,5 +698,6 @@ template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
 template class ColumnDecimal<Decimal256>;
 template class ColumnDecimal<DateTime64>;
+template class ColumnDecimal<Time64>;
 
 }

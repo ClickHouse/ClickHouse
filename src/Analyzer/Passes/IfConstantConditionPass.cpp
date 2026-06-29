@@ -57,7 +57,7 @@ public:
 
 }
 
-void IfConstantConditionPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void IfConstantConditionPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     IfConstantConditionVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

@@ -1,2 +1,0 @@
-# https://github.com/ClickHouse/ClickHouse/issues/55629
-race:rd_kafka_broker_set_nodename

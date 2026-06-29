@@ -36,14 +36,22 @@ private:
     void profileAddedOrChanged(const UUID & profile_id, const SettingsProfilePtr & new_profile);
     void profileRemoved(const UUID & profile_id);
     void mergeSettingsAndConstraints();
+    void mergeSettingsAndConstraintsIfNeeded();
     void mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const;
-    void substituteProfiles(SettingsProfileElements & elements, std::vector<UUID> & substituted_profiles, std::unordered_map<UUID, String> & names_of_substituted_profiles) const;
+
+    void substituteProfiles(SettingsProfileElements & elements,
+        std::vector<UUID> & profiles,
+        std::vector<UUID> & substituted_profiles,
+        std::unordered_map<UUID, String> & names_of_substituted_profiles) const;
 
     const AccessControl & access_control;
     std::unordered_map<UUID, SettingsProfilePtr> all_profiles;
     std::unordered_map<String, UUID> profiles_by_name;
     bool all_profiles_read = false;
+    /// Set by the per-entity handler; the rebuild is coalesced to once per notification batch.
+    bool need_merge_settings_and_constraints TSA_GUARDED_BY(mutex) = false;
     scope_guard subscription;
+    scope_guard batch_subscription;
     std::map<EnabledSettings::Params, std::weak_ptr<EnabledSettings>> enabled_settings;
     std::optional<UUID> default_profile_id;
     Poco::LRUCache<UUID, std::shared_ptr<const SettingsProfilesInfo>> profile_infos_cache;

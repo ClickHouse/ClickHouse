@@ -1,10 +1,13 @@
 #pragma once
 
+#include <Processors/ISimpleTransform.h>
 #include <Processors/ISource.h>
-#include <Processors/RowsBeforeLimitCounter.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <QueryPipeline/Pipe.h>
+
 #include <Core/UUID.h>
-#include <atomic>
+
+#include <Common/EventFD.h>
 
 namespace DB
 {
@@ -23,26 +26,32 @@ public:
     ~RemoteSource() override;
 
     Status prepare() override;
+    void work() override;
     String getName() const override { return "Remote"; }
 
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit.swap(counter); }
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
     /// Stop reading from stream if output port is finished.
     void onUpdatePorts() override;
 
-    int schedule() override { return fd; }
+    int schedule() override;
+
+    void onAsyncJobReady() override;
 
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
 protected:
     std::optional<Chunk> tryGenerate() override;
-    void onCancel() override;
+    void onCancel() noexcept override;
 
 private:
-    bool was_query_sent = false;
+    std::atomic_bool was_query_sent = false;
+    bool need_drain = false;
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;
-    RowsBeforeLimitCounterPtr rows_before_limit;
+    RowsBeforeStepCounterPtr rows_before_limit;
+    RowsBeforeStepCounterPtr rows_before_aggregation;
 
     const bool async_read;
     const bool async_query_sending;
@@ -50,10 +59,14 @@ private:
     int fd = -1;
     size_t rows = 0;
     bool manually_add_rows_before_limit_counter = false;
+    std::atomic_bool preprocessed_packet = false;
+#if defined(OS_LINUX)
+    EventFD startup_event_fd;
+#endif
 };
 
 /// Totals source from RemoteQueryExecutor.
-class RemoteTotalsSource : public ISource
+class RemoteTotalsSource final : public ISource
 {
 public:
     explicit RemoteTotalsSource(RemoteQueryExecutorPtr executor);
@@ -69,7 +82,7 @@ private:
 };
 
 /// Extremes source from RemoteQueryExecutor.
-class RemoteExtremesSource : public ISource
+class RemoteExtremesSource final : public ISource
 {
 public:
     explicit RemoteExtremesSource(RemoteQueryExecutorPtr executor);
@@ -84,9 +97,26 @@ private:
     RemoteQueryExecutorPtr query_executor;
 };
 
+struct UnmarshallBlocksTransform : ISimpleTransform
+{
+public:
+    explicit UnmarshallBlocksTransform(SharedHeader header_)
+        : ISimpleTransform(header_, header_, false)
+    {
+    }
+
+    String getName() const override { return "UnmarshallBlocksTransform"; }
+
+    void transform(Chunk & chunk) override;
+};
+
 /// Create pipe with remote sources.
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, bool async_query_sending);
-
+    bool add_aggregation_info,
+    bool add_totals,
+    bool add_extremes,
+    bool async_read,
+    bool async_query_sending,
+    size_t parallel_marshalling_threads);
 }

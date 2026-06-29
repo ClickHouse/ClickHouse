@@ -1,7 +1,6 @@
 -- Tags: no-parallel, no-replicated-database: Named collection is used
-
-SET allow_experimental_object_type = 1;
 --
+SET explain_query_plan_default = 'legacy';
 
 DROP NAMED COLLECTION IF EXISTS 02918_json_fuzzer;
 CREATE NAMED COLLECTION 02918_json_fuzzer AS json_str='{}';
@@ -90,17 +89,5 @@ SELECT * FROM fuzzJSON(02918_json_fuzzer, max_string_value_length=65537) LIMIT 1
 SELECT * FROM fuzzJSON(02918_json_fuzzer, max_key_length=65537) LIMIT 10; -- { serverError BAD_ARGUMENTS }
 SELECT * FROM fuzzJSON(02918_json_fuzzer, max_key_length=10, min_key_length=0) LIMIT 10; -- { serverError BAD_ARGUMENTS }
 SELECT * FROM fuzzJSON(02918_json_fuzzer, max_key_length=10, min_key_length=11) LIMIT 10; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM fuzzJSON(02918_json_fuzzer, equals(random_seed, viewExplain('EXPLAIN', 'actions = 1', (SELECT count(*) FROM numbers(10))), 54321)) LIMIT 10; -- { serverError BAD_ARGUMENTS }
 
---
-DROP TABLE IF EXISTS 02918_table_obj;
-CREATE TABLE 02918_table_obj (json_obj Object('json')) Engine=Memory;
-
-INSERT INTO 02918_table_obj SELECT * FROM fuzzJSON(
-    02918_json_fuzzer,
-    json_str='{"name": "John Doe", "age": 27, "address": {"city": "Citiville", "zip": "12345"}, "hobbies": ["reading", "traveling", "coding"]}',
-    random_seed=12345) LIMIT 200;
-SELECT count() FROM 02918_table_obj;
-
-DROP TABLE IF EXISTS 02918_table_obj;
-
-DROP NAMED COLLECTION IF EXISTS 02918_json_fuzzer;

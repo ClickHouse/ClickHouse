@@ -1,14 +1,19 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <city.h>
+#include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 #include <future>
+#include <Common/callOnce.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SetKeys.h>
+#include <Interpreters/StorageID.h>
+#include <QueryPipeline/SizeLimits.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {
@@ -22,6 +27,9 @@ struct SetKeyColumns;
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
+class PreparedSetsCache;
+using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+
 struct Settings;
 
 /// This is a structure for prepared sets cache.
@@ -30,6 +38,7 @@ struct SetAndKey
 {
     String key;
     SetPtr set;
+    StoragePtr external_table;
 };
 
 using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
@@ -50,6 +59,11 @@ public:
     virtual DataTypes getTypes() const = 0;
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
+
+    using Hash = CityHash_v1_0_2::uint128;
+    virtual Hash getHash() const = 0;
+
+    virtual ASTPtr getSourceAST() const = 0;
 };
 
 using FutureSetPtr = std::shared_ptr<FutureSet>;
@@ -59,68 +73,140 @@ using FutureSetPtr = std::shared_ptr<FutureSet>;
 class FutureSetFromStorage final : public FutureSet
 {
 public:
-    FutureSetFromStorage(SetPtr set_);
+    explicit FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id);
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
+    Hash getHash() const override;
+    ASTPtr getSourceAST() const override { return ast; }
 
+    const std::optional<StorageID> & getStorageID() const { return storage_id; }
 private:
+    Hash hash;
+    ASTPtr ast;
+    std::optional<StorageID> storage_id;
     SetPtr set;
 };
+
+using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
 
 /// Set from tuple is filled as well as set from storage.
 /// Additionally, it can be converted to set useful for PK.
 class FutureSetFromTuple final : public FutureSet
 {
 public:
-    FutureSetFromTuple(Block block, const Settings & settings);
+    FutureSetFromTuple(Hash hash_, ASTPtr ast_, ColumnsWithTypeAndName block, bool transform_null_in, SizeLimits size_limits);
 
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     DataTypes getTypes() const override;
-
+    Hash getHash() const override;
+    /// Hash based on actual set element data, computed order-independently so that two IN-clause
+    /// sets with the same values (regardless of insertion order or duplicates) hash equal. Lives
+    /// only on `FutureSetFromTuple` because only tuple-literal sets have content available at
+    /// planning time; storage / subquery sets are matched by their structural (AST) hash via
+    /// `getHash()`. Callers must check the set is small enough to justify the O(N log N) cost
+    /// (see `query_plan_max_set_size_for_projection_match`).
+    Hash getContentHash() const;
+    ASTPtr getSourceAST() const override { return ast; }
+    Columns getKeyColumns() const;
+    /// Number of rows on the right-hand side *before* deduplication — the full length of the
+    /// original `IN (...)` list, including repeated and `NULL` values. Available in O(1) and without
+    /// materializing anything, unlike `getKeyColumns`. The deduplicated count is `get`'s
+    /// `getTotalRowCount`. Useful for callers whose cost is proportional to the original list length
+    /// (e.g. `buildOrderedSetInplace`, which filters the original key columns).
+    size_t getInputRowCount() const;
 private:
+    void fillSetElementsOnce() const;
+    Columns getUniqueKeyColumns() const;
+    Hash computeContentHash() const;
+
+    Hash hash;
+    mutable Hash content_hash{};
+    ASTPtr ast;
     SetPtr set;
-    SetKeyColumns set_key_columns;
+    mutable SetKeyColumns set_key_columns;
+    mutable OnceFlag fill_set_elements_once;
+    mutable OnceFlag content_hash_once;
 };
 
-/// Set from subquery can be built inplace for PK or in CreatingSet step.
-/// If use_index_for_in_with_subqueries_max_values is reached, set for PK won't be created,
-/// but ordinary set would be created instead.
+using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
+
+/// Set from subquery can be filled (by running the subquery) in one of two ways:
+///  1. During query analysis. Specifically, inside `SourceStepWithFilter::applyFilters()`.
+///     Useful if the query plan depends on the set contents, e.g. to determine which files to read.
+///  2. During query execution. This is the preferred way.
+///     Sets are created by CreatingSetStep, which runs before other steps.
+/// Be careful: to build the set during query analysis, the `buildSetInplace()` call must happen
+/// inside `SourceStepWithFilter::applyFilters()`. Calling it later, e.g. from `initializePipeline()`
+/// will result in LOGICAL_ERROR "Not-ready Set is passed" (because a CreatingSetStep was already
+/// added to pipeline but hasn't executed yet).
+///
+/// If use_index_for_in_with_subqueries_max_values is reached, the built set won't be suitable for
+/// key analysis, but will work with function IN (the set will contain only hashes of elements).
 class FutureSetFromSubquery final : public FutureSet
 {
 public:
     FutureSetFromSubquery(
-        String key,
+        Hash hash_,
+        ASTPtr ast_,
         std::unique_ptr<QueryPlan> source_,
-        StoragePtr external_table_,
-        FutureSetPtr external_table_set_,
-        const Settings & settings);
+        StoragePtr external_table,
+        std::shared_ptr<FutureSetFromSubquery> external_table_set_,
+        bool transform_null_in,
+        SizeLimits size_limits,
+        size_t max_size_for_index);
 
     FutureSetFromSubquery(
-        String key,
+        Hash hash_,
+        ASTPtr ast_,
         QueryTreeNodePtr query_tree_,
-        const Settings & settings);
+        bool transform_null_in,
+        SizeLimits size_limits,
+        size_t max_size_for_index);
+
+    ~FutureSetFromSubquery() override;
+
+    /// The following two methods are used to transfer ownership of `SetAndKey` from one
+    /// `DelayedCreatingSetStep` to another in automatic parallel replicas optimization.
+    /// The `hash`, `ast` and other fields should be the identical for both `FutureSetFromSubquery` objects.
+    void replaceSetAndKey(SetAndKeyPtr set);
+    SetAndKeyPtr detachSetAndKey();
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
+    Hash getHash() const override;
+    ASTPtr getSourceAST() const override { return ast; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
-    std::unique_ptr<QueryPlan> build(const ContextPtr & context);
+    std::unique_ptr<QueryPlan> build(
+        const SizeLimits & network_transfer_limits,
+        const PreparedSetsCachePtr & prepared_sets_cache);
+
+    void buildSetInplace(const ContextPtr & context);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
 
+    void buildExternalTableFromInplaceSet(StoragePtr external_table_);
+    void setExternalTable(StoragePtr external_table_);
+
+    const QueryPlan * getQueryPlan() const { return source.get(); }
+    QueryPlan * getQueryPlan() { return source.get(); }
+
 private:
+    Hash hash;
+    ASTPtr ast;
     SetAndKeyPtr set_and_key;
-    StoragePtr external_table;
-    FutureSetPtr external_table_set;
+    std::shared_ptr<FutureSetFromSubquery> external_table_set;
 
     std::unique_ptr<QueryPlan> source;
     QueryTreeNodePtr query_tree;
 };
+
+using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
 /// Container for all the sets used in query.
 class PreparedSets
@@ -133,37 +219,41 @@ public:
         UInt64 operator()(const Hash & key) const { return key.low64 ^ key.high64; }
     };
 
-    using SetsFromTuple = std::unordered_map<Hash, std::vector<std::shared_ptr<FutureSetFromTuple>>, Hashing>;
-    using SetsFromStorage = std::unordered_map<Hash, std::shared_ptr<FutureSetFromStorage>, Hashing>;
-    using SetsFromSubqueries = std::unordered_map<Hash, std::shared_ptr<FutureSetFromSubquery>, Hashing>;
+    using SetsFromTuple = std::unordered_map<Hash, std::vector<FutureSetFromTuplePtr>, Hashing>;
+    using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;
+    using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
-    FutureSetPtr addFromStorage(const Hash & key, SetPtr set_);
-    FutureSetPtr addFromTuple(const Hash & key, Block block, const Settings & settings);
+    FutureSetFromStoragePtr addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id);
+    FutureSetFromTuplePtr addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings);
 
-    FutureSetPtr addFromSubquery(
+    FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,
+        ASTPtr ast,
         std::unique_ptr<QueryPlan> source,
         StoragePtr external_table,
-        FutureSetPtr external_table_set,
+        FutureSetFromSubqueryPtr external_table_set,
         const Settings & settings);
 
-    FutureSetPtr addFromSubquery(
+    FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,
+        ASTPtr ast,
         QueryTreeNodePtr query_tree,
         const Settings & settings);
 
-    FutureSetPtr findTuple(const Hash & key, const DataTypes & types) const;
-    std::shared_ptr<FutureSetFromStorage> findStorage(const Hash & key) const;
-    std::shared_ptr<FutureSetFromSubquery> findSubquery(const Hash & key) const;
+    FutureSetFromTuplePtr findTuple(const Hash & key, const DataTypes & types) const;
+    FutureSetFromStoragePtr findStorage(const Hash & key) const;
+    FutureSetFromSubqueryPtr findSubquery(const Hash & key) const;
 
-    using Subqueries = std::vector<std::shared_ptr<FutureSetFromSubquery>>;
-    Subqueries getSubqueries();
+    using Subqueries = std::vector<FutureSetFromSubqueryPtr>;
+    Subqueries getSubqueries() const;
+    bool hasSubqueries() const { return !sets_from_subqueries.empty(); }
 
     const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
     // const SetsFromStorage & getSetsFromStorage() const { return sets_from_storage; }
     // const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
 
     static String toString(const Hash & key, const DataTypes & types);
+    static SizeLimits getSizeLimitsForSet(const Settings & settings);
 
 private:
     SetsFromTuple sets_from_tuple;

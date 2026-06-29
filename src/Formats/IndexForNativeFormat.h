@@ -6,6 +6,9 @@
 namespace DB
 {
 
+class ReadBuffer;
+class WriteBuffer;
+
 /** The Native format can contain a separately located index,
   *  which allows you to understand where what column is located,
   *  and skip unnecessary columns.
@@ -16,7 +19,7 @@ struct IndexOfOneColumnForNativeFormat
 {
     String name;
     String type;
-    MarkInCompressedFile location;
+    MarkInCompressedFile location{};
 };
 
 /** The index for the data block. */
@@ -24,8 +27,8 @@ struct IndexOfBlockForNativeFormat
 {
     using Columns = std::vector<IndexOfOneColumnForNativeFormat>;
 
-    size_t num_columns;
-    size_t num_rows;
+    size_t num_columns{};
+    size_t num_rows{};
     Columns columns;
 
     /// Reads the index for the data block.

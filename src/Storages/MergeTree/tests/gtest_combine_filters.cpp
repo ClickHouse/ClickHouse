@@ -18,22 +18,22 @@ using namespace DB;
  * second_filter: [1 0 1 0 1 0]
  * output_filter: [1 0 0 0 1 0 0 0 1 0 0]
  */
-bool testCombineFilters(size_t size)
+static bool testCombineFilters(size_t size)
 {
-    auto generateFilterWithAlternatingOneAndZero = [](size_t len)->ColumnPtr
+    auto generate_filter_with_alternating_one_and_zero = [](size_t len)->ColumnPtr
     {
-        auto filter = ColumnUInt8::create(len, 0);
+        auto filter = ColumnUInt8::create(len, false);
         auto & filter_data = filter->getData();
 
         for (size_t i = 0; i < len; i += 2)
-            filter_data[i] = 1;
+            filter_data[i] = true;
 
         return filter;
     };
 
-    auto first_filter = generateFilterWithAlternatingOneAndZero(size);
+    auto first_filter = generate_filter_with_alternating_one_and_zero(size);
     /// The count of 1s in the first_filter is floor((size + 1) / 2), which should be the size of the second_filter.
-    auto second_filter = generateFilterWithAlternatingOneAndZero((size + 1) / 2);
+    auto second_filter = generate_filter_with_alternating_one_and_zero((size + 1) / 2);
 
     auto result = combineFilters(first_filter, second_filter);
 
@@ -73,11 +73,11 @@ bool testCombineFilters(size_t size)
  * The second column contains the consecutively incremented UInt8 integers between 0x00 and 0xFF, and when the overflow
  * occurs, the value would reset to 0x00 and increment again.
  */
-bool testCombineColumns(size_t size)
+static bool testCombineColumns(size_t size)
 {
-    auto generateFirstColumn = [] (size_t len, size_t & non_zero_count)->ColumnPtr
+    auto generate_first_column = [] (size_t len, size_t & non_zero_count)->ColumnPtr
     {
-        auto column = ColumnUInt8::create(len, 0);
+        auto column = ColumnUInt8::create(len, static_cast<UInt8>(0));
         auto & column_data = column->getData();
 
         non_zero_count = 0;
@@ -89,9 +89,9 @@ bool testCombineColumns(size_t size)
         return column;
     };
 
-    auto generateSecondColumn = [] (size_t len)->ColumnPtr
+    auto generate_second_column = [] (size_t len)->ColumnPtr
     {
-        auto column = ColumnUInt8::create(len, 0);
+        auto column = ColumnUInt8::create(len, static_cast<UInt8>(0));
         auto & column_data = column->getData();
 
         for (size_t i = 0; i < len; i++)
@@ -103,11 +103,11 @@ bool testCombineColumns(size_t size)
     };
 
     size_t non_zero_count = 0;
-    auto first_column = generateFirstColumn(size, non_zero_count);
+    auto first_column = generate_first_column(size, non_zero_count);
     const auto & first_column_data = typeid_cast<const ColumnUInt8 *>(first_column.get())->getData();
 
     /// The count of non-zero values in the first column should be the size of the second column.
-    auto second_column = generateSecondColumn(non_zero_count);
+    auto second_column = generate_second_column(non_zero_count);
 
     auto result = combineFilters(first_column, second_column);
     const auto & result_data = typeid_cast<const ColumnUInt8 *>(result.get())->getData();
@@ -138,6 +138,57 @@ bool testCombineColumns(size_t size)
     return true;
 }
 
+/* To ensure the vectorized DB::andFilters works as its scalar implementation, this test validates the AND (&&)
+ * of any combinations of the UInt8 values.
+ */
+static bool testAndFilters(size_t size)
+{
+    auto generate_fast_increment_column = [](size_t len)->ColumnPtr
+    {
+        auto filter = ColumnUInt8::create(len);
+        auto & filter_data = filter->getData();
+
+        for (size_t i = 0; i < len; ++i)
+            filter_data[i] = static_cast<UInt8>(i & 0xFF);
+
+        return filter;
+    };
+
+    auto generate_slow_increment_column = [](size_t len)->ColumnPtr
+    {
+        auto filter = ColumnUInt8::create(len);
+        auto & filter_data = filter->getData();
+
+        for (size_t i = 0; i < len; ++i)
+            filter_data[i] = static_cast<UInt8>((i >> 8) & 0xFF);
+
+        return filter;
+    };
+
+    auto first_filter = generate_fast_increment_column(size);
+    auto second_filter = generate_slow_increment_column(size);
+
+    auto result = andFilters(first_filter, second_filter);
+
+    const auto & first_filter_data = typeid_cast<const ColumnUInt8 *>(first_filter.get())->getData();
+    const auto & second_filter_data = typeid_cast<const ColumnUInt8 *>(second_filter.get())->getData();
+    const auto & result_data = typeid_cast<const ColumnUInt8 *>(result.get())->getData();
+
+    if (result->size() != size)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < size; i++)
+    {
+        UInt8 expected = first_filter_data[i] && second_filter_data[i];
+        if (result_data[i] != expected)
+            return false;
+    }
+
+    return true;
+}
+
 TEST(MergeTree, CombineFilters)
 {
     /// Tests with only 0/1 and fixed intervals.
@@ -158,4 +209,19 @@ TEST(MergeTree, CombineFilters)
     EXPECT_TRUE(testCombineColumns(201));
     EXPECT_TRUE(testCombineColumns(2000));
     EXPECT_TRUE(testCombineColumns(200000));
+}
+
+TEST(MergeTree, AndFilters)
+{
+    EXPECT_TRUE(testAndFilters(1));
+    EXPECT_TRUE(testAndFilters(2));
+    EXPECT_TRUE(testAndFilters(15));
+    EXPECT_TRUE(testAndFilters(16));
+    EXPECT_TRUE(testAndFilters(200));
+    EXPECT_TRUE(testAndFilters(201));
+    EXPECT_TRUE(testAndFilters(2000));
+    EXPECT_TRUE(testAndFilters(65535));
+    EXPECT_TRUE(testAndFilters(65536));
+    EXPECT_TRUE(testAndFilters(65537));
+    EXPECT_TRUE(testAndFilters(200000));
 }

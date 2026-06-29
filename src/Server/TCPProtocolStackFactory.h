@@ -23,7 +23,7 @@ class TCPProtocolStackFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server [[maybe_unused]];
-    Poco::Logger * log;
+    LoggerPtr log;
     std::string conf_name;
     std::vector<TCPServerConnectionFactory::Ptr> stack;
     AllowedClientHosts allowed_client_hosts;
@@ -38,7 +38,7 @@ private:
 public:
     template <typename... T>
     explicit TCPProtocolStackFactory(IServer & server_, const std::string & conf_name_, T... factory)
-        : server(server_), log(&Poco::Logger::get("TCPProtocolStackFactory")), conf_name(conf_name_), stack({factory...})
+        : server(server_), log(getLogger("TCPProtocolStackFactory")), conf_name(conf_name_), stack({factory...})
     {
         const auto & config = server.config();
         /// Fill list of allowed hosts.
@@ -62,7 +62,7 @@ public:
         }
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
+    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
     {
         if (!allowed_client_hosts.empty() && !allowed_client_hosts.contains(socket.peerAddress().host()))
             throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", socket.peerAddress().toString());

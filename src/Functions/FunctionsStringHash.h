@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
@@ -26,7 +25,7 @@ namespace ErrorCodes
 // Simhash: String -> UInt64
 // Minhash: String -> (UInt64, UInt64)
 template <typename Impl, typename Name, bool is_simhash, bool is_arg = false>
-class FunctionsStringHash : public IFunction
+class FunctionsStringHash final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -42,6 +41,10 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    bool useDefaultImplementationForVariant() const override { return false; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
@@ -135,7 +138,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
 
@@ -152,9 +155,9 @@ public:
         {
             auto col_res = ColumnVector<UInt64>::create();
             auto & vec_res = col_res->getData();
-            vec_res.resize(column->size());
-            const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
-            Impl::apply(col_str_vector->getChars(), col_str_vector->getOffsets(), shingle_size, vec_res);
+            vec_res.resize(input_rows_count);
+            const ColumnString & col_str_vector = checkAndGetColumn<ColumnString>(*column);
+            Impl::apply(col_str_vector.getChars(), col_str_vector.getOffsets(), shingle_size, vec_res, input_rows_count);
             return col_res;
         }
         else if constexpr (is_arg) // Min hash arg
@@ -170,8 +173,8 @@ public:
             auto min_tuple = ColumnTuple::create(std::move(min_columns));
             auto max_tuple = ColumnTuple::create(std::move(max_columns));
 
-            const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
-            Impl::apply(col_str_vector->getChars(), col_str_vector->getOffsets(), shingle_size, num_hashes, nullptr, nullptr, min_tuple.get(), max_tuple.get());
+            const ColumnString & col_str_vector = checkAndGetColumn<ColumnString>(*column);
+            Impl::apply(col_str_vector.getChars(), col_str_vector.getOffsets(), shingle_size, num_hashes, nullptr, nullptr, min_tuple.get(), max_tuple.get(), input_rows_count);
 
             MutableColumns tuple_columns;
             tuple_columns.emplace_back(std::move(min_tuple));
@@ -184,10 +187,10 @@ public:
             auto col_h2 = ColumnVector<UInt64>::create();
             auto & vec_h1 = col_h1->getData();
             auto & vec_h2 = col_h2->getData();
-            vec_h1.resize(column->size());
-            vec_h2.resize(column->size());
-            const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
-            Impl::apply(col_str_vector->getChars(), col_str_vector->getOffsets(), shingle_size, num_hashes, &vec_h1, &vec_h2, nullptr, nullptr);
+            vec_h1.resize(input_rows_count);
+            vec_h2.resize(input_rows_count);
+            const ColumnString & col_str_vector = checkAndGetColumn<ColumnString>(*column);
+            Impl::apply(col_str_vector.getChars(), col_str_vector.getOffsets(), shingle_size, num_hashes, &vec_h1, &vec_h2, nullptr, nullptr, input_rows_count);
             MutableColumns tuple_columns;
             tuple_columns.emplace_back(std::move(col_h1));
             tuple_columns.emplace_back(std::move(col_h2));

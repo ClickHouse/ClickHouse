@@ -1,6 +1,4 @@
 #include <Parsers/FieldFromAST.h>
-#include <Disks/getOrCreateDiskFromAST.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -51,7 +49,7 @@ public:
             {
                 /// We allow to not hide type of the disk, e.g. disk(type = s3, ...)
                 /// and also nested disk, e.g. disk = 'disk_name'
-                return arg_name != "type" && arg_name != "disk";
+                return arg_name != "type" && arg_name != "disk" && arg_name != "name" ;
             };
 
             for (const auto & arg : disk_function_args)
@@ -74,7 +72,7 @@ public:
 
                 const std::string & key = key_identifier->name();
                 if (is_secret_arg(key))
-                    function_args[1] = std::make_shared<ASTLiteral>("[HIDDEN]");
+                    function_args[1] = make_intrusive<ASTLiteral>("[HIDDEN]");
             }
         }
     }
@@ -90,10 +88,10 @@ String FieldFromASTImpl::toString(bool show_secrets) const
         auto hidden = ast->clone();
         HideDiskConfigurationVisitor::Data data{};
         HideDiskConfigurationVisitor{data}.visit(hidden);
-        return serializeAST(*hidden);
+        return hidden->formatWithSecretsOneLine();
     }
 
-    return serializeAST(*ast);
+    return ast->formatWithSecretsOneLine();
 }
 
 }

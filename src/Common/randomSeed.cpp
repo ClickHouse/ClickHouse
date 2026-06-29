@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
 #include <base/getThreadId.h>
@@ -20,11 +21,11 @@ namespace ErrorCodes
 }
 
 
-DB::UInt64 randomSeed()
+UInt64 randomSeed()
 {
-    struct timespec times;
+    struct timespec times{};
     if (clock_gettime(CLOCK_MONOTONIC, &times))
-        DB::throwFromErrno("Cannot clock_gettime.", DB::ErrorCodes::CANNOT_CLOCK_GETTIME);
+        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
     /// Not cryptographically secure as time, pid and stack address can be predictable.
 
@@ -37,7 +38,7 @@ DB::UInt64 randomSeed()
     /// But randomSeed() must be signal-safe and gethostname and similar functions are not.
     /// Let's try to get utsname.nodename using uname syscall (it's signal-safe).
 #if defined(__linux__)
-    struct utsname sysinfo;
+    struct utsname sysinfo{};
     if (uname(&sysinfo) == 0)
         hash.update<std::identity>(sysinfo);
 #endif

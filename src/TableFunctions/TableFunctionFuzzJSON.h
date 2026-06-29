@@ -5,6 +5,9 @@
 #include <Storages/StorageFuzzJSON.h>
 #include <TableFunctions/ITableFunction.h>
 
+#include "config.h"
+
+#if USE_RAPIDJSON || USE_SIMDJSON
 namespace DB
 {
 
@@ -26,7 +29,7 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "FuzzJSON"; }
+    const char * getStorageEngineName() const override { return "FuzzJSON"; }
 
     String source;
     std::optional<UInt64> random_seed;
@@ -37,3 +40,4 @@ private:
 };
 
 }
+#endif

@@ -19,6 +19,7 @@
 
 
 #include <cstddef>
+#include <vector>
 #include "Poco/ListMap.h"
 #include "Poco/Net/Net.h"
 #include "Poco/String.h"
@@ -79,12 +80,21 @@ namespace Net
         /// Returns the value of the first name-value pair with the given name.
         /// If no value with the given name has been found, the defaultValue is returned.
 
+        std::vector<std::string> getAll(const std::string & name) const;
+        /// Returns all values of all name-value pairs with the given name.
+        ///
+        /// Returns an empty vector if there are no name-value pairs with the given name.
+
         bool has(const std::string & name) const;
         /// Returns true if there is at least one name-value pair
         /// with the given name.
 
         ConstIterator find(const std::string & name) const;
         /// Returns an iterator pointing to the first name-value pair
+        /// with the given name.
+
+        ConstIterator findLast(const std::string & name) const;
+        /// Returns an iterator pointing to the last name-value pair
         /// with the given name.
 
         ConstIterator begin() const;

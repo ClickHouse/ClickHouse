@@ -1,4 +1,8 @@
 <test>
+    <settings>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+    </settings>
+
     <create_query>DROP TABLE IF EXISTS perf_lc_num</create_query>
     <create_query>CREATE TABLE perf_lc_num(
         num UInt8,

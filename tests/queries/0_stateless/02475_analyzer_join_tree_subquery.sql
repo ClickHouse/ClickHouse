@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 WITH subquery AS (SELECT sum(number) FROM numbers(10)) SELECT * FROM subquery;
 

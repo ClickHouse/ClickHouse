@@ -3,8 +3,8 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/IdentifierNode.h>
-
-#include <Parsers/ASTFunction.h>
+#include <Core/Names.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -35,7 +35,7 @@ class LambdaNode final : public IQueryTreeNode
 {
 public:
     /// Initialize lambda with argument names and lambda body expression
-    explicit LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, DataTypePtr result_type_ = {});
+    explicit LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, bool is_operator_, DataTypePtr result_type_ = {});
 
     /// Get argument names
     const Names & getArgumentNames() const
@@ -97,9 +97,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState & state) const override;
+    void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -108,6 +108,7 @@ protected:
 private:
     Names argument_names;
     DataTypePtr result_type;
+    bool is_operator = false;
 
     static constexpr size_t arguments_child_index = 0;
     static constexpr size_t expression_child_index = 1;

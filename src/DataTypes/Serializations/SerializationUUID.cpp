@@ -1,4 +1,5 @@
 #include <Columns/ColumnsNumber.h>
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationUUID.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -9,6 +10,18 @@
 
 namespace DB
 {
+
+UInt128 SerializationUUID::getHash()
+{
+    SipHash hash;
+    hash.update("UUID");
+    return hash.get128();
+}
+
+SerializationPtr SerializationUUID::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationUUID(); });
+}
 
 void SerializationUUID::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
@@ -25,15 +38,16 @@ void SerializationUUID::deserializeText(IColumn & column, ReadBuffer & istr, con
         throwUnexpectedDataAfterParsedValue(column, istr, settings, "UUID");
 }
 
-void SerializationUUID::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+bool SerializationUUID::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const
 {
-    deserializeText(column, istr, settings, false);
+    UUID x;
+    if (!tryReadText(x, istr) || (whole && !istr.eof()))
+        return false;
+
+    assert_cast<ColumnUUID &>(column).getData().push_back(x);
+    return true;
 }
 
-void SerializationUUID::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
 
 void SerializationUUID::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
@@ -76,6 +90,16 @@ void SerializationUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     assert_cast<ColumnUUID &>(column).getData().push_back(std::move(uuid)); /// It's important to do this at the end - for exception safety.
 }
 
+bool SerializationUUID::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    UUID uuid;
+    if (!checkChar('\'', istr) || !tryReadText(uuid, istr) || !checkChar('\'', istr))
+        return false;
+
+    assert_cast<ColumnUUID &>(column).getData().push_back(std::move(uuid));
+    return true;
+}
+
 void SerializationUUID::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
@@ -92,6 +116,15 @@ void SerializationUUID::deserializeTextJSON(IColumn & column, ReadBuffer & istr,
     assert_cast<ColumnUUID &>(column).getData().push_back(x);
 }
 
+bool SerializationUUID::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    UUID x;
+    if (!checkChar('"', istr) || !tryReadText(x, istr) || !checkChar('"', istr))
+        return false;
+    assert_cast<ColumnUUID &>(column).getData().push_back(x);
+    return true;
+}
+
 void SerializationUUID::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
@@ -106,10 +139,18 @@ void SerializationUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
     assert_cast<ColumnUUID &>(column).getData().push_back(value);
 }
 
+bool SerializationUUID::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    UUID value;
+    if (!tryReadCSV(value, istr))
+        return false;
+    assert_cast<ColumnUUID &>(column).getData().push_back(value);
+    return true;
+}
 
 void SerializationUUID::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    UUID x = field.get<UUID>();
+    UUID x = field.safeGet<UUID>();
     writeBinaryLittleEndian(x, ostr);
 }
 
@@ -153,8 +194,9 @@ void SerializationUUID::serializeBinaryBulk(const IColumn & column, WriteBuffer 
 #pragma clang diagnostic pop
 }
 
-void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
 {
+    istr.ignore(sizeof(UUID) * rows_offset);
     typename ColumnVector<UUID>::Container & x = typeid_cast<ColumnVector<UUID> &>(column).getData();
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
@@ -168,4 +210,5 @@ void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & ist
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
 #pragma clang diagnostic pop
 }
+
 }

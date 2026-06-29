@@ -14,19 +14,19 @@ ORDER BY tuple();
 
 SET allow_non_metadata_alters = 0;
 
-ALTER TABLE non_metadata_alters MODIFY COLUMN value3 UInt64; --{serverError 524}
+ALTER TABLE non_metadata_alters MODIFY COLUMN value3 UInt64; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
-ALTER TABLE non_metadata_alters MODIFY COLUMN value1 UInt32; --{serverError 524}
+ALTER TABLE non_metadata_alters MODIFY COLUMN value1 UInt32; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
-ALTER TABLE non_metadata_alters MODIFY COLUMN value4 Date; --{serverError 524}
+ALTER TABLE non_metadata_alters MODIFY COLUMN value4 Date; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
-ALTER TABLE non_metadata_alters DROP COLUMN value4; --{serverError 524}
+ALTER TABLE non_metadata_alters DROP COLUMN value4; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
-ALTER TABLE non_metadata_alters MODIFY COLUMN value2 Enum8('x' = 5, 'y' = 6); --{serverError 524}
+ALTER TABLE non_metadata_alters MODIFY COLUMN value2 Enum8('x' = 5, 'y' = 6); --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
-ALTER TABLE non_metadata_alters RENAME COLUMN value4 TO renamed_value4; --{serverError 524}
+ALTER TABLE non_metadata_alters RENAME COLUMN value4 TO renamed_value4; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
-ALTER TABLE non_metadata_alters MODIFY COLUMN value3 UInt16 TTL value5 + INTERVAL 5 DAY; --{serverError 524}
+ALTER TABLE non_metadata_alters MODIFY COLUMN value3 UInt16 TTL value5 + INTERVAL 5 DAY; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
 SET materialize_ttl_after_modify = 0;
 

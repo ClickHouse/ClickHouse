@@ -1,33 +1,51 @@
 #pragma once
 
-#include <Client/ClientBase.h>
+#include <Client/ClientApplicationBase.h>
+#include <Common/QueryScope.h>
 
+
+namespace BuzzHouse
+{
+    class FuzzConfig;
+    class ExternalIntegrations;
+};
 
 namespace DB
 {
 
-class Client : public ClientBase
+class Client : public ClientApplicationBase
 {
 public:
-    Client() = default;
+    using Arguments = ClientApplicationBase::Arguments;
+
+    Client();
+    ~Client() override;
 
     void initialize(Poco::Util::Application & self) override;
 
     int main(const std::vector<String> & /*args*/) override;
 
+    bool tryToReconnect(uint32_t max_reconnection_attempts, uint32_t time_to_sleep_between) override;
 protected:
-    bool processWithFuzzing(const String & full_query) override;
-    std::optional<bool> processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query);
+    Poco::Util::LayeredConfiguration & getClientConfiguration() override;
+
+    bool processWithASTFuzzer(std::string_view full_query) override;
+    bool buzzHouse() override;
+    bool processASTFuzzerStep(const String & query_to_execute, const ASTPtr & parsed_query);
+
+#if USE_JWT_CPP && USE_SSL
+    void login();
+#endif
 
     void connect() override;
 
-    void processError(const String & query) const override;
+    void processError(std::string_view query) const override;
 
     String getName() const override { return "client"; }
 
     void printHelpMessage(const OptionsDescription & options_description) override;
 
-    void addOptions(OptionsDescription & options_description) override;
+    void addExtraOptions(OptionsDescription & options_description) override;
 
     void processOptions(
         const OptionsDescription & options_description,
@@ -45,9 +63,25 @@ protected:
         std::vector<Arguments> & hosts_and_ports_arguments) override;
 
 private:
+    String getHelpHeader() const;
+    String getHelpFooter() const;
     void printChangedSettings() const;
     void showWarnings();
-    void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
+#if USE_BUZZHOUSE
+    std::unique_ptr<BuzzHouse::FuzzConfig> fuzz_config;
+    std::unique_ptr<BuzzHouse::ExternalIntegrations> external_integrations;
+
+    bool logAndProcessQuery(std::ofstream & outf, const String & full_query);
+    bool processBuzzHouseQuery(const String & full_query);
+    bool fuzzLoopReconnect();
+#endif
     std::vector<String> loadWarningMessages();
+
+    QueryScope query_scope;
+
+#if USE_JWT_CPP && USE_SSL
+    std::shared_ptr<JWTProvider> jwt_provider;
+    bool login_was_auto_added = false;
+#endif
 };
 }

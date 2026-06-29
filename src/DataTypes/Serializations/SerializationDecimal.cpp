@@ -1,4 +1,6 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
+#include <base/TypeName.h>
 
 #include <Columns/ColumnVector.h>
 #include <IO/ReadHelpers.h>
@@ -16,11 +18,19 @@ namespace ErrorCodes
 }
 
 template <typename T>
-bool SerializationDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
+bool SerializationDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
 {
     UInt32 unread_scale = scale;
-    if (!tryReadDecimalText(istr, x, precision, unread_scale))
-        return false;
+    if (csv)
+    {
+        if (!tryReadCSVDecimalText(istr, x, precision, unread_scale))
+            return false;
+    }
+    else
+    {
+        if (!tryReadDecimalText(istr, x, precision, unread_scale))
+            return false;
+    }
 
     if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
         return false;
@@ -45,13 +55,15 @@ template <typename T>
 void SerializationDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     T value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    writeText(value, this->scale, ostr, settings.decimal_trailing_zeros);
+    writeText(value, this->scale, ostr, settings.decimal_trailing_zeros,
+              /* fixed_fractional_length= */ false, /* fractional_length= */ 0,
+              settings.always_write_decimal_point_in_float_and_decimal);
 }
 
 template <typename T>
 void SerializationDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
-    T x;
+    T x{};
     readText(x, istr);
     assert_cast<ColumnType &>(column).getData().push_back(x);
 
@@ -60,11 +72,31 @@ void SerializationDecimal<T>::deserializeText(IColumn & column, ReadBuffer & ist
 }
 
 template <typename T>
+bool SerializationDecimal<T>::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const
+{
+    T x{};
+    if (!tryReadText(x, istr) || (whole && !istr.eof()))
+        return false;
+    assert_cast<ColumnType &>(column).getData().push_back(x);
+    return true;
+}
+
+template <typename T>
 void SerializationDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    T x;
+    T x{};
     readText(x, istr, true);
     assert_cast<ColumnType &>(column).getData().push_back(x);
+}
+
+template <typename T>
+bool SerializationDecimal<T>::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    T x{};
+    if (!tryReadText(x, istr, true))
+        return false;
+    assert_cast<ColumnType &>(column).getData().push_back(x);
+    return true;
 }
 
 template <typename T>
@@ -73,7 +105,11 @@ void SerializationDecimal<T>::serializeTextJSON(const IColumn & column, size_t r
     if (settings.json.quote_decimals)
         writeChar('"', ostr);
 
-    serializeText(column, row_num, ostr, settings);
+    /// Do not force a trailing decimal point in JSON: a bare `1.` is not a valid JSON number when
+    /// `output_format_json_quote_decimals = 0`. This mirrors `SerializationNumber::serializeTextJSON`,
+    /// which goes through `writeJSONNumber` and never forces the point either.
+    T value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    writeText(value, this->scale, ostr, settings.decimal_trailing_zeros);
 
     if (settings.json.quote_decimals)
         writeChar('"', ostr);
@@ -88,6 +124,35 @@ void SerializationDecimal<T>::deserializeTextJSON(IColumn & column, ReadBuffer &
         assertChar('"', istr);
 }
 
+template <typename T>
+bool SerializationDecimal<T>::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    bool have_quotes = checkChar('"', istr);
+    T x{};
+    if (!tryReadText(x, istr) || (have_quotes && !checkChar('"', istr)))
+        return false;
+
+    assert_cast<ColumnType &>(column).getData().push_back(x);
+    return true;
+}
+
+
+template <typename T>
+UInt128 SerializationDecimal<T>::getHash(UInt32 precision_, UInt32 scale_)
+{
+    SipHash hash;
+    hash.update("Decimal");
+    hash.update(TypeName<T>);
+    hash.update(precision_);
+    hash.update(scale_);
+    return hash.get128();
+}
+
+template <typename T>
+SerializationPtr SerializationDecimal<T>::create(UInt32 precision_, UInt32 scale_)
+{
+    return ISerialization::pooled(getHash(precision_, scale_), [=] { return new SerializationDecimal(precision_, scale_); });
+}
 
 template class SerializationDecimal<Decimal32>;
 template class SerializationDecimal<Decimal64>;

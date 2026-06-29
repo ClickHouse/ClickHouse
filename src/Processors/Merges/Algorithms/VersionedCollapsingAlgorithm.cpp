@@ -1,5 +1,6 @@
 #include <Processors/Merges/Algorithms/VersionedCollapsingAlgorithm.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 
 namespace DB
@@ -8,21 +9,21 @@ namespace DB
 static const size_t MAX_ROWS_IN_MULTIVERSION_QUEUE = 8192;
 
 VersionedCollapsingAlgorithm::VersionedCollapsingAlgorithm(
-    const Block & header_,
+    SharedHeader header_,
     size_t num_inputs,
     SortDescription description_,
     const String & sign_column_,
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_,
+    std::optional<size_t> max_dynamic_subcolumns_,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
-    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, MAX_ROWS_IN_MULTIVERSION_QUEUE)
-    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size_rows_, max_block_size_bytes_)
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, MAX_ROWS_IN_MULTIVERSION_QUEUE, std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_))
     /// -1 for +1 in FixedSizeDequeWithGaps's internal buffer. 3 is a reasonable minimum size to collapse anything.
     , max_rows_in_queue(std::min(std::max<size_t>(3, max_block_size_rows_), MAX_ROWS_IN_MULTIVERSION_QUEUE) - 1)
     , current_keys(max_rows_in_queue)
 {
-    sign_column_number = header_.getPositionByName(sign_column_);
+    sign_column_number = header_->getPositionByName(sign_column_);
 }
 
 inline ALWAYS_INLINE static void writeRowSourcePart(WriteBuffer & buffer, RowSourcePart row_source)
@@ -47,7 +48,7 @@ void VersionedCollapsingAlgorithm::insertGap(size_t gap_size)
 
 void VersionedCollapsingAlgorithm::insertRow(size_t skip_rows, const RowRef & row)
 {
-    merged_data.insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
+    merged_data->insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
 
     insertGap(skip_rows);
 
@@ -104,8 +105,8 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
             --num_rows_to_insert;
 
             /// It's ok to return here, because we didn't affect queue.
-            if (merged_data.hasEnoughRows())
-                return Status(merged_data.pull());
+            if (merged_data->hasEnoughRows())
+                return Status(merged_data->pull());
         }
 
         if (current_keys.empty())
@@ -147,13 +148,13 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
         insertRow(gap, row);
         current_keys.popFront();
 
-        if (merged_data.hasEnoughRows())
-            return Status(merged_data.pull());
+        if (merged_data->hasEnoughRows())
+            return Status(merged_data->pull());
     }
 
     /// Write information about last collapsed rows.
     insertGap(current_keys.frontGap());
-    return Status(merged_data.pull(), true);
+    return Status(merged_data->pull(), true);
 }
 
 }

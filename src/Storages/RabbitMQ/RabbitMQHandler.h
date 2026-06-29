@@ -18,13 +18,18 @@ namespace Loop
     static const UInt8 STOP = 2;
 }
 
+/// Default timeout for any blocking AMQP wait that relies on broker callbacks to stop the loop
+/// (table setup, exchange unbind, queue cleanup, producer channel close). Bounds how long
+/// DROP TABLE / INSERT shutdown / server shutdown can block when the broker connection is dead.
+static const uint64_t BLOCKING_LOOP_TIMEOUT_MS = 30000;
+
 using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
 
 class RabbitMQHandler : public AMQP::LibUvHandler
 {
 
 public:
-    RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_);
+    RabbitMQHandler(uv_loop_t * loop_, LoggerPtr log_);
 
     void onError(AMQP::TcpConnection * connection, const char * message) override;
     void onReady(AMQP::TcpConnection * connection) override;
@@ -40,7 +45,12 @@ public:
     /// No synchronization is done with the main loop thread.
     int startBlockingLoop();
 
+    /// Like startBlockingLoop() but stops automatically after timeout_ms milliseconds.
+    /// Returns true if the loop exited naturally (callbacks fired), false if it timed out.
+    bool startBlockingLoopWithTimeout(uint64_t timeout_ms);
+
     void stopLoop();
+    void stopBlockingLoop();
 
     bool connectionRunning() const { return connection_running.load(); }
     bool loopRunning() const { return loop_running.load(); }
@@ -50,7 +60,7 @@ public:
 
 private:
     uv_loop_t * loop;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::atomic<bool> connection_running, loop_running;
     std::atomic<UInt8> loop_state;

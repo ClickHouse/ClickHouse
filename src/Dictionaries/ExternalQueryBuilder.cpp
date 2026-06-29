@@ -1,4 +1,4 @@
-#include "ExternalQueryBuilder.h"
+#include <Dictionaries/ExternalQueryBuilder.h>
 
 #include <boost/range/join.hpp>
 
@@ -41,6 +41,10 @@ ExternalQueryBuilder::ExternalQueryBuilder(
     , where(where_)
     , quoting_style(quoting_style_)
 {
+    // SQL-standard DBs (PostgreSQL, Cassandra, etc.) treat '\' as a literal character, so use '' escaping.
+    if (quoting_style == IdentifierQuotingStyle::DoubleQuotes)
+        format_settings.values.escape_quote_with_quote = true;
+
     if (table.empty() && query.empty())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Setting `table` or `query` must be non empty");
 
@@ -53,10 +57,6 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
 {
     switch (quoting_style)
     {
-        case IdentifierQuotingStyle::None:
-            writeString(s, out);
-            break;
-
         case IdentifierQuotingStyle::Backticks:
             writeBackQuotedString(s, out);
             break;
@@ -218,33 +218,31 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
 
         return out.str();
     }
-    else
+
+    writeString(query, out);
+
+    auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
+    if (condition_position == std::string::npos)
     {
-        writeString(query, out);
+        writeString(" WHERE ", out);
+        composeUpdateCondition(update_field, time_point, out);
+        writeString(";", out);
 
-        auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
-        if (condition_position == std::string::npos)
-        {
-            writeString(" WHERE ", out);
-            composeUpdateCondition(update_field, time_point, out);
-            writeString(";", out);
-
-            return out.str();
-        }
-
-        WriteBufferFromOwnString condition_value_buffer;
-        composeUpdateCondition(update_field, time_point, condition_value_buffer);
-        const auto & condition_value = condition_value_buffer.str();
-
-        auto query_copy = query;
-        query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
-
-        return query_copy;
+        return out.str();
     }
+
+    WriteBufferFromOwnString condition_value_buffer;
+    composeUpdateCondition(update_field, time_point, condition_value_buffer);
+    const auto & condition_value = condition_value_buffer.str();
+
+    auto query_copy = query;
+    query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
+
+    return query_copy;
 }
 
 
-std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> & ids) const
+std::string ExternalQueryBuilder::composeLoadIdsQuery(const VectorWithMemoryTracking<UInt64> & ids) const
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Simple key required for method");
@@ -303,34 +301,32 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
 
         return out.str();
     }
-    else
+
+    writeString(query, out);
+
+    auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
+    if (condition_position == std::string::npos)
     {
-        writeString(query, out);
+        writeString(" WHERE ", out);
+        composeIdsCondition(ids, out);
+        writeString(";", out);
 
-        auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
-        if (condition_position == std::string::npos)
-        {
-            writeString(" WHERE ", out);
-            composeIdsCondition(ids, out);
-            writeString(";", out);
-
-            return out.str();
-        }
-
-        WriteBufferFromOwnString condition_value_buffer;
-        composeIdsCondition(ids, condition_value_buffer);
-        const auto & condition_value = condition_value_buffer.str();
-
-        auto query_copy = query;
-        query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
-
-        return query_copy;
+        return out.str();
     }
+
+    WriteBufferFromOwnString condition_value_buffer;
+    composeIdsCondition(ids, condition_value_buffer);
+    const auto & condition_value = condition_value_buffer.str();
+
+    auto query_copy = query;
+    query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
+
+    return query_copy;
 }
 
 
 std::string ExternalQueryBuilder::composeLoadKeysQuery(
-    const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix) const
+    const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix) const
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Composite key required for method");
@@ -394,31 +390,29 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
 
         return out.str();
     }
-    else
+
+    auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
+    if (condition_position == std::string::npos)
     {
-        auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
-        if (condition_position == std::string::npos)
-        {
-            writeString("SELECT * FROM (", out);
-            writeString(query, out);
-            writeString(") WHERE ", out);
-            composeKeysCondition(key_columns, requested_rows, method, partition_key_prefix, out);
-            writeString(";", out);
-
-            return out.str();
-        }
-
+        writeString("SELECT * FROM (", out);
         writeString(query, out);
+        writeString(") AS subquery WHERE ", out);
+        composeKeysCondition(key_columns, requested_rows, method, partition_key_prefix, out);
+        writeString(";", out);
 
-        WriteBufferFromOwnString condition_value_buffer;
-        composeKeysCondition(key_columns, requested_rows, method, partition_key_prefix, condition_value_buffer);
-        const auto & condition_value = condition_value_buffer.str();
-
-        auto query_copy = query;
-        query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
-
-        return query_copy;
+        return out.str();
     }
+
+    writeString(query, out);
+
+    WriteBufferFromOwnString condition_value_buffer;
+    composeKeysCondition(key_columns, requested_rows, method, partition_key_prefix, condition_value_buffer);
+    const auto & condition_value = condition_value_buffer.str();
+
+    auto query_copy = query;
+    query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
+
+    return query_copy;
 }
 
 
@@ -443,7 +437,7 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, size
 }
 
 
-void ExternalQueryBuilder::composeInWithTuples(const Columns & key_columns, const std::vector<size_t> & requested_rows,
+void ExternalQueryBuilder::composeInWithTuples(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows,
                                                WriteBuffer & out, size_t beg, size_t end) const
 {
     composeKeyTupleDefinition(out, beg, end);
@@ -510,7 +504,7 @@ void ExternalQueryBuilder::composeUpdateCondition(const std::string & update_fie
     writeChar('\'', out);
 }
 
-void ExternalQueryBuilder::composeIdsCondition(const std::vector<UInt64> & ids, WriteBuffer & out) const
+void ExternalQueryBuilder::composeIdsCondition(const VectorWithMemoryTracking<UInt64> & ids, WriteBuffer & out) const
 {
     writeQuoted(dict_struct.id->name, out);
     writeString(" IN (", out);
@@ -528,7 +522,7 @@ void ExternalQueryBuilder::composeIdsCondition(const std::vector<UInt64> & ids, 
     writeString(")", out);
 }
 
-void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix, WriteBuffer & out) const
+void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix, WriteBuffer & out) const
 {
     bool first = true;
 

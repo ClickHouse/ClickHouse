@@ -1,0 +1,16 @@
+<test>
+    <create_query>CREATE TABLE test_multiif_t(d Nullable(Int64)) ENGINE Memory</create_query>
+    <fill_query>INSERT INTO test_multiif_t SELECT * from numbers(300000000)</fill_query>
+
+    <query>select count(1) from test_multiif_t where multiIf(d > 2, d-2, d > 1, d-1, d >0, d, 0) > 1 SETTINGS max_threads=1</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_multiif_t</drop_query>
+
+
+    <!-- Test multiIf with decimal inputs -->
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(multiIf( rand(1) % 2 = 0, materialize(1::Nullable(Decimal256(3))), rand(2) % 2 = 0, materialize(2::Nullable(Decimal256(3))), rand(3) % 2 = 0, materialize(3::Nullable(Decimal256(3))), rand(4) % 2 = 0, materialize(4::Nullable(Decimal256(3))), rand(5) % 2 = 0, materialize(5::Nullable(Decimal256(3))), materialize(6::Nullable(Decimal256(3)))))</query>
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(multiIf( rand(1) % 2 = 0, materialize(1::Decimal256(3)), rand(2) % 2 = 0, materialize(2::Decimal256(3)), rand(3) % 2 = 0, materialize(3::Decimal256(3)), rand(4) % 2 = 0, materialize(4::Decimal256(3)), rand(5) % 2 = 0, materialize(5::Decimal256(3)), materialize(6::Decimal256(3))))</query>
+
+    <!-- Test multiIf with integer inputs -->
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(multiIf(rand() % 2 = 0, rand()+2, rand() % 3 = 0, rand()+3, rand() % 4 = 0, rand()+4, rand() % 5 = 0, rand() + 5, rand() % 6 = 0, rand() + 6, rand()))</query>
+</test>

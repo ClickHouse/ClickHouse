@@ -1,38 +1,51 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Common/CurrentThread.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/quoteString.h>
+#include <Common/ThreadStatus.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsBackup.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Common/quoteString.h>
 
-#include <boost/container/flat_set.hpp>
-
+#include <optional>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
+    extern const SettingsSetOperationMode union_default_mode;
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
     extern const int FUNCTION_ALREADY_EXISTS;
-    extern const int UNKNOWN_FUNCTION;
     extern const int CANNOT_DROP_FUNCTION;
     extern const int CANNOT_CREATE_RECURSIVE_FUNCTION;
-    extern const int UNSUPPORTED_METHOD;
+    extern const int BAD_ARGUMENTS;
 }
 
 
 namespace
 {
-    void validateFunctionRecursiveness(const IAST & node, const String & function_to_create)
+    void validateSQLFunctionRecursiveness(const IAST & node, const String & function_to_create)
     {
         for (const auto & child : node.children)
         {
@@ -40,60 +53,78 @@ namespace
             if (function_name_opt && function_name_opt.value() == function_to_create)
                 throw Exception(ErrorCodes::CANNOT_CREATE_RECURSIVE_FUNCTION, "You cannot create recursive function");
 
-            validateFunctionRecursiveness(*child, function_to_create);
+            validateSQLFunctionRecursiveness(*child, function_to_create);
         }
     }
 
-    void validateFunction(ASTPtr function, const String & name)
+    void validateSQLFunction(ASTPtr function, const String & name)
     {
         ASTFunction * lambda_function = function->as<ASTFunction>();
 
         if (!lambda_function)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected function, got: {}", function->formatForErrorMessage());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function, got: {}", function->formatForErrorMessage());
 
         auto & lambda_function_expression_list = lambda_function->arguments->children;
 
         if (lambda_function_expression_list.size() != 2)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have arguments and body");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have arguments and body");
 
         const ASTFunction * tuple_function_arguments = lambda_function_expression_list[0]->as<ASTFunction>();
 
-        if (!tuple_function_arguments || !tuple_function_arguments->arguments)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have valid arguments");
+        if (!tuple_function_arguments || !tuple_function_arguments->arguments || tuple_function_arguments->name != "tuple")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have valid arguments");
 
-        std::unordered_set<String> arguments;
+        UnorderedSetWithMemoryTracking<String> arguments;
 
         for (const auto & argument : tuple_function_arguments->arguments->children)
         {
             const auto * argument_identifier = argument->as<ASTIdentifier>();
 
             if (!argument_identifier)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda argument must be identifier");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda argument must be identifier");
 
             const auto & argument_name = argument_identifier->name();
             auto [_, inserted] = arguments.insert(argument_name);
             if (!inserted)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Identifier {} already used as function parameter", argument_name);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identifier {} already used as function parameter", argument_name);
         }
 
         ASTPtr function_body = lambda_function_expression_list[1];
         if (!function_body)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have valid function body");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have valid function body");
 
-        validateFunctionRecursiveness(*function_body, name);
-    }
-
-    ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query)
-    {
-        auto ptr = create_function_query.clone();
-        auto & res = typeid_cast<ASTCreateFunctionQuery &>(*ptr);
-        res.if_not_exists = false;
-        res.or_replace = false;
-        FunctionNameNormalizer().visit(res.function_core.get());
-        return ptr;
+        validateSQLFunctionRecursiveness(*function_body, name);
     }
 }
 
+ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const ContextPtr & context)
+{
+    auto ptr = create_function_query.clone();
+
+    if (auto * query = typeid_cast<ASTCreateSQLFunctionQuery *>(ptr.get()))
+    {
+        query->if_not_exists = false;
+        query->or_replace = false;
+        FunctionNameNormalizer::visit(query->function_core.get());
+
+        {
+            SelectIntersectExceptQueryVisitor::Data data{context->getSettingsRef()[Setting::intersect_default_mode], context->getSettingsRef()[Setting::except_default_mode]};
+            SelectIntersectExceptQueryVisitor{data}.visit(query->function_core);
+        }
+        {
+            NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(query->function_core);
+        }
+    }
+
+    if (auto * query = typeid_cast<ASTCreateWasmFunctionQuery *>(ptr.get()))
+    {
+        query->if_not_exists = false;
+        query->or_replace = false;
+    }
+
+    return ptr;
+}
 
 UserDefinedSQLFunctionFactory & UserDefinedSQLFunctionFactory::instance()
 {
@@ -101,7 +132,12 @@ UserDefinedSQLFunctionFactory & UserDefinedSQLFunctionFactory::instance()
     return result;
 }
 
-void UserDefinedSQLFunctionFactory::checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query)
+UserDefinedSQLFunctionFactory::UserDefinedSQLFunctionFactory()
+    : WithContext(Context::getGlobalContextInstance())
+{}
+
+/// Checks that a specified function can be registered, throws an exception if not.
+static void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query, bool throw_if_exists)
 {
     if (FunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", function_name);
@@ -109,72 +145,76 @@ void UserDefinedSQLFunctionFactory::checkCanBeRegistered(const ContextPtr & cont
     if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context))
+    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
 
-    validateFunction(assert_cast<const ASTCreateFunctionQuery &>(create_function_query).function_core, function_name);
+    if (throw_if_exists && UserDefinedWebAssemblyFunctionFactory::instance().has(function_name)) /// NOLINT(readability-static-accessed-through-instance)
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined wasm function '{}' already exists", function_name);
+
+    if (const auto * create_sql_function_query = typeid_cast<const ASTCreateSQLFunctionQuery *>(&create_function_query))
+        validateSQLFunction(create_sql_function_query->function_core, function_name);
 }
 
-void UserDefinedSQLFunctionFactory::checkCanBeUnregistered(const ContextPtr & context, const String & function_name)
+static void checkCanBeUnregistered(const ContextPtr & context, const String & function_name)
 {
     if (FunctionFactory::instance().hasNameOrAlias(function_name) ||
         AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop system function '{}'", function_name);
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context))
+    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) // NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined executable function '{}'", function_name);
 }
 
-bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
+bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & current_context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
 {
-    checkCanBeRegistered(context, function_name, *create_function_query);
-    create_function_query = normalizeCreateFunctionQuery(*create_function_query);
-
-    std::lock_guard lock{mutex};
-    auto it = function_name_to_create_query_map.find(function_name);
-    if (it != function_name_to_create_query_map.end())
-    {
-        if (throw_if_exists)
-            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined function '{}' already exists", function_name);
-        else if (!replace_if_exists)
-            return false;
-    }
+    checkCanBeRegistered(current_context, function_name, *create_function_query, throw_if_exists);
+    create_function_query = normalizeCreateFunctionQuery(*create_function_query, current_context);
 
     try
     {
-        auto & loader = context->getUserDefinedSQLObjectsLoader();
-        bool stored = loader.storeObject(UserDefinedSQLObjectType::Function, function_name, *create_function_query, throw_if_exists, replace_if_exists, context->getSettingsRef());
+        auto & wasm_factory = UserDefinedWebAssemblyFunctionFactory::instance();
+        std::optional<UserDefinedWebAssemblyFunctionFactory::RegisteredFunction> wasm_function;
+        if (create_function_query->as<ASTCreateWasmFunctionQuery>())
+            wasm_function = wasm_factory.prepareFunction(create_function_query, current_context->getWasmModuleManager());
+
+        auto & loader = current_context->getUserDefinedSQLObjectsStorage();
+        bool stored = loader.storeObject(
+            current_context,
+            UserDefinedSQLObjectType::Function,
+            function_name,
+            create_function_query,
+            throw_if_exists,
+            replace_if_exists,
+            current_context->getSettingsRef());
         if (!stored)
             return false;
+
+        if (wasm_function)
+            wasm_factory.addOrReplace(std::move(*wasm_function));
+        else if (replace_if_exists && wasm_factory.has(function_name))
+            wasm_factory.dropIfExists(function_name);
     }
     catch (Exception & exception)
     {
-        exception.addMessage(fmt::format("while storing user defined function {}", backQuote(function_name)));
+        exception.addMessage(fmt::format("while adding user defined function {}", backQuote(function_name)));
         throw;
     }
 
-    function_name_to_create_query_map[function_name] = create_function_query;
     return true;
 }
 
-bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr & context, const String & function_name, bool throw_if_not_exists)
+bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr & current_context, const String & function_name, bool throw_if_not_exists)
 {
-    checkCanBeUnregistered(context, function_name);
-
-    std::lock_guard lock(mutex);
-    auto it = function_name_to_create_query_map.find(function_name);
-    if (it == function_name_to_create_query_map.end())
-    {
-        if (throw_if_not_exists)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "User-defined function '{}' doesn't exist", function_name);
-        else
-            return false;
-    }
+    checkCanBeUnregistered(current_context, function_name);
 
     try
     {
-        auto & loader = context->getUserDefinedSQLObjectsLoader();
-        bool removed = loader.removeObject(UserDefinedSQLObjectType::Function, function_name, throw_if_not_exists);
+        auto & storage = current_context->getUserDefinedSQLObjectsStorage();
+        bool removed = storage.removeObject(
+            current_context,
+            UserDefinedSQLObjectType::Function,
+            function_name,
+            throw_if_not_exists);
         if (!removed)
             return false;
     }
@@ -184,61 +224,63 @@ bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr &
         throw;
     }
 
-    function_name_to_create_query_map.erase(function_name);
+    /// If deleted function is a WASM function, remove it from WASM function factory as well
+    /// After that wasm modules can be safely dropped as well, since no functions refer to them
+    UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(function_name);
+
     return true;
 }
 
 ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
 {
-    std::lock_guard lock(mutex);
+    ASTPtr ast = getContext()->getUserDefinedSQLObjectsStorage().get(function_name);
 
-    auto it = function_name_to_create_query_map.find(function_name);
-    if (it == function_name_to_create_query_map.end())
-        throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-            "The function name '{}' is not registered",
-            function_name);
+    if (ast && CurrentThread::isInitialized())
+    {
+        auto query_context = CurrentThread::get().tryGetQueryContext();
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
+    }
 
-    return it->second;
+    return ast;
 }
 
 ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) const
 {
-    std::lock_guard lock(mutex);
+    ASTPtr ast = getContext()->getUserDefinedSQLObjectsStorage().tryGet(function_name);
 
-    auto it = function_name_to_create_query_map.find(function_name);
-    if (it == function_name_to_create_query_map.end())
-        return nullptr;
+    if (ast && CurrentThread::isInitialized())
+    {
+        auto query_context = CurrentThread::get().tryGetQueryContext();
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
+    }
 
-    return it->second;
+    return ast;
 }
 
 bool UserDefinedSQLFunctionFactory::has(const String & function_name) const
 {
-    return tryGet(function_name) != nullptr;
+    return getContext()->getUserDefinedSQLObjectsStorage().has(function_name);
 }
 
-std::vector<std::string> UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
 {
-    std::vector<std::string> registered_names;
-
-    std::lock_guard lock(mutex);
-    registered_names.reserve(function_name_to_create_query_map.size());
-
-    for (const auto & [name, _] : function_name_to_create_query_map)
-        registered_names.emplace_back(name);
-
-    return registered_names;
+    return getContext()->getUserDefinedSQLObjectsStorage().getAllObjectNames();
 }
 
 bool UserDefinedSQLFunctionFactory::empty() const
 {
-    std::lock_guard lock(mutex);
-    return function_name_to_create_query_map.empty();
+    return getContext()->getUserDefinedSQLObjectsStorage().empty();
 }
 
 void UserDefinedSQLFunctionFactory::backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup) const
 {
-    backupUserDefinedSQLObjects(backup_entries_collector, data_path_in_backup, UserDefinedSQLObjectType::Function, getAllFunctions());
+    backupUserDefinedSQLObjects(
+        backup_entries_collector,
+        data_path_in_backup,
+        UserDefinedSQLObjectType::Function,
+        getContext()->getUserDefinedSQLObjectsStorage().getAllObjects());
 }
 
 void UserDefinedSQLFunctionFactory::restore(RestorerFromBackup & restorer, const String & data_path_in_backup)
@@ -247,57 +289,26 @@ void UserDefinedSQLFunctionFactory::restore(RestorerFromBackup & restorer, const
     const auto & restore_settings = restorer.getRestoreSettings();
     bool throw_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kCreate);
     bool replace_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kReplace);
-    auto context = restorer.getContext();
+    auto restore_context = restorer.getContext();
     for (const auto & [function_name, create_function_query] : restored_functions)
-        registerFunction(context, function_name, create_function_query, throw_if_exists, replace_if_exists);
+        registerFunction(restore_context, function_name, create_function_query, throw_if_exists, replace_if_exists);
 }
 
-void UserDefinedSQLFunctionFactory::setAllFunctions(const std::vector<std::pair<String, ASTPtr>> & new_functions)
+void UserDefinedSQLFunctionFactory::loadFunctions(IUserDefinedSQLObjectsStorage & function_storage, WasmModuleManager & wasm_module_manager)
 {
-    std::unordered_map<String, ASTPtr> normalized_functions;
-    for (const auto & [function_name, create_query] : new_functions)
-        normalized_functions[function_name] = normalizeCreateFunctionQuery(*create_query);
-
-    std::lock_guard lock(mutex);
-    function_name_to_create_query_map = std::move(normalized_functions);
-}
-
-std::vector<std::pair<String, ASTPtr>> UserDefinedSQLFunctionFactory::getAllFunctions() const
-{
-    std::lock_guard lock{mutex};
-    std::vector<std::pair<String, ASTPtr>> all_functions;
-    all_functions.reserve(function_name_to_create_query_map.size());
-    std::copy(function_name_to_create_query_map.begin(), function_name_to_create_query_map.end(), std::back_inserter(all_functions));
-    return all_functions;
-}
-
-void UserDefinedSQLFunctionFactory::setFunction(const String & function_name, const IAST & create_function_query)
-{
-    std::lock_guard lock(mutex);
-    function_name_to_create_query_map[function_name] = normalizeCreateFunctionQuery(create_function_query);
-}
-
-void UserDefinedSQLFunctionFactory::removeFunction(const String & function_name)
-{
-    std::lock_guard lock(mutex);
-    function_name_to_create_query_map.erase(function_name);
-}
-
-void UserDefinedSQLFunctionFactory::removeAllFunctionsExcept(const Strings & function_names_to_keep)
-{
-    boost::container::flat_set<std::string_view> names_set_to_keep{function_names_to_keep.begin(), function_names_to_keep.end()};
-    std::lock_guard lock(mutex);
-    for (auto it = function_name_to_create_query_map.begin(); it != function_name_to_create_query_map.end();)
+    for (const auto & [name, create_function_query] : function_storage.getAllObjects())
     {
-        auto current = it++;
-        if (!names_set_to_keep.contains(current->first))
-            function_name_to_create_query_map.erase(current);
+        try
+        {
+            if (create_function_query->as<ASTCreateWasmFunctionQuery>())
+                UserDefinedWebAssemblyFunctionFactory::instance().addOrReplace(create_function_query, wasm_module_manager);
+        }
+        catch (Exception & exception)
+        {
+            exception.addMessage(fmt::format("while loading user defined function {}", backQuote(name)));
+            throw;
+        }
     }
-}
-
-std::unique_lock<std::recursive_mutex> UserDefinedSQLFunctionFactory::getLock() const
-{
-    return std::unique_lock{mutex};
 }
 
 }

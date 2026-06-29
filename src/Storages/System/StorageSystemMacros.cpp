@@ -1,3 +1,8 @@
+#include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <Core/NamesAndTypes.h>
 #include <Common/Macros.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemMacros.h>
@@ -6,15 +11,16 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemMacros::getNamesAndTypes()
+ColumnsDescription StorageSystemMacros::getColumnsDescription()
 {
-    return {
-        {"macro", std::make_shared<DataTypeString>()},
-        {"substitution", std::make_shared<DataTypeString>()},
+    return ColumnsDescription
+    {
+        {"macro", std::make_shared<DataTypeString>(), "The macro name."},
+        {"substitution", std::make_shared<DataTypeString>(), "The substitution string."},
     };
 }
 
-void StorageSystemMacros::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemMacros::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto macros = context->getMacros();
 
@@ -26,3 +32,6 @@ void StorageSystemMacros::fillData(MutableColumns & res_columns, ContextPtr cont
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemMacros) }

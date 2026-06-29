@@ -1,0 +1,36 @@
+Memory
+test4 insert
+test4 select
+500000
+100000
+100000
+100000
+100000
+MergeTree compact
+test4 insert
+test4 select
+500000
+100000
+100000
+100000
+100000
+test4 select
+500000
+100000
+100000
+100000
+100000
+MergeTree wide
+test4 insert
+test4 select
+500000
+100000
+100000
+100000
+100000
+test4 select
+500000
+100000
+100000
+100000
+100000

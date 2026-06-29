@@ -1,6 +1,7 @@
 #include <IO/SynchronousReader.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -17,6 +18,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
     extern const Event DiskReadElapsedMicroseconds;
+    extern const Event AsynchronousReaderIgnoredBytes;
 }
 
 namespace CurrentMetrics
@@ -37,12 +39,12 @@ namespace ErrorCodes
 std::future<IAsynchronousReader::Result> SynchronousReader::submit(Request request)
 {
     /// If size is zero, then read() cannot be distinguished from EOF
-    assert(request.size);
+    chassert(request.size);
 
 #if defined(POSIX_FADV_WILLNEED)
     int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
     if (0 != posix_fadvise(fd, request.offset, request.size, POSIX_FADV_WILLNEED))
-        throwFromErrno("Cannot posix_fadvise", ErrorCodes::CANNOT_ADVISE);
+        throw ErrnoException(ErrorCodes::CANNOT_ADVISE, "Cannot posix_fadvise");
 #endif
 
     return std::async(std::launch::deferred, [request, this]
@@ -72,7 +74,7 @@ IAsynchronousReader::Result SynchronousReader::execute(Request request)
         if (-1 == res && errno != EINTR)
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            throwFromErrno(fmt::format("Cannot read from file {}", fd), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd);
         }
 
         if (res > 0)
@@ -83,12 +85,12 @@ IAsynchronousReader::Result SynchronousReader::execute(Request request)
 
     /// It reports real time spent including the time spent while thread was preempted doing nothing.
     /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
-    /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
-    /// (NetlinkMetricsProvider has about 500K RPS).
+    /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it.
     watch.stop();
     ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
-    return Result{ .size = bytes_read, .offset = request.ignore };
+    ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
+    return Result{ .buf = request.buf, .size = bytes_read, .offset = request.ignore, .file_offset_of_buffer_end = request.offset + bytes_read };
 }
 
 }

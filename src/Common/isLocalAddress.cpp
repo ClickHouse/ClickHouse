@@ -1,11 +1,14 @@
 #include <Common/isLocalAddress.h>
 
 #include <ifaddrs.h>
+#include <algorithm>
 #include <cstring>
 #include <optional>
+#include <ranges>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/levenshteinDistance.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -24,18 +27,16 @@ namespace
 
 struct NetworkInterfaces : public boost::noncopyable
 {
-    ifaddrs * ifaddr;
+    ifaddrs * ifaddr{};
     NetworkInterfaces()
     {
         if (getifaddrs(&ifaddr) == -1)
-        {
-            throwFromErrno("Cannot getifaddrs", ErrorCodes::SYSTEM_ERROR);
-        }
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getifaddrs");
     }
 
     bool hasAddress(const Poco::Net::IPAddress & address) const
     {
-        ifaddrs * iface;
+        ifaddrs * iface = nullptr;
         for (iface = ifaddr; iface != nullptr; iface = iface->ifa_next)
         {
             /// Point-to-point (VPN) addresses may have NULL ifa_addr
@@ -134,7 +135,21 @@ size_t getHostNamePrefixDistance(const std::string & local_hostname, const std::
 
 size_t getHostNameLevenshteinDistance(const std::string & local_hostname, const std::string & host)
 {
-    return levenshteinDistance(local_hostname, host);
+    return levenshteinDistanceCaseInsensitive(local_hostname, host);
+}
+
+size_t getHostNameLongestCommonPrefix(const std::string & local_hostname, const std::string & host)
+{
+    /// Case-sensitive comparison, matching `getHostNamePrefixDistance` (`nearest_hostname`).
+    const auto [it, _] = std::ranges::mismatch(local_hostname, host);
+    return static_cast<size_t>(it - local_hostname.begin());
+}
+
+size_t getHostNameLongestCommonSuffix(const std::string & local_hostname, const std::string & host)
+{
+    /// Case-sensitive comparison, matching `getHostNamePrefixDistance` (`nearest_hostname`).
+    const auto [it, _] = std::ranges::mismatch(local_hostname | std::views::reverse, host | std::views::reverse);
+    return static_cast<size_t>(it - local_hostname.rbegin());
 }
 
 }

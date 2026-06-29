@@ -10,9 +10,10 @@
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Examples/clickhouse_examples.h>
 
 
-int main(int, char **)
+int mainEntryExampleZlibBuffers(int, char **)
 try
 {
     std::cout << std::fixed << std::setprecision(2);
@@ -21,7 +22,7 @@ try
     Stopwatch stopwatch;
 
     {
-        auto buf = std::make_unique<DB::WriteBufferFromFile>("test_zlib_buffers.gz", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
+        auto buf = std::make_unique<DB::WriteBufferFromFile>("test_zlib_buffers.gz", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
         DB::ZlibDeflatingWriteBuffer deflating_buf(std::move(buf), DB::CompressionMethod::Gzip, /* compression_level = */ 3);
 
         stopwatch.restart();
@@ -34,7 +35,7 @@ try
 
         stopwatch.stop();
         std::cout << "Writing done. Elapsed: " << stopwatch.elapsedSeconds() << " s."
-            << ", " << (deflating_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
+            << ", " << (static_cast<double>(deflating_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
             << std::endl;
     }
 
@@ -45,7 +46,7 @@ try
         stopwatch.restart();
         for (size_t i = 0; i < n; ++i)
         {
-            size_t x;
+            size_t x = {};
             DB::readIntText(x, inflating_buf);
             inflating_buf.ignore();
 
@@ -54,7 +55,7 @@ try
         }
         stopwatch.stop();
         std::cout << "Reading done. Elapsed: " << stopwatch.elapsedSeconds() << " s."
-            << ", " << (inflating_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
+            << ", " << (static_cast<double>(inflating_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
             << std::endl;
     }
 

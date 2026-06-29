@@ -86,7 +86,7 @@ select groupArray(groupArray(number)) over (rows unbounded preceding) as x from 
 [[0,3,6]]
 [[0,3,6],[1,4,7]]
 [[0,3,6],[1,4,7],[2,5,8]]
-select groupArray(groupArray(number)) over (rows unbounded preceding) as x from remote('127.0.0.{1,2}', '', t_01568) group by mod(number, 3) order by x settings distributed_group_by_no_merge=2; -- { serverError 48 }
+select groupArray(groupArray(number)) over (rows unbounded preceding) as x from remote('127.0.0.{1,2}', '', t_01568) group by mod(number, 3) order by x settings distributed_group_by_no_merge=2; -- { serverError NOT_IMPLEMENTED }
 -- proper ORDER BY w/window functions
 select p, o, count() over (partition by p)
 from remote('127.0.0.{1,2}', '',  t_01568)

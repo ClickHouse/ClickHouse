@@ -1,9 +1,9 @@
 #pragma once
 
-#include <string>
-
 #include <base/types.h>
 #include <Common/Exception.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -22,15 +22,15 @@ struct Keeper4LWInfo
     bool is_standalone;
 
     bool has_leader;
+    bool is_exceeding_mem_soft_limit;
 
     uint64_t alive_connections_count;
     uint64_t outstanding_requests_count;
 
+    uint64_t learner_count;
     uint64_t follower_count;
     uint64_t synced_follower_count;
-
-    uint64_t total_nodes_count;
-    int64_t last_zxid;
+    uint64_t synced_non_voting_follower_count;
 
     String getRole() const
     {
@@ -51,28 +51,45 @@ struct Keeper4LWInfo
 struct KeeperLogInfo
 {
     /// My first log index in log store.
-    uint64_t first_log_idx;
+    uint64_t first_log_idx{0};
 
     /// My first log term.
-    uint64_t first_log_term;
+    uint64_t first_log_term{0};
 
     /// My last log index in log store.
-    uint64_t last_log_idx;
+    uint64_t last_log_idx{0};
 
     /// My last log term.
-    uint64_t last_log_term;
+    uint64_t last_log_term{0};
 
     /// My last committed log index in state machine.
-    uint64_t last_committed_log_idx;
+    uint64_t last_committed_log_idx{};
 
     /// Leader's committed log index from my perspective.
-    uint64_t leader_committed_log_idx;
+    uint64_t leader_committed_log_idx{};
 
     /// Target log index should be committed to.
-    uint64_t target_committed_log_idx;
+    uint64_t target_committed_log_idx{};
 
     /// The largest committed log index in last snapshot.
-    uint64_t last_snapshot_idx;
+    uint64_t last_snapshot_idx{};
+
+    uint64_t latest_logs_cache_entries{};
+    uint64_t latest_logs_cache_size{};
+
+    uint64_t commit_logs_cache_entries{};
+    uint64_t commit_logs_cache_size{};
+};
+
+struct KeeperClusterMemberInfo
+{
+    int32_t server_id{};
+    String endpoint;
+    bool is_observer{};
+    int32_t priority{};
+    bool is_leader{};
+    bool is_self{};
+    std::optional<uint64_t> last_log_index;
 };
 
 }

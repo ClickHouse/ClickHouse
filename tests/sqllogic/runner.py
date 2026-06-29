@@ -2,20 +2,24 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-import enum
-import os
-import logging
 import csv
+import enum
 import json
+import logging
 import multiprocessing
+import os
 from functools import reduce
-from deepdiff import DeepDiff
 
-from connection import setup_connection, Engines, default_clickhouse_odbc_conn_str
-from test_runner import TestRunner, Status, RequestType
+from deepdiff import DeepDiff  # pylint:disable=import-error; for style check
 
+from connection import Engines, default_clickhouse_native_conn_args, setup_connection
+from test_runner import RequestType, Status, TestRunner
 
-LEVEL_NAMES = [x.lower() for x in logging._nameToLevel.keys() if x != logging.NOTSET]
+logger = logging.getLogger("runner")
+
+LEVEL_NAMES = [  # pylint:disable-next=protected-access
+    l.lower() for l, n in logging._nameToLevel.items() if n != logging.NOTSET
+]
 
 
 def setup_logger(args):
@@ -41,7 +45,7 @@ def __write_check_status(status_row, out_dir):
     if len(status_row) > 140:
         status_row = status_row[0:135] + "..."
     check_status_path = os.path.join(out_dir, "check_status.tsv")
-    with open(check_status_path, "a") as stream:
+    with open(check_status_path, "a", encoding="utf-8") as stream:
         writer = csv.writer(stream, delimiter="\t", lineterminator="\n")
         writer.writerow(status_row)
 
@@ -60,7 +64,7 @@ def __write_test_result(
 ):
     all_stages = reports.keys()
     test_results_path = os.path.join(out_dir, "test_results.tsv")
-    with open(test_results_path, "a") as stream:
+    with open(test_results_path, "a", encoding="utf-8") as stream:
         writer = csv.writer(stream, delimiter="\t", lineterminator="\n")
         for stage in all_stages:
             report = reports[stage]
@@ -139,6 +143,7 @@ def _child_process(setup_kwargs, runner_kwargs, input_dir, output_dir, test):
 
 def run_all_tests_in_parallel(setup_kwargs, runner_kwargs, input_dir, output_dir):
     process_count = max(1, os.cpu_count() - 2)
+    tests = list(TestRunner.list_tests(input_dir))
     with multiprocessing.Pool(process_count) as pool:
         async_results = [
             pool.apply_async(
@@ -151,9 +156,27 @@ def run_all_tests_in_parallel(setup_kwargs, runner_kwargs, input_dir, output_dir
                     test,
                 ),
             )
-            for test in TestRunner.list_tests(input_dir)
+            for test in tests
         ]
-        reports = [ar.get() for ar in async_results]
+        failed_tests = []
+        reports = []
+        for test, ar in zip(tests, async_results):
+            try:
+                reports.append(ar.get())
+            except Exception as e:
+                logger.error("Child process failed for %s: %s", test, e)
+                failed_tests.append((test, e))
+
+    if failed_tests:
+        names = ", ".join(t for t, _ in failed_tests)
+        logger.error(
+            "%d test file(s) failed to run: %s", len(failed_tests), names
+        )
+
+    if not reports:
+        raise RuntimeError(
+            f"All {len(tests)} test file(s) failed, cannot produce a report"
+        )
 
     report = reduce(lambda x, y: x.combine_with(y), reports)
     report.write_report(output_dir)
@@ -182,7 +205,7 @@ def mode_check_statements(parser):
                 input_dir, f"check statements:: not a dir {input_dir}"
             )
 
-        reports = dict()
+        reports = {}
 
         out_stages_dir = os.path.join(out_dir, f"{args.mode}-stages")
 
@@ -207,8 +230,8 @@ def mode_check_statements(parser):
 
         reports["verify-clickhouse"] = run_all_tests_in_parallel(
             setup_kwargs=as_kwargs(
-                engine=Engines.ODBC,
-                conn_str=default_clickhouse_odbc_conn_str(),
+                engine=Engines.NATIVE,
+                conn_str=default_clickhouse_native_conn_args(),
             ),
             runner_kwargs=as_kwargs(
                 verify_mode=True,
@@ -242,7 +265,7 @@ def mode_check_complete(parser):
                 input_dir, f"check statements:: not a dir {input_dir}"
             )
 
-        reports = dict()
+        reports = {}
 
         out_stages_dir = os.path.join(out_dir, f"{args.mode}-stages")
 
@@ -266,8 +289,8 @@ def mode_check_complete(parser):
 
         reports["complete-clickhouse"] = run_all_tests_in_parallel(
             setup_kwargs=as_kwargs(
-                engine=Engines.ODBC,
-                conn_str=default_clickhouse_odbc_conn_str(),
+                engine=Engines.NATIVE,
+                conn_str=default_clickhouse_native_conn_args(),
             ),
             runner_kwargs=as_kwargs(
                 verify_mode=True,
@@ -286,9 +309,9 @@ def make_actual_report(reports):
     return {stage: report.get_map() for stage, report in reports.items()}
 
 
-def write_actual_report(actial, out_dir):
-    with open(os.path.join(out_dir, "actual_report.json"), "w") as f:
-        f.write(json.dumps(actial))
+def write_actual_report(actual, out_dir):
+    with open(os.path.join(out_dir, "actual_report.json"), "w", encoding="utf-8") as f:
+        f.write(json.dumps(actual))
 
 
 def read_canonic_report(input_dir):
@@ -296,13 +319,15 @@ def read_canonic_report(input_dir):
     if not os.path.exists(file):
         return {}
 
-    with open(os.path.join(input_dir, "canonic_report.json"), "r") as f:
+    with open(
+        os.path.join(input_dir, "canonic_report.json"), "r", encoding="utf-8"
+    ) as f:
         data = f.read()
     return json.loads(data)
 
 
 def write_canonic_report(canonic, out_dir):
-    with open(os.path.join(out_dir, "canonic_report.json"), "w") as f:
+    with open(os.path.join(out_dir, "canonic_report.json"), "w", encoding="utf-8") as f:
         f.write(json.dumps(canonic))
 
 
@@ -370,7 +395,7 @@ def mode_self_test(parser):
         if not os.path.isdir(out_dir):
             raise NotADirectoryError(out_dir, f"self test: not a dir {out_dir}")
 
-        reports = dict()
+        reports = {}
 
         out_stages_dir = os.path.join(out_dir, f"{args.mode}-stages")
 
@@ -398,7 +423,7 @@ def mode_self_test(parser):
         )
         os.makedirs(out_dir_clickhouse_complete, exist_ok=True)
         with setup_connection(
-            Engines.ODBC, default_clickhouse_odbc_conn_str()
+            Engines.NATIVE, default_clickhouse_native_conn_args()
         ) as clickhouse:
             runner = TestRunner(clickhouse)
             runner.run_all_tests_from_dir(self_test_dir)
@@ -411,7 +436,7 @@ def mode_self_test(parser):
         )
         os.makedirs(out_dir_clickhouse_vs_clickhouse, exist_ok=True)
         with setup_connection(
-            Engines.ODBC, default_clickhouse_odbc_conn_str()
+            Engines.NATIVE, default_clickhouse_native_conn_args()
         ) as clickhouse:
             runner = TestRunner(clickhouse)
             runner.with_verify_mode()
@@ -427,8 +452,8 @@ def mode_self_test(parser):
 
         reports["sqlite-vs-clickhouse"] = run_all_tests_in_parallel(
             setup_kwargs=as_kwargs(
-                engine=Engines.ODBC,
-                conn_str=default_clickhouse_odbc_conn_str(),
+                engine=Engines.NATIVE,
+                conn_str=default_clickhouse_native_conn_args(),
             ),
             runner_kwargs=as_kwargs(
                 verify_mode=True,

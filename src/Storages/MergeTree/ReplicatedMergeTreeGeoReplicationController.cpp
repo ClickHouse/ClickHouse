@@ -1,10 +1,17 @@
 #include "ReplicatedMergeTreeGeoReplicationController.h"
 #include <optional>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsString geo_replication_control_region;
+    extern const MergeTreeSettingsUInt64 geo_replication_control_leader_election_period_ms;
+}
 
 namespace ErrorCodes
 {
@@ -14,7 +21,7 @@ namespace ErrorCodes
 ReplicatedMergeTreeGeoReplicationController::ReplicatedMergeTreeGeoReplicationController(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
 {
-    region = storage.getSettings()->geo_replication_control_region;
+    region = (*storage.getSettings())[MergeTreeSetting::geo_replication_control_region].toString();
     if (!region.empty())
     {
         log_name = storage.getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::GeoReplicationController)";
@@ -62,7 +69,7 @@ void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
             initialized = true;
         },
         "",
-        storage.getSettings()->geo_replication_control_leader_election_period_ms);
+        (*storage.getSettings())[MergeTreeSetting::geo_replication_control_leader_election_period_ms]);
 }
 
 void ReplicatedMergeTreeGeoReplicationController::stop()

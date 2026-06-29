@@ -1,15 +1,19 @@
 #pragma once
 
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/StorageConfiguration.h>
 #include <Common/randomSeed.h>
 
+#include "config.h"
+
+#if USE_SIMDJSON || USE_RAPIDJSON
 namespace DB
 {
 
 class NamedCollection;
+struct StorageID;
 
-class StorageFuzzJSON final : public IStorage
+class StorageFuzzJSON final : public StorageWithCommonVirtualColumns
 {
 public:
     struct Configuration : public StatelessTableEngineConfiguration
@@ -24,6 +28,7 @@ public:
         String json_str = "{}";
         UInt64 random_seed = randomSeed();
         bool should_reuse_output = false;
+        bool should_malform_output = false;
         Float64 probability = 0.25;
 
         UInt64 max_output_length = 1024;
@@ -48,6 +53,10 @@ public:
 
     std::string getName() const override { return "FuzzJSON"; }
 
+    static VirtualColumnsDescription createVirtuals();
+
+    using StorageWithCommonVirtualColumns::read;
+
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -59,10 +68,11 @@ public:
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 
-    static StorageFuzzJSON::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
+    static StorageFuzzJSON::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, const StorageID * table_id = nullptr);
 
 private:
     const Configuration config;
 };
 
 }
+#endif

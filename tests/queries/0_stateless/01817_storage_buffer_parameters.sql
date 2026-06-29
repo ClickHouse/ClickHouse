@@ -28,7 +28,7 @@ create table buffer_01817 (key Int) Engine=Buffer(currentDatabase(), data_01817,
     /* min_time= */   1,     /* max_time= */  86400,
     /* min_rows= */   1e9,   /* max_rows= */  1e6,
     /* min_bytes= */  0      /* max_bytes= 4e6  */
-); -- { serverError 42 }
+); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 -- too much args
 create table buffer_01817 (key Int) Engine=Buffer(currentDatabase(), data_01817,
     /* num_layers= */ 1,
@@ -37,6 +37,6 @@ create table buffer_01817 (key Int) Engine=Buffer(currentDatabase(), data_01817,
     /* min_bytes= */  0,     /* max_bytes= */ 4e6,
     /* flush_time= */ 86400, /* flush_rows= */ 10, /* flush_bytes= */0,
     0
-); -- { serverError 42 }
+); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 drop table data_01817;

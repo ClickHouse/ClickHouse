@@ -35,8 +35,8 @@ public:
         auto storage_type_out = DataTypeFactory::instance().get(nested_->getResultType()->getName());
         // Need to make a new function with promoted argument types because SimpleAggregates requires arg_type = return_type.
         AggregateFunctionProperties properties;
-        auto function
-            = AggregateFunctionFactory::instance().get(nested_->getName(), {storage_type_out}, nested_->getParameters(), properties);
+        auto function = AggregateFunctionFactory::instance().get(
+            nested_->getName(), NullsAction::EMPTY, {storage_type_out}, nested_->getParameters(), properties);
 
         // Need to make a clone because it'll be customized.
         auto storage_type_arg = DataTypeFactory::instance().get(nested_->getResultType()->getName());
@@ -83,7 +83,7 @@ public:
         nested_func->add(place, columns, row_num, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
     }

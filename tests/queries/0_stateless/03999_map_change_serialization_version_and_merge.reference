@@ -1,0 +1,119 @@
+1: basic parts, no buckets_info
+0
+1: after alter, new parts use with_buckets
+1
+1: merged part uses with_buckets
+1
+1: row count after merge
+100
+1: spot check data
+0	{'a':0,'b':1}
+25	{'a':25,'b':26}
+49	{'a':49,'b':50}
+50	{'a':50,'c':100}
+75	{'a':75,'c':125}
+99	{'a':99,'c':149}
+1: subcolumn correctness
+0	0	1	0
+25	25	26	0
+49	49	50	0
+50	50	0	100
+75	75	0	125
+99	99	0	149
+2: initial with_buckets parts
+1
+2: new parts use basic
+0
+2: merged part uses basic
+0
+2: row count after merge
+100
+2: spot check data
+0	{'y':0,'x':0}
+25	{'y':250,'x':25}
+49	{'y':490,'x':49}
+50	{'x':50,'z':0}
+75	{'x':75,'z':125}
+99	{'x':99,'z':245}
+2: subcolumn correctness
+0	0	0	0
+25	25	250	0
+49	49	490	0
+50	50	0	0
+75	75	0	125
+99	99	0	245
+3: initial 4-bucket parts
+4
+3: new parts use 8 buckets
+8
+3: merged part bucket count
+8
+3: row count after merge
+100
+3: spot check data
+0	{'c':2,'a':0,'b':1}
+25	{'c':27,'a':25,'b':26}
+49	{'c':51,'a':49,'b':50}
+50	{'d':52,'a':50,'b':51}
+75	{'d':77,'a':75,'b':76}
+99	{'d':101,'a':99,'b':100}
+3: subcolumn correctness
+0	0	1	2	0
+25	25	26	27	0
+49	49	50	51	0
+50	50	51	0	52
+75	75	76	0	77
+99	99	100	0	101
+4: constant strategy, 8 buckets
+8
+4: sqrt strategy, 2 buckets for new part
+2
+4: merged with sqrt strategy
+2
+4: row count after merge
+100
+4: correctness check
+0	100	200	300
+5: three parts with different formats
+all_1_1_0	0	1
+all_2_2_0	1	2
+all_3_3_0	1	6
+5: merged part format
+1	6
+5: row count after merge
+90
+5: spot check data
+0	{'a':0}
+15	{'a':15}
+29	{'a':29}
+30	{'b':100,'a':30}
+45	{'b':115,'a':45}
+59	{'b':129,'a':59}
+60	{'b':200,'c':300,'a':60}
+75	{'b':215,'c':315,'a':75}
+89	{'b':229,'c':329,'a':89}
+5: subcolumn correctness
+0	0	0	0
+15	15	0	0
+29	29	0	0
+30	30	100	0
+45	45	115	0
+59	59	129	0
+60	60	200	300
+75	75	215	315
+89	89	229	329
+6: zero-level parts are basic
+0
+6: new zero-level parts are with_buckets
+1
+6: merged uses with_buckets
+1
+6: row count after merge
+100
+6: subcolumn correctness
+0	0	0	0
+25	25	50	0
+49	49	98	0
+50	50	0	0
+75	75	0	75
+99	99	0	147

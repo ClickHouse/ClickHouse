@@ -1,8 +1,11 @@
-#include <Functions/IFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/scope_guard_safe.h>
@@ -10,11 +13,17 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_deprecated_error_prone_window_functions;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int DEPRECATED_FUNCTION;
 }
 
 namespace
@@ -29,12 +38,20 @@ namespace
   *
   * So, result of function depends on partition of data to columns and on order of data in columns.
   */
-class FunctionRunningAccumulate : public IFunction
+class FunctionRunningAccumulate final : public IFunction
 {
 public:
     static constexpr auto name = "runningAccumulate";
-    static FunctionPtr create(ContextPtr)
+
+    static FunctionPtr create(ContextPtr context)
     {
+        if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
+            throw Exception(
+                ErrorCodes::DEPRECATED_FUNCTION,
+                "Function {} is deprecated since its usage is error-prone (see docs)."
+                "Please use proper window function or set `allow_deprecated_error_prone_window_functions` setting to enable it",
+                name);
+
         return std::make_shared<FunctionRunningAccumulate>();
     }
 
@@ -105,6 +122,20 @@ public:
         IColumn & result_column = *result_column_ptr;
         result_column.reserve(column_with_states->size());
 
+        /// If the aggregate function returns its own state (i.e. it is wrapped
+        /// in `-State`, possibly through `-OrDefault`/`-OrNull`/`-If`/`-ForEach`/
+        /// etc.), `insertResultInto` would push raw pointers to `place` (a
+        /// stack-local `AlignedBuffer`) into the result `ColumnAggregateFunction`,
+        /// producing a use-after-free at the result column's destruction time
+        /// and aliasing every row to the *final* accumulator. Use
+        /// `insertMergeResultInto` instead — it delegates through the combinator
+        /// chain to `AggregateFunctionState::insertMergeResultInto`, which calls
+        /// `ColumnAggregateFunction::insertFrom(place)` to allocate a fresh
+        /// state in the column's own arena and merge our `place` into it. Each
+        /// row therefore owns its own state independent of `place`. The same
+        /// pattern is used in `initializeAggregation` and `arrayReduce`.
+        const bool returns_state = agg_func.isState();
+
         const auto & states = column_with_states->getData();
 
         bool state_created = false;
@@ -129,7 +160,11 @@ public:
             }
 
             agg_func.merge(place.data(), state_to_add, arena.get());
-            agg_func.insertResultInto(place.data(), result_column, arena.get());
+
+            if (returns_state)
+                agg_func.insertMergeResultInto(place.data(), result_column, arena.get());
+            else
+                agg_func.insertResultInto(place.data(), result_column, arena.get());
 
             ++row_number;
         }
@@ -142,7 +177,48 @@ public:
 
 REGISTER_FUNCTION(RunningAccumulate)
 {
-    factory.registerFunction<FunctionRunningAccumulate>();
+    FunctionDocumentation::Description description = R"(
+Accumulates the states of an aggregate function for each row of a data block.
+
+:::warning Deprecated
+The state is reset for each new block of data.
+Due to this error-prone behavior the function has been deprecated, and you are advised to use [window functions](/sql-reference/window-functions) instead.
+You can use setting [`allow_deprecated_error_prone_window_functions`](/operations/settings/settings#allow_deprecated_error_prone_window_functions) to allow usage of this function.
+:::
+)";
+    FunctionDocumentation::Syntax syntax = "runningAccumulate(agg_state[, grouping])";
+    FunctionDocumentation::Arguments arguments = {
+        {"agg_state", "State of the aggregate function.", {"AggregateFunction"}},
+        {"grouping", "Optional. Grouping key. The state of the function is reset if the `grouping` value is changed. It can be any of the supported data types for which the equality operator is defined.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the accumulated result for each row.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example with initializeAggregation",
+        R"(
+WITH initializeAggregation('sumState', number) AS one_row_sum_state
+SELECT
+    number,
+    finalizeAggregation(one_row_sum_state) AS one_row_sum,
+    runningAccumulate(one_row_sum_state) AS cumulative_sum
+FROM numbers(5);
+        )",
+        R"(
+┌─number─┬─one_row_sum─┬─cumulative_sum─┐
+│      0 │           0 │              0 │
+│      1 │           1 │              1 │
+│      2 │           2 │              3 │
+│      3 │           3 │              6 │
+│      4 │           4 │             10 │
+└────────┴─────────────┴────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRunningAccumulate>(documentation);
 }
 
 }

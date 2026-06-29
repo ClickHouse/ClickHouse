@@ -13,6 +13,7 @@ class TTLAggregationAlgorithm final : public ITTLAlgorithm
 {
 public:
     TTLAggregationAlgorithm(
+        const TTLExpressions & ttl_expressions_,
         const TTLDescription & description_,
         const TTLInfo & old_ttl_info_,
         time_t current_time_,

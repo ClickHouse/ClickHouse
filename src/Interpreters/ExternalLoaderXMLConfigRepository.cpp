@@ -2,7 +2,7 @@
 
 #include <filesystem>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Poco/Glob.h>
@@ -24,7 +24,7 @@ ExternalLoaderXMLConfigRepository::ExternalLoaderXMLConfigRepository(
 {
 }
 
-Poco::Timestamp ExternalLoaderXMLConfigRepository::getUpdateTime(const std::string & definition_entity_name)
+std::optional<Poco::Timestamp> ExternalLoaderXMLConfigRepository::getUpdateTime(const std::string & definition_entity_name)
 {
     return FS::getModificationTimestamp(definition_entity_name);
 }
@@ -85,9 +85,9 @@ bool ExternalLoaderXMLConfigRepository::exists(const std::string & definition_en
 }
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> ExternalLoaderXMLConfigRepository::load(
-    const std::string & config_file)
+    const std::string & config_file_path)
 {
-    ConfigProcessor config_processor{config_file};
+    ConfigProcessor config_processor{config_file_path};
     ConfigProcessor::LoadedConfig preprocessed = config_processor.loadConfig();
     config_processor.savePreprocessedConfig(preprocessed, app_path);
     return preprocessed.configuration;

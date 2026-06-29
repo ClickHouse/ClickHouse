@@ -16,21 +16,30 @@ public:
 
     virtual StoragePtr getNested() const = 0;
 
-    String getName() const override { return "StorageProxy"; }
+    String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
     bool isView() const override { return getNested()->isView(); }
+    bool supportsTruncate() const override { return getNested()->supportsTruncate(); }
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
     bool supportsFinal() const override { return getNested()->supportsFinal(); }
     bool supportsPrewhere() const override { return getNested()->supportsPrewhere(); }
     bool supportsReplication() const override { return getNested()->supportsReplication(); }
     bool supportsParallelInsert() const override { return getNested()->supportsParallelInsert(); }
     bool supportsDeduplication() const override { return getNested()->supportsDeduplication(); }
-    bool noPushingToViews() const override { return getNested()->noPushingToViews(); }
+    bool noPushingToViewsOnInserts() const override { return getNested()->noPushingToViewsOnInserts(); }
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
+    bool supportsSubcolumns() const override { return getNested()->supportsSubcolumns(); }
+    bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
-    NamesAndTypesList getVirtuals() const override { return getNested()->getVirtuals(); }
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & base_metadata, ContextPtr query_context) const override
+    {
+        auto nested_metadata = getNested()->getInMemoryMetadataPtr(query_context, false);
+        auto new_metadata = std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(nested_metadata->virtuals));
+        return std::make_shared<StorageSnapshot>(*this, std::move(new_metadata));
+    }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr context,
@@ -38,9 +47,7 @@ public:
         const StorageSnapshotPtr &,
         SelectQueryInfo & info) const override
     {
-        /// TODO: Find a way to support projections for StorageProxy
-        info.ignore_projections = true;
-        const auto & nested_metadata = getNested()->getInMemoryMetadataPtr();
+        const auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, false);
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
     }
 
@@ -65,7 +72,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override
     {
-        return getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+        getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override
@@ -99,7 +106,8 @@ public:
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
     {
         getNested()->alter(params, context, alter_lock_holder);
-        IStorage::setInMemoryMetadata(getNested()->getInMemoryMetadata());
+        auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, true);
+        IStorage::setInMemoryMetadata(*nested_metadata);
     }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override
@@ -143,12 +151,6 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
 
-    bool supportsIndexForIn() const override { return getNested()->supportsIndexForIn(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
-    {
-        return getNested()->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
-    }
-
     DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override
     {
         return getNested()->getCheckTaskList(check_task_filter, context);
@@ -164,8 +166,8 @@ public:
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
-    std::optional<UInt64> totalRows(const Settings & settings) const override { return getNested()->totalRows(settings); }
-    std::optional<UInt64> totalBytes(const Settings & settings) const override { return getNested()->totalBytes(settings); }
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getNested()->totalRows(query_context); }
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getNested()->totalBytes(query_context); }
     std::optional<UInt64> lifetimeRows() const override { return getNested()->lifetimeRows(); }
     std::optional<UInt64> lifetimeBytes() const override { return getNested()->lifetimeBytes(); }
 

@@ -1,14 +1,18 @@
 #pragma once
 
-#include <Client/ConnectionPool.h>
-#include <Client/ConnectionPoolWithFailover.h>
+#include <Client/ConnectionPool_fwd.h>
+#include <Core/Protocol.h>
+#include <Core/Types.h>
 #include <Common/Macros.h>
+#include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/Priority.h>
 
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Timespan.h>
 
 #include <map>
+#include <optional>
 #include <string>
 #include <unordered_set>
 
@@ -35,7 +39,11 @@ struct DatabaseReplicaInfo
     String hostname;
     String shard_name;
     String replica_name;
+    std::optional<bool> is_local;
 };
+
+/// List of replica hostnames grouped per shard. Used to construct a Cluster for the remote() function.
+using HostsByShard = std::vector<Strings>;
 
 struct ClusterConnectionParameters
 {
@@ -45,6 +53,7 @@ struct ClusterConnectionParameters
     bool treat_local_as_remote;
     bool treat_local_port_as_remote;
     bool secure = false;
+    const String & bind_host;
     Priority priority{1};
     String cluster_name;
     String cluster_secret;
@@ -71,14 +80,15 @@ public:
     /// Used for remote() function.
     Cluster(
         const Settings & settings,
-        const std::vector<std::vector<String>> & names,
+        const HostsByShard & names,
         const ClusterConnectionParameters & params);
 
 
     Cluster(
         const Settings & settings,
         const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
-        const ClusterConnectionParameters & params);
+        const ClusterConnectionParameters & params,
+        bool internal_replication = false);
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -95,7 +105,7 @@ public:
         * <node>
         *     <host>example01-01-1</host>
         *     <port>9000</port>
-        *     <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure> if needed -->
+        *     <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure>, <bind_host> if needed -->
         * </node>
         * ...
         * or in <shard> and inside in <replica> elements:
@@ -103,7 +113,7 @@ public:
         *     <replica>
         *         <host>example01-01-1</host>
         *         <port>9000</port>
-        *         <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure> if needed -->
+        *         <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure>, <bind_host> if needed -->
         *    </replica>
         * </shard>
         */
@@ -112,8 +122,15 @@ public:
         String database_shard_name;
         String database_replica_name;
         UInt16 port{0};
+        /// Optional per-node ports for the distributed-plan engine: the interserver port the
+        /// initiator dispatches tasks to, and the streaming-exchange listener port. Zero means
+        /// "not configured" (the initiator then falls back to the server-level ports).
+        UInt16 stateless_worker_port{0};
+        UInt16 streaming_exchange_port{0};
         String user;
         String password;
+        String proto_send_chunked = "notchunked";
+        String proto_recv_chunked = "notchunked";
         String quota_key;
 
         /// For inter-server authorization
@@ -126,11 +143,14 @@ public:
         /// This database is selected when no database is specified for Distributed table
         String default_database;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
+        /// The locality can be auto-reinitialized by reloading cluster config if DNSCacheUpdater is enabled
         bool is_local = false;
         bool user_specified = false;
 
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;
+
+        String bind_host;
 
         Priority priority{1};
 
@@ -166,12 +186,12 @@ public:
         String toFullString(bool use_compact_format) const;
 
         /// Returns address with only shard index and replica index or full address without shard index and replica index
-        static Address fromFullString(const String & address_full_string);
+        static Address fromFullString(std::string_view full_string);
 
         /// Returns resolved address if it does resolve.
         std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
-        auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database); }
+        auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database, bind_host); }
         bool operator==(const Address & other) const { return tuple() == other.tuple(); }
 
     private:
@@ -215,6 +235,7 @@ public:
         ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;
+        String name;
         UInt32 weight = 1;
         Addresses local_addresses;
         /// nullptr if there are no remote addresses
@@ -222,6 +243,7 @@ public:
         /// Connection pool for each replica, contains nullptr for local replicas
         ConnectionPoolPtrs per_replica_pools;
         bool has_internal_replication = false;
+        String default_database;
     };
 
     using ShardsInfo = std::vector<ShardInfo>;
@@ -291,8 +313,14 @@ private:
     struct ReplicasAsShardsTag {};
     Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard);
 
-    void addShard(const Settings & settings, Addresses && addresses, bool treat_local_as_remote, UInt32 current_shard_num,
-                  ShardInfoInsertPathForInternalReplication && insert_paths = {}, UInt32 weight = 1, bool internal_replication = false);
+    void addShard(
+        const Settings & settings,
+        Addresses addresses,
+        bool treat_local_as_remote,
+        UInt32 current_shard_num,
+        String current_shard_name = "",
+        UInt32 weight = 1,
+        bool internal_replication = false);
 
     /// Inter-server secret
     String secret;

@@ -4,8 +4,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 opts=(
-    "--allow_experimental_analyzer=1"
+    "--enable_analyzer=1"
 )
 
 function explain_sort_description()

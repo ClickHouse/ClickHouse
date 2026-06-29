@@ -1,8 +1,6 @@
--- Tags: long, replica, no-replicated-database, no-parallel, no-s3-storage
+-- Tags: long, replica, no-replicated-database, no-parallel, no-object-storage
 -- Tag no-replicated-database: Fails due to additional replicas or shards
 -- Tag no-parallel: static zk path
-
-SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
 
 DROP TABLE IF EXISTS execute_on_single_replica_r1 SYNC;
 DROP TABLE IF EXISTS execute_on_single_replica_r2 SYNC;
@@ -11,7 +9,7 @@ DROP TABLE IF EXISTS execute_on_single_replica_r2 SYNC;
 CREATE TABLE execute_on_single_replica_r1 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_01532/execute_on_single_replica', 'r1') ORDER BY tuple() SETTINGS execute_merges_on_single_replica_time_threshold=10;
 CREATE TABLE execute_on_single_replica_r2 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_01532/execute_on_single_replica', 'r2') ORDER BY tuple() SETTINGS execute_merges_on_single_replica_time_threshold=10;
 
-INSERT INTO execute_on_single_replica_r1 VALUES (1);
+INSERT INTO execute_on_single_replica_r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (1);
 SYSTEM SYNC REPLICA execute_on_single_replica_r2;
 
 SET optimize_throw_if_noop=1;
@@ -114,7 +112,7 @@ OPTIMIZE TABLE execute_on_single_replica_r1 FINAL;
 SYSTEM SYNC REPLICA execute_on_single_replica_r1;
 SYSTEM SYNC REPLICA execute_on_single_replica_r2;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT '****************************';
 SELECT '*** part_log';
@@ -123,7 +121,7 @@ SELECT
     arraySort(groupArrayIf(table, event_type = 'MergeParts')) AS mergers,
     arraySort(groupArrayIf(table, event_type = 'DownloadPart')) AS fetchers
 FROM system.part_log
-WHERE (event_time > (now() - 120))
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (event_time > (now() - 120))
   AND (table LIKE 'execute\\_on\\_single\\_replica\\_r%')
   AND (part_name NOT LIKE '%\\_0')
   AND (database = currentDatabase())

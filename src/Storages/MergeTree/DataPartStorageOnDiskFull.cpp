@@ -1,8 +1,15 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <IO/WriteBufferFromFileBase.h>
+
+#include <Disks/IDiskTransaction.h>
+#include <Disks/SingleDiskVolume.h>
+#include <IO/PackedFilesReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
-#include <Disks/SingleDiskVolume.h>
+#include <IO/ReadPipeline.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -41,17 +48,22 @@ DataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & 
 
 bool DataPartStorageOnDiskFull::exists() const
 {
-    return volume->getDisk()->exists(fs::path(root_path) / part_dir);
+    return volume->getDisk()->existsDirectory(fs::path(root_path) / part_dir);
 }
 
-bool DataPartStorageOnDiskFull::exists(const std::string & name) const
+bool DataPartStorageOnDiskFull::existsFile(const std::string & name) const
 {
-    return volume->getDisk()->exists(fs::path(root_path) / part_dir / name);
+    if (looksLikePackedSkipIndexFile(name))
+    {
+        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
+            return true;
+    }
+    return volume->getDisk()->existsFile(fs::path(root_path) / part_dir / name);
 }
 
-bool DataPartStorageOnDiskFull::isDirectory(const std::string & name) const
+bool DataPartStorageOnDiskFull::existsDirectory(const std::string & name) const
 {
-    return volume->getDisk()->isDirectory(fs::path(root_path) / part_dir / name);
+    return volume->getDisk()->existsDirectory(fs::path(root_path) / part_dir / name);
 }
 
 class DataPartStorageIteratorOnDisk final : public IDataPartStorageIterator
@@ -64,7 +76,7 @@ public:
 
     void next() override { it->next(); }
     bool isValid() const override { return it->isValid(); }
-    bool isFile() const override { return isValid() && disk->isFile(it->path()); }
+    bool isFile() const override { return isValid() && disk->existsFile(it->path()); }
     std::string name() const override { return it->name(); }
     std::string path() const override { return it->path(); }
 
@@ -87,6 +99,11 @@ Poco::Timestamp DataPartStorageOnDiskFull::getFileLastModified(const String & fi
 
 size_t DataPartStorageOnDiskFull::getFileSize(const String & file_name) const
 {
+    if (looksLikePackedSkipIndexFile(file_name))
+    {
+        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
+            return reader->getFileSize(file_name);
+    }
     return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
 }
 
@@ -95,13 +112,18 @@ UInt32 DataPartStorageOnDiskFull::getRefCount(const String & file_name) const
     return volume->getDisk()->getRefCount(fs::path(root_path) / part_dir / file_name);
 }
 
-std::string DataPartStorageOnDiskFull::getRemotePath(const std::string & file_name) const
+std::vector<std::string> DataPartStorageOnDiskFull::getRemotePaths(const std::string & file_name) const
 {
-    auto objects = volume->getDisk()->getStorageObjects(fs::path(root_path) / part_dir / file_name);
-    if (objects.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "One file must be mapped to one object on blob storage in MergeTree tables");
+    const std::string path = fs::path(root_path) / part_dir / file_name;
+    auto objects = volume->getDisk()->getStorageObjects(path);
 
-    return objects[0].remote_path;
+    std::vector<std::string> remote_paths;
+    remote_paths.reserve(objects.size());
+
+    for (const auto & object : objects)
+        remote_paths.push_back(object.remote_path);
+
+    return remote_paths;
 }
 
 String DataPartStorageOnDiskFull::getUniqueId() const
@@ -113,13 +135,49 @@ String DataPartStorageOnDiskFull::getUniqueId() const
     return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFile(
+void DataPartStorageOnDiskFull::prepareRead(
     const std::string & name,
     const ReadSettings & settings,
     std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    ReadPipeline & pipeline) const
 {
-    return volume->getDisk()->readFile(fs::path(root_path) / part_dir / name, settings, read_hint, file_size);
+    if (looksLikePackedSkipIndexFile(name))
+    {
+        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
+        {
+            /// Packed substreams skip the disk's normal pipeline (filesystem cache,
+            /// async prefetch, etc.) and read through PackedFilesReader::readFile, which
+            /// opens the archive via the underlying disk and wraps the result with
+            /// ReadBufferFromFileView at the right offset. The archive's current location is
+            /// captured here and passed in, so the reader holds no path of its own.
+            auto disk = volume->getDisk();
+            String archive_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
+            ReadPipeline::BufferCreator creator =
+                [reader, disk, archive_path, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
+                {
+                    return reader->readFile(disk, archive_path, name, s, read_hint);
+                };
+            pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
+            return;
+        }
+    }
+    volume->getDisk()->prepareRead(fs::path(root_path) / part_dir / name, settings, read_hint, pipeline);
+}
+
+std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExists(
+    const std::string & name,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint) const
+{
+    if (looksLikePackedSkipIndexFile(name))
+    {
+        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
+            return reader->readFile(
+                volume->getDisk(),
+                fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME),
+                name, settings, read_hint);
+    }
+    return volume->getDisk()->readFileIfExists(fs::path(root_path) / part_dir / name, settings, read_hint);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
@@ -129,9 +187,8 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
     const WriteSettings & settings)
 {
     if (transaction)
-        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings, /* autocommit = */ false);
-    else
-        return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
+        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
+    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
 }
 
 void DataPartStorageOnDiskFull::createFile(const String & name)
@@ -182,6 +239,24 @@ void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & sour
             fs::path(source_on_disk->getRelativePath()) / from,
             fs::path(root_path) / part_dir / to);
     });
+}
+
+void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to)
+{
+    const auto * source_on_disk = typeid_cast<const DataPartStorageOnDiskFull *>(&source);
+    if (!source_on_disk)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot create copy file from different storage. Expected DataPartStorageOnDiskFull, got {}",
+            typeid(source).name());
+
+    /// Copying files between different disks is
+    /// not supported in disk transactions.
+    source_on_disk->getDisk()->copyFile(
+        fs::path(source_on_disk->getRelativePath()) / from,
+        *volume->getDisk(),
+        fs::path(root_path) / part_dir / to,
+        getReadSettings());
 }
 
 void DataPartStorageOnDiskFull::createProjection(const std::string & name)

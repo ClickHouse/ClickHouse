@@ -1,12 +1,17 @@
 #pragma once
 
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeCustom.h>
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/VectorWithMemoryTracking.h>
 
-#include <IO/ReadHelpers.h>
 
 namespace DB
 {
+
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
 
 /** The type SimpleAggregateFunction(fct, type) is meant to be used in an AggregatingMergeTree. It behaves like a standard
  * data type but when rows are merged, an aggregation function is applied.
@@ -35,9 +40,13 @@ public:
             : function(function_), argument_types(argument_types_), parameters(parameters_) {}
 
     AggregateFunctionPtr getFunction() const { return function; }
+    String getFunctionName() const;
+    const DataTypes & getArgumentsDataTypes() const { return argument_types; }
+    const Array & getParameters() const { return parameters; }
     String getName() const override;
-    bool identical(const IDataTypeCustomName & rhs_) const override;
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 };
+
+DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters);
 
 }

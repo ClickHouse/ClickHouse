@@ -1,7 +1,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {

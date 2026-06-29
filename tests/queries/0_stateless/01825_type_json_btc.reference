@@ -1,5 +1,0 @@
-100
-data	Tuple(double_spend UInt8, fee Int32, hash String, inputs Nested(index Int8, prev_out Tuple(addr String, n Int16, script String, spending_outpoints Nested(n Int8, tx_index Int64), spent UInt8, tx_index Int64, type Int8, value Int64), script String, sequence Int64, witness String), lock_time Int32, out Nested(addr String, n Int8, script String, spending_outpoints Nested(n Int8, tx_index Int64), spent UInt8, tx_index Int64, type Int8, value Int64), rbf UInt8, relayed_by String, size Int16, time Int32, tx_index Int64, ver Int8, vin_sz Int8, vout_sz Int8, weight Int16)					
-8174.56	2680
-2.32	1
-[[],[(0,359661801933760)]]

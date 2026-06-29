@@ -1,4 +1,10 @@
 #include <IO/AIO.h>
+#include <Common/ErrnoException.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_IOSETUP;
+}
 
 #if defined(OS_LINUX)
 
@@ -11,15 +17,6 @@
 
 /** Small wrappers for asynchronous I/O.
   */
-
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int CANNOT_IOSETUP;
-    }
-}
-
 
 int io_setup(unsigned nr, aio_context_t * ctxp)
 {
@@ -46,7 +43,7 @@ AIOContext::AIOContext(unsigned int nr_events)
 {
     ctx = 0;
     if (io_setup(nr_events, &ctx) < 0)
-        DB::throwFromErrno("io_setup failed", DB::ErrorCodes::CANNOT_IOSETUP);
+        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_IOSETUP, "io_setup failed");
 }
 
 AIOContext::~AIOContext()
@@ -73,15 +70,6 @@ AIOContext & AIOContext::operator=(AIOContext && rhs) noexcept
 
 /** Small wrappers for asynchronous I/O.
   */
-
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int CANNOT_IOSETUP;
-}
-}
-
 
 int io_setup(void)
 {
@@ -137,7 +125,7 @@ AIOContext::AIOContext(unsigned int)
 {
     ctx = io_setup();
     if (ctx < 0)
-        DB::throwFromErrno("io_setup failed", DB::ErrorCodes::CANNOT_IOSETUP);
+        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_IOSETUP, "io_setup failed");
 }
 
 AIOContext::~AIOContext()

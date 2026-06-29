@@ -18,7 +18,7 @@ public:
     using Ptr = PoolBase<PoolObject>::Ptr;
 
     int last_destroy_value = 0;
-    MyPoolBase() : PoolBase<PoolObject>(100, &Poco::Logger::get("MyPoolBase")) { }
+    MyPoolBase() : PoolBase<PoolObject>(100, getLogger("MyPoolBase")) { }
 
 protected:
     ObjectPtr allocObject() override { return std::make_shared<Object>(); }

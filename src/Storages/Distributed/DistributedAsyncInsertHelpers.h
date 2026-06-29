@@ -1,9 +1,7 @@
 #pragma once
 
-namespace Poco
-{
-class Logger;
-}
+#include <Common/Logger.h>
+
 
 namespace DB
 {
@@ -30,6 +28,6 @@ void writeRemoteConvert(
     RemoteInserter & remote,
     bool compression_expected,
     ReadBufferFromFile & in,
-    Poco::Logger * log);
+    LoggerPtr log);
 
 }

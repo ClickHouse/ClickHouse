@@ -1,3 +1,9 @@
+#if !defined(SANITIZER)
+
+/// This test is slow due to exhaustive checking of time zones.
+/// Better to replace with randomization.
+/// Also, recommended to replace with a functional test for better maintainability.
+
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 
@@ -6,13 +12,13 @@
 #include <string>
 #include <string_view>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
 #include <cctz/time_zone.h>
-
+#pragma clang diagnostic pop
 
 /// For the expansion of gtest macros.
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wused-but-marked-unused"
-#endif
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
 
 // All timezones present at build time and embedded into ClickHouse binary.
 extern const char * auto_time_zones[];
@@ -357,7 +363,7 @@ INSTANTIATE_TEST_SUITE_P(AllTimeZones,
     ::testing::ValuesIn(allTimezones())
 );
 
-std::ostream & operator<<(std::ostream & ostr, const DateLUTImpl::Values & v)
+[[maybe_unused]] static std::ostream & operator<<(std::ostream & ostr, const DateLUTImpl::Values & v)
 {
     return ostr << "DateLUTImpl::Values{"
             << "\n\t date              : " << v.date
@@ -378,7 +384,7 @@ struct TimeRangeParam
     const int step_in_seconds;
 };
 
-std::ostream & operator<<(std::ostream & ostr, const TimeRangeParam & param)
+static std::ostream & operator<<(std::ostream & ostr, const TimeRangeParam & param)
 {
     return ostr << param.begin << " : " << param.end << " step: " << param.step_in_seconds << "s";
 }
@@ -548,3 +554,5 @@ INSTANTIATE_TEST_SUITE_P(AllTimezones_Year1970,
 //            {0, 0 + 11 * 3600 * 24 + 12, 11},
         }))
 );
+
+#endif

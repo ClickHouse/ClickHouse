@@ -3,8 +3,8 @@
 {"operation_name":"void DB::DistributedSink::writeToLocal(const Cluster::ShardInfo &, const Block &, size_t)","cluster":"test_cluster_two_shards_localhost","shard":"2","rows":"1","bytes":"8"}
 1
 ===2===
-{"operation_name":"void DB::DistributedAsyncInsertDirectoryQueue::processFile(std::string &)","cluster":"test_cluster_two_shards_localhost","shard":"1","rows":"1","bytes":"8"}
-{"operation_name":"void DB::DistributedAsyncInsertDirectoryQueue::processFile(std::string &)","cluster":"test_cluster_two_shards_localhost","shard":"2","rows":"1","bytes":"8"}
+{"operation_name":"void DB::DistributedAsyncInsertDirectoryQueue::processFile(std::string &, const SettingsChanges &)","cluster":"test_cluster_two_shards_localhost","shard":"1","rows":"1","bytes":"8"}
+{"operation_name":"void DB::DistributedAsyncInsertDirectoryQueue::processFile(std::string &, const SettingsChanges &)","cluster":"test_cluster_two_shards_localhost","shard":"2","rows":"1","bytes":"8"}
 3
 2
 ===3===

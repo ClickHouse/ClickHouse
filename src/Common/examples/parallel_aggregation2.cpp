@@ -18,11 +18,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
-
-
-using Key = UInt64;
-using Value = UInt64;
-using Source = std::vector<Key>;
+#include <Examples/clickhouse_examples.h>
 
 
 namespace CurrentMetrics
@@ -32,13 +28,23 @@ namespace CurrentMetrics
     extern const Metric LocalThreadScheduled;
 }
 
+namespace
+{
+
+using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
+using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
+
+using Key = UInt64;
+using Value = UInt64;
+using Source = std::vector<Key>;
+
 template <typename Map>
 struct AggregateIndependent
 {
     template <typename Creator, typename Updater>
     static void NO_INLINE execute(const Source & data, size_t num_threads, std::vector<std::unique_ptr<Map>> & results,
                         Creator && creator, Updater && updater,
-                        ThreadPool & pool)
+                        SimpleThreadPool & pool)
     {
         results.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i)
@@ -55,7 +61,7 @@ struct AggregateIndependent
                 for (auto it = begin; it != end; ++it)
                 {
                     typename Map::LookupResult place;
-                    bool inserted;
+                    bool inserted = {};
                     map.emplace(*it, place, inserted);
 
                     if (inserted)
@@ -76,7 +82,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
     template <typename Creator, typename Updater>
     static void NO_INLINE execute(const Source & data, size_t num_threads, std::vector<std::unique_ptr<Map>> & results,
                         Creator && creator, Updater && updater,
-                        ThreadPool & pool)
+                        SimpleThreadPool & pool)
     {
         results.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i)
@@ -96,15 +102,15 @@ struct AggregateIndependentWithSequentialKeysOptimization
                 {
                     if (it != begin && *it == prev_key)
                     {
-                        assert(place != nullptr);
+                        chassert(place != nullptr);
                         updater(place->getMapped()); // NOLINT
                         continue;
                     }
                     prev_key = *it;
 
-                    bool inserted;
+                    bool inserted = {};
                     map.emplace(*it, place, inserted);
-                    assert(place != nullptr);
+                    chassert(place != nullptr);
 
                     if (inserted)
                         creator(place->getMapped());
@@ -124,7 +130,7 @@ struct MergeSequential
     template <typename Merger>
     static void NO_INLINE execute(Map ** source_maps, size_t num_maps, Map *& result_map,
                         Merger && merger,
-                        ThreadPool &)
+                        SimpleThreadPool &)
     {
         for (size_t i = 1; i < num_maps; ++i)
         {
@@ -144,7 +150,7 @@ struct MergeSequentialTransposed    /// In practice not better than usual.
     template <typename Merger>
     static void NO_INLINE execute(Map ** source_maps, size_t num_maps, Map *& result_map,
                         Merger && merger,
-                        ThreadPool &)
+                        SimpleThreadPool &)
     {
         std::vector<typename Map::iterator> iterators(num_maps);
         for (size_t i = 1; i < num_maps; ++i)
@@ -177,7 +183,7 @@ struct MergeParallelForTwoLevelTable
     template <typename Merger>
     static void NO_INLINE execute(Map ** source_maps, size_t num_maps, Map *& result_map,
                         Merger && merger,
-                        ThreadPool & pool)
+                        SimpleThreadPool & pool)
     {
         for (size_t bucket = 0; bucket < Map::NUM_BUCKETS; ++bucket)
             pool.scheduleOrThrowOnError([&, bucket, num_maps]
@@ -186,7 +192,7 @@ struct MergeParallelForTwoLevelTable
                 for (size_t i = 0; i < num_maps; ++i)
                     section[i] = &source_maps[i]->impls[bucket];
 
-                typename Map::Impl * res;
+                typename Map::Impl * res = nullptr;
                 ImplMerge::execute(section.data(), num_maps, res, merger, pool);
             });
 
@@ -202,7 +208,7 @@ struct Work
     template <typename Creator, typename Updater, typename Merger>
     static void NO_INLINE execute(const Source & data, size_t num_threads,
                         Creator && creator, Updater && updater, Merger && merger,
-                        ThreadPool & pool)
+                        SimpleThreadPool & pool)
     {
         std::vector<std::unique_ptr<Map>> intermediate_results;
 
@@ -215,7 +221,7 @@ struct Work
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << data.size() / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(data.size()) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -233,20 +239,20 @@ struct Work
         for (size_t i = 0; i < num_maps; ++i)
             intermediate_results_ptrs[i] = intermediate_results[i].get();
 
-        Map * result_map;
+        Map * result_map = nullptr;
         Merge::execute(intermediate_results_ptrs.data(), num_maps, result_map, std::forward<Merger>(merger), pool);
 
         watch.stop();
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in " << time_total
-            << " (" << data.size() / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(data.size()) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << result_map->size() << std::endl << std::endl;
     }
@@ -273,8 +279,9 @@ struct Merger
     void operator()(Value & dst, const Value & src) const { dst += src; }
 };
 
+}
 
-int main(int argc, char ** argv)
+int mainEntryExampleParallelAggregation2(int argc, char ** argv)
 {
     size_t n = std::stol(argv[1]);
     size_t num_threads = std::stol(argv[2]);
@@ -282,7 +289,7 @@ int main(int argc, char ** argv)
 
     std::cerr << std::fixed << std::setprecision(2);
 
-    ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads);
+    SimpleThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads);
 
     Source data(n);
 
@@ -297,7 +304,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "Vector. Size: " << n
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl << std::endl;
     }
 

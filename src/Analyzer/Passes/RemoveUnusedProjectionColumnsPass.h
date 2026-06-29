@@ -17,7 +17,7 @@ public:
 
     String getDescription() override { return "Remove unused projection columns in subqueries."; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

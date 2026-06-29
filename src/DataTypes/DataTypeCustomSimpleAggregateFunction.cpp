@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeFactory.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -32,7 +33,9 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
     /// TODO Make it sane.
     static const std::vector<String> supported_functions{
         "any",
+        "any_respect_nulls",
         "anyLast",
+        "anyLast_respect_nulls",
         "min",
         "max",
         "sum",
@@ -46,6 +49,7 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
         "groupArrayArray",
         "groupArrayLastArray",
         "groupUniqArrayArray",
+        "groupUniqArrayArrayMap",
         "sumMappedArrays",
         "minMappedArrays",
         "maxMappedArrays",
@@ -141,10 +145,12 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
         argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));
 
     if (function_name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty name of aggregate function passed");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty name of aggregate function passed");
 
     AggregateFunctionProperties properties;
-    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
+    /// NullsAction is not part of the type definition, instead it will have transformed the function into a different one
+    auto action = NullsAction::EMPTY;
+    function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
 
     DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(function);
 
@@ -162,24 +168,102 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
     return std::make_pair(storage_type, std::make_unique<DataTypeCustomDesc>(std::move(custom_name), nullptr));
 }
 
-void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)
+String DataTypeCustomSimpleAggregateFunction::getFunctionName() const
 {
-    factory.registerDataTypeCustom("SimpleAggregateFunction", create);
+    return function->getName();
 }
 
-bool DataTypeCustomSimpleAggregateFunction::identical(const IDataTypeCustomName & rhs_) const
+DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters)
 {
-    if (const auto * rhs = typeid_cast<decltype(this)>(&rhs_))
-    {
-        if (parameters != rhs->parameters)
-            return false;
-        if (argument_types.size() != rhs->argument_types.size())
-            return false;
-        for (size_t i = 0; i < argument_types.size(); ++i)
-            if (!argument_types[i]->identical(*rhs->argument_types[i]))
-                return false;
-        return function->getName() == rhs->function->getName();
-    }
-    return false;
+    auto custom_desc = std::make_unique<DataTypeCustomDesc>(
+        std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, argument_types, parameters));
+
+    return DataTypeFactory::instance().getCustom(std::move(custom_desc));
 }
+
+void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)
+{
+    factory.registerDataTypeCustom("SimpleAggregateFunction", create, DataTypeFactory::Case::Sensitive, Documentation{
+            .description = R"DOCS_MD(
+## Description {#description}
+
+The `SimpleAggregateFunction` data type stores the intermediate state of an
+aggregate function, but not its full state as the [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md)
+type does.
+
+This optimization can be applied to functions for which the following property
+holds:
+
+> the result of applying a function `f` to a row set `S1 UNION ALL S2` can
+be obtained by applying `f` to parts of the row set separately, and then again
+applying `f` to the results: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`.
+
+This property guarantees that partial aggregation results are enough to compute
+the combined one, so we do not have to store and process any extra data. For
+example, the result of the `min` or `max` functions require no extra steps to
+calculate the final result from the intermediate steps, whereas the `avg` function
+requires keeping track of a sum and a count, which will be divided to get the
+average in a final `Merge` step which combines the intermediate states.
+
+Aggregate function values are commonly produced by calling an aggregate function
+with the [`-SimpleState`](/sql-reference/aggregate-functions/combinators#-simplestate) combinator appended to the function name.
+
+## Syntax {#syntax}
+
+```sql
+SimpleAggregateFunction(aggregate_function_name, types_of_arguments...)
+```
+
+**Parameters**
+
+- `aggregate_function_name` - The name of an aggregate function.
+- `Type` - Types of the aggregate function arguments.
+
+## Supported functions {#supported-functions}
+
+The following aggregate functions are supported:
+
+- [`any`](/sql-reference/aggregate-functions/reference/any.md)
+- [`any_respect_nulls`](/sql-reference/aggregate-functions/reference/any.md)
+- [`anyLast`](/sql-reference/aggregate-functions/reference/anyLast.md)
+- [`anyLast_respect_nulls`](/sql-reference/aggregate-functions/reference/anyLast.md)
+- [`min`](/sql-reference/aggregate-functions/reference/min.md)
+- [`max`](/sql-reference/aggregate-functions/reference/max.md)
+- [`sum`](/sql-reference/aggregate-functions/reference/sum.md)
+- [`sumWithOverflow`](/sql-reference/aggregate-functions/reference/sumWithOverflow.md)
+- [`groupBitAnd`](/sql-reference/aggregate-functions/reference/groupBitAnd.md)
+- [`groupBitOr`](/sql-reference/aggregate-functions/reference/groupBitOr.md)
+- [`groupBitXor`](/sql-reference/aggregate-functions/reference/groupBitXor.md)
+- [`groupArrayArray`](/sql-reference/aggregate-functions/reference/groupArrayArray.md)
+- [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference/groupUniqArray.md)
+- [`groupUniqArrayArrayMap`](../../sql-reference/aggregate-functions/combinators#-map)
+- [`sumMap` (`sumMappedArrays`)](/sql-reference/aggregate-functions/reference/sumMappedArrays.md)
+- [`minMap` (`minMappedArrays`)](/sql-reference/aggregate-functions/reference/minMappedArrays.md)
+- [`maxMap` (`maxMappedArrays`)](/sql-reference/aggregate-functions/reference/maxMappedArrays.md)
+
+:::note
+Values of the `SimpleAggregateFunction(func, Type)` have the same `Type`,
+so unlike with the `AggregateFunction` type there is no need to apply
+`-Merge`/`-State` combinators.
+
+The `SimpleAggregateFunction` type has better performance than the `AggregateFunction`
+for the same aggregate functions.
+:::
+
+## Example {#example}
+
+```sql
+CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE=AggregatingMergeTree ORDER BY id;
+```
+## Related Content {#related-content}
+
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+- [AggregateFunction](/sql-reference/data-types/aggregatefunction) type.
+)DOCS_MD",
+            .syntax = "SimpleAggregateFunction(name, types...)",
+            .examples = {},
+            .related = {"AggregateFunction"},
+        });
+}
+
 }

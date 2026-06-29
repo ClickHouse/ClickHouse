@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
-#include <Parsers/IAST_fwd.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -11,7 +12,12 @@ namespace DB
 class InterpreterExplainQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterExplainQuery(const ASTPtr & query_, ContextPtr context_) : WithContext(context_), query(query_) { }
+    InterpreterExplainQuery(const ASTPtr & query_, ContextPtr context_, const SelectQueryOptions & options_)
+        : WithContext(context_)
+        , query(query_)
+        , options(options_)
+    {
+    }
 
     BlockIO execute() override;
 
@@ -21,6 +27,7 @@ public:
 
 private:
     ASTPtr query;
+    SelectQueryOptions options;
 
     QueryPipeline executeImpl();
 };

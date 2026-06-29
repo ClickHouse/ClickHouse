@@ -1,10 +1,8 @@
 #pragma once
 
 #include <atomic>
-#include <variant>
 #include <Core/Block.h>
 #include <boost/geometry.hpp>
-#include <boost/geometry/geometries/multi_polygon.hpp>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -34,7 +32,7 @@ public:
      *      - A point is represented by its coordinates stored in an according structure (see below).
      *  A simple polygon is represented by an one-dimensional array of points, stored in the according structure.
      */
-    enum class InputType
+    enum class InputType : uint8_t
     {
         MultiPolygon,
         SimplePolygon
@@ -42,7 +40,7 @@ public:
     /** Controls the different types allowed for providing the coordinates of points.
       * Right now a point can be represented by either an array or a tuple of two Float64 values.
       */
-    enum class PointType
+    enum class PointType : uint8_t
     {
         Array,
         Tuple,
@@ -71,14 +69,14 @@ public:
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load(std::memory_order_relaxed);
+        size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override { return 1.0; }
@@ -100,11 +98,11 @@ public:
     void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const override;
 
     ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+        DefaultOrFilter default_or_filter) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -126,12 +124,26 @@ protected:
      */
     virtual bool find(const Point & point, size_t & polygon_index) const = 0;
 
-    std::vector<Polygon> polygons;
+    /** Returns the number of bytes allocated by the lookup index built on top of the polygons.
+     *  Overridden by subclasses that build an index. Used by `calculateBytesAllocated` to make
+     *  `system.dictionaries.bytes_allocated` reflect the actual footprint, including the index.
+     */
+    [[nodiscard]] virtual size_t getIndexBytesAllocated() const { return 0; }
+
+    VectorWithMemoryTracking<Polygon> polygons;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
     const Configuration configuration;
+
+    /** Computes `bytes_allocated`, including index bytes via the virtual
+      * `getIndexBytesAllocated`. Must be invoked from a *concrete* subclass'
+      * constructor, after that subclass' index members have been built —
+      * calling it from the base constructor would dispatch through the base
+      * vtable and miss the override.
+      */
+    void calculateBytesAllocated();
 
 private:
     /** Helper functions for loading the data from the configuration.
@@ -142,18 +154,23 @@ private:
     void blockToAttributes(const Block & block);
     void loadData();
 
-    void calculateBytesAllocated();
-
     /** Checks whether a given attribute exists and returns its index */
     size_t getAttributeIndex(const std::string & attribute_name) const;
 
     /** Helper function for retrieving the value of an attribute by key. */
     template <typename AttributeType, typename ValueGetter, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
-        const std::vector<IPolygonDictionary::Point> & requested_key_points,
+        const VectorWithMemoryTracking<IPolygonDictionary::Point> & requested_key_points,
         ValueGetter && get_value,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
+
+    template <typename AttributeType, typename ValueGetter, typename ValueSetter>
+    void getItemsShortCircuitImpl(
+        const VectorWithMemoryTracking<IPolygonDictionary::Point> & requested_key_points,
+        ValueGetter && get_value,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask) const;
 
     ColumnPtr key_attribute_column;
 
@@ -166,7 +183,7 @@ private:
     /** Since the original data may have been in the form of multi-polygons, an id is stored for each single polygon
      *  corresponding to the row in which any other attributes for this entry are located.
      */
-    std::vector<size_t> polygon_index_to_attribute_value_index;
+    VectorWithMemoryTracking<size_t> polygon_index_to_attribute_value_index;
 
     /** Extracts a list of polygons from a column according to input_type and point_type.
      *  The polygons are appended to the dictionary with the corresponding ids.
@@ -174,7 +191,7 @@ private:
     void extractPolygons(const ColumnPtr & column);
 
     /** Extracts a list of points from two columns representing their x and y coordinates. */
-    static std::vector<Point> extractPoints(const Columns &key_columns);
+    static VectorWithMemoryTracking<Point> extractPoints(const Columns &key_columns);
 };
 
 }

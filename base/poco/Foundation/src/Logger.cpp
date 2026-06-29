@@ -13,19 +13,116 @@
 
 
 #include "Poco/Logger.h"
-#include "Poco/Formatter.h"
 #include "Poco/LoggingRegistry.h"
 #include "Poco/Exception.h"
-#include "Poco/NumberFormatter.h"
 #include "Poco/NumberParser.h"
 #include "Poco/String.h"
 
+#include <cassert>
+#include <mutex>
+#include <optional>
+
+namespace
+{
+
+std::mutex & getLoggerMutex()
+{
+	auto get_logger_mutex_placeholder_memory = []()
+	{
+		static char buffer[sizeof(std::mutex)]{};
+		return buffer;
+	};
+
+	static std::mutex * logger_mutex = new (get_logger_mutex_placeholder_memory()) std::mutex();
+	return *logger_mutex;
+}
+
+Poco::Logger::LoggerMap * _pLoggerMap = nullptr;
+
+std::optional<Poco::Logger::LoggerMapIterator> findEntry(const std::string & name)
+{
+	if (!_pLoggerMap)
+		return {};
+	auto it = _pLoggerMap->find(name);
+	if (it == _pLoggerMap->end())
+		return {};
+	return it;
+}
+
+Poco::Logger * findEntryRawPtr(const std::string & name)
+{
+	auto it = findEntry(name);
+	return it ? (*it)->second.logger : nullptr;
+}
+
+std::pair<Poco::Logger::LoggerMapIterator, bool> addEntry(Poco::Logger * pLogger)
+{
+	if (!_pLoggerMap)
+		_pLoggerMap = new Poco::Logger::LoggerMap;
+
+	auto result = _pLoggerMap->emplace(pLogger->name(), Poco::Logger::LoggerEntry{pLogger, false /*owned_by_shared_ptr*/});
+	assert(result.second);
+	return result;
+}
+
+std::pair<Poco::Logger::LoggerMapIterator, bool> unsafeGet(const std::string & name, bool get_shared);
+
+Poco::Logger * unsafeGetRawPtr(const std::string & name)
+{
+	return unsafeGet(name, false /*get_shared*/).first->second.logger;
+}
+
+Poco::Logger & parentLogger(const std::string & name)
+{
+	std::string::size_type pos = name.rfind('.');
+	if (pos != std::string::npos)
+	{
+		std::string pname = name.substr(0, pos);
+		if (Poco::Logger * pParent = findEntryRawPtr(pname))
+			return *pParent;
+		return parentLogger(pname);
+	}
+	return *unsafeGetRawPtr(Poco::Logger::ROOT);
+}
+
+std::pair<Poco::Logger::LoggerMapIterator, bool> unsafeGet(const std::string & name, bool get_shared)
+{
+	auto optional_logger_it = findEntry(name);
+
+	if (optional_logger_it)
+	{
+		auto & logger_it = *optional_logger_it;
+		if (logger_it->second.owned_by_shared_ptr)
+		{
+			logger_it->second.logger->duplicate();
+			if (!get_shared)
+				logger_it->second.owned_by_shared_ptr = false;
+		}
+		return std::make_pair(logger_it, false);
+	}
+
+	Poco::Logger * logger = nullptr;
+	if (name == Poco::Logger::ROOT)
+		logger = new Poco::Logger(name, nullptr, Poco::Message::PRIO_INFORMATION);
+	else
+	{
+		Poco::Logger & par = parentLogger(name);
+		logger = new Poco::Logger(name, par.getChannel(), par.getLevel());
+	}
+	return addEntry(logger);
+}
+
+std::pair<Poco::Logger::LoggerMapIterator, bool> unsafeCreate(const std::string & name, Poco::Channel * pChannel, int level)
+{
+	if (findEntry(name)) throw Poco::ExistsException();
+	return addEntry(new Poco::Logger(name, pChannel, level));
+}
+
+}
 
 namespace Poco {
 
 
-Logger::LoggerMap* Logger::_pLoggerMap = 0;
-Mutex Logger::_mapMtx;
 const std::string Logger::ROOT;
 
 
@@ -73,7 +170,7 @@ void Logger::setProperty(const std::string& name, const std::string& value)
 		setChannel(LoggingRegistry::defaultRegistry().channelForName(value));
 	else if (name == "level")
 		setLevel(value);
-	else 
+	else
 		Channel::setProperty(name, value);
 }
 
@@ -84,6 +181,14 @@ void Logger::log(const Message& msg)
 	{
 		_pChannel->log(msg);
 	}
+}
+
+void Logger::log(Message && msg)
+{
+    if (_level >= msg.getPriority() && _pChannel)
+    {
+        _pChannel->log(std::move(msg));
+    }
 }
 
 
@@ -99,30 +204,19 @@ void Logger::log(const Exception& exc, const char* file, int line)
 }
 
 
-void Logger::dump(const std::string& msg, const void* buffer, std::size_t length, Message::Priority prio)
-{
-	if (_level >= prio && _pChannel)
-	{
-		std::string text(msg);
-		formatDump(text, buffer, length);
-		_pChannel->log(Message(_name, text, prio));
-	}
-}
-
-
 void Logger::setLevel(const std::string& name, int level)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	if (_pLoggerMap)
 	{
 		std::string::size_type len = name.length();
-		for (LoggerMap::iterator it = _pLoggerMap->begin(); it != _pLoggerMap->end(); ++it)
+		for (auto & it : *_pLoggerMap)
 		{
-			if (len == 0 || 
-				(it->first.compare(0, len, name) == 0 && (it->first.length() == len || it->first[len] == '.')))
+			if (len == 0 ||
+				(it.first.compare(0, len, name) == 0 && (it.first.length() == len || it.first[len] == '.')))
 			{
-				it->second->setLevel(level);
+				it.second.logger->setLevel(level);
 			}
 		}
 	}
@@ -131,17 +225,17 @@ void Logger::setLevel(const std::string& name, int level)
 
 void Logger::setChannel(const std::string& name, Channel* pChannel)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	if (_pLoggerMap)
 	{
 		std::string::size_type len = name.length();
-		for (LoggerMap::iterator it = _pLoggerMap->begin(); it != _pLoggerMap->end(); ++it)
+		for (auto & it : *_pLoggerMap)
 		{
 			if (len == 0 ||
-				(it->first.compare(0, len, name) == 0 && (it->first.length() == len || it->first[len] == '.')))
+				(it.first.compare(0, len, name) == 0 && (it.first.length() == len || it.first[len] == '.')))
 			{
-				it->second->setChannel(pChannel);
+				it.second.logger->setChannel(pChannel);
 			}
 		}
 	}
@@ -150,238 +244,147 @@ void Logger::setChannel(const std::string& name, Channel* pChannel)
 
 void Logger::setProperty(const std::string& loggerName, const std::string& propertyName, const std::string& value)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	if (_pLoggerMap)
 	{
 		std::string::size_type len = loggerName.length();
-		for (LoggerMap::iterator it = _pLoggerMap->begin(); it != _pLoggerMap->end(); ++it)
+		for (auto & it : *_pLoggerMap)
 		{
 			if (len == 0 ||
-				(it->first.compare(0, len, loggerName) == 0 && (it->first.length() == len || it->first[len] == '.')))
+				(it.first.compare(0, len, loggerName) == 0 && (it.first.length() == len || it.first[len] == '.')))
 			{
-				it->second->setProperty(propertyName, value);
+				it.second.logger->setProperty(propertyName, value);
 			}
 		}
 	}
 }
 
 
-std::string Logger::format(const std::string& fmt, const std::string& arg)
+namespace
 {
-	std::string args[] =
-	{
-		arg
-	};
-	return format(fmt, 1, args);
-}
 
-
-std::string Logger::format(const std::string& fmt, const std::string& arg0, const std::string& arg1)
+struct LoggerDeleter
 {
-	std::string args[] =
+	void operator()(Poco::Logger * logger)
 	{
-		arg0,
-		arg1
-	};
-	return format(fmt, 2, args);
-}
+		std::lock_guard<std::mutex> lock(getLoggerMutex());
 
-
-std::string Logger::format(const std::string& fmt, const std::string& arg0, const std::string& arg1, const std::string& arg2)
-{
-	std::string args[] =
-	{
-		arg0,
-		arg1,
-		arg2
-	};
-	return format(fmt, 3, args);
-}
-
-
-std::string Logger::format(const std::string& fmt, const std::string& arg0, const std::string& arg1, const std::string& arg2, const std::string& arg3)
-{
-	std::string args[] =
-	{
-		arg0,
-		arg1,
-		arg2,
-		arg3
-	};
-	return format(fmt, 4, args);
-}
-
-
-std::string Logger::format(const std::string& fmt, int argc, std::string argv[])
-{
-	std::string result;
-	std::string::const_iterator it = fmt.begin();
-	while (it != fmt.end())
-	{
-		if (*it == '$')
+		/// If logger infrastructure is destroyed just decrement logger reference count
+		if (!_pLoggerMap)
 		{
-			++it;
-			if (*it == '$')
-			{
-				result += '$';
-			}
-			else if (*it >= '0' && *it <= '9')
-			{
-				int i = *it - '0';
-				if (i < argc)
-					result += argv[i];
-			}
-			else
-			{
-				result += '$';
-				result += *it;
-			}
+			logger->release();
+			return;
 		}
-		else result += *it;
-		++it;
+
+		auto it = _pLoggerMap->find(logger->name());
+		assert(it != _pLoggerMap->end());
+
+		/** If reference count is 1, this means this shared pointer owns logger
+		  * and need destroy it.
+		  */
+		size_t reference_count_before_release = logger->release();
+		if (reference_count_before_release == 1)
+		{
+			assert(it->second.owned_by_shared_ptr);
+			_pLoggerMap->erase(it);
+		}
 	}
-	return result;
+};
+
+inline LoggerPtr makeLoggerPtr(Logger & logger, bool owned_by_shared_ptr)
+{
+	if (owned_by_shared_ptr)
+		return LoggerPtr(&logger, LoggerDeleter());
+
+	return LoggerPtr(std::shared_ptr<void>{}, &logger);
 }
 
-
-void Logger::formatDump(std::string& message, const void* buffer, std::size_t length)
-{
-	const int BYTES_PER_LINE = 16;
-
-	message.reserve(message.size() + length*6);
-	if (!message.empty()) message.append("\n");
-	unsigned char* base = (unsigned char*) buffer;
-	int addr = 0;
-	while (addr < length)
-	{
-		if (addr > 0) message.append("\n");
-		message.append(NumberFormatter::formatHex(addr, 4));
-		message.append("  ");
-		int offset = 0;
-		while (addr + offset < length && offset < BYTES_PER_LINE)
-		{
-			message.append(NumberFormatter::formatHex(base[addr + offset], 2));
-			message.append(offset == 7 ? "  " : " ");
-			++offset;
-		}
-		if (offset < 7) message.append(" ");
-		while (offset < BYTES_PER_LINE) { message.append("   "); ++offset; }
-		message.append(" ");
-		offset = 0;
-		while (addr + offset < length && offset < BYTES_PER_LINE)
-		{
-			unsigned char c = base[addr + offset];
-			message += (c >= 32 && c < 127) ? (char) c : '.';
-			++offset;
-		}
-		addr += BYTES_PER_LINE;
-	}
 }
 
 
 Logger& Logger::get(const std::string& name)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
-	return unsafeGet(name);
+	auto [it, inserted] = unsafeGet(name, false /*get_shared*/);
+	return *it->second.logger;
 }
 
 
-Logger& Logger::unsafeGet(const std::string& name)
+LoggerPtr Logger::getShared(const std::string & name, bool should_be_owned_by_shared_ptr_if_created)
 {
-	Logger* pLogger = find(name);
-	if (!pLogger)
-	{
-		if (name == ROOT)
-		{
-			pLogger = new Logger(name, 0, Message::PRIO_INFORMATION);
-		}
-		else
-		{
-			Logger& par = parent(name);
-			pLogger = new Logger(name, par.getChannel(), par.getLevel());
-		}
-		add(pLogger);
-	}
-	return *pLogger;
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
+	auto [it, inserted] = unsafeGet(name, true /*get_shared*/);
+
+	/** If during `unsafeGet` logger was created, then this shared pointer owns it.
+	  * If logger was already created, then this shared pointer does not own it.
+	  */
+	if (inserted && should_be_owned_by_shared_ptr_if_created)
+		it->second.owned_by_shared_ptr = true;
+
+	return makeLoggerPtr(*it->second.logger, it->second.owned_by_shared_ptr);
 }
+
 
 
 Logger& Logger::create(const std::string& name, Channel* pChannel, int level)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
-	if (find(name)) throw ExistsException();
-	Logger* pLogger = new Logger(name, pChannel, level);
-	add(pLogger);
-	return *pLogger;
+	return *unsafeCreate(name, pChannel, level).first->second.logger;
 }
 
+LoggerPtr Logger::createShared(const std::string & name, Channel * pChannel, int level)
+{
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
+
+	auto [it, inserted] = unsafeCreate(name, pChannel, level);
+	it->second.owned_by_shared_ptr = true;
+
+	return makeLoggerPtr(*it->second.logger, it->second.owned_by_shared_ptr);
+}
 
 Logger& Logger::root()
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
-	return unsafeGet(ROOT);
+	return *unsafeGetRawPtr(ROOT);
 }
 
 
 Logger* Logger::has(const std::string& name)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
-	return find(name);
+	return findEntryRawPtr(name);
 }
 
 
 void Logger::shutdown()
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	if (_pLoggerMap)
 	{
-		for (LoggerMap::iterator it = _pLoggerMap->begin(); it != _pLoggerMap->end(); ++it)
+		for (auto & it : *_pLoggerMap)
 		{
-			it->second->release();
+			if (it.second.owned_by_shared_ptr)
+				continue;
+
+			it.second.logger->release();
 		}
+
 		delete _pLoggerMap;
-		_pLoggerMap = 0;
+		_pLoggerMap = nullptr;
 	}
 }
 
-
-Logger* Logger::find(const std::string& name)
-{
-	if (_pLoggerMap)
-	{
-		LoggerMap::iterator it = _pLoggerMap->find(name);
-		if (it != _pLoggerMap->end())
-			return it->second;
-	}
-	return 0;
-}
-
-
-void Logger::destroy(const std::string& name)
-{
-	Mutex::ScopedLock lock(_mapMtx);
-
-	if (_pLoggerMap)
-	{
-		LoggerMap::iterator it = _pLoggerMap->find(name);
-		if (it != _pLoggerMap->end())
-		{
-			it->second->release();
-			_pLoggerMap->erase(it);
-		}
-	}
-}
 
 
 void Logger::names(std::vector<std::string>& names)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	names.clear();
 	if (_pLoggerMap)
@@ -391,22 +394,6 @@ void Logger::names(std::vector<std::string>& names)
 			names.push_back(it->first);
 		}
 	}
-}
-
-
-Logger& Logger::parent(const std::string& name)
-{
-	std::string::size_type pos = name.rfind('.');
-	if (pos != std::string::npos)
-	{
-		std::string pname = name.substr(0, pos);
-		Logger* pParent = find(pname);
-		if (pParent)
-			return *pParent;
-		else
-			return parent(pname);
-	}
-	else return unsafeGet(ROOT);
 }
 
 
@@ -471,14 +458,6 @@ public:
 namespace
 {
 	static AutoLoggerShutdown auto_logger_shutdown;
-}
-
-
-void Logger::add(Logger* pLogger)
-{
-	if (!_pLoggerMap)
-		_pLoggerMap = new LoggerMap;
-	_pLoggerMap->insert(LoggerMap::value_type(pLogger->name(), pLogger));
 }
 
 

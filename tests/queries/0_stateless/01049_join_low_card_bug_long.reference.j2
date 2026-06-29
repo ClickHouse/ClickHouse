@@ -1,5 +1,5 @@
 -- { echoOn }
-SET allow_experimental_analyzer = 0;
+SET enable_analyzer = 0;
 {% for join_algorithm in ['default', 'partial_merge', 'parallel_hash'] -%}
 SET join_algorithm = '{{ join_algorithm }}';
 SET join_use_nulls = 0;
@@ -313,7 +313,7 @@ SELECT r.lc, materialize(r.lc), toTypeName(r.lc), toTypeName(materialize(r.lc)) 
 str	str	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
 str_r	str_r	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
 \N	\N	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 {% for join_algorithm in ['default', 'partial_merge', 'parallel_hash'] -%}
 SET join_algorithm = '{{ join_algorithm }}';
 SET join_use_nulls = 0;

@@ -9,10 +9,10 @@ namespace DB
 
 bool ParserDropNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_drop("DROP");
-    ParserKeyword s_collection("NAMED COLLECTION");
-    ParserKeyword s_if_exists("IF EXISTS");
-    ParserKeyword s_on("ON");
+    ParserKeyword s_drop(Keyword::DROP);
+    ParserKeyword s_collection(Keyword::NAMED_COLLECTION);
+    ParserKeyword s_if_exists(Keyword::IF_EXISTS);
+    ParserKeyword s_on(Keyword::ON);
     ParserIdentifier name_p;
 
     String cluster_str;
@@ -38,7 +38,7 @@ bool ParserDropNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node
             return false;
     }
 
-    auto query = std::make_shared<ASTDropNamedCollectionQuery>();
+    auto query = make_intrusive<ASTDropNamedCollectionQuery>();
 
     tryGetIdentifierNameInto(collection_name, query->collection_name);
     query->if_exists = if_exists;

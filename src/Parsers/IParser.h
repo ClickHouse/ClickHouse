@@ -3,16 +3,20 @@
 #include <absl/container/inlined_vector.h>
 #include <algorithm>
 #include <memory>
+#include <set>
 
 #include <Core/Defines.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/TokenIterator.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
 {
+
+struct LiteralTokenMap;
 
 namespace ErrorCodes
 {
@@ -20,13 +24,67 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Highlight types for syntax highlighting of parsed queries.
+/// APPLY_FOR_HIGHLIGHTS lists the publicly visible types (used in the output of `highlightQuery`).
+/// string_like and string_regexp are internal types used by the parser before expansion.
+#define APPLY_FOR_HIGHLIGHTS(M) \
+    M(none) \
+    M(keyword) \
+    M(identifier) \
+    M(function) \
+    M(alias) \
+    M(substitution) \
+    M(number) \
+    M(string) \
+    M(string_escape) \
+    M(string_metacharacter)
+
+enum class Highlight : uint8_t
+{
+#define M(NAME) NAME,
+    APPLY_FOR_HIGHLIGHTS(M)
+#undef M
+    /// These two are used internally by the parser to mark LIKE/REGEXP string ranges.
+    /// They are expanded into string/string_escape/string_metacharacter by `expandHighlights`.
+    string_like,
+    string_regexp,
+};
+
+struct HighlightedRange
+{
+    const char * begin;
+    const char * end;
+    Highlight highlight;
+
+    auto operator<=>(const HighlightedRange & other) const
+    {
+        return begin <=> other.begin;
+    }
+};
+
+/// Expand string_like and string_regexp ranges into character-level sub-ranges
+/// with string, string_escape, and string_metacharacter highlight types.
+/// Other ranges are passed through unchanged.
+std::vector<HighlightedRange> expandHighlights(const std::set<HighlightedRange> & highlights);
+
 
 /** Collects variants, how parser could proceed further at rightmost position.
+  * Also collects a mapping of parsed ranges for highlighting,
+  * which is accumulated through the parsing.
   */
 struct Expected
 {
     absl::InlinedVector<const char *, 7> variants;
     const char * max_parsed_pos = nullptr;
+
+    bool enable_highlighting = false;
+    std::set<HighlightedRange> highlights;
+
+    /// Optional map for capturing literal token positions during parsing.
+    /// Used by ValuesBlockInputFormat for ConstantExpressionTemplate construction
+    /// and for LIKE/REGEXP syntax highlighting.
+    /// The caller must allocate and manage the map's lifetime.
+    LiteralTokenMap * literal_token_map = nullptr;
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
@@ -47,6 +105,8 @@ struct Expected
     {
         add(it->begin, description);
     }
+
+    void highlight(HighlightedRange range);
 };
 
 
@@ -61,11 +121,30 @@ public:
         uint32_t depth = 0;
         uint32_t max_depth = 0;
 
-        Pos(Tokens & tokens_, uint32_t max_depth_) : TokenIterator(tokens_), max_depth(max_depth_)
+        uint32_t backtracks = 0;
+        uint32_t max_backtracks = 0;
+
+        Pos(Tokens & tokens_, uint32_t max_depth_, uint32_t max_backtracks_)
+            : TokenIterator(tokens_), max_depth(max_depth_), max_backtracks(max_backtracks_)
         {
         }
 
-        Pos(TokenIterator token_iterator_, uint32_t max_depth_) : TokenIterator(token_iterator_), max_depth(max_depth_) { }
+        Pos(TokenIterator token_iterator_, uint32_t max_depth_, uint32_t max_backtracks_)
+            : TokenIterator(token_iterator_), max_depth(max_depth_), max_backtracks(max_backtracks_)
+        {
+        }
+
+        /// Construct a new Pos over different Tokens, inheriting depth/backtrack
+        /// counters and limits from an existing Pos. Use this when re-tokenizing
+        /// a sub-expression so that the overall recursion depth is preserved.
+        Pos(Tokens & tokens_, const Pos & inherit_from)
+            : TokenIterator(tokens_)
+            , depth(inherit_from.depth)
+            , max_depth(inherit_from.max_depth)
+            , backtracks(inherit_from.backtracks)
+            , max_backtracks(inherit_from.max_backtracks)
+        {
+        }
 
         ALWAYS_INLINE void increaseDepth()
         {
@@ -73,6 +152,21 @@ public:
             if (unlikely(max_depth > 0 && depth > max_depth))
                 throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Maximum parse depth ({}) exceeded. "
                     "Consider rising max_parser_depth parameter.", max_depth);
+
+            /** Sometimes the maximum parser depth can be set to a high value by the user,
+              * but we still want to avoid stack overflow.
+              * For this purpose, we can use the checkStackSize function, but it is too heavy.
+              * The solution is to check not too frequently.
+              * The frequency is arbitrary, but not too large, not too small,
+              * and a power of two to simplify the division.
+              */
+#if defined(USE_MUSL) || defined(SANITIZER) || !defined(NDEBUG)
+            static constexpr uint32_t check_frequency = 128;
+#else
+            static constexpr uint32_t check_frequency = 8192;
+#endif
+            if (depth % check_frequency == 0)
+                checkStackSize();
         }
 
         ALWAYS_INLINE void decreaseDepth()
@@ -81,6 +175,10 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in parser: incorrect calculation of parse depth");
             --depth;
         }
+
+        Pos(const Pos & rhs) = default;
+
+        Pos & operator=(const Pos & rhs);
     };
 
     /** Get the text of this parser parses. */
@@ -119,8 +217,7 @@ public:
             pos = begin;
             return false;
         }
-        else
-            return true;
+        return true;
     }
 
     /** The same, but doesn't move the position even if parsing was successful.
@@ -129,6 +226,14 @@ public:
     {
         ASTPtr node;
         return parse(pos, node, expected);
+    }
+
+    /** If the parsed fragment should be highlighted in the query editor,
+      * which type of highlighting to use?
+      */
+    virtual Highlight highlight() const
+    {
+        return Highlight::none;
     }
 
     virtual ~IParser() = default;

@@ -2,8 +2,19 @@
 #include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
+#include <Common/Logger.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 
+
+namespace ProfileEvents
+{
+    /// NOLINT: not settings; the names contain "Settings" so check-settings-style mistakes them for setting externs.
+    extern const Event SettingsProfileCacheRecalculations; // NOLINT
+    extern const Event SettingsProfileCacheRecalculationMicroseconds; // NOLINT
+}
 
 namespace DB
 {
@@ -33,6 +44,8 @@ void SettingsProfilesCache::ensureAllProfilesRead()
             else
                 profileRemoved(id);
         });
+
+    batch_subscription = access_control.subscribeForBatchFinished([this] { mergeSettingsAndConstraintsIfNeeded(); });
 
     for (const UUID & id : access_control.findAll<SettingsProfile>())
     {
@@ -64,7 +77,7 @@ void SettingsProfilesCache::profileAddedOrChanged(const UUID & profile_id, const
         profiles_by_name[new_profile->getName()] = profile_id;
     }
     profile_infos_cache.clear();
-    mergeSettingsAndConstraints();
+    need_merge_settings_and_constraints = true;
 }
 
 
@@ -77,7 +90,18 @@ void SettingsProfilesCache::profileRemoved(const UUID & profile_id)
     profiles_by_name.erase(it->second->getName());
     all_profiles.erase(it);
     profile_infos_cache.clear();
+    need_merge_settings_and_constraints = true;
+}
+
+
+void SettingsProfilesCache::mergeSettingsAndConstraintsIfNeeded()
+{
+    std::lock_guard lock{mutex};
+    if (!need_merge_settings_and_constraints)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
     mergeSettingsAndConstraints();
+    need_merge_settings_and_constraints = false;
 }
 
 
@@ -103,6 +127,8 @@ void SettingsProfilesCache::setDefaultProfileName(const String & default_profile
 void SettingsProfilesCache::mergeSettingsAndConstraints()
 {
     /// `mutex` is already locked.
+    ProfileEvents::increment(ProfileEvents::SettingsProfileCacheRecalculations);
+    Stopwatch watch;
     for (auto i = enabled_settings.begin(), e = enabled_settings.end(); i != e;)
     {
         auto enabled = i->second.lock();
@@ -114,6 +140,14 @@ void SettingsProfilesCache::mergeSettingsAndConstraints()
             ++i;
         }
     }
+
+    const auto elapsed_ms = watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::SettingsProfileCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
+    /// O(enabled sets * profiles), under `mutex` that the ContextAccess build path also takes.
+    if (elapsed_ms >= 1000)
+        LOG_WARNING(getLogger("SettingsProfilesCache"), "Re-merged settings and constraints for {} enabled set(s) over {} profiles in {} ms", enabled_settings.size(), all_profiles.size(), elapsed_ms);
+    else
+        LOG_DEBUG(getLogger("SettingsProfilesCache"), "Re-merged settings and constraints for {} enabled set(s) over {} profiles in {} ms", enabled_settings.size(), all_profiles.size(), elapsed_ms);
 }
 
 
@@ -135,13 +169,12 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
             merged_settings.emplace_back(new_element);
         }
 
-    merged_settings.merge(enabled.params.settings_from_enabled_roles);
-    merged_settings.merge(enabled.params.settings_from_user);
+    merged_settings.merge(enabled.params.settings_from_enabled_roles, /* normalize= */ false);
+    merged_settings.merge(enabled.params.settings_from_user, /* normalize= */ false);
 
     auto info = std::make_shared<SettingsProfilesInfo>(access_control);
 
-    info->profiles = merged_settings.toProfileIDs();
-    substituteProfiles(merged_settings, info->profiles_with_implicit, info->names_of_profiles);
+    substituteProfiles(merged_settings, info->profiles, info->profiles_with_implicit, info->names_of_profiles);
 
     info->settings = merged_settings.toSettingsChanges();
     info->constraints = merged_settings.toSettingsConstraints(access_control);
@@ -152,9 +185,12 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
 
 void SettingsProfilesCache::substituteProfiles(
     SettingsProfileElements & elements,
+    std::vector<UUID> & profiles,
     std::vector<UUID> & substituted_profiles,
     std::unordered_map<UUID, String> & names_of_substituted_profiles) const
 {
+    profiles = elements.toProfileIDs();
+
     /// We should substitute profiles in reversive order because the same profile can occur
     /// in `elements` multiple times (with some other settings in between) and in this case
     /// the last occurrence should override all the previous ones.
@@ -184,6 +220,11 @@ void SettingsProfilesCache::substituteProfiles(
         names_of_substituted_profiles.emplace(profile_id, profile->getName());
     }
     std::reverse(substituted_profiles.begin(), substituted_profiles.end());
+
+    std::erase_if(profiles, [&substituted_profiles_set](const UUID & profile_id)
+    {
+        return !substituted_profiles_set.contains(profile_id);
+    });
 }
 
 std::shared_ptr<const EnabledSettings> SettingsProfilesCache::getEnabledSettings(
@@ -225,13 +266,13 @@ std::shared_ptr<const SettingsProfilesInfo> SettingsProfilesCache::getSettingsPr
     if (auto pos = this->profile_infos_cache.get(profile_id))
         return *pos;
 
-    SettingsProfileElements elements = all_profiles[profile_id]->elements;
+    SettingsProfileElements elements;
+    auto & element = elements.emplace_back();
+    element.parent_profile = profile_id;
 
     auto info = std::make_shared<SettingsProfilesInfo>(access_control);
 
-    info->profiles.push_back(profile_id);
-    info->profiles_with_implicit.push_back(profile_id);
-    substituteProfiles(elements, info->profiles_with_implicit, info->names_of_profiles);
+    substituteProfiles(elements, info->profiles, info->profiles_with_implicit, info->names_of_profiles);
     info->settings = elements.toSettingsChanges();
     info->constraints.merge(elements.toSettingsConstraints(access_control));
 

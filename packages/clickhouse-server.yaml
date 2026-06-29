@@ -50,8 +50,6 @@ contents:
   dst: /etc/init.d/clickhouse-server
 - src: clickhouse-server.service
   dst: /lib/systemd/system/clickhouse-server.service
-- src: root/usr/bin/clickhouse-copier
-  dst: /usr/bin/clickhouse-copier
 - src: root/usr/bin/clickhouse-server
   dst: /usr/bin/clickhouse-server
 # clickhouse-keeper part
