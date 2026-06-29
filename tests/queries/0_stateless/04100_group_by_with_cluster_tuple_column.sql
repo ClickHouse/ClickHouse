@@ -3,6 +3,7 @@
 -- rejection and the suggested unpacking workaround.
 
 SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET allow_experimental_group_by_with_cluster = 1;
 
 DROP TABLE IF EXISTS t_cluster_tuple;
 CREATE TABLE t_cluster_tuple (p Tuple(Float64, Float64), v UInt8) ENGINE = Memory;

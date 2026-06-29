@@ -4,6 +4,7 @@
 -- give; the test contract is correctness, not the path taken.
 
 SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT '--- 12k random hex strings, d=1 ---';
 -- 16-char hex of cityHash64 — uniformly distributed strings, pairwise edit

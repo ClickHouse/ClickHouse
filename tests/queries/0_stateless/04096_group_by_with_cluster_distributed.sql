@@ -7,6 +7,7 @@
 -- initiator against the union of all shards' aggregate states.
 
 SET enable_analyzer = 1;
+SET allow_experimental_group_by_with_cluster = 1;
 SET optimize_skip_unused_shards = 1;
 SET optimize_distributed_group_by_sharding_key = 1;
 SET prefer_localhost_replica = 1;

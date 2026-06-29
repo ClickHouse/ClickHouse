@@ -77,6 +77,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool allow_experimental_group_by_with_cluster;
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_inline_views;
@@ -3907,6 +3908,17 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
   */
 void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
 {
+    /// `WITH CLUSTER` is experimental: it adds a new post-aggregation execution mode
+    /// (numeric bucketing, 2D grid/DSU merging, string q-gram filtering), and any
+    /// clustering mistake silently changes aggregate results. Keep it opt-in.
+    if (query_node_typed.hasGroupByWithCluster()
+        && !scope.context->getSettingsRef()[Setting::allow_experimental_group_by_with_cluster])
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "GROUP BY ... WITH CLUSTER is experimental and disabled by default. "
+            "Set `allow_experimental_group_by_with_cluster = 1` to enable it.");
+    }
+
     /// `WITH CLUSTER` runs after `Aggregating` and needs mergeable states;
     /// ROLLUP/CUBE/GROUPING SETS/TOTALS finalize aggregates earlier and would
     /// hit a `LOGICAL_ERROR` in `mergeAggregateStates`.
@@ -3975,16 +3987,20 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
             {
                 const auto & cluster_elem = group_by_list[orig_cluster_idx];
 
-                /// Wider-than-64-bit numerics (`Int128/256`, `UInt128/256`,
-                /// `Decimal64/128/256`) lose precision before their natural range
-                /// when forced through `getFloat64` — reject them here so the user
-                /// gets a clear error instead of silent misclustering.
+                /// Wider-than-64-bit numerics (`Int128/256`, `UInt128/256`) lose
+                /// precision before their natural range when forced through
+                /// `getFloat64`. All `Decimal` types (including `Decimal32`) are
+                /// rejected too: the distance check runs in `Float64`, so exact
+                /// decimal boundaries depend on binary rounding — e.g. `Decimal32`
+                /// keys `0.7` and `0.8` with `WITH CLUSTER 0.1` would compare
+                /// `0.7 + 0.1 >= 0.8` as `0.7999999999999999 < 0.8` and split a pair
+                /// whose exact decimal distance equals the threshold. Reject them all
+                /// here so the user gets a clear error instead of silent misclustering.
                 auto is_supported_scalar = [](const DataTypePtr & t)
                 {
                     WhichDataType which(t);
                     return which.isNativeInteger()
                         || which.isFloat()
-                        || which.isDecimal32()
                         || which.isDateOrDate32()
                         || which.isDateTimeOrDateTime64()
                         || which.isTimeOrTime64();

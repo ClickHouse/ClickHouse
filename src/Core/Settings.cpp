@@ -8026,6 +8026,11 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_group_by_with_cluster, false, R"(
+Allows the `GROUP BY ... WITH CLUSTER <distance>` modifier, which merges groups whose key values are within the given distance (with chained, transitive semantics). It introduces a new post-aggregation execution mode (numeric bucketing, 2D grid/DSU merging, string q-gram filtering); keep it opt-in until it has production coverage. Possible values:
+- 0 — `GROUP BY ... WITH CLUSTER` is rejected during query analysis.
+- 1 — `GROUP BY ... WITH CLUSTER` is enabled.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
 )", EXPERIMENTAL) \

@@ -2,6 +2,8 @@
 -- Any other arity must be rejected.
 
 -- Arity 3 — not supported.
+SET allow_experimental_group_by_with_cluster = 1;
+
 SELECT count() FROM VALUES('x UInt64, y UInt64, z UInt64', (1, 1, 1))
 GROUP BY (x, y, z) WITH CLUSTER 1; -- { serverError BAD_ARGUMENTS }
 

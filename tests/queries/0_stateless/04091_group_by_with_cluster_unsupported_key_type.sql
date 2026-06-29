@@ -4,6 +4,8 @@
 -- column.
 
 -- 2D tuple with String elements.
+SET allow_experimental_group_by_with_cluster = 1;
+
 SELECT count() FROM VALUES('x UInt64, y UInt64', (1, 2))
 GROUP BY (toString(x), toString(y)) WITH CLUSTER 1; -- { serverError BAD_ARGUMENTS }
 

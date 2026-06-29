@@ -3,6 +3,8 @@
 -- before the cluster step would merge them, which would otherwise produce
 -- a `LOGICAL_ERROR` in `mergeAggregateStates` ("Expected ColumnAggregateFunction").
 
+SET allow_experimental_group_by_with_cluster = 1;
+
 SELECT count() FROM (SELECT toUInt64(number) AS x FROM numbers(4))
 GROUP BY x WITH CLUSTER 1 WITH ROLLUP; -- { serverError BAD_ARGUMENTS }
 

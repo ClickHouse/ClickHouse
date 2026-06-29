@@ -4,6 +4,7 @@
 -- correctness on tens of thousands of rows.
 
 SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT '--- Cell-boundary: distance exactly d (3-4-5 triangle) ---';
 -- (0, 0) and (3, 4): distance 5 exactly (no FP rounding). At d = 5 the check

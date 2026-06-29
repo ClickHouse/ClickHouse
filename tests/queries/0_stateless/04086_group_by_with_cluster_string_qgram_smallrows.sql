@@ -12,6 +12,7 @@
 -- pair merges (2 leftover clusters total, max size 2).
 
 SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT count() AS num_clusters, sum(c) AS total_rows, max(c) AS max_cluster_size
 FROM (

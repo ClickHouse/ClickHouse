@@ -5,6 +5,7 @@
 -- 1D: merging buckets across the distance keeps growing the `groupArray` state.
 
 SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT
     arraySort(groupArray(v)) AS vals

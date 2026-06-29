@@ -8,6 +8,7 @@
 -- merge into a single cluster at `WITH CLUSTER 1`.
 
 SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT count() AS num_clusters, sum(c) AS total_rows
 FROM (
