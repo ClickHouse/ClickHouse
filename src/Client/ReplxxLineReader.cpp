@@ -388,6 +388,17 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     auto callback = [this] (const String & context, size_t context_size)
     {
+        /// When this completion corresponds to the hints currently displayed, reuse the exact
+        /// snapshot taken when they were shown. replxx accepts a hint by indexing this completion
+        /// list with the hint selection, and the background `Suggest::load` thread can insert a
+        /// word that sorts before the displayed one between display and acceptance; reusing the
+        /// snapshot guarantees the accepted word is the one that was shown. Any other completion
+        /// (plain Tab where no hints are shown — empty word, mid-line) is recomputed.
+        if (!hint_completions.empty()
+            && context == hint_completions_context
+            && static_cast<int>(context_size) == hint_completions_context_size)
+            return hint_completions;
+
         /// Prioritize identifiers already present in the whole query line (not just up to the
         /// cursor), so the same words rank first for both Tab completion and the inline hints.
         auto priority = extractIdentifiers(rx.get_state().text());
@@ -407,24 +418,53 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// As-you-type autocompletion: show the matching suggestions as inline "ghost" hints, with
     /// the same priority ordering as Tab completion. replxx renders a single hint inline after
     /// the cursor and a navigable list (Ctrl-Up/Ctrl-Down) for several; Tab accepts the selected
-    /// one. The completion and hint callbacks must return the same words in the same order,
-    /// which is guaranteed by routing both through `Suggest::getMatchingWords`.
+    /// one. Accepting a hint makes replxx index the *completion* list with the hint selection, so
+    /// the completion callback must return the same words in the same order as the displayed hints
+    /// — guaranteed here by computing the words once in the hint callback and reusing that exact
+    /// snapshot in the completion callback (`hint_completions`).
     /// Hints need color, so they are only enabled together with highlighting (see ClientBase).
     if (options.enable_hints && highlighter)
     {
         auto hint_callback = [this] (const String & context, int & context_size, Replxx::Color &)
         {
             /// The callback runs only when the input text changes (replxx caches hints while it
-            /// stays the same), so this is the right place to reset the navigation state.
+            /// stays the same), so this is the right place to reset the navigation state and the
+            /// completion snapshot.
+            hint_selection = -1;
+            hint_count = 0;
+            hints_visible = false;
+            hint_completions.clear();
+            hint_completions_context.clear();
+            hint_completions_context_size = 0;
+
+            /// Mirror `set_complete_on_empty(false)` *before* matching: an empty last word matches
+            /// every suggestion, and this callback runs on every zero-delay repaint, so we must not
+            /// fold and stable-sort the whole dictionary only to drop the result here.
+            const auto last_word_pos = context.find_last_of(word_break_characters);
+            const bool last_word_empty
+                = (last_word_pos == std::string::npos) ? context.empty() : (last_word_pos + 1 == context.size());
+            if (last_word_empty)
+                return replxx::Replxx::hints_t{};
+
             const std::string text = rx.get_state().text();
             auto priority = extractIdentifiers(text.c_str());
-            auto hints = suggest.getHints(context, context_size, word_break_characters, priority, HINTS_MAX_ROWS);
+            /// Compute the matches once and cache the full list, so accepting a hint reuses exactly
+            /// these words (see the completion callback). `getCompletions` returns the matches in
+            /// the same priority order as the hints, so the shown hints are simply its prefix.
+            hint_completions = suggest.getCompletions(context, context_size, word_break_characters, priority);
+            hint_completions_context = context;
+            hint_completions_context_size = context_size;
+
+            replxx::Replxx::hints_t hints;
+            const size_t shown = std::min(hint_completions.size(), HINTS_MAX_ROWS);
+            hints.reserve(shown);
+            for (size_t i = 0; i < shown; ++i)
+                hints.push_back(hint_completions[i].text());
             hint_count = static_cast<int>(hints.size());
-            hint_selection = -1;
+
             /// The "popup" is active only if at least one hint actually has something to complete
             /// (a non-empty suffix). A fully-typed word matches itself with an empty suffix; that
             /// must not count, otherwise Enter would accept the no-op instead of running the query.
-            hints_visible = false;
             for (const auto & hint : hints)
             {
                 if (hint.size() > static_cast<size_t>(context_size))
@@ -438,6 +478,15 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         rx.set_hint_callback(hint_callback);
         rx.set_hint_delay(0); /// Show hints immediately, without a delay.
         rx.set_max_hint_rows(static_cast<int>(HINTS_MAX_ROWS));
+
+        /// replxx drops its internal hint selection on every action that regenerates the line — any
+        /// cursor movement, edit, etc. (see `handle_hints` on `HINT_ACTION::REGENERATE`) — but it
+        /// re-invokes the hint callback only when the input *text* changes. So a plain cursor
+        /// movement (e.g. Left then Right back to the end) silently clears replxx's selection while
+        /// leaving our mirror stale, making Right/Enter treat a no-longer-selected hint as chosen.
+        /// The modify callback runs on every dispatched action, so reset the mirror here to track
+        /// replxx; the hint-navigation keys re-set it *after* invoking, so a real navigation stays.
+        rx.set_modify_callback([this] (std::string &, int &) { hint_selection = -1; });
     }
 
     /// By default C-p/C-n bound to COMPLETE_NEXT/COMPLETE_PREV,
@@ -500,12 +549,17 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// Down advances the selection (and steps into the list); these mirror replxx's internal
         /// wrap (past the last hint -> nothing selected -> first hint) so we know which hint, if
         /// any, is currently chosen.
+        /// `rx.invoke` runs the modify callback, which resets `hint_selection`, so compute the new
+        /// selection from the current one *before* invoking and re-apply it *after* — this keeps
+        /// our mirror equal to replxx's internal selection (which the same action advances).
         auto hint_next = [this](char32_t code)
         {
             if (hintPopupActive())
             {
-                hint_selection = (hint_selection + 1 >= hint_count) ? -1 : hint_selection + 1;
-                return rx.invoke(Replxx::ACTION::HINT_NEXT, code);
+                const int next = (hint_selection + 1 >= hint_count) ? -1 : hint_selection + 1;
+                auto result = rx.invoke(Replxx::ACTION::HINT_NEXT, code);
+                hint_selection = next;
+                return result;
             }
             return rx.invoke(Replxx::ACTION::LINE_NEXT, code);
         };
@@ -515,8 +569,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         {
             if (hintPopupActive() && hint_selection >= 0)
             {
-                --hint_selection; /// from the first hint this deselects; the next Up recalls history
-                return rx.invoke(Replxx::ACTION::HINT_PREVIOUS, code);
+                const int next = hint_selection - 1; /// from the first hint this deselects; next Up recalls history
+                auto result = rx.invoke(Replxx::ACTION::HINT_PREVIOUS, code);
+                hint_selection = next;
+                return result;
             }
             return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
         };
@@ -528,8 +584,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         {
             if (hintPopupActive())
             {
-                hint_selection = (hint_selection - 1 < -1) ? hint_count - 1 : hint_selection - 1;
-                return rx.invoke(Replxx::ACTION::HINT_PREVIOUS, code);
+                const int next = (hint_selection - 1 < -1) ? hint_count - 1 : hint_selection - 1;
+                auto result = rx.invoke(Replxx::ACTION::HINT_PREVIOUS, code);
+                hint_selection = next;
+                return result;
             }
             return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
         });

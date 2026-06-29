@@ -83,10 +83,21 @@ private:
     /// something to complete is currently shown. `hint_count` is how many hints are shown and
     /// `hint_selection` which one is selected (0-based, -1 = none) — kept in sync with replxx's
     /// internal selection so Right/Enter can tell whether a specific hint is chosen. All three
-    /// are refreshed when the input changes (the hint callback regenerates).
+    /// are refreshed when the input changes (the hint callback regenerates); `hint_selection` is
+    /// additionally reset by the modify callback on every action, to track replxx's own reset.
     bool hints_visible = false;
     int hint_count = 0;
     int hint_selection = -1;
+
+    /// Snapshot of the completion words computed when the hints were last displayed, plus the
+    /// context (prefix and its length) they were computed for. The completion callback reuses it
+    /// so that accepting a hint inserts exactly the word that was shown: replxx accepts a hint by
+    /// indexing the *completion* list with the hint selection, and the background `Suggest::load`
+    /// thread can otherwise insert a word that sorts before the displayed one between display and
+    /// acceptance. Input-thread only, like the rest of the hint state.
+    replxx::Replxx::completions_t hint_completions;
+    std::string hint_completions_context;
+    int hint_completions_context_size = 0;
 };
 
 }

@@ -170,6 +170,20 @@ def main():
         lambda o: "countX" in o,
     )
 
+    # 3f. Regression: stepping into the hint list with Down and then moving the cursor away and
+    #     back (Left, Right back to the end of the line) makes replxx drop its internal hint
+    #     selection. The wrapper must follow that drop — otherwise its stale selection would make
+    #     Enter (and Right) treat a no-longer-shown hint as chosen and get swallowed by completion
+    #     instead of running the query. After the dance no hint is selected, so Enter must COMMIT
+    #     the query and a fresh ":)" prompt must appear.
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "stale_selection_enter_commits",
+        [b"SELECT count", b"\x1b[B", b"\x1b[D", b"\x1b[C", b"\r"],
+        lambda o: ":)" in o,
+    )
+
     # 4. --hints 0 disables the ghost text (no gray hint color emitted while typing).
     run_with_timeout(
         base[0],

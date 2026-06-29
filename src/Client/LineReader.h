@@ -30,12 +30,6 @@ public:
             const String & prefix, size_t prefix_length, const char * word_break_characters,
             const Words & priority_words = {});
 
-        /// Like `getCompletions`, but returns plain strings for replxx's as-you-type inline
-        /// hints, capped to `max_hints`. Returns empty when there is no word to complete.
-        replxx::Replxx::hints_t getHints(
-            const String & prefix, size_t prefix_length, const char * word_break_characters,
-            const Words & priority_words, size_t max_hints);
-
         void addWords(Words && new_words);
 
         /// Record identifier-like words used in a committed query so that they are prioritized
@@ -45,9 +39,9 @@ public:
         void setCompletionsCallback(Callback && callback) { custom_completions_callback = callback; }
 
     private:
-        /// Shared core of `getCompletions`/`getHints`: returns the matched words ordered by
-        /// priority — words used earlier this session, then `priority_words`, then the rest in
-        /// the existing sorted order. Sets `last_word_empty` when there is nothing to complete.
+        /// Core of `getCompletions`: returns the matched words ordered by priority — words used
+        /// earlier this session, then `priority_words`, then the rest in the existing sorted
+        /// order. Sets `last_word_empty` when there is nothing to complete.
         Words getMatchingWords(
             const String & prefix, size_t prefix_length, const char * word_break_characters,
             const Words & priority_words, bool & last_word_empty);
