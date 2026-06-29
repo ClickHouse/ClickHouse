@@ -63,7 +63,7 @@ public:
     static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 2 * 1024 * 1024; /// 2 MiB
     /// Drain bound: if only a tail of at most this many bytes remains to a long
     /// connection's read bound, drain it so the connection completes pool-reusable
-    /// (see `maybeDrainLongTail`) instead of being abandoned mid-response.
+    /// (see `dropLong`) instead of being abandoned mid-response.
     static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 1 * 1024 * 1024; /// 1 MiB
     static constexpr size_t CHAINED_BUFFER_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB per ChainedBuffers node
     /// The fixed plan window: residency is planned ONCE over this span (plan-then-stream),
@@ -335,8 +335,6 @@ private:
 
         /// Read to its bound - fully consumed and pool-reusable.
         bool atBound() const { return current_position >= read_until; }
-        /// Dropping now leaves it pool-reusable.
-        bool isComplete(bool at_eof) const { return at_eof || atBound(); }
         /// At least one byte crossed the wire. The GET is issued lazily, so a
         /// never-read connection returns to the pool untouched and must not count
         /// as incomplete.
@@ -376,8 +374,6 @@ private:
         size_t drainTail(size_t max_tail, size_t block_bytes);
     };
 
-    struct FetchMachine;  /// fwd: RetrieveStatus carries a non-owning machine handle
-
     /// Per-retrieve runtime status for the schedule-driven interpreter: the ENTIRE
     /// exec-time mutable surface the loop will branch on - no residency state, no
     /// per-window geometry. `NotLaunched` -> `InFlight` (machine scheduled or a sync
@@ -397,7 +393,6 @@ private:
     {
         RetrievePhase phase = RetrievePhase::NotLaunched;
         size_t fetched = 0;               /// bytes confirmed fetched (the `Ready` frontier)
-        FetchMachine * machine = nullptr; /// non-owning in-flight handle; carries `long_conn`
         ChainedBuffers ready_bytes;                 /// banked fetched prefix for serve, drained as the cursor advances
         bool ready_bytes_is_plaintext = false;      /// banked bytes were decrypted ahead on the worker (decrypt_ahead)
     };
@@ -471,10 +466,10 @@ private:
         /// Out-of-line: initializes `inflight_gauge` (metric symbol is in the .cpp).
         FetchMachine();
 
-        /// LOGICAL requested read-ahead range (the space `position` works in).
-        ByteRange requested_range;
         /// The PHYSICAL cache-aligned window the fetch step reads
-        /// (`fetchWindowAt` widened); collect backfills the caches over it.
+        /// (`fetchWindowAt` widened); collect backfills the caches over it. The
+        /// LOGICAL requested range (the space `position` works in) is this shifted
+        /// down by `data_start_offset`.
         ByteRange physical_window;
         /// The plan's memory-pressure level, snapshotted at launch - the only
         /// geometry field the worker reads (sizes the fetch block / suppresses
@@ -486,9 +481,9 @@ private:
         /// soft-cancelled machine must not race `setReadExtent`.
         std::optional<size_t> extent_snapshot;
         /// The schedule retrieve this machine fulfills (index into the launch-time plan's
-        /// `schedule.retrieves` / `retrieve_status`). Set at launch; read live by
-        /// `reapPutMachine` (marks the retrieve Done) and `cancelMachine` (clears the
-        /// handle). Meaningful only while this machine is the live in-flight handle of that
+        /// `schedule.retrieves` / `retrieve_status`). Set at launch; read live by `machineFor`
+        /// (is a machine running for this retrieve) and `reapPutMachine` (marks the retrieve
+        /// Done). Meaningful only while this machine is the live in-flight handle of that
         /// plan; the re-plan barrier (`chassert(!machine)`) guarantees none straddles a rebuild.
         size_t retrieve_index = 0;
         /// The long source connection CARRIED by this machine: moved in from the
@@ -513,11 +508,12 @@ private:
         /// nodes shared with the served slice).
         VectorWithMemoryTracking<WriterView> writer_views;
         ChainedBuffers fill_chain;
-        /// Segments a SIBLING is downloading (this worker lost the election): it skipped
-        /// fetching them, so `fetched` has holes there. The foreground reads them from the
-        /// sibling's fill at collect (waiting on the query thread). Empty with no contention
-        /// (the worker then leads - and fetches - the whole window).
-        VectorWithMemoryTracking<CacheWriter::SiblingLed> sibling_led;
+        /// Set by the worker when a SIBLING is downloading some segment (this worker lost the
+        /// election): it skipped fetching those, so `fetched` has holes there. At collect the
+        /// foreground revokes to the synchronous path (which re-elects/waits on the sibling-led
+        /// bytes on the query thread). False with no contention (the worker then leads - and
+        /// fetches - the whole window).
+        bool contended = false;
         /// Strategy-A pin taken by the fill step over the partial segment it just
         /// filled, held until the reap: the foreground finalize runs BEFORE the fill,
         /// so its `writerPinAt` finds a still-empty segment - without this, an eviction
@@ -635,10 +631,10 @@ private:
     /// The machine fetch step (runs on the worker thread): elect the FileCache downloader
     /// over the window's fill-target `writer_views`, fetch the LED runs from the source via
     /// the machine's own connection, and write+complete them INLINE on this thread (the
-    /// downloader contract). Segments a sibling leads are SKIPPED and recorded in
-    /// `m.sibling_led` for the foreground to read at collect. Sets `m.fetched` to the led
-    /// bytes (sparse - holes where a sibling leads). With no contention the worker leads the
-    /// whole window, so this fetches it all, exactly like `fetchGapsFromSource`.
+    /// downloader contract). Segments a sibling leads are SKIPPED and flagged via
+    /// `m.contended` so the foreground revokes to the sync path at collect. Sets `m.fetched`
+    /// to the led bytes (sparse - holes where a sibling leads). With no contention the worker
+    /// leads the whole window, so this fetches it all, exactly like `fetchGapsFromSource`.
     void coordinatedPrefetch(FetchMachine & m);
 
     /// Shared assembly tail of both gap paths, run AFTER
@@ -763,16 +759,11 @@ private:
         VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks,
         size_t logical_offset, const MachineBase * stop, Stats & out_stats) const;
 
-    /// If only a tail <= `max_tail_for_drain` remains to the bound, read it out so
-    /// the connection completes and returns to the pool reusable. Returns true iff it
-    /// drained but did not reach the bound (EOF inside the tail).
-    bool maybeDrainLongTail(std::optional<LongConnection> & conn, Stats & out_stats) const;
-
     /// Close `conn`: drain a small tail, account a still-incomplete drop, reset.
     void dropLong(std::optional<LongConnection> & conn, Stats & out_stats) const;
 
-    /// Account an incomplete-connection drop (`everTransferred` and not
-    /// `isComplete`) for `conn`.
+    /// Account an incomplete-connection drop (`everTransferred` and neither at
+    /// EOF nor `atBound`) for `conn`.
     void accountLongDrop(const std::optional<LongConnection> & conn, bool at_eof, Stats & out_stats) const;
 
     /// Reset `conn` if it reached its bound (a clean pool return).
@@ -906,6 +897,12 @@ private:
 
     // ─── Machine lifecycle ───────────────────────────────────────────────
 
+    /// Whether the single in-flight `machine` is currently serving retrieve `ri`. There is
+    /// at most one machine at a time (the re-plan barrier asserts it), and it carries the
+    /// `retrieve_index` it was launched for, so this is the "is a machine running for this
+    /// retrieve" presence test the serve loop branches on.
+    bool machineFor(size_t ri) const { return machine && machine->retrieve_index == ri; }
+
     /// The cancel verb: drop the in-flight machine. `cancelled` is true for a
     /// real cancellation (seek / extent change), false for destructor cleanup.
     void cancelMachine(bool cancelled);
@@ -922,10 +919,10 @@ private:
     /// shrinks under pressure.
     size_t effectiveBlockSize(MemoryPressureLevel level) const;
 
-    /// Read-ahead window for the next prefetch: the full window at
-    /// Normal/Elevated, 0 (suppressed) at High/Critical - read-ahead is
+    /// Whether read-ahead prefetch runs at the given pressure level: true at
+    /// Normal/Elevated, false (suppressed) at High/Critical - read-ahead is
     /// speculative, so once memory is tight it stops entirely.
-    size_t effectivePrefetchWindowSize(MemoryPressureLevel level) const;
+    bool prefetchEnabled(MemoryPressureLevel level) const;
 
     /// How far the in-order fill front runs ahead of the serve cursor: the bottom populatable
     /// tier's lead. A disk-backed (`FilesystemCache`) bottom is flat (`fill_ahead_lead`); a

@@ -485,12 +485,15 @@ void ReaderExecutor::seek(size_t new_position)
 {
     LOG_DEBUG(log, "seek to {}, current position={}", new_position, position);
 
+    /// The machine's requested LOGICAL range is its `physical_window` shifted by the header.
+    const size_t requested_logical_offset = machine ? machine->physical_window.offset - data_start_offset : 0;
+    const size_t requested_logical_end = machine ? machine->physical_window.end() - data_start_offset : 0;
     if (machine
-        && new_position >= machine->requested_range.offset
-        && new_position < machine->requested_range.end())
+        && new_position >= requested_logical_offset
+        && new_position < requested_logical_end)
     {
         LOG_TRACE(log, "seek: target within prefetch [{}, {}), keeping prefetch",
-            machine->requested_range.offset, machine->requested_range.end());
+            requested_logical_offset, requested_logical_end);
         position = new_position;
         reconstructCursor();  /// jumped within the surviving plan
         return;
@@ -827,7 +830,8 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
     /// no takeover: a one-shot fetch has nothing to take over (the GET is read to
     /// its bound, and splitting it would forfeit the request). Interruption remains
     /// the CANCEL mechanism, where the remainder is never fetched at all.
-    LOG_TRACE(log, "tryCollectMachine: waiting on prefetched [{}, {})", m->requested_range.offset, m->requested_range.end());
+    LOG_TRACE(log, "tryCollectMachine: waiting on prefetched [{}, {})",
+        m->physical_window.offset - data_start_offset, m->physical_window.end() - data_start_offset);
     StatTimer wait_scope(stats, Stats::PrefetchWaitMicroseconds);
     runner->waitReleased(*m);
 
@@ -853,7 +857,10 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
     HistogramMetrics::ReaderExecutorPrefetchWaitLatency.observe(
         static_cast<HistogramMetrics::Value>(wait_scope.elapsedMicroseconds()));
 
-    const ByteRange requested_phys{m->requested_range.offset + data_start_offset, m->requested_range.size};
+    /// The requested window in PHYSICAL coords is exactly the cache-aligned `physical_window`
+    /// the fetch step read (the logical `requested_range` was just `physical_window` shifted by
+    /// `data_start_offset`); the assembly below slices it back to the served range.
+    const ByteRange requested_phys = m->physical_window;
 
     /// Sparse fetch: the worker led only some segments (a sibling leads the rest), so `fetched`
     /// has holes. Its led bytes are already written to cache, so REVOKE to the synchronous path
@@ -862,7 +869,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
     /// proven foreground coordination - and never trips the single-contiguous-run guard (the
     /// sparse assembly tripped it on seek / partial / multi-tier patterns). Uncontended windows
     /// (no sibling) keep the direct collect below.
-    if (!m->sibling_led.empty())
+    if (m->contended)
         return false;
 
     if (interrupted)
@@ -1380,10 +1387,11 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     /// Elect the FileCache downloader over the window's fill-target writers (recorded at
     /// launch). Segments WE win (`led_misses`) this worker fetches+writes inline below - it is
     /// the downloader, so it must complete them on THIS thread. Segments a sibling already
-    /// leads go to `m.sibling_led`: the worker SKIPS them (the foreground serves them from the
-    /// sibling's fill at collect), which dedups concurrent cold populate - each segment is
-    /// fetched once across executors.
+    /// leads go to `sibling_led`: the worker SKIPS them (the foreground, seeing `m.contended`,
+    /// revokes to the sync path at collect, which serves them from the sibling's fill), which
+    /// dedups concurrent cold populate - each segment is fetched once across executors.
     VectorWithMemoryTracking<ByteRange> led_misses;
+    VectorWithMemoryTracking<CacheWriter::SiblingLed> sibling_led;
     for (const auto & view : m.writer_views)
     {
         if (!view.writer)
@@ -1392,8 +1400,11 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
         const size_t hi = std::min(window.end(), view.writer->range().end());
         if (lo >= hi)
             continue;
-        view.writer->electDownloaders(ByteRange{lo, hi - lo}, led_misses, m.sibling_led);
+        view.writer->electDownloaders(ByteRange{lo, hi - lo}, led_misses, sibling_led);
     }
+    /// Record contention for the collect side (the led set itself stays worker-local: the
+    /// foreground only needs to know WHETHER a sibling lead exists, to revoke to the sync path).
+    m.contended = !sibling_led.empty();
 
     /// A window byte that no fill-target writer covers cannot be deduped (no cache tier
     /// populates it): fetch it plainly. Add the window remainder (minus elected + sibling-led)
@@ -1401,7 +1412,7 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     IntervalSet elected;
     for (const auto & r : led_misses)
         elected.add(r);
-    for (const auto & sl : m.sibling_led)
+    for (const auto & sl : sibling_led)
         elected.add(sl.sub);
     for (const auto & g : elected.subtract(window))
         led_misses.push_back(g);
@@ -2001,7 +2012,7 @@ bool ReaderExecutor::shouldOpenLong(size_t phys_off) const
         return false;
     const MemoryPressureLevel level
         = read_plan.geometry() ? read_plan.geometry()->pressure_level : MemoryPressureLevel::Normal;
-    if (effectivePrefetchWindowSize(level) == 0)
+    if (!prefetchEnabled(level))
         return false;
     /// Open when the forward reach runs past the current read extent - the right boundary
     /// where a short connection stops and the next read pays a fresh request. A long connection
@@ -2123,23 +2134,16 @@ ChainedBuffers ReaderExecutor::serveFromLong(std::optional<LongConnection> & con
     return chain;
 }
 
-bool ReaderExecutor::maybeDrainLongTail(std::optional<LongConnection> & conn, Stats & out_stats) const
-{
-    if (!conn)
-        return false;
-    const size_t drained = conn->drainTail(max_tail_for_drain, block_size);
-    out_stats.add(Stats::BytesFromSource, drained);
-    out_stats.add(Stats::OverReadBytes, drained);
-    return drained > 0 && !conn->atBound();
-}
-
 void ReaderExecutor::dropLong(std::optional<LongConnection> & conn, Stats & out_stats) const
 {
     if (!conn)
         return;
-    /// Drain a small tail so the connection returns to the pool reusable; the drain
-    /// reports whether it ended short of the bound (EOF).
-    const bool ended_at_eof = maybeDrainLongTail(conn, out_stats);
+    /// Drain a small tail (at most `max_tail_for_drain`) so the connection returns to
+    /// the pool reusable; if it drained but did not reach the bound, it ended short at EOF.
+    const size_t drained = conn->drainTail(max_tail_for_drain, block_size);
+    out_stats.add(Stats::BytesFromSource, drained);
+    out_stats.add(Stats::OverReadBytes, drained);
+    const bool ended_at_eof = drained > 0 && !conn->atBound();
     accountLongDrop(conn, /*at_eof=*/ended_at_eof, out_stats);
     conn.reset();
 }
@@ -2149,7 +2153,7 @@ void ReaderExecutor::accountLongDrop(const std::optional<LongConnection> & conn,
     /// A connection dropped before it was fully consumed (not read to its bound or to
     /// EOF) is abandoned mid-response, not pool-reusable. One that never transferred
     /// is excluded: its lazy GET never started.
-    if (conn && !conn->isComplete(at_eof) && conn->everTransferred())
+    if (conn && !(at_eof || conn->atBound()) && conn->everTransferred())
         out_stats.add(Stats::IncompleteConnections);
 }
 
@@ -2415,7 +2419,6 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     const ByteRange next_physical_window{base, chunk};
 
     auto m = std::make_shared<FetchMachine>();
-    m->requested_range = ByteRange{base - data_start_offset, chunk};
     m->physical_window = next_physical_window;
     m->retrieve_index = ri;
     m->pressure_snapshot = read_plan.geometry()->pressure_level;
@@ -2438,8 +2441,8 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     m->run_step = [this, self = m.get()]
     {
         /// Elect + fetch the led segments + write them inline on THIS worker thread (it is the
-        /// downloader); sibling-led holes are recorded in `self->sibling_led` for the
-        /// foreground to read at collect.
+        /// downloader); sibling-led holes set `self->contended` so the foreground revokes to
+        /// the sync path at collect.
         coordinatedPrefetch(*self);
         /// Decrypt-ahead: produce a plaintext copy on this worker thread so the serve
         /// boundary does not decrypt on the query thread. `fetched` stays ciphertext for
@@ -2464,7 +2467,6 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     }
     machine = std::move(m);
     st.phase = RetrievePhase::InFlight;
-    st.machine = machine.get();
 }
 
 void ReaderExecutor::maybeLaunchAhead()
@@ -2503,7 +2505,7 @@ void ReaderExecutor::maybeLaunchAhead()
     /// retrieve there is nothing to prefetch - skip the rest of the bookkeeping.
     if (!read_plan.has_remote_retrieves)
         return;
-    if (effectivePrefetchWindowSize(read_plan.geometry()->pressure_level) == 0)
+    if (!prefetchEnabled(read_plan.geometry()->pressure_level))
         return;  /// read-ahead suppressed under High/Critical memory pressure
 
     auto & retrieves = read_plan.schedule.retrieves;
@@ -2553,13 +2555,11 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
         }
         st.fetched += window;
         st.phase = RetrievePhase::Ready;
-        st.machine = nullptr;
     }
     else
     {
         /// Revoked while still queued: the foreground reads this window instead.
         st.phase = RetrievePhase::NotLaunched;
-        st.machine = nullptr;
     }
 }
 
@@ -2626,7 +2626,7 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
         || pos < st.ready_bytes.range().offset
         || pos >= st.ready_bytes.range().end())
     {
-        if (st.machine)
+        if (machineFor(ri))
             collectInFlightInto(ri);  /// wait, bank one window, advance the frontier
         else
             return serveRetrieveForeground(ri, position_phys, to_read);  /// not prefetched: read it now
@@ -2673,7 +2673,6 @@ bool ReaderExecutor::committedCellCovers(ByteRange window_phys) const
 
 ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read)
 {
-    auto & st = read_plan.retrieve_status[ri];
     const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
     /// One window of THIS step only (the bank path's bound): a bridged retrieve can span
     /// several steps, and reading past an embedded faster-tier hit would break the 1:1
@@ -2689,7 +2688,7 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
     /// window when its fill range covers it; then the still-uncommitted frontier bytes can be
     /// waited on individually (a `FileSegment` condition wait), the worker keeps running, and the
     /// done machine is finalized later in `maybeLaunchAhead`.
-    const bool machine_leads = st.machine && machine
+    const bool machine_leads = machineFor(ri)
         && machine->physical_window.offset <= window_phys.offset
         && window_phys.end() <= machine->physical_window.end();
     if (machine_leads || committedCellCovers(window_phys))
@@ -2717,7 +2716,7 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
     /// a front for another retrieve, or the cache refused the write): drain any in-flight machine
     /// for THIS retrieve (finalize + free the slot), then fetch the minimum to serve here. This
     /// fallback is the only populatable path that still banks - transiently, one window.
-    if (st.machine)
+    if (machineFor(ri))
         collectInFlightInto(ri);
     return serveRetrieveForeground(ri, position_phys, to_read);
 }
@@ -3141,18 +3140,15 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     auto m = std::move(machine);
     if (!m)
         return;
-    /// Clear the cancelled job's non-owning machine handle: it is live serve state. Without
-    /// this, a later `serveRetrieveStep` would see a stale `st.machine` and collect a
-    /// machine the foreground no longer owns (a null `shared_ptr` deref). The banked
-    /// `ready_bytes`/`fetched` stay valid - the cursor has not moved (`setReadExtent`), or
-    /// a seek re-plans and rebuilds them (see `seek`).
-    if (m->retrieve_index < read_plan.retrieve_status.size())
-        read_plan.retrieve_status[m->retrieve_index].machine = nullptr;
+    /// The global `machine` was just moved out above, so `machineFor` reports no machine for
+    /// this retrieve from here on; the banked `ready_bytes`/`fetched` stay valid - the cursor
+    /// has not moved (`setReadExtent`), or a seek re-plans and rebuilds them (see `seek`).
     /// The foreground holds no long connection while a machine is in flight (moved in
     /// at launch); a queued machine's pristine one is reclaimed below.
     chassert(!long_conn);
 
-    LOG_TRACE(log, "Prefetch: discarding [{}, {})", m->requested_range.offset, m->requested_range.end());
+    LOG_TRACE(log, "Prefetch: discarding [{}, {})",
+        m->physical_window.offset - data_start_offset, m->physical_window.end() - data_start_offset);
 
     if (runner->tryCancelQueued(*m))
     {
@@ -3269,13 +3265,11 @@ size_t ReaderExecutor::effectiveBlockSize(MemoryPressureLevel level) const
     return sizesAtPressure(level, window_size, block_size).block_bytes;
 }
 
-size_t ReaderExecutor::effectivePrefetchWindowSize(MemoryPressureLevel level) const
+bool ReaderExecutor::prefetchEnabled(MemoryPressureLevel level) const
 {
-    if (!PREFETCH_ENABLED[static_cast<size_t>(level)])
-        return 0;
     /// Prefetch reads the same window as a synchronous read; under High/Critical it
-    /// is suppressed entirely (above) rather than shrunk.
-    return effectiveWindowSize(level);
+    /// is suppressed entirely rather than shrunk.
+    return PREFETCH_ENABLED[static_cast<size_t>(level)];
 }
 
 size_t ReaderExecutor::fillAheadLead(MemoryPressureLevel level) const
