@@ -1981,7 +1981,7 @@ class QueryResultElement extends HTMLElement
         this._updateColorizeToggleTitle(toggle, name);
         toggle.addEventListener('click', (e) => {
             e.stopPropagation();
-            this._cycleColorMode(name, toggle);
+            this._cycleColorMode(name);
         });
         /// Do not let pressing the icon start a column-resize drag or a text selection.
         toggle.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -1995,7 +1995,7 @@ class QueryResultElement extends HTMLElement
 
     /// Switch a column to the next color coding mode. Numeric columns cycle through
     /// bar -> heatmap -> categorical -> none; non-numeric columns toggle none <-> categorical.
-    _cycleColorMode(name, toggle)
+    _cycleColorMode(name)
     {
         const cycle = this._columnSupportsValueColoring(name)
             ? ['bar', 'heatmap', 'categorical', 'none']
@@ -2013,11 +2013,32 @@ class QueryResultElement extends HTMLElement
             column_color_modes[name] = next;
         }
 
-        this._applyColumnColor(name, this._columnIndex(name));
+        /// The modes are shared by column name, so every visible result table that has this
+        /// column must be repainted (not just the clicked one) to stay in sync with the URL.
+        for (const el of document.querySelectorAll('query-result'))
+        {
+            el.refreshColumnColor(name);
+        }
+        persistColorModes();
+    }
+
+    /// Repaint one column for the current (shared) mode and refresh its header toggle title.
+    /// A no-op for tables that do not have this column, or that are not in normal tabular layout
+    /// (raw/chart/image results, or the vertical transposed layout, which has no header row).
+    refreshColumnColor(name)
+    {
+        if (!Array.isArray(this._header) || !this._dataTable.tHead) { return; }
+        const col_idx = this._columnIndex(name);
+        if (col_idx < 0) { return; }
+
+        this._applyColumnColor(name, col_idx);
         /// Keep the active-cell categorical emphasis consistent with the new mode.
         this._scheduleCategoricalEmphasis();
+
+        /// The header cells are direct `<th>` children of `<thead>` (not wrapped in a `<tr>`),
+        /// with the row-number header at index 0, so the column's header is `children[col_idx]`.
+        const toggle = this._dataTable.tHead.children[col_idx]?.querySelector('.colorize-toggle');
         if (toggle) { this._updateColorizeToggleTitle(toggle, name); }
-        persistColorModes();
     }
 
     /// Per-type default color mode: `bar` for plain numbers, `none` for everything else
@@ -2050,8 +2071,14 @@ class QueryResultElement extends HTMLElement
     {
         if (this._column_is_date[name])
         {
-            /// Accept both `YYYY-MM-DD` and `YYYY-MM-DD HH:MM:SS[.fff]` (the space needs a `T`).
-            return Date.parse(String(text).replace(' ', 'T'));
+            /// Parse the calendar components and combine them with `Date.UTC`, so the value is
+            /// independent of the viewer's browser timezone and DST (`Date.parse` would apply the
+            /// local zone, which can make the color scale non-monotonic). Accepts `YYYY-MM-DD` and
+            /// `YYYY-MM-DD HH:MM:SS[.fff]` (the time part and fractional seconds are optional).
+            const m = String(text).match(/^(\d+)-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?)?/);
+            if (!m) { return NaN; }
+            const ms = m[7] ? Number('0.' + m[7]) * 1000 : 0;
+            return Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0), ms);
         }
         return +text;
     }
