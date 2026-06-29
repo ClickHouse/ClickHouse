@@ -7,8 +7,6 @@ title: 'cume_dist'
 doc_type: 'reference'
 ---
 
-# cume_dist
-
 Computes the cumulative distribution of a value within a group of values, i.e., the percentage of rows with values less than or equal to the current row's value. Can be used to determine relative standing of a value within a partition.
 
 **Syntax**
@@ -33,9 +31,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 The following example calculates the cumulative distribution of salaries within a team:
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE salaries
 (
     `team` String,
@@ -55,15 +51,13 @@ INSERT INTO salaries FORMAT Values
     ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
 ```
 
-```sql
+```sql title="Query"
 SELECT player, salary,
        cume_dist() OVER (ORDER BY salary DESC) AS cume_dist
 FROM salaries;
 ```
 
-Result:
-
-```response
+```response title="Response"
    ┌─player──────────┬─salary─┬───────────cume_dist─┐
 1. │ Robert George   │ 195000 │  0.2857142857142857 │
 2. │ Gary Chen       │ 195000 │  0.2857142857142857 │

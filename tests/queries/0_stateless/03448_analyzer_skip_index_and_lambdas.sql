@@ -1,4 +1,5 @@
 -- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS index_test;
 CREATE TABLE index_test

@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <iostream>
 #include <vector>
+#include <Examples/clickhouse_examples.h>
 
 /** This program tests merge-selecting algorithm.
   * Usage:
@@ -16,7 +17,7 @@
   * clickhouse-client --query="SELECT 100 + round(10 * rand() / 0xFFFFFFFF) FROM system.numbers LIMIT 105" | tr "\n" ' ' | ./merge_selector
   */
 
-int main(int, char **)
+int mainEntryExampleMergeSelector(int, char **)
 {
     using namespace DB;
 

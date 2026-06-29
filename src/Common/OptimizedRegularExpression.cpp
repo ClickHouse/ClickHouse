@@ -6,6 +6,7 @@
 #include <Common/OptimizedRegularExpression.h>
 
 #include <Common/StringSearcher.h>
+#include <Common/StringUtils.h>
 
 constexpr size_t MIN_LENGTH_FOR_STRSTR = 3;
 constexpr size_t MAX_SUBPATTERNS = 1024;
@@ -25,8 +26,8 @@ namespace
 struct Literal
 {
     std::string literal;
-    bool prefix; /// this literal string is the prefix of the whole string.
-    bool suffix; /// this literal string is the suffix of the whole string.
+    bool prefix{}; /// this literal string is the prefix of the whole string.
+    bool suffix{}; /// this literal string is the suffix of the whole string.
     void clear()
     {
         literal.clear();
@@ -62,6 +63,77 @@ const char * skipNameCapturingGroup(const char * pos, size_t offset, const char 
         else
             return pos;
     }
+    return pos;
+}
+
+/// Skips an escape sequence unsupported by the trivial-substring analysis.
+/// Consumes arguments of hex, octal and Unicode property escapes, and the body of
+/// `\Q...\E` quoted literals, so they are not treated as regexp-meaningful literals.
+/// `pos` points at the character right after the backslash.
+const char * skipUnsupportedEscape(const char * pos, const char * end)
+{
+    if (pos == end)
+        return pos;
+
+    auto is_octal_digit = [](char c) { return c >= '0' && c <= '7'; };
+
+    if (*pos == 'x')
+    {
+        ++pos;
+        if (pos != end && *pos == '{')
+        {
+            while (pos != end && *pos != '}')
+                ++pos;
+            if (pos != end)
+                ++pos;
+        }
+        else
+        {
+            for (size_t i = 0; i < 2 && pos != end && isHexDigit(*pos); ++i)
+                ++pos;
+        }
+    }
+    else if (*pos == 'p' || *pos == 'P')
+    {
+        /// Unicode property: one-letter `\pL`/`\PN` or braced `\p{...}`/`\P{...}`.
+        ++pos;
+        if (pos != end && *pos == '{')
+        {
+            while (pos != end && *pos != '}')
+                ++pos;
+            if (pos != end)
+                ++pos;
+        }
+        else if (pos != end)
+        {
+            ++pos;
+        }
+    }
+    else if (*pos == 'Q')
+    {
+        /// `\Q...\E` quoted literal: consume through the closing `\E` so the body (which may
+        /// contain regexp punctuation) is not parsed as regexp syntax.
+        ++pos;
+        while (pos != end)
+        {
+            if (*pos == '\\' && pos + 1 != end && *(pos + 1) == 'E')
+            {
+                pos += 2;
+                break;
+            }
+            ++pos;
+        }
+    }
+    else if (is_octal_digit(*pos))
+    {
+        for (size_t i = 0; i < 3 && pos != end && is_octal_digit(*pos); ++i)
+            ++pos;
+    }
+    else
+    {
+        ++pos;
+    }
+
     return pos;
 }
 
@@ -223,12 +295,13 @@ const char * analyzeImpl(
                     case '/':
                         goto ordinary;
                     default:
-                        /// all other escape sequences are not supported
+                        /// Unsupported escape: consume it whole, including hex/octal argument
+                        /// bytes, so they are not taken as a required substring (issue #106382).
                         finish_non_trivial_char();
+                        pos = skipUnsupportedEscape(pos, end);
                         break;
                 }
 
-                ++pos;
                 break;
             }
 
@@ -295,7 +368,7 @@ const char * analyzeImpl(
                     }
                     Literal group_required_substr;
                     bool group_is_trival = true;
-                    bool group_has_capture;
+                    bool group_has_capture = false;
                     Literals group_alters;
                     pos = analyzeImpl(regexp, pos + 1, group_required_substr, group_is_trival, group_has_capture, group_alters);
                     /// pos should be ')', if not, then it is not a valid regular expression
@@ -438,7 +511,7 @@ finish:
         /// this two vals are useless, xxx|xxx cannot be trivial nor prefix.
         Literals next_alternatives;
         bool next_is_trivial = true;
-        bool next_has_capture;
+        bool next_has_capture = false;
         pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_has_capture, next_alternatives);
 
         /// has_capture is true when all alternatives have captures
@@ -553,7 +626,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
             case_insensitive_substring_searcher = std::make_unique<ASCIICaseInsensitiveStringSearcher>(
                 reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
         else
-            case_sensitive_substring_searcher = std::make_unique<ASCIICaseSensitiveStringSearcher>(
+            case_sensitive_substring_searcher = std::make_unique<CaseSensitiveStringSearcher>(
                 reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
     }
 }
@@ -572,7 +645,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(OptimizedRegularExpressio
             case_insensitive_substring_searcher = std::make_unique<ASCIICaseInsensitiveStringSearcher>(
                 reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
         else
-            case_sensitive_substring_searcher = std::make_unique<ASCIICaseSensitiveStringSearcher>(
+            case_sensitive_substring_searcher = std::make_unique<CaseSensitiveStringSearcher>(
                 reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
     }
 }
@@ -622,7 +695,7 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
         if (required_substring.empty())
             return true;
 
-        const UInt8 * pos;
+        const UInt8 * pos = nullptr;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else
@@ -638,7 +711,7 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
 
     if (!required_substring.empty())
     {
-        const UInt8 * pos;
+        const UInt8 * pos = nullptr;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else
@@ -679,7 +752,7 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
             return 1;
         }
 
-        const UInt8 * pos;
+        const UInt8 * pos = nullptr;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else
@@ -697,7 +770,7 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
 
     if (!required_substring.empty())
     {
-        const UInt8 * pos;
+        const UInt8 * pos = nullptr;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else

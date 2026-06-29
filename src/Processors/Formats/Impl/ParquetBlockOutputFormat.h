@@ -12,7 +12,7 @@
 namespace DB
 {
 
-class ParquetBlockOutputFormat : public IOutputFormat
+class ParquetBlockOutputFormat final : public IOutputFormat
 {
 public:
     ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_);
@@ -84,7 +84,7 @@ private:
         /// Otherwise we need to call writeColumnChunkBody().
         DataTypePtr column_type;
         std::string column_name;
-        std::vector<ColumnPtr> column_pieces;
+        Columns column_pieces;
 
         Parquet::ColumnChunkWriteState state;
 

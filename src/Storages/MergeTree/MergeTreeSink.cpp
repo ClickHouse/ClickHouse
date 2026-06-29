@@ -1,5 +1,3 @@
-#include <exception>
-#include <memory>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -7,12 +5,15 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/Settings.h>
 
+#include <exception>
+#include <memory>
 
 namespace ProfileEvents
 {
@@ -33,7 +34,9 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
+    extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
 }
 
 namespace MergeTreeSetting
@@ -72,6 +75,12 @@ MergeTreeSink::MergeTreeSink(
     LOG_DEBUG(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
 }
 
+void MergeTreeSink::setHasDependentMaterializedViews(bool has_dependent_views)
+{
+    synchronously_commit_part_for_dependent_views
+        = has_dependent_views && context->getSettingsRef()[Setting::wait_for_part_commit_in_dependent_materialized_views];
+}
+
 void MergeTreeSink::onStart()
 {
     /// It's only allowed to throw "too many parts" before write,
@@ -107,8 +116,15 @@ void MergeTreeSink::consume(Chunk & chunk)
     std::vector<UInt128> all_partwriter_hashes;
     all_partwriter_hashes.reserve(part_blocks.size());
 
+    auto process_list_element = context->getProcessListElement();
+
     for (auto & current_block : part_blocks)
     {
+        /// A single INSERT can split into very many parts (e.g. high-cardinality partition key with
+        /// max_partitions_per_insert_block); honor cancellation/timeout between them.
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
         ProfileEvents::Counters part_counters;
         auto partition_scope = std::make_unique<ProfileEventsScope>(&part_counters);
 
@@ -168,7 +184,7 @@ void MergeTreeSink::consume(Chunk & chunk)
         if (!support_parallel_write && temp_part->part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
-        size_t max_insert_delayed_streams_for_parallel_write;
+        size_t max_insert_delayed_streams_for_parallel_write = 0;
 
         if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
             max_insert_delayed_streams_for_parallel_write = settings[Setting::max_insert_delayed_streams_for_parallel_write];
@@ -212,8 +228,17 @@ void MergeTreeSink::consume(Chunk & chunk)
     deduplication_info->setPartWriterHashes(all_partwriter_hashes, chunk.getNumRows());
 
     finishDelayedChunk();
+
     delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
+    /// Streaming `INSERT` flushes partial blocks on a timeout, so commit the just-written
+    /// part immediately to make its rows visible without waiting for the next consume()
+    /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
+    if (settings[Setting::input_format_max_block_wait_ms] != 0)
+        finishDelayedChunk();
+
+    if (synchronously_commit_part_for_dependent_views)
+        finishDelayedChunk();
 
     ++num_blocks_processed;
 }
@@ -223,8 +248,15 @@ void MergeTreeSink::finishDelayedChunk()
     if (!delayed_chunk)
         return;
 
+    auto process_list_element = context->getProcessListElement();
+
     for (auto & partition : delayed_chunk->partitions)
     {
+        /// Honor cancellation/timeout between parts; finalizing each can be slow on object storage.
+        /// onFinish() skips finishDelayedChunk() when cancelled, so a normal finish never throws here.
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
         Stopwatch watch;
         auto profile_events_scope = std::make_unique<ProfileEventsScope>(&partition.part_counters);
 
