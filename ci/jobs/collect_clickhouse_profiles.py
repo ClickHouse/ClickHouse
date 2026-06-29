@@ -17,10 +17,12 @@ The collected profiles can be used in release builds with:
 import glob
 import os
 import platform
+import shutil
 import subprocess
 import time
+import xml.etree.ElementTree as ET
 
-from ci.defs.defs import BuildTypes, ToolSet
+from ci.defs.defs import ToolSet
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
@@ -45,9 +47,37 @@ PERF_WD = f"{temp_dir}/perf_wd"
 PERF_DB_PATH = f"{PERF_WD}/db0"
 PERF_SERVER_DIR = f"{PERF_WD}/server"
 
-# Limits for BOLT profile collection (disk space)
-BOLT_PROFILE_TIMEOUT = 1800  # 30 minutes
-BOLT_PERF_RUNS = 3  # fewer runs, just need hot paths
+# Profile collection runs the performance-test suite against the slow instrumented
+# / un-BOLTed binary, so it is strictly time-bounded: the whole job must finish
+# within its CI timeout, after which nothing is uploaded. The two collection passes
+# get fixed budgets, clamped at run time (see `collection_budget`) to the time
+# actually left in the job, so a slow build cannot push collection past the hard
+# kill. Once a pass exceeds its budget the remaining perf tests are skipped and
+# logged (never silently dropped).
+JOB_START = time.monotonic()
+JOB_TIMEOUT_S = 8 * 3600
+
+PGO_COLLECT_BUDGET_S = 2 * 3600  # PGO-instrumented pass (slowest binary)
+BOLT_COLLECT_BUDGET_S = 45 * 60  # BOLT-instrumented pass
+# Wall-clock that must remain after the PGO pass for the BOLT build (ThinLTO is slow
+# and this is the largest single phase), both profile merges, and the artifact
+# upload. Kept generous so a slow BOLT build cannot push the job past its timeout.
+BOLT_BUILD_RESERVE_S = 3 * 3600 + 1800
+UPLOAD_RESERVE_S = 20 * 60
+# Hard per-test timeout so a single heavy test (large fill / slow prewarm) cannot
+# stall an entire pass.
+PER_TEST_TIMEOUT_S = 120
+
+# Stop launching perf tests once free disk drops below this. Tests that are killed
+# by the per-test timeout never get to DROP the (often huge) tables they created, so
+# disk usage grows steadily during collection; on the smaller runner this otherwise
+# fills the disk and the later BOLT step dies with ENOSPC. The instrumented server's
+# data dir (where those tables live) is reclaimed in full before the BOLT build, so
+# this floor only has to keep collection itself from running the disk to zero.
+MIN_FREE_DISK_GB = 15
+
+PGO_PERF_RUNS = 2  # a couple of runs is enough to mark hot vs cold code for PGO
+BOLT_PERF_RUNS = 1  # BOLT only needs hot-path coverage
 
 # Maximum time to wait for a freshly-spawned `clickhouse-server` to start
 # accepting connections. PGO-instrumented binaries are noticeably slower at
@@ -55,6 +85,13 @@ BOLT_PERF_RUNS = 3  # fewer runs, just need hot paths
 # generous; for a normal binary readiness is reached within a few seconds.
 SERVER_READINESS_TIMEOUT_S = 600
 SERVER_READINESS_POLL_S = 2
+# Hard timeout for a single `select 1` readiness probe. `--receive_timeout` only
+# bounds the post-query receive phase, so a client that connects to a server stuck
+# in startup (port already open, not yet answering) would block this one call
+# forever — and then the deadline above is never re-checked, turning a stuck
+# startup into a multi-hour job hang. `timeout` bounds every probe so the deadline
+# is honoured and the job fails fast (dumping the server log) instead.
+SERVER_READINESS_PROBE_TIMEOUT_S = 15
 
 LLVM_VERSION = "21"
 
@@ -87,10 +124,41 @@ def get_toolchain_file():
         return f"{repo_path}/cmake/linux/toolchain-aarch64.cmake"
 
 
+def collection_budget(fixed_budget_s, reserve_after_s):
+    """Clamp a fixed profile-collection budget to the time actually left in the job.
+
+    `reserve_after_s` is wall-clock that must remain for work happening *after* this
+    collection pass (e.g. the BOLT build, profile merges, artifact upload), so
+    collection never eats into the time those steps need to finish before the job's
+    hard timeout. Returns a non-negative number of seconds.
+    """
+    hard_deadline = JOB_START + JOB_TIMEOUT_S - reserve_after_s
+    return max(0, min(fixed_budget_s, hard_deadline - time.monotonic()))
+
+
 def run_shell(name, command, **kwargs):
     print(f"\n>>>> {name}\n")
     Shell.check(command, **kwargs)
     print(f"\n<<<< {name}\n")
+
+
+def log_resources(stage):
+    """Log free disk and memory at a stage boundary.
+
+    The heavy phases (the instrumented build, profile collection against large
+    datasets, and especially the second full ThinLTO build that coexists with the
+    first build tree) can exhaust the runner's disk or RAM, which shows up only as
+    an abrupt mid-operation kill. Emitting `df`/`free`/`du` here makes the resource
+    that ran out unambiguous in the job log.
+    """
+    print(f"--- resources at [{stage}] ---")
+    Shell.check(f"df -h {temp_dir} 2>/dev/null || df -h", verbose=True)
+    Shell.check("free -h 2>/dev/null || head -3 /proc/meminfo", verbose=True)
+    Shell.check(
+        f"du -sh {PGO_BUILD_DIR} {BOLT_BUILD_DIR} {PERF_DB_PATH} {PGO_RAW_PROFILES_DIR} 2>/dev/null || :",
+        verbose=True,
+    )
+    print("--- end resources ---")
 
 
 def install_clickhouse(binary_path, server_dir):
@@ -113,6 +181,15 @@ def install_clickhouse(binary_path, server_dir):
     Shell.check(f"rm -f {config_dir}/config.d/ssh.xml")
     Shell.check(f"rm -f {config_dir}/config.d/storage_conf_local.xml")
 
+    # The perf-comparison config (`zzz-perf-comparison-tweaks-config.xml`) force-enables
+    # `remap_executable`. Remapping the `.text` segment of the running, PGO-instrumented
+    # (and non-self-extracting) binary segfaults it on startup, so strip the setting; the
+    # default `false` is what we want here — remapping to huge pages is an irrelevant
+    # micro-optimization for profile collection.
+    Shell.check(
+        f"find {config_dir}/config.d -name '*.xml' -exec sed -i '/remap_executable/d' {{}} +"
+    )
+
     Shell.check(f"chmod +x {binary_path}")
     Shell.check(f"ln -sf {binary_path} {server_dir}/clickhouse")
     Shell.check(f"ln -sf {binary_path} {server_dir}/clickhouse-server")
@@ -127,9 +204,13 @@ def download_datasets():
         print("Datasets already downloaded")
         return True
     Shell.check(f"mkdir -p {PERF_DB_PATH}/data/default/")
+    # Deliberately omit the 100M-row hits dataset (`hits_100m_single`). For profile
+    # *collection* the 10M-row set exercises the same code paths, while querying 100M
+    # rows on the instrumented binary is the heaviest disk+memory consumer and the
+    # most likely cause of a mid-collection out-of-resource kill. Perf tests that need
+    # `hits_100m_single` simply fail their precondition and are skipped.
     dataset_paths = {
         "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
-        "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
         "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
         "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
         "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
@@ -178,7 +259,9 @@ def wait_for_server_ready(proc, server_dir, port, log_file):
         # window would otherwise produce hundreds of identical `Run command`
         # lines; emit a progress heartbeat every 30s instead.
         res, out, _ = Shell.get_res_stdout_stderr(
-            f'{server_dir}/clickhouse-client --port {port} --receive_timeout=5 --query "select 1"'
+            f"timeout -s KILL {SERVER_READINESS_PROBE_TIMEOUT_S} "
+            f"{server_dir}/clickhouse-client --port {port} "
+            f'--connect_timeout 5 --receive_timeout 5 --query "select 1"'
         )
         if out.strip() == "1":
             elapsed = time.monotonic() - start
@@ -259,31 +342,109 @@ def install_perf_python_deps():
     )
 
 
-def run_performance_tests(server_dir, port=9000, runs=7, max_queries=10):
-    """Run all performance tests against a single server to exercise code paths."""
+def test_has_shell_query(test_path):
+    """Whether a performance-test file contains a shell-script query.
+
+    Profile collection runs every `tests/performance/*.xml` against a single,
+    instrumented server started with only `--tcp_port` (its perf config removes
+    `<http_port>`), and it invokes `perf.py` without `--binary` / `--http-port`.
+    Shell-script queries (`<query type="shell">`) rely on exactly those: they build
+    `$CLICKHOUSE_BINARY` / `$CLICKHOUSE_LOCAL` from `--binary` and `$CLICKHOUSE_URL`
+    from `--http-port`. Here they would pick up whatever `clickhouse` is in `PATH`
+    (not the instrumented binary) and hit an HTTP endpoint that is not listening, so
+    such tests are skipped for profile collection rather than collecting profiles for
+    the wrong executable or failing the pass. A parse error is treated as "no shell
+    query" so the test still runs and `perf.py` reports the real error.
+    """
+    try:
+        root = ET.parse(test_path).getroot()
+    except ET.ParseError:
+        return False
+    return any(q.get("type") == "shell" for q in root.findall("query"))
+
+
+def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
+    """Run performance tests against a single server to exercise code paths.
+
+    This is profile *collection*, not benchmarking: we only need to drive the hot
+    code paths, not produce stable timings. The instrumented (and, for the BOLT
+    pass, un-optimized) binary is several times slower than a release build and
+    some individual perf tests would otherwise run for tens of minutes, so three
+    independent limits keep the pass inside its CI budget:
+
+      * `time_budget_s`     - overall wall-clock budget for this pass; once it is
+                              exhausted no further test files are started and the
+                              remaining ones are logged as skipped (never silently
+                              dropped);
+      * `PER_TEST_TIMEOUT_S` - a hard per-test timeout via `timeout(1)`, so a single
+                              heavy test (large table fill, slow prewarm) cannot
+                              stall the whole pass;
+      * small `--max-query-seconds` / `--prewarm-max-query-seconds` passed to
+                              `perf.py`, so individual queries return quickly.
+    """
     test_files = sorted(
         f for f in os.listdir(f"{repo_path}/tests/performance/") if f.endswith(".xml")
     )
-    print(f"Running {len(test_files)} performance tests with {runs} runs each")
+    print(
+        f"Running up to {len(test_files)} performance tests "
+        f"(runs={runs}, max_queries={max_queries}, budget={time_budget_s:.0f}s, "
+        f"per-test timeout={PER_TEST_TIMEOUT_S}s)"
+    )
 
+    deadline = time.monotonic() + time_budget_s
+    ran = 0
     # For profile collection we run against a single server (left=right on same port)
-    for test_file in test_files:
+    for i, test_file in enumerate(test_files):
         test_name = test_file.removesuffix(".xml")
+        # Shell-script queries need the instrumented `--binary` and an HTTP port,
+        # neither of which profile collection passes; they exercise startup / HTTP
+        # timing rather than query code paths, so they are useless for PGO/BOLT
+        # profiles. Skip them here (logged, never silently dropped).
+        if test_has_shell_query(f"{repo_path}/tests/performance/{test_file}"):
+            print(f"  Skipping {test_name}: shell-script query test, not used for profile collection")
+            continue
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            print(
+                f"  Time budget of {time_budget_s:.0f}s exhausted after {ran} test(s); "
+                f"skipping {len(test_files) - i} remaining test(s)"
+            )
+            break
+        free_gb = shutil.disk_usage(temp_dir).free / (1024 ** 3)
+        if free_gb < MIN_FREE_DISK_GB:
+            print(
+                f"  Free disk {free_gb:.1f}G below {MIN_FREE_DISK_GB}G floor after {ran} test(s); "
+                f"stopping collection to leave room for the BOLT build; "
+                f"skipping {len(test_files) - i} remaining test(s)"
+            )
+            break
         print(f"  Running: {test_name}")
-        benchmarks = {"clickbench.xml", "tpch.xml"}
-        mq = 0 if test_file in benchmarks else max_queries
+        # Never let the last test overrun the overall deadline.
+        per_test = int(min(PER_TEST_TIMEOUT_S, remaining))
         res, out, err = Shell.get_res_stdout_stderr(
+            f"timeout -s KILL {per_test} "
             f"{repo_path}/tests/performance/scripts/perf.py "
             f"--host localhost localhost "
             f"--port {port} {port} "
-            f"--runs {runs} --max-queries {mq} "
+            f"--runs {runs} --max-queries {max_queries} "
+            f"--max-query-seconds 15 --prewarm-max-query-seconds 15 "
             f"--profile-seconds 0 "
             f"{repo_path}/tests/performance/{test_file}",
             verbose=True,
             strip=False,
         )
+        ran += 1
         if res != 0:
-            print(f"  WARNING: test {test_name} failed (continuing): {err[:200]}")
+            # Non-zero is expected and harmless here (a query slower than the per-query
+            # cap, or `timeout` killing a long test); the profiles gathered so far are
+            # still valid, so log it and move on.
+            print(f"  WARNING: test {test_name} did not complete cleanly (exit {res}); continuing: {err[:200]}")
+        # Periodic resource snapshot: collection against large datasets accumulates
+        # disk (profraw files) and server memory, and an abrupt kill mid-collection
+        # otherwise gives no clue which ran out.
+        if ran % 20 == 0:
+            log_resources(f"after {ran} perf tests")
+    print(f"Ran {ran} performance test file(s) for profile collection")
 
 
 def configure_datasets(server_dir, port=9000):
@@ -439,6 +600,8 @@ def main():
                 )
             )
             res = results[-1].is_ok()
+            if res:
+                log_resources("after PGO instrumented build")
 
     # --- Stage: Collect PGO profiles ---
     if res and JobStages.COLLECT_PGO_PROFILES in stages:
@@ -461,7 +624,19 @@ def main():
             if not proc:
                 return False
             try:
-                run_performance_tests(pgo_server_dir, port=9000, runs=5, max_queries=10)
+                # Reserve time for the BOLT build, both merges and the upload that
+                # still have to run after this pass.
+                budget = collection_budget(
+                    PGO_COLLECT_BUDGET_S,
+                    BOLT_BUILD_RESERVE_S + BOLT_COLLECT_BUDGET_S + UPLOAD_RESERVE_S,
+                )
+                run_performance_tests(
+                    pgo_server_dir,
+                    port=9000,
+                    runs=PGO_PERF_RUNS,
+                    max_queries=10,
+                    time_budget_s=budget,
+                )
             finally:
                 stop_server(proc, log_fd)
                 # Give time for profraw files to be flushed
@@ -496,6 +671,16 @@ def main():
 
     # --- Stage: Build ClickHouse for BOLT ---
     if res and JobStages.BUILD_FOR_BOLT in stages:
+        # The instrumented build, its raw profraw files, and the instrumented server's
+        # data directory (which holds tens of GB of tables left behind by perf tests
+        # whose `perf.py` was killed by the per-test timeout before it could DROP them)
+        # are all unneeded once the profile is merged — the BOLT build only reads
+        # PGO_PROFDATA_PATH, and the BOLT pass starts its own fresh server. Remove them
+        # before the second full build so two complete build trees plus the datasets
+        # don't exhaust the runner's disk.
+        log_resources("before freeing PGO build dir")
+        Shell.check(f"rm -rf {PGO_BUILD_DIR} {PGO_RAW_PROFILES_DIR} {PERF_WD}/pgo_server")
+        log_resources("before BOLT build")
         os.makedirs(BOLT_BUILD_DIR, exist_ok=True)
 
         cmake_cmd = (
@@ -577,7 +762,15 @@ def main():
                 if not proc:
                     return False
                 try:
-                    run_performance_tests(bolt_server_dir, port=9100, runs=BOLT_PERF_RUNS, max_queries=5)
+                    # Last collection pass: only the merges and the upload follow.
+                    budget = collection_budget(BOLT_COLLECT_BUDGET_S, UPLOAD_RESERVE_S)
+                    run_performance_tests(
+                        bolt_server_dir,
+                        port=9100,
+                        runs=BOLT_PERF_RUNS,
+                        max_queries=5,
+                        time_budget_s=budget,
+                    )
                 finally:
                     stop_server(proc, log_fd)
                     time.sleep(5)
