@@ -1,11 +1,13 @@
--- Tags: no-fasttest
--- Regression test: accurateCastOrNull of a Tuple whose element is Dynamic/Variant into a Tuple
--- with a Nullable element type must distinguish a genuine source NULL from a conversion failure.
--- A source NULL stays an element NULL; a parse/overflow failure nulls the whole Tuple. Dynamic and
--- Variant encode NULLs via the variant NULL discriminator (not a null map), so the source nulls
--- must be reconstructed and subtracted -- otherwise a source NULL is misread as a conversion
--- failure and wrongly nulls the whole Tuple. The non-Dynamic Tuple(Nullable(...)) source is the
--- reference for the correct behaviour.
+-- Regression test: accurateCastOrNull of a Tuple whose element is Dynamic/Variant must distinguish a
+-- genuine source NULL from a conversion failure, matching the non-Dynamic Tuple reference. Dynamic and
+-- Variant encode NULLs via the variant NULL discriminator (not a null map), so the source nulls must be
+-- reconstructed -- otherwise a source NULL is misread.
+--   * Nullable target element: a source NULL stays an element NULL; a conversion failure nulls the whole
+--     Tuple.
+--   * Non-Nullable target element: the element cannot hold NULL, so BOTH a source NULL and a conversion
+--     failure null the whole Tuple (same as the non-Dynamic reference). When a block has no convertible
+--     row the Dynamic/Variant conversion yields a plain default column, so the source nulls must be
+--     reconstructed from the source.
 
 SET allow_experimental_dynamic_type = 1;
 SET allow_experimental_variant_type = 1;
@@ -13,29 +15,51 @@ SET use_variant_as_common_type = 1;
 
 -- { echo }
 
--- Source NULL -> element NULL. Dynamic/Variant source must match the non-Dynamic reference.
+-- Nullable target: source NULL -> element NULL. Dynamic/Variant source must match the non-Dynamic reference.
 SELECT accurateCastOrNull(CAST(tuple(NULL), 'Tuple(Dynamic)'), 'Tuple(Nullable(Float32))') AS r, toTypeName(r);
 SELECT accurateCastOrNull(CAST(tuple(NULL), 'Tuple(Nullable(Float32))'), 'Tuple(Nullable(Float32))') AS r, toTypeName(r);
 SELECT accurateCastOrNull(CAST(tuple(CAST(NULL, 'Variant(Float32, String)')), 'Tuple(Variant(Float32, String))'), 'Tuple(Nullable(Float32))') AS r, toTypeName(r);
 
--- Successful conversion -> element value.
+-- Nullable target: successful conversion -> element value.
 SELECT accurateCastOrNull(CAST(tuple(42), 'Tuple(Dynamic)'), 'Tuple(Nullable(Float32))');
 
--- Parse failure -> whole Tuple NULL (not an element NULL).
+-- Nullable target: parse failure -> whole Tuple NULL (not an element NULL).
 SELECT accurateCastOrNull(CAST(tuple('abc'), 'Tuple(Dynamic)'), 'Tuple(Nullable(Float32))');
 SELECT accurateCastOrNull(CAST(tuple(CAST('abc', 'Variant(Float32, String)')), 'Tuple(Variant(Float32, String))'), 'Tuple(Nullable(Float32))');
 
--- Overflow failure -> whole Tuple NULL.
+-- Nullable target: overflow failure -> whole Tuple NULL.
 SELECT accurateCastOrNull(CAST(tuple(300::Int64), 'Tuple(Dynamic)'), 'Tuple(Nullable(UInt8))');
 
--- Per-row, single block: source NULL, success and parse failure together, Dynamic source.
+-- Nullable target, per-row single block: source NULL, success and parse failure together, Dynamic source.
 SELECT id, accurateCastOrNull(t, 'Tuple(Nullable(Float32))') AS r
 FROM (SELECT * FROM values('id UInt32, t Tuple(Dynamic)',
   (1, tuple(NULL)), (2, tuple(42::Int64)), (3, tuple('bad'::String)), (4, tuple('7'::String))))
 ORDER BY id;
 
--- Per-row, single block: source NULL, success, parse failure together, Variant source.
+-- Nullable target, per-row single block: source NULL, success, parse failure together, Variant source.
 SELECT id, accurateCastOrNull(t, 'Tuple(Nullable(Float32))') AS r
 FROM (SELECT * FROM values('id UInt32, t Tuple(Variant(UInt8, String))',
   (1, tuple(CAST(NULL, 'Variant(UInt8, String)'))), (2, tuple(CAST(5, 'Variant(UInt8, String)'))), (3, tuple(CAST('bad', 'Variant(UInt8, String)')))))
 ORDER BY id;
+
+-- Non-Nullable target: source NULL -> whole Tuple NULL (cannot keep an element NULL). Must match the
+-- non-Dynamic reference. The all-NULL block exercises the plain-default-column path.
+SELECT accurateCastOrNull(CAST(tuple(NULL), 'Tuple(Dynamic)'), 'Tuple(Float32)') AS r, toTypeName(r);
+SELECT accurateCastOrNull(tuple(CAST(NULL, 'Nullable(Float32)')), 'Tuple(Float32)') AS r, toTypeName(r);
+SELECT accurateCastOrNull(CAST(tuple(CAST(NULL, 'Variant(Float32, String)')), 'Tuple(Variant(Float32, String))'), 'Tuple(Float32)') AS r, toTypeName(r);
+
+-- Non-Nullable target: successful conversion -> element value.
+SELECT accurateCastOrNull(CAST(tuple(42::Int64), 'Tuple(Dynamic)'), 'Tuple(Float32)');
+
+-- Non-Nullable target, per-row single block: source NULL coexisting with a convertible row. The source
+-- NULL row must be whole-Tuple NULL while the convertible row keeps its value.
+SELECT id, accurateCastOrNull(t, 'Tuple(Float32)') AS r
+FROM (SELECT * FROM values('id UInt32, t Tuple(Dynamic)', (1, tuple(NULL)), (2, tuple(42::Int64))))
+ORDER BY id;
+SELECT id, accurateCastOrNull(t, 'Tuple(UInt8)') AS r
+FROM (SELECT * FROM values('id UInt32, t Tuple(Variant(UInt8, String))',
+  (1, tuple(CAST(NULL, 'Variant(UInt8, String)'))), (2, tuple(CAST(5, 'Variant(UInt8, String)')))))
+ORDER BY id;
+
+-- Non-Nullable target, multi-element: a source NULL in a non-Nullable Dynamic element nulls the whole Tuple.
+SELECT accurateCastOrNull(CAST((NULL, 9), 'Tuple(Dynamic, Int32)'), 'Tuple(Float32, Int32)') AS r, toTypeName(r);
