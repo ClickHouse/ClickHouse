@@ -524,7 +524,7 @@ public:
         return scope_node;
     }
 
-    [[maybe_unused]] bool containsNode(const std::string & node_name)
+    bool containsNode(const std::string & node_name)
     {
         return node_name_to_node.contains(node_name);
     }
@@ -1209,12 +1209,22 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     if (function_node.getFunctionName() == "exists")
         return visitExistsFunction(node);
 
+    auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
+
+    /// Fast path for the no-lambda case: when there is a single actions scope, an expression that
+    /// has already been built can be reused as-is instead of re-traversing it. With the analyzer,
+    /// WITH-aliases are shared by pointer in the query tree (a DAG), so without this we would
+    /// re-visit shared subtrees once per reference, which is exponential for deeply nested aliases.
+    /// Keying on the action node name also reuses identical repeated subexpressions that are not
+    /// aliased. Lambda scopes (actions_stack.size() > 1) are intentionally excluded, because the
+    /// captured Levels must be recomputed per scope.
+    if (actions_stack.size() == 1 && actions_stack.front().containsNode(function_node_name))
+        return {function_node_name, Levels(0)};
+
     std::optional<NodeNameAndNodeMinLevel> in_function_second_argument_node_name_with_level;
 
     if (isNameOfInFunction(function_node.getFunctionName()))
         in_function_second_argument_node_name_with_level = makeSetForInFunction(node);
-
-    auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
 
     /* Aggregate functions, window functions, and GROUP BY expressions were already analyzed in the previous steps.
      * If we have already visited some expression, we don't need to revisit it or its arguments again.
