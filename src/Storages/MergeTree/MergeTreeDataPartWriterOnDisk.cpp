@@ -6,6 +6,9 @@
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/StringUtils.h>
@@ -261,6 +264,15 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write)
 {
+    /// Building a skip index over many granules (e.g. an unbounded `set(0)` index on a
+    /// high-cardinality column) can run for minutes. The INSERT pipeline only enforces query limits
+    /// between blocks, so without a check here a KILLed INSERT keeps building the index to completion.
+    /// checkTimeLimit throws on a cancelled query and on an exceeded max_execution_time in throw mode;
+    /// it is cheap (an atomic flag plus an elapsed-timer read).
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElementSafe();
+
     /// Filling and writing skip indices like in MergeTreeDataPartWriterWide::writeColumn
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
@@ -269,6 +281,9 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
         for (const auto & granule : granules_to_write)
         {
+            if (query_status)
+                query_status->checkTimeLimit();
+
             if (skip_index_accumulated_marks[i] == index_helper->index.granularity)
             {
                 auto index_granule = skip_indices_aggregators[i]->getGranuleAndReset();
