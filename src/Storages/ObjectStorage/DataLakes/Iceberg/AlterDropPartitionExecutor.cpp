@@ -7,6 +7,7 @@
 /// consist only of AVRO_RECORDS
 
 #include <Core/Block.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
@@ -352,6 +353,21 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
 
     if (state.partition_types.size() != state.partition_columns.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Partitions types count doesn't match with number of partition columns");
+
+    /// A partial DROP PARTITION rewrites the touched manifests, and the replacement manifest's
+    /// `partition` struct is built with `getAvroType`, which has no encoding for Iceberg decimal
+    /// logical types. Without this check the operation would fail only after discovering targets and
+    /// starting writeback. Spark/Iceberg can legally expose decimal partition columns, so reject such
+    /// tables up front rather than failing midway. Decimal partition columns are not supported yet.
+    for (size_t i = 0; i < state.partition_types.size(); ++i)
+    {
+        if (WhichDataType(removeNullable(state.partition_types[i])).isDecimal())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DROP PARTITION is not supported on Iceberg tables with a decimal partition column "
+                "('{}'): the Iceberg manifest writer cannot encode decimal partition values",
+                state.partition_columns[i]);
+    }
 
     return state;
 }
