@@ -115,6 +115,21 @@ Data types supported in Paimon partition keys:
 * `FLOAT`
 * `DOUBLE`
 
+## Partition pruning {#partition-pruning}
+
+ClickHouse supports partition pruning during SELECT queries for Paimon tables, which helps optimize query performance by skipping irrelevant data files based on partition keys. To enable partition pruning, set `use_paimon_partition_pruning = 1`.
+
+## MinMax index pruning {#minmax-index-pruning}
+
+ClickHouse supports min-max index pruning for Paimon tables. When enabled, ClickHouse uses per-file value statistics (min/max values) to skip data files whose value ranges do not satisfy the query predicates. This is an experimental feature disabled by default. To enable it, set `use_paimon_minmax_index_pruning = 1`.
+
+```sql
+SELECT *
+FROM paimonS3(s3_conn, filename='my_table')
+WHERE int_col > 100
+SETTINGS use_paimon_minmax_index_pruning = 1
+```
+
 ## See Also {#see-also}
 
 * [Paimon cluster table function](/sql-reference/table-functions/paimonCluster.md)

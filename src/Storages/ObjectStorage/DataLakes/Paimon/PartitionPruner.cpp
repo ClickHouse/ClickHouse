@@ -2,6 +2,7 @@
 
 #if USE_AVRO
 
+#include <unordered_set>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
@@ -9,7 +10,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 namespace DB
 {
@@ -21,6 +25,41 @@ extern const int BAD_ARGUMENTS;
 
 namespace Paimon
 {
+    /// Whether a column's min/max stats can be decoded by `getFieldFromBinaryRow` and used for pruning.
+    /// This must stay in sync with the `switch` in `getFieldFromBinaryRow`: building a `ColumnCondition`
+    /// for a type that `getFieldFromBinaryRow` cannot decode (e.g. `BINARY`/`VARBINARY`/`ARRAY`/`MAP`/`ROW`,
+    /// or a `TIMESTAMP` with precision > 3) would turn `use_paimon_minmax_index_pruning=1` into a query
+    /// exception whenever the predicate references such a column. For those columns pruning is simply disabled.
+    static bool canDecodeMinMaxStats(const DataType & type)
+    {
+        switch (type.root_type)
+        {
+            case RootDataType::CHAR:
+            case RootDataType::VARCHAR:
+            case RootDataType::BOOLEAN:
+            case RootDataType::DECIMAL:
+            case RootDataType::TINYINT:
+            case RootDataType::SMALLINT:
+            case RootDataType::INTEGER:
+            case RootDataType::BIGINT:
+            case RootDataType::FLOAT:
+            case RootDataType::DOUBLE:
+            case RootDataType::DATE:
+            case RootDataType::TIME_WITHOUT_TIME_ZONE:
+                return true;
+            case RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE:
+            case RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+            {
+                /// `BinaryRow::getTimestamp` only supports DateTime64 with scale <= 3; a higher-precision
+                /// timestamp column (e.g. TIMESTAMP(6)) would otherwise throw while reading the bound.
+                const auto * dt64 = typeid_cast<const DB::DataTypeDateTime64 *>(removeNullable(type.clickhouse_data_type).get());
+                return dt64 && dt64->getScale() <= 3;
+            }
+            default:
+                return false;
+        }
+    }
+
     static boost::intrusive_ptr<DB::IAST> createPartitionKeyAST(const DB::PaimonTableSchema & table_schema)
     {
         auto partition_key_ast = DB::make_intrusive<DB::ASTFunction>();
@@ -90,6 +129,150 @@ namespace Paimon
             return false;
         std::vector<DB::FieldRef> partition_key_values_ref(partition_key_values.begin(), partition_key_values.end());
         return !key_condition->mayBeTrueInRange(partition_key_values_ref.size(), partition_key_values_ref.data(), partition_key_values_ref.data(), partition_key.data_types);
+    }
+
+    MinMaxIndexPruner::MinMaxIndexPruner(
+        const DB::PaimonTableSchema & table_schema_,
+        const DB::ActionsDAG & filter_dag,
+        DB::ContextPtr context)
+        : schema_id(table_schema_.id)
+        , log(getLogger("MinMaxIndexPruner"))
+    {
+        if (filter_dag.getOutputs().empty())
+            return;
+
+        std::unordered_set<String> partition_key_set(
+            table_schema_.partition_keys.begin(), table_schema_.partition_keys.end());
+
+        DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag.getOutputs().front(), context, /* boolean_context */ true);
+
+        column_conditions.reserve(table_schema_.fields.size());
+        for (Int32 field_idx = 0; field_idx < static_cast<Int32>(table_schema_.fields.size()); ++field_idx)
+        {
+            const auto & field = table_schema_.fields[field_idx];
+            if (partition_key_set.contains(field.name))
+                continue;
+
+            /// Skip columns whose min/max stats cannot be decoded safely, so that enabling
+            /// `use_paimon_minmax_index_pruning` never turns a valid table into a query exception.
+            if (!canDecodeMinMaxStats(field.type))
+                continue;
+
+            auto col_ast = DB::make_intrusive<DB::ASTFunction>();
+            col_ast->name = "tuple";
+            col_ast->arguments = DB::make_intrusive<DB::ASTExpressionList>();
+            col_ast->children.push_back(col_ast->arguments);
+            col_ast->arguments->children.emplace_back(DB::make_intrusive<DB::ASTIdentifier>(field.name));
+
+            DB::NamesAndTypesList names_and_types;
+            names_and_types.emplace_back(field.name, removeNullable(field.type.clickhouse_data_type));
+            DB::ColumnsDescription col_desc(names_and_types);
+
+            ColumnCondition cc;
+            cc.key = DB::KeyDescription::getKeyFromAST(col_ast, col_desc, {}, context);
+            auto cond = std::make_unique<DB::KeyCondition>(
+                inverted_dag, context, cc.key.column_names, cc.key.expression, false /* not single_point */);
+
+            if (cond->alwaysUnknownOrTrue())
+                continue;
+
+            cc.column_name = field.name;
+            cc.schema_idx = field_idx;
+            cc.condition = std::move(cond);
+            cc.data_type = field.type;
+            column_conditions.push_back(std::move(cc));
+        }
+    }
+
+    bool MinMaxIndexPruner::canBePruned(const DB::PaimonManifestEntry & manifest_entry) const
+    {
+        if (column_conditions.empty())
+            return false;
+
+        const auto & file = manifest_entry.file;
+
+        if (file.value_stats.min_values.empty() || file.value_stats.max_values.empty())
+            return false;
+
+        BinaryRow min_row(file.value_stats.min_values);
+        BinaryRow max_row(file.value_stats.max_values);
+
+        /// Determine column -> BinaryRow position mapping based on _VALUE_STATS_COLS:
+        ///   null or empty (legacy mode) : position i = schema field index i
+        ///     Note: the Avro deserializer may return an empty Array for Avro null values,
+        ///     so we treat both null and empty the same as legacy mode.
+        ///   non-empty list (dense mode) : position j = column named valueStatsCols[j]
+        const bool legacy_mode = !file.value_stats_cols.has_value() || file.value_stats_cols->empty();
+
+        /// In legacy mode the value stats are positional, encoded in the data file's own schema field order.
+        /// We map those positions to query columns via `schema_idx`, which is the field index in the schema
+        /// this pruner was built from. That mapping is only valid when the file was written with the same
+        /// schema: after schema evolution an older file's position can refer to a different column or type,
+        /// so `mayBeTrueInRange` could falsely prune a file that still contains matching rows. Fail closed and
+        /// skip min/max pruning for such files (they are read in full, which is always correct).
+        /// Dense mode (`_VALUE_STATS_COLS` present) matches stats by column name below and is unaffected.
+        if (legacy_mode && file.schema_id != schema_id)
+            return false;
+
+        std::unordered_map<String, Int32> col_to_pos;
+        if (!legacy_mode)
+        {
+            const auto & stats_cols = *file.value_stats_cols;
+            col_to_pos.reserve(stats_cols.size());
+            for (size_t i = 0; i < stats_cols.size(); ++i)
+                col_to_pos[stats_cols[i].safeGet<String>()] = static_cast<Int32>(i);
+        }
+
+        const auto & null_counts = file.value_stats.null_counts;
+
+        for (const auto & col_cond : column_conditions)
+        {
+            Int32 pos = -1;
+            if (!legacy_mode)
+            {
+                /// Dense mode: look up column position; skip if column has no stats
+                auto it = col_to_pos.find(col_cond.column_name);
+                if (it == col_to_pos.end())
+                    continue;
+                pos = it->second;
+            }
+            else
+            {
+                /// Legacy mode: BinaryRow position = schema field index
+                pos = col_cond.schema_idx;
+            }
+
+            /// The min/max bounds only describe the non-null values of a column. If the file contains any null
+            /// in this column, a predicate that matches NULL (e.g. `col IS NULL`) can still be satisfied even
+            /// when the predicate is false everywhere in [min, max]. Only prune when the null count is known
+            /// and equal to zero; otherwise skip pruning for this column to stay correct.
+            if (pos >= static_cast<Int32>(null_counts.size()))
+                continue;
+            const auto & null_count = null_counts[pos];
+            if (null_count.isNull() || DB::applyVisitor(DB::FieldVisitorConvertToNumber<Int64>(), null_count) != 0)
+                continue;
+
+            /// Skip if stats are null for this column in this file
+            if (min_row.isNullAt(pos) || max_row.isNullAt(pos))
+                continue;
+
+            DB::Field min_field = Paimon::getFieldFromBinaryRow(min_row, pos, col_cond.data_type);
+            DB::Field max_field = Paimon::getFieldFromBinaryRow(max_row, pos, col_cond.data_type);
+
+            /// Check if the filter condition can be satisfied anywhere in [min, max]
+            DB::Row min_row_values = {min_field};
+            DB::Row max_row_values = {max_field};
+            std::vector<DB::FieldRef> min_refs(min_row_values.begin(), min_row_values.end());
+            std::vector<DB::FieldRef> max_refs(max_row_values.begin(), max_row_values.end());
+
+            bool can_be_true = col_cond.condition->mayBeTrueInRange(
+                1, min_refs.data(), max_refs.data(), col_cond.key.data_types);
+
+            if (!can_be_true)
+                return true;
+        }
+
+        return false;
     }
 }
 #endif

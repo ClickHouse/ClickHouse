@@ -1,0 +1,52 @@
+{
+  "version" : 3,
+  "id" : 0,
+  "fields" : [ {
+    "id" : 0,
+    "name" : "id",
+    "type" : "INT NOT NULL"
+  }, {
+    "id" : 1,
+    "name" : "int_val",
+    "type" : "INT NOT NULL"
+  }, {
+    "id" : 2,
+    "name" : "str_val",
+    "type" : "STRING NOT NULL"
+  }, {
+    "id" : 3,
+    "name" : "ts3",
+    "type" : "TIMESTAMP(3) NOT NULL"
+  }, {
+    "id" : 4,
+    "name" : "ts1",
+    "type" : "TIMESTAMP(1) NOT NULL"
+  }, {
+    "id" : 5,
+    "name" : "big_val",
+    "type" : "BIGINT NOT NULL"
+  }, {
+    "id" : 6,
+    "name" : "dec_val",
+    "type" : "DECIMAL(20, 0) NOT NULL"
+  }, {
+    "id" : 7,
+    "name" : "nul_val",
+    "type" : "INT"
+  }, {
+    "id" : 8,
+    "name" : "ts6",
+    "type" : "TIMESTAMP(6) NOT NULL"
+  }, {
+    "id" : 9,
+    "name" : "bin_val",
+    "type" : "BYTES NOT NULL"
+  } ],
+  "highestFieldId" : 9,
+  "partitionKeys" : [ ],
+  "primaryKeys" : [ ],
+  "options" : {
+    "metadata.stats-store" : "fields-*"
+  },
+  "timeMillis" : 1781800702275
+}

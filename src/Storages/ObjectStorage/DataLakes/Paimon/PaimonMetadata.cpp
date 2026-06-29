@@ -52,6 +52,7 @@ extern const int REPLICA_IS_ALREADY_ACTIVE;
 namespace Setting
 {
 extern const SettingsBool use_paimon_partition_pruning;
+extern const SettingsBool use_paimon_minmax_index_pruning;
 extern const SettingsInt64 paimon_target_snapshot_id;
 extern const SettingsUInt64 max_consume_snapshots;
 }
@@ -428,6 +429,14 @@ ObjectIterator PaimonMetadata::iterate(
         partition_pruner.emplace(*schema, filter_dag_copy, getContext());
     }
 
+    /// 3.b Build min-max index pruner if needed
+    std::optional<MinMaxIndexPruner> minmax_pruner;
+    if (filter_dag && query_context->getSettingsRef()[Setting::use_paimon_minmax_index_pruning])
+    {
+        auto filter_dag_copy = filter_dag->clone();
+        minmax_pruner.emplace(*schema, filter_dag_copy, getContext());
+    }
+
     /// 4. Collect data files based on read mode
     Strings data_files;
 
@@ -441,7 +450,7 @@ ObjectIterator PaimonMetadata::iterate(
                 "Its delta manifest contains compaction output (not incremental changes). "
                 "Consider using a non-COMPACT snapshot for accurate incremental semantics.",
                 target_snapshot_id);
-        data_files = collectDeltaFilesForSnapshot(target_state, partition_pruner);
+        data_files = collectDeltaFilesForSnapshot(target_state, partition_pruner, minmax_pruner);
     }
     /// 4.b Regular incremental mode
     else if (isIncrementalReadEnabled())
@@ -479,14 +488,14 @@ ObjectIterator PaimonMetadata::iterate(
 
         std::optional<Int64> last_consumed_snapshot_id;
         const UInt64 max_consume_snapshots = query_context->getSettingsRef()[Setting::max_consume_snapshots];
-        data_files = collectIncrementalDataFiles(state, partition_pruner, max_consume_snapshots, last_consumed_snapshot_id);
+        data_files = collectIncrementalDataFiles(state, partition_pruner, minmax_pruner, max_consume_snapshots, last_consumed_snapshot_id);
 
         if (last_consumed_snapshot_id)
             stream_state->setCommittedSnapshot(*last_consumed_snapshot_id);
     }
     else
     {
-        data_files = collectFullScanDataFiles(state, partition_pruner);
+        data_files = collectFullScanDataFiles(state, partition_pruner, minmax_pruner);
     }
 
     LOG_DEBUG(log, "Collected {} data files for snapshot_id={} (incremental={})",
@@ -657,6 +666,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
 Strings PaimonMetadata::collectIncrementalDataFiles(
     const PaimonTableStatePtr & state,
     const std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<MinMaxIndexPruner> & minmax_pruner,
     UInt64 max_consume_snapshots,
     std::optional<Int64> & last_consumed_snapshot_id) const
 {
@@ -672,7 +682,7 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
         /// First read should include full snapshot (base + delta) to build the initial watermark.
         LOG_INFO(log, "No committed snapshot found, performing initial full read (base+delta) for snapshot_id={}",
                  state->snapshot_id);
-        data_files = collectDataFilesFromManifests({state}, ManifestKind::Both, partition_pruner, true, true);
+        data_files = collectDataFilesFromManifests({state}, ManifestKind::Both, partition_pruner, minmax_pruner, true, true);
         last_consumed_snapshot_id = state->snapshot_id;
     }
     else if (*committed_snapshot_id >= state->snapshot_id)
@@ -705,7 +715,7 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
             return {};
         }
 
-        data_files = collectDataFilesFromManifests(snapshots, ManifestKind::Delta, partition_pruner, true, true);
+        data_files = collectDataFilesFromManifests(snapshots, ManifestKind::Delta, partition_pruner, minmax_pruner, true, true);
         /// Use last_scanned (not snapshots.back()) to advance past trailing compact/missing snapshots.
         last_consumed_snapshot_id = last_scanned_snapshot_id.value_or(snapshots.back()->snapshot_id);
     }
@@ -717,6 +727,7 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
     const std::vector<PaimonTableStatePtr> & snapshots,
     ManifestKind kind,
     const std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<MinMaxIndexPruner> & minmax_pruner,
     bool deduplicate,
     bool track_deletes) const
 {
@@ -751,6 +762,15 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
                 if (partition_pruner && partition_pruner->canBePruned(entry))
                 {
                     LOG_TEST(log, "Partition pruned {} manifest file: {}, {}",
+                             type, entry.file.file_name, entry.file.bucket_path);
+                    continue;
+                }
+
+                /// Min-max index pruning is applied only to non-DELETE entries (DELETE entries
+                /// are handled above), so a delete tombstone can never be pruned away.
+                if (minmax_pruner && minmax_pruner->canBePruned(entry))
+                {
+                    LOG_TEST(log, "Min-max pruned {} manifest file: {}, {}",
                              type, entry.file.file_name, entry.file.bucket_path);
                     continue;
                 }
@@ -790,17 +810,19 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
 
 Strings PaimonMetadata::collectDeltaFilesForSnapshot(
     const PaimonTableStatePtr & state,
-    const std::optional<PartitionPruner> & partition_pruner) const
+    const std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<MinMaxIndexPruner> & minmax_pruner) const
 {
-    return collectDataFilesFromManifests({state}, ManifestKind::Delta, partition_pruner, false, false);
+    return collectDataFilesFromManifests({state}, ManifestKind::Delta, partition_pruner, minmax_pruner, false, false);
 }
 
 Strings PaimonMetadata::collectFullScanDataFiles(
     const PaimonTableStatePtr & state,
-    const std::optional<PartitionPruner> & partition_pruner) const
+    const std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<MinMaxIndexPruner> & minmax_pruner) const
 {
     /// Full scan: include base + delta, with dedup and tombstone handling.
-    return collectDataFilesFromManifests({state}, ManifestKind::Both, partition_pruner, true, true);
+    return collectDataFilesFromManifests({state}, ManifestKind::Both, partition_pruner, minmax_pruner, true, true);
 }
 
 }

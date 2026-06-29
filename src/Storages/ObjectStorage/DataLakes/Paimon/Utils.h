@@ -22,6 +22,7 @@ extern const int BAD_ARGUMENTS;
 namespace Paimon
 {
 using namespace DB;
+struct DataType;
 
 class PathEscape
 {
@@ -71,6 +72,7 @@ public:
     static bool needsEscaping(unsigned char c) { return c < CHAR_TO_ESCAPE.size() && CHAR_TO_ESCAPE.test(c); }
 };
 DB::Row getPartitionFields(const String & partition, const PaimonTableSchema & table_schema);
+DB::Field getFieldFromBinaryRow(BinaryRow & row, Int32 pos, const DataType & data_type);
 String getBucketPath(const String & partition, Int32 bucket, const PaimonTableSchema & table_schema, const String & partition_default_name);
 String concatPath(std::initializer_list<String> paths);
 

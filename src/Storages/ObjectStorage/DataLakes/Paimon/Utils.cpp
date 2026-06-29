@@ -104,70 +104,65 @@ static String formatDateTime(const DateTime64 & x, UInt32 scale, const DateLUTIm
     return res;
 }
 
+DB::Field getFieldFromBinaryRow(BinaryRow & row, Int32 pos, const DataType & data_type)
+{
+    if (data_type.clickhouse_data_type->isNullable() && row.isNullAt(pos))
+        return Null();
+
+    switch (data_type.root_type)
+    {
+        case RootDataType::CHAR:
+        case RootDataType::VARCHAR:
+            return Field(row.getString(pos));
+        case RootDataType::BOOLEAN:
+            return Field(row.getBoolean(pos));
+        case RootDataType::DECIMAL: {
+            if (const auto * decimal_type = typeid_cast<const DataTypeDecimal32 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                return DecimalField<Decimal32>(
+                    row.getDecimal<Int32>(pos, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+            if (const auto * decimal_type = typeid_cast<const DataTypeDecimal64 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                return DecimalField<Decimal64>(
+                    row.getDecimal<Int64>(pos, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+            if (const auto * decimal_type = typeid_cast<const DataTypeDecimal128 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                return DecimalField<Decimal128>(
+                    row.getDecimal<Int128>(pos, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+            if (const auto * decimal_type = typeid_cast<const DataTypeDecimal256 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                return DecimalField<Decimal256>(
+                    row.getDecimal<Int256>(pos, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown decimal type {}", data_type.clickhouse_data_type->getName());
+        }
+        case RootDataType::TINYINT:
+            return Field(row.getByte(pos));
+        case RootDataType::SMALLINT:
+            return Field(row.getShort(pos));
+        case RootDataType::INTEGER:
+        case RootDataType::DATE:
+        case RootDataType::TIME_WITHOUT_TIME_ZONE:
+            return Field(row.getInt(pos));
+        case RootDataType::BIGINT:
+            return Field(row.getLong(pos));
+        case RootDataType::FLOAT:
+            return Field(row.getFloat(pos));
+        case RootDataType::DOUBLE:
+            return Field(row.getDouble(pos));
+        case RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE:
+        case RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE: {
+            const auto * type = typeid_cast<const DataTypeDateTime64 *>(removeNullable(data_type.clickhouse_data_type).get());
+            /// Paimon stores a TIMESTAMP with precision <= 3 as a millisecond count, so `getTimestamp` always
+            /// returns the value in milliseconds (scale 3) regardless of the column's declared scale. The field
+            /// must therefore be built with scale 3; `KeyCondition` rescales it to the column scale when comparing.
+            /// Using `type->getScale()` here would mislabel a lower-scale column (e.g. `DateTime64(1)`) and break
+            /// min/max pruning for it.
+            return DecimalField<DateTime64>(row.getTimestamp(pos, type->getScale()), 3);
+        }
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type {} in BinaryRow field", data_type.root_type);
+    }
+}
+
 DB::Row getPartitionFields(const String & partition_string, const PaimonTableSchema & table_schema)
 {
     Paimon::BinaryRow partition(partition_string);
-    auto get_partition_value = [&partition](Int32 i, Paimon::DataType & data_type) -> Field
-    {
-        if (data_type.clickhouse_data_type->isNullable() && partition.isNullAt(i))
-        {
-            return Null();
-        }
-
-        switch (data_type.root_type)
-        {
-            case RootDataType::CHAR:
-            case RootDataType::VARCHAR:
-                return Field(partition.getString(i));
-            case RootDataType::BOOLEAN: {
-                return Field(partition.getBoolean(i));
-            }
-            case RootDataType::DECIMAL: {
-                if (const auto * decimal_type
-                    = typeid_cast<const DataTypeDecimal32 *>(removeNullable(data_type.clickhouse_data_type).get()))
-                    return DecimalField<Decimal32>(
-                        partition.getDecimal<Int32>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
-                if (const auto * decimal_type
-                    = typeid_cast<const DataTypeDecimal64 *>(removeNullable(data_type.clickhouse_data_type).get()))
-                    return DecimalField<Decimal64>(
-                        partition.getDecimal<Int64>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
-                if (const auto * decimal_type
-                    = typeid_cast<const DataTypeDecimal128 *>(removeNullable(data_type.clickhouse_data_type).get()))
-                    return DecimalField<Decimal128>(
-                        partition.getDecimal<Int128>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
-                if (const auto * decimal_type
-                    = typeid_cast<const DataTypeDecimal256 *>(removeNullable(data_type.clickhouse_data_type).get()))
-                    return DecimalField<Decimal256>(
-                        partition.getDecimal<Int256>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
-                else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type {}", data_type.clickhouse_data_type->getName());
-            }
-            case RootDataType::TINYINT:
-                return Field(partition.getByte(i));
-            case RootDataType::SMALLINT:
-                return Field(partition.getShort(i));
-            case RootDataType::INTEGER:
-            case RootDataType::DATE:
-            case RootDataType::TIME_WITHOUT_TIME_ZONE:
-                return Field(partition.getInt(i));
-            case RootDataType::BIGINT:
-                return Field(partition.getLong(i));
-            case RootDataType::FLOAT:
-                return Field(partition.getFloat(i));
-            case RootDataType::DOUBLE:
-                return Field(partition.getDouble(i));
-            case RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE:
-            case RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE: {
-                const auto * type = typeid_cast<const DataTypeDateTime64 *>(removeNullable(data_type.clickhouse_data_type).get());
-                LOG_TEST(
-                    &Poco::Logger::get("getPartitionString"), "getPrecision: {}, getScale: {}", type->getPrecision(), type->getScale());
-                return DecimalField<DateTime64>(partition.getTimestamp(i, type->getScale()), 3);
-            }
-            default:
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type {} in partition", data_type.root_type);
-        }
-    };
-
     DB::Row partition_key_value;
     for (size_t i = 0; i < table_schema.partition_keys.size(); ++i)
     {
@@ -180,8 +175,8 @@ DB::Row getPartitionFields(const String & partition_string, const PaimonTableSch
                 table_schema.partition_keys[i],
                 fmt::join(table_schema.fields_by_name_indexes, ","));
         }
-        auto field = table_schema.fields[it->second];
-        partition_key_value.emplace_back(get_partition_value(static_cast<Int32>(i), field.type));
+        const auto & field = table_schema.fields[it->second];
+        partition_key_value.emplace_back(getFieldFromBinaryRow(partition, static_cast<Int32>(i), field.type));
     }
     return partition_key_value;
 };
