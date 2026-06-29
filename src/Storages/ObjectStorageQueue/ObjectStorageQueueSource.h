@@ -186,7 +186,7 @@ public:
         bool add_deduplication_info_,
         bool is_deduplication_v2_);
 
-    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
+    static Block getHeader(Block sample_block, const NamesAndTypes & requested_virtual_columns);
 
     String getName() const override;
 
