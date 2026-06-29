@@ -1236,9 +1236,9 @@ private:
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
                     "Cannot decompress ALP(RD)-encoded data, invalid dictionary value: {}, limit: {}",
                     dict_entry, dict_value_limit - 1);
-            
+
             source += sizeof(UInt16);
-            
+
             dict_params.values.push_back(dict_entry);
         }
     }
