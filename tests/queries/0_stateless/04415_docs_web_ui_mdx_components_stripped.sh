@@ -20,7 +20,7 @@ PAGE="$(${CLICKHOUSE_CURL} -sS "${URL}/docs")"
 echo "$PAGE" | grep -oF 'ClickHouse <span class="accent">Reference</span>' | head -n1
 
 # `preprocessMarkdown` collects the names of imported MDX components ...
-echo "$PAGE" | grep -oF 'const components = new Set();' | head -n1
+echo "$PAGE" | grep -oF 'const components = new Set(MDX_COMPONENTS);' | head -n1
 echo "$PAGE" | grep -oF 'md.matchAll(importRe)' | head -n1
 
 # ... and strips the opening/closing/self-closing tags of those components from the body.

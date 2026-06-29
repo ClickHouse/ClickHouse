@@ -630,21 +630,32 @@
 
     marked.use({ extensions: [admonitionExtension, mathBlockExtension, mathInlineExtension] });
 
+    /// Known MDX components from the documentation toolchain (status badges and a few layout
+    /// wrappers). These are build machinery, not content, and are stripped whether or not the
+    /// Markdown that uses them also `import`s them: some embedded entries use them without a local
+    /// import (e.g. `transactionID` opens with a bare `<ExperimentalBadge/>` / `<CloudNotSupportedBadge/>`).
+    /// Only these known names are stripped, so literal `<...>` placeholders in the prose (e.g.
+    /// `<SearchPhrase>` in an XML example) are preserved.
+    const MDX_COMPONENTS = [
+        'ExperimentalBadge', 'BetaBadge', 'DeprecatedBadge',
+        'CloudNotSupportedBadge', 'CloudAvailableBadge', 'PrivatePreviewBadge',
+        'Tabs', 'TabItem', 'VerticalStepper', 'Image',
+    ];
+
     /// Strip MDX-isms that occasionally leak into the documentation text: `import`/`export`
     /// statements and `<import ... >` directives are machinery for the website build, not content.
     /// The components brought in by those `import`s (e.g. the `<ExperimentalBadge/>` of an
-    /// experimental feature, or a `<Tabs>` wrapper) are stripped as well: they are build machinery
-    /// too, and a self-closing custom tag like `<ExperimentalBadge/>` is otherwise parsed by the
-    /// HTML parser as an unclosed element — the self-closing slash is ignored for non-void elements —
-    /// that swallows the rest of the document as its children, so the sanitizer then drops the whole
-    /// body (the visible symptom: an experimental entity rendered as an empty page). Only the names
-    /// actually imported are removed, so literal `<...>` placeholders in the prose (e.g.
-    /// `<SearchPhrase>` in an XML example) are preserved.
+    /// experimental feature, or a `<Tabs>` wrapper), as well as the known `MDX_COMPONENTS` above
+    /// even when they are not imported, are stripped as well: a self-closing custom tag like
+    /// `<ExperimentalBadge/>` is otherwise parsed by the HTML parser as an unclosed element — the
+    /// self-closing slash is ignored for non-void elements — that swallows the rest of the document
+    /// as its children, so the sanitizer then drops the whole body (the visible symptom: an
+    /// experimental entity rendered as an empty page).
     function preprocessMarkdown(md) {
-        /// Collect the local names of imported MDX components: default imports
-        /// (`import ExperimentalBadge from '...'`) and named/aliased imports
+        /// Seed with the known component names, then add the local names of imported MDX components:
+        /// default imports (`import ExperimentalBadge from '...'`) and named/aliased imports
         /// (`import {Tabs, TabItem as Item} from '...'`).
-        const components = new Set();
+        const components = new Set(MDX_COMPONENTS);
         const importRe = /^[ \t]*import\s+([\s\S]*?)\s+from\s+['"][^'"]+['"];?[ \t]*$/gm;
         for (const m of md.matchAll(importRe)) {
             const clause = m[1].trim();
