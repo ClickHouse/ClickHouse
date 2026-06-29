@@ -285,6 +285,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         chassert(!table_data_path_saved.empty());
         db.tables.erase(table_name_);
         db.table_name_to_path.erase(table_name_);
+        /// This path bypasses detachTableUnlocked, so clear stale async-load names
+        /// here too, otherwise getAllTableNames keeps suggesting the old name (#91777).
+        db.eraseAsyncLoadState(table_name_);
         if (has_symlink)
             db.tryRemoveSymlink(table_name_);
         return table_data_path_saved;
