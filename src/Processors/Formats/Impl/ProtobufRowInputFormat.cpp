@@ -73,6 +73,34 @@ try
 }
 catch (...)
 {
+    /// Unlike text formats that rely on syncAfterError to scan for a row delimiter,
+    /// Protobuf knows the message boundary from the length prefix. We can resync
+    /// here directly via endMessage(true), which skips any unread bytes in the
+    /// current message. This keeps the logic self-contained in readRow and leaves
+    /// syncAfterError as a no-op.
+    if (reader)
+    {
+        try
+        {
+            /// Skip remaining bytes in the current message to position ReadBuffer
+            /// at the next message boundary. Without this, if a parse error occurs
+            /// mid-message (e.g. invalid date string in field 1 while field 2 follows),
+            /// the ReadBuffer stays inside the bad message and the next readRow would
+            /// misinterpret the remaining bytes as a new message's length prefix.
+            reader->endMessage(true);
+        }
+        catch (...)
+        {
+            /// endMessage fails when the stream is truncated (message length prefix
+            /// claims more bytes than exist). The stream is unrecoverable — rethrow
+            /// so IRowInputFormat fails the query instead of silently skipping.
+            destroyReaderAndSerializer();
+            throw;
+        }
+    }
+    /// Resync succeeded — destroy and rethrow the original parse error.
+    /// IRowInputFormat will skip this row and call readRow again, which
+    /// recreates reader and serializer at the correct stream position.
     destroyReaderAndSerializer();
     throw;
 }
@@ -86,12 +114,15 @@ void ProtobufRowInputFormat::setReadBuffer(ReadBuffer & in_)
 
 bool ProtobufRowInputFormat::allowSyncAfterError() const
 {
-    return true;
+    /// ProtobufSingle (with_length_delimiter = false) has one message per input —
+    /// there's no next row boundary to skip to after a field-level parse error.
+    return with_length_delimiter;
 }
 
 void ProtobufRowInputFormat::syncAfterError()
 {
-    reader->endMessage(true);
+    /// endMessage was already called in readRow's catch block before destroying
+    /// the reader. Nothing left to do here.
 }
 
 size_t ProtobufRowInputFormat::countRows(size_t max_block_size)
@@ -430,7 +461,7 @@ cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --passw
 
 Select the data inserted into the table:
 
-```sql
+```bash
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
 ```
 
@@ -466,7 +497,7 @@ cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --passw
 
 Select the data inserted into the table:
 
-```sql
+```bash
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
 ```
 
