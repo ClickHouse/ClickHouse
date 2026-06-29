@@ -27,11 +27,11 @@ QUERY id: 0
     LIST id: 14, nodes: 1
       SORT id: 15, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION n.a
-          FUNCTION id: 16, function_name: tupleElement, function_type: ordinary, result_type: Int64
+          FUNCTION id: 2, function_name: tupleElement, function_type: ordinary, result_type: Int64
             ARGUMENTS
-              LIST id: 17, nodes: 2
-                COLUMN id: 18, column_name: __array_join_exp_1, result_type: Tuple(a Int64), source_id: 5
-                CONSTANT id: 19, constant_value: \'a\', constant_value_type: String
+              LIST id: 3, nodes: 2
+                COLUMN id: 4, column_name: __array_join_exp_1, result_type: Tuple(a Int64), source_id: 5
+                CONSTANT id: 6, constant_value: \'a\', constant_value_type: String
 Expression (Project names)
 Header: n.a Int64
   Sorting (Sorting for ORDER BY)
@@ -80,11 +80,11 @@ QUERY id: 0
     LIST id: 19, nodes: 1
       SORT id: 20, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION n.a
-          FUNCTION id: 21, function_name: tupleElement, function_type: ordinary, result_type: Int64
+          FUNCTION id: 2, function_name: tupleElement, function_type: ordinary, result_type: Int64
             ARGUMENTS
-              LIST id: 22, nodes: 2
-                COLUMN id: 23, column_name: __array_join_exp_1, result_type: Tuple(a Int64, b Int64), source_id: 5
-                CONSTANT id: 24, constant_value: \'a\', constant_value_type: String
+              LIST id: 3, nodes: 2
+                COLUMN id: 4, column_name: __array_join_exp_1, result_type: Tuple(a Int64, b Int64), source_id: 5
+                CONSTANT id: 6, constant_value: \'a\', constant_value_type: String
 Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
 Header: n.a Int64
         n.b Int64
