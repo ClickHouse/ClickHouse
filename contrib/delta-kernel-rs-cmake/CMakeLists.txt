@@ -14,8 +14,7 @@ set(USE_DELTA_KERNEL_RS ${ENABLE_LIBRARIES})
 #   `reqwest` via `rustls-tls-native-roots`. Because Cargo unifies features, `reqwest` ends
 #   up built with both the `native-tls` and `rustls` backends, so this is only a partial
 #   `native-tls` enablement. Tracking upstream: https://github.com/apache/arrow-rs-object-store/pull/585
-# NO_ARMV81_OR_HIGHER: Disabled because ring assumes that Neon is available with ARM
-if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER)
+if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") )
   message(STATUS "Disabling delta kernel because of incompatible platform or Rust is disabled")
   set(USE_DELTA_KERNEL_RS 0)
 endif()
