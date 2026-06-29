@@ -23,6 +23,7 @@ SET query_plan_join_swap_table=0;
 SET optimize_move_to_prewhere=1;
 SET query_plan_optimize_prewhere=1;
 SET enable_multiple_prewhere_read_steps=1;
+SET join_runtime_filter_min_probe_rows=0;
 
 -- 1 row in filter
 SELECT count()
