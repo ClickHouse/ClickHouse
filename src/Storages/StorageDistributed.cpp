@@ -114,9 +114,11 @@
 #include <IO/ConnectionTimeouts.h>
 
 #include <base/range.h>
+#include <base/scope_guard.h>
 
 #include <memory>
 #include <filesystem>
+#include <unordered_set>
 
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
@@ -1770,6 +1772,16 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
 {
     /// Heavy path: ask every shard for the modification hash of the underlying table and combine the
     /// answers. Only used when explicitly requested.
+
+    /// The local-shard path recurses into the underlying table's `getModificationHash` in-process, so
+    /// wrapper tables can form a cycle and overflow the stack - e.g. two `Distributed` tables (or a
+    /// `Distributed` and a `Merge`) pointing at each other. The direct self-reference is also handled in
+    /// `getModificationHashOfRemoteTableInShard`, but this guards indirect cycles too: track the tables
+    /// currently being hashed on this thread and fail closed (return nullopt) on re-entry.
+    static thread_local std::unordered_set<const IStorage *> tables_being_hashed;
+    if (!tables_being_hashed.insert(this).second)
+        return {};
+    SCOPE_EXIT({ tables_being_hashed.erase(this); });
 
     /// Table functions have no stable identity on the shards, so we cannot ask system.tables about them.
     if (remote_table_function_ptr)

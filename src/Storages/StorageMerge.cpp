@@ -1860,44 +1860,56 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
 
 std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
-    std::vector<UInt128> table_hashes;
-
-    /// Stop traversing as soon as any source table cannot report its modification hash.
-    auto unknown_table = traverseTablesUntil([&](const StoragePtr & table) -> bool
+    try
     {
-        if (!table)
+        std::vector<UInt128> table_hashes;
+
+        /// Stop traversing as soon as any source table cannot report its modification hash.
+        auto unknown_table = traverseTablesUntil([&](const StoragePtr & table) -> bool
+        {
+            if (!table)
+                return false;
+
+            auto metadata = table->getInMemoryMetadataPtr(query_context, false);
+            auto snapshot = table->getStorageSnapshotWithoutData(metadata, query_context);
+            auto table_hash = table->getModificationHash(snapshot, query_context);
+            if (!table_hash)
+                return true; /// This source cannot tell whether it changed - assume the worst for the whole Merge.
+
+            /// Fold the table identity into the hash so that two source tables with identical contents do
+            /// not cancel out when combined.
+            SipHash per_table;
+            const auto id = table->getStorageID();
+            per_table.update(id.database_name);
+            per_table.update(id.table_name);
+            per_table.update(*table_hash);
+            table_hashes.push_back(per_table.get128());
             return false;
+        });
 
-        auto metadata = table->getInMemoryMetadataPtr(query_context, false);
-        auto snapshot = table->getStorageSnapshotWithoutData(metadata, query_context);
-        auto table_hash = table->getModificationHash(snapshot, query_context);
-        if (!table_hash)
-            return true; /// This source cannot tell whether it changed - assume the worst for the whole Merge.
+        if (unknown_table)
+            return {};
 
-        /// Fold the table identity into the hash so that two source tables with identical contents do
-        /// not cancel out when combined.
-        SipHash per_table;
-        const auto id = table->getStorageID();
-        per_table.update(id.database_name);
-        per_table.update(id.table_name);
-        per_table.update(*table_hash);
-        table_hashes.push_back(per_table.get128());
-        return false;
-    });
+        /// Combine in a deterministic, order-independent way (the iteration order over databases and tables
+        /// is not guaranteed to be stable).
+        std::sort(table_hashes.begin(), table_hashes.end());
 
-    if (unknown_table)
+        SipHash hash;
+        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+        hash.update(table_hashes.size());
+        for (const auto & table_hash : table_hashes)
+            hash.update(table_hash);
+        return hash.get128();
+    }
+    catch (...)
+    {
+        /// Resolving the source tables can fail. Most importantly, two wrapper tables referencing each
+        /// other - e.g. `m1 = Merge(db, '^m2$')` and `m2 = Merge(db, '^m1$')`, or a `Merge` and a
+        /// `Distributed` pointing at each other - make resolving the source metadata recurse until
+        /// `checkStackSize` throws `TOO_DEEP_RECURSION` (see `getDatabaseIterators`). We cannot compute a
+        /// hash then, so fail closed.
         return {};
-
-    /// Combine in a deterministic, order-independent way (the iteration order over databases and tables
-    /// is not guaranteed to be stable).
-    std::sort(table_hashes.begin(), table_hashes.end());
-
-    SipHash hash;
-    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
-    hash.update(table_hashes.size());
-    for (const auto & table_hash : table_hashes)
-        hash.update(table_hash);
-    return hash.get128();
+    }
 }
 
 void registerStorageMerge(StorageFactory & factory);
