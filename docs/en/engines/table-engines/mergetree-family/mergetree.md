@@ -1212,7 +1212,7 @@ It is possible to set up non-replicated MergeTree tables with a one-writer, many
 
 <ExperimentalBadge/>
 
-Multiple ClickHouse instances sharing a single non-replicated `MergeTree` table on object storage can elect a single leader using the [`leader_election`](/operations/settings/merge-tree-settings.md/#leader_election) setting. Only the leader accepts inserts, merges, mutations, and mutating DDL; the other instances act as read-only followers and will take over automatically when the current leader becomes unavailable. `DROP TABLE` on a follower is permitted as a local-metadata-only operation (see "Behavior on the leader vs. on followers" below). This enables active/standby failover without requiring `ClickHouse Keeper`.
+Multiple ClickHouse instances sharing a single non-replicated `MergeTree` table on object storage can elect a single leader using the [`leader_election`](/operations/settings/merge-tree-settings.md/#leader_election) setting. Only the leader accepts inserts, merges, mutations (where the disk's metadata layout supports them), and partition operations (`DETACH`/`ATTACH`/`MOVE`/`REPLACE PARTITION`, `OPTIMIZE`); metadata-changing `ALTER TABLE` is rejected on all nodes (see the supported/unsupported lists below). The other instances act as read-only followers and will take over automatically when the current leader becomes unavailable. `DROP TABLE` on a follower is permitted as a local-metadata-only operation (see "Behavior on the leader vs. on followers" below). This enables active/standby failover without requiring `ClickHouse Keeper`.
 
 Coordination is implemented using conditional writes (`If-Match` / `If-None-Match`) on a small lease file in the object storage bucket. No external coordination service is needed.
 
