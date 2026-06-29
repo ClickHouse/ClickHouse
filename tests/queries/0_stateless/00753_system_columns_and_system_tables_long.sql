@@ -86,6 +86,9 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tab
 DROP TABLE check_system_tables;
 
 SELECT 'Check total_bytes/total_rows for StripeLog';
+-- Unlike TinyLog/Log, StripeLog compresses its combined data stream with the server's default codec
+-- (`getDefaultCodec`, currently `ZSTD(3)`) regardless of the column codec, so `total_bytes` cannot be
+-- pinned here and reflects that default.
 CREATE TABLE check_system_tables (key UInt8) ENGINE = StripeLog();
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 INSERT INTO check_system_tables VALUES (1);
