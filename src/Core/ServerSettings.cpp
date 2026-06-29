@@ -1,6 +1,8 @@
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
 #include <Common/Jemalloc.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
@@ -29,6 +31,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/MemoryTracker.h>
+#include <Common/PerCPUMemory.h>
 
 #include <Common/DNSResolver.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -45,6 +48,7 @@ extern const Metric BackgroundSchedulePoolSize;
 extern const Metric BackgroundBufferFlushSchedulePoolSize;
 extern const Metric BackgroundDistributedSchedulePoolSize;
 extern const Metric BackgroundMessageBrokerSchedulePoolSize;
+extern const Metric PointInPolygonCacheSizeLimit;
 }
 
 namespace DB
@@ -63,6 +67,19 @@ namespace
         return 555;
 #else
         return 0;
+#endif
+    }
+
+    constexpr double getDefaultMemoryWorkerRssSpeculativeReserveRatio() {
+#if defined(SANITIZER)
+        /// Under sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`) the gap between observed
+        /// RSS and the global `MemoryTracker` is dominated by shadow-memory / runtime
+        /// overhead rather than tracker bookkeeping lag, so a non-zero ratio would
+        /// push the tracker past `max_server_memory_usage` for ordinary, non-stress
+        /// queries. Disable the speculation in sanitizer builds.
+        return 0.0;
+#else
+        return 1.0;
 #endif
     }
 }
@@ -338,6 +355,12 @@ namespace
     :::
 
     As a special case, a value of `0` (default) means the server may consume all available memory (excluding further restrictions imposed by `max_server_memory_usage_to_ram_ratio`).
+    )", 0) \
+    DECLARE(UInt64, max_per_cpu_untracked_memory, (8 * 1024 * 1024), R"(
+    Upper bound, in bytes, on the untracked memory all threads running on one CPU may hold at once before it is flushed to the memory tracker. While `max_untracked_memory` bounds a single thread, this bounds the per-CPU total, so many threads cannot multiply their per-thread allowance into a large server-wide overcommit. The total untracked memory is therefore bounded by roughly `number_of_cpus * max_per_cpu_untracked_memory`. A value of `0` disables the per-CPU bound (only the per-thread `max_untracked_memory` applies). Linux only.
+    )", 0) \
+    DECLARE(UInt64, per_cpu_untracked_memory_thread_buffer, (32 * 1024), R"(
+    Amount of untracked memory, in bytes, each thread may hold without touching the shared per-CPU budget. It amortizes the cost of the per-CPU bookkeeping for small allocations and is the slack added on top of `max_per_cpu_untracked_memory * number_of_cpus` in the worst case. A value of `0` removes the slack: every allocation updates the shared per-CPU counter (most precise, but more contention). Linux only.
     )", 0) \
     DECLARE(UInt64, min_allocation_size_to_throw_on_memory_limit, 0, R"(
     Minimum size, in bytes, of a generic C++ allocation (the kind made by standard containers, strings, `std::vector` growth, smart pointers, etc.) that is allowed to raise `MEMORY_LIMIT_EXCEEDED` once `max_server_memory_usage` is reached. Smaller generic allocations are still counted against the memory tracker but are allowed to succeed even past the limit, which reduces spurious failures during cleanup and exception-handling paths near OOM.
@@ -641,6 +664,15 @@ namespace
     DECLARE(UInt64, compiled_expression_cache_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE, R"(Sets the cache size (in bytes) for [compiled expressions](../../operations/caches.md).)", 0) \
     \
     DECLARE(UInt64, compiled_expression_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).)", 0) \
+    DECLARE(UInt64, point_in_polygon_cache_size, DEFAULT_POINT_IN_POLYGON_CACHE_MAX_SIZE, R"(
+    Maximum size in bytes of the cache of preprocessed polygons used by the function `pointInPolygon` with a constant polygon argument.
+    Entries above the limit are evicted in least recently used order.
+    Setting it to `0` disables the cache: all cached polygons are evicted, and every subsequent query preprocesses its constant polygon anew.
+    The cache can also be cleared manually, without changing this limit, with the [`SYSTEM DROP POINT IN POLYGON CACHE`](../../sql-reference/statements/system#drop-point-in-polygon-cache) query.
+    :::note
+    This setting can be modified at runtime and will take effect immediately.
+    :::
+    )", 0) \
     DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache policy name.", 0) \
     DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, R"(
     Maximum size of the query condition cache.
@@ -1210,6 +1242,24 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
     )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
+    DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, getDefaultMemoryWorkerRssSpeculativeReserveRatio(), R"(
+    On each `MemoryWorker` tick, reserve an additional
+    `ratio * min(resident - previous_resident, resident - tracked)` on top of
+    the observed RSS, on the assumption that the next tick may grow by the same
+    amount as the last one (`resident - previous_resident` is the RSS growth
+    over the last tick). The growth is capped by `resident - tracked`, the part
+    of RSS not visible to the global memory tracker, because growth that is
+    already tracked is handled by the ordinary hard-limit check. The reservation
+    is applied to the `rss` counter that the global hard-limit check consults
+    via `MemoryTracker::allocImpl`, so when the extrapolated value crosses
+    `max_server_memory_usage`, subsequent allocations throw
+    `MEMORY_LIMIT_EXCEEDED` before the kernel OOM-killer fires. A value of `0`
+    disables speculation (falling back to `rss = resident`); the default `1`
+    reserves one full growth delta of headroom for the next interval. Under
+    sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`) the default is `0`, because the
+    `resident - tracked` gap is dominated by sanitizer shadow / runtime overhead
+    rather than tracker bookkeeping lag.
+    )", 0) \
     DECLARE(Bool, memory_worker_dynamic_hard_limit, true, R"(
     Whether the background memory worker periodically recomputes the server's hard memory limit at runtime as `(resident memory + system available memory) * max_server_memory_usage_to_ram_ratio`, so the server leaves headroom for other processes running on the same host.
 
@@ -1746,7 +1796,7 @@ struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     // settings which can be loaded from the the default profile, see also MAKE_DEPRECATED_BY_SERVER_CONFIG in src/Core/Settings.h
-    std::unordered_set<std::string> settings_from_profile_allowlist = {
+    UnorderedSetWithMemoryTracking<std::string> settings_from_profile_allowlist = {
         "background_pool_size",
         "background_merges_mutations_concurrency_ratio",
         "background_merges_mutations_scheduling_policy",
@@ -1821,6 +1871,16 @@ std::string_view ServerSettings::getDescription(std::string_view name) const
     return impl->getDescription(name);
 }
 
+std::string_view ServerSettings::getTypeName(std::string_view name) const
+{
+    return impl->getTypeName(name);
+}
+
+String ServerSettings::getDefaultValueString(std::string_view name) const
+{
+    return impl->getDefaultValueString(name);
+}
+
 SettingsTierType ServerSettings::getTier(std::string_view name) const
 {
     return impl->getTier(name);
@@ -1848,6 +1908,8 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
             {"min_allocation_size_to_throw_on_memory_limit", {std::to_string(CurrentMemoryTracker::getMinAllocationSizeBytesToThrow()), ChangeableWithoutRestart::Yes}},
+            {"max_per_cpu_untracked_memory", {std::to_string(per_cpu_memory.budgetCapacity()), ChangeableWithoutRestart::Yes}},
+            {"per_cpu_untracked_memory_thread_buffer", {std::to_string(per_cpu_memory.threadBuffer()), ChangeableWithoutRestart::Yes}},
 
             {"max_table_size_to_drop", {std::to_string(context->getMaxTableSizeToDrop()), ChangeableWithoutRestart::Yes}},
             {"max_named_collection_num_to_warn", {std::to_string(context->getMaxNamedCollectionNumToWarn()), ChangeableWithoutRestart::Yes}},
@@ -1895,6 +1957,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"text_index_header_cache_size", {std::to_string(context->getTextIndexHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"text_index_postings_cache_size", {std::to_string(context->getTextIndexPostingsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"query_cache_max_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"point_in_polygon_cache_size", {std::to_string(CurrentMetrics::get(CurrentMetrics::PointInPolygonCacheSizeLimit)), ChangeableWithoutRestart::Yes}},
             {"unique_key_bitmap_cache_size_bytes",
                 {std::to_string(context->getDeleteBitmapCache() ? context->getDeleteBitmapCache()->maxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
 

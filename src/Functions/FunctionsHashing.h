@@ -389,7 +389,7 @@ struct SipHash128ReferenceKeyedImpl
   * Usually there is no reason to use MurmurHash.
   * It is needed for the cases when you already have MurmurHash in some applications and you want to reproduce it
   * in ClickHouse as is. For example, it is needed to reproduce the behaviour
-  * for NGINX a/b testing module: https://nginx.ru/en/docs/http/ngx_http_split_clients_module.html
+  * for NGINX a/b testing module: https://nginx.org/en/docs/http/ngx_http_split_clients_module.html
   */
 struct MurmurHash2Impl32
 {
