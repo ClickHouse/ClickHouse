@@ -4484,6 +4484,24 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             return;
         }
 
+        /// Check if the identifier refers to a parameterized CTE
+        if (auto cte_it = scope.cte_name_to_query_node.find(table_function_name);
+            cte_it != scope.cte_name_to_query_node.end())
+        {
+            /// Temporarily override query parameters with values from table-function invocation.
+            /// This allows {v:String} style parameters inside the CTE to be substituted.
+            auto old_params = scope_context->getQueryParameters();
+            scope_context->setQueryParameters(view_params);
+
+            scope.table_expressions_in_resolve_process.erase(table_function_node.get());
+            auto cte_node_copy = cte_it->second->clone();
+            table_function_node = cte_node_copy;
+
+            /// Restore original query parameters
+            scope_context->setQueryParameters(old_params);
+            return;
+        }
+
         auto hints = TableFunctionFactory::instance().getHints(table_function_name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
