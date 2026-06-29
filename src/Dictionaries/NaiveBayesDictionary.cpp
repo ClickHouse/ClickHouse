@@ -47,97 +47,6 @@ String trim(std::string_view s)
     return String(s.substr(begin, end - begin));
 }
 
-/// The tokenization mode's name, for error and log messages.
-const char * toString(TokenizerMode mode)
-{
-    switch (mode)
-    {
-        case TokenizerMode::Byte: return "byte";
-        case TokenizerMode::CodePoint: return "codepoint";
-        case TokenizerMode::Token: return "token";
-    }
-    UNREACHABLE();
-}
-
-/// Parses the layout's `mode` parameter into the enum used everywhere after; rejects any unknown mode.
-TokenizerMode parseTokenizerMode(const String & mode)
-{
-    if (mode == "byte")
-        return TokenizerMode::Byte;
-    if (mode == "codepoint")
-        return TokenizerMode::CodePoint;
-    if (mode == "token")
-        return TokenizerMode::Token;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: mode must be 'byte', 'codepoint', or 'token', got '{}'", mode);
-}
-
-/// Resolves a layout padding token for the given mode into the bytes used to pad the query input. Raw bytes
-/// cannot pass through the dictionary's XML config, so byte and code-point tokens are given as numbers (decimal
-/// or 0x hex) and resolved here; token mode takes the literal token string. `parameter_name` is the layout
-/// parameter being resolved ("start_token" or "end_token"), used only to make the error messages specific.
-String parsePaddingToken(const String & raw_value, TokenizerMode mode, std::string_view parameter_name)
-{
-    /// Parses a bounded non-negative integer for byte/codepoint modes. from_chars is used (not parse<>) so an
-    /// out-of-range value is rejected rather than silently wrapped onto another valid token.
-    auto parse_number = [&](UInt32 max_value) -> UInt32
-    {
-        const char * begin = raw_value.data();
-        const char * const end = begin + raw_value.size();
-
-        /// Accept a 0x / 0X hex prefix in addition to decimal; strip it before parsing.
-        int base = 10;
-        if (raw_value.size() > 2 && begin[0] == '0' && (begin[1] == 'x' || begin[1] == 'X'))
-        {
-            base = 16;
-            begin += 2;
-        }
-        UInt32 number = 0;
-        const auto [parsed_end, error] = std::from_chars(begin, end, number, base);
-
-        /// One check rejects empty input, non-digits, trailing characters, overflow, and values past the maximum.
-        if (begin == end || error != std::errc{} || parsed_end != end || number > max_value)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "NaiveBayes dictionary: {} for '{}' mode must be an integer between 0 and {} (decimal or 0x hex), got '{}'",
-                parameter_name,
-                toString(mode),
-                max_value,
-                raw_value);
-        return number;
-    };
-
-    /// A byte-mode token is the single resolved byte.
-    if (mode == TokenizerMode::Byte)
-        return String(1, static_cast<char>(parse_number(0xFF)));
-
-    if (mode == TokenizerMode::CodePoint)
-    {
-        const UInt32 code_point = parse_number(0x10FFFF);
-
-        /// Surrogates are not Unicode scalar values and have no UTF-8 encoding.
-        if (code_point >= 0xD800 && code_point <= 0xDFFF)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "NaiveBayes dictionary: {} for 'codepoint' mode must not be a UTF-16 surrogate (0xD800-0xDFFF), got '{}'",
-                parameter_name,
-                raw_value);
-        /// A codepoint-mode token is the code point's UTF-8 bytes, matching how the input is tokenized.
-        char utf8[4];
-        const size_t length = UTF8::convertCodePointToUTF8(static_cast<int>(code_point), utf8, sizeof(utf8));
-        return String(utf8, length);
-    }
-
-    /// token mode: the literal token, which must be a single whitespace-delimited token. An empty value means
-    /// "no padding" and is handled by the caller, so it never reaches here.
-    if (std::ranges::any_of(raw_value, isWhitespaceASCII))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "NaiveBayes dictionary: {} for 'token' mode must not contain whitespace, got '{}'",
-            parameter_name,
-            raw_value);
-    return raw_value;
-}
-
 /// Parses an explicit priors specification of the form "0=0.6,1=0.4" into a map from class to probability.
 MapWithMemoryTracking<UInt32, double> parseExplicitPriors(const String & priors_str)
 {
@@ -550,17 +459,12 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
         if (!config.has(layout_prefix + ".mode"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary layout requires 'mode' parameter (byte/codepoint/token)");
 
-        /// Query-time tokenization scans a window of n units per n-gram (and, when padding is configured, adds
-        /// (n - 1) boundary tokens at each end), so the per-n-gram work grows with n. Real n-gram sizes are tiny,
-        /// so cap n well above any realistic use to keep a misconfigured model from making every query allocate
-        /// enormous buffers or run effectively forever.
-        static constexpr UInt64 max_ngram_size = 1024;
         const UInt64 n_raw = config.getUInt64(layout_prefix + ".n");
-        if (n_raw == 0 || n_raw > max_ngram_size)
+        if (n_raw == 0 || n_raw > MAX_NGRAM_SIZE)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "NaiveBayes dictionary: n-gram size 'n' must be between 1 and {}, got {}",
-                max_ngram_size,
+                MAX_NGRAM_SIZE,
                 n_raw);
         const auto n = static_cast<UInt32>(n_raw);
 
