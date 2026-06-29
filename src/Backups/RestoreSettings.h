@@ -58,17 +58,20 @@ struct RestoreSettings
     /// restore_functions=false. The individual settings can override structure_only.
     bool structure_only = false;
 
-    /// Whether to restore table data. Default true.
-    /// Can be set to true to restore data even when structure_only is set.
+    /// Whether to restore table data. If not set, defaults to !structure_only
+    /// (i.e. true unless structure_only is set). Can be set explicitly to true to restore
+    /// data even when structure_only is set, or to false to skip data even when it is not.
     std::optional<bool> restore_table_data;
 
     /// Whether to restore access entities (users, roles, settings profiles,
-    /// row policies, quotas). Default true.
-    /// Can be set to true to restore access entities even when structure_only is set.
+    /// row policies, quotas). If not set, defaults to !structure_only
+    /// (i.e. true unless structure_only is set). Can be set explicitly to true to restore
+    /// access entities even when structure_only is set, or to false to skip them even when it is not.
     std::optional<bool> restore_access_entities;
 
-    /// Whether to restore user-defined functions. Default true.
-    /// Can be set to true to restore UDFs even when structure_only is set.
+    /// Whether to restore user-defined functions. If not set, defaults to !structure_only
+    /// (i.e. true unless structure_only is set). Can be set explicitly to true to restore
+    /// UDFs even when structure_only is set, or to false to skip them even when it is not.
     std::optional<bool> restore_functions;
 
     /// How RESTORE command should work if a table to restore already exists.
