@@ -1,5 +1,4 @@
 import pytest
-from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.iceberg_utils import get_uuid_str
 
 
