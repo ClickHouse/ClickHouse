@@ -66,17 +66,17 @@ inline size_t decompressedCount(std::span<const uint8_t> in) noexcept
 
 /// Allocating convenience wrappers around compressInto/decompressInto.
 template <typename T>
-inline std::vector<uint8_t> compress(std::span<const T> in, Delta mode)
+inline std::vector<uint8_t> compress(std::span<const T> in, Delta mode) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
-    std::vector<uint8_t> out(maxCompressedBytes<T>(in.size()));
+    std::vector<uint8_t> out(maxCompressedBytes<T>(in.size())); // STYLE_CHECK_ALLOW_STD_CONTAINERS
     out.resize(compressInto<T>(in, mode, out.data()));
     return out;
 }
 
 template <typename T>
-inline std::vector<T> decompress(std::span<const uint8_t> in)
+inline std::vector<T> decompress(std::span<const uint8_t> in) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
-    std::vector<T> out(decompressedCount(in));
+    std::vector<T> out(decompressedCount(in)); // STYLE_CHECK_ALLOW_STD_CONTAINERS
     decompressInto<T>(in, out.data());
     return out;
 }

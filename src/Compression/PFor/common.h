@@ -77,5 +77,5 @@ inline ALWAYS_INLINE uint64_t loadLE(const uint8_t * p, unsigned k) noexcept
     return v;
 }
 
-} // namespace detail
-} // namespace DB::PFor
+}
+}

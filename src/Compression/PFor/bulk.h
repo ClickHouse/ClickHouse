@@ -92,4 +92,4 @@ inline size_t bulkDecode(const uint8_t * in, size_t count, Delta mode, T * out) 
     return static_cast<size_t>(p - in);
 }
 
-} // namespace DB::PFor::detail
+}

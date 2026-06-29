@@ -224,4 +224,4 @@ inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode,
     return static_cast<size_t>(p - in);
 }
 
-} // namespace DB::PFor::detail
+}

@@ -164,6 +164,6 @@ inline ALWAYS_INLINE void unpackVertical32FusedDelta(
     carry = c;
 }
 
-} // namespace DB::PFor::detail
+}
 
 #endif // PFOR_HAS_VERTICAL

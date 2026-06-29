@@ -92,4 +92,4 @@ inline ALWAYS_INLINE void unpackBits(const uint8_t * in, size_t n, unsigned b, T
     }
 }
 
-} // namespace DB::PFor::detail
+}
