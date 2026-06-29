@@ -183,8 +183,14 @@ def _format_block_preview(rel: str, lines_in_block: list[int], context: int = 2)
     return out
 
 
-def _parse_extra_diff_hunks(diff_text: str) -> dict[str, list]:
+def _parse_extra_diff_hunks(diff_text: str) -> tuple[dict[str, list], set[str]]:
     """Parse a unified git diff (extra_sha -> primary_sha) into per-file hunk structures.
+
+    Returns (file_hunks, deleted_files):
+      file_hunks:    {new_path: [hunk, ...]} for files that survived (possibly modified)
+      deleted_files: set of OLD paths for files deleted or renamed away between the two
+                     commits — these must not be remapped to identity; instead skip them
+                     entirely so their obsolete counters do not leak into stable totals.
 
     Each hunk contains:
       old_start, old_count, new_start, new_count
@@ -192,20 +198,34 @@ def _parse_extra_diff_hunks(diff_text: str) -> dict[str, list]:
       context_map: {old_line: new_line} for lines that survived unchanged
     """
     file_hunks: dict[str, list] = {}
-    current_file = None
+    deleted_files: set[str] = set()
+    current_old: str | None = None   # --- a/... path
+    current_file: str | None = None  # +++ b/... path (None = /dev/null)
     current_hunk = None
     old_pos = new_pos = 0
 
-    re_file_hdr = re.compile(r"^\+\+\+ b/(.*)$")
+    re_old_hdr = re.compile(r"^--- (?:a/)?(.*)$")
+    re_new_hdr = re.compile(r"^\+\+\+ (?:b/)?(.*)$")
     re_hunk_hdr = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
     for line in diff_text.splitlines():
-        m = re_file_hdr.match(line)
+        m = re_old_hdr.match(line)
         if m:
-            path = m.group(1)
-            current_file = None if path == "/dev/null" else path
+            p = m.group(1)
+            current_old = None if p == "/dev/null" else p
+            current_hunk = None
+            continue
+
+        m = re_new_hdr.match(line)
+        if m:
+            p = m.group(1)
+            current_file = None if p == "/dev/null" else p
             if current_file:
                 file_hunks.setdefault(current_file, [])
+            elif current_old:
+                # +++ /dev/null means this old path was deleted or renamed away.
+                # Record it so the accumulator can skip it instead of identity-mapping.
+                deleted_files.add(current_old)
             current_hunk = None
             continue
 
@@ -241,7 +261,7 @@ def _parse_extra_diff_hunks(diff_text: str) -> dict[str, list]:
             old_pos += 1
             new_pos += 1
 
-    return file_hunks
+    return file_hunks, deleted_files
 
 
 def _remap_old_to_new(old_line: int, hunks: list) -> int | None:
@@ -343,7 +363,7 @@ if __name__ == "__main__":
                 if _cnt > 0:
                     bc.add(bkey)
 
-    def _accum_with_remap(data: dict, file_hunks: dict,
+    def _accum_with_remap(data: dict, file_hunks: dict, deleted_files: set,
                           lc: set, lt: set, fc: set, ft: set,
                           bc: set, bt: set) -> None:
         """Accumulate with line-number remapping for extra baselines.
@@ -357,8 +377,13 @@ if __name__ == "__main__":
         Functions are identified by mangled name — stable across minor source
         changes — and need no remapping.
         Branch records carry a line number and are remapped the same way as lines.
+        Files in deleted_files were deleted or renamed away before primary; they
+        are skipped entirely rather than identity-mapped, which would leak obsolete
+        counters into stable totals.
         """
         for _rel, _v in data.items():
+            if _rel in deleted_files:
+                continue  # file was deleted/renamed — skip to avoid ghost counters
             hunks = file_hunks.get(_rel, [])
             for _ln, _cnt in _v["lines"].items():
                 if hunks:
@@ -415,6 +440,7 @@ if __name__ == "__main__":
 
         # Compute per-file line-number remapping from extra_sha -> primary_sha.
         file_hunks: dict[str, list] = {}
+        deleted_files: set[str] = set()
         changed_file_count = 0
         if primary_sha and extra_sha and primary_sha != extra_sha:
             try:
@@ -424,7 +450,7 @@ if __name__ == "__main__":
                     capture_output=True, text=True, timeout=120,
                 )
                 if diff_result.returncode == 0 and diff_result.stdout:
-                    file_hunks = _parse_extra_diff_hunks(diff_result.stdout)
+                    file_hunks, deleted_files = _parse_extra_diff_hunks(diff_result.stdout)
                     changed_file_count = len(file_hunks)
             except Exception as _e:
                 print(f"  Warning: git diff failed for {os.path.basename(extra_path)}: {_e}")
@@ -432,18 +458,18 @@ if __name__ == "__main__":
         print(
             f"Parsing extra baseline coverage from {extra_path} "
             f"(sha={extra_sha[:12] if extra_sha else 'unknown'}, "
-            f"{changed_file_count} files remapped) ..."
+            f"{changed_file_count} files remapped, {len(deleted_files)} deleted/renamed skipped) ..."
         )
         _bx = _parse_info(extra_path)
         print(f"  {len(_bx)} files in {os.path.basename(extra_path)}")
 
         # Accumulate into both stable sets immediately, then drop the parsed dict.
         # stable_pr = Union(m1..mN, PR) so every extra feeds both sides identically.
-        _accum_with_remap(_bx, file_hunks,
+        _accum_with_remap(_bx, file_hunks, deleted_files,
                           _stable_base_line_cov, _stable_base_line_tot,
                           _stable_base_fn_cov,   _stable_base_fn_tot,
                           _stable_base_br_cov,   _stable_base_br_tot)
-        _accum_with_remap(_bx, file_hunks,
+        _accum_with_remap(_bx, file_hunks, deleted_files,
                           _stable_pr_line_cov, _stable_pr_line_tot,
                           _stable_pr_fn_cov,   _stable_pr_fn_tot,
                           _stable_pr_br_cov,   _stable_pr_br_tot)
