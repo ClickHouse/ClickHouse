@@ -59,7 +59,7 @@ namespace
 template <typename From, typename To>
 Field convertNumericTypeImpl(const Field & from)
 {
-    To result;
+    To result{};
     if (!accurate::convertNumeric(from.safeGet<From>(), result))
         return {};
     return result;
@@ -347,22 +347,25 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
         }
 
-        if ((which_type.isDate() || which_type.isDateTime()) && src.getType() == Field::Types::UInt64)
+        if (which_type.isDate() && src.getType() == Field::Types::UInt64)
         {
-            /// We don't need any conversion UInt64 is under type of Date and DateTime
+            /// Date is UInt16 under the hood; range-check so out-of-range integers
+            /// don't get silently truncated by the Date serializer downstream.
+            return convertNumericType<UInt16>(src, type);
+        }
+
+        if (which_type.isDateTime() && src.getType() == Field::Types::UInt64)
+        {
+            /// `DateTime` stores `UInt32` under the hood, so `UInt64` is the canonical `Field` type and no conversion is needed.
             return src;
         }
 
-        if ((which_type.isDate() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
+        if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
-            /// We don't need any conversion UInt64 is under type of Date and Time
-            return src;
-        }
-
-        if (which_type.isTime() && src.getType() == Field::Types::Int64)
-        {
-            /// We don't need any conversion Int64 is under type of Date32
-            return src;
+            /// `Time` stores `Int32` under the hood; convert through `Int32` to produce the canonical
+            /// `Int64` `Field` matching what `Time` part loading produces, and to range-check the input
+            /// so out-of-range integers are not silently truncated by the `Time` serializer downstream.
+            return convertNumericType<Int32>(src, type);
         }
 
         if (which_type.isDate32() && src.getType() == Field::Types::Int64)
@@ -393,7 +396,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             }
             else if (scale_from < scale_to)
             {
-                Int64 result;
+                Int64 result = 0;
                 if (common::mulOverflow(value, scale_multiplier_diff.value, result))
                     throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
                         src.getTypeName(), type.getName(), value, scale_multiplier_diff.value);
@@ -422,11 +425,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
         }
 
-        /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
-        /// produce wrong result in some special cases.
+        /// For toDate('xxx') in 1::Int64. Date is UInt16 under the hood;
+        /// range-check so out-of-range integers don't get silently truncated
+        /// by the Date serializer downstream.
         if (which_type.isDate() && src.getType() == Field::Types::Int64)
         {
-            return convertNumericType<UInt64>(src, type);
+            return convertNumericType<UInt16>(src, type);
         }
 
         /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may
@@ -618,15 +622,27 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     src_size);
 
             for (const auto & elem : src_container)
-                if (elem.getType() != Field::Types::Float64)
+            {
+                if (dst_element_size == 8)
+                {
+                    /// Int8 QBit accepts any numeric field; the value is converted to Int8 below.
+                    if (elem.getType() != Field::Types::Int64 && elem.getType() != Field::Types::UInt64
+                        && elem.getType() != Field::Types::Float64)
+                        throw Exception(
+                            ErrorCodes::TYPE_MISMATCH,
+                            "QBit(Int8) can only be constructed from numeric values, got {}",
+                            elem.getTypeName());
+                }
+                else if (elem.getType() != Field::Types::Float64)
                     throw Exception(
                         ErrorCodes::TYPE_MISMATCH,
                         "QBit can only be constructed from BFloat16, Float32 and Float64 values, got {}",
                         elem.getTypeName());
+            }
 
             Tuple res(dst_element_size);
 
-            auto transpose_bits = [&]<typename Word, typename FloatType>()
+            auto transpose_bits = [&]<typename Word, typename ElementType>()
             {
                 /// Prepare output tuple buffers
                 std::vector<std::string> out(dst_element_size, std::string(bytes_per_fixedstring, '\0'));
@@ -640,7 +656,33 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     Word w = 0;
                     if (i < dst_dimension)
                     {
-                        FloatType v = static_cast<const FloatType>(src_container[i].template safeGet<FloatType>());
+                        ElementType v;
+                        if constexpr (std::is_same_v<ElementType, Int8>)
+                        {
+                            /// Truncate (wrap) the numeric field to Int8 so QBit(Int8) construction has a single
+                            /// contract, matching how `toInt8` / `CAST(... AS Int8)` and the VALUES / Array(Int8)
+                            /// conversions handle out-of-range values (e.g. 128 -> -128). Non-finite or absurdly
+                            /// large Float64 values cannot be wrapped (and casting them to a narrow integer is
+                            /// undefined behaviour), so reject them explicitly, as `toInt8` does for inf/nan.
+                            const Field & elem = src_container[i];
+                            if (elem.getType() == Field::Types::Float64)
+                            {
+                                const Float64 f = elem.safeGet<Float64>();
+                                if (!isFinite(f) || f < static_cast<Float64>(std::numeric_limits<Int64>::min())
+                                    || f >= static_cast<Float64>(std::numeric_limits<Int64>::max()))
+                                    throw Exception(
+                                        ErrorCodes::TYPE_MISMATCH,
+                                        "Cannot convert {} to the Int8 element of QBit",
+                                        applyVisitor(FieldVisitorToString(), elem));
+                                v = static_cast<Int8>(static_cast<Int64>(f));
+                            }
+                            else if (elem.getType() == Field::Types::UInt64)
+                                v = static_cast<Int8>(elem.safeGet<UInt64>());
+                            else
+                                v = static_cast<Int8>(elem.safeGet<Int64>());
+                        }
+                        else
+                            v = static_cast<const ElementType>(src_container[i].template safeGet<ElementType>());
                         std::memcpy(&w, &v, sizeof(Word));
                     }
 
@@ -652,7 +694,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     res[i] = Field(std::move(out[i]));
             };
 
-            if (dst_element_size == 16)
+            if (dst_element_size == 8)
+                transpose_bits.template operator()<uint8_t, Int8>();
+            else if (dst_element_size == 16)
                 transpose_bits.template operator()<UInt16, BFloat16>();
             else if (dst_element_size == 32)
                 transpose_bits.template operator()<UInt32, Float32>();
@@ -762,13 +806,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     if (src.getType() == Field::Types::String)
     {
         /// Promote data type to avoid overflows. Note that overflows in the largest data type are still possible.
-        /// But don't promote Float32, since we want to keep the exact same value
+        /// But don't promote narrow floats (Float32, BFloat16): parsing the string into Float64 and narrowing back
+        /// would fail the strict equality check inside `accurate::convertNumeric` for any decimal value that is not
+        /// exactly representable in the narrow type, producing a Null Field and silently zero-matching comparisons
+        /// like `WHERE bf16_col = '49.9'`.
         /// Also don't promote domain types (like bool) because we would otherwise use the serializer of the promoted type (e.g. UInt64 for
         /// bool, which does not allow 'true' and 'false' as input values)
         const IDataType * type_to_parse = &type;
         DataTypePtr holder;
 
-        if (type.canBePromoted() && !which_type.isFloat32() && !type.getCustomSerialization())
+        if (type.canBePromoted() && !which_type.isFloat32() && !which_type.isBFloat16() && !type.getCustomSerialization())
         {
             holder = type.promoteNumericType();
             type_to_parse = holder.get();

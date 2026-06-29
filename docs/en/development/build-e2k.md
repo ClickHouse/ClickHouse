@@ -7,8 +7,6 @@ title: 'Build on Linux for E2K'
 doc_type: 'guide'
 ---
 
-# Build on Linux for E2K
-
 ClickHouse has experimental support for E2K (Elbrus-2000), and can only be compiled in native mode with minimal configuration using e2k custom-built libraries such as boost, jemalloc, libunwind, zstd.
 
 ## Build ClickHouse {#build-clickhouse}

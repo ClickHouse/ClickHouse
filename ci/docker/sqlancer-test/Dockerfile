@@ -15,10 +15,11 @@ RUN apt-get update --yes \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 RUN mkdir /sqlancer && \
-	wget -q -O- https://github.com/sqlancer/sqlancer/archive/main.tar.gz | \
+	wget -q -O- https://github.com/ClickHouse/sqlancer/archive/308cb3b7a803c252412c8955790d57ca64b36128.tar.gz | \
 	tar zx -C /sqlancer && \
+	mv /sqlancer/sqlancer-308cb3b7a803c252412c8955790d57ca64b36128 /sqlancer/sqlancer-main && \
     find /sqlancer -type d -exec chmod 777 {} \; && \
     find /sqlancer -type f -exec chmod 666 {} \; && \
 	cd /sqlancer/sqlancer-main && \
-	mvn --no-transfer-progress package -DskipTests && \
+	mvn --no-transfer-progress package -Dmaven.test.skip=true && \
 	rm -r /root/.m2

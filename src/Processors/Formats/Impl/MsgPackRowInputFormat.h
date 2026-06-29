@@ -60,7 +60,7 @@ private:
     bool null_as_default;
 };
 
-class MsgPackRowInputFormat : public IRowInputFormat
+class MsgPackRowInputFormat final : public IRowInputFormat
 {
 public:
     MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings);
@@ -87,14 +87,14 @@ private:
     const DataTypes data_types;
 };
 
-class MsgPackSchemaReader : public IRowSchemaReader
+class MsgPackSchemaReader final : public IRowSchemaReader
 {
 public:
     MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
 private:
     msgpack::object_handle readObject();
-    DataTypePtr getDataType(const msgpack::object & object);
+    DataTypePtr getDataType(const msgpack::object & object, size_t depth);
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
