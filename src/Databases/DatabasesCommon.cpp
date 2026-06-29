@@ -642,6 +642,7 @@ void DatabaseWithOwnTablesBase::shutdown()
                 /// Scheduling itself failed (e.g. CannotAllocateThreadFaultInjector, pool exhausted).
                 /// Fall back to inline execution so the per-table cleanup still runs for this table
                 /// and the function reaches its tail cleanup (tables.clear(), rethrow first_error).
+                tryLogCurrentException(log, "Failed to schedule prepare-for-shutdown task, running inline");
                 run_task();
             }
         }
@@ -692,6 +693,7 @@ void DatabaseWithOwnTablesBase::shutdown()
             {
                 /// See comment above. Inline fallback so the UUID mapping still gets released
                 /// and the function reaches its tail cleanup.
+                tryLogCurrentException(log, "Failed to schedule shutdown task, running inline");
                 run_task();
             }
         }
