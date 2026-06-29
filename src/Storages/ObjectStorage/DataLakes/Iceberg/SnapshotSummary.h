@@ -24,9 +24,6 @@ struct SnapshotSummaryUpdateAppend
     UInt64 num_partitions = 0;
 };
 
-/// An Iceberg `overwrite` can either rewrite data (engines like Spark: add data files and
-/// remove old ones) or add position-delete files (how ClickHouse expresses row deletes), so
-/// this struct holds both sets of deltas; the irrelevant ones stay zero.
 struct SnapshotSummaryUpdateOverwrite
 {
     UInt64 added_files = 0;
@@ -84,12 +81,12 @@ using SnapshotSummaryUpdate = std::variant<
 
 struct SnapshotSummaryTotals
 {
-    UInt64 records = 0;
-    UInt64 files_size = 0;
-    UInt64 data_files = 0;
-    UInt64 delete_files = 0;
-    UInt64 position_deletes = 0;
-    UInt64 equality_deletes = 0;
+    std::optional<UInt64> records;
+    std::optional<UInt64> files_size;
+    std::optional<UInt64> data_files;
+    std::optional<UInt64> delete_files;
+    std::optional<UInt64> position_deletes;
+    std::optional<UInt64> equality_deletes;
 };
 
 enum class SnapshotSummaryOperation : int8_t
