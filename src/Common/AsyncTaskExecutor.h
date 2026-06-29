@@ -67,7 +67,10 @@ public:
     virtual ~AsyncTaskExecutor() = default;
 
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// EPOLLIN/EPOLLOUT/EPOLLERR come from <sys/epoll.h> on Linux and from the kqueue
+    /// compatibility shim in <Common/Epoll.h> on macOS, so the values match the `Epoll` flags
+    /// on both platforms.
     enum Event
     {
         READ = EPOLLIN,
