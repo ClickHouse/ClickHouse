@@ -612,13 +612,8 @@ struct ToStartOfInterval<IntervalKind::Kind::Microsecond>
             Int64 microseconds_scaled = 0;
             if (common::mulOverflow(microseconds, scale_diff, microseconds_scaled))
                 throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-            if (t >= 0) [[likely]] /// When we divide the `t` value we should round the result
-            {
-                Int64 t_rounded = 0;
-                if (common::addOverflow(t, scale_diff / 2, t_rounded))
-                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-                return t_rounded / microseconds_scaled * microseconds;
-            }
+            if (t >= 0) [[likely]]
+                return t / microseconds_scaled * microseconds;
             else
             {
                 Int64 result = 0;
@@ -668,13 +663,8 @@ struct ToStartOfInterval<IntervalKind::Kind::Millisecond>
             Int64 milliseconds_scaled = 0;
             if (common::mulOverflow(milliseconds, scale_diff, milliseconds_scaled))
                 throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-            if (t >= 0) [[likely]]  /// When we divide the `t` value we should round the result
-            {
-                Int64 t_rounded = 0;
-                if (common::addOverflow(t, scale_diff / 2, t_rounded))
-                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-                return t_rounded / milliseconds_scaled * milliseconds;
-            }
+            if (t >= 0) [[likely]]
+                return t / milliseconds_scaled * milliseconds;
             else
             {
                 Int64 result = 0;
