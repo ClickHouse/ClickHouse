@@ -526,6 +526,13 @@ def main():
         with open(RELEASE_INFO_FILE) as f:
             release_info = json.load(f)
         release_tag = release_info["release_tag"]
+        # is_branch_release: this release is the latest on its branch → publish
+        # the floating minor/major tags. is_latest: its branch is the latest
+        # release branch → additionally publish `latest`. These decide the
+        # floating tags by whether the release is current, so recovery of the
+        # current release re-applies them while recovery of a superseded one
+        # only re-publishes its exact version tag.
+        is_branch_release = release_info["is_branch_release"]
         is_latest = release_info["latest"]
 
         def _make_docker_build(
@@ -559,16 +566,19 @@ def main():
                     label_version = f"{version_string}{version_suffix}"
                     # Always publish the exact version tag.
                     tags = [f"--tag={image}:{version_string}{version_suffix}"]
-                    # Floating tags (minor/major/latest) must move only on a
-                    # normal release. A recovery run (only-repo / only-docker)
-                    # rebuilds an already-released tag that may no longer be the
-                    # current release on its branch, so moving the floating tags
-                    # would point them back to an older image. Skip them.
-                    if not (args.only_repo or args.only_docker):
+                    # Floating minor/major tags must point at the latest release
+                    # on the branch, so move them only when this release is that
+                    # latest one (is_branch_release) — true for a normal release
+                    # and for recovery of the current release, false for recovery
+                    # of a superseded tag (which would otherwise move them back to
+                    # an older image).
+                    if is_branch_release:
                         tags += [
                             f"--tag={image}:{version_minor}{version_suffix}",
                             f"--tag={image}:{version_major}{version_suffix}",
                         ]
+                        # `latest` additionally requires the branch to be the
+                        # latest release branch.
                         if is_latest:
                             tags.append(f"--tag={image}:latest{version_suffix}")
 

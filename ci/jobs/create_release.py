@@ -417,6 +417,10 @@ class ReleaseInfo:
     codename: str
     previous_release_tag: str
     previous_release_sha: str
+    # Whether this release is the latest on its branch (controls the floating
+    # minor/major docker tags). `latest` above is whether the branch is the
+    # latest release branch (additionally controls the `latest` docker tag).
+    is_branch_release: bool = False
     changelog_pr: str = ""
     version_bump_pr: str = ""
     prs_merged: bool = False
@@ -596,6 +600,26 @@ class ReleaseInfo:
         self.release_progress = ReleaseProgress.STARTED
         self.progress_status = ReleaseProgressDescription.OK
         self.latest = latest_release
+        # The release is the latest on its branch unless an existing release tag
+        # on the same branch already has a higher version. This is what decides
+        # the floating minor/major docker tags, independent of recovery mode:
+        # recovering the current release re-applies them, recovering a superseded
+        # one does not.
+        is_branch_release = True
+        branch_tags = Shell.get_output(
+            f"git tag --list 'v{version.major}.{version.minor}.*'"
+        ).split()
+        for tag in branch_tags:
+            if tag.endswith("-new"):
+                continue
+            try:
+                other = _version_from_tag(tag)
+            except Exception:
+                continue
+            if version < other:
+                is_branch_release = False
+                break
+        self.is_branch_release = is_branch_release
         self.release_type = release_type
         return self
 
