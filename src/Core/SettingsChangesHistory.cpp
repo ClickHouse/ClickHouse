@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.7",
         {
+            {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"explain_query_plan_default", "legacy", "pretty", "From 26.7, `EXPLAIN PLAN` defaults to `actions=1, compact=1, pretty=1`. Set this to `legacy` to restore the pre-26.7 output."},
             {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
@@ -48,6 +49,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
             {"min_rows_per_stream_for_gradual_resize", 0, 1000, "New setting enabled by default that starts `GROUP BY` aggregation with a single stream and switches to all `max_threads` streams once cumulative input crosses the threshold, improving performance on small data volumes."},
             {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting (in bytes) that, paired with `min_rows_per_stream_for_gradual_resize`, controls when the `GROUP BY` pre-aggregation switches from one active stream to all streams."},
+            {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
