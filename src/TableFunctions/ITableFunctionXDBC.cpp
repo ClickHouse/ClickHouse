@@ -3,12 +3,12 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/StorageXDBC.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/ITableFunction.h>
@@ -17,10 +17,7 @@
 #include <Common/Exception.h>
 #include <TableFunctions/registerTableFunctions.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
-
-#include "config.h"
 
 
 namespace DB
@@ -48,7 +45,6 @@ namespace
  */
 class ITableFunctionXDBC : public ITableFunction
 {
-private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
     /* A factory method to create bridge helper, that will assist in remote interaction */
@@ -87,7 +83,7 @@ private:
         return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(context, http_timeout_, connection_string_, use_connection_pooling_);
     }
 
-    const char * getStorageTypeName() const override { return "JDBC"; }
+    const char * getStorageEngineName() const override { return "JDBC"; }
 };
 
 class TableFunctionODBC : public ITableFunctionXDBC
@@ -108,7 +104,7 @@ private:
         return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, http_timeout_, connection_string_, use_connection_pooling_);
     }
 
-    const char * getStorageTypeName() const override { return "ODBC"; }
+    const char * getStorageEngineName() const override { return "ODBC"; }
 };
 
 
@@ -125,32 +121,47 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr 
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function '{0}' requires 1, 2 or 3 arguments: {0}(named_collection) or {0}('DSN', table) or {0}('DSN', schema, table)", getName());
 
-    if (args.size() == 1)
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(ast_function->children.at(0)->children, context))
     {
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(ast_function->children.at(0)->children, context))
+        if (Poco::toLower(getName()) == "jdbc")
         {
-            if (getName() == "JDBC")
-            {
-                validateNamedCollection<>(*named_collection, {"datasource"}, {"schema", "table"});
-                connection_string = named_collection->get<String>("datasource");
-                schema_name = named_collection->getOrDefault<String>("schema", "");
-                remote_table_name = named_collection->getOrDefault<String>("table", "");
-            }
-            else
-            {
-                validateNamedCollection<>(*named_collection, {"connection_settings"}, {"external_database", "external_table"});
+            validateNamedCollection<>(*named_collection, {"datasource"}, {"schema", "external_database",
+                                                                          "external_table", "table"});
 
-                connection_string = named_collection->get<String>("connection_settings");
-                schema_name = named_collection->getOrDefault<String>("external_database", "");
-                remote_table_name = named_collection->getOrDefault<String>("external_table", "");
+            connection_string = named_collection->get<String>("datasource");
 
-            }
+            /// These are aliases for better compatibility and similarity between JDBC and ODBC
+            /// Both aliases cannot be specified simultaneously.
+            if (named_collection->has("external_database") && named_collection->has("schema"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Table function '{0}' cannot have `external_database` and `schema` arguments simultaneously", getName());
+            schema_name = named_collection->getAnyOrDefault<String>({"external_database", "schema"}, "");
+
+            if (named_collection->has("external_table") && named_collection->has("table"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Table function '{0}' cannot have `external_table` and `table` arguments simultaneously", getName());
+            remote_table_name = named_collection->getAnyOrDefault<String>({"external_table", "table"}, "");
         }
         else
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Table function '{0}' has 1 argument, it is expected to be named collection", getName());
+            validateNamedCollection<>(*named_collection, {}, {"datasource", "connection_settings",   // Aliases
+                                                              "external_database",
+                                                              "external_table"});
+
+            if (named_collection->has("datasource") == named_collection->has("connection_settings"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Table function '{0}' must have exactly one `datasource` / `connection_settings` argument", getName());
+            connection_string = named_collection->getAny<String>({"datasource", "connection_settings"});
+
+
+            schema_name = named_collection->getOrDefault<String>("external_database", "");
+            remote_table_name = named_collection->getOrDefault<String>("external_table", "");
         }
+    }
+    else if (args.size() == 1)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Table function '{0}' has 1 argument, it is expected to be named collection", getName());
     }
     else
     {
@@ -177,7 +188,7 @@ void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
     {
         helper = createBridgeHelper(
             context,
-            context->getSettingsRef()[Setting::http_receive_timeout].value,
+            Poco::Timespan(context->getSettingsRef()[Setting::http_receive_timeout]),
             connection_string,
             context->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
         helper->startBridgeSync();
@@ -198,10 +209,21 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
     bool use_nulls = context->getSettingsRef()[Setting::external_table_functions_use_nulls];
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls", toString(use_nulls));
 
+    /// `startBridgeIfNot` above has already verified the bridge responds, so this metadata
+    /// request talks to a known-alive local subprocess. Do not retry it: if the bridge (or the
+    /// ODBC/JDBC driver behind it) stops responding mid-request, retrying `http_max_tries` times,
+    /// each blocking for up to `http_receive_timeout`, keeps the query running for minutes during
+    /// query analysis, where it cannot observe cancellation (`KILL QUERY`, `max_execution_time`).
+    /// That is what surfaces as a "possible deadlock" in the stress-test hung check. Make a single
+    /// attempt and let the error propagate instead.
+    ReadSettings read_settings;
+    read_settings.http_settings.max_tries = 1;
+
     Poco::Net::HTTPBasicCredentials credentials{};
     auto buf = BuilderRWBufferFromHTTP(columns_info_uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withSettings(read_settings)
                    .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(
                         context->getSettingsRef(),
                         context->getServerSettings()))
@@ -228,11 +250,11 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionJDBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionJDBC>();
+    factory.registerFunction<TableFunctionJDBC>({});
 }
 
 void registerTableFunctionODBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionODBC>();
+    factory.registerFunction<TableFunctionODBC>({});
 }
 }

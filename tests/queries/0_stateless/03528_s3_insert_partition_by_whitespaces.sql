@@ -4,26 +4,25 @@
 INSERT INTO FUNCTION
    s3(
        s3_conn,
-       filename = currentDatabase() || '/test1.parquet',
+       filename = currentDatabase() || '/{_partition_id}/test.parquet',
        format = Parquet
     )
-    PARTITION BY rand() % 10
+    PARTITION BY 1
 SELECT
     *
 FROM system.numbers
 LIMIT 10;
 
-SELECT * FROM s3(s3_conn, filename = currentDatabase() || '/test1.parquet');
-
+SELECT * FROM s3(s3_conn, filename = currentDatabase() || '/1/test.parquet');
 
 INSERT INTO FUNCTION
    s3(
        s3_conn,
-       filename = currentDatabase() || '/test2.parquet',
+       filename = currentDatabase() || '/{_partition_id}/test.parquet',
        format = Parquet
-    ) PARTITION BY rand() % 10 SELECT
+    ) PARTITION BY 2 SELECT
     *
 FROM system.numbers
 LIMIT 10;
 
-SELECT * FROM s3(s3_conn, filename = currentDatabase() || '/test2.parquet');
+SELECT * FROM s3(s3_conn, filename = currentDatabase() || '/2/test.parquet');

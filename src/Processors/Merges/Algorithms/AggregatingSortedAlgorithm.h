@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Block_fwd.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Common/AlignedBuffer.h>
@@ -20,11 +21,13 @@ class AggregatingSortedAlgorithm final : public IMergingAlgorithmWithDelayedChun
 {
 public:
     AggregatingSortedAlgorithm(
-        const Block & header,
+        SharedHeader header,
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size_rows_,
-        size_t max_block_size_bytes_);
+        size_t max_block_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_,
+        bool allow_tuple_element_aggregation_);
 
     const char * getName() const override { return "AggregatingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -98,6 +101,11 @@ public:
 
         /// Does SimpleAggregateFunction allocates memory in arena?
         bool allocates_memory_in_arena = false;
+
+        /// Record the origin header before tuple flattening.
+        SharedHeader origin_header;
+
+        bool allow_tuple_element_aggregation = false;
     };
 
 private:
@@ -112,6 +120,7 @@ private:
         AggregatingMergedData(
             UInt64 max_block_size_rows_,
             UInt64 max_block_size_bytes_,
+            std::optional<size_t> max_dynamic_subcolumns_,
             ColumnsDefinition & def_);
 
         void initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs) override;

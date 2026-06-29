@@ -387,6 +387,30 @@ Poco::Timespan WebSocketImpl::getReceiveTimeout()
 }
 
 
+void WebSocketImpl::setSendThrottler(const Poco::Net::ThrottlerPtr& throttler)
+{
+	_pStreamSocketImpl->setSendThrottler(throttler);
+}
+
+
+Poco::Net::ThrottlerPtr WebSocketImpl::getSendThrottler() const
+{
+	return _pStreamSocketImpl->getSendThrottler();
+}
+
+
+void WebSocketImpl::setReceiveThrottler(const Poco::Net::ThrottlerPtr& throttler)
+{
+	_pStreamSocketImpl->setReceiveThrottler(throttler);
+}
+
+
+Poco::Net::ThrottlerPtr WebSocketImpl::getReceiveThrottler() const
+{
+	return _pStreamSocketImpl->getReceiveThrottler();
+}
+
+
 int WebSocketImpl::available()
 {
 	int n = static_cast<int>(_buffer.size()) - _bufferOffset;

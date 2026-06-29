@@ -77,7 +77,7 @@ explain syntax select left_table.id,val_left, val_middle, val_right from left_ta
 explain syntax select left_table.id,val_left, val_middle, val_right from left_table
                                                                              inner join middle_table on left_table.id = middle_table.id
                                                                              inner join right_table on middle_table.id = right_table.id
-               ORDER BY left_table.id, val_left, val_middle, val_right SETTINGS enable_analyzer=0;
+               ORDER BY left_table.id, val_left, val_middle, val_right SETTINGS enable_analyzer=0, enable_optimize_predicate_expression=1; -- CI may inject False; old analyzer's PredicateExpressionsOptimizer not run → subquery wrapper for MergeTree middle_table not created
 
 -- extra: same with subquery
 select left_table.id,val_left, val_middle, val_right from left_table

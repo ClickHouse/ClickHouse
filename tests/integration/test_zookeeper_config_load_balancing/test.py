@@ -129,6 +129,31 @@ def test_hostname_levenshtein_distance(started_cluster):
         change_balancing("hostname_levenshtein_distance", "random", reload=False)
 
 
+# NOTE: there is no test_hostname_longest_common_prefix here. The instances are
+# named nod1/nod2/nod3 and the ZooKeeper hosts zoo1/zoo2/zoo3, so the longest
+# common prefix is 0 for every (node, zoo) pair (they differ at the first
+# character). All ZooKeeper nodes would tie at priority 0 and the choice would
+# fall through to the per-host random field, making the mapping non-deterministic.
+# Prefix ordering is covered deterministically by the unit tests in
+# gtest_get_priority_for_load_balancing and by test_distributed_load_balancing.
+# The suffix variant below is fine: nodN and zooN share the trailing digit, which
+# gives each node a unique nearest ZooKeeper node.
+def test_hostname_longest_common_suffix(started_cluster):
+    try:
+        change_balancing("random", "hostname_longest_common_suffix")
+        for node, regexp in ((node1, zk1_re), (node2, zk2_re), (node3, zk3_re)):
+            connections = (
+                node.exec_in_container(ss_established, privileged=True, user="root")
+                .strip()
+                .split("\n")
+            )
+            logging.debug("Established connections for 2181:\n%s", connections)
+            assert len(connections) == 1
+            assert regexp.search(connections[0])
+    finally:
+        change_balancing("hostname_longest_common_suffix", "random", reload=False)
+
+
 def test_round_robin(started_cluster):
     pm = PartitionManager()
     try:
@@ -139,11 +164,13 @@ def test_round_robin(started_cluster):
             )
             new_idx = (idx + 1) % 3
 
-            pm._add_rule(
+            pm.add_rule(
                 {
+                    "instance": node,
                     "source": node.ip_address,
                     "destination": cluster.get_instance_ip("zoo" + str(idx + 1)),
                     "action": "REJECT --reject-with tcp-reset",
+                    "protocol": "tcp",
                 }
             )
 
@@ -162,11 +189,13 @@ def test_az(started_cluster):
     pm = PartitionManager()
     try:
         # make sure it disconnects from the optimal node
-        pm._add_rule(
+        pm.add_rule(
             {
+                "instance": node4,
                 "source": node4.ip_address,
                 "destination": cluster.get_instance_ip("zoo2"),
                 "action": "REJECT --reject-with tcp-reset",
+                "protocol": "tcp",
             }
         )
 

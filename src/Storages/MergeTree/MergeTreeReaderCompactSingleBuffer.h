@@ -25,6 +25,7 @@ public:
                     size_t rows_offset, Columns & res_columns) override;
 
 private:
+    MergeTreeReaderStream & getStream(const NameAndTypePair &) override { return *stream; }
     void init();
 
     bool initialized = false;

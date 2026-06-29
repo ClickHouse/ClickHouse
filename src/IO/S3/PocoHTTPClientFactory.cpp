@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include <Poco/String.h>
+
 #if USE_AWS_S3
 
 #include <IO/S3/PocoHTTPClientFactory.h>
@@ -16,7 +18,14 @@ std::shared_ptr<Aws::Http::HttpClient>
 PocoHTTPClientFactory::CreateHttpClient(const Aws::Client::ClientConfiguration & client_configuration) const
 {
     if (client_configuration.userAgent.starts_with("ClickHouse"))
-        return std::make_shared<PocoHTTPClient>(static_cast<const PocoHTTPClientConfiguration &>(client_configuration));
+    {
+        const auto & poco_client_configuration = static_cast<const PocoHTTPClientConfiguration &>(client_configuration);
+        if (Poco::toLower(poco_client_configuration.http_client) == "gcp_oauth")
+            return std::make_shared<PocoHTTPClientGCPOAuth>(poco_client_configuration);
+
+        return std::make_shared<PocoHTTPClient>(poco_client_configuration);
+    }
+
     /// This client is created inside the AWS SDK with default settings to obtain ECS credentials from localhost.
     return std::make_shared<PocoHTTPClient>(client_configuration);
 }

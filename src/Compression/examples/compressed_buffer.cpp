@@ -8,9 +8,10 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Examples/clickhouse_examples.h>
 
 
-int main(int, char **)
+int mainEntryExampleCompressedBuffer(int, char **)
 {
     try
     {
@@ -31,7 +32,7 @@ int main(int, char **)
             }
             stopwatch.stop();
             std::cout << "Writing done (1). Elapsed: " << stopwatch.elapsedSeconds()
-                << ", " << (compressed_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
+                << ", " << (static_cast<double>(compressed_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
                 << std::endl;
         }
 
@@ -42,7 +43,7 @@ int main(int, char **)
             stopwatch.restart();
             for (size_t i = 0; i < n; ++i)
             {
-                size_t x;
+                size_t x = {};
                 DB::readIntText(x, compressed_buf);
                 compressed_buf.ignore();
 
@@ -53,7 +54,7 @@ int main(int, char **)
             }
             stopwatch.stop();
             std::cout << "Reading done (1). Elapsed: " << stopwatch.elapsedSeconds()
-                << ", " << (compressed_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
+                << ", " << (static_cast<double>(compressed_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
                 << std::endl;
         }
     }

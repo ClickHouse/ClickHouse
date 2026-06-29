@@ -1,1 +1,1 @@
-CREATE VIEW default.test_table_comment AS (SELECT toString({date_from:String})) COMMENT \'test comment\'
+CREATE VIEW default.test_table_comment COMMENT \'test comment\' AS SELECT toString({date_from:String})

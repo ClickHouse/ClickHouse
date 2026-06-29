@@ -228,15 +228,26 @@ TEST(SLRUCache, MaxCount)
                                    /*max_size_in_bytes=*/1'000'000'000,
                                    /*max_count=*/max_count,
                                    /*size_ratio*/0.5);
-        for (size_t i = 0; i < 10; ++i)
+        for (int i = 0; i < 10; ++i)
         {
             auto [value, loaded] = slru_cache.getOrSet(i, load_func);
             ASSERT_NE(value, nullptr)
                 << "max_count = " << max_count << ", i = " << i;
             ASSERT_EQ(*value, 5)
                 << "max_count = " << max_count << ", i = " << i;
-            ASSERT_EQ(slru_cache.count(), std::min(i + 1, max_count))
+            ASSERT_EQ(slru_cache.count(), std::min(static_cast<size_t>(i + 1), max_count))
                 << "max_count = " << max_count << ", i = " << i;
         }
     }
+}
+
+TEST(SLRUCache, noOnRemoveEntryCallback)
+{
+    DB::SLRUCachePolicy<std::string, size_t> slru_cache = {CurrentMetrics::end(), CurrentMetrics::end(), 20, 1, 0.5, {}};
+    slru_cache.set("key1", std::make_shared<size_t>(10));
+    slru_cache.set("key2", std::make_shared<size_t>(20));
+    auto value = slru_cache.get("key2");
+    ASSERT_TRUE(value != nullptr);
+    value = slru_cache.get("key1");
+    ASSERT_TRUE(value == nullptr);
 }

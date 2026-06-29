@@ -4,17 +4,22 @@
 
 #if USE_AVRO
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
-#include <Storages/KeyDescription.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Core/Field.h>
+#include <Core/Range.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 #include <cstdint>
-#include <variant>
+#include <memory>
+#include <optional>
+#include <unordered_map>
+#include <vector>
 
-namespace Iceberg
+#include <boost/noncopyable.hpp>
+
+namespace DB::Iceberg
 {
+
+class AvroForIcebergDeserializer;
 
 enum class ManifestEntryStatus : uint8_t
 {
@@ -26,106 +31,125 @@ enum class ManifestEntryStatus : uint8_t
 enum class FileContentType : uint8_t
 {
     DATA = 0,
-    POSITION_DELETES = 1,
-    EQUALITY_DELETES = 2,
+    POSITION_DELETE = 1,
+    EQUALITY_DELETE = 2
 };
 
-struct DataFileEntry
+
+enum class ManifestFileContentType
 {
-    String file_name;
+    DATA = 0,
+    DELETE = 1
 };
+
+String FileContentTypeToString(FileContentType type);
 
 struct ColumnInfo
 {
     std::optional<Int64> rows_count;
     std::optional<Int64> bytes_size;
     std::optional<Int64> nulls_count;
-    std::optional<DB::Range> hyperrectangle;
 };
 
-using FileEntry = std::variant<DataFileEntry>; // In the future we will add PositionalDeleteFileEntry and EqualityDeleteFileEntry here
+struct PartitionSpecsEntry
+{
+    Int32 source_id;
+    String transform_name;
+    String partition_name;
+};
+using PartitionSpecification = std::vector<PartitionSpecsEntry>;
+
+struct ManifestFileCacheableInfo
+{
+    std::shared_ptr<AvroForIcebergDeserializer> deserializer;
+    size_t file_bytes_size;
+};
 
 /// Description of Data file in manifest file
-struct ManifestFileEntry
+struct ParsedManifestFileEntry : boost::noncopyable
 {
-    ManifestEntryStatus status;
-    Int64 added_sequence_number;
+    FileContentType content_type;
+    /// The original path as stored in the Iceberg metadata.
+    /// Must be resolved through IcebergPathResolver before use in storage operations.
+    IcebergPathFromMetadata file_path_key;
+    Int64 row_number;
 
-    FileEntry file;
+    ManifestEntryStatus status;
+    std::optional<Int64> parsed_sequence_number;
+    std::optional<Int64> parsed_snapshot_id;
+
     DB::Row partition_key_value;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
+    std::unordered_map<Int32, std::pair<Field, Field>> value_bounds;
+
+    String file_format;
+    std::optional<IcebergPathFromMetadata> lower_reference_data_file_path; // For position delete files only.
+    std::optional<IcebergPathFromMetadata> upper_reference_data_file_path; // For position delete files only.
+    std::optional<std::vector<Int32>> equality_ids;
+
+    /// Data file is sorted with this sort_order_id (can be read from metadata.json)
+    std::optional<Int32> sort_order_id;
+
+    /// File-level statistics from Iceberg manifest (required fields per spec)
+    Int64 record_count;
+    Int64 file_size_in_bytes;
+
+    ParsedManifestFileEntry(
+        FileContentType content_type_,
+        IcebergPathFromMetadata file_path_key_,
+        Int64 row_number_,
+        ManifestEntryStatus status_,
+        std::optional<Int64> written_sequence_number_,
+        std::optional<Int64> written_snapshot_id_,
+        DB::Row partition_key_value_,
+        std::unordered_map<Int32, ColumnInfo> columns_infos_,
+        std::unordered_map<Int32, std::pair<Field, Field>> value_bounds_,
+        String file_format_,
+        std::optional<IcebergPathFromMetadata> lower_reference_data_file_path_,
+        std::optional<IcebergPathFromMetadata> upper_reference_data_file_path_,
+        std::optional<std::vector<Int32>> equality_ids_,
+        std::optional<Int32> sort_order_id_,
+        Int64 record_count_,
+        Int64 file_size_in_bytes_)
+        : content_type(content_type_)
+        , file_path_key(std::move(file_path_key_))
+        , row_number(row_number_)
+        , status(status_)
+        , parsed_sequence_number(written_sequence_number_)
+        , parsed_snapshot_id(written_snapshot_id_)
+        , partition_key_value(std::move(partition_key_value_))
+        , columns_infos(std::move(columns_infos_))
+        , value_bounds(std::move(value_bounds_))
+        , file_format(std::move(file_format_))
+        , lower_reference_data_file_path(std::move(lower_reference_data_file_path_))
+        , upper_reference_data_file_path(std::move(upper_reference_data_file_path_))
+        , equality_ids(std::move(equality_ids_))
+        , sort_order_id(sort_order_id_)
+        , record_count(record_count_)
+        , file_size_in_bytes(file_size_in_bytes_)
+    {
+    }
 };
 
-/**
- * Manifest file has the following format: '/iceberg_data/db/table_name/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro'
- *
- * `manifest file` is different in format version V1 and V2 and has the following contents:
- *                        v1     v2
- * status                 req    req
- * snapshot_id            req    opt
- * sequence_number               opt
- * file_sequence_number          opt
- * data_file              req    req
- * Example format version V1:
- * ┌─status─┬─────────snapshot_id─┬─data_file───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
- * │      1 │ 2819310504515118887 │ ('/iceberg_data/db/table_name/data/00000-1-3edca534-15a0-4f74-8a28-4733e0bf1270-00001.parquet','PARQUET',(),100,1070,67108864,[(1,233),(2,210)],[(1,100),(2,100)],[(1,0),(2,0)],[],[(1,'\0'),(2,'0')],[(1,'c'),(2,'99')],NULL,[4],0) │
- * └────────┴─────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
- * Example format version V2:
- * ┌─status─┬─────────snapshot_id─┬─sequence_number─┬─file_sequence_number─┬─data_file───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
- * │      1 │ 5887006101709926452 │            ᴺᵁᴸᴸ │                 ᴺᵁᴸᴸ │ (0,'/iceberg_data/db/table_name/data/00000-1-c8045c90-8799-4eac-b957-79a0484e223c-00001.parquet','PARQUET',(),100,1070,[(1,233),(2,210)],[(1,100),(2,100)],[(1,0),(2,0)],[],[(1,'\0'),(2,'0')],[(1,'c'),(2,'99')],NULL,[4],[],0) │
- * └────────┴─────────────────────┴─────────────────┴──────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
- * In case of partitioned data we'll have extra directory partition=value:
- * ─status─┬─────────snapshot_id─┬─data_file──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
- * │      1 │ 2252246380142525104 │ ('/iceberg_data/db/table_name/data/a=0/00000-1-c9535a00-2f4f-405c-bcfa-6d4f9f477235-00001.parquet','PARQUET',(0),1,631,67108864,[(1,46),(2,48)],[(1,1),(2,1)],[(1,0),(2,0)],[],[(1,'\0\0\0\0\0\0\0\0'),(2,'1')],[(1,'\0\0\0\0\0\0\0\0'),(2,'1')],NULL,[4],0) │
- * │      1 │ 2252246380142525104 │ ('/iceberg_data/db/table_name/data/a=1/00000-1-c9535a00-2f4f-405c-bcfa-6d4f9f477235-00002.parquet','PARQUET',(1),1,631,67108864,[(1,46),(2,48)],[(1,1),(2,1)],[(1,0),(2,0)],[],[(1,'\0\0\0\0\0\0\0'),(2,'2')],[(1,'\0\0\0\0\0\0\0'),(2,'2')],NULL,[4],0) │
- * │      1 │ 2252246380142525104 │ ('/iceberg_data/db/table_name/data/a=2/00000-1-c9535a00-2f4f-405c-bcfa-6d4f9f477235-00003.parquet','PARQUET',(2),1,631,67108864,[(1,46),(2,48)],[(1,1),(2,1)],[(1,0),(2,0)],[],[(1,'\0\0\0\0\0\0\0'),(2,'3')],[(1,'\0\0\0\0\0\0\0'),(2,'3')],NULL,[4],0) │
- * └────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
- */
-
-class ManifestFileContent
+struct ProcessedManifestFileEntry
 {
-public:
-    explicit ManifestFileContent(
-        const AvroForIcebergDeserializer & manifest_file_deserializer,
-        Int32 format_version_,
-        const String & common_path,
-        Int32 schema_id_,
-        Poco::JSON::Object::Ptr schema_object_,
-        const DB::IcebergSchemaProcessor & schema_processor,
-        Int64 inherited_sequence_number,
-        const std::string & table_location,
-        DB::ContextPtr context);
+    std::shared_ptr<const ParsedManifestFileEntry> parsed_entry;
+    std::shared_ptr<const PartitionSpecification> common_partition_specification;
 
-    const std::vector<ManifestFileEntry> & getFiles() const;
-    Int32 getSchemaId() const;
+    // Always zero in case of format version 1
+    Int64 sequence_number;
+    Int32 resolved_schema_id;
+    String manifest_file_path;
 
-    bool hasPartitionKey() const;
-    const DB::KeyDescription & getPartitionKeyDescription() const;
-    Poco::JSON::Object::Ptr getSchemaObject() const { return schema_object; }
-    /// Get size in bytes of how much memory one instance of this ManifestFileContent class takes.
-    /// Used for in-memory caches size accounting.
-    size_t getSizeInMemory() const;
-
-    /// Fields with rows count in manifest files are optional
-    /// they can be absent.
-    std::optional<Int64> getRowsCountInAllDataFilesExcludingDeleted() const;
-    std::optional<Int64> getBytesCountInAllDataFiles() const;
-
-    bool hasBoundsInfoInManifests() const;
-    const std::set<Int32> & getColumnsIDsWithBounds() const;
-private:
-
-    Int32 schema_id;
-    Poco::JSON::Object::Ptr schema_object;
-    std::optional<DB::KeyDescription> partition_key_description;
-    // Size - number of files
-    std::vector<ManifestFileEntry> files;
-
-    std::set<Int32> column_ids_which_have_bounds;
-
+    String dumpDeletesMatchingInfo() const;
 };
 
-using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
+using ProcessedManifestFileEntryPtr = std::shared_ptr<const ProcessedManifestFileEntry>;
+
+bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
+bool operator<(const DB::Row & lhs, const DB::Row & rhs);
+
+std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs);
 
 }
 

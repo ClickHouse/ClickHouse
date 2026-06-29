@@ -6,6 +6,7 @@ keywords: ['JSONCompact']
 output_format: true
 slug: /interfaces/formats/JSONCompact
 title: 'JSONCompact'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -16,9 +17,9 @@ title: 'JSONCompact'
 
 Differs from [JSON](./JSON.md) only in that data rows are output as arrays, not as objects.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Inserting Data {#inserting-data}
+### Inserting data {#inserting-data}
 
 Using a JSON file with the following data, named as `football.json`:
 
@@ -80,7 +81,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.json' FORMAT JSONCompact;
 ```
 
-### Reading Data {#reading-data}
+### Reading data {#reading-data}
 
 Read data using the `JSONCompact` format:
 
@@ -154,5 +155,4 @@ The output will be in JSON format:
 }
 ```
 
-## Format Settings {#format-settings}
-
+## Format settings {#format-settings}

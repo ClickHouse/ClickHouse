@@ -1,5 +1,7 @@
     ReadFromEmbeddedRocksDB
     ReadType: FullScan
+ReadFromEmbeddedRocksDB
+ReadType:FullScan
 1
 "rows_read":1,
     ReadFromEmbeddedRocksDB

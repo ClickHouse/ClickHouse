@@ -1,14 +1,24 @@
 #include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
 
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/ConstantValue.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 
+#include <Columns/ColumnConst.h>
+#include <Columns/IColumn.h>
+#include <Columns/validateColumnType.h>
+
+#include <Common/typeid_cast.h>
+
+#include <base/unit.h>
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 
@@ -46,6 +56,63 @@ DataTypePtr getEnumType(const std::set<std::string> & string_values)
     return getDataEnumType<DataTypeEnum8>(string_values);
 }
 
+/// `createCastFunction` builds a resolved `_CAST(<string literal>, Enum...)` function node but, unlike
+/// normal function resolution, does not constant-fold it. When the rewritten query is shipped to a
+/// remote shard / parallel replica, that shard re-analyzes the AST and folds `_CAST('a', 'Enum8...')`
+/// into a `ConstantNode` holding the Enum value. The action-node naming on the initiator and the shard
+/// then diverges (`_CAST('a'_String, ...)` vs `_CAST(1_Enum8(...), ...)`), so the converting actions on
+/// the initiator cannot find the column the shard produced -> THERE_IS_NO_COLUMN (issue #74716). Fold the
+/// cast here, exactly as `resolveFunction` does, so both sides name the constant identically. The original
+/// `_CAST` is kept as the constant's source expression, matching a shard-folded constant.
+QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node)
+{
+    const auto * cast_function = cast_node->as<FunctionNode>();
+    if (!cast_function || !cast_function->isResolved())
+        return cast_node;
+
+    auto function_base = cast_function->getFunction();
+    if (!function_base || !function_base->isSuitableForConstantFolding())
+        return cast_node;
+
+    auto argument_columns = cast_function->getArgumentColumns();
+    if (!std::all_of(argument_columns.begin(), argument_columns.end(), [](const auto & arg) { return arg.column && isColumnConst(*arg.column); }))
+        return cast_node;
+
+    auto result_type = function_base->getResultType();
+    auto executable_function = function_base->prepare(argument_columns);
+    auto column = executable_function->execute(argument_columns, result_type, 1, /* dry_run = */ true);
+    if (column && column->empty() && isColumnConst(*column))
+        column = column->cloneResized(1);
+
+    const auto * column_const = column ? typeid_cast<const ColumnConst *>(column.get()) : nullptr;
+    if (!column_const || column_const->getDataColumn().isDummy())
+        return cast_node;
+
+    /// Sanity check mirrored from resolveFunction.
+    if (!columnMatchesType(*column, *result_type))
+        return cast_node;
+
+    /// Match resolveFunction's `byteSize() < 1_MiB` guard. A large folded value (e.g. a `transform`
+    /// Enum-array map >= 1 MiB) is left as a `_CAST` function by the shard, so the initiator must not
+    /// fold it either, otherwise the action-node names diverge again and #74716 reappears.
+    if (column->byteSize() >= 1_MiB)
+        return cast_node;
+
+    /// Mirror resolveFunction's determinism propagation: a value folded from a non-deterministic
+    /// source (e.g. an `if` branch that is `currentUser()`) must stay non-deterministic, otherwise
+    /// downstream hasNonDeterministic()/assertDeterministic() see a different contract than normal folding.
+    bool all_arguments_are_deterministic = true;
+    for (const auto & argument : cast_function->getArguments().getNodes())
+    {
+        if (const auto * argument_constant = argument->as<ConstantNode>())
+            all_arguments_are_deterministic &= argument_constant->isDeterministic();
+    }
+    const bool is_deterministic = all_arguments_are_deterministic && function_base->isDeterministic();
+
+    return std::make_shared<ConstantNode>(
+        ConstantValue{column_const->getPtr(), std::move(result_type)}, cast_node, is_deterministic);
+}
+
 /// if(arg1, arg2, arg3) will be transformed to if(arg1, _CAST(arg2, Enum...), _CAST(arg3, Enum...))
 /// where Enum is generated based on the possible values stored in string_values
 void changeIfArguments(
@@ -55,8 +122,8 @@ void changeIfArguments(
 
     auto & argument_nodes = if_node.getArguments().getNodes();
 
-    argument_nodes[1] = createCastFunction(argument_nodes[1], result_type, context);
-    argument_nodes[2] = createCastFunction(argument_nodes[2], result_type, context);
+    argument_nodes[1] = foldConstantCast(createCastFunction(argument_nodes[1], result_type, context));
+    argument_nodes[2] = foldConstantCast(createCastFunction(argument_nodes[2], result_type, context));
 
     auto if_resolver = FunctionFactory::instance().get("if", context);
 
@@ -77,8 +144,8 @@ void changeTransformArguments(
     auto & array_to = arguments[2];
     auto & default_value = arguments[3];
 
-    array_to = createCastFunction(array_to, std::make_shared<DataTypeArray>(result_type), context);
-    default_value = createCastFunction(default_value, std::move(result_type), context);
+    array_to = foldConstantCast(createCastFunction(array_to, std::make_shared<DataTypeArray>(result_type), context));
+    default_value = foldConstantCast(createCastFunction(default_value, std::move(result_type), context));
 
     auto transform_resolver = FunctionFactory::instance().get("transform", context);
 
@@ -93,7 +160,7 @@ void wrapIntoToString(FunctionNode & function_node, QueryTreeNodePtr arg, Contex
 
     function_node.resolveAsFunction(to_string_function->build(function_node.getArgumentColumns()));
 
-    assert(isString(function_node.getResultType()));
+    chassert(isString(removeNullable(function_node.getResultType())));
 }
 
 class ConvertStringsToEnumVisitor : public InDepthQueryTreeVisitorWithContext<ConvertStringsToEnumVisitor>
@@ -154,7 +221,7 @@ public:
             auto * function_modified_transform_node = modified_transform_node->as<FunctionNode>();
             auto & argument_nodes = function_modified_transform_node->getArguments().getNodes();
 
-            if (!isString(function_node->getResultType()))
+            if (!isString(removeNullable(function_node->getResultType())))
                 return;
 
             const auto * literal_to = argument_nodes[2]->as<ConstantNode>();

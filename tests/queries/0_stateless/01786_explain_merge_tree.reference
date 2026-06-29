@@ -1,6 +1,6 @@
     ReadFromMergeTree (default.test_index)
     Indexes:
-      MinMax
+      Min-Max
         Keys:
           y
         Parts: 4/5
@@ -28,13 +28,14 @@
         Description: set GRANULARITY 2
         Parts: 1/1
         Granules: 2/3
+      Ranges: 1
 -----------------
               "Node Type": "ReadFromMergeTree",
               "Node Id": "ReadFromMergeTree_0",
               "Description": "default.test_index",
               "Indexes": [
                 {
-                  "Type": "MinMax",
+                  "Type": "Min-Max",
                   "Keys": ["y"],
                   "Initial Parts": 5,
                   "Selected Parts": 4,
@@ -110,9 +111,10 @@
         Parts: 1/1
         Granules: 1/1
         Search Algorithm: generic exclusion search
+      Ranges: 1
     ReadFromMergeTree (default.test_index)
     Indexes:
-      MinMax
+      Min-Max
         Keys:
           y
         Parts: 4/5
@@ -140,13 +142,14 @@
         Description: set GRANULARITY 2
         Parts: 1/1
         Granules: 2/3
+      Ranges: 1
 -----------------
               "Node Type": "ReadFromMergeTree",
               "Node Id": "ReadFromMergeTree_0",
               "Description": "default.test_index",
               "Indexes": [
                 {
-                  "Type": "MinMax",
+                  "Type": "Min-Max",
                   "Keys": ["y"],
                   "Initial Parts": 5,
                   "Selected Parts": 4,
@@ -224,3 +227,4 @@
         Parts: 1/1
         Granules: 1/1
         Search Algorithm: generic exclusion search
+      Ranges: 1

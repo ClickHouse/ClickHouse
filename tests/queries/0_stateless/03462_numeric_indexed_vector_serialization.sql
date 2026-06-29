@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS uin_value_details_int32_float64;
 CREATE TABLE uin_value_details_int32_float64
 (

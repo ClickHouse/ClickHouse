@@ -26,7 +26,7 @@ class ProtobufListOutputFormat final : public IRowOutputFormat
 public:
     ProtobufListOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const ProtobufSchemaInfo & schema_info_,
         bool defaults_for_nullable_google_wrappers_,
         const String & google_protos_path);

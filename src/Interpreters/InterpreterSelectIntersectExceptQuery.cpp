@@ -1,6 +1,7 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
@@ -28,6 +29,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_distinct_in_order;
 }
 
@@ -37,25 +39,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static Block getCommonHeader(const Blocks & headers)
+static Block getCommonHeader(const SharedHeaders & headers)
 {
     size_t num_selects = headers.size();
-    Block common_header = headers.front();
+    Block common_header = *headers.front();
     size_t num_columns = common_header.columns();
 
     for (size_t query_num = 1; query_num < num_selects; ++query_num)
     {
-        if (headers[query_num].columns() != num_columns)
+        if (headers[query_num]->columns() != num_columns)
             throw Exception(ErrorCodes::INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH,
                             "Different number of columns in IntersectExceptQuery elements:\n {} \nand\n {}",
-                            common_header.dumpNames(), headers[query_num].dumpNames());
+                            common_header.dumpNames(), headers[query_num]->dumpNames());
     }
 
-    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
+    VectorWithMemoryTracking<const ColumnWithTypeAndName *> columns(num_selects);
     for (size_t column_num = 0; column_num < num_columns; ++column_num)
     {
         for (size_t i = 0; i < num_selects; ++i)
-            columns[i] = &headers[i].getByPosition(column_num);
+            columns[i] = &headers[i]->getByPosition(column_num);
 
         ColumnWithTypeAndName & result_elem = common_header.getByPosition(column_num);
         result_elem = getLeastSuperColumn(columns);
@@ -97,11 +99,11 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
         uses_view_source |= nested_interpreters[i]->usesViewSource();
     }
 
-    Blocks headers(num_children);
+    SharedHeaders headers(num_children);
     for (size_t query_num = 0; query_num < num_children; ++query_num)
         headers[query_num] = nested_interpreters[query_num]->getSampleBlock();
 
-    result_header = getCommonHeader(headers);
+    result_header = std::make_shared<const Block>(getCommonHeader(headers));
 }
 
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
@@ -128,19 +130,20 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
 
     size_t num_plans = nested_interpreters.size();
     std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
-    Headers headers(num_plans);
+    SharedHeaders headers(num_plans);
 
     for (size_t i = 0; i < num_plans; ++i)
     {
         plans[i] = std::make_unique<QueryPlan>();
         nested_interpreters[i]->buildQueryPlan(*plans[i]);
 
-        if (!blocksHaveEqualStructure(plans[i]->getCurrentHeader(), result_header))
+        if (!blocksHaveEqualStructure(*plans[i]->getCurrentHeader(), *result_header))
         {
             auto actions_dag = ActionsDAG::makeConvertingActions(
-                    plans[i]->getCurrentHeader().getColumnsWithTypeAndName(),
-                    result_header.getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Position);
+                    plans[i]->getCurrentHeader()->getColumnsWithTypeAndName(),
+                    result_header->getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Position,
+                    context);
             auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentHeader(), std::move(actions_dag));
             converting_step->setStepDescription("Conversion before UNION");
             plans[i]->addStep(std::move(converting_step));
@@ -150,7 +153,11 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
     }
 
     const Settings & settings = context->getSettingsRef();
-    auto step = std::make_unique<IntersectOrExceptStep>(std::move(headers), final_operator, settings[Setting::max_threads]);
+    auto step = std::make_unique<IntersectOrExceptStep>(
+        std::move(headers),
+        final_operator,
+        getMaxThreadsForAvailableMemory(
+            settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]));
     query_plan.unitePlans(std::move(step), std::move(plans));
 
     const auto & query = query_ptr->as<ASTSelectIntersectExceptQuery &>();
@@ -164,7 +171,7 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
             query_plan.getCurrentHeader(),
             limits,
             0,
-            result_header.getNames(),
+            result_header->getNames(),
             false);
 
         query_plan.addStep(std::move(distinct_step));
@@ -196,25 +203,7 @@ void InterpreterSelectIntersectExceptQuery::ignoreWithTotals()
         interpreter->ignoreWithTotals();
 }
 
-void InterpreterSelectIntersectExceptQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
-{
-    for (const auto & interpreter : nested_interpreters)
-    {
-        if (const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get()))
-        {
-            auto filter = select_interpreter->getRowPolicyFilter();
-            if (filter)
-            {
-                for (const auto & row_policy : filter->policies)
-                {
-                    auto name = row_policy->getFullName().toString();
-                    elem.used_row_policies.emplace(std::move(name));
-                }
-            }
-        }
-    }
-}
-
+void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory);
 void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

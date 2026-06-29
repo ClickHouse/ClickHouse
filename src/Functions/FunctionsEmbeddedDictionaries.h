@@ -17,9 +17,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
 
-#include "config.h"
-
-
 namespace DB
 {
 
@@ -545,7 +542,7 @@ struct FunctionRegionHierarchy :
 
 
 /// Converts a region's numeric identifier to a name in the specified language using a dictionary.
-class FunctionRegionToName : public IFunction
+class FunctionRegionToName final : public IFunction
 {
 public:
     static constexpr auto name = "regionToName";
@@ -633,8 +630,8 @@ public:
 
             for (unsigned int region_id : region_ids)
             {
-                const StringRef & name_ref = dict.getRegionName(region_id, language);
-                col_to->insertData(name_ref.data, name_ref.size);
+                std::string_view name_ref = dict.getRegionName(region_id, language);
+                col_to->insertData(name_ref.data(), name_ref.size());
             }
 
             return col_to;

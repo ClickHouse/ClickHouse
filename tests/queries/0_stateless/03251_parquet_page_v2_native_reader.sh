@@ -17,7 +17,4 @@ DATA_FILE_USER_PATH="${WORKING_DIR}/datapage_v2.snappy.parquet"
 
 cp ${DATA_FILE} ${DATA_FILE_USER_PATH}
 
-# Not reading all columns because some data types and encodings are not supported by native reader yet
-# TODO read all columns once implemented
-${CLICKHOUSE_CLIENT} --query="select a, c from file('${DATA_FILE_USER_PATH}', Parquet) order by c SETTINGS input_format_parquet_use_native_reader=false;"
-${CLICKHOUSE_CLIENT} --query="select a, c from file('${DATA_FILE_USER_PATH}', Parquet) order by c SETTINGS input_format_parquet_use_native_reader=true;"
+${CLICKHOUSE_CLIENT} --query="select a, c from file('${DATA_FILE_USER_PATH}', Parquet) order by c;"

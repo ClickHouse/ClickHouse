@@ -5,6 +5,7 @@
 
 #include <Common/Priority.h>
 #include <IO/BufferBase.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -51,39 +52,7 @@ public:
       * if an exception was thrown, is the ReadBuffer left in a usable state? this varies across implementations;
       * can the caller retry next() after an exception, or call other methods? not recommended
       */
-    bool next()
-    {
-        chassert(!hasPendingData());
-        chassert(position() <= working_buffer.end());
-        chassert(!isCanceled(), "ReadBuffer is canceled. Can't read from it.");
-
-        bytes += offset();
-        bool res = false;
-        try
-        {
-            res = nextImpl();
-        }
-        catch (...)
-        {
-            cancel();
-            throw;
-        }
-
-        if (!res)
-        {
-            working_buffer = Buffer(pos, pos);
-        }
-        else
-        {
-            pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
-            chassert(position() < working_buffer.end());
-        }
-        nextimpl_working_buffer_offset = 0;
-
-        chassert(position() <= working_buffer.end());
-
-        return res;
-    }
+    bool next();
 
     void cancel();
 
@@ -92,7 +61,6 @@ public:
         return canceled;
     }
 
-
     void nextIfAtEnd()
     {
         if (!hasPendingData())
@@ -100,7 +68,6 @@ public:
     }
 
     virtual ~ReadBuffer() = default;
-
 
     /** Unlike std::istream, it returns true if all data was read
       *  (and not in case there was an attempt to read after the end).
@@ -150,9 +117,9 @@ public:
         return bytes_ignored;
     }
 
-    void ignoreAll()
+    size_t ignoreAll()
     {
-        tryIgnore(std::numeric_limits<size_t>::max());
+        return tryIgnore(std::numeric_limits<size_t>::max());
     }
 
     /// Peeks a single byte.
@@ -199,7 +166,7 @@ public:
         return bytes_copied;
     }
 
-    /** Reads n bytes, if there are less - throws an exception. */
+    /** Reads n bytes with read, if there are less - throws an exception. */
     void readStrict(char * to, size_t n);
 
     /** A method that can be more efficiently implemented in derived classes, in the case of reading large enough blocks.
@@ -210,12 +177,19 @@ public:
       */
     [[nodiscard]] virtual size_t readBig(char * to, size_t n) { return read(to, n); }
 
+    /** Reads n bytes with readBig, if there are less - throws an exception. */
+    void readBigStrict(char * to, size_t n);
+
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
       * It's used for asynchronous readers with double-buffering.
       * `priority` is the `ThreadPool` priority, with which the prefetch task will be scheduled.
       * Lower value means higher priority.
       */
     virtual void prefetch(Priority) {}
+
+    /// Wait until reading more data from this buffer is expected to complete without blocking.
+    /// The default implementation keeps the previous behavior for buffers that cannot expose readiness.
+    virtual bool poll(size_t /* timeout_microseconds */) { return true; }
 
     /**
      * Set upper bound for read range [..., position).
@@ -269,13 +243,14 @@ private:
 
 
 using ReadBufferPtr = std::shared_ptr<ReadBuffer>;
+using ReadBufferUniquePtr = std::unique_ptr<ReadBuffer>;
 
 /// Due to inconsistencies in ReadBuffer-family interfaces:
 ///  - some require to fully wrap underlying buffer and own it,
 ///  - some just wrap the reference without ownership,
 /// we need to be able to wrap reference-only buffers with movable transparent proxy-buffer.
 /// The uniqueness of such wraps is responsibility of the code author.
-std::unique_ptr<ReadBuffer> wrapReadBufferReference(ReadBuffer & ref);
-std::unique_ptr<ReadBuffer> wrapReadBufferPointer(ReadBufferPtr ptr);
+ReadBufferUniquePtr wrapReadBufferReference(ReadBuffer & ref);
+ReadBufferUniquePtr wrapReadBufferPointer(ReadBufferPtr ptr);
 
 }

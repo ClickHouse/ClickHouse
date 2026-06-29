@@ -2,6 +2,7 @@ import io
 import os
 import pathlib
 import select
+import shutil
 import subprocess
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -12,6 +13,17 @@ from helpers.cluster import ClickHouseCluster
 
 class ClickHouseDisksException(Exception):
     pass
+
+
+def _worker_suffix() -> str:
+    # Under flaky check pytest-xdist runs the same module in many workers
+    # concurrently (--dist=each). They all share the runner host filesystem,
+    # so paths must be worker-scoped to avoid collisions.
+    return os.environ.get("PYTEST_XDIST_WORKER", "main")
+
+
+def _unique_name(stem: str) -> str:
+    return f"{stem}_{_worker_suffix()}"
 
 
 @pytest.fixture(scope="module")
@@ -35,7 +47,9 @@ def started_cluster():
 class DisksClient(object):
     SEPARATOR = b"\a\a\a\a\n"
     local_client: Optional["DisksClient"] = None  # static variable
-    default_disk_root_directory: str = "/var/lib/clickhouse"
+    # Per-xdist-worker default-disk root so concurrent workers do not stomp
+    # each other on the runner host filesystem.
+    default_disk_root_directory: str = f"/var/lib/clickhouse-{_worker_suffix()}"
 
     def __init__(self, bin_path: str, config_path: str, working_path: str):
         self.bin_path = bin_path
@@ -68,24 +82,40 @@ class DisksClient(object):
             self.proc.stderr.fileno(): self.proc.stderr,
         }
 
-    def execute_query(self, query: str, timeout: float = 5.0) -> str:
+    def execute_query(self, query: str, timeout: float = 60.0) -> str:
         output = io.BytesIO()
 
         self.proc.stdin.write(query.encode() + b"\n")
         self.proc.stdin.flush()
 
-        events = self.poller.poll(timeout)
-        if not events:
-            raise TimeoutError(f"Disks client returned no output")
+        # The disks app marks the end of a command's output with SEPARATOR on
+        # stdout. Keep polling until we actually observe it: a command may emit
+        # log lines on stderr before (or interleaved with) its stdout result,
+        # and reading only a single stderr line and returning would leave the
+        # stdout separator unconsumed, desyncing every subsequent command. The
+        # timeout is generous so that the slowest sanitizer builds (msan) do not
+        # spuriously time out.
+        while True:
+            events = self.poller.poll(timeout)
+            if not events:
+                raise TimeoutError("Disks client returned no output")
 
-        for fd_num, event in events:
-            if event & (select.EPOLLIN | select.EPOLLPRI):
+            separator_seen = False
+            for fd_num, event in events:
+                if not (event & (select.EPOLLIN | select.EPOLLPRI)):
+                    raise ValueError(f"Failed to read from pipe. Flag {event}")
+
                 file = self._fd_nums[fd_num]
 
                 if file == self.proc.stdout:
                     while True:
                         chunk = file.readline()
+                        if not chunk:
+                            raise ClickHouseDisksException(
+                                "Disks client closed its output unexpectedly"
+                            )
                         if chunk.endswith(self.SEPARATOR):
+                            separator_seen = True
                             break
 
                         output.write(chunk)
@@ -95,8 +125,8 @@ class DisksClient(object):
                     print(error_line)
                     # raise ClickHouseDisksException(error_line.strip().decode())
 
-            else:
-                raise ValueError(f"Failed to read from pipe. Flag {event}")
+            if separator_seen:
+                break
 
         data = output.getvalue().strip().decode()
         return data
@@ -107,7 +137,6 @@ class DisksClient(object):
 
         initialized_disks = []
         unitialized_disks = []
-
         disk_ref = []
 
         for line in lines:
@@ -138,16 +167,17 @@ class DisksClient(object):
         output = self.execute_query(
             f"list {path} {recursive_adding} {show_hidden_adding}"
         )
+        # Sort on the client side so assertions do not depend on the disks app
+        # sort order.
         if recursive:
             answer: Dict[str, List[str]] = dict()
             blocks = output.split("\n\n")
             for block in blocks:
                 directory = block.split("\n")[0][:-1]
-                files = block.split("\n")[1:]
+                files = sorted(block.split("\n")[1:])
                 answer[directory] = files
             return answer
-        else:
-            return output.split("\n")
+        return sorted(output.split("\n")) if output else []
 
     def switch_disk(self, disk: str, directory: Optional[str] = None):
         directory_addition = f"--path {directory} " if directory is not None else ""
@@ -201,11 +231,61 @@ class DisksClient(object):
     @staticmethod
     def getLocalDisksClient(refresh: bool):
         if (DisksClient.local_client is None) or refresh:
+            # Tear down the previous subprocess if we are refreshing so a stale
+            # `clickhouse disks` process does not race with the new one on the
+            # shared filesystem.
+            if DisksClient.local_client is not None:
+                try:
+                    DisksClient.local_client.proc.stdin.close()
+                except Exception:
+                    pass
+                try:
+                    DisksClient.local_client.proc.terminate()
+                    DisksClient.local_client.proc.wait(timeout=5)
+                except Exception:
+                    try:
+                        DisksClient.local_client.proc.kill()
+                    except Exception:
+                        pass
+                DisksClient.local_client = None
+
             binary_file = os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH")
             current_working_directory = str(pathlib.Path().resolve())
-            config_file = f"{current_working_directory}/test_disks_app_interactive/configs/config.xml"
-            if not os.path.exists(DisksClient.default_disk_root_directory):
-                os.mkdir(DisksClient.default_disk_root_directory)
+
+            # Wipe any leftover state under the per-worker default disk root
+            # from a previous iteration of this worker.
+            os.makedirs(DisksClient.default_disk_root_directory, exist_ok=True)
+            for entry in os.listdir(DisksClient.default_disk_root_directory):
+                entry_path = os.path.join(
+                    DisksClient.default_disk_root_directory, entry
+                )
+                if os.path.isdir(entry_path) and not os.path.islink(entry_path):
+                    shutil.rmtree(entry_path, ignore_errors=True)
+                else:
+                    try:
+                        os.remove(entry_path)
+                    except OSError:
+                        pass
+
+            # Generate a per-worker config so concurrent flaky-check workers
+            # use different `<path>` roots and do not stomp each other.
+            suffix = _worker_suffix()
+            config_dir = os.path.join(
+                current_working_directory,
+                "test_disks_app_interactive",
+                "configs",
+            )
+            os.makedirs(config_dir, exist_ok=True)
+            config_file = os.path.join(config_dir, f"config_{suffix}.xml")
+            with open(config_file, "w") as cfg:
+                cfg.write(
+                    "<clickhouse>\n"
+                    f"    <path>{DisksClient.default_disk_root_directory}/</path>\n"
+                    "    <logger>\n"
+                    "        <clickhouse-disks>/clickhouse-disks-interactive.log</clickhouse-disks>\n"
+                    "    </logger>\n"
+                    "</clickhouse>\n"
+                )
 
             DisksClient.local_client = DisksClient(
                 binary_file, config_file, current_working_directory
@@ -244,7 +324,9 @@ def test_disks_app_interactive_list_files_local():
 
 def test_disks_app_interactive_list_directories_default():
     client = DisksClient.getLocalDisksClient(True)
-    traversed_dir = client.ls(".", recursive=True)
+    test_dir = _unique_name("test_dir_default")
+    client.mkdir(test_dir)
+    client.cd(test_dir)
     client.mkdir("dir1")
     client.mkdir("dir2")
     client.mkdir(".dir3")
@@ -306,49 +388,67 @@ def test_disks_app_interactive_list_directories_default():
     }
     client.rm("dir1", recursive=True)
     client.rm(".dir3", recursive=True)
-    assert client.ls(".", recursive=True, show_hidden=False) == {".": []}
+    assert client.ls(".", recursive=True, show_hidden=False) == {'.': []}
+    client.cd('..')
+    client.rm(test_dir)
 
 
 def test_disks_app_interactive_cp_and_read():
     initial_text = "File content"
-    with open("a.txt", "w") as file:
+    src_name = _unique_name("a_cpread") + ".txt"
+    dst_name = _unique_name("a_cpread") + ".txt"
+    dir_name = _unique_name("dir1_cpread")
+    b_name = _unique_name("b_cpread") + ".txt"
+    with open(src_name, "w") as file:
         file.write(initial_text)
     client = DisksClient.getLocalDisksClient(True)
     client.switch_disk("default")
-    client.copy("a.txt", "/a.txt", disk_from="local", disk_to="default")
-    read_text = client.read("a.txt")
+    client.copy(src_name, f"/{dst_name}", disk_from="local", disk_to="default")
+    read_text = client.read(dst_name)
     assert initial_text == read_text
-    client.mkdir("dir1")
-    client.copy("a.txt", "/dir1/b.txt", disk_from="local", disk_to="default")
-    read_text = client.read("a.txt", path_to="dir1/b.txt")
+    client.mkdir(dir_name)
+    client.copy(
+        src_name, f"/{dir_name}/{b_name}", disk_from="local", disk_to="default"
+    )
+    read_text = client.read(dst_name, path_to=f"{dir_name}/{b_name}")
     assert "" == read_text
-    read_text = client.read("/dir1/b.txt")
+    read_text = client.read(f"/{dir_name}/{b_name}")
     assert read_text == initial_text
-    with open(f"{DisksClient.default_disk_root_directory}/dir1/b.txt", "r") as file:
+    with open(
+        f"{DisksClient.default_disk_root_directory}/{dir_name}/{b_name}", "r"
+    ) as file:
         read_text = file.read()
         assert read_text == initial_text
-    os.remove("a.txt")
-    client.rm("a.txt")
-    client.rm("/dir1", recursive=True)
+    os.remove(src_name)
+    client.rm(dst_name)
+    client.rm(f"/{dir_name}", recursive=True)
 
 
 def test_disks_app_interactive_test_move_and_write():
     initial_text = "File content"
-    with open("a.txt", "w") as file:
+    src_name = _unique_name("a_movewrite") + ".txt"
+    test_dir = _unique_name("test_movewrite")
+    with open(src_name, "w") as file:
         file.write(initial_text)
     client = DisksClient.getLocalDisksClient(True)
     client.switch_disk("default")
-    client.copy("a.txt", "/a.txt", disk_from="local", disk_to="default")
+    client.mkdir(test_dir)
+    client.cd(test_dir)
+    client.copy(
+        src_name, f"/{test_dir}/{src_name}", disk_from="local", disk_to="default"
+    )
     files = client.ls(".")
-    assert files == ["a.txt"]
-    client.move("a.txt", "b.txt")
+    assert files == [src_name]
+    client.move(src_name, "b.txt")
     files = client.ls(".")
     assert files == ["b.txt"]
-    read_text = client.read("/b.txt")
+    read_text = client.read(f"/{test_dir}/b.txt")
     assert read_text == initial_text
     client.write("b.txt", "c.txt")
     read_text = client.read("c.txt")
     assert read_text == initial_text
     client.rm("b.txt")
     client.rm("c.txt")
-    os.remove("a.txt")
+    os.remove(src_name)
+    client.cd('..')
+    client.rm(test_dir)

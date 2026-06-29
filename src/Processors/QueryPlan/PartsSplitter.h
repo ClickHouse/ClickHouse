@@ -10,6 +10,20 @@ namespace DB
 
 using ReadingInOrderStepGetter = std::function<Pipe(RangesInDataParts)>;
 
+/// Result of splitting parts ranges into intersecting and non-intersecting by primary key.
+struct SplitPartsRangesResult
+{
+    RangesInDataParts non_intersecting_parts_ranges;
+    RangesInDataParts intersecting_parts_ranges;
+};
+
+/// Check if the primary key types are safe for splitting (no floats with NaN, etc.).
+bool isSafePrimaryKey(const KeyDescription & primary_key);
+
+/// Split ranges in data parts into non-intersecting (unique key ranges) and
+/// intersecting (overlapping key ranges that need FINAL merge).
+SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger);
+
 struct SplitPartsWithRangesByPrimaryKeyResult
 {
     RangesInDataParts non_intersecting_parts_ranges;
@@ -53,6 +67,7 @@ struct SplitPartsByRanges
 
     std::vector<RangesInDataParts> layers;
     std::vector<Values> borders;
+    bool in_reverse_order = false;
 };
 
 SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
@@ -66,7 +81,6 @@ Pipes readByLayers(
     SplitPartsByRanges split_ranges,
     const KeyDescription & primary_key,
     ReadingInOrderStepGetter && step_getter,
-    bool in_reverse_order,
     ContextPtr context);
 
 }

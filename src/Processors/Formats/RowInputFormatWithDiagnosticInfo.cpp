@@ -2,6 +2,7 @@
 #include <Formats/verbosePrintString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <DataTypes/IDataType.h>
 
 
 namespace DB
@@ -19,7 +20,7 @@ static String alignedName(const String & name, size_t max_length)
 }
 
 
-RowInputFormatWithDiagnosticInfo::RowInputFormatWithDiagnosticInfo(const Block & header_, ReadBuffer & in_, const Params & params_)
+RowInputFormatWithDiagnosticInfo::RowInputFormatWithDiagnosticInfo(SharedHeader header_, ReadBuffer & in_, const Params & params_)
     : IRowInputFormat(header_, in_, params_)
 {
 }

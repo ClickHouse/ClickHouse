@@ -6,6 +6,7 @@ keywords: ['PrettyCompact']
 output_format: true
 slug: /interfaces/formats/PrettyCompact
 title: 'PrettyCompact'
+doc_type: 'reference'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
@@ -23,8 +24,8 @@ Because of this the result is more compact.
 This format is used by default in the command-line client in interactive mode.
 :::
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 <PrettyFormatSettings />

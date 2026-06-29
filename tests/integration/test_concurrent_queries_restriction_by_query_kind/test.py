@@ -1,5 +1,4 @@
 import time
-from multiprocessing.dummy import Pool
 
 import pytest
 
@@ -46,7 +45,7 @@ def started_cluster():
 def execute_with_background(node, sql, background_sql, background_times, wait_times=3):
     r = None
     for _ in range(wait_times):
-        r = node.query("show processlist", stdin="")
+        r = node.query("show processlist settings show_processlist_include_internal = 0", stdin="")
         if not r.strip():
             break
         time.sleep(1)

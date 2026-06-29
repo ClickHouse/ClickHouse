@@ -15,7 +15,7 @@ public:
         const Settings & settings_,
         const ClientInfo & client_info_)
       : RemoteInserter(connection_, timeouts, query_, settings_, client_info_)
-      , SinkToStorage(RemoteInserter::initializeAndGetHeader())
+      , SinkToStorage(std::make_shared<const Block>(RemoteInserter::initializeAndGetHeader()))
     {
     }
 

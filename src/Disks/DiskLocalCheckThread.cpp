@@ -24,7 +24,7 @@ DiskLocalCheckThread::DiskLocalCheckThread(DiskLocal * disk_, ContextPtr context
     , check_period_ms(local_disk_check_period_ms)
     , log(getLogger("DiskLocalCheckThread"))
 {
-    task = getContext()->getSchedulePool().createTask(log->name(), [this] { run(); });
+    task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this] { run(); });
 }
 
 void DiskLocalCheckThread::startup()
@@ -39,7 +39,7 @@ void DiskLocalCheckThread::startup()
         formatReadableTime(static_cast<double>(check_period_ms) * 1e6 /* ns */));
 }
 
-int diskStatusChange(bool old_val, bool new_val)
+static int diskStatusChange(bool old_val, bool new_val)
 {
     return static_cast<int>(new_val) - static_cast<int>(old_val);
 }

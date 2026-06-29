@@ -29,7 +29,7 @@ class ProtobufRowOutputFormat final : public IRowOutputFormat
 public:
     ProtobufRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const ProtobufSchemaInfo & schema_info_,
         const FormatSettings & settings_,
         bool with_length_delimiter_);

@@ -5,6 +5,7 @@ create table d (i int, j int) engine MergeTree partition by i % 2 order by tuple
 insert into d select number, number from numbers(10000);
 
 set max_rows_to_read = 2, optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_use_projection_filtering = 1;
+set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 
 select min(i), max(i), count() from d;
 select min(i), max(i), count() from d group by _partition_id order by _partition_id;

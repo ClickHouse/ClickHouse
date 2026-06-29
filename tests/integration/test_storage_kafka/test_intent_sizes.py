@@ -1,7 +1,10 @@
 import logging
 
-from helpers.kafka.common_direct import *
-from helpers.kafka.common_direct import _VarintBytes
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 import helpers.kafka.common as k
 
 
@@ -49,29 +52,7 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
-    admin_client = k.get_admin_client(cluster)
-
-    def get_topics_to_delete():
-        return [t for t in admin_client.list_topics() if not t.startswith("_")]
-
-    topics = get_topics_to_delete()
-    logging.debug(f"Deleting topics: {topics}")
-    result = admin_client.delete_topics(topics)
-    for topic, error in result.topic_error_codes:
-        if error != 0:
-            logging.warning(f"Received error {error} while deleting topic {topic}")
-        else:
-            logging.info(f"Deleted topic {topic}")
-
-    retries = 0
-    topics = get_topics_to_delete()
-    while len(topics) != 0:
-        logging.info(f"Existing topics: {topics}")
-        if retries >= 5:
-            raise Exception(f"Failed to delete topics {topics}")
-        retries += 1
-        time.sleep(0.5)
+    k.clean_test_database_and_topics(instance, cluster)
     yield  # run test
 
 
@@ -89,7 +70,7 @@ def test_good_intent_size(kafka_cluster):
 
     produce_message(1)
 
-    create_kafka_query = k.generate_new_create_table_query("kafka", "a String", topic_list=topic_name, format="LineAsString", settings={"kafka_flush_interval_ms": 500})
+    create_kafka_query = k.generate_new_create_table_query("kafka", "a String", topic_list=topic_name, format="LineAsString", settings={"kafka_flush_interval_ms": 3000})
 
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
         instance.query(
@@ -112,7 +93,7 @@ def test_good_intent_size(kafka_cluster):
         def check_intent_size(num_messages, offset):
             consumed_messages = instance.query_with_retry("SELECT * FROM test.dst", retry_count =30, sleep_time=1, check_callback=lambda x: len(TSV(x)) == num_messages)
             logging.debug(f"Consumed messages: {consumed_messages}")
-            instance.wait_for_log_line(f"Saving intent of 1 for topic-partition \\[{topic_name}:0\\] at offset {offset}", look_behind_lines=500)
+            instance.wait_for_log_line(f"Saving intent of 1 for topic-partition \\[{topic_name}:0\\] at offset {offset}")
 
         INVALID_KAFKA_OFFSET = -1001
         check_intent_size(1, INVALID_KAFKA_OFFSET)
@@ -134,18 +115,18 @@ def test_good_intent_size(kafka_cluster):
         produce_message(3)
         check_intent_size(1, INVALID_KAFKA_OFFSET)
         # Do an extra check to make sure wait_for_log_line in `check_intent_size` didn't caught the wrong line
-        assert instance.wait_for_log_line(f"Saving intent of 1 for topic-partition \\[{topic_name}:0\\] at offset {INVALID_KAFKA_OFFSET}", look_behind_lines=10000, repetitions=2)
+        assert instance.wait_for_log_line(f"Saving intent of 1 for topic-partition \\[{topic_name}:0\\] at offset {INVALID_KAFKA_OFFSET}", repetitions=2)
 
         # Check that intent size is correct with multiple messages
         k.kafka_produce(
             kafka_cluster,
             topic_name,
-            [f"message_4", "message_5"]
+            ["message_4", "message_5"]
         )
 
         consumed_messages = instance.query_with_retry("SELECT * FROM test.dst", retry_count = 30, sleep_time = 1, check_callback=lambda x: len(TSV(x)) == 3)
         logging.debug(f"Consumed messages: {consumed_messages}")
-        instance.wait_for_log_line(f"Saving intent of 2 for topic-partition \\[{topic_name}:0\\] at offset 3", look_behind_lines=500)
+        instance.wait_for_log_line(f"Saving intent of 2 for topic-partition \\[{topic_name}:0\\] at offset 3")
 
         result = instance.query("SELECT * FROM test.dst ORDER BY a")
         assert TSV(result) == TSV("message_3\nmessage_4\nmessage_5")
