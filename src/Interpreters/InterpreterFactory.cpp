@@ -39,6 +39,8 @@
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTTransactionControl.h>
+#include <Parsers/ASTCreateModelQuery.h>
+#include <Parsers/ASTDropModelQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
@@ -400,6 +402,14 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTParallelWithQuery>())
     {
         interpreter_name = "InterpreterParallelWithQuery";
+    }
+    else if (query->as<ASTCreateModelQuery>())
+    {
+        interpreter_name = "InterpreterCreateModelQuery";
+    }
+    else if (query->as<ASTDropModelQuery>())
+    {
+        interpreter_name = "InterpreterDropModelQuery";
     }
     else if (query->as<ASTExecuteAsQuery>())
     {

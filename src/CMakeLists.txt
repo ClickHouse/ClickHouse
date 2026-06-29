@@ -74,6 +74,7 @@ endif()
 add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
+add_subdirectory (Models)
 
 if (ENABLE_EXAMPLES)
     add_subdirectory (Examples)
@@ -346,6 +347,7 @@ add_object_library(clickhouse_interpreters_wasm Interpreters/WebAssembly)
 add_object_library(clickhouse_interpreters_merge_tree_transaction Interpreters/MergeTreeTransaction)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
+add_object_library(clickhouse_models Models)
 
 # TODO: at v3 SLP-emitted YMM zero-stores in column construction add `vzeroupper`s around the
 # per-block dispatch and regress `generate_table_function #0/#1/#5` ~18% with no real win.
@@ -873,6 +875,14 @@ endif()
 
 if (TARGET ch_contrib::arrow_flight)
     target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
+endif()
+
+if (TARGET ch_contrib::lightgbm)
+    target_link_libraries(dbms PUBLIC ch_contrib::lightgbm)
+endif()
+
+if (TARGET ch_contrib::xgboost)
+    target_link_libraries(dbms PUBLIC ch_contrib::xgboost)
 endif()
 
 if (ENABLE_BUZZHOUSE)

@@ -354,6 +354,12 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
+[submodule "contrib/LightGBM"]
+	path = contrib/LightGBM
+	url = https://github.com/microsoft/LightGBM.git
+[submodule "contrib/xgboost"]
+	path = contrib/xgboost
+	url = https://github.com/dmlc/xgboost.git
 [submodule "contrib/libpng"]
 	path = contrib/libpng
 	url = https://github.com/pnggroup/libpng.git

@@ -675,6 +675,10 @@
     M(1006, INVALID_CURSOR_LOOKUP) \
     M(1007, ILLEGAL_STREAM) \
     M(1008, TEMPORARY_DATA_NOT_IN_CACHE) \
+    M(1009, MODEL_NOT_FOUND) \
+    M(1010, MODEL_ALREADY_EXISTS) \
+    M(1011, LIGHTGBM_ERROR) \
+    M(1012, XGBOOST_ERROR) \
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -691,7 +695,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1008;
+    constexpr ErrorCode END = 1012;
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames
