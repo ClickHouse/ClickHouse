@@ -18,7 +18,7 @@ class ICompressionCodec;
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
 /// Optional size-adaptive packing for a stream. When @writer is set and a virtual name is given,
-/// the data and marks files are routed through SizeAdaptiveSpoolBuffer wrappers: each accumulates
+/// the data and marks files are routed through a size-adaptive packing wrapper: each accumulates
 /// in memory while it stays under @spill_threshold, otherwise it spills to a standalone file;
 /// substreams that don't spill end up bundled into @writer at finalize. A default-constructed
 /// value (no writer) forces standalone per-file writes regardless of size (e.g. compact-part
@@ -59,12 +59,12 @@ struct MergeTreeWriterStream
     std::string data_file_extension;
     std::string marks_file_extension;
 
-    /// True when this stream is wired through SizeAdaptiveSpoolBuffer (skip indices with
+    /// True when this stream is wired through the size-adaptive packing path (skip indices with
     /// packing enabled). Decided at construction; needed because spool_coupled_spilled stays
-    /// false in two unrelated cases ("never routed through spool" vs "routed but didn't
+    /// false in two unrelated cases ("never routed through packing" vs "routed but didn't
     /// spill") and isPacked() must distinguish them.
     bool is_size_adaptive = false;
-    /// Shared between this substream's data and marks SizeAdaptiveSpoolBuffers, so the first
+    /// Shared between this substream's data and marks packing wrappers, so the first
     /// to cross the spill threshold forces the other to spill too. Must be declared before
     /// plain_file / marks_file so it outlives them at destruction.
     bool spool_coupled_spilled = false;

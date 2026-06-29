@@ -177,7 +177,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
             /// The "logical" stream name (skp_idx_<name>[.suffix]) is what the in-archive virtual
             /// file uses; the on-disk per-file substream may use a hashed form to fit filesystem
-            /// limits. We pass both into MergeTreeWriterStream and SizeAdaptiveSpoolBuffer:
+            /// limits. We pass both into the stream's size-adaptive packing:
             ///   - logical_stream_name: used as the packed_writer virtual filename when the
             ///     substream stays in the archive (no FS length limit there).
             ///   - on_disk_stream_name: used as the standalone-file path when the substream
@@ -412,8 +412,8 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         for (const auto & [type, stream] : skip_indices_streams[i])
         {
             /// preFinalize drains the chain above (compressor + hashing) so the
-            /// SizeAdaptiveSpoolBuffer at the bottom of the stream has seen all bytes and the
-            /// spilled-vs-packed decision is final.
+            /// size-adaptive packing buffer at the bottom of the stream has seen all bytes and
+            /// the spilled-vs-packed decision is final.
             stream->preFinalize();
 
             if (stream->isPacked())
@@ -436,9 +436,9 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
                     }
                 }
 
-                /// Substream fit under the spill threshold: bytes are still in the spool
-                /// buffer; finalize hands them to skip_indices_packed_writer. No per-file
-                /// checksum entry -- the archive's single checksum covers it.
+                /// Substream fit under the spill threshold: bytes are still buffered in memory;
+                /// finalize hands them to skip_indices_packed_writer. No per-file checksum
+                /// entry -- the archive's single checksum covers it.
                 stream->finalize();
             }
             else
