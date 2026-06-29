@@ -1685,7 +1685,12 @@ void IMergeTreeDataPart::removeDeleteOnDestroyMarker()
 
 void IMergeTreeDataPart::removeVersionMetadata()
 {
+    /// Remove both the committed metadata file and any leftover temporary file. A stale
+    /// `txn_version.txt.tmp` left behind without `txn_version.txt` makes the part load as a
+    /// rolled-back transaction (see `VersionMetadataOnDisk::loadMetadata`) and get discarded as
+    /// `Outdated`, so it must be cleaned up together with the main file.
     getDataPartStorage().removeFileIfExists(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+    getDataPartStorage().removeFileIfExists(VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
 }
 
 
