@@ -1,7 +1,6 @@
 <test>
     <settings>
         <compile_aggregate_expressions>1</compile_aggregate_expressions>
-        <min_count_to_compile_aggregate_expression>0</min_count_to_compile_aggregate_expression>
     </settings>
 
     <create_query>
@@ -30,7 +29,7 @@
     </create_query>
 
     <create_query>
-        CREATE TABLE jit_test_merge_tree_nullable (
+        CREATE TABLE jit_test_memory_nullable (
             key UInt64,
             value_1 Nullable(UInt64),
             value_2 Nullable(UInt64),
@@ -42,7 +41,7 @@
     </create_query>
 
     <create_query>
-        CREATE TABLE jit_test_memory_nullable (
+        CREATE TABLE jit_test_merge_tree_nullable (
             key UInt64,
             value_1 Nullable(UInt64),
             value_2 Nullable(UInt64),

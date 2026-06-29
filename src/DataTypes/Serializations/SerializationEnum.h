@@ -9,12 +9,12 @@ namespace DB
 {
 
 template <typename Type>
-class SerializationEnum : public SerializationNumber<Type>
+class SerializationEnum final : public SerializationNumber<Type>
 {
-public:
+private:
     using typename SerializationNumber<Type>::FieldType;
     using typename SerializationNumber<Type>::ColumnType;
-    using Values = EnumValues<Type>::Values;
+    using Values = typename EnumValues<Type>::Values;
 
     // SerializationEnum can be constructed in two ways:
     /// - Make a copy of the Enum name-to-type mapping.
@@ -31,18 +31,31 @@ public:
     {
     }
 
+public:
+    static UInt128 getHash(const Values & values);
+
+    static SerializationPtr create(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type);
+    static SerializationPtr create(const Values & values_);
+
+    size_t allocatedBytes() const override;
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    bool tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    bool tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    bool tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
@@ -50,7 +63,14 @@ public:
     {
         FieldType x;
         readText(x, istr);
-        return ref_enum_values.findByValue(x)->first;
+        /// Validate that value exists (throws if not found)
+        ref_enum_values.getNameForValue(x);
+        return x;
+    }
+
+    bool tryReadValue(ReadBuffer & istr, FieldType & x) const
+    {
+       return tryReadText(x, istr) && ref_enum_values.hasValue(x);
     }
 
     std::optional<EnumValues<Type>> own_enum_values;

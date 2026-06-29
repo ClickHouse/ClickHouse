@@ -6,7 +6,6 @@
 #include <Core/Defines.h>
 #include <boost/noncopyable.hpp>
 #include <Common/Allocator.h>
-#include <Common/ProfileEvents.h>
 #include <Common/memcpySmall.h>
 #include <base/getPageSize.h>
 
@@ -14,12 +13,6 @@
 #   include <sanitizer/asan_interface.h>
 #endif
 
-
-namespace ProfileEvents
-{
-    extern const Event ArenaAllocChunks;
-    extern const Event ArenaAllocBytes;
-}
 
 namespace DB
 {
@@ -47,11 +40,9 @@ private:
 
         std::unique_ptr<MemoryChunk> prev;
 
-        MemoryChunk()
-        {
-        }
+        MemoryChunk() = default;
 
-        void swap(MemoryChunk & other)
+        void swap(MemoryChunk & other) noexcept
         {
             std::swap(begin, other.begin);
             std::swap(pos, other.pos);
@@ -59,28 +50,18 @@ private:
             prev.swap(other.prev);
         }
 
-        MemoryChunk(MemoryChunk && other)
+        MemoryChunk(MemoryChunk && other) noexcept
         {
             *this = std::move(other);
         }
 
-        MemoryChunk & operator=(MemoryChunk && other)
+        MemoryChunk & operator=(MemoryChunk && other) noexcept
         {
             swap(other);
             return *this;
         }
 
-        MemoryChunk(size_t size_)
-        {
-            ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
-            ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
-
-            begin = reinterpret_cast<char *>(Allocator<false>::alloc(size_));
-            pos = begin;
-            end = begin + size_ - pad_right;
-
-            ASAN_POISON_MEMORY_REGION(begin, size_);
-        }
+        explicit MemoryChunk(size_t size_);
 
         ~MemoryChunk()
         {
@@ -143,7 +124,7 @@ private:
                     / linear_growth_threshold) * linear_growth_threshold;
         }
 
-        assert(size_after_grow >= min_next_size);
+        chassert(size_after_grow >= min_next_size);
         return roundUpToPageSize(size_after_grow, page_size);
     }
 
@@ -249,12 +230,11 @@ public:
     char * allocContinue(size_t additional_bytes, char const *& range_start,
                          size_t start_alignment = 0)
     {
-        /*
-         * Allocating zero bytes doesn't make much sense. Also, a zero-sized
-         * range might break the invariant that the range begins at least before
-         * the current MemoryChunk end.
-         */
-        assert(additional_bytes > 0);
+        /** Allocating zero bytes doesn't make much sense. Also, a zero-sized
+          * range might break the invariant that the range begins at least before
+          * the current MemoryChunk end.
+          */
+        chassert(additional_bytes > 0);
 
         if (!range_start)
         {
@@ -272,8 +252,8 @@ public:
         // This method only works for extending the last allocation. For lack of
         // original size, check a weaker condition: that 'begin' is at least in
         // the current MemoryChunk.
-        assert(range_start >= head.begin);
-        assert(range_start < head.end);
+        chassert(range_start >= head.begin);
+        chassert(range_start < head.end);
 
         if (head.pos + additional_bytes <= head.end)
         {

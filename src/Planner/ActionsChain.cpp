@@ -1,17 +1,18 @@
 #include <Planner/ActionsChain.h>
 
-#include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/join.hpp>
 
+#include <Columns/ColumnConst.h>
+#include <DataTypes/IDataType.h>
+
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
+
 
 namespace DB
 {
 
-ActionsChainStep::ActionsChainStep(ActionsDAGPtr actions_,
+ActionsChainStep::ActionsChainStep(ActionsAndProjectInputsFlagPtr actions_,
     bool use_actions_nodes_as_output_columns_,
     ColumnsWithTypeAndName additional_output_columns_)
     : actions(std::move(actions_))
@@ -21,19 +22,19 @@ ActionsChainStep::ActionsChainStep(ActionsDAGPtr actions_,
     initialize();
 }
 
-void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input_columns)
+void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input_columns, const NameSet & source_const_inputs)
 {
     child_required_output_columns_names.clear();
 
     auto child_input_columns_copy = child_input_columns;
 
     std::unordered_set<std::string_view> output_nodes_names;
-    output_nodes_names.reserve(actions->getOutputs().size());
+    output_nodes_names.reserve(actions->dag.getOutputs().size());
 
-    for (auto & output_node : actions->getOutputs())
+    for (auto & output_node : actions->dag.getOutputs())
         output_nodes_names.insert(output_node->result_name);
 
-    for (const auto & node : actions->getNodes())
+    for (const auto & node : actions->dag.getNodes())
     {
         auto it = child_input_columns_copy.find(node.result_name);
         if (it == child_input_columns_copy.end())
@@ -45,20 +46,74 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
         if (output_nodes_names.contains(node.result_name))
             continue;
 
-        actions->getOutputs().push_back(&node);
+        actions->dag.getOutputs().push_back(&node);
         output_nodes_names.insert(node.result_name);
     }
 
-    actions->removeUnusedActions();
-    /// TODO: Analyzer fix ActionsDAG input and constant nodes with same name
-    actions->projectInput();
+    /// When a DAG has both an INPUT and a COLUMN node with the same name
+    /// (created by `duplicate_const_columns` in the `ActionsDAG` constructor),
+    /// replace the COLUMN output with the INPUT so that `removeUnusedActions`
+    /// preserves the INPUT and the column requirement propagates upstream.
+    /// We must only do this when the INPUT and COLUMN carry the same constant
+    /// value, which is the case for `duplicate_const_columns` pairs. When a
+    /// subquery redefines a column (e.g. `'redefined' AS my_field`), the
+    /// COLUMN holds the new value while the INPUT holds the old upstream
+    /// value, so replacing would lose the redefinition.
+    {
+        std::unordered_map<std::string_view, const ActionsDAG::Node *> input_nodes_by_name;
+        for (const auto * input_node : actions->dag.getInputs())
+            input_nodes_by_name.emplace(input_node->result_name, input_node);
+
+        for (auto & output_node : actions->dag.getOutputs())
+        {
+            if (output_node->type == ActionsDAG::ActionType::COLUMN
+                && child_required_output_columns_names.contains(output_node->result_name))
+            {
+                auto it = input_nodes_by_name.find(output_node->result_name);
+                if (it != input_nodes_by_name.end())
+                {
+                    const auto * input_node = it->second;
+
+                    /// Only replace if both nodes carry the same constant value
+                    /// AND have the same result type. This ensures we only affect
+                    /// `duplicate_const_columns` pairs and not column redefinitions
+                    /// where the value or type changed (e.g. `toUInt8(1) AS x` vs
+                    /// `toUInt16(1) AS x`, where values compare equal but types differ).
+                    bool same_const_value = input_node->column
+                        && output_node->column
+                        && isColumnConst(*input_node->column)
+                        && isColumnConst(*output_node->column)
+                        && input_node->result_type
+                        && output_node->result_type
+                        && input_node->result_type->equals(*output_node->result_type)
+                        && assert_cast<const ColumnConst &>(*input_node->column).getField()
+                            == assert_cast<const ColumnConst &>(*output_node->column).getField();
+
+                    if (same_const_value)
+                        output_node = input_node;
+                }
+            }
+        }
+    }
+
+    /// Keep source-constant INPUTs (named in source_const_inputs) that folding would re-create as
+    /// free-standing COLUMN outputs and orphan: they must keep flowing as required inputs so the
+    /// column stays in the stream. Literals/aliases are excluded, so they stay foldable.
+    std::unordered_set<const ActionsDAG::Node *> used_inputs;
+    if (!source_const_inputs.empty())
+        for (const auto * input : actions->dag.getInputs())
+            if (input->column && source_const_inputs.contains(input->result_name))
+                used_inputs.insert(input);
+
+    actions->dag.removeUnusedActions(used_inputs);
+    actions->project_input = true;
     initialize();
 }
 
 void ActionsChainStep::dump(WriteBuffer & buffer) const
 {
     buffer << "DAG" << '\n';
-    buffer << actions->dumpDAG();
+    buffer << actions->dag.dumpDAG();
 
     if (!available_output_columns.empty())
     {
@@ -84,7 +139,7 @@ String ActionsChainStep::dump() const
 
 void ActionsChainStep::initialize()
 {
-    auto required_columns_names = actions->getRequiredColumnsNames();
+    auto required_columns_names = actions->dag.getRequiredColumnsNames();
     input_columns_names = NameSet(required_columns_names.begin(), required_columns_names.end());
 
     available_output_columns.clear();
@@ -93,7 +148,7 @@ void ActionsChainStep::initialize()
     {
         std::unordered_set<std::string_view> available_output_columns_names;
 
-        for (const auto & node : actions->getNodes())
+        for (const auto & node : actions->dag.getNodes())
         {
             if (available_output_columns_names.contains(node.result_name))
                 continue;
@@ -106,14 +161,14 @@ void ActionsChainStep::initialize()
     available_output_columns.insert(available_output_columns.end(), additional_output_columns.begin(), additional_output_columns.end());
 }
 
-void ActionsChain::finalize()
+void ActionsChain::finalize(const NameSet & source_const_inputs)
 {
     if (steps.empty())
         return;
 
     /// For last chain step there are no columns required in child nodes
     NameSet empty_child_input_columns;
-    steps.back().get()->finalizeInputAndOutputColumns(empty_child_input_columns);
+    steps.back().get()->finalizeInputAndOutputColumns(empty_child_input_columns, source_const_inputs);
 
     Int64 steps_last_index = steps.size() - 1;
     for (Int64 i = steps_last_index; i >= 1; --i)
@@ -121,7 +176,7 @@ void ActionsChain::finalize()
         auto & current_step = steps[i];
         auto & previous_step = steps[i - 1];
 
-        previous_step->finalizeInputAndOutputColumns(current_step->getInputColumnNames());
+        previous_step->finalizeInputAndOutputColumns(current_step->getInputColumnNames(), source_const_inputs);
     }
 }
 

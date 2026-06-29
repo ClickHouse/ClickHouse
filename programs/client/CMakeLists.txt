@@ -1,5 +1,6 @@
 set (CLICKHOUSE_CLIENT_SOURCES
     Client.cpp
+    FuzzLoop.cpp
 )
 
 set (CLICKHOUSE_CLIENT_LINK
@@ -10,8 +11,15 @@ set (CLICKHOUSE_CLIENT_LINK
         clickhouse_common_io
         clickhouse_functions
         clickhouse_parsers
-        string_utils
 )
+
+if (TARGET ch_contrib::jwt-cpp)
+    list(APPEND CLICKHOUSE_CLIENT_LINK PUBLIC ch_contrib::jwt-cpp)
+endif()
+
+if (ENABLE_BUZZHOUSE)
+    list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE clickhouse_buzzhouse_proto)
+endif()
 
 if (TARGET ch_rust::skim)
     list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_rust::skim)

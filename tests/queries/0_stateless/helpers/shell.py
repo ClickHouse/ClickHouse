@@ -10,7 +10,7 @@ import uexpect
 
 
 class shell(object):
-    def __init__(self, command=None, name="", log=None, prompt="[#\$] "):
+    def __init__(self, command=None, name="", log=None, prompt="[#\\$] "):
         if command is None:
             command = ["/bin/bash", "--noediting"]
         self.prompt = prompt

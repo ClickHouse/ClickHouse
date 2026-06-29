@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Common/AsynchronousMetrics.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context_fwd.h>
+
+#include <optional>
 
 
 namespace DB
@@ -12,15 +15,20 @@ class ServerAsynchronousMetrics : WithContext, public AsynchronousMetrics
 public:
     ServerAsynchronousMetrics(
         ContextPtr global_context_,
-        int update_period_seconds,
-        int heavy_metrics_update_period_seconds,
-        const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
+        unsigned update_period_seconds,
+        bool update_heavy_metrics_,
+        unsigned heavy_metrics_update_period_seconds,
+        const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+        bool update_jemalloc_epoch_,
+        bool update_rss_);
+
     ~ServerAsynchronousMetrics() override;
 
 private:
-    void updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time) override;
+    void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) override;
     void logImpl(AsynchronousMetricValues & new_values) override;
 
+    bool update_heavy_metrics;
     const Duration heavy_metric_update_period;
     TimePoint heavy_metric_previous_update_time;
     double heavy_update_interval = 0.;
@@ -31,10 +39,43 @@ private:
         size_t detached_by_user;
     };
 
-    DetachedPartsStats detached_parts_stats{};
+    struct MutationStats
+    {
+        /// For keeping track of the number of pending mutations that are over the maximum execution time
+        /// which is controlled by the max_pending_mutations_execution_time_to_warn setting.
+        size_t pending_mutations_over_execution_time;
+        size_t pending_mutations;
+    };
 
-    void updateDetachedPartsStats();
-    void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, AsynchronousMetricValues & new_values);
+    struct ThreadStackStats
+    {
+        /// Whether at least one successful /proc/self/smaps sample has been
+        /// collected. Until then the values are meaningless and the metrics
+        /// are not emitted, so an environment where smaps cannot be read does
+        /// not report a fake zero stack footprint.
+        bool available = false;
+        UInt64 count = 0;
+        UInt64 resident_bytes = 0;
+        UInt64 virtual_bytes = 0;
+    };
+
+    DetachedPartsStats detached_parts_stats{};
+    MutationStats mutation_stats{};
+    ThreadStackStats thread_stack_stats{};
+
+    /// /proc/self/smaps is walked at the slower heavy-metrics cadence rather
+    /// than on every scrape, because it can be expensive on servers with many
+    /// VMAs: the kernel walks page tables for every mapping to compute Rss,
+    /// Pss, etc. Kept here (not in the base class) so the cost is gated.
+    std::optional<ReadBufferFromFilePRead> vm_smaps;
+
+    /// Previous values for the ReaderExecutorModeledCostMsPerRequestedMiB interval delta.
+    UInt64 prev_reader_executor_cost_us = 0;
+    UInt64 prev_reader_executor_requested_bytes = 0;
+
+    void updateMutationAndDetachedPartsStats();
+    void updateThreadStackStats();
+    void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values);
 };
 
 }

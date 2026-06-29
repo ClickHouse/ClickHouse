@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h>
+#include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -42,9 +44,8 @@ private:
     ASTPtr tryLoadObject(UserDefinedSQLObjectType object_type, const String & object_name, const String & file_path, bool check_file_exists);
     String getFilePath(UserDefinedSQLObjectType object_type, const String & object_name) const;
 
-    ContextPtr global_context;
     String dir_path;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::atomic<bool> objects_loaded = false;
 };
 

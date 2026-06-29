@@ -1,0 +1,2 @@
+CREATE MATERIALIZED VIEW default.mv_03002 TO default.table_03002\n(\n    `ts` DateTime\n)\nAS SELECT ts\nFROM default.table_03002
+CREATE MATERIALIZED VIEW default.mv_03002 TO default.table_03002\n(\n    `ts` DateTime\n)\nAS WITH MY_CTE AS\n    (\n        SELECT ts\n        FROM default.table_03002\n    )\nSELECT *\nFROM MY_CTE

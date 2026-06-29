@@ -11,15 +11,15 @@ using namespace DB;
 
 TEST(Processors, PortsConnected)
 {
-    auto col = ColumnUInt8::create(1, 1);
+    auto col = ColumnUInt8::create(1, static_cast<UInt8>(1));
     Columns columns;
     columns.emplace_back(std::move(col));
     Chunk chunk(std::move(columns), 1);
 
-    Block header = {ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")};
+    SharedHeader header = std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")});
 
     auto source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
-    auto sink = std::make_shared<NullSink>(source->getPort().getHeader());
+    auto sink = std::make_shared<NullSink>(source->getPort().getSharedHeader());
 
     connect(source->getPort(), sink->getPort());
 
@@ -34,15 +34,15 @@ TEST(Processors, PortsConnected)
 
 TEST(Processors, PortsNotConnected)
 {
-    auto col = ColumnUInt8::create(1, 1);
+    auto col = ColumnUInt8::create(1, static_cast<UInt8>(1));
     Columns columns;
     columns.emplace_back(std::move(col));
     Chunk chunk(std::move(columns), 1);
 
-    Block header = {ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")};
+    SharedHeader header = std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")});
 
     auto source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
-    auto sink = std::make_shared<NullSink>(source->getPort().getHeader());
+    auto sink = std::make_shared<NullSink>(source->getPort().getSharedHeader());
 
     /// connect(source->getPort(), sink->getPort());
 
@@ -50,7 +50,7 @@ TEST(Processors, PortsNotConnected)
     processors->emplace_back(std::move(source));
     processors->emplace_back(std::move(sink));
 
-#ifndef ABORT_ON_LOGICAL_ERROR
+#ifndef DEBUG_OR_SANITIZER_BUILD
     try
     {
         QueryStatusPtr element;
@@ -61,7 +61,7 @@ TEST(Processors, PortsNotConnected)
     catch (DB::Exception & e)
     {
         std::cout << e.displayText() << std::endl;
-        ASSERT_TRUE(e.displayText().find("pipeline") != std::string::npos) << "Expected 'pipeline', got: " << e.displayText();
+        ASSERT_TRUE(e.displayText().find("Port is not connected") != std::string::npos) << "Expected 'Port is not connected', got: " << e.displayText();
     }
 #endif
 }

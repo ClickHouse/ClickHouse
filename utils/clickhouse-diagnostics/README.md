@@ -232,11 +232,6 @@ Uptime: **13 minutes and 51 seconds**
 			<replace>\1(???)</replace>
 		</rule>
 	</query_masking_rules>
-	<send_crash_reports>
-		<enabled>false</enabled>
-		<anonymize>false</anonymize>
-		<endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
-	</send_crash_reports>
 	<listen_host>0.0.0.0</listen_host>
 	<https_port>8443</https_port>
 	<tcp_ssl_port>9440</tcp_ssl_port>
@@ -318,7 +313,7 @@ SHOW ACCESS
 ```
 **result**
 ```
-CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE default
+CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE `default`
 CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = 'random'
 CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1
 CREATE QUOTA default KEYED BY user_name FOR INTERVAL 1 hour TRACKING ONLY TO default

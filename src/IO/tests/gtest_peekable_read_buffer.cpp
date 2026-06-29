@@ -9,9 +9,9 @@
 static void readAndAssert(DB::ReadBuffer & buf, const char * str)
 {
     size_t n = strlen(str);
-    char tmp[n];
-    buf.readStrict(tmp, n);
-    ASSERT_EQ(strncmp(tmp, str, n), 0);
+    std::vector<char> tmp(n);
+    buf.readStrict(tmp.data(), n);
+    ASSERT_EQ(strncmp(tmp.data(), str, n), 0);
 }
 
 static void assertAvailable(DB::ReadBuffer & buf, const char * str)

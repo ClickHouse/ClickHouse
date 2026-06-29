@@ -4,7 +4,9 @@
 #include <shared_mutex>
 
 #include <Disks/IDisk.h>
-#include <Storages/IStorage.h>
+#include <Processors/QueryPlan/ISourceStep.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
 #include <Core/NamesAndTypes.h>
@@ -22,7 +24,7 @@ using BackupPtr = std::shared_ptr<const IBackup>;
   * Also implements TinyLog - a table engine that is suitable for small chunks of the log.
   * It differs from Log in the absence of mark files.
   */
-class StorageLog final : public IStorage, public WithMutableContext
+class StorageLog final : public StorageWithCommonVirtualColumns, public WithMutableContext
 {
     friend class LogSource;
     friend class LogSink;
@@ -40,13 +42,22 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        bool attach,
+        LoadingStrictnessLevel mode,
         ContextMutablePtr context_);
 
     ~StorageLog() override;
     String getName() const override { return engine_name; }
 
-    Pipe read(
+    Pipe createReadingPipe(
+        const Names & column_names,
+        ContextPtr local_context,
+        const StorageSnapshotPtr & storage_snapshot,
+        size_t max_block_size,
+        size_t num_streams
+    );
+
+    void readImpl(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -64,16 +75,20 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
+    void drop() override;
+
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
     bool supportsSubcolumns() const override { return true; }
     ColumnSizeByName getColumnSizes() const override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr) const override;
+    std::optional<UInt64> totalBytes(ContextPtr) const override;
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
+    static VirtualColumnsDescription createVirtuals();
 
 private:
     using ReadLock = std::shared_lock<std::shared_timed_mutex>;
@@ -119,7 +134,7 @@ private:
     /// Column data
     struct DataFile
     {
-        size_t index;
+        size_t index{};
         String name;
         String path;
         Marks marks;
@@ -132,6 +147,9 @@ private:
     std::vector<DataFile> data_files;
     size_t num_data_files = 0;
     std::map<String, DataFile *> data_files_by_names;
+
+    /// The same as metadata->columns but after call of Nested::collect().
+    ColumnsDescription columns_with_collected_nested;
 
     /// The Log engine uses the marks file, and the TinyLog engine doesn't.
     const bool use_marks_file;
@@ -161,6 +179,39 @@ private:
     const size_t max_compress_block_size;
 
     mutable std::shared_timed_mutex rwlock;
+};
+
+class ReadFromStorageLogStep : public ISourceStep
+{
+public:
+    ReadFromStorageLogStep(
+        const Names & column_names_,
+        ContextPtr local_context_,
+        std::shared_ptr<StorageLog> storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        size_t max_block_size_,
+        size_t num_streams_
+    );
+
+    ReadFromStorageLogStep(const ReadFromStorageLogStep &) = default;
+    ReadFromStorageLogStep(ReadFromStorageLogStep &&) = default;
+
+    String getName() const override { return "ReadFromStorageLog"; }
+
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<ReadFromStorageLogStep>(*this);
+    }
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
+
+private:
+    const Names column_names;
+    ContextPtr local_context;
+    std::shared_ptr<StorageLog> storage;
+    const StorageSnapshotPtr storage_snapshot;
+    const size_t max_block_size;
+    const size_t num_streams;
 };
 
 }

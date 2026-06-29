@@ -1,91 +1,98 @@
 #!/usr/bin/env python3
 
-import os
 import logging
+from pathlib import Path
 
-import requests  # type: ignore
-
-from requests.adapters import HTTPAdapter  # type: ignore
-from urllib3.util.retry import Retry  # type: ignore
-
-from get_previous_release_tag import ReleaseInfo, get_previous_release
-
-CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/tags"
-
-DOWNLOAD_PREFIX = (
-    "https://github.com/ClickHouse/ClickHouse/releases/download/v{version}-{type}/"
+from build_download_helper import DownloadException, download_build_with_progress
+from get_previous_release_tag import (
+    ReleaseInfo,
+    get_previous_release,
+    get_release_by_tag,
 )
-CLICKHOUSE_COMMON_STATIC_PACKAGE_NAME = "clickhouse-common-static_{version}_amd64.deb"
-CLICKHOUSE_COMMON_STATIC_DBG_PACKAGE_NAME = (
-    "clickhouse-common-static-dbg_{version}_amd64.deb"
+
+PACKAGES_DIR = Path("previous_release_package_folder")
+
+# The release packages are a hard prerequisite for the upgrade check: if any of
+# them is missing the whole job is wasted on setup. Retry more persistently than
+# the generic default to ride out transient GitHub/CDN hiccups (the per-attempt
+# backoff is capped, so this extends the total time window rather than the sleep).
+RELEASE_PACKAGE_DOWNLOAD_RETRIES = 10
+
+# Packages that the upgrade check actually installs (see `install_packages` in
+# `tests/docker_scripts/stress_tests.lib`). Only these are essential; a hiccup
+# while downloading any of the other assets (e.g. `clickhouse-keeper`) must not
+# fail the job.
+REQUIRED_PACKAGE_PREFIXES = (
+    "clickhouse-common-static_",
+    "clickhouse-common-static-dbg_",
+    "clickhouse-server_",
+    "clickhouse-client_",
 )
-CLICKHOUSE_SERVER_PACKAGE_NAME = "clickhouse-server_{version}_amd64.deb"
-CLICKHOUSE_SERVER_PACKAGE_FALLBACK = "clickhouse-server_{version}_all.deb"
-CLICKHOUSE_CLIENT_PACKAGE_NAME = "clickhouse-client_{version}_amd64.deb"
-CLICKHOUSE_CLIENT_PACKAGE_FALLBACK = "clickhouse-client_{version}_all.deb"
-
-PACKAGES_DIR = "previous_release_package_folder/"
-VERSION_PATTERN = r"((?:\d+\.)?(?:\d+\.)?(?:\d+\.)?\d+-[a-zA-Z]*)"
 
 
-def download_package(url, out_path, retries=10, backoff_factor=0.3):
-    session = requests.Session()
-    retry = Retry(
-        total=retries,
-        read=retries,
-        connect=retries,
-        backoff_factor=backoff_factor,
-        status_forcelist=[500, 502, 503, 504],
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
-    response = session.get(url)
-    response.raise_for_status()
-    print(f"Download {url} to {out_path}")
-    with open(out_path, "wb") as fd:
-        fd.write(response.content)
-
-
-def download_packages(release, dest_path=PACKAGES_DIR):
-    if not os.path.exists(dest_path):
-        os.makedirs(dest_path)
+def download_packages(
+    release: ReleaseInfo, dest_path: Path = PACKAGES_DIR, debug: bool = False
+) -> None:
+    dest_path.mkdir(parents=True, exist_ok=True)
 
     logging.info("Will download %s", release)
 
-    def get_dest_path(pkg_name):
-        return os.path.join(dest_path, pkg_name)
+    # The debug-symbols package is only downloaded (and installed) in debug mode,
+    # so it is only required there.
+    required_prefixes = tuple(
+        prefix for prefix in REQUIRED_PACKAGE_PREFIXES if debug or "-dbg_" not in prefix
+    )
 
-    for pkg in (
-        CLICKHOUSE_COMMON_STATIC_PACKAGE_NAME,
-        CLICKHOUSE_COMMON_STATIC_DBG_PACKAGE_NAME,
-    ):
-        url = (DOWNLOAD_PREFIX + pkg).format(version=release.version, type=release.type)
-        pkg_name = get_dest_path(pkg.format(version=release.version))
-        download_package(url, pkg_name)
-
-    for pkg, fallback in (
-        (CLICKHOUSE_SERVER_PACKAGE_NAME, CLICKHOUSE_SERVER_PACKAGE_FALLBACK),
-        (CLICKHOUSE_CLIENT_PACKAGE_NAME, CLICKHOUSE_CLIENT_PACKAGE_FALLBACK),
-    ):
-        url = (DOWNLOAD_PREFIX + pkg).format(version=release.version, type=release.type)
-        pkg_name = get_dest_path(pkg.format(version=release.version))
+    failed = {}
+    for pkg, url in release.assets.items():
+        if not pkg.endswith("_amd64.deb") or (not debug and "-dbg_" in pkg):
+            continue
+        pkg_name = dest_path / pkg
         try:
-            download_package(url, pkg_name)
-        except Exception:
-            url = (DOWNLOAD_PREFIX + fallback).format(
-                version=release.version, type=release.type
+            download_build_with_progress(
+                url, pkg_name, retries=RELEASE_PACKAGE_DOWNLOAD_RETRIES
             )
-            pkg_name = get_dest_path(fallback.format(version=release.version))
-            download_package(url, pkg_name)
+        except DownloadException as e:
+            failed[pkg] = str(e)
+            logging.error("Failed to download %s: %s", pkg, e)
+
+    # A required package can be unusable for two reasons, and both must fail the
+    # job loudly with a clear, attributable reason instead of letting a later
+    # `install_packages` die with an opaque `dpkg` glob error:
+    #   1. it was published but failed to download (recorded in `failed`; the
+    #      per-package message distinguishes a genuine 404 from a transient error);
+    #   2. it is absent from the release metadata entirely - a partially published
+    #      release - so it never even entered the download loop above.
+    errors = {
+        pkg: reason
+        for pkg, reason in failed.items()
+        if pkg.startswith(required_prefixes)
+    }
+    available = [pkg for pkg in release.assets if pkg.endswith("_amd64.deb")]
+    for prefix in required_prefixes:
+        if not any(pkg.startswith(prefix) for pkg in available):
+            errors[prefix] = "not found in the release assets"
+
+    if errors:
+        details = "; ".join(f"{pkg}: {reason}" for pkg, reason in errors.items())
+        raise DownloadException(
+            f"Failed to obtain {len(errors)} required release package(s) "
+            f"for {release}: {details}"
+        )
+    if failed:
+        logging.warning(
+            "Some non-essential packages failed to download: %s", ", ".join(failed)
+        )
 
 
-def download_last_release(dest_path):
+def download_last_release(dest_path: Path, debug: bool = False) -> None:
     current_release = get_previous_release(None)
-    download_packages(current_release, dest_path=dest_path)
+    if current_release is None:
+        raise DownloadException("The current release is not found")
+    download_packages(current_release, dest_path=dest_path, debug=debug)
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    release = ReleaseInfo(input())
-    download_packages(release)
+    release = get_release_by_tag(input())
+    download_packages(release, debug=True)

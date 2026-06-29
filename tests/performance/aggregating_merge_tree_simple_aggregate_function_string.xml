@@ -1,4 +1,7 @@
 <test>
+    <settings>
+        <allow_suspicious_primary_key>1</allow_suspicious_primary_key>
+    </settings>
     <create_query>
         CREATE TABLE bench
         ENGINE = AggregatingMergeTree()
@@ -10,7 +13,7 @@
         SETTINGS max_insert_threads = 16
     </create_query>
 
-    <fill_query>OPTIMIZE TABLE bench</fill_query>
+    <fill_query>OPTIMIZE TABLE bench FINAL</fill_query>
 
     <query>
         SELECT *

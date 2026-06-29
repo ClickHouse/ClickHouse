@@ -18,9 +18,9 @@ protected:
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        auto query = std::make_shared<ASTShowAccessQuery>();
+        auto query = make_intrusive<ASTShowAccessQuery>();
 
-        if (!ParserKeyword("SHOW ACCESS").ignore(pos, expected))
+        if (!ParserKeyword(Keyword::SHOW_ACCESS).ignore(pos, expected))
             return false;
 
         node = query;

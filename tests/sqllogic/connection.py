@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import datetime
-import logging
-import pyodbc
-import sqlite3
-import traceback
 import enum
+import logging
 import random
+import sqlite3
 import string
 from contextlib import contextmanager
 
-from exceptions import ProgramError
+try:
+    import pyodbc  # pylint:disable=import-error; for style check
+except ImportError:
+    pyodbc = None
 
+import clickhouse_driver.dbapi as chdbapi  # pylint:disable=import-error; for style check
+
+from exceptions import ProgramError
 
 logger = logging.getLogger("connection")
 logger.setLevel(logging.DEBUG)
@@ -22,9 +25,7 @@ class OdbcConnectingArgs:
         self._kwargs = kwargs
 
     def __str__(self):
-        conn_str = ";".join(
-            ["{}={}".format(x, y) for x, y in self._kwargs.items() if y]
-        )
+        conn_str = ";".join([f"{x}={y}" for x, y in self._kwargs.items() if y])
         return conn_str
 
     def update_database(self, database):
@@ -49,8 +50,21 @@ class OdbcConnectingArgs:
         for kv in conn_str.split(";"):
             if kv:
                 k, v = kv.split("=", 1)
+                # pylint:disable-next=protected-access
                 args._kwargs[k] = v
         return args
+
+
+class NativeConnectingArgs:
+    def __init__(self, host="localhost", port=9000, user="default", database="default", settings=None):
+        self.host = host
+        self.port = port
+        self.user = user
+        self.database = database
+        self.settings = settings or {}
+
+    def update_database(self, database):
+        self.database = database
 
 
 def _random_str(length=8):
@@ -63,14 +77,34 @@ def default_clickhouse_odbc_conn_str():
         OdbcConnectingArgs.create_from_kw(
             dsn="ClickHouse DSN (ANSI)",
             Timeout="300",
-            Url="http://localhost:8123/query?default_format=ODBCDriver2&default_table_engine=MergeTree&union_default_mode=DISTINCT&group_by_use_nulls=1&join_use_nulls=1&allow_create_index_without_type=1&create_index_ignore_unique=1",
+            Url="http://localhost:8123/query?default_format=ODBCDriver2&"
+            "default_table_engine=MergeTree&union_default_mode=DISTINCT&"
+            "group_by_use_nulls=1&join_use_nulls=1&allow_create_index_without_type=1&"
+            "create_index_ignore_unique=1",
         )
+    )
+
+
+def default_clickhouse_native_conn_args():
+    return NativeConnectingArgs(
+        settings={
+            "default_table_engine": "MergeTree",
+            "union_default_mode": "DISTINCT",
+            "group_by_use_nulls": 1,
+            "join_use_nulls": 1,
+            "allow_create_index_without_type": 1,
+            "create_index_ignore_unique": 1,
+            "cast_keep_nullable": 1,
+            "prefer_column_name_to_alias": 1,
+            "aggregate_functions_null_for_empty": 1,
+        }
     )
 
 
 class Engines(enum.Enum):
     SQLITE = enum.auto()
     ODBC = enum.auto()
+    NATIVE = enum.auto()
 
     @staticmethod
     def list():
@@ -82,7 +116,7 @@ class KnownDBMS(str, enum.Enum):
     clickhouse = "ClickHouse"
 
 
-class ConnectionWrap(object):
+class ConnectionWrap:
     def __init__(self, connection=None, factory=None, factory_kwargs=None):
         self._factory = factory
         self._factory_kwargs = factory_kwargs
@@ -126,7 +160,7 @@ class ConnectionWrap(object):
                 f"SELECT name FROM system.tables WHERE database='{self.DATABASE_NAME}'"
             )
         elif self.DBMS_NAME == KnownDBMS.sqlite.value:
-            list_query = f"SELECT name FROM sqlite_master WHERE type='table'"
+            list_query = "SELECT name FROM sqlite_master WHERE type='table'"
         else:
             logger.warning(
                 "unable to drop all tables for unknown database: %s", self.DBMS_NAME
@@ -134,10 +168,15 @@ class ConnectionWrap(object):
             return
 
         list_result = execute_request(list_query, self)
-        logger.info("tables will be dropped: %s", list_result.get_result())
-        for table_name in list_result.get_result():
+        try:
+            tables = list_result.get_result()
+        except ProgramError:
+            logger.warning("failed to list tables in %s, re-raising", self.DATABASE_NAME)
+            raise
+        logger.info("tables will be dropped: %s", tables)
+        for table_name in tables:
             table_name = table_name[0]
-            execute_request(f"DROP TABLE {table_name}", self).assert_no_exception()
+            execute_request(f"DROP TABLE IF EXISTS {table_name}", self).assert_no_exception()
             logger.debug("success drop table: %s", table_name)
 
     def _use_database(self, database="default"):
@@ -154,7 +193,7 @@ class ConnectionWrap(object):
             self._use_database(database)
             logger.info(
                 "currentDatabase : %s",
-                execute_request(f"SELECT currentDatabase()", self).get_result(),
+                execute_request("SELECT currentDatabase()", self).get_result(),
             )
 
     @contextmanager
@@ -167,14 +206,20 @@ class ConnectionWrap(object):
     @contextmanager
     def with_test_database_scope(self):
         self.use_random_database()
+        db_name = self.DATABASE_NAME
         try:
             yield self
         finally:
             self._use_database()
+            if self.DBMS_NAME == KnownDBMS.clickhouse.value and db_name != "default":
+                result = execute_request(f"DROP DATABASE IF EXISTS {db_name}", self)
+                exc = result.get_exception()
+                if exc is not None:
+                    logger.warning("Failed to drop database %s: %s", db_name, exc)
 
     def __exit__(self, *args):
         if hasattr(self._connection, "close"):
-            return self._connection.close()
+            self._connection.close()
 
 
 def setup_connection(engine, conn_str=None, make_debug_request=True):
@@ -184,6 +229,8 @@ def setup_connection(engine, conn_str=None, make_debug_request=True):
         engine = Engines[engine.upper()]
 
     if engine == Engines.ODBC:
+        if pyodbc is None:
+            raise ProgramError("pyodbc is not installed, cannot use ODBC engine")
         if conn_str is None:
             raise ProgramError("conn_str has to be set up for ODBC connection")
 
@@ -202,6 +249,33 @@ def setup_connection(engine, conn_str=None, make_debug_request=True):
         connection.DBMS_NAME = connection.getinfo(pyodbc.SQL_DBMS_NAME)
         connection.DATABASE_NAME = connection.getinfo(pyodbc.SQL_DATABASE_NAME)
         connection.USER_NAME = connection.getinfo(pyodbc.SQL_USER_NAME)
+
+    elif engine == Engines.NATIVE:
+        if conn_str is None:
+            conn_str = default_clickhouse_native_conn_args()
+        if isinstance(conn_str, str):
+            raise ProgramError("NATIVE engine requires NativeConnectingArgs, not a string")
+
+        native_args = conn_str
+        logger.debug("Native connection: host=%s port=%s database=%s", native_args.host, native_args.port, native_args.database)
+
+        def native_factory(args):
+            conn = chdbapi.connect(
+                host=args.host,
+                port=args.port,
+                user=args.user,
+                database=args.database,
+            )
+            return conn
+
+        connection = ConnectionWrap.create_form_factory(
+            factory=native_factory,
+            factory_kwargs=native_args,
+        )
+
+        connection.DBMS_NAME = "ClickHouse"
+        connection.DATABASE_NAME = native_args.database
+        connection.USER_NAME = native_args.user
 
     elif engine == Engines.SQLITE:
         conn_str = conn_str if conn_str is not None else ":memory:"
@@ -263,7 +337,7 @@ class ExecResult:
     def assert_no_exception(self):
         if self.has_exception():
             raise ProgramError(
-                f"request doesn't have a result set, it has the exception",
+                "request doesn't have a result set, it has the exception",
                 parent=self._exception,
             )
 
@@ -271,17 +345,24 @@ class ExecResult:
 def execute_request(request, connection):
     cursor = connection.cursor()
     try:
+        # Apply per-connection settings for the native driver
+        if hasattr(connection, '_factory_kwargs') and isinstance(connection._factory_kwargs, NativeConnectingArgs):
+            settings = connection._factory_kwargs.settings
+            if settings and hasattr(cursor, 'set_settings'):
+                cursor.set_settings(settings)
+
         cursor.execute(request)
         if cursor.description:
             logging.debug("request has a description %s", cursor.description)
             rows = cursor.fetchall()
             connection.commit()
             return ExecResult().as_ok(rows=rows, description=cursor.description)
-        else:
-            logging.debug("request doesn't have a description")
-            connection.commit()
-            return ExecResult().as_ok()
-    except (pyodbc.Error, sqlite3.DatabaseError) as err:
+        logging.debug("request doesn't have a description")
+        connection.commit()
+        return ExecResult().as_ok()
+    except (sqlite3.DatabaseError, Exception) as err:
+        if isinstance(err, KeyboardInterrupt):
+            raise
         return ExecResult().as_exception(err)
     finally:
         cursor.close()

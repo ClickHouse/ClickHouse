@@ -10,22 +10,17 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node", with_zookeeper=True, main_configs=["configs/remote_servers.xml"]
+    "node",
+    with_zookeeper=True,
+    main_configs=["configs/remote_servers.xml"],
+    user_configs=["configs/users.xml"],
 )
-node_1 = cluster.add_instance("node_1", with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
-        node_1.query_with_retry("DROP TABLE IF EXISTS replicated")
-
-        node_1.query_with_retry(
-            """CREATE TABLE replicated (id UInt32, date Date) ENGINE =
-            ReplicatedMergeTree('/clickhouse/tables/replicated', 'node_1')  ORDER BY id PARTITION BY toYYYYMM(date)"""
-        )
-
         node.query_with_retry(
             "CREATE TABLE distributed (id UInt32, date Date) ENGINE = Distributed('test_cluster', 'default', 'replicated')"
         )
@@ -37,11 +32,10 @@ def started_cluster():
 
 
 def test(started_cluster):
-    cluster.pause_container("node_1")
-
     node.query("SYSTEM RELOAD CONFIG")
-    error = node.query_and_get_error(
-        "SELECT count() FROM distributed SETTINGS receive_timeout=1, handshake_timeout_ms=1"
+    # serialize_query_plan=0 because local table does not exist and distributed query fails with a different error
+    node.query_and_get_error(
+        "SELECT count() FROM distributed SETTINGS receive_timeout=1, handshake_timeout_ms=1, serialize_query_plan=0"
     )
 
     result = node.query(
@@ -67,5 +61,3 @@ def test(started_cluster):
 
     assert recovery_time == 0
     assert errors_count == 0
-
-    cluster.unpause_container("node_1")

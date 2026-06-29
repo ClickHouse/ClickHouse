@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Access/EnabledRoles.h>
-#include <Poco/AccessExpireCache.h>
-#include <boost/container/flat_set.hpp>
 #include <map>
 #include <mutex>
+#include <Access/EnabledRoles.h>
+#include <Poco/AccessExpireCache.h>
 
 
 namespace DB
@@ -23,16 +22,26 @@ public:
         const std::vector<UUID> & current_roles,
         const std::vector<UUID> & current_roles_with_admin_option);
 
+    std::shared_ptr<const EnabledRoles> getEnabledRoles(
+        boost::container::flat_set<UUID> current_roles,
+        boost::container::flat_set<UUID> current_roles_with_admin_option);
+
 private:
     using SubscriptionsOnRoles = std::vector<std::shared_ptr<scope_guard>>;
 
     void collectEnabledRoles(scope_guard * notifications) TSA_REQUIRES(mutex);
     void collectEnabledRoles(EnabledRoles & enabled_roles, SubscriptionsOnRoles & subscriptions_on_roles, scope_guard * notifications) TSA_REQUIRES(mutex);
+    void collectEnabledRolesIfNeeded();
     RolePtr getRole(const UUID & role_id, SubscriptionsOnRoles & subscriptions_on_roles) TSA_REQUIRES(mutex);
     void roleChanged(const UUID & role_id, const RolePtr & changed_role);
     void roleRemoved(const UUID & role_id);
 
     const AccessControl & access_control;
+    scope_guard batch_subscription;
+    bool batch_subscribed TSA_GUARDED_BY(mutex) = false;
+
+    /// Set by the per-entity handler; the recalculation is coalesced to once per notification batch.
+    bool need_collect_enabled_roles TSA_GUARDED_BY(mutex) = false;
 
     Poco::AccessExpireCache<UUID, std::pair<RolePtr, std::shared_ptr<scope_guard>>> TSA_GUARDED_BY(mutex) cache;
 

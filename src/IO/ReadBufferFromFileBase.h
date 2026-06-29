@@ -22,6 +22,13 @@
 namespace DB
 {
 
+/// A consistent snapshot of a remote object's metadata, fetched in a single request.
+struct RemoteFileMetadata
+{
+    size_t size = 0;
+    time_t last_modification_time = 0;
+};
+
 class ReadBufferFromFileBase : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName, public WithFileSize
 {
 public:
@@ -50,7 +57,7 @@ public:
         clock_type = clock_type_;
     }
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
 
     void setProgressCallback(ContextPtr context);
 
@@ -58,7 +65,18 @@ public:
     /// I.e. it can be read using open() or mmap(). If this buffer is a "view" into a subrange of the
     /// file, *out_view_offset is set to the start of that subrange, i.e. the difference between actual
     /// file offset and what getPosition() returns.
-    virtual bool isRegularLocalFile(size_t * /* out_view_offset */ = nullptr) { return false; }
+    virtual bool isRegularLocalFile(size_t * /*out_view_offsee*/) { return false; }
+
+    virtual bool isCached() const { return false; }
+
+    /// Query the actual object's size and last modification time directly from remote storage.
+    /// Unlike tryGetFileSize(), which typically returns a pre-known cached value passed at construction time,
+    /// this method issues a real metadata request (e.g. S3 HeadObject, Azure GetProperties) and reflects
+    /// the current state of the object. Both fields come from a single request, so they form a consistent
+    /// snapshot -- useful for detecting (and confirming, via the timestamp) that an object was overwritten
+    /// between listing and reading.
+    /// Returns std::nullopt for non-remote or local file buffers.
+    virtual std::optional<RemoteFileMetadata> getRemoteFileMetadata() const { return std::nullopt; }
 
 protected:
     std::optional<size_t> file_size;

@@ -1,17 +1,19 @@
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
-#include <Parsers/ParserWatchQuery.h>
+#include <Parsers/ParserWithElement.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
-#include "Parsers/IAST_fwd.h"
 
 
 namespace DB
@@ -23,28 +25,46 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+
+/// Whether the SELECT of an INSERT ... SELECT reads inline data through the `input` table function.
+/// Only in that case does an INSERT with a SELECT carry inline data following the FORMAT clause.
+bool selectReadsInlineDataViaInputFunction(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "input")
+        return true;
+    for (const auto & child : ast->children)
+        if (selectReadsInlineDataViaInputFunction(child))
+            return true;
+    return false;
+}
+
+}
+
+
 bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// Create parsers
-    ParserKeyword s_insert_into("INSERT INTO");
-    ParserKeyword s_from_infile("FROM INFILE");
-    ParserKeyword s_compression("COMPRESSION");
-    ParserKeyword s_table("TABLE");
-    ParserKeyword s_function("FUNCTION");
+    ParserKeyword s_insert_into(Keyword::INSERT_INTO);
+    ParserKeyword s_from_infile(Keyword::FROM_INFILE);
+    ParserKeyword s_compression(Keyword::COMPRESSION);
+    ParserKeyword s_table(Keyword::TABLE);
+    ParserKeyword s_function(Keyword::FUNCTION);
     ParserToken s_dot(TokenType::Dot);
-    ParserKeyword s_values("VALUES");
-    ParserKeyword s_format("FORMAT");
-    ParserKeyword s_settings("SETTINGS");
-    ParserKeyword s_select("SELECT");
-    ParserKeyword s_watch("WATCH");
-    ParserKeyword s_partition_by("PARTITION BY");
-    ParserKeyword s_with("WITH");
+    ParserKeyword s_values(Keyword::VALUES);
+    ParserKeyword s_format(Keyword::FORMAT);
+    ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_select(Keyword::SELECT);
+    ParserKeyword s_partition_by(Keyword::PARTITION_BY);
+    ParserKeyword s_with(Keyword::WITH);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserToken s_semicolon(TokenType::Semicolon);
     ParserIdentifier name_p(true);
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserFunction table_function_p{false};
+    ParserFunction table_function_p{false, true};
     ParserStringLiteral infile_name_p;
     ParserExpressionWithOptionalAlias exp_elem_p(false);
 
@@ -56,14 +76,23 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr columns;
     ASTPtr format;
     ASTPtr select;
-    ASTPtr watch;
     ASTPtr table_function;
     ASTPtr settings_ast;
     ASTPtr partition_by_expr;
     ASTPtr compression;
+    ASTPtr with_expression_list;
 
     /// Insertion data
     const char * data = nullptr;
+
+    if (s_with.ignore(pos, expected))
+    {
+        if (!ParserList(std::make_unique<ParserWithElement>(), std::make_unique<ParserToken>(TokenType::Comma))
+            .parse(pos, with_expression_list, expected))
+            return false;
+        if (with_expression_list->children.empty())
+            return false;
+    }
 
     /// Check for key words `INSERT INTO`. If it isn't found, the query can't be parsed as insert query.
     if (!s_insert_into.ignore(pos, expected))
@@ -104,14 +133,30 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    Pos before_lparen = pos;
+
     /// Is there a list of columns
     if (s_lparen.ignore(pos, expected))
     {
         if (!columns_p.parse(pos, columns, expected))
-            return false;
+        {
+            /// Column list parsing failed entirely (e.g. "((SELECT ..." where the second '(' is not a valid column name).
+            /// Rewind to before the '(' so it can be parsed as part of a SELECT query later.
+            columns.reset();
+            pos = before_lparen;
+        }
+        else
+        {
+            /// Optional trailing comma
+            ParserToken(TokenType::Comma).ignore(pos);
 
-        if (!s_rparen.ignore(pos, expected))
-            return false;
+            /// If this fails, we want to rewind to before the lparen so we can later check for (SELECT ...)
+            if (!s_rparen.ignore(pos, expected))
+            {
+                columns.reset();
+                pos = before_lparen;
+            }
+        }
     }
 
     /// Check if file is a source of data.
@@ -143,14 +188,15 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     String format_str;
     Pos before_values = pos;
 
-    /// VALUES or FORMAT or SELECT or WITH or WATCH.
+    /// VALUES or FORMAT or SELECT or WITH.
     /// After FROM INFILE we expect FORMAT, SELECT, WITH or nothing.
     if (!infile && s_values.ignore(pos, expected))
     {
         /// If VALUES is defined in query, everything except setting will be parsed as data,
         /// and if values followed by semicolon, the data should be null.
-        if (!s_semicolon.checkWithoutMoving(pos, expected))
+        if (pos->type != TokenType::Semicolon)
             data = pos->begin;
+
         format_str = "Values";
     }
     else if (s_format.ignore(pos, expected))
@@ -161,27 +207,38 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         tryGetIdentifierNameInto(format, format_str);
     }
-    else if (s_select.ignore(pos, expected) || s_with.ignore(pos,expected))
+    else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected) || s_lparen.ignore(pos, expected))
     {
-        /// If SELECT is defined, return to position before select and parse
-        /// rest of query as SELECT query.
+        /// If SELECT is defined (possibly in parentheses), return to position before select and parse
+        /// rest of query as SELECT query. Parentheses are handled by ParserSelectWithUnionQuery.
         pos = before_values;
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
+
+        if (with_expression_list && select)
+        {
+            const auto & children = select->as<ASTSelectWithUnionQuery>()->list_of_selects->children;
+            for (const auto & child : children)
+            {
+                auto * child_select = child->as<ASTSelectQuery>();
+                if (child_select)
+                {
+                    if (child_select->getExpression(ASTSelectQuery::Expression::WITH, false))
+                        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                            "Only one WITH should be presented, either before INSERT or SELECT.");
+                    child_select->setExpression(ASTSelectQuery::Expression::WITH,
+                        ASTPtr(with_expression_list));
+                    /// WITH was appended after SELECT/TABLES; normalize back to canonical order.
+                    child_select->normalizeChildrenOrder();
+                }
+            }
+        }
 
         /// FORMAT section is expected if we have input() in SELECT part
         if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
             return false;
 
         tryGetIdentifierNameInto(format, format_str);
-    }
-    else if (!infile && s_watch.ignore(pos, expected))
-    {
-        /// If WATCH is defined, return to position before WATCH and parse
-        /// rest of query as WATCH query.
-        pos = before_values;
-        ParserWatchQuery watch_p;
-        watch_p.parse(pos, watch, expected);
     }
     else if (!infile)
     {
@@ -219,8 +276,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
     }
 
-    /// In case of defined format, data follows it.
-    if (format && !infile)
+    /// In case of defined format, data follows it -- but only for inline-data INSERTs.
+    /// An INSERT ... SELECT has no inline data (the rows come from the SELECT), unless the SELECT
+    /// reads them through the `input` table function. Without `input`, anything after the FORMAT
+    /// (including a `;` query terminator) is not insert data, so we must not look for it nor raise
+    /// the "excessive ';'" error. This matters e.g. for `EXPLAIN ... INSERT ... SELECT ... FORMAT
+    /// <name>;`, where the trailing FORMAT is the EXPLAIN output format, not an insert data format.
+    if (format && !infile && (!select || selectReadsInlineDataViaInputFunction(select)))
     {
         Pos last_token = pos;
         --last_token;
@@ -250,7 +312,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// Create query and fill its fields.
-    auto query = std::make_shared<ASTInsertQuery>();
+    auto query = make_intrusive<ASTInsertQuery>();
     node = query;
 
     if (infile)
@@ -286,17 +348,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->columns = columns;
     query->format = std::move(format_str);
     query->select = select;
-    query->watch = watch;
     query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
-    query->end = end;
+    query->end = data ? end : nullptr;
 
     if (columns)
         query->children.push_back(columns);
     if (select)
         query->children.push_back(select);
-    if (watch)
-        query->children.push_back(watch);
     if (settings_ast)
         query->children.push_back(settings_ast);
 

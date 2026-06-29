@@ -1,4 +1,5 @@
 <test>
+    <query>SELECT number AS n FROM numbers_mt(200000000) ORDER BY n DESC LIMIT 1 FORMAT Null</query>
     <query>SELECT number AS n FROM numbers_mt(200000000) ORDER BY n DESC LIMIT 10 FORMAT Null</query>
     <query>SELECT number AS n FROM numbers_mt(200000000) ORDER BY n DESC LIMIT 100 FORMAT Null</query>
     <query>SELECT number AS n FROM numbers_mt(200000000) ORDER BY n DESC LIMIT 1500 FORMAT Null</query>
@@ -7,6 +8,7 @@
     <query>SELECT number AS n FROM numbers_mt(200000000) ORDER BY n DESC LIMIT 10000 FORMAT Null</query>
     <query>SELECT number AS n FROM numbers_mt(200000000) ORDER BY n DESC LIMIT 65535 FORMAT Null</query>
 
+    <query>SELECT intHash64(number) AS n FROM numbers_mt(500000000) ORDER BY n LIMIT 1 FORMAT Null</query>
     <query>SELECT intHash64(number) AS n FROM numbers_mt(500000000) ORDER BY n LIMIT 10 FORMAT Null</query>
     <query>SELECT intHash64(number) AS n FROM numbers_mt(200000000) ORDER BY n LIMIT 100 FORMAT Null</query>
     <query>SELECT intHash64(number) AS n FROM numbers_mt(200000000) ORDER BY n LIMIT 1500 FORMAT Null</query>
@@ -15,6 +17,7 @@
     <query>SELECT intHash64(number) AS n FROM numbers_mt(200000000) ORDER BY n LIMIT 10000 FORMAT Null</query>
     <query>SELECT intHash64(number) AS n FROM numbers_mt(100000000) ORDER BY n LIMIT 65535 FORMAT Null</query>
 
+    <query>SELECT intHash64(number) AS n FROM numbers_mt(200000000) ORDER BY n, n + 1, n + 2 LIMIT 1 FORMAT Null</query>
     <query>SELECT intHash64(number) AS n FROM numbers_mt(200000000) ORDER BY n, n + 1, n + 2 LIMIT 10 FORMAT Null</query>
     <query>SELECT intHash64(number) AS n FROM numbers_mt(200000000) ORDER BY n, n + 1, n + 2 LIMIT 100 FORMAT Null</query>
     <query>SELECT intHash64(number) AS n FROM numbers_mt(200000000) ORDER BY n, n + 1, n + 2 LIMIT 1500 FORMAT Null</query>

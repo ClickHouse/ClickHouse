@@ -90,9 +90,12 @@ public:
         const String & query_id,
         UInt64 stage,
         ClientInfo & client_info,
-        bool with_pending_data) override;
+        bool with_pending_data,
+        const std::vector<String> & external_roles) override;
 
-    void sendReadTaskResponse(const String &) override
+    void sendQueryPlan(const QueryPlan & query_plan) override;
+
+    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
     }
@@ -106,11 +109,11 @@ public:
 
     Packet receivePacketUnlocked(AsyncCallback async_callback) override;
 
+    UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) override;
+
     void disconnect() override;
 
     void sendCancel() override;
-
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids) override;
 
     Packet drain() override;
 
@@ -121,6 +124,8 @@ public:
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
     void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
+
+    void setDistributedFanout(size_t total_connections) override { distributed_fanout = total_connections; }
 
     void setAsyncCallback(AsyncCallback async_callback) override;
 
@@ -178,18 +183,21 @@ private:
     std::queue<int> offsets_queue;
 
     /// The current number of valid connections to the replicas of this shard.
-    size_t active_connection_count;
+    size_t active_connection_count = 0;
 
     /// We count offsets in which we can't change replica anymore,
     /// it's needed to cancel choosing new replicas when we
     /// disabled replica changing in all offsets.
-    size_t offsets_with_disabled_changing_replica;
+    size_t offsets_with_disabled_changing_replica = 0;
 
     Pipeline pipeline_for_new_replicas;
 
     /// New replica may not support two-level aggregation due to version incompatibility.
     /// If we didn't disabled it, we need to skip this replica.
     bool disable_two_level_aggregation = false;
+
+    /// Total number of remote connections across all shards in the distributed query.
+    size_t distributed_fanout = 0;
 
     /// We will save replica with last received packet
     /// (except cases when packet type is EndOfStream or Exception)

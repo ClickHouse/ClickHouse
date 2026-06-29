@@ -13,7 +13,7 @@ ORDER BY key;
 INSERT INTO alter_default select toDate('2020-01-05'), number from system.numbers limit 100;
 
 -- Cannot add column without type
-ALTER TABLE alter_default ADD COLUMN value DEFAULT '10'; --{serverError 36}
+ALTER TABLE alter_default ADD COLUMN value DEFAULT '10'; --{serverError BAD_ARGUMENTS}
 
 ALTER TABLE alter_default ADD COLUMN value String DEFAULT '10';
 
@@ -45,7 +45,7 @@ ALTER TABLE alter_default MODIFY COLUMN value UInt8 DEFAULT 10;
 
 SHOW CREATE TABLE alter_default;
 
-ALTER TABLE alter_default ADD COLUMN bad_column UInt8 DEFAULT 'q'; --{serverError 6}
+ALTER TABLE alter_default ADD COLUMN bad_column UInt8 DEFAULT 'q'; --{serverError CANNOT_PARSE_TEXT}
 
 ALTER TABLE alter_default ADD COLUMN better_column UInt8 DEFAULT '1';
 
@@ -53,7 +53,7 @@ SHOW CREATE TABLE alter_default;
 
 ALTER TABLE alter_default ADD COLUMN other_date String DEFAULT '0';
 
-ALTER TABLE alter_default MODIFY COLUMN other_date DateTime; --{serverError 41}
+ALTER TABLE alter_default MODIFY COLUMN other_date DateTime; --{serverError CANNOT_PARSE_DATETIME}
 
 ALTER TABLE alter_default MODIFY COLUMN other_date DEFAULT 1;
 

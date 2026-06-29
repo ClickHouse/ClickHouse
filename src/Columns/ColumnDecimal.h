@@ -1,28 +1,22 @@
 #pragma once
 
-#include <cmath>
-
-#include <base/sort.h>
 #include <base/TypeName.h>
 #include <Core/Field.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 #include <Common/typeid_cast.h>
-#include <Columns/ColumnVectorHelper.h>
+#include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
-#include <Columns/IColumnImpl.h>
-
 
 namespace DB
 {
 
 /// A ColumnVector for Decimals
 template <is_decimal T>
-class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
+class ColumnDecimal final : public COWHelper<IColumnHelper<ColumnDecimal<T>, ColumnFixedSizeHelper>, ColumnDecimal<T>>
 {
 private:
     using Self = ColumnDecimal;
-    friend class COWHelper<ColumnVectorHelper, Self>;
+    friend class COWHelper<IColumnHelper<Self, ColumnFixedSizeHelper>, Self>;
 
 public:
     using ValueType = T;
@@ -41,112 +35,124 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const override { return TypeName<T>.data(); }
-    TypeIndex getDataType() const override { return TypeToTypeIndex<T>; }
+    const char * getFamilyName() const final;
+    TypeIndex getDataType() const final;
 
-    bool isNumeric() const override { return false; }
-    bool canBeInsideNullable() const override { return true; }
+    bool isNumeric() const final { return false; }
+    bool canBeInsideNullable() const final { return true; }
     bool isFixedAndContiguous() const final { return true; }
-    size_t sizeOfValueIfFixed() const override { return sizeof(T); }
+    size_t sizeOfValueIfFixed() const final { return sizeof(T); }
+    std::span<char> insertRawUninitialized(size_t count) final;
 
-    size_t size() const override { return data.size(); }
-    size_t byteSize() const override { return data.size() * sizeof(data[0]); }
-    size_t byteSizeAt(size_t) const override { return sizeof(data[0]); }
-    size_t allocatedBytes() const override { return data.allocated_bytes(); }
-    void protect() override { data.protect(); }
-    void reserve(size_t n) override { data.reserve(n); }
+    size_t size() const final { return data.size(); }
+    size_t byteSize() const final { return data.size() * sizeof(data[0]); }
+    size_t byteSizeAt(size_t) const final { return sizeof(data[0]); }
+    size_t allocatedBytes() const final { return data.allocated_bytes(); }
+    void protect() final { data.protect(); }
+    void reserve(size_t n) final { data.reserve_exact(n); }
+    size_t capacity() const final { return data.capacity(); }
+    void shrinkToFit() final { data.shrink_to_fit(); }
 
-    void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
-    void insertData(const char * src, size_t /*length*/) override;
-    void insertDefault() override { data.push_back(T()); }
-    void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }
-    void insert(const Field & x) override { data.push_back(x.get<T>()); }
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+    void insertFrom(const IColumn & src, size_t n) final { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+#else
+    void doInsertFrom(const IColumn & src, size_t n) final { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+#endif
 
-    void popBack(size_t n) override
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) final
+#else
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) final
+#endif
     {
+        ValueType v = assert_cast<const Self &>(src).getData()[position];
+        data.resize_fill(data.size() + length, v);
+    }
+
+    void insertData(const char * src, size_t /*length*/) final;
+    void insertDefault() final { data.push_back(T()); }
+    void insertManyDefaults(size_t length) final { data.resize_fill(data.size() + length); }
+    void insert(const Field & x) final { data.push_back(x.safeGet<T>()); }
+    bool tryInsert(const Field & x) final;
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+    void insertRangeFrom(const IColumn & src, size_t start, size_t length) final;
+#else
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) final;
+#endif
+
+    void popBack(size_t n) final
+    {
+        if (n > size())
+            throwCannotPopBack(n, this->getName(), size());
+
         data.resize_assume_reserved(data.size() - n);
     }
 
-    std::string_view getRawData() const override
+    std::string_view getRawData() const final
     {
         return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
-    StringRef getDataAt(size_t n) const override
+    std::string_view getDataAt(size_t n) const final
     {
-        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+        return {reinterpret_cast<const char *>(&data[n]), sizeof(data[n])};
     }
 
-    Float64 getFloat64(size_t n) const final { return DecimalUtils::convertTo<Float64>(data[n], scale); }
+    Float64 getFloat64(size_t n) const final;
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
-    void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void updateWeakHash32(WeakHash32 & hash) const override;
-    void updateHashFast(SipHash & hash) const override;
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                       int direction, int nan_direction_hint) const override;
-    bool hasEqualValues() const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) final;
+    void skipSerializedInArena(ReadBuffer & in) const final;
+    void updateHashWithValue(size_t n, SipHash & hash) const final;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const final;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const final;
+    void updateHashFast(SipHash & hash) const final;
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
+#else
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
+#endif
+    [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const final;
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const final;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                        size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+                        size_t limit, int nan_direction_hint, IColumn::Permutation & res) const final;
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                        size_t limit, int, IColumn::Permutation & res, EqualRanges& equal_ranges) const override;
+                        size_t limit, int, IColumn::Permutation & res, EqualRanges& equal_ranges) const final;
+    size_t estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const final;
 
-    MutableColumnPtr cloneResized(size_t size) const override;
 
-    Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
-    void get(size_t n, Field & res) const override { res = (*this)[n]; }
-    bool getBool(size_t n) const override { return bool(data[n].value); }
-    Int64 getInt(size_t n) const override { return Int64(data[n].value); }
-    UInt64 get64(size_t n) const override;
-    bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
+    MutableColumnPtr cloneResized(size_t size) const final;
 
-    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
-    void expand(const IColumn::Filter & mask, bool inverted) override;
+    Field operator[](size_t n) const final { return DecimalField<ValueType>(data[n], scale); }
+    void get(size_t n, Field & res) const final { res = (*this)[n]; }
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const final;
+    bool getBool(size_t n) const final { return bool(data[n].value); }
+    Int64 getInt(size_t n) const final { return Int64(data[n].value); }
+    UInt64 get64(size_t n) const final;
+    bool isDefaultAt(size_t n) const final { return data[n].value == 0; }
 
-    ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
-    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const final;
+    void filter(const IColumn::Filter & filt) final;
+    void expand(const IColumn::Filter & mask, bool inverted) final;
+
+    ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const final;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const final;
 
     template <typename Type>
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
-    ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
-    void getExtremes(Field & min, Field & max) const override;
+    ColumnPtr replicate(const IColumn::Offsets & offsets) const final;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const final;
 
-    MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override
-    {
-        return this->template scatterImpl<Self>(num_columns, selector);
-    }
-
-    void gather(ColumnGathererStream & gatherer_stream) override;
-
-    bool structureEquals(const IColumn & rhs) const override
+    bool structureEquals(const IColumn & rhs) const final
     {
         if (auto rhs_concrete = typeid_cast<const ColumnDecimal<T> *>(&rhs))
             return scale == rhs_concrete->scale;
         return false;
     }
 
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
-    }
+    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) final;
 
-    UInt64 getNumberOfDefaultRows() const override
-    {
-        return this->template getNumberOfDefaultRowsImpl<Self>();
-    }
-
-    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
-    {
-        return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
-    }
-
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const final;
 
     void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }
@@ -161,6 +167,14 @@ protected:
     UInt32 scale;
 };
 
+template <class TCol>
+concept is_col_over_big_decimal = std::is_same_v<TCol, ColumnDecimal<typename TCol::ValueType>>
+    && is_decimal<typename TCol::ValueType> && is_over_big_int<typename TCol::NativeT>;
+
+template <class TCol>
+concept is_col_int_decimal = std::is_same_v<TCol, ColumnDecimal<typename TCol::ValueType>>
+    && is_decimal<typename TCol::ValueType> && std::is_integral_v<typename TCol::NativeT>;
+
 template <class> class ColumnVector;
 template <class T> struct ColumnVectorOrDecimalT { using Col = ColumnVector<T>; };
 template <is_decimal T> struct ColumnVectorOrDecimalT<T> { using Col = ColumnDecimal<T>; };
@@ -170,7 +184,7 @@ template <is_decimal T>
 template <typename Type>
 ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
 
     auto res = this->create(limit, scale);
     typename Self::Container & res_data = res->getData();
@@ -188,6 +202,7 @@ extern template class ColumnDecimal<Decimal64>;
 extern template class ColumnDecimal<Decimal128>;
 extern template class ColumnDecimal<Decimal256>;
 extern template class ColumnDecimal<DateTime64>;
+extern template class ColumnDecimal<Time64>;
 
 
 }

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Storages/CheckResults.h>
+#include <Common/Logger.h>
 #include <map>
 #include <base/types.h>
+#include <memory>
 #include <mutex>
 
 namespace Poco { class Logger; }
@@ -12,20 +14,23 @@ namespace DB
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 
+class WriteBuffer;
 
 /// Stores the sizes of all columns, and can check whether the columns are corrupted.
 class FileChecker
 {
 public:
-    FileChecker(const String & file_info_path_);
+    explicit FileChecker(const String & file_info_path_);
     FileChecker(DiskPtr disk_, const String & file_info_path_);
 
     void setPath(const String & file_info_path_);
     String getPath() const;
 
     void update(const String & full_file_path);
+    void update(const String & filename, size_t size);
     void setEmpty(const String & full_file_path);
     void save() const;
+    void save(WriteBuffer & buffer) const;
     bool empty() const { return map.empty(); }
 
     /// Check the files whose parameters are specified in sizes.json
@@ -48,7 +53,7 @@ public:
 
     struct DataValidationTasks
     {
-        DataValidationTasks(const std::map<String, size_t> & map_)
+        explicit DataValidationTasks(const std::map<String, size_t> & map_)
             : map(map_), it(map.begin())
         {}
 
@@ -83,7 +88,7 @@ private:
     size_t getRealFileSize(const String & path_) const;
 
     const DiskPtr disk;
-    const Poco::Logger * log;
+    const LoggerPtr log;
 
     String files_info_path;
     std::map<String, size_t> map;

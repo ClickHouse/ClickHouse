@@ -107,25 +107,63 @@ select 1 intersect (select 1 except select 2);
 select 1 union all select 2  except (select 2 except select 1 union all select 1) except select 4;
 select 1 intersect select count() from (select 1 except select 2 intersect select 2 union all select 1);
 explain syntax select 1 intersect select 1;
-SELECT 1
+(
+    SELECT 1
+    FROM system.one
+)
 INTERSECT DISTINCT
-SELECT 1
+(
+    SELECT 1
+    FROM system.one
+)
 explain syntax select 1 except select 1;
-SELECT 1
+(
+    SELECT 1
+    FROM system.one
+)
 EXCEPT DISTINCT
-SELECT 1
+(
+    SELECT 1
+    FROM system.one
+)
 explain syntax select 1 union all select 2  except (select 2 except select 1 union all select 1) except select 4;
-SELECT 1
-UNION ALL
-SELECT 2
+(
+    (
+        (
+            SELECT 1
+            FROM system.one
+        )
+        UNION ALL
+        (
+            SELECT 2
+            FROM system.one
+        )
+    )
+    EXCEPT DISTINCT
+    (
+        (
+            (
+                SELECT 2
+                FROM system.one
+            )
+            EXCEPT DISTINCT
+            (
+                SELECT 1
+                FROM system.one
+            )
+        )
+        UNION ALL
+        (
+            SELECT 1
+            FROM system.one
+        )
+    )
+)
 EXCEPT DISTINCT
-SELECT 2
-EXCEPT DISTINCT
-SELECT 1
-UNION ALL
-SELECT 1
-EXCEPT DISTINCT
-SELECT 4
+(
+    SELECT 4
+    FROM system.one
+)
 set limit=1;
 select 1 intersect select 1;
 1

@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 
 #include <Columns/ColumnConst.h>
@@ -16,18 +17,28 @@ namespace DB
 {
 
 template <typename T>
-void SerializationNumber<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationNumber<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeText(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
+    auto x = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
+    if constexpr (is_floating_point<T>)
+        writeFloatText(x, ostr, settings, settings.always_write_decimal_point_in_float_and_decimal);
+    else
+        writeText(x, ostr);
 }
 
 template <typename T>
 void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
-    T x;
+    T x{};
 
     if constexpr (is_integer<T> && is_arithmetic_v<T>)
-        readIntTextUnsafe(x, istr);
+    {
+        /// readIntTextUnsafe treats a leading '0' as the complete value zero, but readIntText tolerates it
+        if (settings.allow_number_leading_zeros)
+            readIntText(x, istr);
+        else
+            readIntTextUnsafe(x, istr);
+    }
     else
         readText(x, istr);
 
@@ -38,15 +49,28 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
 }
 
 template <typename T>
+bool SerializationNumber<T>::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const
+{
+    T x{};
+
+    if (!tryReadText(x, istr) || (whole && !istr.eof()))
+        return false;
+
+    assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
+    return true;
+}
+
+template <typename T>
 void SerializationNumber<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto x = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
     writeJSONNumber(x, ostr, settings);
 }
 
-template <typename T>
-void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+template <typename T, typename ReturnType>
+ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
     bool has_quote = false;
     if (!istr.eof() && *istr.position() == '"')        /// We understand the number both in quotes and without.
     {
@@ -54,13 +78,16 @@ void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & 
         ++istr.position();
     }
 
-    FieldType x;
+    T x{};
 
     /// null
     if (!has_quote && !istr.eof() && *istr.position() == 'n')
     {
         ++istr.position();
-        assertString("ull", istr);
+        if constexpr (throw_exception)
+            assertString("ull", istr);
+        else if (!checkString("ull", istr))
+            return ReturnType(false);
 
         x = NaNOrZero<T>();
     }
@@ -73,26 +100,62 @@ void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & 
         {
             // extra conditions to parse true/false strings into 1/0
             if (istr.eof())
-                throwReadAfterEOF();
+            {
+                if constexpr (throw_exception)
+                    throwReadAfterEOF();
+                else
+                    return false;
+            }
+
             if (*istr.position() == 't' || *istr.position() == 'f')
             {
                 bool tmp = false;
-                readBoolTextWord(tmp, istr);
+                if constexpr (throw_exception)
+                    readBoolTextWord(tmp, istr);
+                else if (!readBoolTextWord<bool>(tmp, istr))
+                    return ReturnType(false);
+
                 x = tmp;
             }
             else
-                readText(x, istr);
+            {
+                if constexpr (throw_exception)
+                    readText(x, istr);
+                else if (!tryReadText(x, istr))
+                    return ReturnType(false);
+            }
         }
         else
         {
-            readText(x, istr);
+            if constexpr (throw_exception)
+                readText(x, istr);
+            else if (!tryReadText(x, istr))
+                return ReturnType(false);
         }
 
         if (has_quote)
-            assertChar('"', istr);
+        {
+            if constexpr (throw_exception)
+                assertChar('"', istr);
+            else if (!checkChar('"', istr))
+                return ReturnType(false);
+        }
     }
 
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
+    return ReturnType(true);
+}
+
+template <typename T>
+void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeTextJSONImpl<T, void>(column, istr, settings);
+}
+
+template <typename T>
+bool SerializationNumber<T>::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    return deserializeTextJSONImpl<T, bool>(column, istr, settings);
 }
 
 template <typename T>
@@ -104,10 +167,20 @@ void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & i
 }
 
 template <typename T>
+bool SerializationNumber<T>::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const
+{
+    FieldType x;
+    if (!tryReadCSV(x, istr))
+        return false;
+    assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
+    return true;
+}
+
+template <typename T>
 void SerializationNumber<T>::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     /// ColumnVector<T>::ValueType is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::ValueType x = static_cast<typename ColumnVector<T>::ValueType>(field.get<FieldType>());
+    typename ColumnVector<T>::ValueType x = static_cast<typename ColumnVector<T>::ValueType>(field.safeGet<FieldType>());
     writeBinaryLittleEndian(x, ostr);
 }
 
@@ -151,8 +224,9 @@ void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBu
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
 {
+    istr.ignore(sizeof(typename ColumnVector<T>::ValueType) * rows_offset);
     typename ColumnVector<T>::Container & x = typeid_cast<ColumnVector<T> &>(column).getData();
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
@@ -162,6 +236,20 @@ void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
     if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
         for (size_t i = initial_size; i < x.size(); ++i)
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
+}
+
+template <typename T>
+UInt128 SerializationNumber<T>::getHash()
+{
+    SipHash hash;
+    hash.update(TypeName<T>);
+    return hash.get128();
+}
+
+template <typename T>
+SerializationPtr SerializationNumber<T>::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationNumber<T>(); });
 }
 
 template class SerializationNumber<UInt8>;
@@ -176,6 +264,7 @@ template class SerializationNumber<Int32>;
 template class SerializationNumber<Int64>;
 template class SerializationNumber<Int128>;
 template class SerializationNumber<Int256>;
+template class SerializationNumber<BFloat16>;
 template class SerializationNumber<Float32>;
 template class SerializationNumber<Float64>;
 

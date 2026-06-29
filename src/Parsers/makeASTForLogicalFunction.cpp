@@ -2,8 +2,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/IAST_erase.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
@@ -12,9 +12,9 @@ namespace DB
 ASTPtr makeASTForLogicalAnd(ASTs && arguments)
 {
     bool partial_result = true;
-    boost::range::remove_erase_if(arguments, [&](const ASTPtr & argument) -> bool
+    std::erase_if(arguments, [&](const ASTPtr & argument)
     {
-        bool b;
+        bool b = false;
         if (!tryGetLiteralBool(argument.get(), b))
             return false;
         partial_result &= b;
@@ -22,14 +22,14 @@ ASTPtr makeASTForLogicalAnd(ASTs && arguments)
     });
 
     if (!partial_result)
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(0)});
+        return make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(0)});
     if (arguments.empty())
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
+        return make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)});
     if (arguments.size() == 1)
         return arguments[0];
 
-    auto function = std::make_shared<ASTFunction>();
-    auto exp_list = std::make_shared<ASTExpressionList>();
+    auto function = make_intrusive<ASTFunction>();
+    auto exp_list = make_intrusive<ASTExpressionList>();
     function->name = "and";
     function->arguments = exp_list;
     function->children.push_back(exp_list);
@@ -41,9 +41,9 @@ ASTPtr makeASTForLogicalAnd(ASTs && arguments)
 ASTPtr makeASTForLogicalOr(ASTs && arguments)
 {
     bool partial_result = false;
-    boost::range::remove_erase_if(arguments, [&](const ASTPtr & argument) -> bool
+    std::erase_if(arguments, [&](const ASTPtr & argument)
     {
-        bool b;
+        bool b = false;
         if (!tryGetLiteralBool(argument.get(), b))
             return false;
         partial_result |= b;
@@ -51,14 +51,14 @@ ASTPtr makeASTForLogicalOr(ASTs && arguments)
     });
 
     if (partial_result)
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
+        return make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)});
     if (arguments.empty())
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(0)});
+        return make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(0)});
     if (arguments.size() == 1)
         return arguments[0];
 
-    auto function = std::make_shared<ASTFunction>();
-    auto exp_list = std::make_shared<ASTExpressionList>();
+    auto function = make_intrusive<ASTFunction>();
+    auto exp_list = make_intrusive<ASTExpressionList>();
     function->name = "or";
     function->arguments = exp_list;
     function->children.push_back(exp_list);
@@ -81,7 +81,7 @@ bool tryGetLiteralBool(const IAST * ast, bool & value)
         }
         return false;
     }
-    catch (...)
+    catch (const Exception &)
     {
         return false;
     }

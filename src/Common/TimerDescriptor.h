@@ -1,18 +1,20 @@
 #pragma once
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 #include <Poco/Timespan.h>
 
 namespace DB
 {
 
-/// Wrapper over timerfd.
+/// Wrapper over timerfd on Linux. On macOS it is backed by a dedicated kqueue with an
+/// EVFILT_TIMER registration; the kqueue descriptor itself is pollable, so `getDescriptor()`
+/// can still be added to an `Epoll` and becomes readable when the timer fires.
 class TimerDescriptor
 {
 private:
     int timer_fd;
 
 public:
-    explicit TimerDescriptor(int clockid = CLOCK_MONOTONIC, int flags = 0);
+    TimerDescriptor();
     ~TimerDescriptor();
 
     TimerDescriptor(const TimerDescriptor &) = delete;

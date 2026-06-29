@@ -22,7 +22,7 @@ namespace DB
   */
 
 /// Specifies how many connections to return from ConnectionPoolWithFailover::getMany() method.
-enum class PoolMode
+enum class PoolMode : uint8_t
 {
     /// Return exactly one connection.
     GET_ONE = 0,
@@ -42,14 +42,13 @@ public:
             size_t max_error_cap = DBMS_CONNECTION_POOL_WITH_FAILOVER_MAX_ERROR_COUNT);
 
     using Entry = IConnectionPool::Entry;
+    using PoolWithFailoverBase<IConnectionPool>::getValidTryResult;
 
     /** Allocates connection to work. */
     Entry get(const ConnectionTimeouts & timeouts) override;
     Entry get(const ConnectionTimeouts & timeouts,
               const Settings & settings,
               bool force_connected) override; /// From IConnectionPool
-
-    Priority getPriority() const override; /// From IConnectionPool
 
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
@@ -79,25 +78,36 @@ public:
         AsyncCallback async_callback = {},
         std::optional<bool> skip_unavailable_endpoints = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
+    /// The same as getManyChecked(), but respects distributed_insert_skip_read_only_replicas setting.
+    std::vector<TryResult> getManyCheckedForInsert(
+        const ConnectionTimeouts & timeouts,
+        const Settings & settings,
+        PoolMode pool_mode,
+        const QualifiedTableName & table_to_check);
 
     struct NestedPoolStatus
     {
         const Base::NestedPoolPtr pool;
-        size_t error_count;
-        size_t slowdown_count;
+        size_t error_count = 0;
+        size_t slowdown_count = 0;
         std::chrono::seconds estimated_recovery_time;
     };
 
     using Status = std::vector<NestedPoolStatus>;
     Status getStatus() const;
 
-    std::vector<Base::ShuffledPool> getShuffledPools(const Settings & settings, GetPriorityFunc priority_func = {});
+    std::vector<Base::ShuffledPool> getShuffledPools(const Settings & settings, GetPriorityFunc priority_func = {}, bool use_slowdown_count = false);
 
-    size_t getMaxErrorCup() const { return Base::max_error_cap; }
+    size_t getMaxErrorCap() const { return Base::max_error_cap; }
 
     void updateSharedError(std::vector<ShuffledPool> & shuffled_pools)
     {
         Base::updateSharedErrorCounts(shuffled_pools);
+    }
+
+    void incrementErrorCount(ConnectionPoolPtr pool)
+    {
+        Base::incrementErrorCount(pool);
     }
 
     size_t getPoolSize() const { return Base::getPoolSize(); }
@@ -109,18 +119,20 @@ private:
         PoolMode pool_mode,
         const TryGetEntryFunc & try_get_entry,
         std::optional<bool> skip_unavailable_endpoints = std::nullopt,
-        GetPriorityForLoadBalancing::Func priority_func = {});
+        GetPriorityForLoadBalancing::Func priority_func = {},
+        bool skip_read_only_replicas = false);
 
     /// Try to get a connection from the pool and check that it is good.
     /// If table_to_check is not null and the check is enabled in settings, check that replication delay
     /// for this table is not too large.
     TryResult tryGetEntry(
-            IConnectionPool & pool,
+            const ConnectionPoolPtr & pool,
             const ConnectionTimeouts & timeouts,
             std::string & fail_message,
             const Settings & settings,
             const QualifiedTableName * table_to_check = nullptr,
-            AsyncCallback async_callback = {});
+            AsyncCallback async_callback = {},
+            bool force_connected = false);
 
     GetPriorityForLoadBalancing::Func makeGetPriorityFunc(const Settings & settings);
 

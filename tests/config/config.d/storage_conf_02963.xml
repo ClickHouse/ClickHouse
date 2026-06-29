@@ -1,0 +1,15 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_disk_02963>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <path>s3_disk/</path>
+                <endpoint>http://localhost:11111/test/common/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <request_timeout_ms>20000</request_timeout_ms>
+            </s3_disk_02963>
+        </disks>
+    </storage_configuration>
+</clickhouse>

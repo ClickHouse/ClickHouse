@@ -9,8 +9,8 @@
 #include <Common/ArenaAllocator.h>
 #include <Common/iota.h>
 
-#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -19,18 +19,28 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
+/// Guard against allocation bombs in deserialize(): a crafted aggregate state
+/// can declare a huge element count and make resize/reserve allocate gigabytes
+/// before any data is read. The bound matches the existing largestTriangleThreeBuckets
+/// contract (its MAX_ARRAY_SIZE = 1ULL << 30), which is the only consumer of this
+/// shared read() with a documented size limit. Keeping the same value means no
+/// legitimate pre-existing state is rejected (for an oversized state the error just
+/// moves from getResult to deserialize), while crafted multi-GiB bombs that declare
+/// ~4.29e9 elements still throw before allocating.
+static constexpr size_t MAX_STATISTICS_STATE_SIZE = 1ULL << 30;
+
 /// Because ranks are adjusted, we have to store each of them in Float type.
-using RanksArray = std::vector<Float64>;
+using RanksArray = VectorWithMemoryTracking<Float64>;
 
 template <typename Values>
 std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & values)
 {
     const size_t size = values.size();
     /// Save initial positions, than sort indices according to the values.
-    std::vector<size_t> indexes(size);
+    VectorWithMemoryTracking<size_t> indexes(size);
     iota(indexes.data(), indexes.size(), size_t(0));
     std::sort(indexes.begin(), indexes.end(),
         [&] (size_t lhs, size_t rhs) { return values[lhs] < values[rhs]; });
@@ -43,19 +53,23 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
         size_t right = left;
         while (right < size && values[indexes[left]] == values[indexes[right]])
             ++right;
-        auto adjusted = (left + right + 1.) / 2.;
+        auto adjusted = (static_cast<Float64>(left) + static_cast<Float64>(right) + 1.) / 2.;
         auto count_equal = right - left;
 
-        /// Scipy implementation throws exception in this case too.
-        if (count_equal == size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "All numbers in both samples are identical");
-
-        tie_numenator += std::pow(count_equal, 3) - count_equal;
+        tie_numenator += std::pow(count_equal, 3) - static_cast<Float64>(count_equal);
         for (size_t iter = left; iter < right; ++iter)
             out[indexes[iter]] = adjusted;
         left = right;
     }
-    return {out, 1 - (tie_numenator / (std::pow(size, 3) - size))};
+
+    // Protect against division by zero if all values are identical
+    Float64 tie_correction = 1.0;
+    if (size > 1)
+    {
+        tie_correction = 1 - (tie_numenator / (std::pow(size, 3) - static_cast<Float64>(size)));
+    }
+
+    return {out, tie_correction};
 }
 
 
@@ -111,6 +125,9 @@ struct StatisticalSample
     {
         readVarUInt(size_x, buf);
         readVarUInt(size_y, buf);
+        if (size_x > MAX_STATISTICS_STATE_SIZE || size_y > MAX_STATISTICS_STATE_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large array size in aggregate function state (maximum: {})", MAX_STATISTICS_STATE_SIZE);
         x.resize(size_x, arena);
         y.resize(size_y, arena);
         buf.readStrict(reinterpret_cast<char *>(x.data()), size_x * sizeof(x[0]));

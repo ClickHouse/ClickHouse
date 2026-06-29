@@ -17,7 +17,7 @@ DROP TABLE t3;
 
 -- view
 CREATE VIEW v AS SELECT * FROM t1;
-CREATE TABLE t3 AS v; -- { serverError 80 }
+CREATE TABLE t3 AS v; -- { serverError INCORRECT_QUERY }
 DROP TABLE v;
 
 -- dictionary
@@ -36,7 +36,7 @@ SOURCE(CLICKHOUSE(
     TABLE 'dict_data' DB concat(currentDatabase(), '_1') USER 'default' PASSWORD ''))
 LIFETIME(MIN 0 MAX 0)
 LAYOUT(SPARSE_HASHED());
-CREATE TABLE t3 AS dict; -- { serverError 80 }
+CREATE TABLE t3 AS dict; -- { serverError INCORRECT_QUERY }
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t3;

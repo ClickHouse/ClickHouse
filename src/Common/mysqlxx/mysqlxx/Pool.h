@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/Logger.h>
+
 #include <list>
 #include <memory>
 #include <mutex>
@@ -11,9 +13,11 @@
 #include <mysqlxx/Connection.h>
 
 
+/// NOLINTBEGIN(modernize-macro-to-enum)
 #define MYSQLXX_POOL_DEFAULT_START_CONNECTIONS 1
 #define MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS 16
 #define MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL 1
+/// NOLINTEND(modernize-macro-to-enum)
 
 
 namespace mysqlxx
@@ -57,20 +61,21 @@ public:
             incrementRefCount();
         }
 
+        Entry& operator=(const Entry& src)
+        {
+            if (this != &src)
+            {
+                decrementRefCount();
+                data = src.data;
+                pool = src.pool;
+                incrementRefCount();
+            }
+            return *this;
+        }
+
         ~Entry()
         {
             decrementRefCount();
-        }
-
-        Entry & operator= (const Entry & src) /// NOLINT
-        {
-            pool = src.pool;
-            if (data)
-                decrementRefCount();
-            data = src.data;
-            if (data)
-                incrementRefCount();
-            return * this;
         }
 
         bool isNull() const
@@ -112,8 +117,7 @@ public:
         {
             if (pool)
                 return pool->getDescription();
-            else
-                return "pool is null";
+            return "pool is null";
         }
 
         void disconnect();
@@ -163,13 +167,17 @@ public:
          const std::string & user_,
          const std::string & password_,
          unsigned port_,
+         const std::string & ssl_ca_ = "",
+         const std::string & ssl_cert_ = "",
+         const std::string & ssl_key_ = "",
          const std::string & socket_ = "",
          unsigned connect_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
          unsigned rw_timeout_ = MYSQLXX_DEFAULT_RW_TIMEOUT,
          unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
          unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
-         bool opt_reconnect_ = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+         bool opt_reconnect_ = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
+         bool enable_compression_ = false);
 
     Pool(const Pool & other)
         : default_connections{other.default_connections},
@@ -178,7 +186,9 @@ public:
           user{other.user}, password{other.password},
           port{other.port}, socket{other.socket},
           connect_timeout{other.connect_timeout}, rw_timeout{other.rw_timeout},
-          enable_local_infile{other.enable_local_infile}, opt_reconnect(other.opt_reconnect)
+          ssl_ca(other.ssl_ca), ssl_cert(other.ssl_cert), ssl_key(other.ssl_key),
+          enable_local_infile{other.enable_local_infile}, opt_reconnect(other.opt_reconnect),
+          enable_compression{other.enable_compression}
     {}
 
     Pool & operator=(const Pool &) = delete;
@@ -196,13 +206,19 @@ public:
     /// Get description of database.
     std::string getDescription() const
     {
-        return description;
+        std::lock_guard lock(mutex);
+        return getDescriptionImpl();
     }
 
     void removeConnection(Connection * connection);
 
+    bool isOnline()
+    {
+        return online;
+    }
+
 protected:
-    Poco::Logger * log = &Poco::Logger::get("mysqlxx::Pool");
+    LoggerPtr log = getLogger("mysqlxx::Pool");
 
     /// Number of MySQL connections which are created at launch.
     unsigned default_connections;
@@ -217,7 +233,7 @@ private:
     /// List of connections.
     Connections connections;
     /// Lock for connections list access
-    std::mutex mutex;
+    mutable std::mutex mutex;
     /// Description of connection.
     std::string description;
 
@@ -235,6 +251,7 @@ private:
     std::string ssl_key;
     bool enable_local_infile;
     bool opt_reconnect;
+    bool enable_compression;
 
     /// True if connection was established at least once.
     bool was_successful{false};
@@ -242,8 +259,16 @@ private:
     /// Initialises class if it wasn't.
     void initialize();
 
+    /// Pool is online.
+    std::atomic<bool> online{true};
+
     /** Create new connection. */
     Connection * allocConnection(bool dont_throw_if_failed_first_time = false);
+
+    std::string getDescriptionImpl() const
+    {
+        return description;
+    }
 };
 
 }

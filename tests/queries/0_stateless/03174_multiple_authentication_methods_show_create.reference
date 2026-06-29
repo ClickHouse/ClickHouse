@@ -1,0 +1,2 @@
+CREATE USER u_03174_multiple_auth_show_create IDENTIFIED WITH plaintext_password, sha256_password, bcrypt_password, sha256_password
+CREATE USER u_03174_multiple_auth_show_create IDENTIFIED WITH sha256_password, plaintext_password, bcrypt_password, sha256_password

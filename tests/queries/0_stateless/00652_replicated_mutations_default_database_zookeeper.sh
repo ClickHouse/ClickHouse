@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./mergetree_mutations.lib
 . "$CURDIR"/mergetree_mutations.lib
 
-${CLICKHOUSE_CLIENT} --allow_nondeterministic_mutations=1 --multiquery << EOF
+${CLICKHOUSE_CLIENT} --allow_nondeterministic_mutations=1 << EOF
 DROP TABLE IF EXISTS mutations_r1;
 DROP TABLE IF EXISTS for_subquery;
 

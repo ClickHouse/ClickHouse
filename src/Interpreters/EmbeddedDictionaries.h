@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Common/Logger_fwd.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 
@@ -10,7 +11,7 @@
 #include <functional>
 
 
-namespace Poco { class Logger; namespace Util { class AbstractConfiguration; } }
+namespace Poco { namespace Util { class AbstractConfiguration; } }
 
 namespace DB
 {
@@ -24,7 +25,7 @@ class GeoDictionariesLoader;
 class EmbeddedDictionaries : WithContext
 {
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
 
     MultiVersion<RegionsHierarchies> regions_hierarchies;
     MultiVersion<RegionsNames> regions_names;

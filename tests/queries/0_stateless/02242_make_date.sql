@@ -17,14 +17,14 @@ select makeDate(cast('-1980.1' as Decimal(20,5)), 9, 18);
 select makeDate(cast(1980.1 as Float32), 9, 19);
 select makeDate(cast(-1980.1 as Float32), 9, 20);
 
-select makeDate(cast(1980 as Date), 10, 30); -- { serverError 43 }
-select makeDate(cast(-1980 as Date), 10, 30); -- { serverError 43 }
-select makeDate(cast(1980 as Date32), 10, 30); -- { serverError 43 }
-select makeDate(cast(-1980 as Date32), 10, 30); -- { serverError 43 }
-select makeDate(cast(1980 as DateTime), 10, 30); -- { serverError 43 }
-select makeDate(cast(-1980 as DateTime), 10, 30); -- { serverError 43 }
-select makeDate(cast(1980 as DateTime64), 10, 30); -- { serverError 43 }
-select makeDate(cast(-1980 as DateTime64), 10, 30); -- { serverError 43 }
+select makeDate(cast(1980 as Date), 10, 30); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select makeDate(cast(-1980 as Date), 10, 30); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select makeDate(cast(1980 as Date32), 10, 30); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select makeDate(cast(-1980 as Date32), 10, 30); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select makeDate(cast(1980 as DateTime), 10, 30); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select makeDate(cast(-1980 as DateTime), 10, 30); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select makeDate(cast(1980 as DateTime64), 10, 30); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select makeDate(cast(-1980 as DateTime64), 10, 30); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 select makeDate(0.0, 1, 2);
 select makeDate(1980, 15, 1);
@@ -60,12 +60,12 @@ select makeDate(0xffffffff+2010,1,4);
 select makeDate(0x7fffffffffffffff+2010,1,3);
 select makeDate(0xffffffffffffffff+2010,1,4);
 
-select makeDate('1980', '10', '20'); -- { serverError 43 }
-select makeDate('-1980', 3, 17); -- { serverError 43 }
+select makeDate('1980', '10', '20'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select makeDate('-1980', 3, 17); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-select makeDate('aa', 3, 24); -- { serverError 43 }
-select makeDate(1994, 'aa', 24); -- { serverError 43 }
-select makeDate(1984, 3, 'aa'); -- { serverError 43 }
+select makeDate('aa', 3, 24); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select makeDate(1994, 'aa', 24); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select makeDate(1984, 3, 'aa'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 select makeDate(True, 3, 24);
 select makeDate(1994, True, 24);
@@ -78,8 +78,8 @@ select makeDate(NULL, 3, 4);
 select makeDate(1980, NULL, 4);
 select makeDate(1980, 3, NULL);
 
-select makeDate(1980); -- { serverError 42 }
-select makeDate(1980, 1, 1, 1); -- { serverError 42 }
+select makeDate(1980); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select makeDate(1980, 1, 1, 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 select MAKEDATE(1980, 1, 1);
 select MAKEDATE(1980, 1);

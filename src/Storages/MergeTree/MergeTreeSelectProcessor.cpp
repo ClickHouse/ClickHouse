@@ -1,93 +1,185 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+
+#include <Columns/ColumnLazy.h>
 #include <Columns/FilterDescription.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
-#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Processors/Chunk.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Storages/BlockNumberColumn.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
 #include <city.h>
+#include <Core/Settings.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PredicateStatisticsLog.h>
+#include <Processors/Chunk.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
+
+namespace
+{
+
+template <typename Func>
+struct TelemetryWrapper
+{
+    TelemetryWrapper(Func callback_, ProfileEvents::Event event_, std::string span_name_)
+        : callback(std::move(callback_)), event(event_), span_name(std::move(span_name_))
+    {
+    }
+
+    template <typename... Args>
+    auto operator()(Args &&... args)
+    {
+        DB::OpenTelemetry::SpanHolder span(span_name);
+        DB::ProfileEventTimeIncrement<DB::Time::Microseconds> increment(event);
+        return callback(std::forward<Args>(args)...);
+    }
+
+private:
+    Func callback;
+    ProfileEvents::Event event;
+    std::string span_name;
+};
+
+}
+
+namespace ProfileEvents
+{
+extern const Event ParallelReplicasAnnouncementMicroseconds;
+extern const Event ParallelReplicasReadRequestMicroseconds;
+}
 
 namespace DB
 {
 
-namespace ErrorCodes
+namespace Setting
 {
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-    extern const int LOGICAL_ERROR;
-    extern const int QUERY_WAS_CANCELLED;
+    extern const SettingsUInt64 predicate_statistics_sample_rate;
 }
 
-static void injectNonConstVirtualColumns(
-    size_t rows,
-    Block & block,
-    const Names & virtual_columns,
-    MergeTreeReadTask * task = nullptr);
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+}
 
-static void injectPartConstVirtualColumns(
-    size_t rows,
-    Block & block,
-    MergeTreeReadTask * task,
-    const DataTypePtr & partition_value_type,
-    const Names & virtual_columns);
+ParallelReadingExtension::ParallelReadingExtension(
+    MergeTreeAllRangesCallback all_callback_,
+    MergeTreeReadTaskCallback callback_,
+    size_t number_of_current_replica_,
+    size_t total_nodes_count_,
+    String stream_id_)
+    : number_of_current_replica(number_of_current_replica_)
+    , total_nodes_count(total_nodes_count_)
+    , stream_id(std::move(stream_id_))
+{
+    all_callback = TelemetryWrapper<MergeTreeAllRangesCallback>{
+        std::move(all_callback_), ProfileEvents::ParallelReplicasAnnouncementMicroseconds, "ParallelReplicasAnnouncement"};
+
+    callback = TelemetryWrapper<MergeTreeReadTaskCallback>{
+        std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
+}
+
+void ParallelReadingExtension::sendInitialRequest(
+    CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const
+{
+    all_callback(InitialAllRangesAnnouncement{
+        mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id});
+}
+
+std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
+    CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const
+{
+    return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, description, stream_id});
+}
+
+MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
+    RangesByIndex read_ranges_,
+    ProjectionRangesByIndex projection_read_ranges_,
+    MergeTreeIndexReadResultPoolPtr index_reader_pool_,
+    PartRemainingMarks part_remaining_marks_)
+    : read_ranges(std::move(read_ranges_))
+    , projection_read_ranges(std::move(projection_read_ranges_))
+    , index_reader_pool(std::move(index_reader_pool_))
+    , part_remaining_marks(std::move(part_remaining_marks_))
+{
+    chassert(index_reader_pool);
+}
+
+MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const
+{
+    const auto & part_ranges = read_ranges.at(task.getInfo().part_index_in_query);
+    auto it = projection_read_ranges.find(task.getInfo().part_index_in_query);
+    static RangesInDataParts empty_parts_ranges;
+    const auto & projection_parts_ranges = it != projection_read_ranges.end() ? it->second : empty_parts_ranges;
+    auto & remaining_marks = part_remaining_marks.at(task.getInfo().part_index_in_query).value;
+
+    auto storage_snapshot = task.getMainReader().getStorageSnapshot();
+    const auto & all_updated_columns = task.getInfo().alter_conversions->getAllUpdatedColumns();
+    auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(part_ranges, projection_parts_ranges, storage_snapshot->metadata, all_updated_columns);
+
+    /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
+    /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
+    /// cleanup of any per-part cached resources (e.g., skip index read result or projection index bitmaps).
+    size_t task_marks = task.getNumMarksToRead();
+    bool part_last_task = remaining_marks.fetch_sub(task_marks, std::memory_order_acq_rel) == task_marks;
+
+    if (part_last_task)
+        index_reader_pool->clear(task.getInfo().data_part);
+
+    return index_read_result;
+}
 
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MergeTreeReadPoolPtr pool_,
     MergeTreeSelectAlgorithmPtr algorithm_,
-    const MergeTreeData & storage_,
+    const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
+    const IndexReadTasks & index_read_tasks_,
     const ExpressionActionsSettings & actions_settings_,
-    const MergeTreeReadTask::BlockSizeParams & block_size_params_,
     const MergeTreeReaderSettings & reader_settings_,
-    const Names & virt_column_names_)
+    MergeTreeIndexBuildContextPtr merge_tree_index_build_context_,
+    LazyMaterializingRowsPtr lazy_materializing_rows_,
+    const ColumnsDescription * columns_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
+    , row_level_filter(row_level_filter_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps))
+    , prewhere_actions(getPrewhereActions(
+          row_level_filter,
+          prewhere_info,
+          index_read_tasks_,
+          actions_settings,
+          reader_settings_.enable_multiple_prewhere_read_steps,
+          reader_settings_.force_short_circuit_execution,
+          columns_))
     , reader_settings(reader_settings_)
-    , block_size_params(block_size_params_)
-    , virt_column_names(virt_column_names_)
-    , partition_value_type(storage_.getPartitionValueType())
+    , result_header(transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
+    , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
+    , lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {
-    if (reader_settings.apply_deleted_mask)
-    {
-        PrewhereExprStep step
-        {
-            .type = PrewhereExprStep::Filter,
-            .actions = nullptr,
-            .filter_column_name = LightweightDeleteDescription::FILTER_COLUMN.name,
-            .remove_filter_column = true,
-            .need_filter = true,
-            .perform_alter_conversions = true,
-        };
+    bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
+    if (has_prewhere_actions_steps)
+        LOG_TEST(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
 
-        lightweight_delete_filter_step = std::make_shared<PrewhereExprStep>(std::move(step));
-    }
-
-    header_without_const_virtual_columns = applyPrewhereActions(pool->getHeader(), prewhere_info);
-    size_t non_const_columns_offset = header_without_const_virtual_columns.columns();
-    injectNonConstVirtualColumns(0, header_without_const_virtual_columns, virt_column_names);
-
-    for (size_t col_num = non_const_columns_offset; col_num < header_without_const_virtual_columns.columns(); ++col_num)
-        non_const_virtual_column_names.emplace_back(header_without_const_virtual_columns.getByPosition(col_num).name);
-
-    result_header = header_without_const_virtual_columns;
-    injectPartConstVirtualColumns(0, result_header, nullptr, partition_value_type, virt_column_names);
-
-    if (!prewhere_actions.steps.empty())
-        LOG_TRACE(log, "PREWHERE condition was split into {} steps: {}", prewhere_actions.steps.size(), prewhere_actions.dumpConditions());
-
-    if (prewhere_info)
-        LOG_TEST(log, "Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
-            (prewhere_info->prewhere_actions ? prewhere_info->prewhere_actions->dumpDAG(): std::string("<nullptr>")),
-            (!prewhere_actions.steps.empty() ? prewhere_actions.dump() : std::string("<nullptr>")));
+    if (prewhere_info || has_prewhere_actions_steps)
+        LOG_TEST(log, "PREWHERE conditions: {}, Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
+            has_prewhere_actions_steps ? prewhere_actions.dumpConditions() : std::string("<nullptr>"),
+            prewhere_info ? prewhere_info->prewhere_actions.dumpDAG() : std::string("<nullptr>"),
+            has_prewhere_actions_steps ? prewhere_actions.dump() : std::string("<nullptr>"));
 }
 
 String MergeTreeSelectProcessor::getName() const
@@ -95,363 +187,420 @@ String MergeTreeSelectProcessor::getName() const
     return fmt::format("MergeTreeSelect(pool: {}, algorithm: {})", pool->getName(), algorithm->getName());
 }
 
-bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere);
-
-PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps)
+PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
+    const FilterDAGInfoPtr & row_level_filter,
+    const PrewhereInfoPtr & prewhere_info,
+    const IndexReadTasks & index_read_tasks,
+    const ExpressionActionsSettings & actions_settings,
+    bool enable_multiple_prewhere_read_steps,
+    bool force_short_circuit_execution,
+    const ColumnsDescription * columns)
 {
     PrewhereExprInfo prewhere_actions;
-    if (prewhere_info)
+
+    if (row_level_filter)
     {
-        if (prewhere_info->row_level_filter)
+        PrewhereExprStep row_level_filter_step
         {
-            PrewhereExprStep row_level_filter_step
-            {
-                .type = PrewhereExprStep::Filter,
-                .actions = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings),
-                .filter_column_name = prewhere_info->row_level_column_name,
-                .remove_filter_column = true,
-                .need_filter = true,
-                .perform_alter_conversions = true,
-            };
+            .type = PrewhereExprStep::Filter,
+            .actions = std::make_shared<ExpressionActions>(row_level_filter->actions.clone(), actions_settings),
+            .filter_column_name = row_level_filter->column_name,
+            .remove_filter_column = row_level_filter->do_remove_column,
+            .need_filter = true,
+            .perform_alter_conversions = true,
+            .columns_overwritten_by_chain = {},
+            .mutation_version = std::nullopt,
+        };
 
-            prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(row_level_filter_step)));
-        }
+        prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(row_level_filter_step)));
+    }
 
-        if (!enable_multiple_prewhere_read_steps ||
-            !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions))
+    /// Add steps for reading virtual columns for indexes.
+    /// Those must be separate steps, because index readers
+    /// cannot read physical columns from table.
+    for (const auto & [_, index_task] : index_read_tasks)
+    {
+        auto index_read_step = std::make_shared<PrewhereExprStep>();
+        index_read_step->type = PrewhereExprStep::None;
+        index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(index_task.columns), actions_settings);
+        prewhere_actions.steps.emplace_back(std::move(index_read_step));
+    }
+
+    if (prewhere_info &&
+        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns)))
+    {
+        PrewhereExprStep prewhere_step
         {
-            PrewhereExprStep prewhere_step
-            {
-                .type = PrewhereExprStep::Filter,
-                .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings),
-                .filter_column_name = prewhere_info->prewhere_column_name,
-                .remove_filter_column = prewhere_info->remove_prewhere_column,
-                .need_filter = prewhere_info->need_filter,
-                .perform_alter_conversions = true,
-            };
+            .type = PrewhereExprStep::Filter,
+            .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions.clone(), actions_settings),
+            .filter_column_name = prewhere_info->prewhere_column_name,
+            .remove_filter_column = prewhere_info->remove_prewhere_column,
+            .need_filter = prewhere_info->need_filter,
+            .perform_alter_conversions = true,
+            .columns_overwritten_by_chain = {},
+            .mutation_version = std::nullopt,
+        };
 
-            prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(prewhere_step)));
-        }
+        prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(prewhere_step)));
     }
 
     return prewhere_actions;
 }
 
+ChunkAndProgress
+MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const
+{
+    if (!current_task.getReadersChain().isInitialized())
+        current_task.initializeReadersChain(
+            prewhere_actions, merge_tree_index_build_context, lazy_materializing_rows,
+            read_steps_performance_counters, reader_settings.collect_predicate_statistics);
+
+    auto res = task_algorithm.readFromTask(current_task);
+
+    if (res.row_count)
+    {
+        /// Reorder the columns according to result_header
+        Columns ordered_columns;
+        ordered_columns.reserve(result_header.columns());
+        for (size_t i = 0; i < result_header.columns(); ++i)
+        {
+            auto name = result_header.getByPosition(i).name;
+            ordered_columns.push_back(res.block.getByName(name).column);
+        }
+
+        auto chunk = Chunk(ordered_columns, res.row_count);
+        const auto & data_part = current_task.getInfo().data_part;
+
+        if (add_part_level)
+            chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
+
+        if (reader_settings.use_query_condition_cache)
+        {
+            /// The attached marks let the downstream FilterTransform record WHERE-filtered marks
+            /// into the QueryConditionCache. Skip attaching them when on-fly mutations run ahead of
+            /// the filter, otherwise a mutation-filtered mark would poison the cache for a later
+            /// apply_mutations_on_fly = 0 query.
+            if (!current_task.appliesMutationsBeforePrewhere())
+            {
+                String part_name
+                    = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name) : data_part->name;
+                chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(
+                    data_part->storage.getStorageID().uuid,
+                    part_name,
+                    data_part->index_granularity->getMarksCount(),
+                    data_part->index_granularity->hasFinalMark(),
+                    res.read_mark_ranges));
+            }
+
+            /// Some rows survived PREWHERE, but individual granules within this batch may
+            /// still have been fully filtered out. Record those granules immediately so that
+            /// future queries can skip them without waiting for an entire batch to be zero.
+            if (prewhere_info && !res.unmatched_mark_ranges.empty()
+                && !current_task.readersChainCanSkipMarksBeforePrewhere()
+                && !current_task.appliesMutationsBeforePrewhere()
+                && !row_level_filter)
+                current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
+        }
+
+        return ChunkAndProgress{
+            .chunk = std::move(chunk), .num_read_rows = res.num_read_rows, .num_read_bytes = res.num_read_bytes,
+            .is_finished = false, .read_mark_ranges = std::move(res.read_mark_ranges)};
+    }
+
+    /// Suppress PREWHERE attribution when a reader earlier in the chain (skip-index or projection-index)
+    /// can skip whole marks before PREWHERE evaluates them. In that case `res.read_mark_ranges` may
+    /// include marks that were filtered by the index, and recording them under the PREWHERE predicate's
+    /// hash would poison the QueryConditionCache: later queries that share the same PREWHERE predicate
+    /// hash would skip those marks even though the predicate alone matches their rows. See Issue #104781.
+    /// On-fly mutations and patch parts filter rows ahead of PREWHERE for the same reason. A row-level
+    /// security filter is also prepended before PREWHERE (getPrewhereActions), yet this write keys only
+    /// on the query PREWHERE hash, so a mark hidden by a row policy would be wrongly attributed to the
+    /// PREWHERE predicate and read by a later query without that policy.
+    if (reader_settings.use_query_condition_cache && prewhere_info
+        && !current_task.readersChainCanSkipMarksBeforePrewhere()
+        && !current_task.appliesMutationsBeforePrewhere()
+        && !row_level_filter)
+        current_task.addPrewhereUnmatchedMarks(res.read_mark_ranges);
+
+    return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
+}
+
+void MergeTreeSelectProcessor::setVirtualRowConversions(
+    ExpressionActionsPtr virtual_row_conversions_, Block pk_block_header_, bool read_in_reverse_order_)
+{
+    virtual_row_conversions = std::move(virtual_row_conversions_);
+    pk_block_header = std::move(pk_block_header_);
+    read_in_reverse_order = read_in_reverse_order_;
+}
+
+ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
+    const MergeTreeReadTask & current_task, const MarkRanges & read_mark_ranges) const
+{
+    if (!virtual_row_conversions || read_mark_ranges.empty())
+        return {};
+
+    const auto & data_part = current_task.getInfo().data_part;
+    const auto & index = data_part->getIndex();
+
+    /// Forward order: the source will next produce data starting at back().end.
+    /// Reverse order: MergeTreeInReverseOrderSelectAlgorithm returns chunks in reverse.
+    /// After returning a chunk from marks [a, b), the next chunk covers earlier marks ending at a.
+    /// So front().begin is the boundary of the next output.
+    size_t next_mark = read_in_reverse_order
+        ? read_mark_ranges.front().begin
+        : read_mark_ranges.back().end;
+
+    size_t num_pk_columns = pk_block_header.columns();
+    if (index->size() < num_pk_columns)
+        return {};
+
+    bool has_value = std::ranges::all_of(*index, [&](const auto & col) { return col->size() > next_mark; });
+    if (!has_value)
+        return {};
+
+    ColumnsWithTypeAndName pk_columns;
+    pk_columns.reserve(num_pk_columns);
+    for (size_t j = 0; j < num_pk_columns; ++j)
+    {
+        const auto & header_col = pk_block_header.getByPosition(j);
+        auto column = header_col.column->cloneEmpty();
+        column->insert((*(*index)[j])[next_mark]);
+        pk_columns.push_back({std::move(column), header_col.type, header_col.name});
+    }
+    Block pk_block(std::move(pk_columns));
+
+    Columns empty_columns;
+    empty_columns.reserve(result_header.columns());
+    for (size_t i = 0; i < result_header.columns(); ++i)
+        empty_columns.push_back(result_header.getByPosition(i).type->createColumn()->cloneEmpty());
+
+    Chunk chunk(std::move(empty_columns), 0);
+    auto part_level = data_part->info.level;
+    chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(part_level, pk_block, virtual_row_conversions));
+
+    return {std::move(chunk), 0, 0, false, {}};
+}
+
 ChunkAndProgress MergeTreeSelectProcessor::read()
 {
+    if (pending_virtual_row)
+    {
+        auto result = std::move(*pending_virtual_row);
+        pending_virtual_row.reset();
+        return result;
+    }
+
     while (!is_cancelled)
     {
         try
         {
             if (!task || algorithm->needNewTask(*task))
+            {
+                /// Update the query condition cache for filters in PREWHERE stage.
+                /// Skip the write when a reader earlier in the chain (skip-index or projection-index)
+                /// could have filtered marks before PREWHERE saw them, to avoid attributing those
+                /// marks to the PREWHERE predicate hash. See Issue #104781.
+                /// On-fly mutations and patch parts filter rows ahead of PREWHERE for the same reason.
+                /// A row-level security filter is also prepended before PREWHERE, yet this write keys
+                /// only on the query PREWHERE hash, so a mark hidden by a row policy must not be attributed
+                /// to the PREWHERE predicate (a later query without the policy would skip rows it should see).
+                if (reader_settings.use_query_condition_cache && task && prewhere_info
+                    && !task->readersChainCanSkipMarksBeforePrewhere()
+                    && !task->appliesMutationsBeforePrewhere()
+                    && !row_level_filter)
+                {
+                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+                    {
+                        if (output->result_name == prewhere_info->prewhere_column_name)
+                        {
+                            if (!VirtualColumnUtils::isDeterministic(output))
+                                continue;
+
+                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                            auto data_part = task->getInfo().data_part;
+
+                            String part_name = data_part->isProjectionPart()
+                                ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+                                : data_part->name;
+                            query_condition_cache->write(
+                                data_part->storage.getStorageID().uuid,
+                                part_name,
+                                output->getHash(),
+                                prewhere_info->prewhere_actions.getNames()[0],
+                                task->getPrewhereUnmatchedMarks(),
+                                data_part->index_granularity->getMarksCount(),
+                                data_part->index_granularity->hasFinalMark());
+
+                            break;
+                        }
+                    }
+                }
+
                 task = algorithm->getNewTask(*pool, task.get());
+            }
 
             if (!task)
                 break;
+
+            if (storage_id.empty())
+            {
+                storage_id = task->getInfo().data_part->storage.getStorageID();
+                prewhere_step_offset = task->getInfo().mutation_steps.size();
+            }
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                 break;
             throw;
         }
 
-        if (!task->getMainRangeReader().isInitialized())
-            initializeRangeReaders();
+        auto result = readCurrentTask(*task, *algorithm);
 
-        auto res = algorithm->readFromTask(*task, block_size_params);
-
-        if (res.row_count)
+        /// Emit a virtual row update after each block, carrying the next mark's PK boundary.
+        /// This allows MergingSortedTransform to reprioritize sources when:
+        /// - PREWHERE filters all rows (merge gets updated position without actual data)
+        /// - A downstream filter (WHERE, JOIN) removes all rows (virtual row passes through filters)
+        if (virtual_row_conversions && !result.is_finished)
         {
-            injectVirtualColumns(res.block, res.row_count, task.get(), partition_value_type, virt_column_names);
-
-            /// Reorder the columns according to result_header
-            Columns ordered_columns;
-            ordered_columns.reserve(result_header.columns());
-            for (size_t i = 0; i < result_header.columns(); ++i)
-            {
-                auto name = result_header.getByPosition(i).name;
-                ordered_columns.push_back(res.block.getByName(name).column);
-            }
-
-            return ChunkAndProgress{
-                .chunk = Chunk(ordered_columns, res.row_count, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level) : nullptr),
-                .num_read_rows = res.num_read_rows,
-                .num_read_bytes = res.num_read_bytes,
-                .is_finished = false};
+            auto vrow = buildVirtualRowFromIndex(*task, result.read_mark_ranges);
+            if (vrow.chunk)
+                pending_virtual_row.emplace(std::move(vrow));
         }
-        else
-        {
-            return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
-        }
+
+        return result;
     }
 
-    return {Chunk(), 0, 0, true};
+    return {Chunk(), 0, 0, true, {}};
 }
 
-void MergeTreeSelectProcessor::initializeRangeReaders()
+/// Cancels all internal operations for this select processor, including cancelling any ongoing index reads.
+void MergeTreeSelectProcessor::cancel() noexcept
 {
-    PrewhereExprInfo all_prewhere_actions;
-    if (lightweight_delete_filter_step && task->getInfo().data_part->hasLightweightDelete())
-        all_prewhere_actions.steps.push_back(lightweight_delete_filter_step);
+    is_cancelled = true;
 
-    for (const auto & step : prewhere_actions.steps)
-        all_prewhere_actions.steps.push_back(step);
-
-    task->initializeRangeReaders(all_prewhere_actions, non_const_virtual_column_names);
-}
-
-
-namespace
-{
-    struct VirtualColumnsInserter
-    {
-        explicit VirtualColumnsInserter(Block & block_) : block(block_) {}
-
-        bool columnExists(const String & name) const { return block.has(name); }
-
-        void insertUInt8Column(const ColumnPtr & column, const String & name)
-        {
-            block.insert({column, std::make_shared<DataTypeUInt8>(), name});
-        }
-
-        void insertUInt64Column(const ColumnPtr & column, const String & name)
-        {
-            block.insert({column, std::make_shared<DataTypeUInt64>(), name});
-        }
-
-        void insertUUIDColumn(const ColumnPtr & column, const String & name)
-        {
-            block.insert({column, std::make_shared<DataTypeUUID>(), name});
-        }
-
-        void insertLowCardinalityColumn(const ColumnPtr & column, const String & name)
-        {
-            block.insert({column, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), name});
-        }
-
-        void insertPartitionValueColumn(
-            size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String & name)
-        {
-            ColumnPtr column;
-            if (rows)
-                column = partition_value_type->createColumnConst(rows, Tuple(partition_value.begin(), partition_value.end()))
-                             ->convertToFullColumnIfConst();
-            else
-                column = partition_value_type->createColumn();
-
-            block.insert({column, partition_value_type, name});
-        }
-
-        Block & block;
-    };
-}
-
-/// Adds virtual columns that are not const for all rows
-static void injectNonConstVirtualColumns(
-    size_t rows,
-    Block & block,
-    const Names & virtual_columns,
-    MergeTreeReadTask * task)
-{
-    VirtualColumnsInserter inserter(block);
-    for (const auto & virtual_column_name : virtual_columns)
-    {
-        if (virtual_column_name == "_part_offset")
-        {
-            if (!rows)
-            {
-                inserter.insertUInt64Column(DataTypeUInt64().createColumn(), virtual_column_name);
-            }
-            else
-            {
-                if (!inserter.columnExists(virtual_column_name))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Column {} must have been filled part reader",
-                        virtual_column_name);
-            }
-        }
-
-        if (virtual_column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
-        {
-                /// If _row_exists column isn't present in the part then fill it here with 1s
-                ColumnPtr column;
-                if (rows)
-                    column = LightweightDeleteDescription::FILTER_COLUMN.type->createColumnConst(rows, 1)->convertToFullColumnIfConst();
-                else
-                    column = LightweightDeleteDescription::FILTER_COLUMN.type->createColumn();
-
-                inserter.insertUInt8Column(column, virtual_column_name);
-        }
-
-        if (virtual_column_name == BlockNumberColumn::name)
-        {
-            ColumnPtr column;
-            if (rows)
-            {
-                size_t value = 0;
-                if (task)
-                {
-                    value = task->getInfo().data_part ? task->getInfo().data_part->info.min_block : 0;
-                }
-                column = BlockNumberColumn::type->createColumnConst(rows, value)->convertToFullColumnIfConst();
-            }
-            else
-                column = BlockNumberColumn::type->createColumn();
-
-            inserter.insertUInt64Column(column, virtual_column_name);
-        }
-    }
-}
-
-/// Adds virtual columns that are const for the whole part
-static void injectPartConstVirtualColumns(
-    size_t rows,
-    Block & block,
-    MergeTreeReadTask * task,
-    const DataTypePtr & partition_value_type,
-    const Names & virtual_columns)
-{
-    VirtualColumnsInserter inserter(block);
-    /// add virtual columns
-    /// Except _sample_factor, which is added from the outside.
-    if (!virtual_columns.empty())
-    {
-        if (unlikely(rows && !task))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert virtual columns to non-empty chunk without specified task.");
-
-        const IMergeTreeDataPart * part = nullptr;
-
-        if (rows)
-        {
-            part = task->getInfo().data_part.get();
-            if (part->isProjectionPart())
-                part = part->getParentPart();
-        }
-
-        for (const auto & virtual_column_name : virtual_columns)
-        {
-            if (virtual_column_name == "_part")
-            {
-                ColumnPtr column;
-                if (rows)
-                    column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}
-                                 .createColumnConst(rows, part->name)
-                                 ->convertToFullColumnIfConst();
-                else
-                    column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn();
-
-                inserter.insertLowCardinalityColumn(column, virtual_column_name);
-            }
-            else if (virtual_column_name == "_part_index")
-            {
-                ColumnPtr column;
-                if (rows)
-                    column = DataTypeUInt64().createColumnConst(rows, task->getInfo().part_index_in_query)->convertToFullColumnIfConst();
-                else
-                    column = DataTypeUInt64().createColumn();
-
-                inserter.insertUInt64Column(column, virtual_column_name);
-            }
-            else if (virtual_column_name == "_part_uuid")
-            {
-                ColumnPtr column;
-                if (rows)
-                    column = DataTypeUUID().createColumnConst(rows, part->uuid)->convertToFullColumnIfConst();
-                else
-                    column = DataTypeUUID().createColumn();
-
-                inserter.insertUUIDColumn(column, virtual_column_name);
-            }
-            else if (virtual_column_name == "_partition_id")
-            {
-                ColumnPtr column;
-                if (rows)
-                    column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}
-                                 .createColumnConst(rows, part->info.partition_id)
-                                 ->convertToFullColumnIfConst();
-                else
-                    column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn();
-
-                inserter.insertLowCardinalityColumn(column, virtual_column_name);
-            }
-            else if (virtual_column_name == "_partition_value")
-            {
-                if (rows)
-                    inserter.insertPartitionValueColumn(rows, part->partition.value, partition_value_type, virtual_column_name);
-                else
-                    inserter.insertPartitionValueColumn(rows, {}, partition_value_type, virtual_column_name);
-            }
-        }
-    }
-}
-
-void MergeTreeSelectProcessor::injectVirtualColumns(
-    Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns)
-{
-    /// First add non-const columns that are filled by the range reader and then const columns that we will fill ourselves.
-    /// Note that the order is important: virtual columns filled by the range reader must go first
-    injectNonConstVirtualColumns(row_count, block, virtual_columns,task);
-    injectPartConstVirtualColumns(row_count, block, task, partition_value_type, virtual_columns);
-}
-
-Block MergeTreeSelectProcessor::applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info)
-{
-    if (prewhere_info)
-    {
-        if (prewhere_info->row_level_filter)
-        {
-            block = prewhere_info->row_level_filter->updateHeader(std::move(block));
-            auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
-            if (!row_level_column.type->canBeUsedInBooleanContext())
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
-                    row_level_column.type->getName());
-            }
-
-            block.erase(prewhere_info->row_level_column_name);
-        }
-
-        if (prewhere_info->prewhere_actions)
-        {
-            block = prewhere_info->prewhere_actions->updateHeader(std::move(block));
-
-            auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
-            if (!prewhere_column.type->canBeUsedInBooleanContext())
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
-                    prewhere_column.type->getName());
-            }
-
-            if (prewhere_info->remove_prewhere_column)
-            {
-                block.erase(prewhere_info->prewhere_column_name);
-            }
-            else if (prewhere_info->need_filter)
-            {
-                WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
-
-                if (which.isNativeInt() || which.isNativeUInt())
-                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
-                else if (which.isFloat())
-                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
-                else
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                        "Illegal type {} of column for filter",
-                        prewhere_column.type->getName());
-            }
-        }
-    }
-
-    return block;
+    if (merge_tree_index_build_context)
+        merge_tree_index_build_context->index_reader_pool->cancel();
 }
 
 Block MergeTreeSelectProcessor::transformHeader(
-    Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns)
+    Block block,
+    const FilterDAGInfoPtr & row_level_filter,
+    const PrewhereInfoPtr & prewhere_info)
 {
-    auto transformed = applyPrewhereActions(std::move(block), prewhere_info);
-    injectVirtualColumns(transformed, 0, nullptr, partition_value_type, virtual_columns);
+    auto transformed = SourceStepWithFilter::applyPrewhereActions(std::move(block), row_level_filter, prewhere_info);
     return transformed;
+}
+
+static String dumpStatistics(const ReadStepsPerformanceCounters & counters)
+{
+    WriteBufferFromOwnString out;
+    const auto & index_counter = counters.getIndexCounter();
+    if (index_counter)
+        out << fmt::format("index step rows_read: {}, ", index_counter->rows_read.load());
+
+    const auto & all_counters = counters.getCounters();
+    for (size_t i = 0; i < all_counters.size(); ++i)
+    {
+        out << fmt::format("step {} rows_read: {} rows_passed: {}", i,
+            all_counters[i]->rows_read.load(), all_counters[i]->rows_passed_filter.load());
+        if (i + 1 < all_counters.size())
+            out << ", ";
+    }
+    return out.str();
+}
+
+void MergeTreeSelectProcessor::logPredicateStatistics() const
+{
+    auto query_context = CurrentThread::tryGetQueryContext();
+    if (!query_context)
+        return;
+
+    UInt64 sample_rate = query_context->getSettingsRef()[Setting::predicate_statistics_sample_rate];
+    if (sample_rate == 0)
+        return;
+
+    if (sample_rate > 1)
+    {
+        auto qid = CurrentThread::getQueryId();
+        if (CityHash_v1_0_2::CityHash64(qid.data(), qid.size()) % sample_rate != 0)
+            return;
+    }
+
+    auto predicate_stats_log = query_context->getPredicateStatisticsLog();
+    if (!predicate_stats_log)
+        return;
+
+    if (storage_id.database_name.empty())
+        return;
+
+    const auto & counters = read_steps_performance_counters.getCounters();
+    std::vector<size_t> filter_step_indices;
+    for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
+    {
+        const auto & step = *prewhere_actions.steps[i];
+        if (step.type == PrewhereExprStep::Filter && !step.filter_column_name.empty() && step.actions)
+            filter_step_indices.push_back(i);
+    }
+
+    if (filter_step_indices.empty())
+        return;
+
+    size_t first = prewhere_step_offset + filter_step_indices.front();
+    size_t last = prewhere_step_offset + filter_step_indices.back();
+
+    if (last >= counters.size() || !counters[first] || !counters[last])
+        return;
+
+    UInt64 whole_input = counters[first]->rows_read;
+    UInt64 whole_passed = counters[last]->rows_passed_filter;
+
+    if (whole_input == 0)
+        return;
+
+    Float64 whole_selectivity = static_cast<Float64>(whole_passed) / static_cast<Float64>(whole_input);
+
+    time_t now = time(nullptr);
+    UInt16 today = static_cast<UInt16>(DateLUT::instance().toDayNum(now));
+    String query_id(CurrentThread::getQueryId());
+
+    for (size_t step_i : filter_step_indices)
+    {
+        const auto & step = prewhere_actions.steps[step_i];
+        size_t counter_i = prewhere_step_offset + step_i;
+
+        if (counter_i >= counters.size() || !counters[counter_i] || !step->actions)
+            continue;
+
+        UInt64 input_rows = counters[counter_i]->rows_read.load();
+        UInt64 passed_rows = counters[counter_i]->rows_passed_filter.load();
+
+        if (input_rows == 0)
+            continue;
+
+        Float64 step_selectivity = static_cast<Float64>(passed_rows) / static_cast<Float64>(input_rows);
+
+        PredicateStatisticsLogElement elem;
+        elem.event_date = today;
+        elem.event_time = now;
+        elem.database = storage_id.database_name;
+        elem.table = storage_id.table_name;
+        elem.query_id = query_id;
+        elem.predicate_expression = step->actions->getActionsDAG().dumpDAG();
+        elem.input_rows = input_rows;
+        elem.passed_rows = passed_rows;
+        elem.filter_selectivity = step_selectivity;
+        elem.total_input_rows = whole_input;
+        elem.total_passed_rows = whole_passed;
+        elem.total_selectivity = whole_selectivity;
+        predicate_stats_log->add(std::move(elem));
+    }
+}
+
+void MergeTreeSelectProcessor::onFinish() const
+{
+    LOG_TEST(log, "Read steps statistics: {}", dumpStatistics(read_steps_performance_counters));
+    logPredicateStatistics();
 }
 
 }

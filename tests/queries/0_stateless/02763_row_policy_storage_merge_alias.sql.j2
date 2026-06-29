@@ -12,8 +12,6 @@ CREATE TABLE 02763_a_merge (x UInt8, y UInt64, z UInt64) ENGINE = Merge(currentD
 
 {% for prew in [0 , 1] -%}
 
-
-
 SELECT 'x, y, z FROM 02763_a_merge';
 SELECT x, y, z FROM 02763_a_merge ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
 SELECT '* FROM 02763_a_merge';

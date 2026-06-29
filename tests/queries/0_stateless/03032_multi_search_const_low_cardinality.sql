@@ -1,0 +1,1 @@
+SELECT multiSearchFirstIndex(toLowCardinality(''), [toLowCardinality('')])

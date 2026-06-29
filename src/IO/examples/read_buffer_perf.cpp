@@ -5,17 +5,19 @@
 #include <base/types.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Examples/clickhouse_examples.h>
 
 
-int main(int, char **)
+int mainEntryExampleReadBufferPerf(int, char **)
 {
     try
     {
         DB::ReadBufferFromFile in("test");
 
-        DB::Int64 a = 0;
-        DB::Float64 b = 0;
-        DB::String c, d;
+        Int64 a = 0;
+        Float64 b = 0;
+        String c;
+        String d;
 
         size_t i = 0;
         while (!in.eof())

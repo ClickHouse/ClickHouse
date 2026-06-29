@@ -1,20 +1,23 @@
 #pragma once
 
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 
 namespace DB
 {
 
 /// For system.data_skipping_indices table - describes the data skipping indices in tables, similar to system.columns.
-class StorageSystemDataSkippingIndices : public IStorage
+class StorageSystemDataSkippingIndices : public StorageWithCommonVirtualColumns
 {
 public:
     explicit StorageSystemDataSkippingIndices(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemDataSkippingIndices"; }
 
-    Pipe read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,

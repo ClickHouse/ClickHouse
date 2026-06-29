@@ -74,13 +74,12 @@ ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr c
 
     /// otherwise, we get table structure by dictionary structure.
     auto dictionary_structure = external_loader.getDictionaryStructure(dictionary_name, context);
-    return ColumnsDescription(StorageDictionary::getNamesAndTypes(dictionary_structure));
+    return ColumnsDescription(StorageDictionary::getNamesAndTypes(dictionary_structure, false));
 }
 
 StoragePtr TableFunctionDictionary::executeImpl(
     const ASTPtr &, ContextPtr context, const std::string & table_name, ColumnsDescription, bool is_insert_query) const
 {
-    context->checkAccess(AccessType::dictGet, getDatabaseName(), table_name);
     StorageID dict_id(getDatabaseName(), table_name);
     auto dictionary_table_structure = getActualTableStructure(context, is_insert_query);
 
@@ -91,9 +90,10 @@ StoragePtr TableFunctionDictionary::executeImpl(
 }
 
 
+void registerTableFunctionDictionary(TableFunctionFactory & factory);
 void registerTableFunctionDictionary(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionDictionary>();
+    factory.registerFunction<TableFunctionDictionary>({});
 }
 
 }

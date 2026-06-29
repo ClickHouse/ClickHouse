@@ -1,0 +1,10 @@
+-- { echoOn }
+SELECT shardNum(), count() FROM dt WHERE (tag_id, tag_name) IN ((1, 'foo1'), (1, 'foo2')) GROUP BY 1 ORDER BY 1;
+1	2
+2	2
+SELECT shardNum(), count() FROM dt WHERE tag_id IN (1, 1) AND tag_name IN ('foo1', 'foo2') GROUP BY 1 ORDER BY 1;
+1	2
+2	2
+SELECT shardNum(), count() FROM dt WHERE tag_id = 1 AND tag_name IN ('foo1', 'foo2') GROUP BY 1 ORDER BY 1;
+1	2
+2	2

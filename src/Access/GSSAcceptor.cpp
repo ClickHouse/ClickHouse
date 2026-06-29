@@ -43,6 +43,21 @@ bool GSSAcceptorContext::isFailed() const
 
 #if USE_KRB5
 
+String bufferToString(const gss_buffer_desc & buf)
+{
+    // Copy the GSS buffer verbatim. Do not strip trailing NULs: some callers (notably
+    // output_token_buf from gss_accept_sec_context, which carries an encrypted AP-REP in
+    // SPNEGO) pass opaque binary data where trailing 0x00 bytes are meaningful. Display
+    // strings from gss_display_status / gss_display_name have buf.length excluding the
+    // NUL terminator on MIT krb5 and Heimdal, so no trimming is needed there either.
+    String str;
+
+    if (buf.length > 0 && buf.value != nullptr)
+        str.assign(static_cast<char *>(buf.value), buf.length);
+
+    return str;
+}
+
 namespace
 {
 
@@ -73,19 +88,6 @@ PrincipalName::PrincipalName(String principal)
         name = *it;
         instances.assign(++it, st.end());
     }
-}
-
-String bufferToString(const gss_buffer_desc & buf)
-{
-    String str;
-
-    if (buf.length > 0 && buf.value != nullptr)
-    {
-        str.assign(static_cast<char *>(buf.value), buf.length);
-        while (!str.empty() && str.back() == '\0') { str.pop_back(); }
-    }
-
-    return str;
 }
 
 String extractSpecificStatusMessages(OM_uint32 status_code, int status_type, const gss_OID & mech_type)
@@ -328,7 +330,7 @@ void GSSAcceptorContext::initHandles()
     }
 }
 
-String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger * log)
+String GSSAcceptorContext::processToken(const String & input_token, LoggerPtr log)
 {
     std::lock_guard lock(gss_global_mutex);
 
@@ -455,7 +457,7 @@ void GSSAcceptorContext::initHandles()
 {
 }
 
-String GSSAcceptorContext::processToken(const String &, Poco::Logger *)
+String GSSAcceptorContext::processToken(const String &, LoggerPtr)
 {
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without GSS-API/Kerberos support");
 }

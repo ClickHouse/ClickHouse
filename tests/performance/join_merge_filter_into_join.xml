@@ -1,0 +1,9 @@
+<test>
+
+    <create_query>CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=MergeTree() ORDER BY age</create_query>
+
+    <fill_query>INSERT INTO users SELECT 1 as uid, 'Max' as name, number as age FROM numbers_mt(10000)</fill_query>
+
+    <query>SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.age</query>
+
+</test>

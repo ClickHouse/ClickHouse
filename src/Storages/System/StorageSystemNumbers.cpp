@@ -1,29 +1,48 @@
 #include <Storages/System/StorageSystemNumbers.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <mutex>
-#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
-#include <Processors/Sources/NullSource.h>
-#include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
+
 
 namespace DB
 {
 
-StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool multithreaded_, std::optional<UInt64> limit_, UInt64 offset_)
-    : IStorage(table_id), multithreaded(multithreaded_), limit(limit_), offset(offset_)
+StorageSystemNumbers::StorageSystemNumbers(
+    const StorageID & table_id,
+    bool multithreaded_,
+    const std::string & column_name_,
+    std::optional<UInt128> limit_,
+    UInt64 offset_,
+    UInt64 step_,
+    bool descending_)
+    : StorageWithCommonVirtualColumns(table_id), multithreaded(multithreaded_), limit(limit_), offset(offset_), column_name(column_name_), step(step_), descending(descending_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
+    /// This column doesn't have a comment, because otherwise it will be added to all the tables which were created via
+    /// CREATE TABLE test as numbers(5)
+    storage_metadata.setColumns(ColumnsDescription({{column_name_, std::make_shared<DataTypeUInt64>()}}));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageSystemNumbers::read(
+VirtualColumnsDescription StorageSystemNumbers::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemNumbers::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -34,7 +53,9 @@ void StorageSystemNumbers::read(
     size_t num_streams)
 {
     query_plan.addStep(std::make_unique<ReadFromSystemNumbersStep>(
-        column_names, shared_from_this(), storage_snapshot, query_info, std::move(context), max_block_size, num_streams));
+        column_names, query_info, storage_snapshot, context, shared_from_this(), max_block_size, num_streams));
+}
 }
 
-}
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemNumbers) }

@@ -1,47 +1,50 @@
 #pragma once
 
-#include <Core/Field.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
 
 namespace DB
 {
 
-/** Immutable constant value representation during analysis stage.
-  * Some query nodes can be represented by constant (scalar subqueries, functions with constant arguments).
-  */
-class ConstantValue;
-using ConstantValuePtr = std::shared_ptr<ConstantValue>;
-
 class ConstantValue
 {
 public:
-    ConstantValue(Field value_, DataTypePtr data_type_)
-        : value(std::move(value_))
+    ConstantValue(ColumnConstPtr column_, DataTypePtr data_type_)
+        : column(std::move(column_))
         , data_type(std::move(data_type_))
     {}
 
-    const Field & getValue() const
+    ConstantValue(const Field & field_, DataTypePtr data_type_)
+        : column(data_type_->createColumnConst(1, field_))
+        , data_type(std::move(data_type_))
+    {}
+
+    const ColumnConstPtr & getColumn() const
     {
-        return value;
+        return column;
     }
 
     const DataTypePtr & getType() const
     {
         return data_type;
     }
+
+    String getValueName(const IColumn::Options & options) const
+    {
+        return column->getValueName(0, options);
+    }
+
+    static ColumnConstPtr wrapToColumnConst(const ColumnPtr & column_)
+    {
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(column_.get()))
+            return column_const->getPtr();
+        return ColumnConst::create(column_, 1);
+    }
+
 private:
-    Field value;
+    ColumnConstPtr column;
     DataTypePtr data_type;
 };
-
-inline bool operator==(const ConstantValue & lhs, const ConstantValue & rhs)
-{
-    return lhs.getValue() == rhs.getValue() && lhs.getType()->equals(*rhs.getType());
-}
-
-inline bool operator!=(const ConstantValue & lhs, const ConstantValue & rhs)
-{
-    return !(lhs == rhs);
-}
 
 }

@@ -1,14 +1,14 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <string>
 #include <Coordination/KeeperLogStore.h>
-#include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperSnapshotManager.h>
+#include <Core/Types.h>
 #include <libnuraft/nuraft.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
-#include "Coordination/KeeperStateMachine.h"
-#include "Coordination/RaftServerConfig.h"
-#include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperStateMachine.h>
+#include <Coordination/RaftServerConfig.h>
+#include <Access/AuthenticationData.h>
 
 namespace DB
 {
@@ -23,7 +23,6 @@ public:
         const std::string & config_prefix_,
         const std::string & server_state_file_name_,
         const Poco::Util::AbstractConfiguration & config,
-        const CoordinationSettingsPtr & coordination_settings,
         KeeperContextPtr keeper_context_);
 
     /// Constructor for tests
@@ -89,11 +88,19 @@ public:
         return configuration_wrapper.cluster_config->get_servers().size();
     }
 
+    ClusterConfigPtr getClusterConfig() const
+    {
+        std::lock_guard lock(configuration_wrapper_mutex);
+        return configuration_wrapper.cluster_config;
+    }
+
     /// Read all log entries in log store from the begging and return latest config (with largest log_index)
     ClusterConfigPtr getLatestConfigFromLogStore() const;
 
     // TODO (myrrc) This should be removed once "reconfig" is stabilized
-    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config, const CoordinationSettingsPtr & coordination_settings) const;
+    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config, const CoordinationSettings & coordination_settings) const;
+
+    std::optional<AuthenticationData> getAuthenticationData() const;
 
 private:
     const String & getOldServerStatePath();
@@ -105,9 +112,11 @@ private:
     struct KeeperConfigurationWrapper
     {
         /// Our port
-        int port;
+        int port = -1;
         /// Our config
         KeeperServerConfigPtr config;
+        /// Password to access keeper
+        std::optional<AuthenticationData> auth_data;
         /// Servers id's to start as followers
         std::unordered_set<int> servers_start_as_followers;
         /// Cluster config
@@ -128,7 +137,7 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    Poco::Logger * logger;
+    LoggerPtr logger;
 
 public:
     /// Parse configuration from xml config.

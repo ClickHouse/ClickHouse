@@ -2,20 +2,16 @@
 # -*- coding: utf-8 -*-
 
 import logging
-import os
-
-from itertools import chain
 from enum import Enum
-from hashlib import md5
 from functools import reduce
-import sqlglot
-from sqlglot.expressions import PrimaryKeyColumnConstraint, ColumnDef
+from hashlib import md5
+from itertools import chain
 
 from exceptions import (
-    Error,
-    ProgramError,
-    ErrorWithParent,
     DataResultDiffer,
+    Error,
+    ErrorWithParent,
+    ProgramError,
     QueryExecutionError,
 )
 
@@ -139,36 +135,11 @@ class FileBlockBase:
     @staticmethod
     def convert_request(sql):
         if sql.startswith("CREATE TABLE"):
-            result = sqlglot.transpile(sql, read="sqlite", write="clickhouse")[0]
-            pk_token = sqlglot.parse_one(result, read="clickhouse").find(
-                PrimaryKeyColumnConstraint
-            )
-            pk_string = "tuple()"
-            if pk_token is not None:
-                pk_string = str(pk_token.find_ancestor(ColumnDef).args["this"])
-
-            result += " ENGINE = MergeTree() ORDER BY " + pk_string
-            return result
-        elif "SELECT" in sql and "CAST" in sql and "NULL" in sql:
-            # convert `CAST (NULL as INTEGER)` to `CAST (NULL as Nullable(Int32))`
-            try:
-                ast = sqlglot.parse_one(sql, read="sqlite")
-            except sqlglot.errors.ParseError as err:
-                logger.info("cannot parse %s , error is %s", sql, err)
-                return sql
-            cast = ast.find(sqlglot.expressions.Cast)
-            # logger.info("found sql %s && %s && %s", sql, cast.sql(), cast.to.args)
-            if (
-                cast is not None
-                and cast.name == "NULL"
-                and ("nested" not in cast.to.args or not cast.to.args["nested"])
-            ):
-                cast.args["to"] = sqlglot.expressions.DataType.build(
-                    "NULLABLE", expressions=[cast.to]
-                )
-                new_sql = ast.sql("clickhouse")
-                # logger.info("convert from %s to %s", sql, new_sql)
-                return new_sql
+            # ClickHouse handles SQLite types (INTEGER, TEXT, VARCHAR) natively,
+            # and `default_table_engine`, `allow_create_index_without_type`,
+            # `create_index_ignore_unique` settings handle the rest.
+            # We only need to add SETTINGS for nullable keys and block columns.
+            return sql + " SETTINGS allow_nullable_key = 1, enable_block_number_column = 1, enable_block_offset_column = 1"
         return sql
 
     @staticmethod
@@ -248,6 +219,7 @@ class FileBlockBase:
             )
             block.with_result(result)
             return block
+        raise ValueError(f"Unknown block_type {block_type}")
 
     def dump_to(self, output):
         if output is None:
@@ -258,9 +230,6 @@ class FileBlockBase:
 
 
 class FileBlockComments(FileBlockBase):
-    def __init__(self, parser, start, end):
-        super().__init__(parser, start, end)
-
     def get_block_type(self):
         return BlockType.comments
 
@@ -469,20 +438,20 @@ class QueryResult:
             (
                 str(x)
                 for x in [
-                    "rows: {}".format(self.rows) if self.rows else "",
-                    "values_count: {}".format(self.values_count)
-                    if self.values_count
-                    else "",
-                    "data_hash: {}".format(self.data_hash) if self.data_hash else "",
-                    "exception: {}".format(self.exception) if self.exception else "",
-                    "hash_threshold: {}".format(self.hash_threshold)
-                    if self.hash_threshold
-                    else "",
+                    f"rows: {self.rows}" if self.rows else "",
+                    f"values_count: {self.values_count}" if self.values_count else "",
+                    f"data_hash: {self.data_hash}" if self.data_hash else "",
+                    f"exception: {self.exception}" if self.exception else "",
+                    (
+                        f"hash_threshold: {self.hash_threshold}"
+                        if self.hash_threshold
+                        else ""
+                    ),
                 ]
                 if x
             )
         )
-        return "QueryResult({})".format(params)
+        return f"QueryResult({params})"
 
     def __iter__(self):
         if self.rows is not None:
@@ -491,12 +460,10 @@ class QueryResult:
             if self.values_count <= self.hash_threshold:
                 return iter(self.rows)
         if self.data_hash is not None:
-            return iter(
-                [["{} values hashing to {}".format(self.values_count, self.data_hash)]]
-            )
+            return iter([[f"{self.values_count} values hashing to {self.data_hash}"]])
         if self.exception is not None:
-            return iter([["exception: {}".format(self.exception)]])
-        raise ProgramError("Query result is empty", details="{}".format(self.__str__()))
+            return iter([[f"exception: {self.exception}"]])
+        raise ProgramError("Query result is empty", details=str(self))
 
     @staticmethod
     def __value_count(rows):
@@ -528,7 +495,7 @@ class QueryResult:
         for row in rows:
             res_row = []
             for c, t in zip(row, types):
-                logger.debug(f"Builging row. c:{c} t:{t}")
+                logger.debug("Building row. c:%s t:%s", c, t)
                 if c is None:
                     res_row.append("NULL")
                     continue
@@ -541,7 +508,7 @@ class QueryResult:
                 elif t == "I":
                     try:
                         res_row.append(str(int(c)))
-                    except ValueError as ex:
+                    except ValueError:
                         # raise QueryExecutionError(
                         #     f"Got non-integer result '{c}' for I type."
                         # )
@@ -549,7 +516,7 @@ class QueryResult:
                     except OverflowError as ex:
                         raise QueryExecutionError(
                             f"Got overflowed result '{c}' for I type."
-                        )
+                        ) from ex
 
                 elif t == "R":
                     res_row.append(f"{c:.3f}")
@@ -567,6 +534,7 @@ class QueryResult:
             values = list(chain(*rows))
             values.sort()
             return [values] if values else []
+        return []
 
     @staticmethod
     def __calculate_hash(rows):
@@ -595,9 +563,9 @@ class QueryResult:
         # do not print details to the test file
         # but print original exception
         if isinstance(e, ErrorWithParent):
-            message = "{}, original is: {}".format(e, e.get_parent())
+            message = f"{e}, original is: {e.get_parent()}"
         else:
-            message = "{}".format(e)
+            message = str(e)
 
         return QueryResult(exception=message)
 
@@ -616,9 +584,8 @@ class QueryResult:
                         "canonic and actual results have different exceptions",
                         details=f"canonic: {canonic.exception}, actual: {actual.exception}",
                     )
-                else:
-                    # exceptions are the same
-                    return
+                # exceptions are the same
+                return
             elif canonic.exception is not None:
                 raise DataResultDiffer(
                     "canonic result has exception and actual result doesn't",
@@ -639,9 +606,8 @@ class QueryResult:
             if canonic.values_count != actual.values_count:
                 raise DataResultDiffer(
                     "canonic and actual results have different value count",
-                    details="canonic values count {}, actual {}".format(
-                        canonic.values_count, actual.values_count
-                    ),
+                    details=f"canonic values count {canonic.values_count}, "
+                    f"actual {actual.values_count}",
                 )
             if canonic.data_hash != actual.data_hash:
                 raise DataResultDiffer(
@@ -653,9 +619,8 @@ class QueryResult:
             if canonic.values_count != actual.values_count:
                 raise DataResultDiffer(
                     "canonic and actual results have different value count",
-                    details="canonic values count {}, actual {}".format(
-                        canonic.values_count, actual.values_count
-                    ),
+                    details=f"canonic values count {canonic.values_count}, "
+                    f"actual {actual.values_count}",
                 )
             if canonic.rows != actual.rows:
                 raise DataResultDiffer(
@@ -665,5 +630,5 @@ class QueryResult:
 
         raise ProgramError(
             "Unable to compare results",
-            details="actual {}, canonic {}".format(actual, canonic),
+            details=f"actual {actual}, canonic {canonic}",
         )

@@ -1,12 +1,25 @@
-SELECT count()
-FROM t_02156_merge1
-PREWHERE notEmpty(v) AND (k = 3)
+          Prewhere info
+            Prewhere filter
+            Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
+          Prewhere info
+            Prewhere filter
+            Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
+          Prewhere info
+            Prewhere filter
+            Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
+          Prewhere info
+            Prewhere filter
+            Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
 2
-SELECT count()
-FROM t_02156_merge2
-WHERE (k = 3) AND notEmpty(v)
+        Filter column: and(equals(k, 3), notEmpty(v)) (removed)
+          Prewhere info
+            Prewhere filter
+            Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
 2
-SELECT count()
-FROM t_02156_merge3
-WHERE (k = 3) AND notEmpty(v)
+              Prewhere info
+                Prewhere filter
+                Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
+              Prewhere info
+                Prewhere filter
+                Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
 2

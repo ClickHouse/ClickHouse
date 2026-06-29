@@ -14,7 +14,7 @@ namespace MySQLParser
 
 ASTPtr ASTDropQuery::clone() const
 {
-    auto res = std::make_shared<ASTDropQuery>(*this);
+    auto res = make_intrusive<ASTDropQuery>(*this);
     res->children.clear();
     res->is_truncate = is_truncate;
     res->if_exists = if_exists;
@@ -23,22 +23,22 @@ ASTPtr ASTDropQuery::clone() const
 
 bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_drop("DROP");
-    ParserKeyword s_truncate("TRUNCATE");
-    ParserKeyword s_table("TABLE");
-    ParserKeyword s_database("DATABASE");
-    ParserKeyword s_if_exists("IF EXISTS");
-    ParserKeyword s_view("VIEW");
-    ParserKeyword on("ON");
+    ParserKeyword s_drop(Keyword::DROP);
+    ParserKeyword s_truncate(Keyword::TRUNCATE);
+    ParserKeyword s_table(Keyword::TABLE);
+    ParserKeyword s_database(Keyword::DATABASE);
+    ParserKeyword s_if_exists(Keyword::IF_EXISTS);
+    ParserKeyword s_view(Keyword::VIEW);
+    ParserKeyword on(Keyword::ON);
     ParserIdentifier name_p(false);
 
-    ParserKeyword s_event("EVENT");
-    ParserKeyword s_function("FUNCTION");
-    ParserKeyword s_index("INDEX");
-    ParserKeyword s_server("SERVER");
-    ParserKeyword s_trigger("TRIGGER");
+    ParserKeyword s_event(Keyword::EVENT);
+    ParserKeyword s_function(Keyword::FUNCTION);
+    ParserKeyword s_index(Keyword::INDEX);
+    ParserKeyword s_server(Keyword::SERVER);
+    ParserKeyword s_trigger(Keyword::TRIGGER);
 
-    auto query = std::make_shared<ASTDropQuery>();
+    auto query = make_intrusive<ASTDropQuery>();
     node = query;
     ASTDropQuery::QualifiedNames names;
     bool if_exists = false;

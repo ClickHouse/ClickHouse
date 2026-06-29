@@ -26,10 +26,8 @@
 #include <pcg-random/pcg_random.hpp>
 #include <Common/randomSeed.h>
 
-#ifdef __clang__
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Wused-but-marked-unused"
-#endif
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
 #include <xxhash.h>
 
 using Key = UInt64;
@@ -385,6 +383,4 @@ OK_GOOGLE(TestRndInput, HashMap, TwoRoundsTwoVarsHash, elements_to_insert)
 OK_GOOGLE(TestRndInput, HashMap, WyHash, elements_to_insert)
 OK_GOOGLE(TestRndInput, HashMap, XXH3Hash, elements_to_insert)
 
-#ifdef __clang__
-#    pragma clang diagnostic pop
-#endif
+#pragma clang diagnostic pop

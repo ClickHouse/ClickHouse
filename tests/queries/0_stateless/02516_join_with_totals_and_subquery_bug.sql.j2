@@ -13,7 +13,7 @@ INNER JOIN
     GROUP BY 1
         WITH TOTALS
 ) AS t2 USING (a)
-SETTINGS allow_experimental_analyzer=0;
+SETTINGS enable_analyzer=0;
 
 SELECT *
 FROM
@@ -30,7 +30,7 @@ INNER JOIN
     GROUP BY 1
         WITH TOTALS
 ) AS t2 USING (a)
-SETTINGS allow_experimental_analyzer=1;
+SETTINGS enable_analyzer=1;
 
 SELECT a
 FROM

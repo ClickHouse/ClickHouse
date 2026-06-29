@@ -132,7 +132,7 @@ SELECT substring(s, l, r) FROM t;
 
 DROP table if exists t;
 
-SELECT 'UBSAN bug';
+SELECT '-- UBSAN bug';
 
 /** NOTE: The behaviour of substring and substringUTF8 is inconsistent when negative offset is greater than string size:
   * substring:
@@ -144,3 +144,6 @@ SELECT 'UBSAN bug';
   * This may be subject for change.
   */
 SELECT substringUTF8('hello, Ð¿Ñ�Ð¸Ð²ÐµÑ�', -9223372036854775808, number) FROM numbers(16) FORMAT Null;
+
+SELECT '-- Alias';
+SELECT byteSlice('hello', 2, 2);

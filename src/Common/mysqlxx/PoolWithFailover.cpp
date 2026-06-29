@@ -1,3 +1,5 @@
+#include <Common/Exception.h>
+#include <Common/ReplicasReconnector.h>
 #include <algorithm>
 #include <ctime>
 #include <random>
@@ -11,9 +13,45 @@
 namespace DB::ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int BAD_ARGUMENTS;
 }
 
 using namespace mysqlxx;
+
+static auto connectionReestablisher(std::weak_ptr<Pool> pool, bool shareable)
+{
+    return [weak_pool = pool, shareable](UInt64 interval_milliseconds)
+    {
+        auto shared_pool = weak_pool.lock();
+        if (!shared_pool)
+            return false;
+
+        if (shareable && shared_pool.use_count() == 2)
+            return true;
+
+        if (!shared_pool->isOnline())
+        {
+            try
+            {
+                shared_pool->get();
+                Poco::Util::Application::instance().logger().information("Reestablishing connection to " + shared_pool->getDescription() + " has succeeded.");
+            }
+            catch (const Poco::Exception & e)
+            {
+                if (interval_milliseconds >= 1000)
+                    Poco::Util::Application::instance().logger().warning("Reestablishing connection to " + shared_pool->getDescription() + " has failed: " + e.displayText());
+            }
+            catch (const std::exception &)
+            {
+                if (interval_milliseconds >= 1000)
+                    Poco::Util::Application::instance().logger().warning("Reestablishing connection to " + shared_pool->getDescription() + " has failed.");
+            }
+        }
+
+        return true;
+    };
+}
+
 
 PoolWithFailover::PoolWithFailover(
         const Poco::Util::AbstractConfiguration & config_,
@@ -23,8 +61,24 @@ PoolWithFailover::PoolWithFailover(
         const size_t max_tries_)
     : max_tries(max_tries_)
     , shareable(config_.getBool(config_name_ + ".share_connection", false))
-    , wait_timeout(UINT64_MAX)
+    , wait_timeout(config_.getUInt64(config_name_ + ".connection_wait_timeout", MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT))
+    , bg_reconnect(config_.getBool(config_name_ + ".background_reconnect", false))
 {
+    /// Honor `connection_pool_size` and `connection_wait_timeout` for XML-defined dictionaries too,
+    /// matching the named-collection / DDL path (see createMySQLPoolWithFailover). Previously XML pools
+    /// always waited indefinitely for a free connection (wait_timeout = UINT64_MAX) and the pool size was
+    /// not configurable, so a shared pool (share_connection=true) serving many dictionaries could freeze
+    /// SYSTEM RELOAD DICTIONARIES once all connections were in use, instead of failing with a clear error.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/22048
+    const unsigned max_connections = config_.getUInt(config_name_ + ".connection_pool_size", max_connections_);
+
+    /// Match the named-collection / DDL path (createMySQLPoolWithFailover), which rejects a zero-sized
+    /// pool: with max_connections = 0 the pool could still hand out the default start connection (it is
+    /// allocated before max_connections is enforced), so a "zero-sized" pool is neither rejected nor truly
+    /// empty. Fail with a clear error instead.
+    if (max_connections == 0)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Connection pool cannot have zero size");
+
     if (config_.has(config_name_ + ".replica"))
     {
         Poco::Util::AbstractConfiguration::Keys replica_keys;
@@ -39,7 +93,10 @@ PoolWithFailover::PoolWithFailover(
                 int priority = config_.getInt(replica_name + ".priority", 0);
 
                 replicas_by_priority[priority].emplace_back(
-                    std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections_, config_name_.c_str()));
+                    std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections, config_name_.c_str()));
+
+                if (bg_reconnect)
+                    DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_by_priority[priority].back()), shareable));
             }
         }
 
@@ -56,8 +113,11 @@ PoolWithFailover::PoolWithFailover(
     else
     {
         replicas_by_priority[0].emplace_back(
-            std::make_shared<Pool>(config_, config_name_, default_connections_, max_connections_));
+            std::make_shared<Pool>(config_, config_name_, default_connections_, max_connections));
+        if (bg_reconnect)
+            DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_by_priority[0].back()), shareable));
     }
+
 }
 
 
@@ -77,27 +137,39 @@ PoolWithFailover::PoolWithFailover(
         const RemoteDescription & addresses,
         const std::string & user,
         const std::string & password,
+        const std::string & ssl_ca,
+        const std::string & ssl_cert,
+        const std::string & ssl_key,
         unsigned default_connections_,
         unsigned max_connections_,
         size_t max_tries_,
         uint64_t wait_timeout_,
         size_t connect_timeout_,
-        size_t rw_timeout_)
+        size_t rw_timeout_,
+        bool bg_reconnect_,
+        bool enable_compression_)
     : max_tries(max_tries_)
     , shareable(false)
     , wait_timeout(wait_timeout_)
+    , bg_reconnect(bg_reconnect_)
 {
     /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
     for (const auto & [host, port] : addresses)
     {
         replicas_by_priority[0].emplace_back(std::make_shared<Pool>(database,
-            host, user, password, port,
+            host, user, password, port, ssl_ca, ssl_cert, ssl_key,
             /* socket_ = */ "",
             connect_timeout_,
             rw_timeout_,
             default_connections_,
-            max_connections_));
+            max_connections_,
+            MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
+            MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
+            enable_compression_));
+        if (bg_reconnect)
+            DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_by_priority[0].back()), shareable));
     }
+
 }
 
 
@@ -105,6 +177,7 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
     : max_tries{other.max_tries}
     , shareable{other.shareable}
     , wait_timeout(other.wait_timeout)
+    , bg_reconnect(other.bg_reconnect)
 {
     if (shareable)
     {
@@ -117,9 +190,14 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
             Replicas replicas;
             replicas.reserve(priority_replicas.second.size());
             for (const auto & pool : priority_replicas.second)
+            {
                 replicas.emplace_back(std::make_shared<Pool>(*pool));
+                if (bg_reconnect)
+                    DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas.back()), shareable));
+            }
             replicas_by_priority.emplace(priority_replicas.first, std::move(replicas));
         }
+
     }
 }
 
@@ -150,6 +228,9 @@ PoolWithFailover::Entry PoolWithFailover::get()
             {
                 PoolPtr & pool = replicas[i];
 
+                if (bg_reconnect && !pool->isOnline())
+                    continue;
+
                 try
                 {
                     Entry entry = shareable ? pool->get(wait_timeout) : pool->tryGet();
@@ -165,7 +246,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
                 }
                 catch (const Poco::Exception & e)
                 {
-                    if (e.displayText().find("mysqlxx::Pool is full") != std::string::npos) /// NOTE: String comparison is trashy code.
+                    if (e.displayText().contains("mysqlxx::Pool is full")) /// NOTE: String comparison is trashy code.
                     {
                         full_pool = &pool;
                     }
@@ -213,7 +294,5 @@ PoolWithFailover::Entry PoolWithFailover::get()
 
     if (replicas_by_priority.size() > 1)
         throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Connections to all mysql replicas failed: {}", message.str());
-    else
-        throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Connections to mysql failed: {}", message.str());
-
+    throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Connections to mysql failed: {}", message.str());
 }

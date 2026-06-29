@@ -1,11 +1,11 @@
 SELECT '-- negative tests';
-SELECT splitByChar(',', '1,2,3', ''); -- { serverError 43 }
-SELECT splitByRegexp('[ABC]', 'oneAtwoBthreeC', ''); -- { serverError 43 }
-SELECT alphaTokens('abca1abc', ''); -- { serverError 43 }
-SELECT splitByAlpha('abca1abc', ''); -- { serverError 43 }
-SELECT splitByNonAlpha('  1!  a,  b.  ',  ''); -- { serverError 43 }
-SELECT splitByWhitespace('  1!  a,  b.  ', ''); -- { serverError 43 }
-SELECT splitByString(', ', '1, 2 3, 4,5, abcde', ''); -- { serverError 43 }
+SELECT splitByChar(',', '1,2,3', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT splitByRegexp('[ABC]', 'oneAtwoBthreeC', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT alphaTokens('abca1abc', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT splitByAlpha('abca1abc', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT splitByNonAlpha('  1!  a,  b.  ',  ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT splitByWhitespace('  1!  a,  b.  ', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT splitByString(', ', '1, 2 3, 4,5, abcde', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '-- splitByChar';
 SELECT '-- (default)';

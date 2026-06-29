@@ -1,8 +1,11 @@
 #pragma once
 
 
+#include <pcg_random.hpp>
+
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Common/randomSeed.h>
 
 
 namespace DB
@@ -17,7 +20,7 @@ class ReplicatedMergeMutateTaskBase : public IExecutableTask
 {
 public:
     ReplicatedMergeMutateTaskBase(
-        Poco::Logger * log_,
+        LoggerPtr log_,
         StorageReplicatedMergeTree & storage_,
         ReplicatedMergeTreeQueue::SelectedEntryPtr & selected_entry_,
         IExecutableTask::TaskResultCallback & task_result_callback_)
@@ -28,6 +31,7 @@ public:
         /// This is needed to ask an asssignee to assign a new merge/mutate operation
         /// It takes bool argument and true means that current task is successfully executed.
         , task_result_callback(task_result_callback_)
+        , rng(randomSeed())
     {
     }
 
@@ -52,6 +56,8 @@ protected:
     virtual PrepareResult prepare() = 0;
     virtual bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) = 0;
 
+    void maybeSleepBeforeZeroCopyLock(uint64_t estimated_space_for_result);
+
     /// Will execute a part of inner MergeTask or MutateTask
     virtual bool executeInnerTask() = 0;
 
@@ -66,13 +72,13 @@ protected:
     ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry;
     ReplicatedMergeTreeLogEntry & entry;
     MergeList::EntryPtr merge_mutate_entry{nullptr};
-    Poco::Logger * log;
+    LoggerPtr log;
     /// ProfileEvents for current part will be stored here
     ProfileEvents::Counters profile_counters;
     ContextMutablePtr task_context;
 
 private:
-    enum class CheckExistingPartResult
+    enum class CheckExistingPartResult : uint8_t
     {
         PART_EXISTS,
         OK
@@ -81,7 +87,7 @@ private:
     CheckExistingPartResult checkExistingPart();
     bool executeImpl();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE_INNER_MERGE,
@@ -94,6 +100,7 @@ private:
     State state{State::NEED_PREPARE};
     IExecutableTask::TaskResultCallback task_result_callback;
     bool print_exception = true;
+    pcg64 rng;
 };
 
 }

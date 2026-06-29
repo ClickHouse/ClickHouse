@@ -1,38 +1,48 @@
-#include <Databases/IDatabase.h>
+#include <Access/ContextAccess.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
-#include <Access/ContextAccess.h>
-#include <Storages/System/StorageSystemDatabases.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/System/StorageSystemDatabases.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/logger_useful.h>
-#include <Parsers/formatAST.h>
 
 
 namespace DB
 {
 
-NamesAndTypesList StorageSystemDatabases::getNamesAndTypes()
+namespace ErrorCodes
 {
-    return {
-        {"name", std::make_shared<DataTypeString>()},
-        {"engine", std::make_shared<DataTypeString>()},
-        {"data_path", std::make_shared<DataTypeString>()},
-        {"metadata_path", std::make_shared<DataTypeString>()},
-        {"uuid", std::make_shared<DataTypeUUID>()},
-        {"engine_full", std::make_shared<DataTypeString>()},
-        {"comment", std::make_shared<DataTypeString>()}
-    };
+    extern const int UNKNOWN_DATABASE;
 }
 
-NamesAndAliases StorageSystemDatabases::getNamesAndAliases()
+
+ColumnsDescription StorageSystemDatabases::getColumnsDescription()
 {
-    return {
-        {"database", std::make_shared<DataTypeString>(), "name"}
+    auto description = ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Database name."},
+        {"engine", std::make_shared<DataTypeString>(), "Database engine."},
+        {"data_path", std::make_shared<DataTypeString>(), "Data path."},
+        {"metadata_path", std::make_shared<DataTypeString>(), "Metadata path."},
+        {"uuid", std::make_shared<DataTypeUUID>(), "Database UUID."},
+        {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the database engine."},
+        {"comment", std::make_shared<DataTypeString>(), "Database comment."},
+        {"is_external", std::make_shared<DataTypeUInt8>(), "Database is external (i.e. PostgreSQL/DataLakeCatalog)."},
     };
+
+    description.setAliases({
+        {"database", std::make_shared<DataTypeString>(), "name"}
+    });
+
+    return description;
 }
 
 static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database)
@@ -41,7 +51,7 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
     while (true)
     {
         String name = database->getDatabaseName();
-        guard = DatabaseCatalog::instance().getDDLGuard(name, "");
+        guard = DatabaseCatalog::instance().getDDLGuard(name, "", nullptr);
 
         /// Ensure that the database was not renamed before we acquired the lock
         auto locked_database = DatabaseCatalog::instance().tryGetDatabase(name);
@@ -54,7 +64,7 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
             return {};
 
         guard.reset();
-        LOG_TRACE(&Poco::Logger::get("StorageSystemDatabases"), "Failed to lock database {} ({}), will retry", name, database->getUUID());
+        LOG_TRACE(getLogger("StorageSystemDatabases"), "Failed to lock database {} ({}), will retry", name, database->getUUID());
     }
 
     ASTPtr ast = database->getCreateDatabaseQuery();
@@ -72,7 +82,15 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
     return engine_full;
 }
 
-static ColumnPtr getFilteredDatabases(const Databases & databases, const SelectQueryInfo & query_info, ContextPtr context)
+Block StorageSystemDatabases::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "engine" },
+        { {}, std::make_shared<DataTypeUUID>(), "uuid" },
+    };
+}
+
+static ColumnPtr getFilteredDatabases(const Databases & databases, const ActionsDAG::Node * predicate, ContextPtr context)
 {
     MutableColumnPtr name_column = ColumnString::create();
     MutableColumnPtr engine_column = ColumnString::create();
@@ -94,33 +112,37 @@ static ColumnPtr getFilteredDatabases(const Databases & databases, const SelectQ
         ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"),
         ColumnWithTypeAndName(std::move(uuid_column), std::make_shared<DataTypeUUID>(), "uuid")
     };
-    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
     return block.getByPosition(0).column;
 }
 
-void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
 {
     const auto access = context->getAccess();
-    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
-
-    const auto databases = DatabaseCatalog::instance().getDatabases();
-    ColumnPtr filtered_databases_column = getFilteredDatabases(databases, query_info, context);
+    const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
+    /// Remote databases are always shown in system.databases regardless of show_remote_databases_in_system_tables.
+    /// Listing a database name is purely local metadata and never requires expensive calls to an external service.
+    /// The setting only guards operations like system.tables / system.columns that enumerate a database's contents.
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
+    ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
 
     for (size_t i = 0; i < filtered_databases_column->size(); ++i)
     {
-        auto database_name = filtered_databases_column->getDataAt(i).toString();
+        auto database_name = filtered_databases_column->getDataAt(i);
 
-        if (check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
+        if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
             continue;
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue; /// filter out the internal database for temporary tables in system.databases, asynchronous metric "NumberOfDatabases" behaves the same way
 
-        const auto & database = databases.at(database_name);
+        auto database_it = databases.find(database_name);
+        if (database_it == databases.end())
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", database_name);
+        const auto & database = database_it->second;
 
         size_t src_index = 0;
         size_t res_index = 0;
-        const auto & columns_mask = query_info.columns_mask;
         if (columns_mask[src_index++])
             res_columns[res_index++]->insert(database_name);
         if (columns_mask[src_index++])
@@ -135,7 +157,12 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[res_index++]->insert(getEngineFull(context, database));
         if (columns_mask[src_index++])
             res_columns[res_index++]->insert(database->getDatabaseComment());
+        if (columns_mask[src_index++])
+            res_columns[res_index++]->insert(database->isExternal());
    }
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDatabases) }

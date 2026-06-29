@@ -1,14 +1,15 @@
 #include <Core/MySQL/PacketsProtocolText.h>
+
+#include <Core/MySQL/MySQLUtils.h>
 #include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include "Common/assert_cast.h"
-#include "Core/MySQL/IMySQLWritePacket.h"
-#include "DataTypes/DataTypeLowCardinality.h"
-#include "DataTypes/DataTypesDecimal.h"
+#include <Common/assert_cast.h>
+#include <Core/MySQL/IMySQLWritePacket.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesDecimal.h>
 
-#include "MySQLUtils.h"
 
 namespace DB
 {
@@ -22,7 +23,7 @@ namespace ProtocolText
 ResultSetRow::ResultSetRow(const Serializations & serializations, const DataTypes & data_types, const Columns & columns_, size_t row_num_)
     : columns(columns_), row_num(row_num_)
 {
-    static FormatSettings format_settings = {.bool_true_representation = "1", .bool_false_representation = "0"};
+    FormatSettings format_settings = {.bool_true_representation = "1", .bool_false_representation = "0"};
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
@@ -115,7 +116,7 @@ void ColumnDefinition::readPayloadImpl(ReadBuffer & payload)
 {
     String def;
     readLengthEncodedString(def, payload);
-    assert(def == "def");
+    chassert(def == "def");
     readLengthEncodedString(schema, payload);
     readLengthEncodedString(table, payload);
     readLengthEncodedString(org_table, payload);
@@ -156,7 +157,7 @@ void ColumnDefinition::writePayloadImpl(WriteBuffer & buffer) const
 
 ColumnDefinition getColumnDefinition(const String & column_name, const DataTypePtr & data_type)
 {
-    ColumnType column_type;
+    ColumnType column_type = {};
     CharacterSet charset = CharacterSet::binary;
     int flags = 0;
     uint8_t decimals = 0;
@@ -243,7 +244,7 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
             charset = CharacterSet::utf8_general_ci;
             break;
     }
-    return ColumnDefinition(column_name, charset, 0, column_type, flags, decimals);
+    return ColumnDefinition(column_name, charset, 0, column_type, static_cast<uint16_t>(flags), decimals);
 }
 
 }

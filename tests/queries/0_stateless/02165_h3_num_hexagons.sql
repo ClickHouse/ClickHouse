@@ -16,4 +16,4 @@ SELECT h3NumHexagons(12);
 SELECT h3NumHexagons(13);
 SELECT h3NumHexagons(14);
 SELECT h3NumHexagons(15);
-SELECT h3NumHexagons(16); -- { serverError 69 }
+SELECT h3NumHexagons(16); -- { serverError ARGUMENT_OUT_OF_BOUND }

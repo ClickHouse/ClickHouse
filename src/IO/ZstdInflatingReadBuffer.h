@@ -29,8 +29,8 @@ private:
     bool nextImpl() override;
 
     ZSTD_DCtx * dctx;
-    ZSTD_inBuffer input;
-    ZSTD_outBuffer output;
+    ZSTD_inBuffer input{};
+    ZSTD_outBuffer output{};
     bool eof_flag = false;
 };
 

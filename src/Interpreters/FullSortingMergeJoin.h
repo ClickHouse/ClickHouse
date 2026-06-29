@@ -21,24 +21,61 @@ namespace ErrorCodes
 class FullSortingMergeJoin : public IJoin
 {
 public:
-    explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+    explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader & right_sample_block_,
+                                  int null_direction_ = 1)
         : table_join(table_join_)
         , right_sample_block(right_sample_block_)
+        , null_direction(null_direction_)
     {
-        LOG_TRACE(&Poco::Logger::get("FullSortingMergeJoin"), "Will use full sorting merge join");
+        LOG_TRACE(getLogger("FullSortingMergeJoin"), "Will use full sorting merge join");
     }
 
     std::string getName() const override { return "FullSortingMergeJoin"; }
+
     const TableJoin & getTableJoin() const override { return *table_join; }
+
+    bool isCloneSupported() const override
+    {
+        return getTotals().empty();
+    }
+
+    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
+        SharedHeader,
+        SharedHeader right_sample_block_) const override
+    {
+        return std::make_shared<FullSortingMergeJoin>(table_join_, right_sample_block_, null_direction);
+    }
+
+    int getNullDirection() const { return null_direction; }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::addBlockToJoin should not be called");
     }
 
+    /// Strictness/kind combinations that MergeJoinAlgorithm (the engine behind this join) implements.
+    /// Mirrors the checks in MergeJoinAlgorithm's constructor (MergeJoinTransform.cpp).
+    static bool isMergeAlgorithmStrictnessAndKindSupported(JoinKind kind, JoinStrictness strictness)
+    {
+        if (strictness != JoinStrictness::Any && strictness != JoinStrictness::All && strictness != JoinStrictness::Asof)
+            return false;
+
+        if (strictness == JoinStrictness::Asof)
+            return isInner(kind) || isLeft(kind);
+
+        return isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind);
+    }
+
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join)
     {
         if (!table_join->oneDisjunct())
+            return false;
+
+        /// The actual joining is done by MergeJoinAlgorithm, which only implements
+        /// Any/All/Asof strictness and Inner/Left/Right/Full kind (Asof restricted to Left/Inner).
+        /// Decline anything else here so chooseJoinAlgorithm falls back to another algorithm
+        /// instead of building a pipeline that raises a query exception later.
+        if (!isMergeAlgorithmStrictnessAndKindSupported(table_join->kind(), table_join->strictness()))
             return false;
 
         bool support_storage = !table_join->isSpecialStorage();
@@ -65,7 +102,7 @@ public:
         for (size_t i = 0; i < onexpr.key_names_left.size(); ++i)
         {
             DataTypePtr left_type = left_block.getByName(onexpr.key_names_left[i]).type;
-            DataTypePtr right_type = right_sample_block.getByName(onexpr.key_names_right[i]).type;
+            DataTypePtr right_type = right_sample_block->getByName(onexpr.key_names_right[i]).type;
 
             bool type_equals
                 = table_join->hasUsing() ? left_type->equals(*right_type) : removeNullable(left_type)->equals(*removeNullable(right_type));
@@ -84,11 +121,12 @@ public:
     }
 
     /// Used just to get result header
-    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /* not_processed */) override
+    JoinResultPtr joinBlock(Block block) override
     {
-        for (const auto & col : right_sample_block)
+        for (const auto & col : *right_sample_block)
             block.insert(col);
         block = materializeBlock(block).cloneEmpty();
+        return IJoinResult::createFromBlock(std::move(block));
     }
 
     void setTotals(const Block & block) override { totals = block; }
@@ -117,8 +155,9 @@ public:
 
 private:
     std::shared_ptr<TableJoin> table_join;
-    Block right_sample_block;
+    SharedHeader right_sample_block;
     Block totals;
+    int null_direction;
 };
 
 }

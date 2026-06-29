@@ -1,10 +1,10 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTStreamSettings.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
-
 
 namespace DB
 {
@@ -30,7 +30,7 @@ void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
 
 ASTPtr ASTTableExpression::clone() const
 {
-    auto res = std::make_shared<ASTTableExpression>(*this);
+    auto res = make_intrusive<ASTTableExpression>(*this);
     res->children.clear();
 
     CLONE(database_and_table_name);
@@ -38,6 +38,8 @@ ASTPtr ASTTableExpression::clone() const
     CLONE(subquery);
     CLONE(sample_size);
     CLONE(sample_offset);
+    CLONE(column_aliases);
+    CLONE(stream_settings);
 
     return res;
 }
@@ -47,18 +49,25 @@ void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
     hash_state.update(locality);
     hash_state.update(strictness);
     hash_state.update(kind);
+    hash_state.update(is_natural);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 ASTPtr ASTTableJoin::clone() const
 {
-    auto res = std::make_shared<ASTTableJoin>(*this);
+    auto res = make_intrusive<ASTTableJoin>(*this);
     res->children.clear();
 
     CLONE(using_expression_list);
     CLONE(on_expression);
 
     return res;
+}
+
+void ASTTableJoin::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
+{
+    f(nullptr, &using_expression_list);
+    f(nullptr, &on_expression);
 }
 
 void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
@@ -69,7 +78,7 @@ void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
 
 ASTPtr ASTArrayJoin::clone() const
 {
-    auto res = std::make_shared<ASTArrayJoin>(*this);
+    auto res = make_intrusive<ASTArrayJoin>(*this);
     res->children.clear();
 
     CLONE(expression_list);
@@ -79,7 +88,7 @@ ASTPtr ASTArrayJoin::clone() const
 
 ASTPtr ASTTablesInSelectQueryElement::clone() const
 {
-    auto res = std::make_shared<ASTTablesInSelectQueryElement>(*this);
+    auto res = make_intrusive<ASTTablesInSelectQueryElement>(*this);
     res->children.clear();
 
     CLONE(table_join);
@@ -91,7 +100,7 @@ ASTPtr ASTTablesInSelectQueryElement::clone() const
 
 ASTPtr ASTTablesInSelectQuery::clone() const
 {
-    const auto res = std::make_shared<ASTTablesInSelectQuery>(*this);
+    const auto res = make_intrusive<ASTTablesInSelectQuery>(*this);
     res->children.clear();
 
     for (const auto & child : children)
@@ -103,58 +112,77 @@ ASTPtr ASTTablesInSelectQuery::clone() const
 #undef CLONE
 
 
-void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.current_select = this;
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
     if (database_and_table_name)
     {
-        settings.ostr << " ";
-        database_and_table_name->formatImpl(settings, state, frame);
+        ostr << " ";
+        database_and_table_name->format(ostr, settings, state, frame);
     }
-    else if (table_function && !(table_function->as<ASTFunction>()->prefer_subquery_to_function_formatting && subquery))
+    else if (table_function && !(table_function->as<ASTFunction>()->preferSubqueryToFunctionFormatting() && subquery))
     {
-        settings.ostr << " ";
-        table_function->formatImpl(settings, state, frame);
+        ostr << " ";
+        table_function->format(ostr, settings, state, frame);
     }
     else if (subquery)
     {
-        settings.ostr << settings.nl_or_ws << indent_str;
-        subquery->formatImpl(settings, state, frame);
+        ostr << settings.nl_or_ws << indent_str;
+        subquery->format(ostr, settings, state, frame);
+    }
+
+    /// format column aliases (`AS t(a, b)` -> the (a, b) part)
+    if (column_aliases)
+    {
+        ostr << "(";
+        auto column_aliases_frame = frame;
+        column_aliases_frame.expression_list_prepend_whitespace = false;
+        column_aliases->format(ostr, settings, state, column_aliases_frame);
+        ostr << ")";
     }
 
     if (final)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str
-            << "FINAL" << (settings.hilite ? hilite_none : "");
+        ostr << settings.nl_or_ws << indent_str
+            << "FINAL";
     }
 
     if (sample_size)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str
-            << "SAMPLE " << (settings.hilite ? hilite_none : "");
-        sample_size->formatImpl(settings, state, frame);
+        ostr << settings.nl_or_ws << indent_str
+            << "SAMPLE ";
+        sample_size->format(ostr, settings, state, frame);
 
         if (sample_offset)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << ' '
-                << "OFFSET " << (settings.hilite ? hilite_none : "");
-            sample_offset->formatImpl(settings, state, frame);
+            ostr << ' '
+                << "OFFSET ";
+            sample_offset->format(ostr, settings, state, frame);
+        }
+    }
+
+    if (stream_settings)
+    {
+        ostr << settings.nl_or_ws << indent_str << "STREAM";
+
+        const auto & typed_stream_settings = stream_settings->as<ASTStreamSettings &>();
+        if (typed_stream_settings.settings.cursor_tree.has_value())
+        {
+            ostr << ' ';
+            stream_settings->format(ostr, settings, state, frame);
         }
     }
 }
 
 
-void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, FormatState &, FormatStateStacked frame) const
+void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
     if (kind != JoinKind::Comma)
-    {
-        settings.ostr << settings.nl_or_ws << indent_str;
-    }
+        ostr << settings.nl_or_ws << indent_str;
 
     switch (locality)
     {
@@ -162,7 +190,7 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
         case JoinLocality::Local:
             break;
         case JoinLocality::Global:
-            settings.ostr << "GLOBAL ";
+            ostr << "GLOBAL ";
             break;
     }
 
@@ -174,121 +202,148 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
                 break;
             case JoinStrictness::RightAny:
             case JoinStrictness::Any:
-                settings.ostr << "ANY ";
+                ostr << "ANY ";
                 break;
             case JoinStrictness::All:
-                settings.ostr << "ALL ";
+                ostr << "ALL ";
                 break;
             case JoinStrictness::Asof:
-                settings.ostr << "ASOF ";
+                ostr << "ASOF ";
                 break;
             case JoinStrictness::Semi:
-                settings.ostr << "SEMI ";
+                ostr << "SEMI ";
                 break;
             case JoinStrictness::Anti:
-                settings.ostr << "ANTI ";
+                ostr << "ANTI ";
                 break;
         }
     }
 
+    if (is_natural)
+        ostr << "NATURAL ";
+
     switch (kind)
     {
         case JoinKind::Inner:
-            settings.ostr << "INNER JOIN";
+            ostr << "INNER JOIN";
             break;
         case JoinKind::Left:
-            settings.ostr << "LEFT JOIN";
+            ostr << "LEFT JOIN";
             break;
         case JoinKind::Right:
-            settings.ostr << "RIGHT JOIN";
+            ostr << "RIGHT JOIN";
             break;
         case JoinKind::Full:
-            settings.ostr << "FULL OUTER JOIN";
+            ostr << "FULL OUTER JOIN";
             break;
         case JoinKind::Cross:
-            settings.ostr << "CROSS JOIN";
+            ostr << "CROSS JOIN";
             break;
         case JoinKind::Comma:
-            settings.ostr << ",";
+            ostr << ",";
             break;
         case JoinKind::Paste:
-            settings.ostr << "PASTE JOIN";
+            ostr << "PASTE JOIN";
             break;
     }
-
-    settings.ostr << (settings.hilite ? hilite_none : "");
 }
 
 
-void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
     frame.expression_list_prepend_whitespace = false;
 
     if (using_expression_list)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " USING " << (settings.hilite ? hilite_none : "");
-        settings.ostr << "(";
-        using_expression_list->formatImpl(settings, state, frame);
-        settings.ostr << ")";
+        ostr << " USING ";
+        ostr << "(";
+        using_expression_list->format(ostr, settings, state, frame);
+        ostr << ")";
     }
     else if (on_expression)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
-        on_expression->formatImpl(settings, state, frame);
+        ostr << " ON ";
+
+       /** If there is an alias for the whole expression we wrap the ON clause in parens in two cases:
+         *  1. collapse_identical_nodes_to_aliases is true (meaning old analyzer is being used) AND the alias was
+         *     defined earlier in the query
+         *  2. collapse_identical_nodes_to_aliases is false (the analyzer) - because we will not make any substitutions
+         */
+        bool on_need_parens = false;
+        auto on_alias = on_expression->tryGetAlias();
+        if (!on_alias.empty())
+        {
+            bool was_alias_defined_earlier = state.printed_asts_with_alias.contains(
+                {frame.current_select, on_alias, on_expression->getTreeHash(/*ignore_aliases=*/true)});
+            on_need_parens = settings.collapse_identical_nodes_to_aliases ? !was_alias_defined_earlier : true;
+        }
+
+
+        if (on_need_parens)
+        {
+            ostr << "(";
+            /// We have just emitted `(` around the ON expression, so suppress the
+            /// child's own `parenthesized` parens (which would otherwise duplicate ours).
+            FormatStateStacked inner_frame = frame;
+            inner_frame.wrapped_in_parens = true;
+            on_expression->format(ostr, settings, state, inner_frame);
+            ostr << ")";
+        }
+        else
+        {
+            on_expression->format(ostr, settings, state, frame);
+        }
     }
 }
 
 
-void ASTTableJoin::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTTableJoin::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    formatImplBeforeTable(settings, state, frame);
-    settings.ostr << " ... ";
-    formatImplAfterTable(settings, state, frame);
+    formatImplBeforeTable(ostr, settings, state, frame);
+    ostr << " ...";
+    formatImplAfterTable(ostr, settings, state, frame);
 }
 
 
-void ASTArrayJoin::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTArrayJoin::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
     frame.expression_list_prepend_whitespace = true;
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
+    ostr
         << settings.nl_or_ws
         << indent_str
-        << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN" << (settings.hilite ? hilite_none : "");
+        << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN";
 
     settings.one_line
-        ? expression_list->formatImpl(settings, state, frame)
-        : expression_list->as<ASTExpressionList &>().formatImplMultiline(settings, state, frame);
+        ? expression_list->format(ostr, settings, state, frame)
+        : expression_list->as<ASTExpressionList &>().formatImplMultiline(ostr, settings, state, frame);
 }
 
 
-void ASTTablesInSelectQueryElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTTablesInSelectQueryElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (table_expression)
     {
         if (table_join)
-            table_join->as<ASTTableJoin &>().formatImplBeforeTable(settings, state, frame);
+            table_join->as<ASTTableJoin &>().formatImplBeforeTable(ostr, settings, state, frame);
 
-        table_expression->formatImpl(settings, state, frame);
+        table_expression->format(ostr, settings, state, frame);
 
         if (table_join)
-            table_join->as<ASTTableJoin &>().formatImplAfterTable(settings, state, frame);
+            table_join->as<ASTTableJoin &>().formatImplAfterTable(ostr, settings, state, frame);
     }
     else if (array_join)
     {
-        array_join->formatImpl(settings, state, frame);
+        array_join->format(ostr, settings, state, frame);
     }
 }
 
 
-void ASTTablesInSelectQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTTablesInSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-
     for (const auto & child : children)
-        child->formatImpl(settings, state, frame);
+        child->format(ostr, settings, state, frame);
 }
 
 }

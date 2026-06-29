@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemQuotaUsage.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -11,6 +12,7 @@
 #include <Access/QuotaUsage.h>
 #include <Access/Common/AccessFlags.h>
 #include <base/range.h>
+#include <algorithm>
 
 
 namespace DB
@@ -22,7 +24,9 @@ namespace
     {
         out_column_null_map.push_back(false);
         if (type_info.output_as_float)
-            static_cast<ColumnFloat64 &>(out_column).getData().push_back(double(value) / type_info.output_denominator);
+            static_cast<ColumnFloat64 &>(out_column)
+                .getData()
+                .push_back(static_cast<double>(value) / static_cast<double>(type_info.output_denominator));
         else
             static_cast<ColumnUInt64 &>(out_column).getData().push_back(value / type_info.output_denominator);
     }
@@ -40,24 +44,37 @@ namespace
 }
 
 
-NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypes()
+ColumnsDescription StorageSystemQuotaUsage::getColumnsDescription()
 {
-    return getNamesAndTypesImpl(/* add_column_is_current = */ false);
+    return getColumnsDescriptionImpl(/* add_column_is_current = */ false);
 }
 
-NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypesImpl(bool add_column_is_current)
+ColumnsDescription StorageSystemQuotaUsage::getColumnsDescriptionImpl(bool add_column_is_current)
 {
-    NamesAndTypesList names_and_types{
-        {"quota_name", std::make_shared<DataTypeString>()},
-        {"quota_key", std::make_shared<DataTypeString>()}
+    ColumnsDescription description
+    {
+        {"quota_name", std::make_shared<DataTypeString>(), "Quota name."},
+        {"quota_key", std::make_shared<DataTypeString>(), "Key value."}
     };
 
     if (add_column_is_current)
-        names_and_types.push_back({"is_current", std::make_shared<DataTypeUInt8>()});
+        description.add({"is_current", std::make_shared<DataTypeUInt8>(), "Quota usage for current user."});
 
-    names_and_types.push_back({"start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())});
-    names_and_types.push_back({"end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())});
-    names_and_types.push_back({"duration", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())});
+    description.add({
+        "start_time",
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
+        "Start time for calculating resource consumption."
+    });
+    description.add({
+        "end_time",
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
+        "End time for calculating resource consumption."
+    });
+    description.add({
+        "duration",
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()),
+        "Length of the time interval for calculating resource consumption, in seconds."
+    });
 
     for (auto quota_type : collections::range(QuotaType::MAX))
     {
@@ -68,26 +85,26 @@ NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypesImpl(bool add_column_
             data_type = std::make_shared<DataTypeFloat64>();
         else
             data_type = std::make_shared<DataTypeUInt64>();
-        names_and_types.push_back({column_name, std::make_shared<DataTypeNullable>(data_type)});
-        names_and_types.push_back({String("max_") + column_name, std::make_shared<DataTypeNullable>(data_type)});
+        description.add({column_name, std::make_shared<DataTypeNullable>(data_type), type_info.current_usage_description});
+        description.add({String("max_") + column_name, std::make_shared<DataTypeNullable>(data_type), type_info.max_allowed_usage_description});
     }
 
-    return names_and_types;
+    return description;
 }
 
 
-void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
     if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
         context->checkAccess(AccessType::SHOW_QUOTAS);
 
-    auto usage = context->getQuotaUsage();
-    if (!usage)
+    auto usages = context->getQuotaUsages();
+    if (usages.empty())
         return;
 
-    fillDataImpl(res_columns, context, /* add_column_is_current = */ false, {std::move(usage).value()});
+    fillDataImpl(res_columns, context, /* add_column_is_current = */ false, usages);
 }
 
 
@@ -125,11 +142,13 @@ void StorageSystemQuotaUsage::fillDataImpl(
         column_max_null_map[quota_type_i] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     }
 
-    std::optional<UUID> current_quota_id;
+    /// A user may be governed by several quotas at once, so `is_current` is set for every
+    /// quota enforced for the current user/context, not just one.
+    std::vector<UUID> current_quota_ids;
     if (add_column_is_current)
     {
-        if (auto current_usage = context->getQuotaUsage())
-            current_quota_id = current_usage->quota_id;
+        for (const auto & current_usage : context->getQuotaUsages())
+            current_quota_ids.push_back(current_usage.quota_id);
     }
 
     auto add_row = [&](const String & quota_name, const UUID & quota_id, const String & quota_key, const QuotaUsage::Interval * interval)
@@ -138,7 +157,8 @@ void StorageSystemQuotaUsage::fillDataImpl(
         column_quota_key.insertData(quota_key.data(), quota_key.length());
 
         if (add_column_is_current)
-            column_is_current->push_back(quota_id == current_quota_id);
+            column_is_current->push_back(
+                std::find(current_quota_ids.begin(), current_quota_ids.end(), quota_id) != current_quota_ids.end());
 
         if (!interval)
         {
@@ -194,3 +214,6 @@ void StorageSystemQuotaUsage::fillDataImpl(
         add_rows(usage.quota_name, usage.quota_id, usage.quota_key, usage.intervals);
 }
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemQuotaUsage) }

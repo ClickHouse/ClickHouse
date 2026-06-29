@@ -1,0 +1,9 @@
+Question: 'How awesome is clickhouse?', Answer: 'unbelievably awesome!', Number of Likes: 456, Date: 2016-01-02;
+Question: 'How fast is clickhouse?', Answer: 'Lightning fast!', Number of Likes: 9876543210, Date: 2016-01-03;
+Question: 'Is it opensource?', Answer: 'of course it is!', Number of Likes: 789, Date: 2016-01-04
+
+===== Results ===== 
+Question: 'How awesome is clickhouse?', Answer: 'unbelievably awesome!', Number of Likes: 456, Date: 2016-01-02;
+Question: 'How fast is clickhouse?', Answer: 'Lightning fast!', Number of Likes: 9876543210, Date: 2016-01-03;
+Question: 'Is it opensource?', Answer: 'of course it is!', Number of Likes: 789, Date: 2016-01-04
+===================

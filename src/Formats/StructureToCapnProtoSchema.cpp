@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/randomSeed.h>
 #include <pcg_random.hpp>
 
@@ -220,7 +220,8 @@ String prepareAndGetCapnProtoTypeName(WriteBuffer & buf, const DataTypePtr & dat
 
 }
 
-void StructureToCapnProtoSchema::writeSchema(WriteBuffer & buf, const String & message_name, const NamesAndTypesList & names_and_types_)
+void StructureToCapnProtoSchema::writeSchema(
+    WriteBuffer & buf, const String & message_name, const NamesAndTypesList & names_and_types_, bool /* with_envelope */)
 {
     auto names_and_types = collectNested(names_and_types_, true, "CapnProto");
     writeCapnProtoHeader(buf);

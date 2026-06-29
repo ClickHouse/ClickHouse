@@ -11,11 +11,17 @@ struct DivideIntegralOrZeroImpl
     using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    /// See the comment in DivideIntegralImpl.
+    static constexpr bool no_vectorize = true;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
-        if (unlikely(divisionLeadsToFPE(a, b)))
+        /// Use `integerDivisionLeadsToFPE` (not `divisionLeadsToFPE`) so the FPE precheck accounts for
+        /// the same operand casts that `DivideIntegralImpl::apply` performs. Otherwise mixed
+        /// signed/unsigned operands such as `intDivOrZero(Int8(-128), UInt8(255))` (evaluated as
+        /// `Int8(-128) / Int8(-1)`) would raise `ILLEGAL_DIVISION` instead of returning zero.
+        if (unlikely(integerDivisionLeadsToFPE(a, b)))
             return 0;
 
         return DivideIntegralImpl<A, B>::template apply<Result>(a, b);
@@ -31,7 +37,27 @@ using FunctionIntDivOrZero = BinaryArithmeticOverloadResolver<DivideIntegralOrZe
 
 REGISTER_FUNCTION(IntDivOrZero)
 {
-    factory.registerFunction<FunctionIntDivOrZero>();
+    FunctionDocumentation::Description description = R"(
+Same as `intDiv` but returns zero when dividing by zero or when dividing a
+minimal negative number by minus one.
+    )";
+    FunctionDocumentation::Syntax syntax = "intDivOrZero(a, b)";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"a", "Left hand operand.", {"(U)Int*"}},
+        {"b", "Right hand operand.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Result of integer division of a and b, or zero."};
+    FunctionDocumentation::Examples examples =
+    {
+        {"Integer division by zero", "SELECT intDivOrZero(1, 0)", "0"},
+        {"Dividing a minimal negative number by minus 1", "SELECT intDivOrZero(0.05, -1)", "0"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIntDivOrZero>(documentation);
 }
 
 }

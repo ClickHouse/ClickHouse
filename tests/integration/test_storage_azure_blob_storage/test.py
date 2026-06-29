@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 
+import functools
 import gzip
-import json
-import logging
-import os
 import io
 import random
+import re
 import threading
 import time
+from datetime import datetime, timedelta
 
-from azure.storage.blob import BlobServiceClient
-import helpers.client
 import pytest
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.network import PartitionManager
-from helpers.mock_servers import start_mock_servers
-from helpers.test_tools import exec_query_with_retry
+from azure.storage.blob import (
+    BlobServiceClient,
+    ContainerSasPermissions,
+    generate_container_sas,
+)
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV, assert_logs_contain_with_retry
+from helpers.utility import SafeThread
 
 
 @pytest.fixture(scope="module")
@@ -24,25 +27,27 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=["configs/named_collections.xml", "configs/schema_cache.xml"],
-            user_configs=["configs/disable_profilers.xml", "configs/users.xml"],
+            main_configs=["configs/named_collections.xml", "configs/schema_cache.xml", "configs/blob_log.xml"],
+            user_configs=["configs/disable_profilers.xml", "configs/users.xml", "configs/sync_inserts.xml"],
             with_azurite=True,
         )
         cluster.start()
+        container_client = cluster.blob_service_client.get_container_client("cont")
+        container_client.create_container()
         yield cluster
     finally:
         cluster.shutdown()
 
 
 def azure_query(
-    node, query, expect_error="false", try_num=10, settings={}, query_on_retry=None
+    node, query, expect_error=False, try_num=10, settings={}, query_on_retry=None, user=None
 ):
     for i in range(try_num):
         try:
-            if expect_error == "true":
-                return node.query_and_get_error(query, settings=settings)
+            if expect_error:
+                return node.query_and_get_error(query, settings=settings, user=user)
             else:
-                return node.query(query, settings=settings)
+                return node.query(query, settings=settings, user=user)
         except Exception as ex:
             retriable_errors = [
                 "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
@@ -125,13 +130,29 @@ def delete_all_files(cluster):
     yield
 
 
+def generate_sas_token(cluster):
+    sas_token = generate_container_sas(
+        account_name="devstoreaccount1",
+        account_key="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+        container_name="cont",
+        permission=ContainerSasPermissions(
+            read=True, write=True, delete=True, list=True, create=True, add=True
+        ),
+        expiry=datetime.utcnow() + timedelta(hours=1),  # 1 hour expiry
+    )
+    return f"http://azurite1:{cluster.env_variables['AZURITE_PORT']}/devstoreaccount1/cont/?{sas_token}"
+
+
 def test_create_table_connection_string(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        f"CREATE TABLE test_create_table_conn_string (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}',"
-        f"'cont', 'test_create_connection_string', 'CSV')",
+        f"""
+        CREATE TABLE test_create_table_conn_string (key UInt64, data String)
+        Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_create_connection_string', 'CSV')
+        """,
     )
+    azure_query(node, "DROP TABLE IF EXISTS test_create_table_conn_string")
 
 
 def test_create_table_account_string(cluster):
@@ -141,6 +162,7 @@ def test_create_table_account_string(cluster):
         f"CREATE TABLE test_create_table_account_url (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f"'cont', 'test_create_connection_string', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
     )
+    azure_query(node, "DROP TABLE IF EXISTS test_create_table_account_url")
 
 
 def test_simple_write_account_string(cluster):
@@ -154,6 +176,7 @@ def test_simple_write_account_string(cluster):
     azure_query(node, "INSERT INTO test_simple_write VALUES (1, 'a')")
     print(get_azure_file_content("test_simple_write.csv", port))
     assert get_azure_file_content("test_simple_write.csv", port) == '1,"a"\n'
+    azure_query(node, "DROP TABLE test_simple_write")
 
 
 def test_simple_write_connection_string(cluster):
@@ -167,6 +190,7 @@ def test_simple_write_connection_string(cluster):
     azure_query(node, "INSERT INTO test_simple_write_connection_string VALUES (1, 'a')")
     print(get_azure_file_content("test_simple_write_c.csv", port))
     assert get_azure_file_content("test_simple_write_c.csv", port) == '1,"a"\n'
+    azure_query(node, "DROP TABLE test_simple_write_connection_string")
 
 
 def test_simple_write_named_collection_1(cluster):
@@ -182,7 +206,7 @@ def test_simple_write_named_collection_1(cluster):
     )
     print(get_azure_file_content("test_simple_write_named.csv", port))
     assert get_azure_file_content("test_simple_write_named.csv", port) == '1,"a"\n'
-    azure_query(node, "TRUNCATE TABLE test_simple_write_named_collection_1")
+    azure_query(node, "DROP TABLE test_simple_write_named_collection_1")
 
 
 def test_simple_write_named_collection_2(cluster):
@@ -199,6 +223,7 @@ def test_simple_write_named_collection_2(cluster):
     )
     print(get_azure_file_content("test_simple_write_named_2.csv", port))
     assert get_azure_file_content("test_simple_write_named_2.csv", port) == '1,"a"\n'
+    azure_query(node, "DROP TABLE test_simple_write_named_collection_2")
 
 
 def test_partition_by(cluster):
@@ -220,6 +245,7 @@ def test_partition_by(cluster):
     assert "1,2,3\n" == get_azure_file_content("test_3.csv", port)
     assert "3,2,1\n" == get_azure_file_content("test_1.csv", port)
     assert "78,43,45\n" == get_azure_file_content("test_45.csv", port)
+    azure_query(node, "DROP TABLE test_partitioned_write")
 
 
 def test_partition_by_string_column(cluster):
@@ -240,6 +266,7 @@ def test_partition_by_string_column(cluster):
     assert '1,"foo/bar"\n' == get_azure_file_content("test_foo/bar.csv", port)
     assert '3,"йцук"\n' == get_azure_file_content("test_йцук.csv", port)
     assert '78,"你好"\n' == get_azure_file_content("test_你好.csv", port)
+    azure_query(node, "DROP TABLE test_partitioned_string_write")
 
 
 def test_partition_by_const_column(cluster):
@@ -258,6 +285,7 @@ def test_partition_by_const_column(cluster):
     )
     azure_query(node, f"INSERT INTO test_partitioned_const_write VALUES {values}")
     assert values_csv == get_azure_file_content("test_88.csv", port)
+    azure_query(node, "DROP TABLE test_partitioned_const_write")
 
 
 def test_truncate(cluster):
@@ -273,6 +301,7 @@ def test_truncate(cluster):
     azure_query(node, "TRUNCATE TABLE test_truncate")
     with pytest.raises(Exception):
         print(get_azure_file_content("test_truncate.csv", port))
+    azure_query(node, "DROP TABLE test_truncate")
 
 
 def test_simple_read_write(cluster):
@@ -289,6 +318,7 @@ def test_simple_read_write(cluster):
     assert get_azure_file_content("test_simple_read_write.csv", port) == '1,"a"\n'
     print(azure_query(node, "SELECT * FROM test_simple_read_write"))
     assert azure_query(node, "SELECT * FROM test_simple_read_write") == "1\ta\n"
+    azure_query(node, "DROP TABLE test_simple_read_write")
 
 
 def test_create_new_files_on_insert(cluster):
@@ -301,21 +331,21 @@ def test_create_new_files_on_insert(cluster):
     azure_query(node, "truncate table test_multiple_inserts")
     azure_query(
         node,
-        f"insert into test_multiple_inserts select number, randomString(100) from numbers(10) settings azure_truncate_on_insert=1",
+        "insert into test_multiple_inserts select number, randomString(100) from numbers(10) settings azure_truncate_on_insert=1",
     )
     azure_query(
         node,
-        f"insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings azure_create_new_file_on_insert=1",
+        "insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings azure_create_new_file_on_insert=1",
     )
     azure_query(
         node,
-        f"insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings azure_create_new_file_on_insert=1",
+        "insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings azure_create_new_file_on_insert=1",
     )
 
-    result = azure_query(node, f"select count() from test_multiple_inserts")
+    result = azure_query(node, "select count() from test_multiple_inserts")
     assert int(result) == 60
 
-    azure_query(node, f"drop table test_multiple_inserts")
+    azure_query(node, "drop table test_multiple_inserts")
 
 
 def test_overwrite(cluster):
@@ -329,18 +359,19 @@ def test_overwrite(cluster):
 
     azure_query(
         node,
-        f"insert into test_overwrite select number, randomString(100) from numbers(50) settings azure_truncate_on_insert=1",
+        "insert into test_overwrite select number, randomString(100) from numbers(50) settings azure_truncate_on_insert=1",
     )
     node.query_and_get_error(
-        f"insert into test_overwrite select number, randomString(100) from numbers(100)"
+        "insert into test_overwrite select number, randomString(100) from numbers(100)"
     )
     azure_query(
         node,
-        f"insert into test_overwrite select number, randomString(100) from numbers(200) settings azure_truncate_on_insert=1",
+        "insert into test_overwrite select number, randomString(100) from numbers(200) settings azure_truncate_on_insert=1",
     )
 
-    result = azure_query(node, f"select count() from test_overwrite")
+    result = azure_query(node, "select count() from test_overwrite")
     assert int(result) == 200
+    azure_query(node, "DROP TABLE test_overwrite")
 
 
 def test_insert_with_path_with_globs(cluster):
@@ -351,8 +382,9 @@ def test_insert_with_path_with_globs(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',  container='cont', blob_path='test_insert_with_globs*', format='Parquet')",
     )
     node.query_and_get_error(
-        f"insert into table function test_insert_globs SELECT number, randomString(100) FROM numbers(500)"
+        "insert into table function test_insert_globs SELECT number, randomString(100) FROM numbers(500)"
     )
+    azure_query(node, "DROP TABLE test_insert_globs")
 
 
 def test_put_get_with_globs(cluster):
@@ -361,6 +393,7 @@ def test_put_get_with_globs(cluster):
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     max_path = ""
+    used_names = []
     for i in range(10):
         for j in range(10):
             path = "{}/{}_{}/{}.csv".format(
@@ -368,6 +401,8 @@ def test_put_get_with_globs(cluster):
             )
             max_path = max(path, max_path)
             values = f"({i},{j},{i + j})"
+
+            used_names.append(f"test_put_{i}_{j}")
 
             azure_query(
                 node,
@@ -389,20 +424,29 @@ def test_put_get_with_globs(cluster):
             bucket="cont", max_path=max_path
         )
     ]
+    azure_query(node, "DROP TABLE test_glob_select")
+    for name in used_names:
+        azure_query(node, f"DROP TABLE {name}")
 
 
 def test_azure_glob_scheherazade(cluster):
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     values = "(1, 1, 1)"
-    nights_per_job = 1001 // 30
+    # The glob pattern night_*/tale.csv is fully exercised across many distinct
+    # directories with far fewer than the original 1001 files; the absolute
+    # count only drives CPU cost (heavily amplified under coverage/sanitizers).
+    nights = 101
+    nights_per_job = max(1, nights // 30)
     jobs = []
-    for night in range(0, 1001, nights_per_job):
+    used_names = []
+    for night in range(0, nights, nights_per_job):
 
         def add_tales(start, end):
             for i in range(start, end):
                 path = "night_{}/tale.csv".format(i)
                 unique_num = random.randint(1, 10000)
+                used_names.append(f"test_scheherazade_{i}_{unique_num}")
                 azure_query(
                     node,
                     f"CREATE TABLE test_scheherazade_{i}_{unique_num} ({table_format}) Engine = AzureBlobStorage(azure_conf2, "
@@ -415,7 +459,7 @@ def test_azure_glob_scheherazade(cluster):
 
         jobs.append(
             threading.Thread(
-                target=add_tales, args=(night, min(night + nights_per_job, 1001))
+                target=add_tales, args=(night, min(night + nights_per_job, nights))
             )
         )
         jobs[-1].start()
@@ -429,7 +473,29 @@ def test_azure_glob_scheherazade(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', blob_path='night_*/tale.csv', format='CSV')",
     )
     query = "select count(), sum(column1), sum(column2), sum(column3) from test_glob_select_scheherazade"
-    assert azure_query(node, query).splitlines() == ["1001\t1001\t1001\t1001"]
+    assert azure_query(node, query).splitlines() == [f"{nights}\t{nights}\t{nights}\t{nights}"]
+    azure_query(node, "DROP TABLE test_glob_select_scheherazade")
+
+    drop_jobs = []
+
+    def drop_tales(names):
+        for name in names:
+            azure_query(node, f"DROP TABLE {name}")
+
+    # SafeThread re-raises a worker's exception on join(); a raw threading.Thread
+    # would swallow it, letting cleanup fail silently and leak the table.
+    for start in range(0, len(used_names), nights_per_job):
+        drop_jobs.append(
+            SafeThread(
+                target=functools.partial(
+                    drop_tales, used_names[start : start + nights_per_job]
+                )
+            )
+        )
+        drop_jobs[-1].start()
+
+    for job in drop_jobs:
+        job.join()
 
 
 @pytest.mark.parametrize(
@@ -488,7 +554,7 @@ def test_schema_inference_no_globs(cluster):
         f"blob_path='test_schema_inference_no_globs.csv', format='CSVWithNames')",
     )
 
-    query = f"insert into test_schema_inference_src SELECT number, toString(number), number * number FROM numbers(1000)"
+    query = "insert into test_schema_inference_src SELECT number, toString(number), number * number FROM numbers(1000)"
     azure_query(node, query)
 
     azure_query(
@@ -503,6 +569,8 @@ def test_schema_inference_no_globs(cluster):
     assert azure_query(node, query).splitlines() == [
         "499500\t2890\t332833500\ttest_schema_inference_no_globs.csv\tcont/test_schema_inference_no_globs.csv"
     ]
+    azure_query(node, "DROP TABLE test_schema_inference_src")
+    azure_query(node, "DROP TABLE test_select_inference")
 
 
 def test_schema_inference_from_globs(cluster):
@@ -511,6 +579,7 @@ def test_schema_inference_from_globs(cluster):
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     max_path = ""
+    used_names = []
     for i in range(10):
         for j in range(10):
             path = "{}/{}_{}/{}.csv".format(
@@ -518,6 +587,7 @@ def test_schema_inference_from_globs(cluster):
             )
             max_path = max(path, max_path)
             values = f"({i},{j},{i + j})"
+            used_names.append(f"test_schema_{i}_{j}")
 
             azure_query(
                 node,
@@ -543,6 +613,9 @@ def test_schema_inference_from_globs(cluster):
             bucket="cont", max_path=max_path
         )
     ]
+    azure_query(node, "DROP TABLE test_glob_select_inference")
+    for name in used_names:
+        azure_query(node, f"DROP TABLE {name}")
 
 
 def test_simple_write_account_string_table_function(cluster):
@@ -592,8 +665,53 @@ def test_simple_write_named_collection_1_table_function(cluster):
 
     azure_query(
         node,
-        "TRUNCATE TABLE drop_table",
+        "DROP TABLE drop_table",
     )
+
+
+def test_named_collection_hive_partitioning_partition_columns_in_data_file(cluster):
+    node = cluster.instances["node"]
+    cluster.env_variables["AZURITE_PORT"]
+    azure_query(
+        node,
+        f"""INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2,
+        storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',
+        container='cont',
+        blob_path='test_hive_partitioning_partition_columns_in_data_file',
+        format=Parquet,
+        partition_strategy = 'hive',
+        partition_columns_in_data_file = 1)
+        PARTITION BY (year, country)
+        SELECT 1 as key, 2020 as year, 'USA' as country"""
+    )
+
+    azure_query(
+        node,
+        f"""INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2,
+        storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',
+        container='cont',
+        blob_path='test_hive_partitioning_partition_columns_not_in_data_file',
+        format=Parquet,
+        partition_strategy = 'hive',
+        partition_columns_in_data_file = 0) PARTITION BY (year, country)
+        SELECT 1 as key, 2020 as year, 'USA' as country""",
+    )
+
+    assert azure_query(node,
+        f"""SELECT num_columns FROM azureBlobStorage(
+        azure_conf2,
+        storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',
+        container='cont',
+        blob_path='test_hive_partitioning_partition_columns_in_data_file/**.parquet',
+        format=ParquetMetadata)""") == "3\n"
+
+    assert azure_query(node,
+        f"""SELECT num_columns FROM azureBlobStorage(
+        azure_conf2,
+        storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',
+        container='cont',
+        blob_path='test_hive_partitioning_partition_columns_not_in_data_file/**.parquet',
+        format=ParquetMetadata)""") == "1\n"
 
 
 def test_simple_write_named_collection_2_table_function(cluster):
@@ -603,6 +721,7 @@ def test_simple_write_named_collection_2_table_function(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='test_simple_write_named_2_tf.csv', format='CSV', structure='key UInt64, data String') VALUES (1, 'a')",
+        settings={"azure_truncate_on_insert": 1},
     )
     print(get_azure_file_content("test_simple_write_named_2_tf.csv", port))
     assert get_azure_file_content("test_simple_write_named_2_tf.csv", port) == '1,"a"\n'
@@ -626,6 +745,7 @@ def test_put_get_with_globs_tf(cluster):
                 node,
                 f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
                 f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values}",
+                settings={"azure_truncate_on_insert": 1},
             )
     query = (
         f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, "
@@ -646,7 +766,7 @@ def test_schema_inference_no_globs_tf(cluster):
     query = (
         f"insert into table function azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
         f"container='cont', blob_path='test_schema_inference_no_globs_tf.csv', format='CSVWithNames', structure='{table_format}') "
-        f"SELECT number, toString(number), number * number FROM numbers(1000)"
+        f"SELECT number, toString(number), number * number FROM numbers(1000) SETTINGS azure_truncate_on_insert=1"
     )
     azure_query(node, query)
 
@@ -679,7 +799,7 @@ def test_schema_inference_from_globs_tf(cluster):
                 f"insert into table function azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
                 f"container='cont', blob_path='{path}', format='CSVWithNames', structure='{table_format}') VALUES {values}"
             )
-            azure_query(node, query)
+            azure_query(node, query, settings={"azure_truncate_on_insert": 1})
 
     query = (
         f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, "
@@ -706,6 +826,7 @@ def test_partition_by_tf(cluster):
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
         f"'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', "
         f"'CSV', 'auto', '{table_format}') PARTITION BY {partition_by} VALUES {values}",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     assert "1,2,3\n" == get_azure_file_content("test_partition_tf_3.csv", port)
@@ -725,6 +846,7 @@ def test_filter_using_file(cluster):
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', 'cont', '{filename}', "
         f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', "
         f"'{table_format}') PARTITION BY {partition_by} VALUES {values}",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     query = (
@@ -742,7 +864,7 @@ def test_read_subcolumns(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_subcolumns.tsv', "
         f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto',"
-        f" 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3)",
+        f" 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3) SETTINGS azure_truncate_on_insert=1",
     )
 
     azure_query(
@@ -785,14 +907,33 @@ def test_read_subcolumns(cluster):
     assert res == "42\tcont/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
 
 
+def test_read_subcolumn_time(cluster):
+    node = cluster.instances["node"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_subcolumn_time.tsv', "
+        f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto',"
+        f" 'a UInt32') select (42) SETTINGS azure_truncate_on_insert=1",
+    )
+
+    res = node.query(
+        f"select a, dateDiff('minute', _time, now()) < 59 from azureBlobStorage('{storage_account_url}', 'cont', 'test_subcolumn_time.tsv',"
+        f" 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto',"
+        f" 'a UInt32')"
+    )
+
+    assert res == "42\t1\n"
+
+
 def test_read_from_not_existing_container(cluster):
     node = cluster.instances["node"]
     query = (
-        f"select * from azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',  'cont_not_exists', 'test_table.csv', "
+        f"select * from azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',  'cont-not-exists', 'test_table.csv', "
         f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto')"
     )
     expected_err_msg = "container does not exist"
-    assert expected_err_msg in azure_query(node, query, expect_error="true")
+    assert expected_err_msg in azure_query(node, query, expect_error=True)
 
 
 def test_function_signatures(cluster):
@@ -804,6 +945,7 @@ def test_function_signatures(cluster):
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'column1 UInt32') VALUES (1),(2),(3)",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     # " - connection_string, container_name, blobpath\n"
@@ -826,25 +968,57 @@ def test_function_signatures(cluster):
     query_5 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'column1 UInt32')"
     assert azure_query(node, query_5) == "1\n2\n3\n"
 
-    # " - storage_account_url, container_name, blobpath, account_name, account_key\n"
-    query_6 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}')"
+    # " - connection_string, container_name, blobpath, format, compression, partition_strategy \n"
+    query_6 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'wildcard')"
     assert azure_query(node, query_6) == "1\n2\n3\n"
 
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, structure\n"
-    query_7 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'column1 UInt32')"
+    # " - connection_string, container_name, blobpath, format, compression, partition_strategy, structure \n"
+    query_7 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'wildcard', 'column1 UInt32')"
     assert azure_query(node, query_7) == "1\n2\n3\n"
 
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
-    query_8 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV')"
+    # " - connection_string, container_name, blobpath, format, compression, partition_strategy, partition_columns_in_data_file \n"
+    query_8 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'wildcard', true)"
     assert azure_query(node, query_8) == "1\n2\n3\n"
 
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
-    query_9 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto')"
+    # " - connection_string, container_name, blobpath, format, compression, partition_strategy, partition_columns_in_data_file, structure \n"
+    query_9 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'wildcard', true, 'column1 UInt32')"
     assert azure_query(node, query_9) == "1\n2\n3\n"
 
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n"
-    query_10 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'column1 UInt32')"
+    # " - storage_account_url, container_name, blobpath, account_name, account_key\n"
+    query_10 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}')"
     assert azure_query(node, query_10) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, structure\n"
+    query_11 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'column1 UInt32')"
+    assert azure_query(node, query_11) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
+    query_12 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV')"
+    assert azure_query(node, query_12) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
+    query_13 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto')"
+    assert azure_query(node, query_13) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n"
+    query_14 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'column1 UInt32')"
+    assert azure_query(node, query_14) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy\n"
+    query_15 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard')"
+    assert azure_query(node, query_15) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, structure\n"
+    query_16 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard', 'column1 UInt32')"
+    assert azure_query(node, query_16) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file\n"
+    query_17 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard', true)"
+    assert azure_query(node, query_17) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, structure\n"
+    query_18 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard', true, 'column1 UInt32')"
+    assert azure_query(node, query_18) == "1\n2\n3\n"
 
 
 def check_profile_event_for_query(instance, file, profile_event, amount):
@@ -918,11 +1092,13 @@ def test_union_schema_inference_mode(cluster):
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference1.jsonl', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'a UInt32') VALUES (1)",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference2.jsonl', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'b UInt32') VALUES (2)",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     node.query("system drop schema cache for azure")
@@ -945,7 +1121,6 @@ def test_union_schema_inference_mode(cluster):
         f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference*.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') order by tuple(*) settings schema_inference_mode='union' format TSV",
     )
     assert result == "1\t\\N\n" "\\N\t2\n"
-    node.query(f"system drop schema cache for hdfs")
     result = azure_query(
         node,
         f"desc azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference2.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') settings schema_inference_mode='union', describe_compact_output=1 format TSV",
@@ -960,14 +1135,15 @@ def test_union_schema_inference_mode(cluster):
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference3.jsonl', '{account_name}', '{account_key}', 'CSV', 'auto', 's String') VALUES ('Error')",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     error = azure_query(
         node,
         f"desc azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference*.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') settings schema_inference_mode='union', describe_compact_output=1 format TSV",
-        expect_error="true",
+        expect_error=True,
     )
-    assert "Cannot extract table structure" in error
+    assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in error
 
 
 def test_schema_inference_cache(cluster):
@@ -981,7 +1157,7 @@ def test_schema_inference_cache(cluster):
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cache0.jsonl', '{account_name}', '{account_key}') "
-        f"select * from numbers(100)",
+        f"select * from numbers(100) SETTINGS azure_truncate_on_insert=1",
     )
 
     time.sleep(1)
@@ -1076,7 +1252,7 @@ def test_schema_inference_cache(cluster):
     run_describe_query(node, files, connection_string)
     check_cache_hits(node, files)
 
-    node.query(f"system drop schema cache for azure")
+    node.query("system drop schema cache for azure")
     check_cache(node, [])
 
     run_describe_query(node, files, connection_string)
@@ -1158,7 +1334,7 @@ def test_schema_inference_cache(cluster):
     assert int(res) == 300
     check_cache_hits(node, "test_cache{0,1}.csv", 2)
 
-    node.query(f"system drop schema cache for azure")
+    node.query("system drop schema cache for azure")
     check_cache(node, [])
 
     res = run_count_query(node, "test_cache{0,1}.csv", connection_string, True)
@@ -1188,19 +1364,19 @@ def test_filtering_by_file_or_path(cluster):
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}','cont', 'test_filter1.tsv', 'devstoreaccount1',  "
-        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 1",
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 1 SETTINGS azure_truncate_on_insert=1",
     )
 
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}','cont', 'test_filter2.tsv', 'devstoreaccount1',  "
-        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 2",
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 2 SETTINGS azure_truncate_on_insert=1",
     )
 
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_filter3.tsv', 'devstoreaccount1', "
-        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 3",
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 3 SETTINGS azure_truncate_on_insert=1",
     )
 
     node.query(
@@ -1212,7 +1388,7 @@ def test_filtering_by_file_or_path(cluster):
     node.query("SYSTEM FLUSH LOGS")
 
     result = node.query(
-        f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query like '%select%azure%test_filter%' AND type='QueryFinish'"
+        "SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query ilike '%select%azure%test_filter%' AND type='QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1"
     )
 
     assert int(result) == 1
@@ -1224,19 +1400,19 @@ def test_size_virtual_column(cluster):
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}','cont', 'test_size_virtual_column1.tsv', 'devstoreaccount1',  "
-        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 1",
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 1 SETTINGS azure_truncate_on_insert=1",
     )
 
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}','cont', 'test_size_virtual_column2.tsv', 'devstoreaccount1',  "
-        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 11",
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 11 SETTINGS azure_truncate_on_insert=1",
     )
 
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_size_virtual_column3.tsv', 'devstoreaccount1', "
-        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 111",
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 111 SETTINGS azure_truncate_on_insert=1",
     )
 
     result = azure_query(
@@ -1250,3 +1426,497 @@ def test_size_virtual_column(cluster):
         result
         == "test_size_virtual_column1.tsv\t2\ntest_size_virtual_column2.tsv\t3\ntest_size_virtual_column3.tsv\t4\n"
     )
+
+
+def test_format_detection(cluster):
+    node = cluster.instances["node"]
+    connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    port = cluster.env_variables["AZURITE_PORT"]
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+    account_key_pattern = re.compile("AccountKey=.*?(;|$)")
+    masked_azure_conn_string = re.sub(
+        account_key_pattern, "AccountKey=[HIDDEN]\\1", connection_string
+    )
+
+    put_azure_file_content("test_format_detection0", port, b"")
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'x UInt64, y String') select number as x, 'str_' || toString(number) from numbers(10)",
+    )
+
+    expected_desc_result = azure_query(
+        node,
+        f"desc azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'auto')",
+    )
+
+    desc_result = azure_query(
+        node,
+        f"desc azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}')",
+    )
+
+    assert expected_desc_result == desc_result
+
+    expected_result = azure_query(
+        node,
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'x UInt64, y String')",
+    )
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}')",
+    )
+
+    assert result == expected_result
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}', auto, auto, 'x UInt64, y String')",
+    )
+
+    assert result == expected_result
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection{{0,1}}', '{account_name}', '{account_key}')",
+    )
+
+    assert result == expected_result
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection{{0,1}}', '{account_name}', '{account_key}')",
+    )
+
+    assert result == expected_result
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection{{0,1}}', '{account_name}', '{account_key}')",
+    )
+
+    assert result == expected_result
+
+    azure_query(
+        node,
+        f"create or replace table test_format_detection engine=AzureBlobStorage('{connection_string}', 'cont', 'test_format_detection1')",
+    )
+    result = azure_query(
+        node,
+        "show create table test_format_detection",
+    )
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
+    )
+
+    azure_query(
+        node,
+        f"create or replace table test_format_detection engine=AzureBlobStorage('{connection_string}', 'cont', 'test_format_detection1', auto)",
+    )
+    result = azure_query(
+        node,
+        "show create table test_format_detection",
+    )
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
+    )
+
+    azure_query(
+        node,
+        f"create or replace table test_format_detection engine=AzureBlobStorage('{connection_string}', 'cont', 'test_format_detection1', auto, 'none')",
+    )
+    result = azure_query(
+        node,
+        "show create table test_format_detection",
+    )
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
+    )
+
+    azure_query(
+        node,
+        f"create or replace table test_format_detection engine=AzureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}')",
+    )
+    result = azure_query(
+        node,
+        "show create table test_format_detection",
+    )
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\')\n"
+    )
+
+    azure_query(
+        node,
+        f"create or replace table test_format_detection engine=AzureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}', auto)",
+    )
+    result = azure_query(
+        node,
+        "show create table test_format_detection",
+    )
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\')\n"
+    )
+
+    azure_query(
+        node,
+        f"create or replace table test_format_detection engine=AzureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}', auto, 'none')",
+    )
+    result = azure_query(
+        node,
+        "show create table test_format_detection",
+    )
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\', \\'none\\')\n"
+    )
+    azure_query(
+        node,
+        "DROP TABLE test_format_detection",
+    )
+
+
+def test_write_to_globbed_partitioned_path(cluster):
+    node = cluster.instances["node"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+    error = azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_data_*_{{_partition_id}}', '{account_name}', '{account_key}', 'CSV', 'auto', 'x UInt64') partition by 42 select 42 SETTINGS azure_truncate_on_insert=1",
+        expect_error="true",
+    )
+
+    assert "DATABASE_ACCESS_DENIED" in error
+
+
+def test_parallel_read(cluster):
+    node = cluster.instances["node"]
+    connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_parallel_read.parquet', '{account_name}', '{account_key}') "
+        f"select * from numbers(10000) settings azure_truncate_on_insert=1",
+    )
+    time.sleep(1)
+
+    res = azure_query(
+        node,
+        f"select count() from azureBlobStorage('{connection_string}', 'cont', 'test_parallel_read.parquet') settings remote_filesystem_read_method='read'",
+    )
+    assert int(res) == 10000
+    assert_logs_contain_with_retry(node, "AzureBlobStorage readBigAt read bytes")
+
+
+def test_respect_object_existence_on_partitioned_write(cluster):
+    node = cluster.instances["node"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write42.csv', '{account_name}', '{account_key}') select 42 settings azure_truncate_on_insert=1",
+    )
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write42.csv', '{account_name}', '{account_key}')",
+    )
+
+    assert int(result) == 42
+
+    error = azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 42 settings azure_truncate_on_insert=0",
+        expect_error="true",
+    )
+
+    assert "BAD_ARGUMENTS" in error
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 43 settings azure_truncate_on_insert=1",
+    )
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write42.csv', '{account_name}', '{account_key}')",
+    )
+
+    assert int(result) == 43
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 44 settings azure_truncate_on_insert=0, azure_create_new_file_on_insert=1",
+    )
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write42.1.csv', '{account_name}', '{account_key}')",
+    )
+
+    assert int(result) == 44
+
+
+def test_insert_create_new_file(cluster):
+    node = cluster.instances["node"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_create_new_file.csv', '{account_name}', '{account_key}', 'a UInt64') VALUES (1)",
+        settings={
+            "azure_truncate_on_insert": False,
+            "azure_create_new_file_on_insert": True,
+        },
+    )
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_create_new_file.csv', '{account_name}', '{account_key}', 'a UInt64') VALUES (2)",
+        settings={
+            "azure_truncate_on_insert": False,
+            "azure_create_new_file_on_insert": True,
+        },
+    )
+
+    res = azure_query(
+        node,
+        f"SELECT _file, * FROM azureBlobStorage('{storage_account_url}', 'cont', 'test_create_new_file*', '{account_name}', '{account_key}', 'a UInt64') ORDER BY a",
+    )
+
+    assert TSV(res) == TSV(
+        "test_create_new_file.csv\t1\ntest_create_new_file.1.csv\t2\n"
+    )
+
+
+def test_hive_partitioning_with_one_parameter(cluster):
+    # type: (ClickHouseCluster) -> None
+    node = cluster.instances["node"]  # type: ClickHouseInstance
+    table_format = "column1 String, column2 String"
+    values = "('Elizabeth', 'Gordon')"
+    path = "a/column1=Elizabeth/sample.csv"
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values}",
+        settings={
+            "azure_truncate_on_insert": 1,
+            "use_hive_partitioning": 0,
+        },
+    )
+
+    query = (
+        f"SELECT column2, _file, _path, column1 FROM azureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
+        f"blob_path='{path}', format='CSVWithNames', structure='{table_format}')"
+    )
+    assert azure_query(
+        node, query, settings={"use_hive_partitioning": 1}
+    ).splitlines() == [
+        "Gordon\tsample.csv\t{bucket}/{max_path}\tElizabeth".format(
+            bucket="cont", max_path=path
+        )
+    ]
+
+    query = (
+        f"SELECT column2 FROM azureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
+        f"blob_path='{path}', format='CSVWithNames', structure='{table_format}');"
+    )
+    assert azure_query(
+        node, query, settings={"use_hive_partitioning": 1}
+    ).splitlines() == ["Gordon"]
+
+
+def test_hive_partitioning_with_all_parameters(cluster):
+    # type: (ClickHouseCluster) -> None
+    node = cluster.instances["node"]  # type: ClickHouseInstance
+    table_format = "column1 String, column2 String"
+    values_1 = "('Elizabeth', 'Gordon')"
+    values_2 = "('Emilia', 'Gregor')"
+    path = "a/column1=Elizabeth/column2=Gordon/sample.csv"
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
+        settings={
+            "azure_truncate_on_insert": 1,
+            "use_hive_partitioning": 0,
+        },
+    )
+
+    query = (
+        f"SELECT column1, column2, _file, _path FROM azureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
+        f"blob_path='{path}', format='CSVWithNames', structure='{table_format}');"
+    )
+
+    pattern = r"DB::Exception: A hive partitioned file can't contain only partition columns"
+
+    with pytest.raises(Exception, match=pattern):
+        azure_query(node, query, settings={"use_hive_partitioning": 1})
+
+
+def test_hive_partitioning_without_setting(cluster):
+    # type: (ClickHouseCluster) -> None
+    node = cluster.instances["node"]  # type: ClickHouseInstance
+    table_format = "column1 String, column2 String"
+    values_1 = "('Elizabeth', 'Gordon')"
+    values_2 = "('Emilia', 'Gregor')"
+    path = "a/column1=Elizabeth/column2=Gordon/column3=Gordon/sample.csv"
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
+        settings={
+            "azure_truncate_on_insert": 1,
+            "use_hive_partitioning": 0,
+        },
+    )
+
+    query = (
+        f"SELECT column1, column2, _file, _path, column3 FROM azureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
+        f"blob_path='{path}', format='CSVWithNames', structure='{table_format}');"
+    )
+    pattern = re.compile(
+        r"DB::Exception: Unknown expression identifier `.*` in scope.*", re.DOTALL
+    )
+
+    with pytest.raises(Exception, match=pattern):
+        azure_query(node, query, settings={"use_hive_partitioning": 0})
+
+
+def test_sas_token(cluster):
+    node = cluster.instances["node"]
+    sas_token = generate_sas_token(cluster)
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{sas_token}', '', 'test-sas-token.csv') SELECT 'foo'",
+        settings={
+            "azure_truncate_on_insert": 1,
+        },
+    )
+    content = azure_query(
+        node, f"SELECT * FROM azureBlobStorage('{sas_token}', '', 'test-sas-token.csv')"
+    )
+    assert content.splitlines() == ["foo"]
+
+
+def test_hive_partition_strategy(cluster):
+    node = cluster.instances["node"]
+
+    azure_query(
+        node,
+        f"create table test_hive_partition_strategy (year UInt16, country String, counter UInt8)"
+        f"engine=AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f"'cont', 'test_hive_partition_strategy',"
+        f"'devstoreaccount1',"
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',"
+        f"'Parquet', 'auto', 'hive') PARTITION BY (year, country)",
+    )
+
+    azure_query(node, "insert into table test_hive_partition_strategy values (2020, 'Brazil', 1), (2021, 'Russia', 2), (2021, 'Russia', 3);")
+
+    res = azure_query(node, "select distinct on (counter) replaceRegexpAll(_path, '/[0-9]+\\.parquet', '/<snowflakeid>.parquet') AS _path, counter from test_hive_partition_strategy order by counter;")
+
+    assert "cont/test_hive_partition_strategy/year=2020/country=Brazil/<snowflakeid>.parquet\t1\ncont/test_hive_partition_strategy/year=2021/country=Russia/<snowflakeid>.parquet\t2\ncont/test_hive_partition_strategy/year=2021/country=Russia/<snowflakeid>.parquet\t3\n" == res
+
+    azure_query(node, "DROP TABLE IF EXISTS test_hive_partition_strategy")
+
+
+def test_blob_storage_log(cluster):
+    node = cluster.instances["node"]
+
+    azure_query(
+        node,
+        f"CREATE TABLE test_blob_storage_log (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" 'cont', 'test_blob_storage_log.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+    )
+
+    query_id = "blob_storage_log_test_" + str(random.randint(1, 1000000))
+    azure_query(
+        node,
+        "INSERT INTO test_blob_storage_log VALUES (1, 'a'), (2, 'b'), (3, 'c')",
+        settings={"query_id": query_id},
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    blob_storage_log = node.query("SELECT * FROM system.blob_storage_log")
+
+    result = node.query(
+        f"""SELECT
+            countIf(event_type == 'Upload'),
+            countIf(remote_path == 'test_blob_storage_log.csv'),
+            countIf(bucket == 'cont'),
+            countIf(error == ''),
+            count()
+        FROM system.blob_storage_log WHERE query_id = '{query_id}'"""
+    )
+    r = result.strip().split("\t")
+    assert int(r[0]) >= 1, blob_storage_log  # At least one Upload event
+    assert int(r[1]) >= 1, blob_storage_log  # Remote path matches
+    assert int(r[2]) >= 1, blob_storage_log  # Bucket (container) matches
+    assert int(r[3]) >= 1, blob_storage_log  # At least one successful operation
+    assert int(r[4]) >= 1, blob_storage_log  # At least one log entry
+
+    azure_query(node, "DROP TABLE test_blob_storage_log")
+
+
+def test_blob_storage_log_multipart(cluster):
+    node = cluster.instances["node"]
+
+    azure_query(
+        node,
+        f"CREATE TABLE test_blob_storage_log_multipart (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" 'cont', 'test_blob_storage_log_multipart.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+    )
+
+    query_id = "blob_storage_log_multipart_" + str(random.randint(1, 1000000))
+    # Insert enough data to trigger multipart upload
+    azure_query(
+        node,
+        "INSERT INTO test_blob_storage_log_multipart SELECT number, randomString(100) FROM numbers(10000)",
+        settings={
+            "query_id": query_id,
+            "azure_max_single_part_upload_size": 100,  # Force multipart upload
+        },
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    blob_storage_log = node.query("SELECT * FROM system.blob_storage_log")
+
+    result = node.query(
+        f"""SELECT
+            countIf(event_type == 'MultiPartUploadWrite'),
+            countIf(event_type == 'MultiPartUploadComplete'),
+            countIf(bucket == 'cont'),
+            count()
+        FROM system.blob_storage_log WHERE query_id = '{query_id}'"""
+    )
+    r = result.strip().split("\t")
+    assert int(r[0]) >= 1, blob_storage_log  # At least one MultiPartUploadWrite event
+    assert int(r[1]) >= 1, blob_storage_log  # At least one MultiPartUploadComplete event
+    assert int(r[2]) >= 1, blob_storage_log  # Bucket (container) matches
+    assert int(r[3]) >= 1, blob_storage_log  # At least one log entry
+
+    azure_query(node, "DROP TABLE test_blob_storage_log_multipart")

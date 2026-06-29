@@ -23,7 +23,7 @@ public:
 
     String getDescription() override { return "Rewrite sum(if) and sumIf into countIf"; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

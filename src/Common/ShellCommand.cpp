@@ -1,13 +1,29 @@
+/// `wait4` is declared under `_DEFAULT_SOURCE` on Linux glibc, which the
+/// `-std=c++23` strict mode otherwise hides. Define it before the first system
+/// header that guards it. It is a libc feature-test macro, hence the reserved
+/// name; suppress the diagnostics that would otherwise reject our own define.
+#if defined(OS_LINUX) && !defined(_DEFAULT_SOURCE)
+#   pragma clang diagnostic push
+#   pragma clang diagnostic ignored "-Wreserved-macro-identifier"
+#   pragma clang diagnostic ignored "-Wunused-macros"
+#   define _DEFAULT_SOURCE // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+#   pragma clang diagnostic pop
+#endif
+
+#include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <dlfcn.h>
 #include <unistd.h>
+
 #include <csignal>
 
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ShellCommand.h>
+#include <Common/UDFProcessRegistry.h>
 #include <Common/PipeFDs.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -54,13 +70,16 @@ ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd
 {
 }
 
-Poco::Logger * ShellCommand::getLogger()
+LoggerPtr ShellCommand::getLogger()
 {
-    return &Poco::Logger::get("ShellCommand");
+    return ::getLogger("ShellCommand");
 }
 
 ShellCommand::~ShellCommand()
 {
+    if (do_not_terminate)
+        return;
+
     if (wait_called)
         return;
 
@@ -93,7 +112,7 @@ ShellCommand::~ShellCommand()
 
 bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
 {
-    LOG_TRACE(getLogger(), "Try wait for shell command pid {} with timeout {}", pid, timeout_in_seconds);
+    LOG_TRACE(getLogger(), "Try wait for shell command pid {} with timeout {} (seconds)", pid, timeout_in_seconds);
 
     wait_called = true;
 
@@ -107,7 +126,12 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     for (auto & [_, fd] : read_fds)
         fd.close();
 
-    return waitForPid(pid, timeout_in_seconds);
+    bool process_terminated_normally = waitForPid(pid, timeout_in_seconds);
+
+    if (process_terminated_normally && config.register_in_udf_process_registry)
+        UDFProcessRegistry::instance().removeIfGenerationMatches(pid, udf_registry_generation);
+
+    return process_terminated_normally;
 }
 
 void ShellCommand::logCommand(const char * filename, char * const argv[])
@@ -153,6 +177,9 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
     std::vector<std::unique_ptr<PipeFDs>> read_pipe_fds;
     std::vector<std::unique_ptr<PipeFDs>> write_pipe_fds;
+
+    read_pipe_fds.reserve(config.read_fds.size());
+    write_pipe_fds.reserve(config.write_fds.size());
 
     for (size_t i = 0; i < config.read_fds.size(); ++i)
         read_pipe_fds.emplace_back(std::make_unique<PipeFDs>());
@@ -223,6 +250,9 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         pipe_stderr.fds_rw[0],
         config));
 
+    if (config.register_in_udf_process_registry)
+        res->udf_registry_generation = UDFProcessRegistry::instance().add(pid);
+
     for (size_t i = 0; i < config.read_fds.size(); ++i)
     {
         auto & fds = *read_pipe_fds[i];
@@ -237,7 +267,14 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         res->write_fds.emplace(fd, fds.fds_rw[1]);
     }
 
-    LOG_TRACE(getLogger(), "Started shell command '{}' with pid {}", filename, pid);
+    LOG_TRACE(
+        getLogger(),
+        "Started shell command '{}' with pid {} and file descriptors: out {}, err {}",
+        filename,
+        pid,
+        res->out.getFD(),
+        res->err.getFD());
+
     return res;
 }
 
@@ -284,11 +321,68 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const ShellCommand::Co
     return executeImpl(path.data(), argv.data(), config);
 }
 
+struct ShellCommand::tryWaitResult
+{
+    bool is_process_terminated = false;
+    int retcode = -1;
+};
 
 int ShellCommand::tryWait()
 {
-    wait_called = true;
+    return tryWaitImpl(true).retcode;
+}
 
+ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_exit_status)
+{
+    LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
+
+    ShellCommand::tryWaitResult result;
+
+    int options = ((!blocking) ? WNOHANG : 0);
+    int status = 0;
+    int waitpid_retcode = -1;
+    ::rusage local_rusage{};
+
+    while (waitpid_retcode < 0)
+    {
+        /// Reap the child. With `Config::collect_resource_usage` (executable UDFs),
+        /// use `wait4` to also collect the child's `rusage`: it is `waitpid` plus an
+        /// `rusage` out-parameter and shares its pid/status/options/EINTR semantics.
+        /// Without the flag, reap with plain `waitpid` and collect no usage.
+        if (config.collect_resource_usage)
+            waitpid_retcode = wait4(pid, &status, options, &local_rusage);
+        else
+            waitpid_retcode = waitpid(pid, &status, options);
+        if (waitpid_retcode > 0)
+        {
+            /// A reaped pid may be reused immediately, so `wait_called` must be set the
+            /// moment the child is reaped — before any operation that can throw — so the
+            /// destructor never waits on or signals an unrelated process.
+            wait_called = true;
+            if (config.register_in_udf_process_registry)
+                UDFProcessRegistry::instance().removeIfGenerationMatches(pid, udf_registry_generation);
+            if (config.collect_resource_usage)
+            {
+                child_user_time_us = static_cast<UInt64>(local_rusage.ru_utime.tv_sec) * 1000000ULL
+                    + static_cast<UInt64>(local_rusage.ru_utime.tv_usec);
+                child_system_time_us = static_cast<UInt64>(local_rusage.ru_stime.tv_sec) * 1000000ULL
+                    + static_cast<UInt64>(local_rusage.ru_stime.tv_usec);
+                child_resource_usage_captured = true;
+            }
+            break;
+        }
+        if (!blocking && !waitpid_retcode)
+        {
+            result.is_process_terminated = false;
+            return result;
+        }
+        if (errno != EINTR)
+            throw ErrnoException(ErrorCodes::CANNOT_WAITPID, "Cannot waitpid");
+    }
+
+    LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);
+
+    result.is_process_terminated = true;
     in.close();
     out.close();
     err.close();
@@ -299,19 +393,17 @@ int ShellCommand::tryWait()
     for (auto & [_, fd] : read_fds)
         fd.close();
 
-    LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
-
-    int status = 0;
-    while (waitpid(pid, &status, 0) < 0)
-    {
-        if (errno != EINTR)
-            throw ErrnoException(ErrorCodes::CANNOT_WAITPID, "Cannot waitpid");
-    }
-
-    LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);
+    /// When `check_exit_status` is false the caller only wants the reaped `rusage`;
+    /// skip decoding/validating the status so a non-zero or signalled child is not
+    /// reported as an error.
+    if (!check_exit_status)
+        return result;
 
     if (WIFEXITED(status))
-        return WEXITSTATUS(status);
+    {
+        result.retcode = WEXITSTATUS(status);
+        return result;
+    }
 
     if (WIFSIGNALED(status))
         throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was terminated by signal {}", toString(WTERMSIG(status)));
@@ -323,10 +415,8 @@ int ShellCommand::tryWait()
 }
 
 
-void ShellCommand::wait()
+void ShellCommand::handleProcessRetcode(int retcode) const
 {
-    int retcode = tryWait();
-
     if (retcode != EXIT_SUCCESS)
     {
         switch (retcode)
@@ -349,5 +439,47 @@ void ShellCommand::wait()
     }
 }
 
+bool ShellCommand::waitIfProccesTerminated()
+{
+    auto proc_status = tryWaitImpl(false);
+    if (proc_status.is_process_terminated)
+    {
+        handleProcessRetcode(proc_status.retcode);
+    }
+    return proc_status.is_process_terminated;
+}
+
+
+bool ShellCommand::tryReapWithoutStatusCheck()
+{
+    return tryWaitImpl(/*blocking=*/false, /*check_exit_status=*/false).is_process_terminated;
+}
+
+
+void ShellCommand::wait()
+{
+    int retcode = tryWaitImpl(true).retcode;
+    handleProcessRetcode(retcode);
+}
+
+
+bool ShellCommand::wasChildResourceUsageCaptured() const noexcept
+{
+    return child_resource_usage_captured;
+}
+
+
+UInt64 ShellCommand::getChildUserTimeMicroseconds() const noexcept
+{
+    return child_user_time_us;
+}
+
+
+UInt64 ShellCommand::getChildSystemTimeMicroseconds() const noexcept
+{
+    return child_system_time_us;
+}
+
 
 }
+
