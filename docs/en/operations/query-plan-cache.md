@@ -7,8 +7,9 @@ title: 'Query plan cache'
 doc_type: 'guide'
 ---
 
-The query plan cache stores the *query plan* of a `SELECT` query so that repeated executions of the same query skip parsing, query
-analysis and logical planning. Unlike the [query cache](query-cache.md), which stores query *results*, a query plan cache hit still
+The query plan cache stores the *query plan* of a `SELECT` query so that repeated executions of the same query skip query
+analysis and logical planning. The query is still parsed on every execution (the cache key is built from the parsed AST), but the
+expensive analysis and planning steps are reused. Unlike the [query cache](query-cache.md), which stores query *results*, a query plan cache hit still
 executes the query against current data: the cached plan's table reads are storage-agnostic placeholders that are re-bound to fresh data
 snapshots on every execution. The plan cache is therefore transactionally consistent and suitable for workloads where the same
 analysis-heavy query runs repeatedly over changing data — for example dashboards over deeply nested views.
