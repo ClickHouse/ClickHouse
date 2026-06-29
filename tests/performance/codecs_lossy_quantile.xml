@@ -1,0 +1,73 @@
+<test>
+    <settings>
+        <allow_suspicious_codecs>1</allow_suspicious_codecs>
+        <allow_experimental_codecs>1</allow_experimental_codecs>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>type</name>
+            <values>
+                <value>Float32</value>
+                <value>Float64</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>num_rows</name>
+            <values>
+                <value>10000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Baseline: NONE -->
+    <create_query>
+        CREATE TABLE codec_lq_none_{type} (n {type} CODEC(NONE))
+        ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
+        SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;
+    </create_query>
+    <!-- LossyQuantile variants -->
+    <create_query>
+        CREATE TABLE codec_lq_lq2_{type} (n {type} CODEC(LossyQuantile(2)))
+        ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
+        SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;
+    </create_query>
+    <create_query>
+        CREATE TABLE codec_lq_lq4_{type} (n {type} CODEC(LossyQuantile(4)))
+        ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
+        SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;
+    </create_query>
+    <create_query>
+        CREATE TABLE codec_lq_lq8_{type} (n {type} CODEC(LossyQuantile(8)))
+        ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
+        SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;
+    </create_query>
+    <create_query>
+        CREATE TABLE codec_lq_lz4_{type} (n {type} CODEC(LZ4))
+        ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
+        SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;
+    </create_query>
+    <create_query>
+        CREATE TABLE codec_lq_fpc_{type} (n {type} CODEC(FPC))
+        ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
+        SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;
+    </create_query>
+    <create_query>system stop merges</create_query>
+
+    <!-- Insert benchmarks (random data) -->
+    <query>INSERT INTO codec_lq_none_{type} (n) SELECT (intHash64(number) - 4294967295)/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
+    <query>INSERT INTO codec_lq_lq2_{type} (n) SELECT (intHash64(number) - 4294967295)/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
+    <query>INSERT INTO codec_lq_lq4_{type} (n) SELECT (intHash64(number) - 4294967295)/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
+    <query>INSERT INTO codec_lq_lq8_{type} (n) SELECT (intHash64(number) - 4294967295)/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
+    <query>INSERT INTO codec_lq_lz4_{type} (n) SELECT (intHash64(number) - 4294967295)/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
+    <query>INSERT INTO codec_lq_fpc_{type} (n) SELECT (intHash64(number) - 4294967295)/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
+
+    <drop_query>system start merges</drop_query>
+    <drop_query>DROP TABLE IF EXISTS codec_lq_none_{type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS codec_lq_lq2_{type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS codec_lq_lq4_{type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS codec_lq_lq8_{type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS codec_lq_lz4_{type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS codec_lq_fpc_{type}</drop_query>
+
+</test>
