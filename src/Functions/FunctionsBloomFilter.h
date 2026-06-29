@@ -70,15 +70,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto * bloom_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bloom_type && bloom_type->getFunctionName() == AggregateFunctionGroupBloomFilterData::name))
+        const DataTypePtr value_type = getBloomFilterValueType(arguments[0]);
+        if (!value_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a Bloom filter state "
                 "(AggregateFunction(groupBloomFilter, T)) but it has type {}",
                 getName(), arguments[0]->getName());
 
-        DataTypes arg_data_types = bloom_type->getArgumentsDataTypes();
-        const DataTypePtr & value_type = arg_data_types[0];
         DataTypePtr dispatch_value_type = removeLowCardinalityAndNullable(value_type);
 
         if (!canCastProbeType(arguments[1], dispatch_value_type))
@@ -96,10 +94,13 @@ public:
         auto col_to = ColumnVector<UInt8>::create(input_rows_count);
         typename ColumnVector<UInt8>::Container & vec_to = col_to->getData();
 
-        const IDataType * from_type = arguments[0].type.get();
-        const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
-        DataTypes arg_data_types = aggr_type->getArgumentsDataTypes();
-        const DataTypePtr & value_type = arg_data_types[0];
+        DataTypePtr value_type = getBloomFilterValueType(arguments[0].type);
+        if (!value_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a Bloom filter state "
+                "(AggregateFunction(groupBloomFilter, T)) but it has type {}",
+                getName(), arguments[0].type->getName());
+
         DataTypePtr dispatch_value_type = removeLowCardinalityAndNullable(value_type);
 
         if (!canCastProbeType(arguments[1].type, dispatch_value_type))
@@ -189,6 +190,25 @@ public:
     }
 
 private:
+    static DataTypePtr getBloomFilterValueType(const DataTypePtr & type)
+    {
+        const auto * bloom_type = typeid_cast<const DataTypeAggregateFunction *>(type.get());
+        if (!bloom_type)
+            return {};
+
+        const auto & base_function = bloom_type->getFunction()->getBaseAggregateFunctionWithSameStateRepresentation();
+        if (base_function.getName() != AggregateFunctionGroupBloomFilterData::name)
+            return {};
+
+        const DataTypes & arg_data_types = base_function.getArgumentTypes();
+        if (arg_data_types.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Bloom filter aggregate function {} has no value argument",
+                base_function.getName());
+
+        return arg_data_types[0];
+    }
+
     static bool canCastProbeType(const DataTypePtr & probe_type, const DataTypePtr & bloom_value_type)
     {
         DataTypePtr dispatch_probe_type = removeLowCardinalityAndNullable(probe_type);

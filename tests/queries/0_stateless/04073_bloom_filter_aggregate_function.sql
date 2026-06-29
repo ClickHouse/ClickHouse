@@ -12,6 +12,19 @@ SELECT
     bloomFilterContains(subquery_bf, toUInt64(42)),
     toTypeName(type_bf) LIKE 'AggregateFunction(groupBloomFilter%';
 
+-- bloomFilterContains must accept groupBloomFilterIfState because the If combinator
+-- keeps the same Bloom filter state representation as groupBloomFilterState.
+WITH
+    (SELECT groupBloomFilterIfState(1000)(number, number = 42) FROM numbers(100)) AS bf
+SELECT
+    bloomFilterContains(bf, toUInt64(42)),
+    bloomFilterContains(bf, toUInt64(41)),
+    toTypeName(bf) LIKE 'AggregateFunction(groupBloomFilterIf%';
+
+WITH
+    (SELECT groupBloomFilterIfState(1000)(number, 0) FROM numbers(100)) AS bf
+SELECT bloomFilterContains(bf, toUInt64(42));
+
 -- groupBloomFilter without -State combinator has no meaningful scalar result.
 SELECT groupBloomFilter(1000)(number) AS result
 FROM numbers(100); -- { serverError BAD_ARGUMENTS }
