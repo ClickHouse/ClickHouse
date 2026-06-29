@@ -1271,12 +1271,12 @@ The table below shows the behavior of this setting for various date-time functio
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
-Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*().
+Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*().
 This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.
 Enabling this setting gives the wrong impression that different values within a column can have different timezones.
 Therefore, please do not enable this setting.
 )", 0) \
-    DECLARE(Bool, use_legacy_to_time, true, R"(
+    DECLARE(Bool, use_legacy_to_time, false, R"(
 When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
 Otherwise, uses a new toTime function, that converts different type of data into the Time type.
 The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
@@ -2511,6 +2511,18 @@ Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both ta
     \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
 Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
+)", 0) \
+    \
+    DECLARE(ExplainQueryPlanDefault, explain_query_plan_default, ExplainQueryPlanDefault::PRETTY, R"(
+Default format used by `EXPLAIN PLAN`.
+
+Possible values:
+- `pretty` (default since 26.7) — `actions`, `compact`, and `pretty` default to `true`, producing a compact, pretty, action-annotated plan.
+- `legacy` — pre-26.7 output.
+
+Specifying the `actions`, `compact`, or `pretty` options explicitly in the `EXPLAIN` statement (for example, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) always overrides this setting.
+
+`EXPLAIN PLAN` with `json = 1` or `distributed = 1` keeps the legacy (pre-26.7) defaults regardless of this setting, unless `actions`, `compact`, or `pretty` are set explicitly. The pretty output cannot represent JSON results or per-shard distributed plans, so those modes are only rendered correctly in legacy form.
 )", 0) \
     \
     DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(
@@ -7436,12 +7448,6 @@ Default partition strategy for file like engines.
     DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
 )", 0) \
-    DECLARE(Bool, allow_deprecated_snowflake_conversion_functions, false, R"(
-Functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are deprecated and disabled by default.
-Please use functions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, and `dateTime64ToSnowflakeID` instead.
-
-To re-enable the deprecated functions (e.g., during a transition period), please set this setting to `true`.
-)", 0) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
 )", 0) \
@@ -8439,6 +8445,7 @@ Maximum number of texts to include in a single HTTP request made by `aiEmbed`. T
     MAKE_OBSOLETE(M, Bool, allow_experimental_qbit_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_qbit_type, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_alias_table_engine, false) \
+    MAKE_OBSOLETE(M, Bool, allow_deprecated_snowflake_conversion_functions, false) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
