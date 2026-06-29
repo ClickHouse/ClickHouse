@@ -978,8 +978,14 @@ ColumnPtr RecordBatchDecoder::decodeField(
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC field node has a negative length {}", node_length);
     const size_t rows = static_cast<size_t>(node_length);
 
+    /// A dictionary-encoded field is physically an index array here (validity slot + indices); its value-type
+    /// layout (union, null, ...) lives only in the DictionaryBatch. Skip the value-type special cases below
+    /// for such a field so its index buffer is not misread as, e.g., a union type-id buffer; the
+    /// `field.dictionary` branch further down consumes the validity slot and the indices.
+    const bool is_dictionary = field.dictionary.has_value();
+
     /// Unions have no validity buffer; handle them before consuming one.
-    if (field.type.kind == TypeKind::Union)
+    if (!is_dictionary && field.type.kind == TypeKind::Union)
     {
         /// An Arrow union carries no top-level validity bitmap, so a node that nonetheless reports nulls is
         /// malformed: there is no bitmap to say which rows are null, and `decodeUnion` would decode the
@@ -998,7 +1004,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
     /// column. Decode it as an all-null `Nullable(Nothing)` (matching `fieldToCHType` and how the library
     /// reader wraps its `Nothing` column); `buildChunk` then casts it to the requested target as NULLs
     /// (or column DEFAULTs with `null_as_default`).
-    if (field.type.kind == TypeKind::Null)
+    if (!is_dictionary && field.type.kind == TypeKind::Null)
         return ColumnNullable::create(ColumnNothing::create(rows), ColumnUInt8::create(rows, UInt8{1}));
 
     /// Every nullable-capable node carries a validity buffer slot first, then its value buffers.
@@ -1052,6 +1058,16 @@ void RecordBatchDecoder::skipField(const ArrowField & field)
     /// Consume this field's FieldNode, mirroring decodeField.
     nextNode();
 
+    /// A dictionary-encoded field is physically an index array here (validity slot + indices); its
+    /// value-type layout lives only in the DictionaryBatch. Handle it before the value-type special cases
+    /// below, which would otherwise consume the wrong buffers and desync the cursor.
+    if (field.dictionary)
+    {
+        nextBuffer(); /// validity
+        nextBuffer(); /// indices
+        return;
+    }
+
     /// Unions carry no validity buffer (decodeField dispatches to decodeUnion before consuming one):
     /// a type-ids buffer, an offsets buffer for dense unions, then one subtree per child — a null-typed
     /// child being just a placeholder node, exactly as decodeUnion consumes them.
@@ -1086,13 +1102,6 @@ void RecordBatchDecoder::skipField(const ArrowField & field)
 
     /// Validity buffer, present for every other field.
     nextBuffer();
-
-    /// A dictionary-encoded field carries only its index buffer here; the values are in a DictionaryBatch.
-    if (field.dictionary)
-    {
-        nextBuffer();
-        return;
-    }
 
     switch (field.type.kind)
     {
