@@ -18,9 +18,12 @@ SET enable_analyzer=1;
 
 DROP TABLE IF EXISTS t_agg_in_order;
 
+-- Pin the codec to `ZSTD(3)` (the server default) so the actually-read compressed bytes match the
+-- input-estimate sample, which is serialized with `getDefaultCodec` (otherwise the `no-random-*`
+-- harness would inject `LZ4` and the read bytes would diverge from the `ZSTD(3)`-based estimate).
 CREATE TABLE t_agg_in_order(key UInt64, value UInt64, s String)
 ENGINE=MergeTree ORDER BY key
-SETTINGS index_granularity=8192, auto_statistics_types='';
+SETTINGS index_granularity=8192, auto_statistics_types='', default_compression_codec='ZSTD(3)';
 
 INSERT INTO t_agg_in_order SELECT number, number, toString(number) FROM numbers(2e6);
 
@@ -68,16 +71,19 @@ WHERE ratio > 2;
 -- Check output bytes estimation accuracy against known-good values (ratio should be within 2x).
 -- Expected output bytes were measured with default settings on 2e6 rows:
 -- execute queries with parallel replicas and with local plan disabled, then take the network received bytes metric as estimation.
+-- The output estimate serializes the aggregation output with `getDefaultCodec`; under the `ZSTD(3)`
+-- default the two `max_threads=1` queries (single, multi_agg) compress ~5x smaller than the original
+-- `LZ4`-era measurements, so their expected values are recalibrated for `ZSTD(3)`.
 SELECT format('{}: output estimation off by {}x (expected~{}, estimated={})', log_comment, round(ratio, 2), expected, statistics_output_bytes)
 FROM (
     SELECT
         log_comment,
         ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] AS statistics_output_bytes,
         multiIf(
-            log_comment = 'agg_in_order_single', 25519057,
+            log_comment = 'agg_in_order_single', 4781834,
             log_comment = 'agg_in_order_multi', 25515684,
             log_comment = 'agg_in_order_filter', 10096176,
-            log_comment = 'agg_in_order_multi_agg', 33649632,
+            log_comment = 'agg_in_order_multi_agg', 6889765,
             log_comment = 'agg_in_order_group_by_key', 2532395,
             0) AS expected,
         greatest(expected, statistics_output_bytes) / least(expected, statistics_output_bytes) AS ratio
