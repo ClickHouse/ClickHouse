@@ -94,7 +94,8 @@ DistinctTransform::DistinctTransform(
     {
         pool = nullptr;
         try_init_bf = !((limit_hint_ && limit_hint_ < 1000000) || set_limit_for_enabling_bloom_filter_ == 0);
-    } else
+    }
+    else
     {
         try_init_bf = false;
         if (max_threads_ > 1)
@@ -138,27 +139,26 @@ void DistinctTransform::buildCombinedFilter(
 
     for (size_t i = 0; i < rows; ++i)
     {
-
         auto key_holder = state.getKeyHolder(i, variants.string_pool);
         auto hash = method.data.hash(keyHolderGetKey(key_holder));
 
         auto hash1 = hash;
         auto hash2 = intHash32(hash);
 
-        auto has_element = bloom_filter->findRawHash(hash1/*, SEED_GEN_A*/) && bloom_filter->findRawHash(hash2/*, SEED_GEN_A*/);
+        auto has_element = bloom_filter->findRawHash(hash1) && bloom_filter->findRawHash(hash2);
 
         if (has_element)
         {
             bool inserted;
             method.data.emplace(key_holder, it, inserted, hash);
-            //auto emplace_result = state.emplaceImpl(key_holder, method.data);
             /// Emit the record if there is no such key in the current set yet.
             /// Skip it otherwise.
             filter[i] = inserted;
-        } else
+        }
+        else
         {
-            bloom_filter->addRawHash(hash1/*, SEED_GEN_A*/);
-            bloom_filter->addRawHash(hash2/*, SEED_GEN_A*/);
+            bloom_filter->addRawHash(hash1);
+            bloom_filter->addRawHash(hash2);
             passed_bf++;
             filter[i] = true;
         }
@@ -409,7 +409,6 @@ void DistinctTransform::buildSetParallelFilter(
                     size_t i = all_indices[j];
                     bool inserted;
                     method.data.emplace(keys[i], it, inserted, hashes[i]);
-                    //auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
                     filter[i] = inserted;
                 }
             }
