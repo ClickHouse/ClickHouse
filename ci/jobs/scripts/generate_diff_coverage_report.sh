@@ -51,15 +51,22 @@ fi
 
 export CURRENT_COMMIT
 export BASE_COMMIT
+export FIRST_BASE_COMMIT
 export PR_NUMBER
 export REPO_NAME
 
+# Use FIRST_BASE_COMMIT (the actual commit the baseline .info was downloaded from)
+# as the base for the diff, not BASE_COMMIT. This ensures the diff and the baseline
+# counters are in the same coordinate system: if the baseline came from an older
+# commit than BASE_COMMIT, computing git diff BASE_COMMIT...HEAD would remap lines
+# relative to BASE_COMMIT while the baseline uses FIRST_BASE_COMMIT line numbers,
+# producing wrong positions in the diff HTML for any file edited between the two.
 gh api \
   -H "Accept: application/vnd.github.v3.diff" \
-  repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT} \
+  repos/ClickHouse/ClickHouse/compare/${FIRST_BASE_COMMIT}...${CURRENT_COMMIT} \
   > changes.diff
 changed_files=$(gh api \
-  repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT} \
+  repos/ClickHouse/ClickHouse/compare/${FIRST_BASE_COMMIT}...${CURRENT_COMMIT} \
   --jq '.files[].filename'
 )
 echo "Changed files:"
@@ -136,7 +143,7 @@ fi
 genhtml \
   --header-title "${HEADER_TITLE}" \
   --title "branch=${BRANCH}, current_commit=${CURRENT_COMMIT}" \
-  --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${BASE_COMMIT}" \
+  --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${FIRST_BASE_COMMIT}" \
   --baseline-file baseline.changed.info \
   --diff-file changes.diff \
   --output-directory llvm_coverage_diff_html_report \
