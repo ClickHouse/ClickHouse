@@ -361,7 +361,8 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     /// tables up front rather than failing midway. Decimal partition columns are not supported yet.
     for (size_t i = 0; i < state.partition_types.size(); ++i)
     {
-        const auto partition_type = WhichDataType(removeNullable(state.partition_types[i]));
+        const auto nested_partition_type = removeNullable(state.partition_types[i]);
+        const auto partition_type = WhichDataType(nested_partition_type);
 
         if (partition_type.isDecimal())
             throw Exception(
@@ -375,6 +376,13 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
                 ErrorCodes::NOT_IMPLEMENTED,
                 "DROP PARTITION is not supported on Iceberg tables with a UUID partition column "
                 "('{}'): the Iceberg manifest writer cannot encode UUID partition values",
+                state.partition_columns[i]);
+
+        if (isBool(nested_partition_type))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DROP PARTITION is not supported on Iceberg tables with a boolean partition column "
+                "('{}'): the Iceberg manifest writer encodes it as Avro int, diverging from the table partition spec",
                 state.partition_columns[i]);
     }
 
