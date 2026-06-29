@@ -33,10 +33,8 @@ static constexpr size_t BLOOM_FILTER_MAX_SIZE_BYTES = 256 * 1024 * 1024;
 static constexpr size_t BLOOM_FILTER_MAX_HASHES = 20;
 
 /// Returns {filter_size_bytes, num_hashes} for the given expected element count and false-positive rate.
-/// Standard path (k_opt = -ln(p)/ln2 <= BLOOM_FILTER_MAX_HASHES): m = -n*ln(p)/(ln2)^2, k = round(k_opt).
-/// When k_opt > BLOOM_FILTER_MAX_HASHES, the standard size is too small to honour the requested FPR
-/// with only BLOOM_FILTER_MAX_HASHES hash functions. In that case k is fixed at the cap and size is
-/// derived from the inverse of p = (1-exp(-k*n/m))^k:
+/// First select an integer k = clamp(round(-ln(p)/ln2), 1, BLOOM_FILTER_MAX_HASHES).
+/// Then derive the size from the inverse of p = (1-exp(-k*n/m))^k for this exact k:
 ///   m = ceil( -k * n / ln(1 - p^(1/k)) )
 inline std::pair<size_t, size_t> bloomFilterOptimalParams(size_t expected_elements, double false_positive_rate)
 {
@@ -51,19 +49,13 @@ inline std::pair<size_t, size_t> bloomFilterOptimalParams(size_t expected_elemen
     const double ln2 = std::numbers::ln2;
     const double k_opt = -std::log(false_positive_rate) / ln2;
 
-    size_t num_hashes = 0;
-    double bytes_double = 0.0;
-    if (k_opt <= static_cast<double>(BLOOM_FILTER_MAX_HASHES))
-    {
-        bytes_double = std::ceil(-n * std::log(false_positive_rate) / (ln2 * ln2) / 8.0);
-        num_hashes = std::max(size_t{1}, static_cast<size_t>(std::round(k_opt)));
-    }
-    else
-    {
-        num_hashes = BLOOM_FILTER_MAX_HASHES;
-        const double k = static_cast<double>(num_hashes);
-        bytes_double = std::ceil(-k * n / std::log(1.0 - std::pow(false_positive_rate, 1.0 / k)) / 8.0);
-    }
+    const size_t num_hashes = std::clamp(
+        static_cast<size_t>(std::round(k_opt)),
+        size_t{1},
+        BLOOM_FILTER_MAX_HASHES);
+    const double k = static_cast<double>(num_hashes);
+    const double bits_double = -k * n / std::log1p(-std::pow(false_positive_rate, 1.0 / k));
+    const double bytes_double = std::ceil(bits_double / 8.0);
 
     if (!std::isfinite(bytes_double) || bytes_double > static_cast<double>(BLOOM_FILTER_MAX_SIZE_BYTES))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

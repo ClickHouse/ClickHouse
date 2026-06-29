@@ -81,20 +81,25 @@ FROM numbers(100);
 
 ## Implementation details {#implementation-details}
 
-The filter size and number of hash functions are computed automatically from `expected_elements` and `false_positive_rate` using the standard formulas:
+The filter size and number of hash functions are computed automatically from `expected_elements` and `false_positive_rate`. The implementation first computes the optimal continuous number of hashes:
 
-- Optimal size in bits: `m = -n × ln(p) / (ln 2)²`
-- Optimal number of hashes: `k = (m / n) × ln 2`
+- Optimal continuous number of hashes: `k = -ln(p) / ln(2)`
 
-where `n` is the expected number of elements and `p` is the false positive rate.
-
-**Hash function cap.** The number of hash functions is limited to a maximum of 20 (`BLOOM_FILTER_MAX_HASHES`). The optimal `k` exceeds this cap when the requested `false_positive_rate` is smaller than approximately `2⁻²⁰ ≈ 9.5 × 10⁻⁷`. In that case the filter size is automatically increased to the minimum size that still achieves the requested false positive rate with `k = 20`:
+where `p` is the false positive rate. It then rounds `k` to an integer and clamps it to the range `[1, 20]`. After the integer `k` is selected, the size is computed from the inverse of the Bloom filter false positive probability:
 
 ```text
 m = ceil( -k × n / ln(1 - p^(1/k)) )
 ```
 
-This guarantees the advertised false-positive rate is honoured, at the cost of a larger filter. If the recomputed size exceeds the 256 MB limit, an exception is thrown.
+where `m` is the filter size in bits and `n` is the expected number of elements. Computing `m` after integer `k` selection guarantees the advertised false-positive rate is honoured.
+
+**Hash function cap.** The number of hash functions is limited to a maximum of 20 (`BLOOM_FILTER_MAX_HASHES`). The optimal `k` exceeds this cap when the requested `false_positive_rate` is smaller than approximately `2⁻²⁰ ≈ 9.5 × 10⁻⁷`. In that case the same inverse formula is applied with `k = 20`, increasing the filter size enough to achieve the requested false positive rate:
+
+```text
+m = ceil( -k × n / ln(1 - p^(1/k)) )
+```
+
+If the computed size exceeds the 256 MB limit, an exception is thrown.
 
 When merging states (e.g. in distributed queries), both filters must have identical parameters (`filter_size_bytes`, `num_hashes`, `seed`). Merging is performed by bitwise OR of the filter arrays.
 

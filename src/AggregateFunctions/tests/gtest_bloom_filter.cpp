@@ -84,6 +84,15 @@ ColumnPtr executeBloomFilterContains(
     return function.executeImpl(arguments, std::make_shared<DataTypeUInt8>(), rows);
 }
 
+double actualFalsePositiveRate(size_t expected_elements, size_t size_bytes, size_t num_hashes)
+{
+    const double m_bits = static_cast<double>(size_bytes) * 8.0;
+    const double k = static_cast<double>(num_hashes);
+    return std::pow(
+        1.0 - std::exp(-k * static_cast<double>(expected_elements) / m_bits),
+        k);
+}
+
 }
 
 TEST(BloomFilterData, OptimalParameterValidation)
@@ -97,25 +106,23 @@ TEST(BloomFilterData, OptimalParameterValidation)
     EXPECT_GE(k, 1u);
 }
 
-/// When k_opt = -ln(p)/ln2 > BLOOM_FILTER_MAX_HASHES, the size must be enlarged so that
-/// the actual FPR with k = BLOOM_FILTER_MAX_HASHES does not exceed the requested p.
-TEST(BloomFilterData, OptimalParamsRecomputesWhenHashCapExceeded)
+/// The size must be computed for the selected integer k, otherwise rounding k can make
+/// the actual false positive rate exceed the requested p.
+TEST(BloomFilterData, OptimalParamsHonorFalsePositiveRateAfterIntegerHashSelection)
 {
-    auto check_fpr = [](size_t n, double p)
+    auto check_fpr = [](size_t n, double p, size_t expected_num_hashes)
     {
         auto [size_bytes, k] = bloomFilterOptimalParams(n, p);
         EXPECT_LE(size_bytes, BLOOM_FILTER_MAX_SIZE_BYTES);
-        EXPECT_EQ(k, BLOOM_FILTER_MAX_HASHES);
-        /// actual_fpr = (1 - exp(-k*n/m))^k
-        const double m_bits = static_cast<double>(size_bytes) * 8.0;
-        const double actual_fpr = std::pow(
-            1.0 - std::exp(-static_cast<double>(k) * static_cast<double>(n) / m_bits),
-            static_cast<double>(k));
+        EXPECT_EQ(k, expected_num_hashes);
+        const double actual_fpr = actualFalsePositiveRate(n, size_bytes, k);
         EXPECT_LE(actual_fpr, p);
     };
 
-    check_fpr(1, 1e-10);    /// k_opt ≈ 33
-    check_fpr(1, 1e-100);   /// k_opt ≈ 332; regression: was returning ~64 bytes with actual FPR ≈ 4e-29
+    check_fpr(1'000'000, 0.9, 1);                                  /// high p rounds k down to 1
+    check_fpr(1'000'000, BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE, 5);
+    check_fpr(1, 1e-10, BLOOM_FILTER_MAX_HASHES);                   /// k_opt ≈ 33
+    check_fpr(1, 1e-100, BLOOM_FILTER_MAX_HASHES);                  /// k_opt ≈ 332
 
     /// recomputed size > 256 MB → throw
     EXPECT_THROW(bloomFilterOptimalParams(100'000'000, 1e-7), Exception);
