@@ -2226,6 +2226,19 @@ private:
             }
         }
 
+        /// The all-columns mutation rebuilds checksums.txt from scratch, recording only freshly
+        /// written columns and recalculated indexes. Files hardlinked from the source part (e.g.
+        /// per-file skip indexes that were not recalculated) carry no checksum otherwise, leaving
+        /// untracked files in the new part: CHECK TABLE fails and getDeserializedFormat (which
+        /// probes checksums before the storage fallback) stops seeing the index. Copy the source
+        /// checksum for every hardlinked file the source part tracked.
+        for (const auto & file : entries_to_hardlink)
+        {
+            auto it = ctx->source_part->checksums.files.find(file);
+            if (it != ctx->source_part->checksums.files.end())
+                ctx->all_gathered_data.checksums.files.emplace(file, it->second);
+        }
+
         /// Tracking of hardlinked files required for zero-copy replication.
         /// We don't remove them when we delete last copy of source part because
         /// new part can use them.
