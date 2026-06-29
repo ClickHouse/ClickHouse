@@ -379,70 +379,75 @@ ReaderExecutor::~ReaderExecutor()
     }
 }
 
-/// One window of bytes, or empty at EOF. An in-flight prefetch is consumed
-/// FIRST, before the EOF gate: an unknown-size worker can latch `reached_eof`
-/// while still returning the file's final bytes, so gating first would drop
-/// them. With no prefetch, read synchronously (or return empty at EOF).
-/// Releases the long connection + slot once EOF is latched, then reads one
-/// window ahead.
+/// One window of bytes, or empty at EOF. At EOF an in-flight prefetch is drained FIRST: an
+/// unknown-size worker can latch `reached_eof` on a short read while still holding the file's
+/// final bytes, so reporting EOF before draining it would drop them. Only with nothing in
+/// flight is EOF reported (releasing the fill pin). Otherwise the plan is brought up to date
+/// and the cursor step is served - a resident run streamed from the held cache handle, or an
+/// in-flight / synchronous gap fetch.
 ChainedBuffers ReaderExecutor::readNextWindow()
 {
     /// Total foreground time in the read call (planning, cache reads, source reads,
     /// prefetch waits) - the executor's direct contribution to query read latency.
     StatTimer work_timer(stats, Stats::WorkMicroseconds);
 
-    /// EOF return - but a machine launched before EOF can have its worker latch
-    /// `reached_eof` via a short read on an unknown-size source while still holding
-    /// the final bytes. Defer the EOF return until that machine is collected in the
-    /// gap branch below; only return here once nothing is in flight.
-    if (atEnd() && !machine)
+    const size_t position_phys = position + data_start_offset;
+
+    if (atEnd())
     {
+        /// A machine launched before EOF can have its worker latch `reached_eof` via a short
+        /// read on an unknown-size source while still holding the final bytes. Drain that last
+        /// window through the normal serve; the next call finds no machine and returns empty.
+        if (machine)
+        {
+            prepareCursor(position_phys);
+            return finishWindow(interpretStep(position_phys));
+        }
+
         LOG_TRACE(log, "readNextWindow: EOF at position {}", position);
-        /// Drop the in-flight fill pin at EOF instead of waiting for the caller to
-        /// drop the `PipelineReadBuffer`; a subsequent seek-back re-establishes it.
+        /// Drop the in-flight fill pin at EOF instead of waiting for the caller to drop the
+        /// `PipelineReadBuffer`; a subsequent seek-back re-establishes it.
         inflight_segment_pin.reset();
         return {};
     }
 
-    const size_t position_phys = position + data_start_offset;
+    /// Not at EOF, so the cursor step is served below. The advertised extent may still be
+    /// exhausted (`atExtent()` without EOF); the gate then skips the (re)plan and
+    /// `interpretStep` returns empty at the extent.
+    if (!atExtent())
+        prepareCursor(position_phys);
+    return finishWindow(interpretStep(position_phys));
+}
 
-    ChainedBuffers chain;
+void ReaderExecutor::prepareCursor(size_t position_phys)
+{
+    const bool at_plan_end = read_plan.geometry() && position_phys >= read_plan.geometry()->plan_end;
 
-    /// Plan-first: build/refresh the geometry, then let the interpreter serve the
-    /// cursor step - a resident run streamed from the held cache handle, or an
-    /// in-flight / synchronous gap fetch. `readCeiling()` is the pressure-free
-    /// "is there anything left to read?" guard (clamped to the advertised extent /
-    /// file end); an unknown-size source has no known end here (EOF is latched by a
-    /// short read), so it reads up to the extent (or is effectively unbounded).
-    if (readCeiling() > 0)
+    /// At the boundary, collect the in-flight machine BEFORE replanning. A consumed step at
+    /// `plan_end` serves nothing, so the serve's gap branch never collects it; without this the
+    /// replan stays blocked (machine still set -> `observeAndSchedule`'s `chassert(!machine)`)
+    /// and the executor stalls at `plan_end` - a premature interior EOF. Collecting commits the
+    /// machine's cells (so the replan below sees them resident) and clears `machine`.
+    if (machine && at_plan_end)
+        collectInFlightInto(machine->retrieve_index);
+
+    /// Re-plan only once the plan is fully consumed - the cursor fell before `plan_start`, or
+    /// reached `plan_end` and the plan does not already run to EOF. The plan is used to its end
+    /// before a rebuild (no pre-emptive look-ahead). Never replan while a machine is in flight:
+    /// it would re-probe residency and could see the worker's just-fetched gap as resident. The
+    /// per-plan pressure level is sampled once inside `observeAndSchedule`.
+    const bool want_replan = !read_plan.geometry()
+        || position_phys < read_plan.geometry()->plan_start
+        || (at_plan_end && !planReachesEnd());
+    if (!machine && want_replan)
     {
-        const bool at_plan_end = read_plan.geometry() && position_phys >= read_plan.geometry()->plan_end;
-
-        /// At the boundary, collect the in-flight machine BEFORE replanning. A consumed step at
-        /// `plan_end` serves nothing, so the serve's gap branch never collects it; without this the
-        /// replan stays blocked (machine still set -> `observeAndSchedule`'s `chassert(!machine)`)
-        /// and the executor stalls at `plan_end` - a premature interior EOF. Collecting commits the
-        /// machine's cells (so the replan below sees them resident) and clears `machine`.
-        if (machine && at_plan_end)
-            collectInFlightInto(machine->retrieve_index);
-
-        /// Re-plan only once the plan is fully consumed - the cursor fell before `plan_start`, or
-        /// reached `plan_end` and the plan does not already run to EOF. The plan is used to its end
-        /// before a rebuild (no pre-emptive look-ahead). Never replan while a machine is in flight:
-        /// it would re-probe residency and could see the worker's just-fetched gap as resident. The
-        /// per-plan pressure level is sampled once inside `observeAndSchedule`.
-        const bool want_replan = !read_plan.geometry()
-            || position_phys < read_plan.geometry()->plan_start
-            || (at_plan_end && !planReachesEnd());
-        if (!machine && want_replan)
-        {
-            observeAndSchedule(position_phys);
-            reconstructCursor();
-        }
+        observeAndSchedule(position_phys);
+        reconstructCursor();
     }
+}
 
-    chain = interpretStep(position_phys);
-
+ChainedBuffers ReaderExecutor::finishWindow(ChainedBuffers chain)
+{
     stats.add(Stats::RequestedBytes, chain.range().size);
     position += chain.range().size;
     /// Credit the over-read: bytes now delivered to the consumer that were earlier fetched ahead
@@ -455,9 +460,9 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
         chain.range().size, chain.getNodes().size(), position);
 
-    /// Unknown-size EOF is latched by a short read here, not the pre-read gate,
-    /// and the caller stops on the empty chain without a follow-up call - so drop
-    /// the in-flight fill pin now rather than leaking it.
+    /// Unknown-size EOF is latched by a short read here, not the pre-read gate, and the caller
+    /// stops on the empty chain without a follow-up call - so drop the in-flight fill pin now
+    /// rather than leaking it.
     if (reached_eof)
         inflight_segment_pin.reset();
 

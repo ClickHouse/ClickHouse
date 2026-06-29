@@ -3311,9 +3311,9 @@ TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
 
 /// For an unknown-size source, the worker can latch `reached_eof` mid-flight
 /// while still producing a partial chain with the real final bytes.
-/// `readNextWindow`'s EOF gate must defer to the in-flight machine (`atEnd()
-/// && !machine`), so those bytes are collected and served; only the
-/// nothing-in-flight case short-circuits to EOF.
+/// `readNextWindow`'s `atEnd()` branch must drain the in-flight machine before
+/// reporting EOF, so those final bytes are collected and served; only the
+/// nothing-in-flight case short-circuits to empty.
 TEST(ReaderExecutor, UnknownSizePrefetchedFinalBytesAreServed)
 {
     /// 30 bytes "ABAB...". The source has the real bytes; the executor is

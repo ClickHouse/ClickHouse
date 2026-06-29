@@ -811,6 +811,18 @@ private:
     void reconstructCursor();
     void advanceCursor();
 
+    /// Bring the plan and cursor up to date for serving at `position_phys`: collect an in-flight
+    /// machine sitting at the consumed plan end, then (re)plan once the plan is fully consumed
+    /// (cursor before `plan_start`, or at `plan_end` with the plan not already running to EOF).
+    /// Never replans while a machine is in flight - that would re-probe residency and could see
+    /// the worker's just-fetched gap as resident.
+    void prepareCursor(size_t position_phys);
+
+    /// The shared post-serve tail of `readNextWindow`: account the served window, advance the
+    /// cursor, net out the over-read, drop the fill pin at EOF, launch the next read-ahead, and
+    /// decrypt. Returns the plaintext window.
+    ChainedBuffers finishWindow(ChainedBuffers chain);
+
     /// The schedule-driven interpreter: `readNextWindow` runs the schedule's already-planned
     /// jobs instead of re-deriving the next gap from the coverage map. `interpretStep`
     /// dispatches on `steps[cursor]`; `maybeLaunchAhead` launches the schedule's `Remote`
@@ -924,6 +936,11 @@ private:
     /// known) and the read extent - the per-read analogue of `boundedPlanSpan`.
     size_t boundedReadSize(size_t want) const;
 
+    /// The advertised read extent (`setReadUntilPosition`) has been reached - no room left
+    /// within it, though the file may continue. `readNextWindow` uses this (not the file end)
+    /// to gate the (re)plan once EOF is handled separately.
+    bool atExtent() const { return read_extent_end && position >= *read_extent_end; }
+
     bool atEnd() const
     {
         if (offset_map.hasUnknownSize())
@@ -933,9 +950,9 @@ private:
 
     /// The per-call read ceiling in LOGICAL bytes: bytes remaining to the read extent, or one
     /// window when the source size is unknown. `> 0` iff there is room to read at the cursor.
-    /// (Was the `to_read` parameter.) Deliberately does NOT test `reached_eof`: the
-    /// `atEnd() && !machine` guard owns the no-machine EOF, so an in-flight machine's final
-    /// bytes are still collected after EOF latches.
+    /// (Was the `to_read` parameter.) Deliberately does NOT test `reached_eof`: when EOF latches
+    /// with a machine still in flight, `readNextWindow`'s `atEnd()` branch drains that final
+    /// window through `interpretStep`, which serves only while `readCeiling() > 0`.
     size_t readCeiling() const
     {
         return offset_map.hasUnknownSize() ? clampToExtent(window_size) : clampToExtent(totalSize() - position);
