@@ -10,7 +10,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query "
-    SET allow_experimental_alias_table_engine = 1;
     CREATE TABLE alias_cancel_target (x UInt64) ENGINE = MergeTree ORDER BY x;
     CREATE TABLE alias_cancel ENGINE = Alias('alias_cancel_target');
 "
