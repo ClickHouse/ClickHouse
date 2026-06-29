@@ -3558,7 +3558,9 @@ Minimal size of block to compress in CROSS JOIN. Zero value means - disable this
     DECLARE(Bool, enable_join_in_memory_compression, false, R"(
 Compress the right-side blocks held in memory by hash-based joins (`hash`, `parallel_hash`, `grace_hash`) when the join is about to exceed its memory budget, instead of only shrinking them.
 
-Compression kicks in adaptively, using the same memory-pressure signal as block shrinking: when the join data accounts for more than half of `max_bytes_in_join`, or the query memory growth exceeds half of the query memory limit (`max_memory_usage`). It is therefore only effective when one of these limits is set; without a limit there is no "before out of memory" signal and the right table is never compressed.
+For `hash` and `parallel_hash`, compression kicks in adaptively, using the same memory-pressure signal as block shrinking: when the join data accounts for more than half of `max_bytes_in_join`, or the query memory growth exceeds half of the query memory limit (`max_memory_usage`). It is therefore only effective when one of these limits is set; without a limit there is no "before out of memory" signal and the right table is never compressed.
+
+For standalone `grace_hash`, compression is applied as a one-time compaction of the active in-memory bucket when it reaches `max_bytes_in_join`, just before that bucket would otherwise be rehashed or spilled to disk. The `max_memory_usage` trigger does not apply to a `grace_hash` bucket, and blocks inserted into the bucket after it has been compacted are not compressed again.
 
 This trades probe-time CPU (right-side blocks must be decompressed on the fly, with a bounded cache controlled by `join_decompressed_columns_cache_bytes`) for lower peak memory, allowing larger joins to run in memory before reaching an out-of-memory condition or spilling to disk.
 )", 0) \
