@@ -553,6 +553,20 @@ def test_persistent_table_does_not_reuse_credentialed_client_across_sessions():
     node.query("DROP TABLE t_persistent_env SYNC")
 
 
+def test_persistent_table_created_with_opt_in_refuses_first_restricted_read():
+    # A persistent S3 table created with the opt-in resolves the server credentials at create time. The FIRST
+    # read in a default restricted session must still be refused -- the create-time client is not reused across
+    # the restriction-mode change (the create-time settings update establishes the mode, so the restricted read
+    # rebuilds anonymous and is refused).
+    node.query("DROP TABLE IF EXISTS t_persist_optin SYNC")
+    node.query(
+        "CREATE TABLE t_persist_optin (x UInt8) ENGINE = S3(nc_persistent_env)",
+        settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+    assert "ACCESS_DENIED" in node.query_and_get_error("SELECT * FROM t_persist_optin")
+    node.query("DROP TABLE t_persist_optin SYNC")
+
+
 def test_named_collection_does_not_inherit_server_sse():
     # The server <s3> endpoint config carries an SSE-C customer key. A named collection with its own explicit
     # keys must not inherit that server-managed key (which getClient would send to the endpoint): reading a

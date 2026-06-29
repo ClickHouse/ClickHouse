@@ -292,7 +292,18 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
 
 void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config)
 {
+    /// Force the disk root and every `locations.<name>` child anonymous: an `include` can resolve a
+    /// `locations.<name>` S3 child with its own server-managed auth, and this pre-resolution fallback runs
+    /// instead of the post-resolution per-prefix check, so a root-only rewrite would leave such a child with
+    /// the server identity (built with `for_disk_s3 = true`, bypassing the restriction).
     forceAnonymousS3DiskConfigAtPrefix(config, "");
+    if (config.has("locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys("locations", locations);
+        for (const auto & location : locations)
+            forceAnonymousS3DiskConfigAtPrefix(config, "locations." + location + ".");
+    }
 }
 
 void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & config, const String & prefix)
