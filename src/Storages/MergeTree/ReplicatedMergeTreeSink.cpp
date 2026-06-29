@@ -250,6 +250,7 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFault
             /// `getQuorumSize()` reads `quorum_replicas_num`, which is still uninitialized here
             /// (it is normally assigned from this function's return value in `onStart()`). Populate
             /// it first so majority quorum is computed from the current replica count instead of 0
+            
             quorum_replicas_num = replicas_number;
             size_t quorum_size = getQuorumSize();
 
