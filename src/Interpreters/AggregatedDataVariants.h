@@ -317,8 +317,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     bool isTwoLevel() const;
     bool isConvertibleToTwoLevel() const;
     void convertToTwoLevel();
-    bool isLowCardinality() const { return isLowCardinality(type); }
-    static bool isLowCardinality(Type type);
+    bool isLowCardinality() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
 
     /** Select the aggregation method based on the number and types of keys. */

@@ -633,10 +633,14 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
           CurrentMetrics::AggregatorThreadsScheduled,
           params.max_threads))
 {
+    /// The execute path measures memory usage via a dedicated Thread-level tracker created under the
+    /// current query tracker. 
+    // The merge path can't use this because it recieves pre-allocated state that can not be covered by
+    // the memory tracker, so it falls back to the delta in query memory.
     if (params.only_merge)
         memory_usage_before_aggregation = getCurrentQueryMemoryUsage();
     else
-        memory_tracker = tryCreateMemoryTracker();
+        memory_tracker = tryCreateMemoryTrackerUnderCurrentQuery();
 
     aggregate_functions.resize(params.aggregates_size);
     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -1591,9 +1595,25 @@ bool Aggregator::executeOnBlock(Columns columns,
     AggregateColumns & aggregate_columns,
     bool & no_more_keys) const
 {
+    /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
+    /// and query memory trackers, and accounts for the aggregation state across all threads.
+    const bool use_own_tracker = memory_tracker && CurrentThread::getMemoryTracker()
+        && CurrentThread::getMemoryTracker()->getParent() == memory_tracker->getParent();
+    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
+    if (use_own_tracker)
+        memory_tracker_switcher.emplace(memory_tracker.get());
+
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
+    /// How to perform the aggregation?
+    if (result.empty())
+    {
+        initDataVariantsWithSizeHint(result, method_chosen, params);
+        result.keys_size = params.keys_size;
+        result.key_sizes = key_sizes;
+        LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
+    }
 
     /** Constant columns are not supported directly during aggregation.
       * To make them work anyway, we materialize them.
@@ -1621,7 +1641,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         }
 
 
-        if (!AggregatedDataVariants::isLowCardinality(method_chosen))
+        if (!result.isLowCardinality())
         {
             auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());
             if (column_no_lc.get() != key_columns[i])
@@ -1635,24 +1655,6 @@ bool Aggregator::executeOnBlock(Columns columns,
     NestedColumnsHolder nested_columns_holder;
     AggregateFunctionInstructions aggregate_functions_instructions;
     prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions, nested_columns_holder);
-
-    /// Tracking starts after input materialization if necessary.
-    /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
-    /// and query memory trackers, and accounts for the aggregation state across all threads.
-    const bool use_own_tracker = memory_tracker && CurrentThread::getMemoryTracker()
-        && CurrentThread::getMemoryTracker()->getParent() == memory_tracker->getParent();
-    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
-    if (use_own_tracker)
-        memory_tracker_switcher.emplace(memory_tracker.get());
-
-    /// How to perform the aggregation?
-    if (result.empty())
-    {
-        initDataVariantsWithSizeHint(result, method_chosen, params);
-        result.keys_size = params.keys_size;
-        result.key_sizes = key_sizes;
-        LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
-    }
 
     if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
     {
@@ -1684,7 +1686,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();
-    Int64 current_memory_usage = use_own_tracker ? memory_tracker->getParent()->get() : getCurrentQueryMemoryUsage();
+    Int64 current_memory_usage = getCurrentQueryMemoryUsage();
 
     /// Here all the results in the sum are taken into account, from different threads.
     Int64 result_size_bytes = use_own_tracker ? memory_tracker->get() : current_memory_usage;

@@ -14,7 +14,7 @@ std::optional<UInt64> getCurrentQueryHardLimit();
 Int64 getCurrentQueryMemoryUsage();
 
 /// Create a memory tracker under the current query memory tracker.
-std::unique_ptr<MemoryTracker> tryCreateMemoryTracker();
+std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery();
 
 /// Limit number of threads based on free memory.
 /// If free memory (server limit minus tracked) is less than threads * min_free_per_thread,
