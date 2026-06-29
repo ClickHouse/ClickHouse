@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/SharedMutex.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 
 
@@ -36,7 +37,7 @@ public:
     ~ContextTimeSeriesTagsCollector();
 
     /// A sorted list of tags with their values.
-    using TagNamesAndValues = std::vector<std::pair<String, String>>;
+    using TagNamesAndValues = VectorWithMemoryTracking<std::pair<String, String>>;
     using TagNamesAndValuesPtr = std::shared_ptr<const TagNamesAndValues>;
 
     static String toString(const TagNamesAndValues & tags);
@@ -51,30 +52,30 @@ public:
     void storeTags(const IDType & id, const TagNamesAndValuesPtr & tags);
 
     template <typename IDType>
-    void storeTags(const std::vector<IDType> & ids, const std::vector<TagNamesAndValuesPtr> & tags_vector);
+    void storeTags(const VectorWithMemoryTracking<IDType> & ids, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
 
     /// Returns the group assigned to a specified set of tags.
     /// If that set of tags hasn't been added to the collector yet then this functions adds it.
     Group getGroupForTags(const TagNamesAndValuesPtr & tags);
-    std::vector<Group> getGroupForTags(const std::vector<TagNamesAndValuesPtr> & tags_vector);
+    VectorWithMemoryTracking<Group> getGroupForTags(const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
 
     /// Group #0 is always reserved for an empty set of tags.
     static Group getGroupForNoTags() { return 0; }
 
     /// Returns the set of tags which is assigned a specified group.
     TagNamesAndValuesPtr getTagsByGroup(Group group) const;
-    std::vector<TagNamesAndValuesPtr> getTagsByGroup(const std::vector<Group> & groups_) const;
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByGroup(const VectorWithMemoryTracking<Group> & groups_) const;
 
     /// Returns a sampling key for a specified group. The sampling key is a stable UInt64 hash
     /// derived from the tags of a specified group. It's intended as a deterministic sort key
     /// for sampling operations like `limitk` and `limit_ratio`.
     UInt64 getSamplingKeyByGroup(Group group) const;
-    std::vector<UInt64> getSamplingKeyByGroup(const std::vector<Group> & groups_) const;
+    VectorWithMemoryTracking<UInt64> getSamplingKeyByGroup(const VectorWithMemoryTracking<Group> & groups_) const;
 
     /// Extracts the value of a specified tag, or an empty string if there is no such tag in the group.
     String extractTag(Group group, const String & tag_to_extract) const;
-    std::vector<String> extractTag(const std::vector<Group> & groups_, const String & tag_to_extract) const;
-    void extractTag(const std::vector<Group> & groups_, const String & tag_to_extract, ColumnString & out_column) const;
+    VectorWithMemoryTracking<String> extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract) const;
+    void extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract, ColumnString & out_column) const;
 
     /// Returns the group assigned to the set of tags which was added to the collector
     /// with a specified identifier.
@@ -82,50 +83,50 @@ public:
     Group getGroupByID(const IDType & id) const;
 
     template <typename IDType>
-    std::vector<Group> getGroupByID(const std::vector<IDType> & ids) const;
+    VectorWithMemoryTracking<Group> getGroupByID(const VectorWithMemoryTracking<IDType> & ids) const;
 
     /// Returns the set of tags which was added to the collector with a specified identifier.
     template <typename IDType>
     TagNamesAndValuesPtr getTagsByID(const IDType & id) const;
 
     template <typename IDType>
-    std::vector<TagNamesAndValuesPtr> getTagsByID(const std::vector<IDType> & ids) const;
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByID(const VectorWithMemoryTracking<IDType> & ids) const;
 
     /// Removes a tag from a group and returns the result group.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
     Group removeTag(Group group, const String & tag_to_remove);
-    std::vector<Group> removeTag(const std::vector<Group> & groups_, const String & tag_to_remove);
+    VectorWithMemoryTracking<Group> removeTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_remove);
 
     /// Removes multiple tags from a group and returns the result group.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
     Group removeTags(Group group, const Strings & tags_to_remove);
-    std::vector<Group> removeTags(const std::vector<Group> & groups_, const Strings & tags_to_remove);
+    VectorWithMemoryTracking<Group> removeTags(const VectorWithMemoryTracking<Group> & groups_, const Strings & tags_to_remove);
 
     /// Removes all tags from a group except specified ones and returns the result group.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
     Group removeAllTagsExcept(Group group, const Strings & tags_to_keep);
-    std::vector<Group> removeAllTagsExcept(const std::vector<Group> & groups_, const Strings & tags_to_keep);
+    VectorWithMemoryTracking<Group> removeAllTagsExcept(const VectorWithMemoryTracking<Group> & groups_, const Strings & tags_to_keep);
 
     /// Copies a specified tag from `src_group` to `dest_group`. The function replaces any previous value of the copied tag in `dest_group`.
     /// If the copied tag doesn't present in `src_group` then the function will remove them in `dest_group` as well.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
     Group copyTag(Group dest_group, Group src_group, const String & tag_to_copy);
-    std::vector<Group> copyTag(Group dest_group, const std::vector<Group> & src_groups, const String & tag_to_copy);
-    std::vector<Group> copyTag(const std::vector<Group> & dest_groups, Group src_group, const String & tag_to_copy);
-    std::vector<Group> copyTag(const std::vector<Group> & dest_groups, const std::vector<Group> & src_groups, const String & tag_to_copy);
+    VectorWithMemoryTracking<Group> copyTag(Group dest_group, const VectorWithMemoryTracking<Group> & src_groups, const String & tag_to_copy);
+    VectorWithMemoryTracking<Group> copyTag(const VectorWithMemoryTracking<Group> & dest_groups, Group src_group, const String & tag_to_copy);
+    VectorWithMemoryTracking<Group> copyTag(const VectorWithMemoryTracking<Group> & dest_groups, const VectorWithMemoryTracking<Group> & src_groups, const String & tag_to_copy);
 
     /// Copies specified tags from `src_group` to `dest_group`. The function replaces any previous values of the copied tags in `dest_group`.
     /// If some of the copied tags don't present in `src_group` then the function will remove them in `dest_group` as well.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
     Group copyTags(Group dest_group, Group src_group, const Strings & tags_to_copy);
-    std::vector<Group> copyTags(Group dest_group, const std::vector<Group> & src_groups, const Strings & tags_to_copy);
-    std::vector<Group> copyTags(const std::vector<Group> & dest_groups, Group src_group, const Strings & tags_to_copy);
-    std::vector<Group> copyTags(const std::vector<Group> & dest_groups, const std::vector<Group> & src_groups, const Strings & tags_to_copy);
+    VectorWithMemoryTracking<Group> copyTags(Group dest_group, const VectorWithMemoryTracking<Group> & src_groups, const Strings & tags_to_copy);
+    VectorWithMemoryTracking<Group> copyTags(const VectorWithMemoryTracking<Group> & dest_groups, Group src_group, const Strings & tags_to_copy);
+    VectorWithMemoryTracking<Group> copyTags(const VectorWithMemoryTracking<Group> & dest_groups, const VectorWithMemoryTracking<Group> & src_groups, const Strings & tags_to_copy);
 
     /// Joins all the values of all the `src_tags` using `separator` and returns a new group with the tag `dest_tag` set to the joined value.
     /// This function implements the logic of promql function label_join().
     Group joinTags(Group group, const String & dest_tag, const String & separator, const Strings & src_tags);
-    std::vector<Group> joinTags(const std::vector<Group> & groups, const String & dest_tag, const String & separator, const Strings & src_tags);
+    VectorWithMemoryTracking<Group> joinTags(const VectorWithMemoryTracking<Group> & groups, const String & dest_tag, const String & separator, const Strings & src_tags);
 
     /// Matches the regular expression `regex` against the value of the tag `src_tag`.
     /// If it matches, the value of the tag `dest_tag` in the returned group will be the expansion of `replacement`,
@@ -135,7 +136,7 @@ public:
     /// If the regular expression doesn't match then the original group is returned unchanged.
     /// This function implements the logic of promql function label_replace().
     Group replaceTag(Group group, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex);
-    std::vector<Group> replaceTag(const std::vector<Group> & groups, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex);
+    VectorWithMemoryTracking<Group> replaceTag(const VectorWithMemoryTracking<Group> & groups, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex);
 
 private:
     /// Transforms the set of tags assigned to a group using a one-argument function, returns the result group.
@@ -144,7 +145,7 @@ private:
     Group transformTags(Group group, TransformFunc && transform_func);
 
     template <typename TransformFunc>
-    std::vector<Group> transformTags(const std::vector<Group> & groups_, TransformFunc && transform_func);
+    VectorWithMemoryTracking<Group> transformTags(const VectorWithMemoryTracking<Group> & groups_, TransformFunc && transform_func);
 
     /// Transforms the set of tags assigned to a group using a two-arguments function, returns the result group.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
@@ -152,13 +153,13 @@ private:
     Group transformTags2(Group group1, Group group2, TransformFunc2 && transform_func);
 
     template <typename TransformFunc2>
-    std::vector<Group> transformTags2(Group group1, const std::vector<Group> & groups2, TransformFunc2 && transform_func);
+    VectorWithMemoryTracking<Group> transformTags2(Group group1, const VectorWithMemoryTracking<Group> & groups2, TransformFunc2 && transform_func);
 
     template <typename TransformFunc2>
-    std::vector<Group> transformTags2(const std::vector<Group> & groups1, Group group2, TransformFunc2 && transform_func);
+    VectorWithMemoryTracking<Group> transformTags2(const VectorWithMemoryTracking<Group> & groups1, Group group2, TransformFunc2 && transform_func);
 
     template <typename TransformFunc2>
-    std::vector<Group> transformTags2(const std::vector<Group> & groups1, const std::vector<Group> & groups2, TransformFunc2 && transform_func);
+    VectorWithMemoryTracking<Group> transformTags2(const VectorWithMemoryTracking<Group> & groups1, const VectorWithMemoryTracking<Group> & groups2, TransformFunc2 && transform_func);
 
     /// Key for `groups_for_tags`. The hash is computed once in the constructor.
     struct TagsKey
@@ -185,10 +186,10 @@ private:
 
     mutable SharedMutex mutex;
 
-    std::vector<TagNamesAndValuesPtr> groups TSA_GUARDED_BY(mutex);
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> groups TSA_GUARDED_BY(mutex);
 
     /// Sampling key (stable UInt64 hash of tags) for each group.
-    std::vector<UInt64> sampling_keys TSA_GUARDED_BY(mutex);
+    VectorWithMemoryTracking<UInt64> sampling_keys TSA_GUARDED_BY(mutex);
 
     std::unordered_map<TagsKey, Group, Hash, Equal> groups_for_tags TSA_GUARDED_BY(mutex);
 

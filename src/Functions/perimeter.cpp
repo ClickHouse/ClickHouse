@@ -67,7 +67,7 @@ REGISTER_FUNCTION(Perimeter)
         };
         FunctionDocumentation::Examples examples;
 
-        FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 12};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
@@ -87,7 +87,7 @@ REGISTER_FUNCTION(Perimeter)
         };
         FunctionDocumentation::Examples examples;
 
-        FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 12};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

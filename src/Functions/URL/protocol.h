@@ -17,7 +17,7 @@ inline std::string_view getURLScheme(const char * data, size_t size)
     const char * pos = data;
     const char * end = data + size;
 
-    if (isAlphaASCII(*pos))
+    if (pos < end && isAlphaASCII(*pos))
     {
         for (++pos; pos < end; ++pos)
         {

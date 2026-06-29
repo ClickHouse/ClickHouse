@@ -61,6 +61,10 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
+    bool supportsStreaming() const override { return true; }
+
+    CursorPromotersMap buildPromoters() override;
+
     bool supportsTransactions() const override { return support_transaction; }
 
     void read(
@@ -295,7 +299,7 @@ private:
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts) override;
+    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 

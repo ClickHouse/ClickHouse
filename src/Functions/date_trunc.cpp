@@ -32,13 +32,13 @@ namespace Setting
 namespace
 {
 
-class FunctionDateTrunc : public IFunction
+class FunctionDateTrunc final : public IFunction
 {
 public:
     static constexpr auto name = "dateTrunc";
 
-    FunctionDateTrunc(ContextPtr context_, IntervalKind::Kind datepart_kind_)
-        : context(context_), datepart_kind(datepart_kind_) {}
+    FunctionDateTrunc(FunctionOverloadResolverPtr to_start_of_interval_, IntervalKind::Kind datepart_kind_)
+        : to_start_of_interval(to_start_of_interval_), datepart_kind(datepart_kind_) {}
 
     String getName() const override { return name; }
 
@@ -64,8 +64,6 @@ public:
         const ColumnPtr interval_column = ColumnConst::create(ColumnInt64::create(1, interval_value), input_rows_count);
         temp_columns[1] = {interval_column, std::make_shared<DataTypeInterval>(datepart_kind), ""};
 
-        auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context);
-
         if (arguments.size() == 2)
             return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry_run = */ false);
 
@@ -84,17 +82,21 @@ public:
     }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr to_start_of_interval;
     IntervalKind::Kind datepart_kind;
 };
 
 
-class FunctionDateTruncOverloadResolver : public IFunctionOverloadResolver
+class FunctionDateTruncOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "dateTrunc";
 
-    explicit FunctionDateTruncOverloadResolver(ContextPtr context_) : context(context_) {}
+    explicit FunctionDateTruncOverloadResolver(ContextPtr context)
+        : to_start_of_interval(FunctionFactory::instance().get("toStartOfInterval", context))
+        , function_date_trunc_return_type_behavior(context->getSettingsRef()[Setting::function_date_trunc_return_type_behavior])
+    {
+    }
 
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<FunctionDateTruncOverloadResolver>(context); }
 
@@ -115,9 +117,9 @@ public:
             DateTime,
             DateTime64,
         };
-        ResultType result_type;
+        ResultType result_type = {};
 
-        IntervalKind::Kind datepart_kind;
+        IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
 
         String datepart_param;
         auto check_first_argument = [&] {
@@ -159,7 +161,7 @@ public:
             /// If we have a DateTime64 or Date32 as an input, it can be negative.
             /// In this case, we should provide the corresponding return type, which supports negative values.
             /// For compatibility, we do it under a setting.
-            if ((isDateTime64(arguments[1].type) || isDate32(arguments[1].type)) && context->getSettingsRef()[Setting::function_date_trunc_return_type_behavior] == 0)
+            if ((isDateTime64(arguments[1].type) || isDate32(arguments[1].type)) && function_date_trunc_return_type_behavior == 0)
             {
                 if (result_type == ResultType::Date)
                     result_type = Date32;
@@ -231,11 +233,11 @@ public:
                 "name of datepart", getName());
 
         String datepart_param = Poco::toLower(datepart_column->getValue<String>());
-        IntervalKind::Kind datepart_kind;
+        IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
         if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 
-        auto function = std::make_shared<FunctionDateTrunc>(context, datepart_kind);
+        auto function = std::make_shared<FunctionDateTrunc>(to_start_of_interval, datepart_kind);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -245,7 +247,8 @@ public:
     }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr to_start_of_interval;
+    UInt64 function_date_trunc_return_type_behavior;
 };
 
 }

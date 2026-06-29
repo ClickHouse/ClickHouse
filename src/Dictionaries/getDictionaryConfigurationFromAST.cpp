@@ -13,6 +13,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
+#include <Core/UUID.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -617,7 +618,7 @@ void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names
 
 }
 
-void checkLifetime(const ASTCreateQuery & query)
+static void checkLifetime(const ASTCreateQuery & query)
 {
     if (query.dictionary->layout && query.dictionary->layout->layout_type == "direct")
     {

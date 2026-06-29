@@ -54,6 +54,7 @@ public:
 
 private:
     bool find(const Point & point, size_t & polygon_index) const override;
+    [[nodiscard]] size_t getIndexBytesAllocated() const override;
 
     VectorWithMemoryTracking<SlabsPolygonIndex> buckets;
     GridRoot<FinalCell> grid;
@@ -82,6 +83,7 @@ public:
 
 private:
     bool find(const Point & point, size_t & polygon_index) const override;
+    [[nodiscard]] size_t getIndexBytesAllocated() const override;
 
     GridRoot<FinalCellWithSlabs> index;
 

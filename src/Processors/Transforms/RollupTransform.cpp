@@ -42,7 +42,7 @@ void GroupByModifierTransform::mergeConsumed()
     if (use_nulls)
     {
         for (auto key : keys)
-            columns[key] = makeNullableSafe(columns[key]);
+            columns[key] = makeNullableOrLowCardinalityNullableSafe(columns[key]);
     }
     current_chunk = Chunk{ columns, rows };
 
@@ -58,7 +58,7 @@ Chunk GroupByModifierTransform::merge(Chunks && chunks, bool is_input, bool fina
         agg_chunks.emplace_back(std::move(chunk));
 
     auto & aggregator = is_input ? params->aggregator : *output_aggregator;
-    auto result = aggregator.mergeBlocks(agg_chunks, final, is_cancelled);
+    auto result = aggregator.mergeBlocks(agg_chunks, final, is_cancelled, /* dataflow_cache_updater= */ nullptr);
     return std::move(result.chunk);
 }
 
@@ -74,14 +74,6 @@ RollupTransform::RollupTransform(SharedHeader header, AggregatingTransformParams
     : GroupByModifierTransform(std::move(header), params_, use_nulls_)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {}
-
-MutableColumnPtr getColumnWithDefaults(Block const & header, size_t key, size_t n)
-{
-    auto const & col = header.getByPosition(key);
-    auto result_column = col.column->cloneEmpty();
-    col.type->insertManyDefaultsInto(*result_column, n);
-    return result_column;
-}
 
 Chunk RollupTransform::generate()
 {

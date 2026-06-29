@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=MergeTree ORDER BY tuple();
 
 INSERT INTO users VALUES (1231, 'John', 33);
@@ -10,7 +11,7 @@ SET query_plan_join_swap_table = 0;
 SET enable_analyzer = 1; -- Optimization requires LogicalJoinStep
 SET enable_parallel_replicas = 0; -- Optimization requires LogicalJoinStep
 SET parallel_hash_join_threshold = 0;
-SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 
 -- { echoOn }
 

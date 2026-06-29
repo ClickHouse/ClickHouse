@@ -26,8 +26,12 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
+#include <Core/UUID.h>
 
 namespace fs = std::filesystem;
 
@@ -104,6 +108,15 @@ struct ReplicatedFetchReadCallback
     }
 };
 
+/// Validate a projection name from an untrusted replica before it is used to build a path.
+/// It becomes a single directory component ("<name>.proj"), so it must be non-empty and contain
+/// no '/'. Standalone "." and ".." are safe here ("..proj"/"...proj" are single components).
+bool isProjectionNameSafe(const std::string & projection_name)
+{
+    return !projection_name.empty()
+        && projection_name.find('/') == std::string::npos;
+}
+
 }
 
 
@@ -179,7 +192,7 @@ void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuf
         Strings capabilities;
         const String delimiter(", ");
         size_t pos_start = 0;
-        size_t pos_end;
+        size_t pos_end = 0;
         while ((pos_end = remote_fs_metadata.find(delimiter, pos_start)) != std::string::npos)
         {
             const String token = remote_fs_metadata.substr(pos_start, pos_end - pos_start);
@@ -330,7 +343,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     return data_checksums;
 }
 
-bool wait_loop(UInt32 wait_timeout_ms, const std::function<bool()> & pred)
+static bool wait_loop(UInt32 wait_timeout_ms, const std::function<bool()> & pred)
 {
     static const UInt32 loop_delay_ms = 5;
 
@@ -496,7 +509,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 
     ReadSettings read_settings = context->getReadSettings();
     /// Disable retries for fetches, this will be done by the engine itself.
-    read_settings.http_max_tries = 1;
+    read_settings.http_settings.max_tries = 1;
 
     auto in = BuilderRWBufferFromHTTP(uri)
                   .withConnectionGroup(HTTPConnectionGroupType::HTTP)
@@ -687,7 +700,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
     ThrottlerPtr throttler,
     bool sync) const
 {
-    size_t files;
+    size_t files = 0;
     readBinary(files, in);
     LOG_DEBUG(log, "Downloading files {}", files);
 
@@ -697,19 +710,20 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
     for (size_t i = 0; i < files; ++i)
     {
         String file_name;
-        UInt64 file_size;
+        UInt64 file_size = 0;
 
         readStringBinary(file_name, in);
         readBinary(file_size, in);
 
-        /// File must be inside "absolute_part_path" directory.
-        /// Otherwise malicious ClickHouse replica may force us to write to arbitrary path.
-        String absolute_file_path = fs::weakly_canonical(fs::path(data_part_storage->getRelativePath()) / file_name);
-        if (!startsWith(absolute_file_path, fs::weakly_canonical(data_part_storage->getRelativePath()).string()))
+        /// Guard against a malicious replica writing outside the part directory.
+        /// Runs for both the base part and projection parts.
+        const auto absolute_file_path = fs::weakly_canonical(fs::path(data_part_storage->getRelativePath()) / file_name);
+        if (!pathStartsWith(absolute_file_path, fs::path(data_part_storage->getRelativePath())))
             throw Exception(ErrorCodes::INSECURE_PATH,
                 "File path ({}) doesn't appear to be inside part path ({}). "
                 "This may happen if we are trying to download part from malicious replica or logical error.",
-                absolute_file_path, data_part_storage->getRelativePath());
+                absolute_file_path.string(),
+                data_part_storage->getRelativePath());
 
         written_files.emplace_back(output_buffer_getter(*data_part_storage, file_name, file_size));
         HashingWriteBuffer hashing_out(*written_files.back());
@@ -794,11 +808,19 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     auto part_dir = tmp_prefix + part_name;
     auto part_relative_path = data.getRelativeDataPath() + String(to_detached ? MergeTreeData::DETACHED_DIR_NAME : "");
-    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
 
-    /// Create temporary part storage to write sent files.
-    /// Actual part storage will be initialized later from metadata.
-    auto part_storage_for_loading = std::make_shared<DataPartStorageOnDiskFull>(volume, part_relative_path, part_dir);
+    /// Same rationale as `MergeTreeData::loadDataPart`: the `SingleDiskVolume` and the
+    /// `DataPartStorageOnDiskFull` below are stored on the resulting part and live for its
+    /// lifetime. Only this two-line scope is wrapped — the actual fetch I/O buffers below
+    /// are short-lived and stay in the default arena.
+    auto [volume, part_storage_for_loading] = [&]
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        auto v = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
+        auto s = std::make_shared<DataPartStorageOnDiskFull>(v, part_relative_path, part_dir);
+        return std::pair{std::move(v), std::move(s)};
+    }();
+
     part_storage_for_loading->beginTransaction();
 
     if (part_storage_for_loading->exists())
@@ -829,6 +851,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         {
             String projection_name;
             readStringBinary(projection_name, in);
+
+            /// Validate before getProjection()/createDirectories() so no attacker-named
+            /// directory is ever created from an untrusted replica's projection name.
+            if (!isProjectionNameSafe(projection_name))
+                throw Exception(ErrorCodes::INSECURE_PATH,
+                    "Projection name ({}) doesn't appear to be a valid name. "
+                    "This may happen if we are trying to download part from malicious replica or logical error.",
+                    projection_name);
+
             MergeTreeData::DataPart::Checksums projection_checksum;
 
             auto projection_part_storage = part_storage_for_loading->getProjection(projection_name + ".proj");

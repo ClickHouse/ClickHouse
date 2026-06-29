@@ -22,7 +22,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionH3ExactEdgeLengthKm : public IFunction
+class FunctionH3ExactEdgeLengthKm final : public IFunction
 {
 public:
     static constexpr auto name = "h3ExactEdgeLengthKm";

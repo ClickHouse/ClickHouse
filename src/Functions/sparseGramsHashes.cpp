@@ -16,7 +16,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 template <bool is_utf8>
-class SparseGramsHashes : public IFunction
+class SparseGramsHashes final : public IFunction
 {
 public:
     static constexpr auto name = is_utf8 ? "sparseGramsHashesUTF8" : "sparseGramsHashes";

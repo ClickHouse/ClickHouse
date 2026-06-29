@@ -25,7 +25,7 @@ namespace DB
 ///
 /// The Symbolized and Collapsed formats support a symbolize_with_inline flag: when true, inline
 /// frames are resolved; when false they are skipped.
-class JemallocProfileSource : public ISource
+class JemallocProfileSource final : public ISource
 {
 public:
     JemallocProfileSource(

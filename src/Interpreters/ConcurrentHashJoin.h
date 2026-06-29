@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
@@ -13,8 +12,6 @@
 
 namespace DB
 {
-
-struct SelectQueryInfo;
 
 /**
  * The default `HashJoin` is not thread-safe for inserting the right table's rows; thus, it is done on a single thread.
@@ -42,12 +39,18 @@ class ConcurrentHashJoin : public IJoin
 {
 
 public:
+    /// `external_join_threshold_` is the auto-spill memory cap supplied by `SpillingHashJoin`
+    /// when this instance is wrapped. It bounds statistics-driven preallocation so the
+    /// reserve cannot blow past the wrapper's spill threshold. Pass 0 for standalone use
+    /// (`join_algorithm = 'parallel_hash'`); the user-visible `max_bytes_before_external_join`
+    /// setting deliberately does NOT apply to standalone instances.
     explicit ConcurrentHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         size_t slots_,
         SharedHeader right_sample_block,
         const StatsCollectingParams & stats_collecting_params_,
-        bool any_take_last_row_ = false);
+        bool any_take_last_row_ = false,
+        size_t external_join_threshold_ = 0);
 
     ~ConcurrentHashJoin() override;
 
@@ -86,7 +89,8 @@ public:
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
     {
-        return std::make_shared<ConcurrentHashJoin>(table_join_, slots, right_sample_block_, stats_collecting_params);
+        return std::make_shared<ConcurrentHashJoin>(
+            table_join_, slots, right_sample_block_, stats_collecting_params, any_take_last_row, external_join_threshold);
     }
 
     std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
@@ -95,6 +99,11 @@ public:
     }
 
     void onBuildPhaseFinish() override;
+
+    void setEnableLazyColumnsIndexing(bool value) override
+    {
+        std::ranges::for_each(hash_joins, [value](auto & hash_join) { hash_join->data->setEnableLazyColumnsIndexing(value); });
+    }
 
     struct InternalHashJoin
     {
@@ -114,6 +123,7 @@ private:
     bool build_phase_finished = false;
 
     StatsCollectingParams stats_collecting_params;
+    const size_t external_join_threshold;
 
     std::mutex totals_mutex;
     Block totals;
@@ -121,7 +131,4 @@ private:
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
 };
 
-// The following two methods are deprecated and hopefully will be removed in the future.
-IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
-UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash);
 }

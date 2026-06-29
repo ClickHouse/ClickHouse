@@ -62,7 +62,7 @@ struct LemmatizeImpl
 };
 
 
-class FunctionLemmatize : public IFunction
+class FunctionLemmatize final : public IFunction
 {
 public:
     static constexpr auto name = "lemmatize";
