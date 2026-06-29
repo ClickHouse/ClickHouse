@@ -3692,14 +3692,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 return true;
             }
 
-            /// `extractFixedPrefixFromLikePattern` drops the backslash for an unknown escape `\c`,
-            /// diverging from row-level matching, so decline and let row-level evaluation handle it.
-            if ((func_name == "like" || func_name == "notLike")
-                && const_arg_pos == 1
-                && const_value.getType() == Field::Types::String
-                && likePatternHasUnknownBackslashEscape(const_value.safeGet<String>()))
-                return false;
-
             size_t key_arg_pos = 1 - const_arg_pos;
             auto key_arg = func.getArgumentAt(key_arg_pos);
 
