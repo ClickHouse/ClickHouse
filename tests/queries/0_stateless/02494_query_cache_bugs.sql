@@ -54,4 +54,6 @@ SELECT sum(c) FROM tab SETTINGS join_overflow_mode = 'break', use_query_cache = 
 SELECT sum(c) FROM tab SETTINGS transfer_overflow_mode = 'break', use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE }
 SELECT sum(c) FROM tab SETTINGS distinct_overflow_mode = 'break', use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE }
 
+DROP TABLE tab;
+
 SYSTEM CLEAR QUERY CACHE;

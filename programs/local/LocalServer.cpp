@@ -62,6 +62,7 @@
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Interpreters/Cache/QueryResultCacheFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
@@ -1151,6 +1152,7 @@ try
     registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
+    registerQueryResultCaches(QueryResultCacheFactory::instance());
 
     processConfig();
 
@@ -1557,8 +1559,9 @@ void LocalServer::processConfig()
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
 
-    /// Initialize a dummy query result cache.
-    global_context->setQueryResultCache(0, 0, 0, 0);
+    /// Initialize a dummy query result cache: `clickhouse-local` must not honor the server-side
+    /// `query_cache` section (in particular it must never reach for an external Redis backend).
+    global_context->setNoOpQueryResultCache();
 
     /// Initialize allowed tiers
     global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);
