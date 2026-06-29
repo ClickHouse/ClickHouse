@@ -12,10 +12,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 base="http://localhost:11111/test/${CLICKHOUSE_DATABASE}/04340"
 
-# Many files directly in one flat directory (no sub-directories).
-for i in $(seq -w 1 40); do
-    $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('${base}/data_${i}.csv', 'test', 'testtest', 'CSV', 'x UInt64') SELECT ${i} SETTINGS s3_truncate_on_insert=1;"
-done
+# Many files directly in one flat directory (no sub-directories). Write all of them with a single
+# partitioned `INSERT` (one object per partition id) instead of 40 separate `INSERT` statements:
+# under sanitizer builds each separate client round-trip costs a few seconds, so the loop alone could
+# push the test past the per-test time limit, whereas a single query creates `data_01.csv` ... `data_40.csv`
+# server-side in one pass. `leftPad(toString(x), 2, '0')` makes every partition id exactly two digits, so
+# the files match the anchored `data_??.csv` glob below; digit-only partition ids pass the partition-value
+# validation for `s3` writes.
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('${base}/data_{_partition_id}.csv', 'test', 'testtest', 'CSV', 'x UInt64') PARTITION BY leftPad(toString(x), 2, '0') SELECT number AS x FROM numbers(1, 40) SETTINGS s3_truncate_on_insert=1;"
 
 # Match the files by an anchored glob (`data_??.csv`) rather than `*.csv`. Under the stress query fuzzer
 # the directory can also hold sibling objects with mutated, non-UTF-8 names (e.g. `data\xef\xbf\xbd.csv`)
@@ -29,10 +33,13 @@ q="SELECT count(), uniqExact(_path), sum(sipHash64(_path)) FROM s3('${base}/data
 
 serial=$($CLICKHOUSE_CLIENT -q "${q}, s3_list_object_parallelism=1")
 parallel=$($CLICKHOUSE_CLIENT -q "${q}, s3_list_object_parallelism=8")
+# A pathologically large parallelism must be clamped internally (not try to spawn a billion listing
+# threads nor overflow the buffered-keys bound) and still return the same result as the serial listing.
+clamped=$($CLICKHOUSE_CLIENT -q "${q}, s3_list_object_parallelism=1000000000")
 
-if [ "$serial" == "$parallel" ]; then
+if [ "$serial" == "$parallel" ] && [ "$serial" == "$clamped" ]; then
     # No duplicates iff count == uniqExact; print count for a deterministic, readable result.
     echo "flat listing serial==parallel OK, files=$(echo "$parallel" | cut -f1)"
 else
-    echo "MISMATCH serial=[${serial}] parallel=[${parallel}]"
+    echo "MISMATCH serial=[${serial}] parallel=[${parallel}] clamped=[${clamped}]"
 fi
