@@ -843,6 +843,9 @@ private:
     ChainedBuffers serveRetrieveForeground(size_t ri, size_t position_phys);
     void collectInFlightInto(size_t ri);
     void maybeLaunchAhead();
+    /// Build the machine's runner-independent fetch step (see the definition). Shared by the
+    /// pool runner and the future inline runner.
+    std::function<StepResult()> makeFetchStep(FetchMachine & m);
     void launchRetrieve(size_t ri);
     bool depsSatisfied(size_t ri) const;
 

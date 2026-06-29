@@ -2362,6 +2362,26 @@ bool ReaderExecutor::depsSatisfied(size_t ri) const
     return true;
 }
 
+std::function<StepResult()> ReaderExecutor::makeFetchStep(FetchMachine & m)
+{
+    /// The machine's fetch step, runner-independent: `PoolFetchMachineRunner` runs it on a pool
+    /// worker, a `LocalFetchMachineRunner` inline on the serve thread. Elect + fetch the led
+    /// segments + write them inline on the running thread (it is the downloader); sibling-led
+    /// holes set `contended` so the foreground revokes to the sync path at collect. A cancel
+    /// mid-fetch leaves a partial led prefix; collect revokes or serves it (a sparse `fetched`
+    /// from sibling-led holes is NORMAL, not a stop indicator).
+    return [this, self = &m]
+    {
+        coordinatedPrefetch(*self);
+        if (self->interrupt_requested.load() && !self->reached_eof)
+        {
+            self->stats.add(Stats::MachineInterrupted);
+            return StepResult::Interrupted;
+        }
+        return StepResult::AwaitCollect;
+    };
+}
+
 void ReaderExecutor::launchRetrieve(size_t ri)
 {
     const auto & r = read_plan.schedule.retrieves[ri];
@@ -2398,21 +2418,7 @@ void ReaderExecutor::launchRetrieve(size_t ri)
             next_physical_window.offset, stats);
     m->long_conn = takeLong(long_conn);
 
-    m->run_step = [this, self = m.get()]
-    {
-        /// Elect + fetch the led segments + write them inline on THIS worker thread (it is the
-        /// downloader); sibling-led holes set `self->contended` so the foreground revokes to
-        /// the sync path at collect.
-        coordinatedPrefetch(*self);
-        /// A cancel mid-fetch leaves a partial led prefix; collect revokes or serves it. A
-        /// sparse `fetched` (sibling-led holes) is NORMAL, not a stop indicator.
-        if (self->interrupt_requested.load() && !self->reached_eof)
-        {
-            self->stats.add(Stats::MachineInterrupted);
-            return StepResult::Interrupted;
-        }
-        return StepResult::AwaitCollect;
-    };
+    m->run_step = makeFetchStep(*m);
 
     if (!runner->schedule(m))
     {
