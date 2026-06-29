@@ -618,7 +618,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
                 "string literal, the slashes have to be additionally escaped. "
                 "For example, to match an opening brace, write '\\(' -- "
                 "the first slash is for SQL and the second one is for regex",
-                for_message(regexp_), re2->error());
+                for_message(regexp_), for_message(re2->error()));
         }
 
         if (!is_no_capture)
