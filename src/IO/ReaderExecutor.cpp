@@ -411,16 +411,22 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         return {};
     }
 
-    /// Not at EOF, so the cursor step is served below. The advertised extent may still be
-    /// exhausted (`atExtent()` without EOF); the gate then skips the (re)plan and
-    /// `interpretStep` returns empty at the extent.
-    if (!atExtent())
-        prepareCursor(position_phys);
+    /// Not at EOF, so the cursor step is served below. `prepareCursor` no-ops at the extent
+    /// (`atExtent()`), where `interpretStep` then returns empty - the correct EOF for this extent.
+    prepareCursor(position_phys);
     return finishWindow(interpretStep(position_phys));
 }
 
 void ReaderExecutor::prepareCursor(size_t position_phys)
 {
+    /// At the read extent there is nothing left to (re)plan: `boundedPlanSpan` clamps to the
+    /// extent, so a replan would only build an empty plan (and needlessly reset the in-flight
+    /// pin). `interpretStep` then returns empty - the correct EOF for this extent; a later
+    /// `setReadExtent` re-plans from the new bound. (There is no machine to collect here either:
+    /// fetches are extent-clamped, so by the extent any machine's range is already served.)
+    if (atExtent())
+        return;
+
     const bool at_plan_end = read_plan.geometry() && position_phys >= read_plan.geometry()->plan_end;
 
     /// At the boundary, collect the in-flight machine BEFORE replanning. A consumed step at
@@ -2713,27 +2719,16 @@ ChainedBuffers ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, siz
     return serveCacheBlock(position_phys, std::min(readCeiling(), step.output.end() - position_phys));
 }
 
-ChainedBuffers ReaderExecutor::handleExtentOrReplan(size_t position_phys)
-{
-    /// The cursor ran past the materialized steps (or there is nothing to read). At a known
-    /// end / the extent, this is EOF (empty chain). Otherwise re-plan from here and retry.
-    if (readCeiling() == 0 || atEnd())
-        return {};
-    if (!read_plan.geometry() || read_plan.cursor >= read_plan.schedule.steps.size())
-    {
-        observeAndSchedule(position_phys);
-        reconstructCursor();
-        if (read_plan.schedule.steps.empty())
-            return {};
-    }
-    return interpretStep(position_phys);
-}
-
 ChainedBuffers ReaderExecutor::interpretStep(size_t position_phys)
 {
+    /// Nothing to serve: the read extent is exhausted (`readCeiling() == 0`) or the plan is
+    /// empty. `prepareCursor` is the sole scheduler - it (re)plans before every serve when the
+    /// cursor outruns the plan, so there is no reschedule to do here; an empty result is EOF for
+    /// this extent. (The `cursor >= steps.size()` test is defensive: `findStepContaining` clamps
+    /// to the last step, so for a non-empty plan the cursor is always in range.)
     if (readCeiling() == 0 || !read_plan.geometry() || read_plan.schedule.steps.empty()
         || read_plan.cursor >= read_plan.schedule.steps.size())
-        return handleExtentOrReplan(position_phys);
+        return {};
 
     const auto & step = read_plan.schedule.steps[read_plan.cursor];
     if (step.require_retrieve.has_value())

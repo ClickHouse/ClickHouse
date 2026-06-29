@@ -846,7 +846,6 @@ private:
     ChainedBuffers serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys) const;
     ChainedBuffers serveRetrieveForeground(size_t ri, size_t position_phys);
     void collectInFlightInto(size_t ri);
-    ChainedBuffers handleExtentOrReplan(size_t position_phys);
     void maybeLaunchAhead();
     void launchRetrieve(size_t ri);
     bool depsSatisfied(size_t ri) const;
