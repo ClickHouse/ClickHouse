@@ -185,6 +185,71 @@ bool projectionCanBeEvaluatedForConstHeader(const QueryTreeNodePtr & node)
     return true;
 }
 
+/// `ignore` and `indexHint` always return a ColumnConst regardless of their arguments. They keep
+/// their FunctionNode form (isSuitableForConstantFolding() == false), so the analyzer does not fold
+/// them into a ConstantNode, yet the real projection plan produces a ColumnConst. Recognize them by
+/// name so the analyze-only header can keep the constant even when an argument subtree contains an
+/// IN operator or subquery that cannot be evaluated here (see projectionCanBeEvaluatedForConstHeader).
+bool functionResultIsAlwaysConstant(const String & function_name)
+{
+    return function_name == "ignore" || function_name == "indexHint";
+}
+
+/// Try to fold a projection to its constant column without building an ActionsDAG over the whole
+/// subtree. Returns the constant column (sized for one row) or nullptr if the projection is not a
+/// constant. Used as a fallback for projections that projectionCanBeEvaluatedForConstHeader() rejects
+/// because they hold an IN operator or subquery: an always-constant function such as ignore(s IN (...))
+/// still produces a ColumnConst on the replicas, so the analyze-only header must keep it constant to
+/// avoid a parallel-replicas header divergence. Only constant nodes and functions evaluated entirely
+/// from constants are touched, so the unevaluable IN/subquery argument subtree is never visited.
+ColumnPtr tryEvaluateConstantProjectionColumn(const QueryTreeNodePtr & node)
+{
+    if (const auto * constant_node = node->as<ConstantNode>())
+        return constant_node->getResultType()->createColumnConst(1, constant_node->getValue());
+
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node || !function_node->isResolved())
+        return nullptr;
+
+    auto function_base = function_node->getFunction();
+    if (!function_base)
+        return nullptr;
+
+    auto result_type = function_node->getResultType();
+
+    /// ignore()/indexHint() are constant by their own semantics: do not look at the arguments
+    /// (which may hold an unevaluable IN/subquery), just execute on the empty argument list.
+    if (functionResultIsAlwaysConstant(function_node->getFunctionName()))
+    {
+        auto column = function_base->prepare({})->execute({}, result_type, 1, /* dry_run = */ true);
+        if (column && isColumnConst(*column))
+            return column->cloneResized(1);
+        return nullptr;
+    }
+
+    /// Any other function can be constant only if it is suitable for constant folding and every
+    /// argument folds to a constant. This recursion only visits constant arguments, so it covers
+    /// nested cases like toString(ignore(s IN (...))) while never descending into an IN/subquery.
+    if (!function_base->isSuitableForConstantFolding())
+        return nullptr;
+
+    ColumnsWithTypeAndName argument_columns;
+    const auto & arguments = function_node->getArguments().getNodes();
+    argument_columns.reserve(arguments.size());
+    for (const auto & argument : arguments)
+    {
+        auto argument_column = tryEvaluateConstantProjectionColumn(argument);
+        if (!argument_column)
+            return nullptr;
+        argument_columns.emplace_back(std::move(argument_column), argument->getResultType(), "");
+    }
+
+    auto column = function_base->prepare(argument_columns)->execute(argument_columns, result_type, 1, /* dry_run = */ true);
+    if (column && isColumnConst(*column))
+        return column->cloneResized(1);
+    return nullptr;
+}
+
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
 /// If `column_names` is empty, check access to any columns and return names of accessible columns
@@ -1563,6 +1628,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         if (evaluated && isColumnConst(*evaluated))
                             column = projection_column.type->createColumnConst(0, (*evaluated)[0]);
                     }
+                }
+                else if (projection_nodes && i < projection_nodes->size())
+                {
+                    /// The projection holds an IN operator or subquery, so it cannot go through the
+                    /// ActionsDAG path above. It is still constant when an always-constant function
+                    /// (ignore/indexHint) sits on the path to the result, e.g. ignore(s IN (...)).
+                    auto evaluated = tryEvaluateConstantProjectionColumn((*projection_nodes)[i]);
+                    if (evaluated && isColumnConst(*evaluated))
+                        column = projection_column.type->createColumnConst(0, (*evaluated)[0]);
                 }
 
                 if (column)

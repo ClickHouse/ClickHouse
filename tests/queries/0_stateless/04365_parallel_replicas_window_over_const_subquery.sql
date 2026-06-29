@@ -41,4 +41,16 @@ SELECT DISTINCT count(*) OVER () FROM (SELECT s IN (SELECT toString(number) FROM
 SELECT DISTINCT count(*) OVER () FROM (SELECT s IN ('1', '2') FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
 SELECT DISTINCT count(*) OVER () FROM (SELECT toUInt8(s IN ('1', '2')) + 0 FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
 
+-- An always-constant function (ignore/indexHint) is a ColumnConst on the replicas regardless of
+-- its arguments, even when the argument subtree holds an IN operator or subquery that cannot be
+-- evaluated while building the analyze-only header. The header must keep the constant, otherwise the
+-- unused column is pruned on the coordinator while the replica streams it (the same OutputPort
+-- divergence). This holds for an IN tuple, an IN subquery, and an always-constant function nested
+-- under another constant-folding function.
+SELECT DISTINCT count(*) OVER () FROM (SELECT ignore(s IN ('1', '2')) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT ignore(s IN (SELECT toString(number) FROM numbers(3))) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT ignore(s IN ('1', '2')) AS c, s FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT toString(ignore(s IN ('1', '2'))) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT indexHint(s IN ('1', '2')) FROM t_window_const);
+
 DROP TABLE t_window_const;
