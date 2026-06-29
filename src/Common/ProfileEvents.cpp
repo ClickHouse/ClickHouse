@@ -842,7 +842,6 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorBytesFromFilesystemCache, "Physical bytes ReaderExecutor issued from the filesystem cache tier (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorRequestedBytes.", ValueType::Bytes) \
     M(ReaderExecutorBytesFromSource, "Physical bytes ReaderExecutor issued to the source after missing all cache tiers (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorRequestedBytes.", ValueType::Bytes) \
     M(ReaderExecutorBytesPushedToCacheSync, "Bytes ReaderExecutor wrote back into cache tiers via put from a foreground (synchronous) read.", ValueType::Bytes) \
-    M(ReaderExecutorBytesPushedToCacheAsync, "Bytes ReaderExecutor wrote back into cache tiers via put from a background prefetch read.", ValueType::Bytes) \
     M(ReaderExecutorBytesPromoted, "Bytes ReaderExecutor wrote into a faster cache tier by promotion: a range served from a slower tier, written up into a missing populatable upper tier (e.g. filesystem cache to page cache).", ValueType::Bytes) \
     M(ReaderExecutorCacheGetRequests, "Number of CacheReader::read invocations in ReaderExecutor.", ValueType::Number) \
     M(ReaderExecutorCachePopulateRequests, "Number of CacheWriter::write invocations in ReaderExecutor.", ValueType::Number) \
@@ -862,7 +861,6 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorPrefetchCancelled, "Number of times a ReaderExecutor prefetch was cancelled before its worker started.", ValueType::Number) \
     M(ReaderExecutorPrefetchPoolFull, "Number of times PrefetchThreadPool::submitJob returned nullptr (queue full); fell back to a synchronous read.", ValueType::Number) \
     M(ReaderExecutorPrefetchDiscardedRunning, "Number of times ReaderExecutor's cancelMachine blocked on a running read-ahead's release because the revoke lost the race; the work the worker did is wasted.", ValueType::Number) \
-    M(ReaderExecutorPrefetchDiscardWaitMicroseconds, "Time blocked in ReaderExecutor's cancelMachine waiting for a running read-ahead to finish before throwing its result away.", ValueType::Microseconds) \
     M(ReaderExecutorPrefetchIssuedSourceBytes, "Bytes ReaderExecutor prefetch reads fetched from the source (a bandwidth cost), whether or not later consumed.", ValueType::Bytes) \
     M(ReaderExecutorMachineInterrupted, "Number of times a ReaderExecutor background machine wrapped up early at an interrupt point on request (collect takeover or cancel).", ValueType::Number) \
     M(ReaderExecutorPartialCollects, "Number of ReaderExecutor collects that served a non-empty partial prefix fetched before the machine was interrupted; the remainder is read by the normal dispatch.", ValueType::Number) \

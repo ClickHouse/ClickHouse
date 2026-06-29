@@ -25,7 +25,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBytesFromFilesystemCache;
     extern const Event ReaderExecutorBytesFromSource;
     extern const Event ReaderExecutorBytesPushedToCacheSync;
-    extern const Event ReaderExecutorBytesPushedToCacheAsync;
     extern const Event ReaderExecutorBytesPromoted;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
@@ -45,7 +44,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorPrefetchCancelled;
     extern const Event ReaderExecutorPrefetchPoolFull;
     extern const Event ReaderExecutorPrefetchDiscardedRunning;
-    extern const Event ReaderExecutorPrefetchDiscardWaitMicroseconds;
     extern const Event ReaderExecutorPrefetchIssuedSourceBytes;
     extern const Event ReaderExecutorPrefetchWastedSourceBytes;
     extern const Event ReaderExecutorMachineInterrupted;
@@ -121,7 +119,6 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
             ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 20000ULL * value / (1024 * 1024));
             break;
         case BytesPushedToCacheSync:    ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesPushedToCacheSync, value); break;
-        case BytesPushedToCacheAsync:   ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesPushedToCacheAsync, value); break;
         case BytesPromoted:             ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesPromoted, value); break;
         case CacheGetRequests:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheGetRequests, value);
@@ -152,7 +149,6 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case PrefetchCancelled:         ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchCancelled, value); break;
         case PrefetchPoolFull:          ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchPoolFull, value); break;
         case PrefetchDiscardedRunning:  ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardedRunning, value); break;
-        case PrefetchDiscardWaitMicroseconds: ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardWaitMicroseconds, value); break;
         case PrefetchIssuedSourceBytes: ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchIssuedSourceBytes, value); break;
         case PrefetchWastedSourceBytes: ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWastedSourceBytes, value); break;
         case MachineInterrupted:        ProfileEvents::increment(ProfileEvents::ReaderExecutorMachineInterrupted, value); break;
@@ -314,23 +310,23 @@ ReaderExecutor::~ReaderExecutor()
 
     LOG_DEBUG(log,
         "Destroyed: from_page_cache={} from_filesystem_cache={} from_source={} "
-        "pushed_to_cache_sync={} pushed_to_cache_async={} "
+        "pushed_to_cache_sync={} "
         "get_reqs={} populate_reqs={} src_reqs={} "
         "get_us={} populate_us={} src_us={} decrypt_us={} "
         "prefetch_wait_us={} sync_read_us={} work_us={} "
         "prefetch_hits={} prefetch_cancelled={} prefetch_pool_full={} "
-        "prefetch_discarded_running={} prefetch_discard_wait_us={} "
+        "prefetch_discarded_running={} "
         "prefetch_issued_source_bytes={} "
         "prefetch_wasted_source_bytes={} "
         "incomplete_connections={} over_read_bytes={}",
         stats.get(Stats::BytesFromPageCache), stats.get(Stats::BytesFromFilesystemCache), stats.get(Stats::BytesFromSource),
-        stats.get(Stats::BytesPushedToCacheSync), stats.get(Stats::BytesPushedToCacheAsync),
+        stats.get(Stats::BytesPushedToCacheSync),
         stats.get(Stats::CacheGetRequests), stats.get(Stats::CachePopulateRequests), stats.get(Stats::SourceRequests),
         stats.get(Stats::CacheGetMicroseconds), stats.get(Stats::CachePopulateMicroseconds),
         stats.get(Stats::SourceReadMicroseconds), stats.get(Stats::DecryptMicroseconds),
         stats.get(Stats::PrefetchWaitMicroseconds), stats.get(Stats::SyncReadMicroseconds), stats.get(Stats::WorkMicroseconds),
         stats.get(Stats::PrefetchHits), stats.get(Stats::PrefetchCancelled), stats.get(Stats::PrefetchPoolFull),
-        stats.get(Stats::PrefetchDiscardedRunning), stats.get(Stats::PrefetchDiscardWaitMicroseconds),
+        stats.get(Stats::PrefetchDiscardedRunning),
         stats.get(Stats::PrefetchIssuedSourceBytes),
         stats.get(Stats::PrefetchWastedSourceBytes),
         stats.get(Stats::IncompleteConnections), stats.get(Stats::OverReadBytes));
@@ -352,7 +348,6 @@ ReaderExecutor::~ReaderExecutor()
         elem.bytes_from_filesystem_cache = stats.get(Stats::BytesFromFilesystemCache);
         elem.bytes_from_source = stats.get(Stats::BytesFromSource);
         elem.bytes_pushed_to_cache_sync = stats.get(Stats::BytesPushedToCacheSync);
-        elem.bytes_pushed_to_cache_async = stats.get(Stats::BytesPushedToCacheAsync);
         elem.cache_get_requests = stats.get(Stats::CacheGetRequests);
         elem.cache_populate_requests = stats.get(Stats::CachePopulateRequests);
         elem.source_requests = stats.get(Stats::SourceRequests);
@@ -368,7 +363,6 @@ ReaderExecutor::~ReaderExecutor()
         elem.prefetch_cancelled = stats.get(Stats::PrefetchCancelled);
         elem.prefetch_pool_full = stats.get(Stats::PrefetchPoolFull);
         elem.prefetch_discarded_running = stats.get(Stats::PrefetchDiscardedRunning);
-        elem.prefetch_discard_wait_us = stats.get(Stats::PrefetchDiscardWaitMicroseconds);
         elem.prefetch_issued_source_bytes = stats.get(Stats::PrefetchIssuedSourceBytes);
         elem.prefetch_wasted_source_bytes = stats.get(Stats::PrefetchWastedSourceBytes);
 

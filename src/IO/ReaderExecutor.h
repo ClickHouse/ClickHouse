@@ -219,7 +219,6 @@ private:
             BytesFromFilesystemCache,
             BytesFromSource,
             BytesPushedToCacheSync,
-            BytesPushedToCacheAsync,
             BytesPromoted,
             CacheGetRequests,
             CachePopulateRequests,
@@ -243,7 +242,6 @@ private:
             PrefetchCancelled,
             PrefetchPoolFull,
             PrefetchDiscardedRunning,
-            PrefetchDiscardWaitMicroseconds,
             PrefetchIssuedSourceBytes,
             PrefetchWastedSourceBytes,
             /// A machine wrapped up early at an interrupt point on request.

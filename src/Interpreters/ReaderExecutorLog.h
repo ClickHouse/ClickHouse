@@ -26,7 +26,6 @@ struct ReaderExecutorLogElement
     UInt64 bytes_from_filesystem_cache = 0;
     UInt64 bytes_from_source = 0;
     UInt64 bytes_pushed_to_cache_sync = 0;
-    UInt64 bytes_pushed_to_cache_async = 0;
 
     UInt64 cache_get_requests = 0;
     UInt64 cache_populate_requests = 0;
@@ -45,7 +44,6 @@ struct ReaderExecutorLogElement
     UInt64 prefetch_cancelled = 0;
     UInt64 prefetch_pool_full = 0;
     UInt64 prefetch_discarded_running = 0;
-    UInt64 prefetch_discard_wait_us = 0;
     UInt64 prefetch_issued_source_bytes = 0;
     UInt64 prefetch_wasted_source_bytes = 0;
 

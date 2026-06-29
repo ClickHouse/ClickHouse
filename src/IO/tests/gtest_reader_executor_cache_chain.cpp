@@ -74,7 +74,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBytesFromFilesystemCache;
     extern const Event ReaderExecutorBytesFromSource;
     extern const Event ReaderExecutorBytesPushedToCacheSync;
-    extern const Event ReaderExecutorBytesPushedToCacheAsync;
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorBytesPromoted;
 }

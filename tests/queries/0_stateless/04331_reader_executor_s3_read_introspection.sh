@@ -50,7 +50,7 @@ $CLICKHOUSE_CLIENT --query "
     SELECT
         count() > 0,
         sum(bytes_from_source) > 0,
-        sum(bytes_pushed_to_cache_sync + bytes_pushed_to_cache_async) > 0
+        sum(bytes_pushed_to_cache_sync) > 0
     FROM system.reader_executor_log
     WHERE query_id = '$COLD_ID'
 "

@@ -32,7 +32,6 @@ ColumnsDescription ReaderExecutorLogElement::getColumnsDescription()
         {"bytes_from_filesystem_cache", std::make_shared<DataTypeUInt64>(), "Physical bytes issued to the filesystem cache tier (foreground plus background prefetch, including bytes a discarded prefetch wasted) - not consumer-served bytes."},
         {"bytes_from_source", std::make_shared<DataTypeUInt64>(), "Physical bytes fetched from source after missing all cache tiers (foreground plus background prefetch, including bytes a discarded prefetch wasted) - drives the bandwidth cost."},
         {"bytes_pushed_to_cache_sync", std::make_shared<DataTypeUInt64>(), "Bytes written back into cache tiers via `put` from a foreground (synchronous) read."},
-        {"bytes_pushed_to_cache_async", std::make_shared<DataTypeUInt64>(), "Bytes written back into cache tiers from a background prefetch read."},
 
         {"cache_get_requests", std::make_shared<DataTypeUInt64>(), "Number of `CacheReader::read` invocations."},
         {"cache_populate_requests", std::make_shared<DataTypeUInt64>(), "Number of `CacheWriter::write` invocations."},
@@ -51,7 +50,6 @@ ColumnsDescription ReaderExecutorLogElement::getColumnsDescription()
         {"prefetch_cancelled", std::make_shared<DataTypeUInt64>(), "Number of prefetches cancelled before their worker ran."},
         {"prefetch_pool_full", std::make_shared<DataTypeUInt64>(), "Number of times `PrefetchThreadPool::submitJob` returned `nullptr` (queue full)."},
         {"prefetch_discarded_running", std::make_shared<DataTypeUInt64>(), "Number of times `cancelMachine` blocked on the release wait because the worker had already started; everything the worker produced is wasted."},
-        {"prefetch_discard_wait_microseconds", std::make_shared<DataTypeUInt64>(), "Time blocked in `cancelMachine` waiting for a running read-ahead to finish before its result was thrown away."},
         {"prefetch_issued_source_bytes", std::make_shared<DataTypeUInt64>(), "Bytes prefetch reads fetched from the source (a bandwidth cost), whether or not they were later consumed."},
         {"prefetch_wasted_source_bytes", std::make_shared<DataTypeUInt64>(), "Source bytes a running prefetch materialised into a chain that was then discarded - real wasted bandwidth. Excludes cache `put`s made in the same window, which persist for later reads."},
     };
@@ -74,7 +72,6 @@ void ReaderExecutorLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(bytes_from_filesystem_cache);
     columns[i++]->insert(bytes_from_source);
     columns[i++]->insert(bytes_pushed_to_cache_sync);
-    columns[i++]->insert(bytes_pushed_to_cache_async);
 
     columns[i++]->insert(cache_get_requests);
     columns[i++]->insert(cache_populate_requests);
@@ -93,7 +90,6 @@ void ReaderExecutorLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(prefetch_cancelled);
     columns[i++]->insert(prefetch_pool_full);
     columns[i++]->insert(prefetch_discarded_running);
-    columns[i++]->insert(prefetch_discard_wait_us);
     columns[i++]->insert(prefetch_issued_source_bytes);
     columns[i++]->insert(prefetch_wasted_source_bytes);
 }

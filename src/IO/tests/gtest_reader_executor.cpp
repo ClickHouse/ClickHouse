@@ -73,7 +73,6 @@ using namespace DB;
 namespace ProfileEvents
 {
     extern const Event ReaderExecutorBytesPushedToCacheSync;
-    extern const Event ReaderExecutorBytesPushedToCacheAsync;
     extern const Event ReaderExecutorBytesFromSource;
     extern const Event ReaderExecutorBytesFromPageCache;
     extern const Event ReaderExecutorBytesFromFilesystemCache;
@@ -3469,10 +3468,10 @@ TEST(ReaderExecutor, ResidentRunOverlapsDownstreamGapPrefetch)
 
 /// Every cache populate is synchronous (inline on the read thread): both the
 /// foreground gap fill and the prefetch-collect fill credit
-/// `ReaderExecutorBytesPushedToCacheSync`. The deferred (async) path was retired
-/// with the put lane, so `ReaderExecutorBytesPushedToCacheAsync` stays zero whether
-/// or not a prefetch pool is present. `stats` are flushed to `ProfileEvents` in
-/// `~ReaderExecutor`, so each delta is read only after the executor scope closes.
+/// `ReaderExecutorBytesPushedToCacheSync`, with or without a prefetch pool (the
+/// deferred async populate path was retired with the put lane). `stats` are flushed
+/// to `ProfileEvents` in `~ReaderExecutor`, so each delta is read only after the
+/// executor scope closes.
 TEST(ReaderExecutor, PopulatesInlineWithOrWithoutPool)
 {
     constexpr size_t file_size = 2048;
@@ -3489,7 +3488,6 @@ TEST(ReaderExecutor, PopulatesInlineWithOrWithoutPool)
     /// No prefetch pool: every populate runs on the foreground path.
     {
         const auto sync_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed);
-        const auto async_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed);
         {
             auto cache = std::make_shared<MockCacheProvider>(window);
             ReaderExecutor::Options executor_options;
@@ -3499,14 +3497,12 @@ TEST(ReaderExecutor, PopulatesInlineWithOrWithoutPool)
         }
         EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - sync_before, file_size)
             << "without a prefetch pool every populate is synchronous";
-        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before, 0u);
     }
 
     /// With a prefetch pool the worker fetches the gap bytes, but the collect writes
     /// them INLINE on the read thread - so the populate is synchronous too.
     {
         const auto sync_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed);
-        const auto async_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed);
         {
             auto cache = std::make_shared<MockCacheProvider>(window);
             auto pool = std::make_shared<SyncPrefetchPool>();
@@ -3517,9 +3513,7 @@ TEST(ReaderExecutor, PopulatesInlineWithOrWithoutPool)
             while (!executor.readNextWindow().empty()) {}
         }
         const auto sync_delta = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - sync_before;
-        const auto async_delta = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before;
         EXPECT_EQ(sync_delta, file_size) << "the prefetch-collect fill writes inline on the read thread";
-        EXPECT_EQ(async_delta, 0u) << "the deferred (async) populate path is retired";
     }
 }
 
@@ -4313,8 +4307,6 @@ TEST(ReaderExecutor, MachineCollectFillsCacheInline)
         EXPECT_EQ(cold, content);
         EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheSync), 0u)
             << "machine-collected windows fill the cache inline on the read thread";
-        EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheAsync), 0u)
-            << "the deferred (async) fill path is retired";
     }
     /// Cold executor destroyed: its fills already landed inline, so the page cache
     /// now holds the whole file.
