@@ -1,3 +1,4 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <base/defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <base/sleep.h>
@@ -83,6 +84,8 @@
 
 #include <Storages/IStorage.h>
 #include <Common/FieldVisitorToString.h>
+
+#include <Storages/IStorage.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
@@ -573,8 +576,6 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
         std::nullopt,
         std::nullopt);
 
-    chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
-
     std::tie(data_snapshot, table_state_snapshot.schema_id) = getStateImpl(local_context, metadata_object);
     table_state_snapshot.snapshot_id = data_snapshot ? std::optional{data_snapshot->snapshot_id} : std::nullopt;
     table_state_snapshot.metadata_version = metadata_version;
@@ -908,15 +909,20 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         history_record.snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
         history_record.manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(f_manifest_list));
-        const auto summary = snapshot->getObject(f_summary);
-        if (summary->has(f_added_data_files))
-            history_record.added_files = summary->getValue<Int64>(f_added_data_files);
-        if (summary->has(f_added_records))
-            history_record.added_records = summary->getValue<Int64>(f_added_records);
-        if (summary->has(f_added_files_size))
-            history_record.added_files_size = summary->getValue<Int64>(f_added_files_size);
-        if (summary->has(f_changed_partition_count))
-            history_record.num_partitions = summary->getValue<Int64>(f_changed_partition_count);
+
+        if (const auto summary = snapshot->getObject(f_summary))
+        {
+            auto snapshot_summary = SnapshotSummary::fromJSON(*summary, /*with_extra_fields=*/true);
+
+            if (snapshot_summary)
+                history_record.snapshot_summary = std::move(snapshot_summary.value());
+            else
+                LOG_ERROR(
+                    log,
+                    "Error '{}' while parsing snapshot's summary with snapshot_id={}",
+                    snapshot_summary.error(),
+                    history_record.snapshot_id);
+        }
 
         if (snapshot->has(f_parent_snapshot_id) && !snapshot->isNull(f_parent_snapshot_id))
             history_record.parent_id = snapshot->getValue<Int64>(f_parent_snapshot_id);
@@ -1395,7 +1401,6 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
     ReadBuffer & in)
 {
     auto log = getLogger("IcebergMetadata");
-    auto schema_processor = std::make_shared<IcebergSchemaProcessor>();
     Int32 format_version = 0;
     String table_location;
     readVarInt(format_version, in);
@@ -1414,6 +1419,7 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
     auto standard_persistent_components
         = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr, local_context, log);
+    auto schema_processor = standard_persistent_components.schema_processor;
     auto deserialized_persistent_components = Iceberg::PersistentTableComponents{
         .schema_processor = schema_processor,
         .metadata_cache = standard_persistent_components.metadata_cache,

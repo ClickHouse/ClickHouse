@@ -88,6 +88,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 Connection::~Connection()
@@ -1116,15 +1117,6 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->throttle(out->count() - prev_bytes);
 }
 
-void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
-    writeVectorBinary(uuids, *out);
-    out->finishChunk();
-    out->next();
-}
-
-
 void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
@@ -1433,9 +1425,17 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::PartUUIDs:
-                readVectorBinary(res.part_uuids, *in);
+            {
+                // allow_experimental_query_deduplication is no longer supported, but an old server
+                // may still send this packet. Skip the obsolete, peer-controlled payload without
+                // materializing it (do not resize a vector to a peer-chosen size).
+                UInt64 num_part_uuids = 0;
+                readVarUInt(num_part_uuids, *in);
+                if (num_part_uuids > DEFAULT_MAX_STRING_SIZE)
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+                in->ignore(num_part_uuids * sizeof(UUID));
                 return res;
-
+            }
             case Protocol::Server::ReadTaskRequest:
                 return res;
 

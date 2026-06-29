@@ -456,27 +456,37 @@ static bool writeMetadataFiles(
                 std::nullopt,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 context->getWriteSettings());
-            generateManifestFile(
-                metadata,
-                chunk_partitioner ? chunk_partitioner->getColumns() : std::vector<String>{},
-                partition_key,
-                chunk_partitioner ? chunk_partitioner->getResultTypes() : std::vector<DataTypePtr>{},
-                {data_file.path},
-                {static_cast<UInt64>(data_file.total_rows)},
-                {static_cast<UInt64>(data_file.total_bytes)},
-                set.statistics_by_partition.at(partition_key),
-                sample_block,
-                new_snapshot,
-                write_format,
-                partititon_spec,
-                partition_spec_id,
-                *buffer_manifest_entry,
-                content_type);
-            buffer_manifest_entry->finalize();
-            auto size = buffer_manifest_entry->count();
-            if (size == 0)
-                size = object_storage->getObjectMetadata(path_resolver.resolve(manifest_entry_path), /*with_tags=*/false).size_bytes;
-            manifest_entry_sizes.push_back(size);
+            try
+            {
+                generateManifestFile(
+                    metadata,
+                    chunk_partitioner ? chunk_partitioner->getColumns() : std::vector<String>{},
+                    partition_key,
+                    chunk_partitioner ? chunk_partitioner->getResultTypes() : DataTypes{},
+                    {delete_filename.path},
+                    {static_cast<UInt64>(delete_filename.total_rows)},
+                    {static_cast<UInt64>(delete_filename.total_bytes)},
+                    delete_filenames.delete_statistic.at(partition_key),
+                    sample_block,
+                    new_snapshot,
+                    write_format,
+                    partititon_spec,
+                    partition_spec_id,
+                    *buffer_manifest_entry,
+                    content_type);
+                buffer_manifest_entry->finalize();
+                auto size = buffer_manifest_entry->count();
+                if (size == 0)
+                {
+                    size = object_storage->getObjectMetadata(path_resolver.resolve(manifest_entry_path), /*with_tags=*/false).size_bytes;
+                }
+                manifest_entry_sizes.push_back(size);
+            }
+            catch (...)
+            {
+                cleanup();
+                throw;
+            }
         }
     };
 
