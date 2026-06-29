@@ -49,6 +49,32 @@ namespace DB::ArrowIPC
 
 namespace
 {
+/// Expand an Arrow LSB-first bitmap into one byte per row (0 or 1). With `invert` each output byte is
+/// flipped, turning the validity bitmap (1 = valid) into a ClickHouse null map (1 = null). Unpacks 8 bits
+/// at a time via SWAR (the same trick as the Parquet decoder), scalar for the trailing < 8 bits.
+void expandBitmapToBytes(const uint8_t * bits, size_t rows, UInt8 * out, bool invert)
+{
+    const UInt64 flip = invert ? 0x0101010101010101ULL : 0;
+    size_t i = 0;
+    for (; i + 8 <= rows; i += 8)
+    {
+        UInt64 x = UInt64(bits[i / 8]);
+        x = (x | (x << 28)) & 0x0000000f0000000ful;
+        x = (x | (x << 14)) & 0x0003000300030003ul;
+        x = (x | (x <<  7)) & 0x0101010101010101ul;
+        x ^= flip;
+        /// `x` holds row i+0 in its least significant byte; store little-endian so that byte lands at out[i]
+        /// on both little- and big-endian hosts.
+        x = DB::toLittleEndian(x);
+        memcpy(out + i, &x, 8);
+    }
+    for (; i < rows; ++i)
+    {
+        const UInt8 bit = (bits[i >> 3] >> (i & 7)) & 1;
+        out[i] = invert ? (bit ^ 1) : bit;
+    }
+}
+
 /// Strips the outer `Nullable`/`LowCardinality` wrappers off a requested-type hint so the underlying
 /// type (number, Array, Tuple, Map) can be inspected. Handles both `LowCardinality(Nullable(...))` and
 /// `Nullable(LowCardinality(...))`.
@@ -221,8 +247,7 @@ ColumnPtr RecordBatchDecoder::buildNullMap(const Slice & validity, size_t rows, 
     checkBufferSize(validity, (rows + 7) / 8, "validity");
     const auto * bits = reinterpret_cast<const uint8_t *>(validity.ptr);
     /// Arrow validity bitmap is LSB-first and uses 1 = valid; ClickHouse null map uses 1 = null.
-    for (size_t i = 0; i < rows; ++i)
-        data[i] = ((bits[i >> 3] >> (i & 7)) & 1) ? 0 : 1;
+    expandBitmapToBytes(bits, rows, data.data(), /*invert=*/true);
 
     return null_map;
 }
@@ -301,8 +326,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
             auto & data = assert_cast<ColumnUInt8 &>(*column).getData();
             data.resize(rows);
             const auto * bits = reinterpret_cast<const uint8_t *>(values.ptr);
-            for (size_t i = 0; i < rows; ++i)
-                data[i] = (bits[i >> 3] >> (i & 7)) & 1;
+            expandBitmapToBytes(bits, rows, data.data(), /*invert=*/false);
             break;
         }
         case TypeKind::Decimal:

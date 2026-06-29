@@ -3,6 +3,7 @@
 #if USE_ARROW
 
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -41,6 +42,34 @@ namespace ErrorCodes
 namespace DB::ArrowIPC
 {
 
+namespace
+{
+
+/// Pack one bit per input byte into `out` (size (num_rows + 7) / 8, zero-initialised by the caller):
+/// bit = 1 where the byte is non-zero, optionally inverted. Arrow validity uses invert = true (1 = not-null),
+/// Bool uses invert = false. Processes 64 bytes per step via `bytes64MaskToBits64Mask`, scalar for the tail.
+void packBytesToBits(const UInt8 * bytes, size_t num_rows, char * out, bool invert)
+{
+    auto * bits = reinterpret_cast<UInt8 *>(out);
+    const UInt64 flip = invert ? ~UInt64(0) : 0;
+    size_t i = 0;
+    for (; i + 64 <= num_rows; i += 64)
+    {
+        /// `word` holds row i+0 in its least significant bit; store little-endian so the byte covering rows
+        /// i..i+7 lands at bits[i/8] on both little- and big-endian hosts.
+        const UInt64 word = bytes64MaskToBits64Mask(bytes + i) ^ flip;
+        const UInt64 le = DB::toLittleEndian(word);
+        memcpy(bits + i / 8, &le, sizeof(le));
+    }
+    for (; i < num_rows; ++i)
+    {
+        if ((bytes[i] != 0) != invert)
+            bits[i >> 3] |= static_cast<UInt8>(1) << (i & 7);
+    }
+}
+
+}
+
 void RecordBatchEncoder::appendBuffer(const void * data, size_t length)
 {
     while (body.size() % 8 != 0)
@@ -72,16 +101,9 @@ Int64 RecordBatchEncoder::appendValidity(const IColumn * null_map_column, size_t
 
     const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
     PODArray<char> bitmap((num_rows + 7) / 8, 0);
-    Int64 null_count = 0;
-    for (size_t i = 0; i < num_rows; ++i)
-    {
-        if (null_map[i])
-            ++null_count;
-        else
-            bitmap[i >> 3] = static_cast<char>(bitmap[i >> 3] | (1 << (i & 7))); /// Arrow validity bit: 1 = valid.
-    }
+    packBytesToBits(null_map.data(), num_rows, bitmap.data(), /*invert=*/true); /// Arrow validity bit: 1 = valid.
     appendBuffer(bitmap.data(), bitmap.size());
-    return null_count;
+    return countBytesInFilter(null_map.data(), 0, num_rows);
 }
 
 void RecordBatchEncoder::appendOffsets(const IColumn::Offsets & ch_offsets, size_t num_rows)
@@ -132,11 +154,7 @@ void RecordBatchEncoder::encodeValues(
         /// Pack the 0/1 UInt8 column into an Arrow bit-packed boolean buffer.
         const auto & data = assert_cast<const ColumnUInt8 &>(column).getData();
         PODArray<char> bitmap((num_rows + 7) / 8, 0);
-        for (size_t i = 0; i < num_rows; ++i)
-        {
-            if (data[i])
-                bitmap[i >> 3] = static_cast<char>(bitmap[i >> 3] | (1 << (i & 7)));
-        }
+        packBytesToBits(data.data(), num_rows, bitmap.data(), /*invert=*/false);
         appendBuffer(bitmap.data(), bitmap.size());
         return;
     }
@@ -206,7 +224,8 @@ void RecordBatchEncoder::encodeValues(
         case TypeIndex::Decimal32: case TypeIndex::Decimal64: case TypeIndex::Decimal128: case TypeIndex::Decimal256:
         {
             const size_t arrow_width = which.idx == TypeIndex::Decimal256 ? 32 : 16;
-            PODArray<char> out(num_rows * arrow_width, 0);
+            /// Every byte of every slot is written below (value bytes + sign extension), so no zero-init.
+            PODArray<char> out(num_rows * arrow_width);
             auto emit = [&](const auto & col)
             {
                 using ValueType = typename std::decay_t<decltype(col)>::ValueType;
@@ -421,16 +440,9 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
         nested_type = removeNullable(type);
     }
 
-    Int64 null_count = 0;
-    if (null_map_column)
-    {
-        const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
-        for (size_t i = 0; i < num_rows; ++i)
-            null_count += null_map[i] ? 1 : 0;
-    }
-
+    /// `appendValidity` packs the validity buffer and returns the null count in one pass over the null map.
+    const Int64 null_count = appendValidity(null_map_column, num_rows);
     nodes.emplace_back(static_cast<Int64>(num_rows), null_count);
-    appendValidity(null_map_column, num_rows);
     encodeValues(*nested, nested_type, num_rows, null_map_column);
 }
 
@@ -485,6 +497,13 @@ RecordBatchEncoder::EncodedBatch RecordBatchEncoder::encode(const Columns & colu
     nodes.clear();
     buffers.clear();
     body.clear();
+
+    /// Reserve the body up front so `appendBuffer` does not repeatedly reallocate and copy as it grows.
+    /// The column byte sizes approximate the Arrow body size closely enough to serve as a capacity hint.
+    size_t body_hint = 0;
+    for (const auto & column : columns)
+        body_hint += column->byteSize();
+    body.reserve(body_hint);
 
     for (size_t i = 0; i < columns.size(); ++i)
         encodeField(*columns[i], types[i], num_rows);
