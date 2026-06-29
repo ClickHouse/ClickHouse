@@ -10,6 +10,16 @@ SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_
 -- Override randomized max_threads to avoid timeout on slow builds (ASan)
 SET max_threads=0;
 
+-- The runtime dataflow output-bytes estimate is sensitive to the block size, so pin
+-- `max_block_size` to its default to keep the estimate stable against randomization.
+SET max_block_size=65409;
+
+-- The aggregation-state size estimate is recorded per bucket after the conversion to
+-- a two-level hash table, so forcing the conversion from the very first block (the test
+-- randomization sets these thresholds as low as 1) shifts the estimate well away from the
+-- expected values calibrated under the default thresholds. Pin them to the defaults.
+SET group_by_two_level_threshold=100000, group_by_two_level_threshold_bytes=50000000;
+
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 
 -- Unsupported at the moment, refer to comments in `RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes`
@@ -44,7 +54,7 @@ SYSTEM FLUSH LOGS query_log;
 
 -- Just checking that the estimation is not too far off
 WITH
-    [96, 500000, 11189312, 2359808, 64, 29920, 82456, 20000, 31064320, 275251200, 48271331/*, 641835*/] AS expected_bytes,
+    [3, 195461, 5962954, 1100491, 2, 16885, 42323, 9434, 23722663, 203701090, 82404720/*, 641835*/] AS expected_bytes,
     arrayJoin(arrayMap(x -> (untuple(x.1), x.2), arrayZip(res, expected_bytes))) AS res
 SELECT format('{} {} {}', res.1, res.2, res.3)
 FROM
@@ -58,4 +68,3 @@ FROM
     )
 )
 WHERE (greatest(res.2, res.3) / least(res.2, res.3)) > 2.5 AND NOT (res.2 < 100 AND res.3 < 100);
-

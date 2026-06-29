@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
+#include <Common/PODArray.h>
 #include <Common/SipHash.h>
+#include <bit>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
@@ -214,6 +216,140 @@ protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 };
 
+/// For the case when there is one packed string key.
+template <
+    typename Value,
+    typename Mapped,
+    bool place_string_to_arena = true,
+    bool use_cache = true,
+    bool need_offset = false,
+    bool nullable = false>
+struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
+                              HashMethodPackedString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>,
+                              Value,
+                              Mapped,
+                              use_cache,
+                              need_offset,
+                              nullable>
+{
+    static_assert(!need_offset);
+    static_assert(!nullable);
+    using Self = HashMethodPackedString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
+
+    static constexpr bool has_cheap_key_calculation = false;
+
+    const IColumn::Offset * offsets;
+    const UInt8 * chars;
+    PaddedPODArray<UInt32> hashes;
+
+    /// Hashing strategy:
+    /// - Empty string (len == 0):
+    ///   Use hash = 0. Empty keys are handled as a special case and do not participate
+    ///   in the unified encoding path to keep the main comparison logic simple.
+    ///
+    /// - String length <= UInt32 max:
+    ///   Use StringViewHash() to compute a 32-bit hash from string content.
+    ///   This hash is later combined with the string length (32-bit) to form a compact
+    ///   64-bit inline key metadata (hash | len), allowing:
+    ///     * Fast hash comparison
+    ///     * Length comparison without extra memory access
+    ///     * Reduced Cell size in the hash table
+    ///
+    /// - String length > UInt32 max:
+    ///   Such keys are extremely rare in practice. For these oversized strings,
+    ///   we fall back to using the low 32 bits of the string length as hash value.
+    ///   This intentionally sacrifices hash quality in exchange for:
+    ///     * Avoiding extra hashing cost
+    ///     * Preserving a uniform Cell layout
+    ///   Collisions are acceptable here due to the very low occurrence rate, and
+    ///   full string comparison is still used as the final equality check.
+    ///
+    /// Notes:
+    /// - 32-bit hash is sufficient for in-memory aggregation hash tables.
+    /// - A separate 64-bit hash is used only in external aggregation scenarios
+    ///   and is generated via a dedicated conversion path.
+    /// - This length-aware hashing scheme is a key building block for compact
+    ///   Cell design and cache-friendly probing in the optimized String Hash Table.
+    HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+        : Base(key_columns[0])
+    {
+        const IColumn * column = key_columns[0];
+        const ColumnString & column_string = assert_cast<const ColumnString &>(*column);
+        offsets = column_string.getOffsets().data();
+        chars = column_string.getChars().data();
+        auto & data = hashes;
+        size_t rows = column_string.size();
+        data.resize_exact(rows);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            auto str = column_string.getDataAt(i);
+            size_t size = str.size();
+            if (size == 0)
+                data[i] = 0;
+#if defined(CRC_INT)
+            else if (size < 8)
+                /// Tiny keys (1..7 bytes) go through a single CRC instruction on the masked
+                /// word, exactly like `StringHashTableHash` for `StringKey8`. This avoids the
+                /// multiply-heavy `hashLessThan8` path inside `StringViewHash` for short strings,
+                /// which otherwise dominates low-cardinality short-string aggregation
+                /// (`group_by_sundy_li`, `if_transform_strings_to_enum`). Keys of 8 bytes or more
+                /// already use the cheap CRC loop in `StringViewHash` and are left unchanged, so
+                /// medium/large keys (e.g. URLs) keep the same hash and bucketing as before.
+                data[i] = hashTinyKey(str.data(), size); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+#endif
+            else if (size <= std::numeric_limits<UInt32>::max())
+                data[i] = static_cast<UInt32>(StringViewHash()(str));
+            else
+                data[i] = static_cast<UInt32>(size);
+        }
+    }
+
+#if defined(CRC_INT)
+    /// Hash a 1..7 byte key with a single CRC instruction.
+    /// Reading 8 bytes from the key start is safe: `ColumnString::Chars` is a `PaddedPODArray`
+    /// with at least 15 bytes of right padding, so the load never crosses the allocation end.
+    /// Trailing bytes beyond the key length are masked off, so the result depends only on the
+    /// key content and is independent of neighbouring data.
+    static ALWAYS_INLINE UInt32 hashTinyKey(const char * data, size_t size)
+    {
+        const UInt8 shift = static_cast<UInt8>((-size & 7) * 8);
+        UInt64 word = 0;
+        memcpy(&word, data, sizeof(word));
+        /// `memcpy` places the key in the low bytes of `word` on little-endian and in the high
+        /// bytes on big-endian, so the trailing-byte mask has to follow the same direction.
+        /// `CRC_INT` is also defined on big-endian s390x, so masking the wrong end there would
+        /// fold neighbouring padding bytes into the hash and split a single tiny key into
+        /// several groups (the hash is stored in `PackedStringRef::low` and gates `operator==`).
+        if constexpr (std::endian::native == std::endian::little)
+            word &= (~UInt64(0) >> shift);
+        else
+            word &= (~UInt64(0) << shift);
+        size_t res = static_cast<size_t>(-1);
+        res = CRC_INT(static_cast<UInt32>(res), word);
+        return static_cast<UInt32>(res);
+    }
+#endif
+
+    auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
+    {
+        if constexpr (place_string_to_arena)
+        {
+            return ArenaPackedStringHolder{
+                PackedStringRef::build(
+                    reinterpret_cast<const char *>(chars + offsets[row - 1]), offsets[row] - offsets[row - 1], hashes[row]),
+                pool};
+        }
+        else
+        {
+            return PackedStringRef::build(
+                reinterpret_cast<const char *>(chars + offsets[row - 1]), offsets[row] - offsets[row - 1], hashes[row]);
+        }
+    }
+
+protected:
+    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
+};
 
 /// For the case when there is one fixed-length string key.
 template <
