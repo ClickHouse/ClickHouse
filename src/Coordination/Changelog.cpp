@@ -2769,7 +2769,7 @@ size_t LogEntryStorage::getFirstIndex() const
 
 void LogEntryStorage::shutdown()
 {
-    if (std::exchange(is_shutdown, true))
+    if (is_shutdown.exchange(true))
         return;
 
     if (!prefetch_queue.isFinished())

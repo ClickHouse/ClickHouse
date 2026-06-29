@@ -33,7 +33,7 @@ public:
     void write_at(uint64_t index, nuraft::ptr<nuraft::log_entry> & entry) override;
 
     /// Return entries between [start, end).
-    nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> log_entries(uint64_t start, uint64_t end) override;
+    nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> log_entries(uint64_t start, uint64_t end) override TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     static constexpr int32_t NO_PEER_ID = -1;
 

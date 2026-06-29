@@ -79,7 +79,7 @@ nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> KeeperLogStore::log_ent
     LogReadPlan plan;
     {
         ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
-        plan = changelog.getReadPlan(start, end, /*batch_size_hint_in_bytes=*/0);
+        plan = changelog.getReadPlan(start, end, /*max_size_bytes=*/0);
     }
     return changelog.executeReadPlan(plan);
 }

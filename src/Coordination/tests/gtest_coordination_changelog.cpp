@@ -2051,7 +2051,7 @@ TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendVsActiveFileRead)
                     EXPECT_LE(entries->size(), 5u);
                 }
             }
-            catch (const DB::Exception &) // Ok: expected when writeAt races with the read
+            catch (const DB::Exception &) // NOLINT(bugprone-empty-catch) - expected when writeAt races with the read
             {
             }
         }
