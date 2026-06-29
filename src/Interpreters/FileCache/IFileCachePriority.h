@@ -58,12 +58,16 @@ public:
     {
         const Key key;
         const size_t offset;
-        const KeyMetadataPtr key_metadata;
+        /// Weak so invalidated entries awaiting lazy removal do not pin KeyMetadata.
+        /// While Active it is kept alive by the metadata bucket.
+        const KeyMetadataWeakPtr key_metadata;
 
         std::atomic<size_t> size;
-        std::atomic<size_t> hits = 0;
 
         std::string toString(const std::string & prefix = "") const;
+
+        /// Locks `key_metadata`, throwing if it expired.
+        KeyMetadataPtr getKeyMetadata() const;
 
         enum class State
         {
@@ -444,7 +448,11 @@ public:
     /// Invoked by `EvictionCandidates::evict` for each successfully-evicted
     /// segment.
     using OnEvictCallback = std::function<void(const FileSegment & segment, const UserID & user_id)>;
-    virtual void setOnEvictCallback(OnEvictCallback callback) { chassert(!on_evict_callback, "on_evict_callback cannot be set twice"); on_evict_callback = std::move(callback); }
+    virtual void setOnEvictCallback(OnEvictCallback callback)
+    {
+        chassert(!on_evict_callback, "on_evict_callback cannot be set twice");
+        on_evict_callback = std::move(callback);
+    }
     const OnEvictCallback & getOnEvictCallback() const { return on_evict_callback; }
 
 protected:

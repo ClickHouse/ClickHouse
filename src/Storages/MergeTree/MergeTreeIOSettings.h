@@ -20,6 +20,8 @@ using MMappedFileCachePtr = std::shared_ptr<MMappedFileCache>;
 
 struct SelectQueryInfo;
 
+class PackedFilesWriter;
+
 enum class CompactPartsReadMethod : uint8_t
 {
     SingleBuffer,
@@ -75,6 +77,10 @@ struct MergeTreeReaderSettings
     /// This information can be used for more optimal reading of
     /// columns prefixes.
     bool read_only_column_sample = false;
+    /// True when predicate_statistics_sample_rate > 0, i.e. the read steps must
+    /// maintain selectivity counters for system.predicate_statistics_log. When
+    /// false (the default), the readers skip the per-granule counter work.
+    bool collect_predicate_statistics = false;
 
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove
@@ -133,6 +139,14 @@ struct MergeTreeWriterSettings
     MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
     double map_buckets_coefficient = 1.0;
     size_t map_buckets_min_avg_size = 0;
+
+    /// When non-null, the writer borrows this `PackedFilesWriter` from an outer writer instead
+    /// of creating its own. The borrower contributes its packed substreams to the shared
+    /// archive but never writes `skp_idx.packed` to disk; that is the owner's responsibility
+    /// (so two writers don't race over the same archive file). Used by the vertical-merge
+    /// per-column `MergedColumnOnlyOutputStream`, which shares the horizontal
+    /// `MergedBlockOutputStream`'s archive.
+    PackedFilesWriter * external_packed_skip_indices_writer = nullptr;
     bool use_adaptive_write_buffer_for_dynamic_subcolumns{};
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};
