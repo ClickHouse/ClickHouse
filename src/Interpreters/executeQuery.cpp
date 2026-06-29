@@ -29,6 +29,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
@@ -1510,6 +1511,16 @@ void wrapNestedConstructionSettings(
             if (select_ptr.get() != create_query->select)
                 create_query->replace(create_query->select, select_ptr);
         }
+        return;
+    }
+    if (ast->as<ASTAlterQuery>())
+    {
+        /// `ALTER TABLE … MODIFY QUERY` stores a (materialized) view's query as a *definition*; it is
+        /// not executed here and cannot carry construction settings — they are rejected in
+        /// `AlterCommand::parse` (mirroring the `CREATE VIEW` guard in `InterpreterCreateQuery`). Do NOT
+        /// descend and wrap its `SELECT`: otherwise the settings (including those nested in a subquery's
+        /// own `SETTINGS`) would be silently materialized and stripped here, and that rejection — which
+        /// inspects the stored `SELECT` — would never fire.
         return;
     }
 
