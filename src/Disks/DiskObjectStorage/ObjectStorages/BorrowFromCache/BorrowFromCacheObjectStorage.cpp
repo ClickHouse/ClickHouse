@@ -72,10 +72,26 @@ namespace
         {
         }
 
-        /// `ReadBufferFromFileDecorator` does not forward this, so the base `SeekableReadBuffer`
-        /// version throws `NOT_IMPLEMENTED`. `ReadBufferFromRemoteFSGather` calls this in a
-        /// `chassert`, which trips on debug/sanitizer builds during `IDisk::checkAccess`.
+        /// Forward the methods that `ReadBufferFromFileDecorator` does not delegate. The cache file
+        /// is plugged into `ReadBufferFromRemoteFSGather` (and, on the async path,
+        /// `AsynchronousBoundedReadBuffer`) exactly like the `local_blob_storage` read wrapper
+        /// `ReadBufferFromFileWithLogging`. A bare decorator would inherit the no-op
+        /// `setReadUntilPosition` / `setReadUntilEnd` and the `false`-returning
+        /// `supportsRightBoundedReads` / `supportsReadAt` of the base classes, so the gather's
+        /// `createImplementationBuffer` bound (set when a requested range ends inside this object)
+        /// would be silently dropped and positional `readBigAt` reads would be disabled. Forward
+        /// the same set of methods as `ReadBufferFromFileWithLogging` so the wrapper is transparent.
         size_t getFileOffsetOfBufferEnd() const override { return impl->getFileOffsetOfBufferEnd(); }
+        void setReadUntilPosition(size_t position) override { impl->setReadUntilPosition(position); }
+        void setReadUntilEnd() override { impl->setReadUntilEnd(); }
+        bool supportsRightBoundedReads() const override { return impl->supportsRightBoundedReads(); }
+        bool supportsReadAt() override { return impl->supportsReadAt(); }
+        size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const override
+        {
+            return impl->readBigAt(to, n, offset, progress_callback);
+        }
+        bool isSeekCheap() override { return impl->isSeekCheap(); }
+        bool isContentCached(size_t offset, size_t size) override { return impl->isContentCached(offset, size); }
 
     private:
         std::shared_ptr<FileSegmentsHolder> holder;
