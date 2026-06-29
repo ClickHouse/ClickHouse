@@ -1501,11 +1501,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             /// constant column and break parallel-replicas reading.
             ///
             /// A projection is constant not only when it is a folded ConstantNode but also when it
-            /// evaluates to a constant column at runtime (e.g. identity(0): identity is not suitable
-            /// for constant folding, so it stays a FunctionNode, yet it returns its constant argument
-            /// unchanged). Build the projection expression with no source columns and, if it references
-            /// none, evaluate it through the same updateHeader path real planning uses; keep the result
-            /// only when it is a ColumnConst.
+            /// evaluates to a constant column at runtime, even while referencing a source column.
+            /// Two cases that stay FunctionNodes yet always produce a ColumnConst: identity(0)
+            /// (returns its constant argument unchanged) and ignore(s) (always returns 0). Evaluate
+            /// each projection through the same updateHeader path real planning uses, feeding it a
+            /// header of the expression's own input columns, and keep the result only if it is a
+            /// ColumnConst.
             const QueryTreeNodes * projection_nodes = nullptr;
             if (query_node)
                 projection_nodes = &query_node->getProjection().getNodes();
@@ -1520,12 +1521,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     ColumnNodePtrWithHashSet empty_correlated_columns_set;
                     auto [projection_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
                         (*projection_nodes)[i], {}, planner_context, empty_correlated_columns_set);
-                    /// Only constant expressions can be evaluated here: anything referencing a source
-                    /// column adds an INPUT and updateHeader would fail without the missing column.
-                    if (!correlated_subtrees.notEmpty() && projection_dag.getInputs().empty()
-                        && projection_dag.getOutputs().size() == 1)
+                    /// Correlated projections carry PLACEHOLDER nodes that never fold to a constant.
+                    if (!correlated_subtrees.notEmpty() && projection_dag.getOutputs().size() == 1)
                     {
-                        auto evaluated = projection_dag.updateHeader({}).safeGetByPosition(0).column;
+                        Block input_header;
+                        for (const auto * input : projection_dag.getInputs())
+                            input_header.insert(ColumnWithTypeAndName(
+                                input->result_type->createColumn(), input->result_type, input->result_name));
+                        auto evaluated = projection_dag.updateHeader(input_header).safeGetByPosition(0).column;
                         if (evaluated && isColumnConst(*evaluated))
                             column = projection_column.type->createColumnConst(0, (*evaluated)[0]);
                     }
