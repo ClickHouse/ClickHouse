@@ -422,25 +422,24 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     /// in-flight / synchronous gap fetch.
     if (to_read > 0)
     {
-        /// Re-plan only when the cursor leaves the planned span. The margin is the
-        /// BASE `window_size` (a constant), so deciding whether to plan never queries
-        /// memory pressure; the plan span and every read are clamped to `plan_end`,
-        /// and the per-plan pressure level is sampled once inside `observeAndSchedule`.
-        /// NB: do not re-plan while a machine is in flight - a re-plan would re-probe residency
-        /// and could see the worker's just-fetched gap as RESIDENT, wrongly taking the resident
-        /// fast-path while `machine` is still set (the `observeAndSchedule` `chassert(!machine)`
-        /// invariant). For a mid-plan gap the serve's gap branch collects the machine. But once
-        /// the cursor reaches `plan_end` the cursor sits on a consumed step (its serve yields
-        /// nothing), so the gap branch never collects - leaving the re-plan permanently blocked
-        /// and the executor stalled at `plan_end`, a premature EOF in the interior of the extent.
-        /// Collect the in-flight machine here (committing its cells, which the re-plan then sees
-        /// resident) so the re-plan, now with `machine` cleared, can extend past the stale plan_end.
-        const bool want_replan = !read_plan.geometry()
-            || position_phys < read_plan.geometry()->plan_start
-            || (position_phys + window_size > read_plan.geometry()->plan_end && !planReachesEnd());
         const bool at_plan_end = read_plan.geometry() && position_phys >= read_plan.geometry()->plan_end;
+
+        /// At the boundary, collect the in-flight machine BEFORE replanning. A consumed step at
+        /// `plan_end` serves nothing, so the serve's gap branch never collects it; without this the
+        /// replan stays blocked (machine still set -> `observeAndSchedule`'s `chassert(!machine)`)
+        /// and the executor stalls at `plan_end` - a premature interior EOF. Collecting commits the
+        /// machine's cells (so the replan below sees them resident) and clears `machine`.
         if (machine && at_plan_end)
             collectInFlightInto(machine->retrieve_index);
+
+        /// Re-plan only once the plan is fully consumed - the cursor fell before `plan_start`, or
+        /// reached `plan_end` and the plan does not already run to EOF. The plan is used to its end
+        /// before a rebuild (no pre-emptive look-ahead). Never replan while a machine is in flight:
+        /// it would re-probe residency and could see the worker's just-fetched gap as resident. The
+        /// per-plan pressure level is sampled once inside `observeAndSchedule`.
+        const bool want_replan = !read_plan.geometry()
+            || position_phys < read_plan.geometry()->plan_start
+            || (at_plan_end && !planReachesEnd());
         if (!machine && want_replan)
         {
             observeAndSchedule(position_phys);
