@@ -52,8 +52,6 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Functions/FunctionFactory.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -509,16 +507,17 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
             return QueryProcessingStage::WithMergeableStateAfterAggregation;
         }
 
-        /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
-        /// (since in this case queries processed separately and the initiator is just a proxy in this case).
+        /// distributed_group_by_no_merge=1 does not respect distributed_push_down_limit:
+        /// shards process the query independently and the initiator just concatenates.
         ///
-        /// We always return Complete here regardless of to_stage, because with
-        /// distributed_group_by_no_merge=1 each shard processes the full query
-        /// independently and the initiator just concatenates results.
-        /// The caller may request a lower stage (e.g. StorageMerge passes
-        /// WithMergeableState when it wraps multiple tables), but that's fine —
-        /// the caller handles storage_stage > processed_stage correctly.
-        return QueryProcessingStage::Complete;
+        /// Each shard processes to Complete, so report at least Complete. Use max with
+        /// to_stage so a caller asking for a higher stage (WithMergeableStateAfterAggregation
+        /// or WithMergeableStateAfterAggregationAndLimit) is not silently downgraded.
+        /// If a caller asks for a lower stage (e.g. StorageMerge passing WithMergeableState
+        /// for a multi-table merge), `read()` still honors `processed_stage` and sends the
+        /// right query to shards; StorageMerge caps its own advertised stage so this
+        /// Complete does not leak into outer headers.
+        return std::max(to_stage, QueryProcessingStage::Complete);
     }
 
     /// Nested distributed query cannot return Complete stage,
@@ -934,94 +933,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
-
-    /// Snapshot the projection-item structural hashes BEFORE ReplaseAliasColumnsVisitor
-    /// inlines ALIAS columns.  These "original" hashes identify what the outer planner
-    /// (which sees the un-inlined query tree) will treat as equivalent: items with the
-    /// same original hash collapse to a single DAG output through removeUnusedActions's
-    /// name-based deduplication, so we must keep them collapsed on the shard too.
-    /// Items that only become structurally identical after inlining (e.g. two ALIAS
-    /// columns expanding to the same expression, or one ALIAS column written next to
-    /// the same expression written directly) must, conversely, be disambiguated, or
-    /// the shard returns fewer columns than the outer planner expects and the
-    /// position-based rename in PlannerJoinTree throws NUMBER_OF_COLUMNS_DOESNT_MATCH.
-    std::vector<IQueryTreeNode::Hash> original_projection_hashes;
-    if (auto * pre_visitor_query_node = query_tree_to_modify->as<QueryNode>())
-    {
-        const auto & projection_nodes = pre_visitor_query_node->getProjection().getNodes();
-        original_projection_hashes.reserve(projection_nodes.size());
-        for (const auto & node : projection_nodes)
-            original_projection_hashes.push_back(node->getTreeHash({.compare_aliases = false}));
-    }
-
     ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
     replace_alias_columns_visitor.visit(query_tree_to_modify);
-
-    /// Resolve structural collisions in the post-inlining projection that did not
-    /// exist in the original tree.  Items are bucketed by their post-inlining
-    /// structural hash; within each bucket they are further partitioned by their
-    /// original (pre-inlining) hash.  The first partition in each bucket keeps the
-    /// natural DAG name; every subsequent partition gets a fresh __actionName wrap;
-    /// items in the same partition share that wrap, so the shard ends up with
-    /// exactly as many distinct DAG output names as the outer planner's NameSet
-    /// deduplication produces.
-    if (auto * query_node_ptr = query_tree_to_modify->as<QueryNode>())
-    {
-        auto & projection_nodes = query_node_ptr->getProjection().getNodes();
-        if (projection_nodes.size() == original_projection_hashes.size())
-        {
-            struct TreeHashHash
-            {
-                size_t operator()(const IQueryTreeNode::Hash & h) const { return CityHash_v1_0_2::Hash128to64(h); }
-            };
-            struct OriginEntry { IQueryTreeNode::Hash original_hash; String wrap_name; };
-            std::unordered_map<IQueryTreeNode::Hash, std::vector<OriginEntry>, TreeHashHash> bucket;
-            FunctionOverloadResolverPtr action_name_resolver;
-            size_t wrap_counter = 0;
-
-            for (size_t i = 0; i < projection_nodes.size(); ++i)
-            {
-                auto inlined_hash = projection_nodes[i]->getTreeHash({.compare_aliases = false});
-                auto & entries = bucket[inlined_hash];
-
-                if (entries.empty())
-                {
-                    entries.push_back({original_projection_hashes[i], {}});
-                    continue;
-                }
-
-                String wrap_name;
-                auto it = std::find_if(entries.begin(), entries.end(),
-                    [&](const OriginEntry & e) { return e.original_hash == original_projection_hashes[i]; });
-                if (it != entries.end())
-                {
-                    if (it->wrap_name.empty())
-                        continue;
-                    wrap_name = it->wrap_name;
-                }
-                else
-                {
-                    ++wrap_counter;
-                    wrap_name = "__distributed_alias_dedup_" + std::to_string(wrap_counter);
-                    entries.push_back({original_projection_hashes[i], wrap_name});
-                }
-
-                if (!action_name_resolver)
-                    action_name_resolver = FunctionFactory::instance().get("__actionName", query_context);
-
-                auto node_alias = projection_nodes[i]->getAlias();
-                projection_nodes[i]->removeAlias();
-                auto name_node = std::make_shared<ConstantNode>(wrap_name);
-                auto wrapper = std::make_shared<FunctionNode>("__actionName");
-                wrapper->getArguments().getNodes().push_back(std::move(projection_nodes[i]));
-                wrapper->getArguments().getNodes().push_back(std::move(name_node));
-                wrapper->resolveAsFunction(action_name_resolver);
-                if (!node_alias.empty())
-                    wrapper->setAlias(node_alias);
-                projection_nodes[i] = std::move(wrapper);
-            }
-        }
-    }
 
     const auto & settings = query_context->getSettingsRef();
 
@@ -1114,8 +1027,9 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     auto shard_filter_generator = ClusterProxy::getShardFilterGeneratorForCustomKey(
-        *modified_query_info.getCluster(), local_context, getInMemoryMetadataPtr(local_context, false)->columns);
+        *modified_query_info.getCluster(), local_context, metadata_snapshot->columns);
 
     ClusterProxy::executeQuery(
         query_plan,
@@ -1404,8 +1318,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto cluster = getCluster();
 
     /// Select query is needed for pruining on virtual columns
+    const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, cluster, src_storage_cluster.getInMemoryMetadataPtr(local_context, false));
+        predicate, filter.get(), local_context, cluster, storage_metadata);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -1521,7 +1436,8 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
         }
     }
 
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     commands.apply(new_metadata, local_context);
     checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
 }
@@ -1531,7 +1447,8 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
     auto table_id = getStorageID();
 
     checkAlterIsPossible(params, local_context);
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);

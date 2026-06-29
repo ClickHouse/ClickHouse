@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NumberTraits.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
@@ -387,6 +388,23 @@ int ColumnLowCardinality::compareAtWithCollation(size_t n, size_t m, const IColu
     return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
 }
 
+size_t ColumnLowCardinality::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    /// The fast path searches over dictionary indexes rather than values: in a sorted column a run of equal
+    /// values maps to a run of equal indexes, so equal indexes are contiguous. This holds only when distinct
+    /// dictionary entries always have distinct values. Floating-point types break that invariant: -0.0 and
+    /// +0.0, as well as the different NaN bit patterns, have distinct bit patterns yet compare equal. A
+    /// dictionary built from deserialized data is not canonicalized (insert-time canonicalization unifies the
+    /// NaNs of freshly inserted data, but does not apply when reading back, and -0.0 is not unified at all), so
+    /// it can hold such value-equal entries separately. So for a floating-point inner type we compare values.
+    if (WhichDataType(getDictionary().getNestedNotNullableColumn()->getDataType()).isFloat())
+        return IColumn::getEqualRangeEndAssumeSorted(begin, end, nan_direction_hint);
+
+    /// We only require equal values to be contiguous. If the column is sorted, then equal values are contiguous.
+    /// If equal values are contiguous, then equal indexes are also contiguous.
+    return getIndexes().getEqualRangeEndAssumeSorted(begin, end, nan_direction_hint);
+}
+
 bool ColumnLowCardinality::hasEqualValues() const
 {
     if (getDictionary().size() <= 1)
@@ -681,6 +699,20 @@ ColumnPtr ColumnLowCardinality::countKeys() const
 bool ColumnLowCardinality::containsNull() const
 {
     return getDictionary().nestedColumnIsNullable() && idx.containsDefault();
+}
+
+void ColumnLowCardinality::applyNegatedNullMap(const NullMap & map, size_t offset)
+{
+    if (!nestedIsNullable())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot apply a null map to {} with a non-nullable dictionary", getName());
+
+    if (offset + map.size() != size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Null map of size {} at offset {} does not match {} of size {}",
+            map.size(), offset, getName(), size());
+
+    idx.setIndexesWhereMaskZero(map, getDictionary().getNullValueIndex(), offset);
 }
 
 ColumnLowCardinality::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)

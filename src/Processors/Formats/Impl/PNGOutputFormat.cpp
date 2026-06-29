@@ -1,13 +1,13 @@
 #include <Processors/Formats/Impl/PNGOutputFormat.h>
 
-#if USE_LIBPNG
+#if USE_LIBPNG && USE_BASE64
 
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/PNGSerializer.h>
 #include <Formats/PNGTerminalOutput.h>
 #include <Formats/PNGWriter.h>
-#include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromStringWithMemoryTracking.h>
 
 namespace DB
 {
@@ -16,14 +16,17 @@ namespace
 {
 constexpr auto FORMAT_NAME = "PNG";
 
-/// Encode the image as a PNG file into a string buffer.
-String encodePNG(const PNGSerializer & serializer)
+/// Encode the image as a PNG file into a memory-tracked buffer. The buffer can be large (proportional to the
+/// image size), so it uses the throwing memory tracker to honor `max_memory_usage` instead of overshooting it.
+StringWithMemoryTracking encodePNG(const PNGSerializer & serializer)
 {
-    WriteBufferFromOwnString png_buf;
+    StringWithMemoryTracking png;
+    WriteBufferFromStringWithMemoryTracking png_buf(png);
     PNGWriter writer(png_buf, serializer.getWidth(), serializer.getHeight(), serializer.getChannels());
     writer.writeImage(reinterpret_cast<const unsigned char *>(serializer.getPixels()));
     writer.finalize();
-    return png_buf.str();
+    png_buf.finalize();
+    return png;
 }
 }
 
