@@ -8,31 +8,35 @@
     <tcp_port>9090</tcp_port>
     <!-- <tcp_with_proxy_port>9091</tcp_with_proxy_port> -->
 
-    <storage>
-        <servers>
-            <server>
-                <key>server-1</key>
-                <host>127.0.0.1</host>
-                <!-- port with enabled proxy header parsing -->
-                <tcp_port>9011</tcp_port>
-            </server>
-            <server>
-                <key>server-2</key>
-                <host>127.0.0.1</host>
-                <!-- port with enabled proxy header parsing -->
-                <tcp_port>9012</tcp_port>
-            </server>
-        </servers>
-    </storage>
+    <!-- Upstream ClickHouse servers, declared as named clusters of replicas. -->
+    <upstreams>
+        <clusters>
+            <cluster_a>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <!-- port with enabled proxy header parsing -->
+                    <tcp_port>9011</tcp_port>
+                </replica>
+            </cluster_a>
+            <cluster_b>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <tcp_port>9011</tcp_port>
+                </replica>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <tcp_port>9012</tcp_port>
+                </replica>
+            </cluster_b>
+        </clusters>
+    </upstreams>
 
     <routing>
         <rules>
             <rule>
                 <user>admin</user>
                 <action>
-                    <route_to>
-                        <server>server-2</server>
-                    </route_to>
+                    <route_to>cluster_b</route_to>
                 </action>
             </rule>
             <rule>
@@ -40,22 +44,15 @@
                 <!-- <host>test.clickhouse.cloud</host> -->
                 <user>test_user</user>
                 <action>
-                    <route_to>
-                        <server>server-1</server>
-                    </route_to>
+                    <route_to>cluster_a</route_to>
                 </action>
             </rule>
             <rule>
                 <user>test_user</user>
                 <!-- <host>test-1.clickhouse.cloud</host> -->
                 <action>
-                    <route_to>
-                        <server>server-1</server>
-                        <server>server-2</server>
-                    </route_to>
-                    <policy>
-                        round_robin
-                    </policy>
+                    <route_to>cluster_b</route_to>
+                    <policy>round_robin</policy>
                 </action>
             </rule>
             <rule>

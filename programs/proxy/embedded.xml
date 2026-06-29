@@ -7,23 +7,22 @@
 
     <tcp_port>9090</tcp_port>
 
-    <storage>
-        <servers>
-            <server>
-                <key>server</key>
-                <host>127.0.0.1</host>
-                <!-- port with enabled proxy header parsing -->
-                <tcp_port>9011</tcp_port>
-            </server>
-        </servers>
-    </storage>
+    <upstreams>
+        <clusters>
+            <default>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <!-- port with enabled proxy header parsing -->
+                    <tcp_port>9011</tcp_port>
+                </replica>
+            </default>
+        </clusters>
+    </upstreams>
 
     <routing>
         <default>
              <action>
-                <route_to>
-                    <server>server</server>
-                </route_to>
+                <route_to>default</route_to>
             </action>
         </default>
     </routing>

@@ -25,45 +25,61 @@ namespace Proxy
 
 namespace
 {
-Servers parseServers(const Poco::Util::AbstractConfiguration & config)
+std::string makeServerKey(const std::string & host, int tcp_port)
 {
-    Servers servers;
+    return host + ":" + std::to_string(tcp_port);
+}
 
-    std::vector<std::string> config_keys;
-    config.keys("storage.servers", config_keys);
+/// Parses the named clusters declared under `<upstreams><clusters>`. Every cluster is an
+/// ordered list of `<replica>` entries (host and tcp_port). The flat `servers` map collects
+/// all replicas across all clusters, deduplicated by their `host:port` key, so that the key
+/// chosen by a load balancer can later be resolved back to a concrete server.
+void parseClusters(const Poco::Util::AbstractConfiguration & config, Clusters & clusters, Servers & servers)
+{
+    std::vector<std::string> cluster_names;
+    config.keys("upstreams.clusters", cluster_names);
 
-    for (const std::string & config_key : config_keys)
+    for (const std::string & cluster_name : cluster_names)
     {
-        if (config_key != "server" && !config_key.starts_with("server["))
-            continue;
+        const std::string cluster_prefix = "upstreams.clusters." + cluster_name;
 
-        try
+        Cluster cluster;
+
+        std::vector<std::string> replica_keys;
+        config.keys(cluster_prefix, replica_keys);
+
+        for (const std::string & replica_key : replica_keys)
         {
-            const auto prefix = "storage.servers." + config_key;
+            if (replica_key != "replica" && !replica_key.starts_with("replica["))
+                continue;
+
+            const std::string replica_prefix = cluster_prefix + "." + replica_key;
+
             ServerConfig server;
-            server.key = config.getString(prefix + ".key");
-            server.host = config.getString(prefix + ".host");
+            server.host = config.getString(replica_prefix + ".host");
+            server.tcp_port = config.getInt(replica_prefix + ".tcp_port", 0);
+            server.key = makeServerKey(server.host, server.tcp_port);
 
-            server.tcp_port = config.getInt(prefix + ".tcp_port", 0);
-
-            servers[server.key] = std::move(server);
+            cluster.push_back(server);
+            servers[server.key] = server;
         }
-        catch (const Poco::NotFoundException &)
+
+        if (cluster.empty())
         {
-            break;
+            throw DB::Exception(
+                DB::ErrorCodes::INVALID_CONFIG_PARAMETER, "Cluster '{}' has no replicas configured at {}", cluster_name, cluster_prefix);
         }
-    }
 
-    return servers;
+        clusters[cluster_name] = std::move(cluster);
+    }
 }
 
 std::shared_ptr<DefaultRule> parseRule(
     const Poco::Util::AbstractConfiguration & config,
-    const Servers & servers,
+    const Clusters & clusters,
     GlobalConnectionsCounter * global_counter,
-    std::string prefix,
+    const std::string & prefix,
     bool is_filter_rule)
-try
 {
     std::shared_ptr<DefaultRule> rule;
 
@@ -80,43 +96,49 @@ try
         rule = std::make_shared<DefaultRule>();
     }
 
-    prefix += ".action";
+    const std::string action_prefix = prefix + ".action";
 
-    if (config.hasProperty(prefix + ".reject") && config.getBool(prefix + ".reject"))
+    const bool has_reject = config.hasProperty(action_prefix + ".reject");
+    const bool has_route_to = config.hasProperty(action_prefix + ".route_to");
+
+    if (!has_reject && !has_route_to)
+    {
+        /// The default rule is optional: its absence simply means "reject everything that no
+        /// rule matched". A filter rule, on the other hand, must declare an explicit action.
+        if (!is_filter_rule)
+            return nullptr;
+        throw DB::Exception(
+            DB::ErrorCodes::INVALID_CONFIG_PARAMETER, "Routing rule at {} must specify either 'reject' or 'route_to'", action_prefix);
+    }
+
+    if (has_reject && config.getBool(action_prefix + ".reject"))
     {
         rule->action.type = RuleActionType::Reject;
     }
-    else
+    else if (has_route_to)
     {
-        prefix += ".route_to";
         rule->action.type = RuleActionType::Route;
-        std::vector<std::string> config_keys;
-        config.keys(prefix, config_keys);
 
-        for (const std::string & config_key : config_keys)
-        {
-            if (config_key != "server" && !config_key.starts_with("server["))
-                continue;
+        const std::string cluster_name = config.getString(action_prefix + ".route_to");
+        rule->action.target_cluster = cluster_name;
 
-            try
-            {
-                std::string server_key = config.getString(prefix + "." + config_key);
-
-                rule->action.target_servers.push_back(server_key);
-            }
-            catch (const Poco::NotFoundException &)
-            {
-                break;
-            }
-        }
-
-        if (rule->action.target_servers.empty())
+        const auto cluster_iter = clusters.find(cluster_name);
+        if (cluster_iter == clusters.end())
         {
             throw DB::Exception(
-                DB::ErrorCodes::INVALID_CONFIG_PARAMETER, "Routing rule action 'route_to' has no servers configured at {}", prefix);
+                DB::ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "Routing rule action 'route_to' references unknown cluster '{}' at {}",
+                cluster_name,
+                action_prefix);
         }
 
-        std::string policy_str = config.getString(prefix + ".action.policy", "");
+        const Cluster & cluster = cluster_iter->second;
+
+        rule->action.target_servers.reserve(cluster.size());
+        for (const ServerConfig & server : cluster)
+            rule->action.target_servers.push_back(server.key);
+
+        const std::string policy_str = config.getString(action_prefix + ".policy", "");
         rule->policy = parseLoadBalancingPolicy(policy_str);
 
         switch (rule->policy)
@@ -129,29 +151,18 @@ try
                 break;
         }
 
-        std::vector<ServerConfig> rule_servers;
-        rule_servers.reserve(rule->action.target_servers.size());
-        for (const auto & server_key : rule->action.target_servers)
-        {
-            const auto iter = servers.find(server_key);
-            if (iter == servers.end())
-            {
-                throw DB::Exception(
-                    DB::ErrorCodes::INVALID_CONFIG_PARAMETER, "Server with key '{}' not found in configuration", server_key);
-            }
-            rule_servers.push_back(iter->second);
-        }
-        rule->connections_counter = std::make_shared<ConnectionsCounter>(rule_servers, global_counter);
+        rule->connections_counter = std::make_shared<ConnectionsCounter>(cluster, global_counter);
+    }
+    else
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::INVALID_CONFIG_PARAMETER, "Routing rule at {} must specify either 'reject: true' or 'route_to'", action_prefix);
     }
 
     return rule;
 }
-catch (const Poco::NotFoundException &)
-{
-    return nullptr;
-}
 
-Rules parseRules(const Poco::Util::AbstractConfiguration & config, const Servers & servers, GlobalConnectionsCounter * global_counter)
+Rules parseRules(const Poco::Util::AbstractConfiguration & config, const Clusters & clusters, GlobalConnectionsCounter * global_counter)
 {
     Rules rules;
 
@@ -165,12 +176,7 @@ Rules parseRules(const Poco::Util::AbstractConfiguration & config, const Servers
 
         std::string prefix = "routing.rules." + config_key;
 
-        auto rule = parseRule(config, servers, global_counter, prefix, /*is_filter_rule=*/true);
-        if (rule == nullptr)
-        {
-            break;
-        }
-
+        auto rule = parseRule(config, clusters, global_counter, prefix, /*is_filter_rule=*/true);
         rules.push_back(std::static_pointer_cast<FilterRule>(rule));
     }
 
@@ -178,20 +184,27 @@ Rules parseRules(const Poco::Util::AbstractConfiguration & config, const Servers
 }
 
 std::shared_ptr<DefaultRule>
-parseDefaultRule(const Poco::Util::AbstractConfiguration & config, const Servers & servers, GlobalConnectionsCounter * global_counter)
+parseDefaultRule(const Poco::Util::AbstractConfiguration & config, const Clusters & clusters, GlobalConnectionsCounter * global_counter)
 {
     std::string prefix = "routing.default";
-    return parseRule(config, servers, global_counter, prefix, /*is_filter_rule=*/false);
+    return parseRule(config, clusters, global_counter, prefix, /*is_filter_rule=*/false);
 }
 }
 
 RouterConfig parseConfig(const Poco::Util::AbstractConfiguration & config, GlobalConnectionsCounter * global_counter)
 {
-    auto servers = parseServers(config);
-    auto rules = parseRules(config, servers, global_counter);
-    auto default_rule = parseDefaultRule(config, servers, global_counter);
+    Clusters clusters;
+    Servers servers;
+    parseClusters(config, clusters, servers);
 
-    return {.servers = std::move(servers), .rules = std::move(rules), .default_rule = std::move(default_rule)};
+    auto rules = parseRules(config, clusters, global_counter);
+    auto default_rule = parseDefaultRule(config, clusters, global_counter);
+
+    return {
+        .servers = std::move(servers),
+        .clusters = std::move(clusters),
+        .rules = std::move(rules),
+        .default_rule = std::move(default_rule)};
 }
 
 }

@@ -27,6 +27,9 @@ enum class RuleActionType
 struct RuleAction
 {
     RuleActionType type = RuleActionType::Route;
+    /// Name of the cluster the rule routes to (empty for a `Reject` action).
+    std::string target_cluster;
+    /// Keys of the replicas that belong to `target_cluster`, expanded at config-parsing time.
     std::vector<std::string> target_servers;
 };
 
