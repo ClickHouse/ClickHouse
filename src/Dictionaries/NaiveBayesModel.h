@@ -501,7 +501,7 @@ public:
 
     /// Transforms the accumulated training data into the compact, query-ready model, filling the member arrays.
     /// The inputs are `observations` (one `(n-gram, class, count)` row each), the per-class `class_totals`, and
-    /// the per-class `log_priors`; `alpha` is the Laplace smoothing strength. `observations` is sorted in place,
+    /// the per-class `log_priors`; `alpha` is the additive (Lidstone) smoothing strength. `observations` is sorted in place,
     /// while `class_totals` and `log_priors` are only read.
     ///
     /// The model is laid out as two groups of arrays:
@@ -572,11 +572,15 @@ public:
         for (size_t c = 0; c < num_classes; ++c)
             scores[c] = log_prior[c];
 
+        /// Only n-grams in the model vocabulary are features. An n-gram seen in no class during training carries no
+        /// class signal, so it is skipped entirely: it contributes neither a delta nor the per-class absent baseline.
+        size_t matched_ngrams = 0;
         auto accumulate = [&](std::string_view ngram)
         {
             auto it = ngram_to_index.find(ngram);
             if (!it)
                 return;
+            ++matched_ngrams;
             const UInt32 index = it->getMapped();
 
             chassert(index + 1 < ngram_offsets.size());
@@ -586,10 +590,10 @@ public:
             for (UInt32 j = begin; j < end; ++j)
                 scores[class_deltas[j].class_index] += static_cast<double>(class_deltas[j].delta);
         };
-        const size_t num_ngrams = tokenizer.enumerateNgrams(input, ngram_size, start_token, end_token, scratch, accumulate);
+        tokenizer.enumerateNgrams(input, ngram_size, start_token, end_token, scratch, accumulate);
 
         for (size_t c = 0; c < num_classes; ++c)
-            scores[c] += static_cast<double>(num_ngrams) * static_cast<double>(absent_ngram_log_prob[c]);
+            scores[c] += static_cast<double>(matched_ngrams) * static_cast<double>(absent_ngram_log_prob[c]);
     }
 
     /// Maps a dense class index back to the original class id.

@@ -166,7 +166,7 @@ private:
 
     std::unique_ptr<NaiveBayesModelData<Tokenizer>> model_data;
 
-    /// Laplace smoothing parameter.
+    /// Additive (Lidstone) smoothing parameter.
     double alpha;
 
     /// Store each row of the training data as a (ngram_index, class_id, count) tuple.
