@@ -87,7 +87,7 @@ SerializationVariant::SerializationVariant(
     const VariantSerializations & variant_serializations_,
     const Names & variant_names_,
     const String & variant_name_)
-    : variant_types(variant_types_)
+    : variant_types(variant_types_.begin(), variant_types_.end())
     , variant_serializations(variant_serializations_)
     , variant_names(variant_names_)
     , deserialize_text_order(getVariantsDeserializeTextOrder(variant_types_))
