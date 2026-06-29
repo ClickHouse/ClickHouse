@@ -7,6 +7,7 @@
 #include <Columns/FilterDescription.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
+#include <Common/ProfileEvents.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>

@@ -23,6 +23,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <Functions/pointInPolygon.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/AsynchronousMetricLog.h>
@@ -481,6 +482,10 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
 #endif
+        case Type::CLEAR_POINT_IN_POLYGON_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_POINT_IN_POLYGON_CACHE);
+            clearPointInPolygonCache();
+            break;
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -1245,6 +1250,7 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
 
         case Type::RESET_DDL_WORKER:
+            getContext()->checkAccess(AccessType::SYSTEM_RESET_DDL_WORKER);
             getContext()->getDDLWorker().requestToResetState();
             break;
         default:
@@ -2474,6 +2480,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
+        case Type::CLEAR_POINT_IN_POLYGON_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:
@@ -2819,6 +2826,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
             break;
         }
+        case Type::RESET_DDL_WORKER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESET_DDL_WORKER);
+            break;
+        }
         case Type::ALLOCATE_MEMORY:
         case Type::FREE_MEMORY:
         {
@@ -2834,7 +2846,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESET_COVERAGE:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
-        case Type::RESET_DDL_WORKER:
         case Type::END: break;
     }
     return required_access;
