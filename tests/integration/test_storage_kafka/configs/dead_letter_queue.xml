@@ -1,0 +1,8 @@
+<clickhouse>
+    <dead_letter_queue>
+        <database>system</database>
+        <table>dead_letter_queue</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </dead_letter_queue>
+</clickhouse>

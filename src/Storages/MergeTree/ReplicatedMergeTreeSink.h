@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -67,18 +68,21 @@ public:
         // special flag to determine the ALTER TABLE ATTACH PART without the query context,
         // needed to set the special LogEntryType::ATTACH_PART
         bool is_attach_ = false,
-        bool allow_attach_while_readonly_ = false);
+        bool allow_attach_while_readonly_ = false,
+        std::optional<ZooKeeperRetriesInfo> keeper_retries_info_ = std::nullopt);
 
     ~ReplicatedMergeTreeSink() override;
 
     void onStart() override;
     void consume(Chunk & chunk) override;
     void onFinish() override;
+    void setHasDependentMaterializedViews(bool has_dependent_views) override;
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
-    /// For ATTACHing existing data on filesystem.
-    bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
+    /// For `ATTACH`ing existing data on filesystem. `RESTORE` paths use `deduplicate_part = false`
+    /// to preserve duplicate parts.
+    bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool deduplicate_part = true);
 
 protected:
     virtual void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper);
@@ -142,12 +146,14 @@ protected:
     bool allow_attach_while_readonly = false;
     bool quorum_parallel = false;
     bool deduplicate = true;
+    bool synchronously_commit_part_for_dependent_views = false;
     UInt64 num_blocks_processed = 0;
 
     LoggerPtr log;
 
     ContextPtr context;
     StorageSnapshotPtr storage_snapshot;
+    std::optional<ZooKeeperRetriesInfo> keeper_retries_info;
 
     bool is_async_insert = true;
     InsertDeduplicationVersions insert_deduplication_version = InsertDeduplicationVersions::NEW_UNIFIED_HASHES;

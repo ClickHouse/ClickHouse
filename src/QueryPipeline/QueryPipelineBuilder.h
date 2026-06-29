@@ -49,7 +49,8 @@ public:
     ~QueryPipelineBuilder() = default;
     QueryPipelineBuilder(QueryPipelineBuilder &&) = default;
     QueryPipelineBuilder(const QueryPipelineBuilder &) = delete;
-    QueryPipelineBuilder & operator= (QueryPipelineBuilder && rhs) = default;
+    /// Not noexcept: the QueryPlanResourceHolder it owns appends on move-assignment, which can throw.
+    QueryPipelineBuilder & operator= (QueryPipelineBuilder && rhs) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     QueryPipelineBuilder & operator= (const QueryPipelineBuilder & rhs) = delete;
 
     /// All pipes must have same header.
@@ -71,10 +72,10 @@ public:
 
     /// Note: this two methods do not care about resources inside the chain.
     /// You should attach them yourself.
-    void addChains(std::vector<Chain> chains);
+    void addChains(VectorWithMemoryTracking<Chain> chains);
     void addChain(Chain chain);
 
-    using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
+    using Transformer = std::function<Processors(const OutputPortRawPtrs & ports)>;
     /// Transform pipeline in general way.
     void transform(const Transformer & transformer, bool check_ports = true);
 
@@ -92,9 +93,6 @@ public:
     /// Forget about current totals and extremes. It is needed before aggregation, cause they will be calculated again.
     void dropTotalsAndExtremes();
 
-    /// Will read from this stream after all data was read from other streams.
-    void addDelayedStream(ProcessorPtr source);
-
     void addMergingAggregatedMemoryEfficientTransform(
         AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
 
@@ -109,7 +107,7 @@ public:
     /// Unite several pipelines together. Result pipeline would have common_header structure.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     static QueryPipelineBuilder unitePipelines(
-            std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
+            VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines,
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 
@@ -117,6 +115,15 @@ public:
         QueryPipelineBuilderPtr left,
         QueryPipelineBuilderPtr right,
         ProcessorPtr transform,
+        Processors * collected_processors);
+
+    /// Select one of two data pipelines based on a signal pipeline.
+    /// All three pipelines are resized to single streams.
+    /// Creates InputSelectorTransform internally.
+    static QueryPipelineBuilderPtr selectPipeline(
+        QueryPipelineBuilderPtr signal,
+        QueryPipelineBuilderPtr true_pipeline,
+        QueryPipelineBuilderPtr false_pipeline,
         Processors * collected_processors);
 
     /// Join two pipelines together using JoinPtr.

@@ -3,6 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Common/NaNUtils.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
@@ -35,7 +36,7 @@ namespace
   * And you're right. But actually it's made similar to a random Python library from the internet:
   * https://github.com/jmoiron/humanize/blob/b37dc30ba61c2446eecb1a9d3e9ac8c9adf00f03/src/humanize/time.py#L462
   */
-class FunctionFormatReadableTimeDelta : public IFunction
+class FunctionFormatReadableTimeDelta final : public IFunction
 {
 public:
     static constexpr auto name = "formatReadableTimeDelta";
@@ -63,7 +64,7 @@ public:
 
         const IDataType & type = *arguments[0];
 
-        if (!isNumber(type))
+        if (!isNumber(type) && !isInterval(type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
 
         if (arguments.size() >= 2)
@@ -149,11 +150,13 @@ public:
         offsets_to.resize(input_rows_count);
 
         WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
+        const auto * interval_type = checkAndGetDataType<DataTypeInterval>(arguments[0].type.get());
+        Float64 seconds_in_interval = interval_type ? interval_type->getKind().toSeconds() : 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             /// Virtual call is Ok (negligible comparing to the rest of calculations).
-            Float64 value = arguments[0].column->getFloat64(i);
+            Float64 value = interval_type ? arguments[0].column->getFloat64(i) * seconds_in_interval : arguments[0].column->getFloat64(i);
 
             if (!isFinite(value))
             {
@@ -172,7 +175,7 @@ public:
                 /// To output separators between parts: ", " and " and ".
                 bool has_output = false;
 
-                Float64 whole_part;
+                Float64 whole_part = 0;
                 std::string fractional_str = getFractionalString(std::modf(value, &whole_part));
 
                 switch (max_unit) /// A kind of Duff Device.
@@ -362,13 +365,15 @@ private:
 REGISTER_FUNCTION(FormatReadableTimeDelta)
 {
     FunctionDocumentation::Description description = R"(
-Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as a string.
+Given a time interval (delta) in seconds or an `INTERVAL` expression, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as a string.
 
 This function accepts any numeric type as input, but internally it casts them to `Float64`. Results might be suboptimal with large values.
+
+When an `INTERVAL` expression is passed, its value is converted to seconds. Interval units of `MONTH` and greater (`MONTH`, `QUARTER`, `YEAR`) are not supported as they don't represent a fixed-sized interval in seconds.
     )";
     FunctionDocumentation::Syntax syntax = "formatReadableTimeDelta(column[, maximum_unit, minimum_unit])";
     FunctionDocumentation::Arguments arguments = {
-        {"column", "A column with a numeric time delta.", {"Float64"}},
+        {"column", "A column with a numeric time delta, or an `INTERVAL` expression. Interval units of `MONTH` and greater are not supported.", {"Float64", "Interval"}},
         {"maximum_unit", "Optional. Maximum unit to show. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. Default value: `years`.", {"const String"}},
         {"minimum_unit", "Optional. Minimum unit to show. All smaller units are truncated. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown. Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.", {"const String"}}
     };
@@ -401,6 +406,16 @@ SELECT
 │      12345 │ 205 minutes and 45 seconds                                      │
 │  432546534 │ 7209108 minutes and 54 seconds                                  │
 └────────────┴─────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "With an INTERVAL expression", R"(
+SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
+        )",
+        R"(
+┌─time_delta─────────────────────────┐
+│ 3 hours, 25 minutes and 45 seconds │
+└────────────────────────────────────┘
         )"
     }
     };

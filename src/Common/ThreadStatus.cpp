@@ -1,16 +1,19 @@
-#include <Common/Exception.h>
-#include <Common/ErrnoException.h>
-#include <Common/ThreadProfileEvents.h>
-#include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
-#include <Common/CurrentThread.h>
-#include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
-#include <Common/memory.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+
 #include <Core/Settings.h>
-#include <base/getPageSize.h>
 #include <Interpreters/Context.h>
+#include <base/getPageSize.h>
+#include <Common/CurrentThread.h>
+#include <Common/ErrnoException.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/QueryProfiler.h>
+#include <Common/SignalUnsafeMutationGuard.h>
+#include <Common/ThreadProfileEvents.h>
+#include <Common/logger_useful.h>
+#include <Common/memory.h>
+#include <Common/setThreadName.h>
+#include <Common/PerCPUMemory.h>
 
 #include <Poco/Logger.h>
 
@@ -20,8 +23,6 @@
 
 namespace DB
 {
-thread_local ThreadStatus constinit * current_thread = nullptr;
-
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
@@ -116,6 +117,9 @@ ThreadStatus::ThreadStatus()
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("Thread");
+    /// memory_tracker is already parented to total_memory_tracker, so a thread that never attaches
+    /// to a group still honors total_memory_tracker_sample_probability.
+    resolveMemorySampleConfig();
     log = getLogger("ThreadStatus");
 
     current_thread = this;
@@ -173,16 +177,22 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
 void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
 {
     chassert(query_id.empty());
+    SignalUnsafeMutationGuard guard(is_query_id_usable);
     query_id = std::move(new_query_id);
 }
 
 void ThreadStatus::clearQueryId() noexcept
 {
+    SignalUnsafeMutationGuard guard(is_query_id_usable);
     query_id.clear();
 }
 
-const String & ThreadStatus::getQueryId() const
+std::string_view ThreadStatus::getQueryId() const
 {
+    if (!is_query_id_usable.load(std::memory_order_acquire))
+        return "";
+
+    std::atomic_signal_fence(std::memory_order_seq_cst);
     return query_id;
 }
 
@@ -235,11 +245,14 @@ LogsLevel ThreadStatus::getClientLogsLevel() const
 
 void ThreadStatus::flushUntrackedMemory()
 {
+    /// The deferred bytes our contribution accounted for are about to be tracked, so remove it.
+    per_cpu_memory.release(per_cpu_untracked_memory);
+
     if (untracked_memory == 0)
         return;
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
-    Int64 current_untracked_memory = current_thread->untracked_memory;
+    Int64 current_untracked_memory = untracked_memory;
     untracked_memory = 0;
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
@@ -268,7 +281,7 @@ ThreadStatus::~ThreadStatus()
 {
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
-    assert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
+    chassert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
 
     /// detachGroup if it was attached
     if (deleter)

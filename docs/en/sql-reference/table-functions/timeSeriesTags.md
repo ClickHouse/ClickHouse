@@ -8,8 +8,6 @@ title: 'timeSeriesTags'
 doc_type: 'reference'
 ---
 
-# timeSeriesTags Table Function
-
 `timeSeriesTags(db_name.time_series_table)` - Returns the [tags](../../engines/table-engines/integrations/time-series.md#tags-table) table
 used by table `db_name.time_series_table` whose table engine is the [TimeSeries](../../engines/table-engines/integrations/time-series.md) engine:
 

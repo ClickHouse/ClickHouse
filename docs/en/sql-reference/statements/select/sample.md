@@ -6,8 +6,6 @@ title: 'SAMPLE Clause'
 doc_type: 'reference'
 ---
 
-# SAMPLE Clause
-
 The `SAMPLE` clause allows for approximated `SELECT` query processing.
 
 When data sampling is enabled, the query is not performed on all the data, but only on a certain fraction of data (sample). For example, if you need to calculate statistics for all the visits, it is enough to execute the query on the 1/10 fraction of all the visits and then multiply the result by 10.

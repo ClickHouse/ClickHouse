@@ -7,8 +7,6 @@ title: 'MySQL table engine'
 doc_type: 'reference'
 ---
 
-# MySQL table engine
-
 The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server.
 
 ## Creating a table {#creating-a-table}
@@ -16,8 +14,8 @@ The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data tha
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
 ) ENGINE = MySQL({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 SETTINGS
@@ -26,7 +24,8 @@ SETTINGS
     [ connection_wait_timeout=5, ]
     [ connection_auto_close=true, ]
     [ connect_timeout=10, ]
-    [ read_write_timeout=300 ]
+    [ read_write_timeout=300, ]
+    [ enable_compression=false ]
 ;
 ```
 
@@ -192,6 +191,35 @@ Possible values:
 - Positive integer.
 
 Default value: `300`.
+
+### `enable_compression` {#enable-compression}
+
+Enables compression for the MySQL protocol connection.
+
+Default value: `false`.
+
+This setting applies to:
+
+- the `MySQL` table engine;
+- the `MySQL` database engine;
+- the `mysql` table function;
+- named collections used by MySQL integrations.
+
+When enabled, ClickHouse requests compression for the connection.
+
+Example:
+
+```sql
+CREATE TABLE mysql_engine_compression
+(
+    id UInt32,
+    name String,
+    age UInt32,
+    money UInt32
+)
+ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
+SETTINGS enable_compression = 1;
+```
 
 ## See also {#see-also}
 

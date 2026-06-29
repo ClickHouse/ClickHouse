@@ -8,19 +8,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 1/1
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 100000000
-                  Parts: 1/1
-                  Granules: 1/1
-                Ranges: 1
+            ReadFromMergeTree (default.tab)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 1/1
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 100000000
+                Parts: 1/1
+                Granules: 1/1
+              Ranges: 1
       LazilyReadFromMergeTree
 12 rows, index_granularity = 3, GRANULARITY = 2 --> 4 granules, 2 indexed block
 6	[0,2]	0
@@ -32,19 +31,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 2/4
-                Ranges: 2
+            ReadFromMergeTree (default.tab)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 2/4
+              Ranges: 2
       LazilyReadFromMergeTree
 Special cases
 -- Non-default metric, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction
@@ -57,19 +55,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 3/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 3/4
+              Ranges: 1
       LazilyReadFromMergeTree
 -- Setting "max_limit_for_vector_search_queries"
 Expression (Project names)
@@ -78,14 +75,13 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Ranges: 1
       LazilyReadFromMergeTree
 -- Test all distance metrics x all quantization
 1	[2,3.2]	2.3323807824711897
@@ -97,19 +93,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_l2_f64)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 4/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_l2_f64)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 4/4
+              Ranges: 1
       LazilyReadFromMergeTree
 1	[2,3.2]	2.3323807824711897
 4	[2.4,5.2]	3.9999999046325727
@@ -120,19 +115,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_l2_f32)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 4/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_l2_f32)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 4/4
+              Ranges: 1
       LazilyReadFromMergeTree
 1	[2,3.2]	2.3323807824711897
 4	[2.4,5.2]	3.9999999046325727
@@ -143,19 +137,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_l2_f16)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 4/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_l2_f16)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 4/4
+              Ranges: 1
       LazilyReadFromMergeTree
 1	[2,3.2]	2.3323807824711897
 4	[2.4,5.2]	3.9999999046325727
@@ -166,19 +159,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_l2_bf16)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 4/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_l2_bf16)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 4/4
+              Ranges: 1
       LazilyReadFromMergeTree
 1	[2,3.2]	2.3323807824711897
 4	[2.4,5.2]	3.9999999046325727
@@ -189,19 +181,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_l2_i8)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 3/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_l2_i8)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 3/4
+              Ranges: 1
       LazilyReadFromMergeTree
 6	[1,9.3]	0.005731362878640178
 4	[2.4,5.2]	0.09204062768384846
@@ -212,19 +203,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_cos_f64)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 3/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_cos_f64)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 3/4
+              Ranges: 1
       LazilyReadFromMergeTree
 6	[1,9.3]	0.005731362878640178
 4	[2.4,5.2]	0.09204062768384846
@@ -235,19 +225,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_cos_f32)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 3/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_cos_f32)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 3/4
+              Ranges: 1
       LazilyReadFromMergeTree
 6	[1,9.3]	0.005731362878640178
 4	[2.4,5.2]	0.09204062768384846
@@ -258,19 +247,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_cos_f16)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 3/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_cos_f16)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 3/4
+              Ranges: 1
       LazilyReadFromMergeTree
 6	[1,9.3]	0.005731362878640178
 4	[2.4,5.2]	0.09204062768384846
@@ -281,19 +269,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_cos_bf16)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 3/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_cos_bf16)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 3/4
+              Ranges: 1
       LazilyReadFromMergeTree
 6	[1,9.3]	0.005731362878640178
 4	[2.4,5.2]	0.09204062768384846
@@ -304,19 +291,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_cos_i8)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 3/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_cos_i8)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 3/4
+              Ranges: 1
       LazilyReadFromMergeTree
 6	[1,9.3]	18.600000381469727
 4	[2.4,5.2]	10.399999618530273
@@ -327,19 +313,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_dot_f64)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 3/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_dot_f64)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 3/4
+              Ranges: 1
       LazilyReadFromMergeTree
 6	[1,9.3]	18.600000381469727
 4	[2.4,5.2]	10.399999618530273
@@ -350,19 +335,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_dot_f32)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 3/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_dot_f32)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 3/4
+              Ranges: 1
       LazilyReadFromMergeTree
 6	[1,9.3]	18.600000381469727
 4	[2.4,5.2]	10.399999618530273
@@ -373,19 +357,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_dot_f16)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 3/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_dot_f16)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 3/4
+              Ranges: 1
       LazilyReadFromMergeTree
 6	[1,9.3]	18.600000381469727
 4	[2.4,5.2]	10.399999618530273
@@ -396,19 +379,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_dot_bf16)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 3/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_dot_bf16)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 3/4
+              Ranges: 1
       LazilyReadFromMergeTree
 6	[1,9.3]	18.600000381469727
 4	[2.4,5.2]	10.399999618530273
@@ -419,19 +401,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab_dot_i8)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 3/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab_dot_i8)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 3/4
+              Ranges: 1
       LazilyReadFromMergeTree
 -- Index on Array(Float64) column
 6	[0,2]	0
@@ -451,19 +432,18 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 3/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 3/4
+              Ranges: 1
       LazilyReadFromMergeTree
 -- Wrong sort direction (DESC for L2Distance), doesnt use the index
 Expression (Project names)
@@ -472,14 +452,13 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Ranges: 1
       LazilyReadFromMergeTree
 -- Wrong sort direction, (DESC for cosineDistance) doesnt use the index
 Expression (Project names)
@@ -488,14 +467,13 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Ranges: 1
       LazilyReadFromMergeTree
 -- Wrong sort direction (ASC for dotProduct), doesnt use the index
 Expression (Project names)
@@ -504,12 +482,11 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            Expression
-              ReadFromMergeTree (default.tab)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Ranges: 1
+            ReadFromMergeTree (default.tab)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Ranges: 1
       LazilyReadFromMergeTree

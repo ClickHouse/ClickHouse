@@ -10,7 +10,7 @@ from .utils import Utils
 
 class CacheRunnerHooks:
     @classmethod
-    def configure(cls, workflow):
+    def configure(cls, workflow, skip_lookup=False):
         workflow_config = RunConfig.from_fs(workflow.name)
         docker_digests = workflow_config.digest_dockers
         cache = Cache()
@@ -74,6 +74,11 @@ class CacheRunnerHooks:
         assert (
             workflow_config.digest_jobs
         ), f"BUG, Workflow with enabled cache must have job digests after configuration, wf [{workflow.name}]"
+
+        if skip_lookup:
+            print("NOTE: Cache lookup skipped, digests computed only")
+            workflow_config.dump()
+            return workflow_config
 
         print("Check remote cache")
 

@@ -37,7 +37,7 @@ try
     , manifest_file_path(manifest_file_path_)
 {
     auto manifest_file_reader
-        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
+        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer), MAX_AVRO_SCHEMA_DEPTH);
 
     avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
     auto data_type = AvroSchemaReader::avroNodeToDataType(root_node);
@@ -84,20 +84,29 @@ TypeIndex AvroForIcebergDeserializer::getTypeForPath(const std::string & path) c
 Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() const
 {
     auto format_version_value = tryGetAvroMetadataValue("format-version");
-    if (!format_version_value.has_value())
-        return 1;
-    try
+    if (format_version_value.has_value())
     {
-        return std::stoi(format_version_value.value());
+        try
+        {
+            return std::stoi(format_version_value.value());
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read iceberg table format version from Iceberg avro manifest file '{}': {}",
+                manifest_file_path,
+                e.what());
+        }
     }
-    catch (const std::exception & e)
-    {
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Cannot read iceberg table format version from Iceberg avro manifest file '{}': {}",
-            manifest_file_path,
-            e.what());
-    }
+
+    /// Older ClickHouse versions wrote both manifest lists and manifest files without the
+    /// `format-version` Avro metadata key, so we fall back to schema-based detection: the
+    /// `sequence_number` field appears at the top level of v2 manifest lists and v2
+    /// manifest entries, but is absent from their v1 counterparts.
+    if (hasPath(f_sequence_number))
+        return 2;
+    return 1;
 }
 
 

@@ -105,4 +105,3 @@ disguis
 -- Array(UInt32) as first argument raises ILLEGAL_TYPE_OF_ARGUMENT.
 -- Array(Nullable(UInt32)) as first argument raises ILLEGAL_TYPE_OF_ARGUMENT.
 -- Array(Array(String)) as first argument raises ILLEGAL_TYPE_OF_ARGUMENT.
--- Calling without the experimental setting raises SUPPORT_IS_DISABLED.

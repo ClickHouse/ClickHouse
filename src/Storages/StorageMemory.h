@@ -126,8 +126,12 @@ public:
       */
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
-    void setMaterializedCTE(MaterializedCTEPtr materialized_cte_) { materialized_cte = std::move(materialized_cte_); }
-    const MaterializedCTEPtr & getMaterializedCTE() const { return materialized_cte; }
+    /// Stored as a weak_ptr to break the reference cycle: MaterializedCTE owns the StorageMemory
+    /// (via its `storage` and `table_holder` members), and this back-pointer lets us recover the
+    /// CTE descriptor from the storage. If we kept a shared_ptr here, neither object would ever
+    /// be destroyed, and the temporary table would never be removed from `DatabaseMemory`.
+    void setMaterializedCTE(MaterializedCTEPtr materialized_cte_) { materialized_cte = materialized_cte_; }
+    MaterializedCTEPtr getMaterializedCTE() const { return materialized_cte.lock(); }
 
 private:
     static VirtualColumnsDescription createVirtuals();
@@ -142,7 +146,7 @@ private:
     mutable std::mutex mutex;
 
     bool delay_read_for_global_subqueries = false;
-    MaterializedCTEPtr materialized_cte;
+    MaterializedCTEWeakPtr materialized_cte;
 
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;

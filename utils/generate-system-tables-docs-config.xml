@@ -1,8 +1,10 @@
 <clickhouse>
-    <!-- Enable all system log tables so their columns appear in system.columns.
-         NOTE: Currently log tables are not created in clickhouse-local because
-         initializeSystemLogs() requires full server infrastructure.
-         These entries are kept for future use when this limitation is resolved. -->
+    <!-- Enable system log tables so their columns appear in `system.columns`.
+         `clickhouse-local` initializes system logs whenever any `<*_log>` section is
+         present in the config (see `hasAnySystemLogConfigured` and
+         `LocalServer::connect`); `prepare_system_log_tables_on_startup` then creates
+         the tables eagerly so their schemas are visible without flushing logs first. -->
+    <prepare_system_log_tables_on_startup>true</prepare_system_log_tables_on_startup>
     <query_log><database>system</database><table>query_log</table></query_log>
     <query_thread_log><database>system</database><table>query_thread_log</table></query_thread_log>
     <part_log><database>system</database><table>part_log</table></part_log>
@@ -32,4 +34,6 @@
     <aggregated_zookeeper_log><database>system</database><table>aggregated_zookeeper_log</table></aggregated_zookeeper_log>
     <iceberg_metadata_log><database>system</database><table>iceberg_metadata_log</table></iceberg_metadata_log>
     <delta_lake_metadata_log><database>system</database><table>delta_lake_metadata_log</table></delta_lake_metadata_log>
+    <predicate_statistics_log><database>system</database><table>predicate_statistics_log</table></predicate_statistics_log>
+    <histogram_metric_log><database>system</database><table>histogram_metric_log</table></histogram_metric_log>
 </clickhouse>

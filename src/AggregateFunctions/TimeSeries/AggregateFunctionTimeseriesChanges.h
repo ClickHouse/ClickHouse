@@ -88,7 +88,7 @@ public:
 
     void deserializeBucket(Bucket & bucket, ReadBuffer & buf, const size_t bucket_index) const
     {
-        size_t sample_count;
+        size_t sample_count = 0;
         readBinaryLittleEndian(sample_count,buf);
         bucket.samples.reserve(sample_count);
 
@@ -173,7 +173,11 @@ public:
         /// Fill the data for missing buckets
         for (UInt32 i = 0; i < Base::bucket_count; ++i)
         {
-            const TimestampType current_timestamp = Base::start_timestamp + i * Base::step;
+            /// Use `Base::timestampAtIndex` to compute the grid timestamp with overflow-safe
+            /// arithmetic. The plain expression `Base::start_timestamp + i * Base::step`
+            /// signed-overflows `TimestampType` when `step` is near `INT64_MAX` and `i >= 2`
+            /// (reachable from adversarial fuzzer inputs), which trips UBSAN.
+            const TimestampType current_timestamp = Base::timestampAtIndex(i);
 
             auto bucket_it = buckets.find(i);
             if (bucket_it != buckets.end())
@@ -190,7 +194,8 @@ public:
             }
 
             /// Remove samples that are out of the window
-            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window <= current_timestamp)
+            while (!samples_in_window.empty()
+                   && Base::isSampleOutOfWindow(samples_in_window.front().first, current_timestamp))
             {
                 samples_in_window.pop_front();
             }
