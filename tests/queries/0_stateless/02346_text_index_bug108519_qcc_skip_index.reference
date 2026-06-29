@@ -12,3 +12,5 @@ alter_populate	0
 alter_no_stale_read	1
 disj_off_consults_entry	0
 disj_same_reuses_entry	1
+namecol_read_b_consults_entry	0
+namecol_reuse_a_reuses_entry	1

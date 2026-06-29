@@ -1382,20 +1382,29 @@ UInt64 MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(UInt64 con
     /// drops indexes no longer present in metadata, and leaves it empty when use_skip_indexes = 0. So
     /// any change to the running set (a different ignore list, an index dropped/added/redefined, skip
     /// indexes off) changes the key, and a query that did not run an index never reads a verdict
-    /// produced by it. Each index contributes the tree hash of its full definition AST (name, type,
-    /// expression, granularity, arguments), so a same-name/same-type index with a different definition
-    /// is also distinguished. Index names are unique within a table, so sorting by name is a
-    /// deterministic, order-independent ordering; each per-index contribution is fixed width (two
-    /// UInt64), so different sets cannot collide by concatenation.
-    std::vector<std::pair<String, IASTHash>> index_identities;
+    /// produced by it. Each index contributes a stable identity: its name, its granularity, and the
+    /// tree hash of its definition AST (type, expression, arguments). name and granularity are plain
+    /// members of ASTIndexDeclaration and are not part of its tree hash, so they are folded in
+    /// separately; otherwise two indexes with the same expression and type but a different name or
+    /// granularity would share a key (the partially-materialized case: a verdict produced while one
+    /// index ran could be served to a query running only the other). The name is length-prefixed so
+    /// distinct (name, granularity) pairs cannot collide by concatenation. Index names are unique
+    /// within a table, so sorting by name is a deterministic, order-independent ordering.
+    std::vector<std::tuple<String, UInt64, IASTHash>> index_identities;
     index_identities.reserve(indexes.skip_indexes.useful_indices.size());
     for (const auto & useful_index : indexes.skip_indexes.useful_indices)
-        index_identities.emplace_back(useful_index.index->index.name, useful_index.index->index.definition_ast->getTreeHash(/*ignore_aliases=*/true));
-    std::sort(index_identities.begin(), index_identities.end(), [](const auto & l, const auto & r) { return l.first < r.first; });
+        index_identities.emplace_back(
+            useful_index.index->index.name,
+            useful_index.index->index.granularity,
+            useful_index.index->index.definition_ast->getTreeHash(/*ignore_aliases=*/true));
+    std::sort(index_identities.begin(), index_identities.end(), [](const auto & l, const auto & r) { return std::get<0>(l) < std::get<0>(r); });
 
     hash.update(index_identities.size());
-    for (const auto & [name, definition_hash] : index_identities)
+    for (const auto & [name, granularity, definition_hash] : index_identities)
     {
+        hash.update(name.size());
+        hash.update(name);
+        hash.update(granularity);
         hash.update(definition_hash.low64);
         hash.update(definition_hash.high64);
     }

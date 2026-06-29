@@ -185,3 +185,48 @@ FROM system.query_log WHERE current_database = currentDatabase() AND type = 'Que
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE tab_disj;
+
+-- Two indexes with the same expression and type but different names. The index name and granularity
+-- are plain members of ASTIndexDeclaration and are not part of its tree hash, so an entry written
+-- while ix_a ran must not be consulted by a query that ran ix_b instead (a different effective set).
+-- The names are folded into the key separately (length-prefixed), so the two profiles do not collide.
+-- This is the partially-materialized hazard: ix_b may not be built for a part, so a query "running
+-- ix_b" would otherwise replay ix_a's exclusion. minmax exclusions are sound, so the divergence is not
+-- a wrong row count; assert it via the QueryConditionCacheHits profile event. ix_a runs while ix_b is
+-- ignored (populate), then ix_b runs while ix_a is ignored (must miss), then ix_a runs again (must hit,
+-- so reuse for the same profile is preserved). tab_namecol is freshly created, so no instance-wide
+-- SYSTEM DROP QUERY CONDITION CACHE is needed (that would race sibling QCC tests in the parallel pool).
+DROP TABLE IF EXISTS tab_namecol;
+CREATE TABLE tab_namecol
+(
+    n UInt64,
+    INDEX ix_a n TYPE minmax GRANULARITY 1,
+    INDEX ix_b n TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO tab_namecol VALUES (2), (5);
+
+-- Populate running ix_a (ix_b ignored): n = 999 matches nothing, ix_a drops both granules (sound).
+SELECT count() FROM tab_namecol WHERE n = 999
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0, ignore_data_skipping_indices = 'ix_b', log_comment = '02346_qcc_namecol_pop_a' FORMAT Null;
+
+-- Same predicate running ix_b (ix_a ignored): a different effective set, so this must NOT consult ix_a's
+-- entry. Before folding the name into the key, the two sets shared a profiled key and this hit.
+SELECT count() FROM tab_namecol WHERE n = 999
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0, ignore_data_skipping_indices = 'ix_a', log_comment = '02346_qcc_namecol_read_b' FORMAT Null;
+
+-- Same predicate, same profile as the populate (ix_a, ix_b ignored): must hit, so reuse is preserved.
+SELECT count() FROM tab_namecol WHERE n = 999
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0, ignore_data_skipping_indices = 'ix_b', log_comment = '02346_qcc_namecol_reuse_a' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'namecol_read_b_consults_entry', ProfileEvents['QueryConditionCacheHits']
+FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_qcc_namecol_read_b'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+SELECT 'namecol_reuse_a_reuses_entry', ProfileEvents['QueryConditionCacheHits']
+FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_qcc_namecol_reuse_a'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+DROP TABLE tab_namecol;
