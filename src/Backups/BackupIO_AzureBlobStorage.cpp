@@ -39,8 +39,8 @@ namespace
         /// fields (which come from server settings, not RequestSettings), so the map is not misleading
         /// about what the backup engine effectively uses.
         return {
-            {"use_native_copy", settings.use_native_copy ? "true" : "false"},
-            {"check_objects_after_upload", settings.check_objects_after_upload ? "true" : "false"},
+            {"use_native_copy", settings.use_native_copy ? "1" : "0"},
+            {"check_objects_after_upload", settings.check_objects_after_upload ? "1" : "0"},
             {"max_single_part_upload_size", std::to_string(settings.max_single_part_upload_size)},
             /// Backup reads use ReadBufferFromAzureBlobStorage, whose seek coalescing uses the read
             /// setting (remote_read_min_bytes_for_seek), not RequestSettings::min_bytes_for_seek.

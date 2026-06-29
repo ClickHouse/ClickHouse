@@ -60,7 +60,7 @@ struct BackupOperationInfo
     /// Profile events collected during the backup.
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters = nullptr;
 
-    /// Backup/restore-specific settings requested for this operation (the SETTINGS clause).
+    /// Backup/restore-specific settings effectively used for this operation (from the `SETTINGS` clause, including defaults).
     /// Sensitive settings are not stored. Core query settings are observable via `system.query_log`.
     std::map<String, String> settings;
 
