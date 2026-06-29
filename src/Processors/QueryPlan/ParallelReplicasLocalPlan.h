@@ -12,7 +12,7 @@ class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
 std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
-    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
     const Block & header,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage);

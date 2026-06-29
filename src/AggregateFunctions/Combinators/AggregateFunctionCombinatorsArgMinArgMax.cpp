@@ -183,7 +183,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if ((isMin && data(place).data().setIfSmaller(data(rhs).data(), arena))
             || (!isMin && data(place).data().setIfGreater(data(rhs).data(), arena)))
@@ -261,8 +261,14 @@ public:
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<CombinatorArgMinArgMax<true>>());
-    factory.registerCombinator(std::make_shared<CombinatorArgMinArgMax<false>>());
+    factory.registerCombinator(std::make_shared<CombinatorArgMinArgMax<true>>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumArgMin`), it adds an extra trailing argument that should be any comparable expression. The nested aggregate function processes only the rows that have the minimum value of that extra expression, using all of the preceding arguments (which may be zero, one, or several, e.g. `countArgMin(key)`, `sumArgMin(x, key)`, `corrArgMin(x, y, key)`).",
+        .syntax = "<aggregate_function>ArgMin([arg, ...], key)",
+        .related = {"ArgMax"}});
+    factory.registerCombinator(std::make_shared<CombinatorArgMinArgMax<false>>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumArgMax`), it adds an extra trailing argument that should be any comparable expression. The nested aggregate function processes only the rows that have the maximum value of that extra expression, using all of the preceding arguments (which may be zero, one, or several, e.g. `countArgMax(key)`, `sumArgMax(x, key)`, `corrArgMax(x, y, key)`).",
+        .syntax = "<aggregate_function>ArgMax([arg, ...], key)",
+        .related = {"ArgMin"}});
 }
 
 }

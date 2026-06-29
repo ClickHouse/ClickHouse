@@ -19,26 +19,31 @@ namespace ErrorCodes
 }
 
 template <typename T>
-EnumValues<T>::EnumValues(const Values & values_)
+EnumValues<T>::EnumValues(const Values & values_, ValidationMode validation_mode)
     : values(values_)
 {
     if (values.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "DataTypeEnum enumeration cannot be empty");
 
-    /// Sort values by numeric value (for getValues() compatibility)
-    ::sort(std::begin(values), std::end(values), [](const auto & left, const auto & right)
+    /// Temporary `ADD ENUM VALUES` entries carry per-element relative flags, so their order
+    /// must stay exactly as parsed until `mergeEnumTypes` consumes those flags.
+    if (validation_mode == ValidationMode::Normal)
     {
-        return left.second < right.second;
-    });
+        /// Sort values by numeric value (for getValues() compatibility)
+        ::sort(std::begin(values), std::end(values), [](const auto & left, const auto & right)
+        {
+            return left.second < right.second;
+        });
+    }
 
-    buildLookupStructures();
+    buildLookupStructures(validation_mode);
 }
 
 template <typename T>
 EnumValues<T>::~EnumValues() = default;
 
 template <typename T>
-void EnumValues<T>::buildLookupStructures()
+void EnumValues<T>::buildLookupStructures(ValidationMode validation_mode)
 {
     const size_t n = values.size();
 
@@ -63,6 +68,15 @@ void EnumValues<T>::buildLookupStructures()
                     toString(values[name_sorted_index[i]].second));
         }
     }
+
+    /// `ADD ENUM VALUES` may temporarily rewrite a leading implicit prefix to `1..N`. These numbers are
+    /// only relative placeholders until `mergeEnumTypes` remaps them, so a `TemporaryAdd` instance keeps
+    /// its values in parser order (not sorted by value) and may contain duplicate placeholder values.
+    /// Skip duplicate-value validation and the value-to-name lookup structures: such an instance is only
+    /// used to read back `getValues()` and is never queried by value, and building the value-to-name
+    /// lookup here would be incorrect (and could even overflow the range) on unsorted values.
+    if (validation_mode == ValidationMode::TemporaryAdd)
+        return;
 
     /// Check for duplicate values (values are already sorted by value)
     for (size_t i = 1; i < n; ++i)
@@ -208,9 +222,9 @@ size_t EnumValues<T>::allocatedBytes() const
 }
 
 template <typename T>
-Names EnumValues<T>::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> EnumValues<T>::getAllRegisteredNames() const
 {
-    Names result;
+    VectorWithMemoryTracking<String> result;
     result.reserve(values.size());
     for (const auto & value : values)
         result.emplace_back(value.first);

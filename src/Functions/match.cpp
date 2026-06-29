@@ -39,7 +39,7 @@ Alternative operator syntax: `haystack REGEXP pattern`.
     FunctionDocumentation::Syntax syntax = "match(haystack, pattern)";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "String in which the pattern is searched.", {"String"}},
-        {"pattern", "Regular expression pattern.", {"const String"}}
+        {"pattern", "Regular expression pattern. Can be a constant or come from a column.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the pattern matches, `0` otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {

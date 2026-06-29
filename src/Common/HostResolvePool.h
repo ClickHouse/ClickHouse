@@ -83,7 +83,11 @@ public:
         const String & operator*() & { return resolved_host; }
         const String & operator*() const & { return resolved_host; }
 
+        /// Mark the address as failed in the pool. Also suppresses the destructor's success callback.
         void setFail();
+        /// Suppress the destructor's success callback without reporting a failure to the pool.
+        /// Use when the address was selected via `resolve` but never actually attempted
+        void setUnused();
         ~Entry();
 
     private:
@@ -99,7 +103,8 @@ public:
         const Poco::Net::IPAddress address;
         const String resolved_host;
 
-        bool fail = false;
+        /// When true, the destructor will not call `pool->setSuccess`.
+        bool skip_success_callback = false;
     };
 
     /// can throw NetException(ErrorCodes::DNS_ERROR, ...), Exception(ErrorCodes::BAD_ARGUMENTS, ...)
@@ -191,10 +196,19 @@ protected:
             return was_ok;
         }
 
-        void setSuccess()
+        /// Returns true if the address was failed and is now cleared, so the caller can
+        /// adjust the banned-count metric. A successful connection proves the address is
+        /// reachable, so it must be un-banned even if it was handed out while failed (the
+        /// all-banned zero-weight branch in `selectBest` can do that under a transient race).
+        bool setSuccess()
         {
+            bool was_failed = failed;
+
+            failed = false;
             consecutive_fail_count = 0;
             ++usage;
+
+            return was_failed;
         }
     };
 
@@ -240,6 +254,12 @@ public:
     void dropCache();
 
     HostResolver::Ptr getResolver(const String & host);
+
+    /// Pre-populate the pool with a resolver for `host`, replacing any cached entry.
+    /// For tests: allows simulating multi-address DNS responses without injecting into
+    /// the real `DNSResolver`, so the `prepareNewConnection` retry path can be exercised
+    /// deterministically.
+    void injectResolverForTest(const String & host, HostResolver::Ptr resolver);
 private:
     std::mutex mutex;
     std::unordered_map<String, HostResolver::Ptr> host_pools TSA_GUARDED_BY(mutex);

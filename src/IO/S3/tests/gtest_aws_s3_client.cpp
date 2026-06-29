@@ -630,6 +630,100 @@ TEST(IOTestAwsS3Client, AssumeRole)
     }
 }
 
+TEST(IOTestAwsS3Client, ClientCacheRegistryGetOrCreateCacheForKey)
+{
+    auto & registry = DB::S3::ClientCacheRegistry::instance();
+
+    std::shared_ptr<DB::S3::ClientCache> cache_ab1 = registry.getOrCreateCacheForKey("endpoint1", "bucket1");
+    std::shared_ptr<DB::S3::ClientCache> cache_ab2 = registry.getOrCreateCacheForKey("endpoint1", "bucket1");
+    EXPECT_EQ(cache_ab1.get(), cache_ab2.get()) << "Same (endpoint, bucket) should return the same cache";
+
+    std::shared_ptr<DB::S3::ClientCache> cache_b1 = registry.getOrCreateCacheForKey("endpoint1", "bucket2");
+    EXPECT_NE(cache_ab1.get(), cache_b1.get()) << "Different bucket should return different cache";
+
+    std::shared_ptr<DB::S3::ClientCache> cache_e2 = registry.getOrCreateCacheForKey("endpoint2", "bucket1");
+    EXPECT_NE(cache_ab1.get(), cache_e2.get()) << "Different endpoint should return different cache";
+
+    auto cache_concat1 = registry.getOrCreateCacheForKey("ab", "c");
+    auto cache_concat2 = registry.getOrCreateCacheForKey("a", "bc");
+    EXPECT_NE(cache_concat1.get(), cache_concat2.get())
+        << "Pairs with identical concatenation but different boundary must not share a cache";
+}
+
+TEST(IOTestAwsS3Client, ClientSharesCacheWithClone)
+{
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::URI uri("https://s3.eu-central-1.amazonaws.com/my-bucket/key");
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "eu-central-1",
+        remote_host_filter,
+        10,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        true,
+        true,
+        false,
+        false,
+        {},
+        {},
+        "https");
+    client_configuration.endpointOverride = uri.endpoint;
+
+    DB::S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
+        .gcs_issue_compose_request = false,
+        .is_s3express_bucket = false,
+    };
+
+    auto shared_cache = DB::S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(uri.endpoint, uri.bucket);
+    std::unique_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
+        client_configuration,
+        client_settings,
+        "access",
+        "secret",
+        "",
+        {},
+        {},
+        DB::S3::CredentialsConfiguration{.use_environment_credentials = false, .use_insecure_imds_request = false},
+        "",
+        shared_cache);
+
+    ASSERT_TRUE(client);
+    std::unique_ptr<DB::S3::Client> clone = client->clone();
+    ASSERT_TRUE(clone);
+
+    EXPECT_EQ(client->getRawCache(), shared_cache.get()) << "Client should use the shared cache";
+    EXPECT_EQ(clone->getRawCache(), client->getRawCache()) << "Clone should share the same cache as original";
+}
+
+TEST(IOTestAwsS3Client, ClientCacheRegistryRefcount)
+{
+    /// Verify ClientCacheRegistry refcounting directly via the test-only refcount accessor.
+    /// We can't go through Client construction/destruction because Client::~Client catches
+    /// and logs exceptions from unregisterClient, so a refcount bug would be invisible;
+    /// and we can't probe via the throwing path (the entry was already removed) because in
+    /// debug/sanitizer builds LOGICAL_ERROR aborts the process instead of throwing.
+    auto & registry = DB::S3::ClientCacheRegistry::instance();
+    auto shared_cache = registry.getOrCreateCacheForKey(
+        "https://s3.us-east-1.amazonaws.com",
+        "test-refcount-bucket");
+
+    ASSERT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 0u);
+
+    registry.registerClient(shared_cache);
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 1u);
+
+    /// Second registration of the same cache must bump the refcount, not silently no-op.
+    registry.registerClient(shared_cache);
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 2u);
+
+    registry.unregisterClient(shared_cache.get());
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 1u);
+
+    registry.unregisterClient(shared_cache.get());
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 0u);
+}
+
 TEST(IOTestAwsS3Client, WebIdentityConfiguredFromEnvironment)
 {
     constexpr const char * k_role = "AWS_ROLE_ARN";

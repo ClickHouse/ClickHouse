@@ -222,7 +222,7 @@ String removeEscapedSlashes(const String & json_str)
 static void extendSchemaForPartitions(
     String & schema,
     const std::vector<String> & partition_columns,
-    const std::vector<DataTypePtr> & partition_types)
+    const DataTypes & partition_types)
 {
     Poco::JSON::Array::Ptr partition_fields = new Poco::JSON::Array;
     for (size_t i = 0; i < partition_columns.size(); ++i)
@@ -251,7 +251,7 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
-    const std::vector<DataTypePtr> & partition_types,
+    const DataTypes & partition_types,
     const std::vector<IcebergPathFromMetadata> & data_file_names,
     const std::vector<UInt64> & data_file_row_counts,
     const std::vector<UInt64> & data_file_byte_counts,
@@ -290,6 +290,7 @@ void generateManifestFile(
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
     writer.setMetadata(Iceberg::f_schema, json_representation);
+    writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
     std::ostringstream oss_partition_spec; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec);
@@ -483,6 +484,7 @@ void generateManifestList(
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
+    writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
     for (size_t entry_idx = 0; entry_idx < manifest_entry_names.size(); ++entry_idx)
     {
@@ -1005,7 +1007,7 @@ bool IcebergStorageSink::initializeMetadata()
                     metadata,
                     partitioner ? partitioner->getColumns() : std::vector<String>{},
                     partition_key,
-                    partitioner ? partitioner->getResultTypes() : std::vector<DataTypePtr>{},
+                    partitioner ? partitioner->getResultTypes() : DataTypes{},
                     writer.getDataFiles(),
                     writer.getDataFileRowCounts(),
                     writer.getDataFileByteCounts(),

@@ -35,7 +35,7 @@ public:
     bool has(const String & function_name) const;
 
     /// Get all user defined functions registered names.
-    Strings getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     /// Check whether any UDFs have been registered
     bool empty() const;

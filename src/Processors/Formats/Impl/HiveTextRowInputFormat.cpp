@@ -62,6 +62,15 @@ void registerInputFormatHiveText(FormatFactory & factory)
         {
             return std::make_shared<HiveTextRowInputFormat>(std::make_unique<const Block>(sample), buf, params, settings);
         });
+
+    factory.setDocumentation("HiveText", Documentation{
+        .description = R"DOCS_MD(
+## Description {#description}
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
 void registerFileSegmentationEngineHiveText(FormatFactory & factory);
