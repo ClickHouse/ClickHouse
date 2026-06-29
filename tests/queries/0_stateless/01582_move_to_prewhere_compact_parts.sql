@@ -1,5 +1,6 @@
 -- Tags: no-random-merge-tree-settings
 SET explain_query_plan_default = 'legacy';
+SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT change the plan
 
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
