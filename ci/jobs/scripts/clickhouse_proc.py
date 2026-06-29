@@ -106,6 +106,10 @@ class ClickHouseProc:
         # caller can persist the real detail (e.g. the clickminio restart status)
         # into the step Result.info / CIDB instead of a generic note.
         self.minio_setup_error = None
+        # Same idea for prepare_stateful_data(): the failing sub-command + its
+        # ClickHouse error tail, so the re-prepare ERROR row carries the real
+        # reason instead of the generic "failed to re-prepare stateful data".
+        self.stateful_setup_error = None
         self.debug_artifacts = []
         self.extra_tests_results = []
         self.logs = []
@@ -709,12 +713,17 @@ profiles:
         return True
 
     def prepare_stateful_data(self, with_s3_storage, is_db_replicated):
+        self.stateful_setup_error = None
         if is_db_replicated:
             print("Skip stateful data preparation for db replicated")
             return True
         command = """
 set -e
 set -o pipefail
+# Record which sub-command failed (set -e then exits). Combined with the
+# ClickHouse client error already on stderr, this is captured below so the
+# bugfix-validation re-prepare path can report the real reason.
+trap 'rc=$?; echo "prepare_stateful_data: command at line $LINENO failed with exit $rc" >&2' ERR
 
 MAX_EXECUTION_TIME=1800
 
@@ -758,7 +767,26 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 """
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
-        return Shell.check(command)
+        # Run via Shell.run (bash, like Shell.check) but keep a log file so that
+        # on failure we can surface the failing sub-command + its ClickHouse
+        # error tail to the caller. Same success semantics as before
+        # (returncode == 0). This is what makes the intermittent msan re-prepare
+        # failure diagnosable in CIDB instead of a generic boolean.
+        log_file = f"{temp_dir}/prepare_stateful_data.log"
+        rc = Shell.run(command, log_file=log_file, verbose=True)
+        if rc != 0:
+            tail = ""
+            try:
+                with open(log_file, errors="ignore") as f:
+                    tail = "".join(f.readlines()[-15:]).strip()
+            except OSError:
+                pass
+            self.stateful_setup_error = (
+                f"stateful data prep failed (exit {rc})"
+                + (f": {tail}" if tail else "")
+            )
+            print(f"ERROR: {self.stateful_setup_error}")
+        return rc == 0
 
     def insert_system_zookeeper_config(self):
         for _ in range(10):

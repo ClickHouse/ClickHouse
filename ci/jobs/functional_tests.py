@@ -671,7 +671,13 @@ def main():
                     with_s3_storage=is_s3_storage,
                     is_db_replicated=is_database_replicated,
                 ):
-                    print("SETUP FAILURE: prepare_stateful_data failed")
+                    print(
+                        "SETUP FAILURE: "
+                        + (
+                            CH.stateful_setup_error
+                            or "prepare_stateful_data failed"
+                        )
+                    )
                     res = False
                 elif not CH.insert_system_zookeeper_config():
                     print("SETUP FAILURE: insert_system_zookeeper_config failed")
@@ -868,7 +874,14 @@ def main():
                             and CH.insert_system_zookeeper_config()
                         )
                         if not reprepared:
-                            reprepare_error = "failed to re-prepare stateful data"
+                            # Prefer the concrete sub-command + ClickHouse error
+                            # captured by prepare_stateful_data() over the generic
+                            # message, so the (intermittent, msan) re-prepare
+                            # failure is diagnosable in CIDB test_context_raw.
+                            reprepare_error = (
+                                CH.stateful_setup_error
+                                or "failed to re-prepare stateful data"
+                            )
                     if not reprepared:
                         info_text = (
                             "Failed to re-prepare the test environment "
