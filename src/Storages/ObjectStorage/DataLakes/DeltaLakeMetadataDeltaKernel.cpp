@@ -43,7 +43,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int TABLE_ALREADY_EXISTS;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -724,7 +723,7 @@ void DeltaLakeMetadataDeltaKernel::createTable(
     const ContextPtr & local_context,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
-    bool if_not_exists)
+    bool /* if_not_exists */)
 {
     auto log = getLogger("DeltaLakeMetadataDeltaKernel");
 
@@ -732,30 +731,29 @@ void DeltaLakeMetadataDeltaKernel::createTable(
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Delta table, but storage configuration is expired");
 
-    if (!local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "To enable delta lake writes (including CREATE TABLE), use allow_experimental_delta_lake_writes = 1");
-
-    /// If a `_delta_log` already exists at the location, treat the table as
-    /// existing: bail out cleanly under IF NOT EXISTS, otherwise refuse.
-    /// `listFiles` returns the .json commits; an empty `_delta_log` directory
-    /// (which the kernel will also refuse to overwrite) is conservatively
-    /// treated as existing.
+    /// If a `_delta_log` already exists at the location, the Delta table is already
+    /// present on storage. This is the normal "point a ClickHouse table at an existing
+    /// Delta table" flow (the primary, read-only path), so attach to it instead of
+    /// creating -- regardless of `IF NOT EXISTS` and without requiring write access.
+    /// A duplicate ClickHouse table *name* is rejected separately by `IDatabase::createTable`.
+    /// `listFiles` returns the .json commits.
     const auto data_path = configuration_ptr->getRawPath().path;
     const auto existing_commits = listFiles(*object_storage_, data_path, deltalake_metadata_directory, metadata_file_suffix);
     if (!existing_commits.empty())
     {
-        if (if_not_exists)
-        {
-            LOG_DEBUG(log, "Delta table already exists at `{}`, IF NOT EXISTS no-op", data_path);
-            return;
-        }
-        throw Exception(
-            ErrorCodes::TABLE_ALREADY_EXISTS,
-            "Delta table at `{}` already has a `_delta_log` with {} commit(s)",
+        LOG_DEBUG(
+            log,
+            "Delta table already exists at `{}` ({} commit(s)); attaching to it without creating",
             data_path, existing_commits.size());
+        return;
     }
+
+    /// Creating a brand-new Delta table writes the initial commit, which is a write
+    /// operation and therefore requires delta lake writes to be enabled.
+    if (!local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "To enable delta lake writes (including CREATE TABLE), use allow_experimental_delta_lake_writes = 1");
 
     /// Qualify: a member function `getKernelHelper()` shadows the free
     /// function inside this class's static methods.

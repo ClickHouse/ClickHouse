@@ -60,8 +60,11 @@ DROP TABLE t_dl_schema_types;
 
 # The commit JSON must contain every logical column name so downstream readers
 # (kernel or another Delta implementation) reconstruct the schema correctly.
+# Column names live in the `metaData.schemaString` field, which is itself a
+# JSON-encoded string, so the quotes around each name are backslash-escaped
+# (e.g. \"c_byte\"). Match that escaped form with a fixed-string grep.
 for col in c_byte c_short c_int c_long c_float c_double c_string c_n_int c_n_str; do
-    if ! grep -q "\"$col\"" "$INITIAL_LOG"; then
+    if ! grep -qF "\\\"$col\\\"" "$INITIAL_LOG"; then
         echo "fail: column $col not found in initial commit"
         exit 1
     fi

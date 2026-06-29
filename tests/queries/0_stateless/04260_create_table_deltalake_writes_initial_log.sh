@@ -38,8 +38,11 @@ fi
 echo "post-create: initial commit exists"
 
 # Capture the file size so we can prove the no-op CREATE does not overwrite it.
+# Use GNU `stat -c %Y` first (Linux CI) and fall back to BSD `stat -f %m` (macOS):
+# on Linux, `stat -f` is `--file-system` and would emit volatile free-block counts
+# into the captured value, making the BEFORE/AFTER comparison spuriously differ.
 SIZE_BEFORE=$(wc -c < "$INITIAL_LOG")
-MTIME_BEFORE=$(stat -f "%m" "$INITIAL_LOG" 2>/dev/null || stat -c "%Y" "$INITIAL_LOG")
+MTIME_BEFORE=$(stat -c "%Y" "$INITIAL_LOG" 2>/dev/null || stat -f "%m" "$INITIAL_LOG")
 
 # Round-trip a write through the kernel to confirm the new table is fully usable.
 $CLICKHOUSE_CLIENT --query "
@@ -65,7 +68,7 @@ DROP TABLE t_dl_initial;
 "
 
 SIZE_AFTER=$(wc -c < "$INITIAL_LOG")
-MTIME_AFTER=$(stat -f "%m" "$INITIAL_LOG" 2>/dev/null || stat -c "%Y" "$INITIAL_LOG")
+MTIME_AFTER=$(stat -c "%Y" "$INITIAL_LOG" 2>/dev/null || stat -f "%m" "$INITIAL_LOG")
 
 if [ "$SIZE_BEFORE" != "$SIZE_AFTER" ] || [ "$MTIME_BEFORE" != "$MTIME_AFTER" ]; then
     echo "fail: initial commit file was rewritten by the second CREATE TABLE"

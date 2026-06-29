@@ -76,7 +76,8 @@ public:
     /// which itself converts `ColumnsDescription` -> `StructType` through
     /// `buildKernelEngineSchema` (in `getSchemaFromSnapshot.{h,cpp}`, alongside
     /// the existing kernel <-> ClickHouse schema helpers).
-    /// No-op (or throws) when the location already has a `_delta_log`.
+    /// When the location already has a `_delta_log`, attaches to the existing table
+    /// (no commit is written and write access is not required).
     /// Direct entry point for both `DeltaLakeMetadata::createInitial`
     /// (standalone `ENGINE = DeltaLake(...)`) and `DatabaseDataLake::createTable`
     /// (Unity / catalog-managed paths).
@@ -86,7 +87,7 @@ public:
         const ContextPtr & local_context,
         const ColumnsDescription & columns,
         ASTPtr partition_by,
-        bool if_not_exists);
+        bool /* if_not_exists */);
 
     std::optional<size_t> totalRows(ContextPtr) const override;
 
