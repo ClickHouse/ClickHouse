@@ -522,8 +522,12 @@ private:
             if (!isAscii(lo_byte))
                 return false; /// Char classes must be ASCII-only to stay byte/code-point equivalent.
 
-            /// Range like `a-z` (but a trailing `-` before `]` is a literal `-`).
-            if (peek() == '-' && peek(1) != ']' && peek(1) != '\0')
+            /// Range like `a-z` (but a trailing `-` before `]` is a literal `-`). Use an explicit
+            /// bounds check rather than `peek(1) != '\0'`: a real NUL byte after `-` (e.g. `[a-\0]`,
+            /// which arrives as a length-delimited byte) is a genuine range endpoint, so it must reach
+            /// the `hi_byte < lo_byte` check below and be rejected exactly like RE2 rejects the
+            /// descending range - not be mistaken for the end of the pattern.
+            if (peek() == '-' && peek(1) != ']' && pos + 1 < pattern.size())
             {
                 ++pos; /// consume '-'.
                 uint8_t hi_byte = 0;
