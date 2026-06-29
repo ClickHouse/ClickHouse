@@ -68,7 +68,7 @@ The supported formats are:
 | [JSON](./formats/JSON/JSON.md)                                                                             | ✔   | ✔     |
 | [JSONAsString](./formats/JSON/JSONAsString.md)                                                             | ✔   | ✗     |
 | [JSONAsObject](./formats/JSON/JSONAsObject.md)                                                             | ✔   | ✗     |
-| [JSONStrings](./formats/JSON/JSONStrings.md)                                                               | ✔   | ✔     |
+| [JSONStrings](./formats/JSON/JSONStrings.md)                                                               | ✗   | ✔     |
 | [JSONColumns](./formats/JSON/JSONColumns.md)                                                               | ✔   | ✔     |
 | [JSONColumnsWithMetadata](./formats/JSON/JSONColumnsWithMetadata.md)                                       | ✔   | ✔     |
 | [JSONCompact](./formats/JSON/JSONCompact.md)                                                               | ✔   | ✔     |
@@ -127,12 +127,13 @@ The supported formats are:
 | [XML](./formats/XML.md)                                                                                    | ✗   | ✔     |
 | [CapnProto](./formats/CapnProto.md)                                                                        | ✔   | ✔     |
 | [LineAsString](./formats/LineAsString/LineAsString.md)                                                     | ✔   | ✔     |
-| [LineAsStringWithNames](./formats/LineAsString/LineAsStringWithNames.md)                                   | ✔   | ✔     |
-| [LineAsStringWithNamesAndTypes](./formats/LineAsString/LineAsStringWithNamesAndTypes.md)                   | ✔   | ✔     |
+| [LineAsStringWithNames](./formats/LineAsString/LineAsStringWithNames.md)                                   | ✗   | ✔     |
+| [LineAsStringWithNamesAndTypes](./formats/LineAsString/LineAsStringWithNamesAndTypes.md)                   | ✗   | ✔     |
 | [Regexp](./formats/Regexp.md)                                                                              | ✔   | ✗     |
 | [RawBLOB](./formats/RawBLOB.md)                                                                            | ✔   | ✔     |
 | [MsgPack](./formats/MsgPack.md)                                                                            | ✔   | ✔     |
 | [MySQLDump](./formats/MySQLDump.md)                                                                        | ✔   | ✗     |
+| [GeoJSON](./formats/GeoJSON.md)                                                                            | ✔   | ✔     |
 | [DWARF](./formats/DWARF.md)                                                                                | ✔   | ✗     |
 | [Markdown](./formats/Markdown.md)                                                                          | ✗   | ✔     |
 | [Form](./formats/Form.md)                                                                                  | ✔   | ✗     |
