@@ -1,0 +1,12 @@
+changeSecond scale 7 into arrayPushBack
+['2020-01-01 00:00:00.0000000','2020-01-01 12:00:30.0000000']
+changeMinute scale 7 into arrayPushFront
+['2020-01-01 12:45:00.0000000','2020-01-01 00:00:00.0000000']
+changeHour scale 1 into arrayConcat
+['2020-01-01 00:00:00.0','2020-01-01 05:00:00.0']
+changeDay scale 6 into arrayPushBack
+['2020-01-01 00:00:00.000000','2020-01-20 12:00:00.000000']
+changeMonth scale 5 into arrayPushFront
+['2020-06-01 12:00:00.00000','2020-01-01 00:00:00.00000']
+result column scale matches declared type
+DateTime64(7)
