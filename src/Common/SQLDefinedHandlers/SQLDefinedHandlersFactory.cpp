@@ -268,6 +268,14 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
     /// for `DROP IF EXISTS` it is a no-op. Either way the version-bumping removal is the source of truth.
     bool removed = metadata_storage->removeIfExists(query.handler_name);
 
+    /// Record the deletion as soon as the version-bumping removal in the source of truth has committed, before
+    /// the snapshot reload below - which may throw (a transient Keeper read error, or another stored handler
+    /// that fails to parse) and would otherwise let a real deletion of a replicated HTTP endpoint exit without
+    /// any server-side record. Log only when a znode was actually removed, so `DROP HANDLER IF EXISTS` on an
+    /// absent handler stays a silent no-op.
+    if (removed)
+        LOG_INFO(log, "Dropped handler `{}`", query.handler_name);
+
     /// Once `removeIfExists` returns, the persistent store has proven this handler is gone - either we removed
     /// it here, or it was already absent. Drop it from the local snapshot first, before the full reload below,
     /// so that even if that reload throws (a transient Keeper read error, or another stored handler that fails
@@ -283,11 +291,6 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
     loaded_handlers = metadata_storage->getAll();
     rebuildSnapshot(lock);
     metadata_storage->commitReload();
-
-    /// Log only when a znode was actually removed, so `DROP HANDLER IF EXISTS` on an absent handler stays
-    /// a silent no-op while a real deletion of a replicated HTTP endpoint leaves a server-side record.
-    if (removed)
-        LOG_INFO(log, "Dropped handler `{}`", query.handler_name);
 
     if (!removed && !query.if_exists)
         throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot drop handler `{}`, because it doesn't exist", query.handler_name);
