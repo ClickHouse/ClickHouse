@@ -30,7 +30,9 @@ void DeletionVectorTransform::transform(DB::Chunk & chunk, const ExcludedRows & 
 {
     auto chunk_info = chunk.getChunkInfos().get<DB::ChunkInfoRowNumbers>();
     if (!chunk_info)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist");
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "ChunkInfoRowNumbers does not exist; the data reader must attach row numbers before deletion vectors are applied");
 
     const size_t num_rows_before = chunk.getNumRows();
     size_t num_rows_after = num_rows_before;

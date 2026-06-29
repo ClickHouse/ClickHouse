@@ -9,6 +9,7 @@
 #include <IO/CompressionMethod.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/Context.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -296,11 +297,21 @@ static void writeDataFiles(
         auto output_format = FormatFactory::instance().getOutputFormat(
             write_format, *write_buffer, *sample_block, context, format_settings, output_format_filter_info);
 
+        size_t row_offset = 0;
         while (true)
         {
             auto chunk = input_format->read();
             if (chunk.empty())
                 break;
+
+            /// Position-delete transforms map physical row positions to the deletion bitmap using
+            /// `ChunkInfoRowNumbers`. Parquet and row-based readers attach it, but block formats such
+            /// as ORC do not, which made `OPTIMIZE` fail with "ChunkInfoRowNumbers does not exist".
+            /// Compaction reads each data file with a single stream in physical order, so the running
+            /// row offset is the correct absolute position; attach it when the reader did not.
+            if (!chunk.getChunkInfos().has<ChunkInfoRowNumbers>())
+                chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(row_offset));
+            row_offset += chunk.getNumRows();
 
             data_file->manifest_list->statistics.update(chunk);
             delete_file_transform->transform(chunk);

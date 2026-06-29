@@ -261,7 +261,9 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
     size_t num_rows_after_filtration = chunk.getNumRows();
     auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
     if (!chunk_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist");
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "ChunkInfoRowNumbers does not exist; the data reader must attach row numbers before position deletes are applied");
 
     size_t num_indices = chunk_info->applied_filter.has_value() ? chunk_info->applied_filter->size() : chunk.getNumRows();
 
