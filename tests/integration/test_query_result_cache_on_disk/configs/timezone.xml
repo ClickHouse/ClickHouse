@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- A non-UTC server timezone (UTC+8, no DST) so `test_disk_cache_preserves_datetime_timezone_after_restart`
+         can observe whether a cached `DateTime('UTC')` result keeps its explicit timezone across a restart. If the
+         on-disk payload is written with the old Native revision 0, the timezone parameter is stripped, so after
+         reload the value is rendered in this server timezone instead of UTC. -->
+    <timezone>Asia/Shanghai</timezone>
+</clickhouse>

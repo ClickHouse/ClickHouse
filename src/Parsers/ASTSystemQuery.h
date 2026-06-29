@@ -180,6 +180,7 @@ public:
     UInt64 seconds{};
     UInt64 untracked_memory_size{};
 
+    std::optional<String> query_result_cache_type;
     std::optional<String> query_result_cache_tag;
 
     String filesystem_cache_name;

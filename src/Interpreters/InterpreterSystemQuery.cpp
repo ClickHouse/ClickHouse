@@ -537,7 +537,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::CLEAR_QUERY_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->clearQueryResultCache(query.query_result_cache_tag);
+            getContext()->clearQueryResultCache(query.query_result_cache_type, query.query_result_cache_tag);
             break;
         }
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:

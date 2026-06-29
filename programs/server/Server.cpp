@@ -2137,6 +2137,16 @@ try
 
     JemallocCacheArena::setEnabled(server_settings[ServerSetting::use_separate_cache_arena]);
 
+    /// Set the base path for filesystem caches before any cache or disk is created.
+    /// Some caches (e.g. the query result cache when configured to use a cache disk) resolve a disk
+    /// during their setup, which lazily initializes the whole disk selector. Disks initialized before
+    /// this point would use the default caches path instead of the configured `filesystem_caches_path`.
+    {
+        String filesystem_caches_path = server_settings[ServerSetting::filesystem_caches_path].value;
+        if (!filesystem_caches_path.empty())
+            global_context->setFilesystemCachesPath(getCanonicalPath(std::move(filesystem_caches_path), path_str));
+    }
+
     const size_t max_cache_size = static_cast<size_t>(static_cast<double>(physical_server_memory) * server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
 
     String uncompressed_cache_policy = server_settings[ServerSetting::uncompressed_cache_policy];
@@ -2305,12 +2315,25 @@ try
     size_t query_result_cache_max_entries = server_settings[ServerSetting::query_cache_max_entries];
     size_t query_result_cache_max_entry_size_in_bytes = server_settings[ServerSetting::query_cache_max_entry_size_in_bytes];
     size_t query_result_cache_max_entry_size_in_rows = server_settings[ServerSetting::query_cache_max_entry_size_in_rows];
+    size_t query_result_cache_max_disk_size_in_bytes = config().getUInt64("query_cache.max_disk_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_DISK_SIZE);
+    size_t query_result_cache_max_disk_entries = config().getUInt64("query_cache.max_disk_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_DISK_ENTRIES);
+    String query_result_cache_disk = config().getString("query_cache.disk", DEFAULT_QUERY_RESULT_CACHE_DISK);
+    String query_result_cache_path = config().getString("query_cache.path", DEFAULT_QUERY_RESULT_CACHE_PATH);
+
     if (query_result_cache_max_size_in_bytes > max_cache_size)
     {
         query_result_cache_max_size_in_bytes = max_cache_size;
         LOG_INFO(log, "Lowered query result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_result_cache_max_size_in_bytes));
     }
-    global_context->setQueryResultCache(query_result_cache_max_size_in_bytes, query_result_cache_max_entries, query_result_cache_max_entry_size_in_bytes, query_result_cache_max_entry_size_in_rows);
+    global_context->setQueryResultCache(
+        query_result_cache_max_size_in_bytes,
+        query_result_cache_max_entries,
+        query_result_cache_max_entry_size_in_bytes,
+        query_result_cache_max_entry_size_in_rows,
+        query_result_cache_max_disk_size_in_bytes,
+        query_result_cache_max_disk_entries,
+        query_result_cache_disk,
+        query_result_cache_path);
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];
@@ -3111,13 +3134,6 @@ try
     /// Set the path for google proto files
     if (server_settings[ServerSetting::google_protos_path].changed)
         global_context->setGoogleProtosPath(fs::weakly_canonical(server_settings[ServerSetting::google_protos_path].value));
-
-    /// Set path for filesystem caches
-    {
-        String filesystem_caches_path = server_settings[ServerSetting::filesystem_caches_path].value;
-        if (!filesystem_caches_path.empty())
-            global_context->setFilesystemCachesPath(getCanonicalPath(std::move(filesystem_caches_path), path_str));
-    }
 
     /// NOTE: Do sanity checks after we loaded all possible substitutions (for the configuration) from ZK
     /// Additionally, making the check after the default profile is initialized.

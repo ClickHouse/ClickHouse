@@ -27,6 +27,15 @@
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressionFactory.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -35,6 +44,8 @@ namespace ProfileEvents
 {
     extern const Event QueryCacheHits;
     extern const Event QueryCacheMisses;
+    extern const Event QueryCacheDiskHits;
+    extern const Event QueryCacheDiskMisses;
     extern const Event QueryCacheAgeSeconds;
     extern const Event QueryCacheReadRows;
     extern const Event QueryCacheReadBytes;
@@ -46,6 +57,8 @@ namespace CurrentMetrics
 {
     extern const Metric QueryCacheBytes;
     extern const Metric QueryCacheEntries;
+    extern const Metric QueryCacheDiskBytes;
+    extern const Metric QueryCacheDiskEntries;
 }
 
 namespace DB
@@ -63,8 +76,10 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int UNKNOWN_TYPE;
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -241,6 +256,13 @@ namespace
 
 bool isQueryResultCacheRelatedSetting(const String & setting_name)
 {
+    /// The disk-related settings end with `_disk` rather than `_query_cache`, so spell them out: they only control
+    /// where the query result cache is written/read (the read side is gated separately in `createReader`), they do
+    /// not affect the query result, and must not be part of the cache key. Otherwise a result written with
+    /// `enable_writes_to_query_cache_disk = 1` could never be read back with only `enable_reads_from_query_cache_disk = 1`.
+    if (setting_name == "enable_writes_to_query_cache_disk" || setting_name == "enable_reads_from_query_cache_disk")
+        return true;
+
     return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
 }
 
@@ -544,6 +566,219 @@ QueryResultCache::Key::Key(
 {
 }
 
+QueryResultCache::Key::Key(IASTHash ast_hash_)
+    : ast_hash(ast_hash_)
+    , is_shared(false)
+    , is_compressed(false)
+    , is_subquery(false)
+{
+}
+
+QueryResultCache::Key::Key(
+    IASTHash ast_hash_,
+    SharedHeader header_,
+    std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+    bool is_shared_,
+    std::chrono::time_point<std::chrono::system_clock> expires_at_,
+    bool is_compressed_,
+    String & query_string_,
+    String & query_id_,
+    String & tag_)
+    : ast_hash(ast_hash_)
+    , header(header_)
+    , user_id(user_id_)
+    , current_user_roles(current_user_roles_)
+    , is_shared(is_shared_)
+    , expires_at(expires_at_)
+    , is_compressed(is_compressed_)
+    , query_string(query_string_)
+    , query_id(query_id_)
+    , tag(tag_)
+    , is_subquery(false)
+{
+}
+
+/// Version of the on-disk `key_metadata.txt` format. Bump whenever the serialized layout changes so that
+/// `deserialize` can intentionally reject (and `loadEntrysFromDisk` discard) entries written by an older or
+/// newer incompatible version instead of misparsing them.
+///
+/// Version 2: `query_id`, `query_tag` and `query_string` are written as TSV-escaped strings
+/// (`writeEscapedString` / `readEscapedString`) instead of raw text. `query_cache_tag` accepts any string and
+/// `query_id` is client-provided, so a value containing a newline or tab (both valid input) must round-trip
+/// through the newline-terminated metadata format instead of truncating the field and getting the whole entry
+/// discarded as broken on reload.
+///
+/// Version 3: the payload (`results.bin` / `totals.bin` / `extremes.bin`) is written with the current server's
+/// Native protocol revision instead of revision `0`, and that revision is persisted in `key_metadata.txt`
+/// (`native_revision`) so the payload is read back with the exact revision it was written with. Revision `0`
+/// took the old-client compatibility branches of `NativeWriter`/`NativeReader` and could downgrade type
+/// metadata (e.g. it strips the timezone parameter of `DateTime('tz')`), so a restored entry could be served
+/// with the wrong result type.
+static constexpr UInt64 QUERY_RESULT_CACHE_DISK_FORMAT_VERSION = 3;
+
+static constexpr auto * token_format_version = "format_version: ";
+static constexpr auto * token_native_revision = "native_revision: ";
+static constexpr auto * token_user_id = "user_id: ";
+static constexpr auto * token_current_user_roles = "current_user_roles: ";
+static constexpr auto * token_is_shared = "is_shared: ";
+static constexpr auto * token_created_at = "created_at: ";
+static constexpr auto * token_expires_at = "expires_at: ";
+static constexpr auto * token_is_compressed = "is_compressed: ";
+static constexpr auto * token_is_subquery = "is_subquery: ";
+static constexpr auto * token_query_string = "query_string: ";
+static constexpr auto * token_query_id = "query_id: ";
+static constexpr auto * token_tag = "query_tag: ";
+
+void QueryResultCache::Key::serialize(WriteBuffer & buf) const
+{
+    writeText(token_format_version, buf);
+    writeText(std::to_string(QUERY_RESULT_CACHE_DISK_FORMAT_VERSION), buf);
+    writeText("\n", buf);
+
+    /// Native protocol revision the payload (`results.bin` etc.) was written with. Persisted so it is read back
+    /// with the same revision, preserving full type metadata across server upgrades (see the format-version note).
+    writeText(token_native_revision, buf);
+    writeText(std::to_string(native_revision), buf);
+    writeText("\n", buf);
+
+    writeText(token_user_id, buf);
+    UUID uid = user_id ? *user_id : UUIDHelpers::Nil;
+    writeUUIDText(uid, buf);
+    writeText("\n", buf);
+
+    writeText(token_current_user_roles, buf);
+    for (size_t i = 0; i < current_user_roles.size(); ++i)
+    {
+        writeUUIDText(current_user_roles[i], buf);
+        if (i != current_user_roles.size() - 1)
+            writeText(",", buf);
+    }
+    writeText("\n", buf);
+
+    writeText(token_is_shared, buf);
+    writeBoolText(is_shared, buf);
+    writeText("\n", buf);
+
+    writeText(token_created_at, buf);
+    writeVarUInt(std::chrono::system_clock::to_time_t(created_at), buf);
+    writeText("\n", buf);
+
+    writeText(token_expires_at, buf);
+    writeVarUInt(std::chrono::system_clock::to_time_t(expires_at), buf);
+    writeText("\n", buf);
+
+    writeText(token_is_compressed, buf);
+    writeBoolText(is_compressed, buf);
+    writeText("\n", buf);
+
+    writeText(token_is_subquery, buf);
+    writeBoolText(is_subquery, buf);
+    writeText("\n", buf);
+
+    /// `query_id`, `tag` and `query_string` are arbitrary strings (a tag/query id can legally contain a
+    /// newline or tab). Escape them so they round-trip through the newline-terminated metadata format instead
+    /// of being truncated at the first '\n'/'\t' and making `deserialize` reject the whole entry.
+    writeText(token_query_id, buf);
+    writeEscapedString(query_id, buf);
+    writeText("\n", buf);
+
+    writeText(token_tag, buf);
+    writeEscapedString(tag, buf);
+    writeText("\n", buf);
+
+    writeText(token_query_string, buf);
+    writeEscapedString(query_string, buf);
+    writeText("\n", buf);
+}
+
+void QueryResultCache::Key::deserialize(ReadBuffer & buf)
+{
+    assertString(token_format_version, buf);
+    UInt64 format_version = 0;
+    readText(format_version, buf);
+    assertChar('\n', buf);
+    if (format_version != QUERY_RESULT_CACHE_DISK_FORMAT_VERSION)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unsupported query result cache on-disk format version: {} (expected {})",
+            format_version,
+            QUERY_RESULT_CACHE_DISK_FORMAT_VERSION);
+
+    assertString(token_native_revision, buf);
+    readText(native_revision, buf);
+    assertChar('\n', buf);
+
+    assertString(token_user_id, buf);
+    UUID uid;
+    readUUIDText(uid, buf);
+    if (uid != UUIDHelpers::Nil)
+        user_id = uid;
+
+    assertChar('\n', buf);
+    assertString(token_current_user_roles, buf);
+    std::vector<UUID> roles;
+    while (!checkChar('\n', buf))
+    {
+        UUID user_role;
+        readUUIDText(user_role, buf);
+        roles.push_back(user_role);
+        /// Comma is a separator, not a terminator: the last UUID is followed by '\n' (handled by the loop condition).
+        checkChar(',', buf);
+    }
+    if (!roles.empty())
+        current_user_roles = roles;
+
+    assertString(token_is_shared, buf);
+    readBoolText(is_shared, buf);
+
+    assertChar('\n', buf);
+    assertString(token_created_at, buf);
+    std::time_t created_timestamp = 0;
+    readVarUInt(created_timestamp, buf);
+    created_at = std::chrono::system_clock::from_time_t(created_timestamp);
+
+    assertChar('\n', buf);
+    assertString(token_expires_at, buf);
+    std::time_t timestamp = 0;
+    readVarUInt(timestamp, buf);
+    expires_at = std::chrono::system_clock::from_time_t(timestamp);
+
+    assertChar('\n', buf);
+    assertString(token_is_compressed, buf);
+    readBoolText(is_compressed, buf);
+
+    assertChar('\n', buf);
+    assertString(token_is_subquery, buf);
+    readBoolText(is_subquery, buf);
+
+    assertChar('\n', buf);
+    assertString(token_query_id, buf);
+    readEscapedString(query_id, buf);
+
+    assertChar('\n', buf);
+    assertString(token_tag, buf);
+    readEscapedString(tag, buf);
+
+    assertChar('\n', buf);
+    assertString(token_query_string, buf);
+    readEscapedString(query_string, buf);
+    assertChar('\n', buf);
+}
+
+String QueryResultCache::Key::getKeyPath() const
+{
+    String ast_hash_str = std::to_string(ast_hash.low64) + '_' + std::to_string(ast_hash.high64);
+    /// `is_subquery` is part of the cache key identity (see `operator==` and `KeyHasher`): a top-level entry
+    /// and a subquery entry can share the same AST hash but are distinct keys. It must therefore be part of
+    /// the on-disk path as well, otherwise both entries would map to the same directory and clobber or evict
+    /// each other's files. Append it as a suffix so the leading hash text (and the first-level bucket) is
+    /// unchanged and remains parseable on load.
+    if (is_subquery)
+        ast_hash_str += "_subquery";
+    return fs::path(ast_hash_str.substr(0, 3)) / ast_hash_str;
+}
+
+
 bool QueryResultCache::Key::operator==(const Key & other) const
 {
     return ast_hash == other.ast_hash && is_subquery == other.is_subquery;
@@ -567,19 +802,25 @@ size_t QueryResultCache::EntryWeight::operator()(const Entry & entry) const
     return res;
 }
 
+size_t QueryResultCache::DiskEntryWeight::operator()(const DiskEntry & entry) const
+{
+    return entry.bytes_on_disk;
+}
+
 bool QueryResultCache::IsStale::operator()(const Key & key) const
 {
     return (key.expires_at < std::chrono::system_clock::now());
 };
 
 QueryResultCacheWriter::QueryResultCacheWriter(
-    Cache & cache_,
+    QueryResultCachePtr cache_,
     const QueryResultCache::Key & key_,
     size_t max_entry_size_in_bytes_,
     size_t max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_runtime_,
     bool squash_partial_results_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    bool enable_writes_to_query_cache_disk_)
     : cache(cache_)
     , key(key_)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
@@ -587,8 +828,9 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     , min_query_runtime(min_query_runtime_)
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
+    , enable_writes_to_query_cache_disk(enable_writes_to_query_cache_disk_)
 {
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+    if (!cache_->isStale(key))
     {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
@@ -603,6 +845,7 @@ QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & ot
     , min_query_runtime(other.min_query_runtime)
     , squash_partial_results(other.squash_partial_results)
     , max_block_size(other.max_block_size)
+    , enable_writes_to_query_cache_disk(other.enable_writes_to_query_cache_disk)
 {
 }
 
@@ -676,7 +919,7 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+    if (!cache->isStale(key))
     {
         /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
@@ -724,10 +967,10 @@ void QueryResultCacheWriter::finalizeWrite()
         query_result->chunks = std::move(squashed_chunks);
     }
 
+    Chunks uncompressed_chunks;
     if (key.is_compressed)
     {
         /// Compress result chunks. Reduces the space consumption of the cache but means reading from it will be slower due to decompression.
-
         Chunks compressed_chunks;
 
         for (const auto & chunk : query_result->chunks)
@@ -742,6 +985,7 @@ void QueryResultCacheWriter::finalizeWrite()
             Chunk compressed_chunk(compressed_columns, chunk.getNumRows());
             compressed_chunks.push_back(std::move(compressed_chunk));
         }
+        uncompressed_chunks = std::move(query_result->chunks);
         query_result->chunks = std::move(compressed_chunks);
     }
 
@@ -767,13 +1011,38 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
-    cache.set(key, query_result);
+    cache->writeMemory(key, query_result);
+
+    if (enable_writes_to_query_cache_disk)
+    {
+        if (key.is_compressed)
+        {
+            /// `query_result` (holding the compressed chunks) was just shared into `memory_cache`, and its
+            /// weight was accounted for the compressed chunks. Mutating it back to uncompressed chunks here
+            /// would leave the memory cache holding uncompressed data while it is accounted as compressed,
+            /// breaking `QueryCacheBytes`, eviction and per-user quotas. Serialize the uncompressed chunks to
+            /// disk through a separate transient entry instead. `totals`/`extremes` are never compressed, so
+            /// they are cloned as-is.
+            auto disk_result = std::make_shared<QueryResultCache::Entry>();
+            disk_result->chunks = std::move(uncompressed_chunks);
+            if (query_result->totals.has_value())
+                disk_result->totals.emplace(query_result->totals->clone());
+            if (query_result->extremes.has_value())
+                disk_result->extremes.emplace(query_result->extremes->clone());
+
+            cache->writeDisk(key, disk_result);
+        }
+        else
+        {
+            cache->writeDisk(key, query_result);
+        }
+    }
 
     LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
 }
 
 /// Creates a source processor which serves result chunks stored in the query result cache, and separate sources for optional totals/extremes.
-void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
+void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks && chunks, std::optional<Chunk> & totals, std::optional<Chunk> & extremes)
 {
     /// Some bookkeeping for profile events
     size_t total_rows = 0;
@@ -791,81 +1060,57 @@ void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks &
     if (totals.has_value())
     {
         Chunks chunks_totals;
-        chunks_totals.emplace_back(totals->clone());
+        chunks_totals.push_back(std::move(*totals));
         source_from_chunks_totals = std::make_unique<SourceFromChunks>(header, std::move(chunks_totals));
     }
 
     if (extremes.has_value())
     {
         Chunks chunks_extremes;
-        chunks_extremes.emplace_back(extremes->clone());
+        chunks_extremes.push_back(std::move(*extremes));
         source_from_chunks_extremes = std::make_unique<SourceFromChunks>(header, std::move(chunks_extremes));
     }
 }
 
-QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &)
+QueryResultCacheReader::QueryResultCacheReader(
+    QueryResultCachePtr cache_,
+    const Cache::Key & key,
+    bool enable_reads_from_query_cache_disk,
+    size_t max_query_result_cache_size_in_bytes_quota,
+    size_t max_query_result_cache_entries_quota,
+    const std::lock_guard<std::mutex> &)
 {
-    auto entry = cache_.getWithKey(key);
+    auto entry = cache_->readFromMemory(key);
+
+    if (!entry.has_value() && enable_reads_from_query_cache_disk)
+    {
+        auto disk_entry = cache_->readFromDisk(key, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
+        if (disk_entry.has_value())
+        {
+            ProfileEvents::increment(ProfileEvents::QueryCacheDiskHits);
+            entry.emplace(std::move(*disk_entry));
+        }
+        else
+            ProfileEvents::increment(ProfileEvents::QueryCacheDiskMisses);
+    }
+
+    /// Account the general hit/miss only after the optional disk lookup: a disk hit avoided query
+    /// computation, so it must count as a `QueryCacheHits` and not as a `QueryCacheMisses`.
+    if (entry.has_value())
+        ProfileEvents::increment(ProfileEvents::QueryCacheHits);
+    else
+        ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
 
     if (!entry.has_value())
-    {
-        LOG_TRACE(logger, "No query result found for query {}", doubleQuoteString(key.query_string));
         return;
-    }
 
-    const auto & entry_key = entry->key;
-    const auto & entry_mapped = entry->mapped;
-
-    const bool is_same_user_id = ((!entry_key.user_id.has_value() && !key.user_id.has_value()) || (entry_key.user_id.has_value() && key.user_id.has_value() && *entry_key.user_id == *key.user_id));
-    const bool is_same_current_user_roles = (entry_key.current_user_roles == key.current_user_roles);
-    if (!entry_key.is_shared && (!is_same_user_id || !is_same_current_user_roles))
-    {
-        LOG_TRACE(logger, "Inaccessible query result found for query {}", doubleQuoteString(key.query_string));
-        return;
-    }
-
-    if (QueryResultCache::IsStale()(entry_key))
-    {
-        LOG_TRACE(logger, "Stale query result found for query {}", doubleQuoteString(key.query_string));
-        return;
-    }
+    auto & entry_key = entry->key;
+    auto & entry_mapped = entry->mapped;
 
     auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - entry_key.created_at).count();
     ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
 
-    if (!entry_key.is_compressed)
-    {
-        // Cloning chunks isn't exactly great. It could be avoided by another indirection, i.e. wrapping Entry's members chunks, totals and
-        // extremes into shared_ptrs and assuming that the lifecycle of these shared_ptrs coincides with the lifecycle of the Entry
-        // shared_ptr. This is not done 1. to keep things simple 2. this case (uncompressed chunks) is the exceptional case, in the other
-        // case (the default case aka. compressed chunks) we need to decompress the entry anyways and couldn't apply the potential
-        // optimization.
-
-        Chunks cloned_chunks;
-        for (const auto & chunk : entry_mapped->chunks)
-            cloned_chunks.push_back(chunk.clone());
-
-        buildSourceFromChunks(entry_key.header, std::move(cloned_chunks), entry_mapped->totals, entry_mapped->extremes);
-    }
-    else
-    {
-        Chunks decompressed_chunks;
-        const Chunks & chunks = entry_mapped->chunks;
-        for (const auto & chunk : chunks)
-        {
-            const Columns & columns = chunk.getColumns();
-            Columns decompressed_columns;
-            for (const auto & column : columns)
-            {
-                auto decompressed_column = column->decompress();
-                decompressed_columns.push_back(decompressed_column);
-            }
-            Chunk decompressed_chunk(decompressed_columns, chunk.getNumRows());
-            decompressed_chunks.push_back(std::move(decompressed_chunk));
-        }
-
-        buildSourceFromChunks(entry_key.header, std::move(decompressed_chunks), entry_mapped->totals, entry_mapped->extremes);
-    }
+    buildSourceFromChunks(entry_key.header, std::move(entry_mapped->chunks), entry_mapped->totals, entry_mapped->extremes);
 
     created_at = entry_key.created_at;
     expires_at = entry_key.expires_at;
@@ -873,31 +1118,20 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }
 
-bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events) const
+bool QueryResultCacheReader::hasCacheEntryForKey() const
 {
-    bool has_entry = (source_from_chunks != nullptr);
-
-    if (update_profile_events)
-    {
-        if (has_entry)
-            ProfileEvents::increment(ProfileEvents::QueryCacheHits);
-        else
-            ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
-    }
-
-    return has_entry;
+    return source_from_chunks != nullptr;
 }
-
 
 std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entryCreatedAt()
 {
-    chassert(hasCacheEntryForKey(false));
+    chassert(hasCacheEntryForKey());
     return created_at;
 }
 
 std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entryExpiresAt()
 {
-    chassert(hasCacheEntryForKey(false));
+    chassert(hasCacheEntryForKey());
     return expires_at;
 }
 
@@ -916,26 +1150,120 @@ std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceExtremes()
     return std::move(source_from_chunks_extremes);
 }
 
-QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
-    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, EntryWeight, IsStale>>(
-            CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+namespace
 {
-    updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
+
+/// `query_cache.path` is documented as a directory *relative to the configured disk*. On `DiskLocal`, file
+/// operations join paths as `fs::path(disk_root) / path`, so an absolute `path` silently replaces the disk root
+/// and a `..` component escapes it. Because the on-disk query result cache scans `path`, writes entries under it,
+/// and `removeRecursive`s cache-shaped subdirectories (broken/expired/evicted entries and `SYSTEM DROP QUERY
+/// CACHE`), a misconfigured `path` could otherwise read, write and recursively delete data outside the configured
+/// cache directory. Fail closed: accept only a non-empty relative path with no `..` component at all; reject
+/// absolute paths and any parent-traversal. An unsafe path disables the on-disk cache entirely (see the
+/// constructor) rather than risking destructive operations outside the cache root.
+bool isQueryResultCacheDiskPathSafe(const fs::path & path)
+{
+    if (path.empty() || path.is_absolute())
+        return false;
+
+    /// Reject any `..` component in the *original* configured path, before normalization. Lexical
+    /// normalization is unsound in the presence of symlinks: `link/../query_result_cache` lexically
+    /// normalizes to `query_result_cache` and would pass a normalized-only check, but on disk
+    /// `root/link/../query_result_cache` is resolved relative to the *target* of `link` (if `link` is a
+    /// symlink), escaping the disk root. Given the destructive cleanup paths (`removeRecursive`), reject every
+    /// `..` component outright instead of reasoning about whether it cancels lexically.
+    for (const auto & component : path)
+        if (component == "..")
+            return false;
+
+    /// Reject a path that, once normalized, points at the disk root itself (e.g. `.` or `./.`): the cache needs
+    /// a real subdirectory to own and clean up, not the disk root.
+    const fs::path normalized = path.lexically_normal();
+    if (normalized.empty() || normalized == ".")
+        return false;
+
+    return true;
 }
 
-void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+}
+
+QueryResultCache::QueryResultCache(
+    size_t max_size_in_bytes,
+    size_t max_entries,
+    size_t max_entry_size_in_bytes_,
+    size_t max_entry_size_in_rows_,
+    size_t max_disk_size_in_bytes,
+    size_t max_disk_entries,
+    DiskPtr & disk_,
+    const String & path_)
+    : memory_cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, EntryWeight, IsStale>>(
+        CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+    , disk_cache(std::make_unique<TTLCachePolicy<Key, DiskEntry, KeyHasher, DiskEntryWeight, IsStale>>(
+        CurrentMetrics::QueryCacheDiskBytes, CurrentMetrics::QueryCacheDiskEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+    , disk(disk_)
+    , path(path_)
+{
+    /// Disable the on-disk cache when `path` is not a safe relative path within the disk root: every disk
+    /// operation (load, write, read, cleanup) is gated on `disk`, so clearing it here fails closed in one place
+    /// and prevents scanning/writing/`removeRecursive` outside the configured cache directory.
+    if (disk && !isQueryResultCacheDiskPathSafe(path))
+    {
+        LOG_ERROR(
+            logger,
+            "Query result cache path '{}' is not a safe relative path within the disk root "
+            "(absolute paths and '..' components are rejected); the on-disk query result cache is disabled.",
+            path.string());
+        disk = nullptr;
+    }
+
+    updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_, max_disk_size_in_bytes, max_disk_entries);
+
+    loadEntrysFromDisk();
+}
+
+QueryResultCache::~QueryResultCache()
+{
+    shutdown = true;
+
+    /// `disk_cache` owns `DiskEntry` shared pointers whose deleters read `shutdown`, `disk`, `path` and
+    /// `logger` (members declared after `disk_cache`, so destroyed before it). Destroy `disk_cache`
+    /// explicitly here, while those members are still alive, so the deleters never run on already-destroyed
+    /// state. With `shutdown == true` the deleters intentionally do not touch the disk (cache files are kept
+    /// across restart), so this only frees the in-memory bookkeeping.
+    disk_cache.clear();
+}
+
+void QueryResultCache::updateConfiguration(
+    size_t max_size_in_bytes,
+    size_t max_entries,
+    size_t max_entry_size_in_bytes_,
+    size_t max_entry_size_in_rows_,
+    size_t max_disk_size_in_bytes,
+    size_t max_disk_entries)
 {
     std::lock_guard lock(mutex);
-    cache.setMaxSizeInBytes(max_size_in_bytes);
-    cache.setMaxCount(max_entries);
+    memory_cache.setMaxSizeInBytes(max_size_in_bytes);
+    memory_cache.setMaxCount(max_entries);
+    disk_cache.setMaxSizeInBytes(max_disk_size_in_bytes);
+    disk_cache.setMaxCount(max_disk_entries);
     max_entry_size_in_bytes = max_entry_size_in_bytes_;
     max_entry_size_in_rows = max_entry_size_in_rows_;
 }
 
-QueryResultCacheReader QueryResultCache::createReader(const Key & key)
+QueryResultCacheReader QueryResultCache::createReader(
+    const Key & key,
+    bool enable_reads_from_query_cache_disk,
+    size_t max_query_result_cache_size_in_bytes_quota,
+    size_t max_query_result_cache_entries_quota)
 {
     std::lock_guard lock(mutex);
-    return QueryResultCacheReader(cache, key, lock);
+    return QueryResultCacheReader(
+        shared_from_this(),
+        key,
+        enable_reads_from_query_cache_disk,
+        max_query_result_cache_size_in_bytes_quota,
+        max_query_result_cache_entries_quota,
+        lock);
 }
 
 QueryResultCacheWriter QueryResultCache::createWriter(
@@ -944,48 +1272,730 @@ QueryResultCacheWriter QueryResultCache::createWriter(
     bool squash_partial_results,
     size_t max_block_size,
     size_t max_query_result_cache_size_in_bytes_quota,
-    size_t max_query_result_cache_entries_quota)
+    size_t max_query_result_cache_entries_quota,
+    bool enable_writes_to_query_cache_disk)
 {
     /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
     /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
     /// users.xml change.
     /// user_id == std::nullopt is the internal user for which no quota can be configured
     if (key.user_id.has_value())
-        cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
+    {
+        memory_cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
+        /// `disk_cache` uses the same `PerUserTTLCachePolicyUserQuota`. Without registering the quota here a user
+        /// whose per-user query-cache quota blocks memory entries could still fill the disk cache up to the global
+        /// `query_cache.max_disk_size_in_bytes` / `query_cache.max_disk_entries` limits. Apply the same per-user
+        /// limits to the disk cache so they are enforced consistently for memory and disk writes.
+        disk_cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
+    }
 
     std::lock_guard lock(mutex);
-    return QueryResultCacheWriter(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
+    return QueryResultCacheWriter(shared_from_this(),
+        key,
+        max_entry_size_in_bytes,
+        max_entry_size_in_rows,
+        min_query_runtime,
+        squash_partial_results,
+        max_block_size,
+        enable_writes_to_query_cache_disk);
 }
 
-void QueryResultCache::clear(const std::optional<String> & tag)
+bool QueryResultCache::isStale(const Key & key)
 {
-    if (tag)
+    /// Writer admission check (the only caller). A writer always (re)populates `memory_cache` and, when
+    /// allowed, unconditionally refreshes the disk entry via `writeDisk` (which removes the old one first).
+    /// Therefore freshness is decided by `memory_cache` only. Including `disk_cache` here would break the
+    /// contract of `enable_reads_from_query_cache_disk = 0`: after `SYSTEM DROP QUERY CACHE TYPE 'Memory'`
+    /// (or after a restart that loads only disk metadata) a query with disk reads disabled would miss memory,
+    /// execute normally, and then be denied the memory write because a non-stale disk entry exists - so the
+    /// memory cache would never be repopulated while that disk entry lives.
+    if (auto entry = memory_cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+        return false;
+
+    return true;
+}
+
+void QueryResultCache::writeMemory(const Key & key, const QueryResultCache::Cache::MappedPtr & entry)
+{
+    memory_cache.set(key, entry);
+}
+
+void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache::MappedPtr & entry)
+{
+    if (!disk || disk->isBroken())
+        return;
+
+    /// Serialize all disk publishing under the cache `mutex`. Reads also hold this mutex
+    /// (`QueryResultCacheReader` is constructed with it held, so `readFromDisk` runs under it), and the only
+    /// other places that touch the on-disk tree (`reset`, `updateConfiguration`, `dump`, `loadEntrysFromDisk`)
+    /// hold it too. Without this lock two `QueryResultCacheWriter`s for the same key (each holds only its own
+    /// writer mutex) could both pass the memory-only `isStale` check and then write the same `entry_path`
+    /// concurrently: one truncating/writing `results.bin` while the other's `disk_cache.remove`/`set` runs a
+    /// `DiskEntry` deleter that `removeRecursive`s the same directory, publishing an entry that points at
+    /// missing or mixed files. Holding the mutex makes `remove` + file write + `set` atomic per key and ensures
+    /// every `removeRecursive` of an `entry_path` happens while no reader or writer is touching that path.
+    std::lock_guard lock(mutex);
+
+    /// Remove any existing entry under this key first. Otherwise, when we later call
+    /// `disk_cache.set(key, ...)`, the old `DiskEntry`'s deleter would run after the new
+    /// files were written and would `removeRecursive(entry_path)` of the freshly written data
+    /// (the on-disk path is the same for both old and new entries with the same key).
+    disk_cache.remove(key);
+
+    auto entry_path = fs::path(path) / key.getKeyPath();
+    auto disk_entry = std::shared_ptr<DiskEntry>(
+        new DiskEntry,
+        [this, entry_path](DiskEntry * e)
+        {
+            try
+            {
+                if (!shutdown)
+                    disk->removeRecursive(entry_path);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(logger, "Failed to remove query result cache entry from disk");
+            }
+            delete e;
+        }
+    );
+
+    try
     {
-        auto predicate = [tag](const Key & key, const Cache::MappedPtr &) { return key.tag == tag.value(); };
-        cache.remove(predicate);
+        disk->createDirectories(entry_path);
+
+        {
+            auto entry_file = disk->writeFile(entry_path / "key_metadata.txt");
+            key.serialize(*entry_file);
+            entry_file->finalize();
+            /// `key_metadata.txt` is part of the on-disk entry and contains the formatted query string/tag/
+            /// query id, so its size must count towards the disk cache weight. Otherwise the configured
+            /// `max_disk_size_in_bytes` could be bypassed by metadata bytes. Account the bytes actually
+            /// written (`count()` after finalize), matching `disk->getFileSize` used on reload.
+            disk_entry->bytes_on_disk += entry_file->count();
+        }
+
+        serializeEntry(key, entry, disk_entry);
+        disk_cache.set(key, disk_entry);
+
+        /// `disk_cache.set` can silently decline the entry (e.g. `max_disk_size_in_bytes` / `max_disk_entries`
+        /// or a per-user quota is exceeded) - `CacheBase::set` reports nothing. In that case the local
+        /// `disk_entry` is the sole owner, so its deleter removes `entry_path` when this function returns (the
+        /// `DiskEntry` is declared after `lock`, so it is destroyed - and the files removed - while the cache
+        /// `mutex` is still held). Hence a declined entry leaves no files on disk and does not bypass the
+        /// configured disk-size limit. Only claim a successful store when the entry was actually admitted.
+        if (disk_cache.contains(key))
+            LOG_TRACE(logger, "Stored query result of query {} to disk, size {}", doubleQuoteString(key.query_string), disk_cache.count());
+        else
+            LOG_TRACE(logger, "Query result of query {} was not stored to disk (disk cache capacity or quota exceeded); its files are removed", doubleQuoteString(key.query_string));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(logger, "Save query results to disk failed");
+
+        /// The write failed after `createDirectories`, so `entry_path` may hold a partial
+        /// `key_metadata.txt`/`results.bin` tree that is not owned by any `disk_cache` entry (`disk_cache.set`
+        /// was not reached). Remove it best-effort so a failed write (e.g. disk full) does not leak files that
+        /// `SYSTEM DROP QUERY CACHE TYPE 'Disk'` cannot reach until the next restart.
+        try
+        {
+            if (disk->existsDirectory(entry_path))
+                disk->removeRecursive(entry_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(logger, "Failed to remove partially written query result cache entry from disk");
+        }
+    }
+}
+
+std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromMemory(const Key & key)
+{
+    auto entry = memory_cache.getWithKey(key);
+    if (!entry.has_value())
+        return std::nullopt;
+
+    const auto & entry_key = entry->key;
+    const auto & entry_mapped = entry->mapped;
+
+    if (!checkAccess(entry_key, key))
+        return std::nullopt;
+
+    auto res = std::make_shared<Entry>();
+
+    if (!entry_key.is_compressed)
+    {
+        // Cloning chunks isn't exactly great. It could be avoided by another indirection, i.e. wrapping Entry's members chunks, totals and
+        // extremes into shared_ptrs and assuming that the lifecycle of these shared_ptrs coincides with the lifecycle of the Entry
+        // shared_ptr. This is not done 1. to keep things simple 2. this case (uncompressed chunks) is the exceptional case, in the other
+        // case (the default case aka. compressed chunks) we need to decompress the entry anyways and couldn't apply the potential
+        // optimization.
+
+        Chunks cloned_chunks;
+        for (const auto & chunk : entry_mapped->chunks)
+            cloned_chunks.push_back(chunk.clone());
+
+        res->chunks = std::move(cloned_chunks);
     }
     else
     {
-        cache.clear();
+        Chunks decompressed_chunks;
+        const Chunks & chunks = entry_mapped->chunks;
+        for (const auto & chunk : chunks)
+        {
+            const Columns & columns = chunk.getColumns();
+            Columns decompressed_columns;
+            for (const auto & column : columns)
+            {
+                auto decompressed_column = column->decompress();
+                decompressed_columns.push_back(decompressed_column);
+            }
+            Chunk decompressed_chunk(decompressed_columns, chunk.getNumRows());
+            decompressed_chunks.push_back(std::move(decompressed_chunk));
+        }
+        res->chunks = std::move(decompressed_chunks);
     }
 
+    if (entry->mapped->totals.has_value())
+        res->totals.emplace(entry->mapped->totals->clone());
+
+    if (entry->mapped->extremes.has_value())
+        res->extremes.emplace(entry->mapped->extremes->clone());
+
+    return {{entry->key, res}};
+}
+
+std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk(
+    const Key & key,
+    size_t max_query_result_cache_size_in_bytes_quota,
+    size_t max_query_result_cache_entries_quota)
+{
+    if (!disk)
+        return std::nullopt;
+
+    auto disk_entry = disk_cache.getWithKey(key);
+    if (!disk_entry.has_value())
+        return std::nullopt;
+
+    const auto & disk_entry_key = disk_entry->key;
+
+    if (!checkAccess(disk_entry_key, key))
+        return std::nullopt;
+
+    /// `checkAccess` admits a *shared* entry (`is_shared`) for a reader other than its writer. The promotion
+    /// below inserts into `memory_cache` under `disk_entry_key` (the owner's key) and would register the quota
+    /// under the owner's `user_id` using *this reader's* `query_cache_max_size_in_bytes` /
+    /// `query_cache_max_entries`. For a different reader, that lets user B overwrite user A's memory-cache
+    /// quota state with B's (possibly looser) limits and promote A-owned entries past A's real quota. Only promote
+    /// (and register the quota) when the reader is the entry owner; for a cross-user shared read, still serve
+    /// the result for this query but do not touch the owner's memory cache or quota.
+    const bool reader_is_owner = (disk_entry_key.user_id == key.user_id);
+
+    try
+    {
+        auto [header, entry_, disk_entry_]  = deserializeEntry(disk_entry_key);
+        if (!entry_)
+            return std::nullopt;
+
+        if (reader_is_owner)
+        {
+            /// After a restart `loadEntrysFromDisk` populates only `disk_cache`, leaving the `memory_cache`
+            /// per-user quota map empty - and `PerUserTTLCachePolicyUserQuota` treats an unregistered user as
+            /// unlimited. Without registering the quota a result whose compressed on-disk size fit the disk
+            /// cache but whose in-memory weight exceeds the user's `query_cache_max_size_in_bytes` /
+            /// `query_cache_max_entries` could be promoted here and push `QueryCacheBytes` past the profile cap
+            /// just by being read from disk. Register it first (mirroring `createWriter`) so the
+            /// `memory_cache.set` below is declined by `approveWrite` when the promotion would exceed the
+            /// quota; the entry is still returned to the reader for this query.
+            if (disk_entry_key.user_id.has_value())
+                memory_cache.setQuotaForUser(*disk_entry_key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
+
+            if (disk_entry_key.is_compressed)
+            {
+                /// Promote a compressed copy into `memory_cache` (so the in-memory representation matches the
+                /// `is_compressed` flag), but return a decompressed entry to the reader. Unlike `readFromMemory`,
+                /// this path must not hand `ColumnCompressed` chunks to the pipeline: the source processors do
+                /// not decompress, and using such a column throws "ColumnCompressed must be decompressed before
+                /// use". The deserialized `entry_` already holds uncompressed chunks, so compress a separate copy
+                /// for the cache and keep `entry_` for the reader.
+                auto memory_entry = std::make_shared<Entry>();
+                for (const auto & chunk : entry_->chunks)
+                    memory_entry->chunks.push_back(chunk.clone());
+                if (entry_->totals.has_value())
+                    memory_entry->totals.emplace(entry_->totals->clone());
+                if (entry_->extremes.has_value())
+                    memory_entry->extremes.emplace(entry_->extremes->clone());
+
+                compressEntry(memory_entry);
+                memory_cache.set(disk_entry_key, memory_entry);
+            }
+            else
+            {
+                memory_cache.set(disk_entry_key, entry_);
+            }
+        }
+
+        return {{disk_entry_key, entry_}};
+    }
+    catch (...)
+    {
+        tryLogCurrentException(logger, "Failed to read query result cache entry from disk");
+    }
+    return std::nullopt;
+}
+
+void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::Cache::MappedPtr & entry, QueryResultCache::DiskCache::MappedPtr & disk_entry) const
+{
+    auto entry_path = path / key.getKeyPath();
+    auto write_chunk = [](const Chunk & chunk, NativeWriter & writer)
+    {
+        const Columns & columns = chunk.getColumns();
+        SharedHeader header = writer.getHeader();
+        Block block = header->cloneEmpty();
+        block.setColumns(columns);
+        writer.write(block);
+    };
+
+    {
+        auto out = disk->writeFile(entry_path / "results.bin");
+        auto compress_out = std::make_unique<CompressedWriteBuffer>(*out, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
+        NativeWriter writer(*compress_out, key.native_revision, key.header);
+
+        /// A cached query that produced zero result rows has no chunks (empty chunks are rejected in
+        /// `QueryResultCacheWriter::buffer`). Persist a single header-only (zero-row) block so the result
+        /// schema can be restored on read; otherwise `results.bin` would contain no blocks and the header
+        /// could not be reconstructed.
+        if (entry->chunks.empty())
+            writer.write(key.header->cloneEmpty());
+        else
+            for (const auto & chunk : entry->chunks)
+                write_chunk(chunk, writer);
+
+        compress_out->finalize();
+        out->finalize();
+        /// Account the compressed bytes actually written to the file (`out->count()` after finalize), not
+        /// `compress_out->count()` which is the uncompressed byte count. This keeps the disk weight consistent
+        /// with `disk->getFileSize` used by `deserializeEntry`/`loadDiskEntryHeaderAndSize` on reload, so
+        /// `QueryCacheDiskBytes`, `system.query_cache.result_size` and `max_disk_size_in_bytes` stay correct.
+        disk_entry->bytes_on_disk += out->count();
+    }
+
+    if (entry->totals.has_value())
+    {
+        auto out = disk->writeFile(entry_path / "totals.bin");
+        auto compress_out = std::make_unique<CompressedWriteBuffer>(*out, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
+        NativeWriter writer(*compress_out, key.native_revision, key.header);
+        write_chunk(*entry->totals, writer);
+        compress_out->finalize();
+        out->finalize();
+        disk_entry->bytes_on_disk += out->count(); /// Compressed bytes on disk (see comment above for results.bin).
+    }
+
+    if (entry->extremes.has_value())
+    {
+        auto out = disk->writeFile(entry_path / "extremes.bin");
+        auto compress_out = std::make_unique<CompressedWriteBuffer>(*out, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
+        NativeWriter writer(*compress_out, key.native_revision, key.header);
+        write_chunk(*entry->extremes, writer);
+        compress_out->finalize();
+        out->finalize();
+        disk_entry->bytes_on_disk += out->count(); /// Compressed bytes on disk (see comment above for results.bin).
+    }
+}
+
+std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCache::MappedPtr> QueryResultCache::deserializeEntry(const Key & key)
+{
+    auto entry = std::make_shared<Entry>();
+    auto disk_entry = std::make_shared<DiskEntry>();
+    std::optional<Block> header;
+    auto key_path = path / key.getKeyPath();
+    {
+        auto result_path = key_path / "results.bin";
+        auto in = disk->readFile(result_path, {});
+        auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
+        NativeReader reader(*compress_in, key.native_revision);
+
+        while (!compress_in->eof())
+        {
+            Block res = reader.read();
+
+            if (!header)
+                header = res.cloneEmpty();
+
+            /// Skip the header-only (zero-row) block written for empty results: such an entry must be
+            /// restored with no chunks to match how it was stored in memory.
+            if (res.rows() != 0)
+                entry->chunks.emplace_back(res.getColumns(), res.rows());
+        }
+
+        disk_entry->bytes_on_disk += disk->getFileSize(result_path);
+    }
+
+    if (!header)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Query result cache entry contains no blocks, cannot restore the result schema");
+
+    auto totals_path = key_path / "totals.bin";
+    if (auto in = disk->readFileIfExists(totals_path, {}))
+    {
+        auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
+        NativeReader reader(*compress_in, key.native_revision);
+        Block res = reader.read();
+
+        entry->totals.emplace(res.getColumns(), res.rows());
+        disk_entry->bytes_on_disk += disk->getFileSize(totals_path);
+    }
+
+    auto extremes_path = key_path / "extremes.bin";
+    if (auto in = disk->readFileIfExists(extremes_path, {}))
+    {
+        auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
+        NativeReader reader(*compress_in, key.native_revision);
+        Block res = reader.read();
+
+        entry->extremes.emplace(res.getColumns(), res.rows());
+        disk_entry->bytes_on_disk += disk->getFileSize(extremes_path);
+    }
+
+    /// Account the metadata file too, to match the write path (`writeDisk`).
+    disk_entry->bytes_on_disk += disk->getFileSize(key_path / "key_metadata.txt");
+
+    return std::make_tuple(*header, entry, disk_entry);
+}
+
+std::pair<Block, size_t> QueryResultCache::loadDiskEntryHeaderAndSize(const Key & key)
+{
+    auto key_path = path / key.getKeyPath();
+    std::optional<Block> header;
+    size_t bytes_on_disk = 0;
+
+    {
+        auto result_path = key_path / "results.bin";
+        auto in = disk->readFile(result_path, {});
+        auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
+        NativeReader reader(*compress_in, key.native_revision);
+
+        /// Reading the first block is enough to recover the result schema (every persisted entry, including a
+        /// zero-row one, has at least one block). The remaining blocks are not materialized: the full result
+        /// is read lazily by `readFromDisk` only when a query is actually allowed to read from disk.
+        if (!compress_in->eof())
+        {
+            Block res = reader.read();
+            header = res.cloneEmpty();
+        }
+
+        if (!header)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Query result cache entry contains no blocks, cannot restore the result schema");
+
+        bytes_on_disk += disk->getFileSize(result_path);
+    }
+
+    auto totals_path = key_path / "totals.bin";
+    if (disk->existsFile(totals_path))
+        bytes_on_disk += disk->getFileSize(totals_path);
+
+    auto extremes_path = key_path / "extremes.bin";
+    if (disk->existsFile(extremes_path))
+        bytes_on_disk += disk->getFileSize(extremes_path);
+
+    /// Account the metadata file too, to match the write path (`writeDisk`).
+    bytes_on_disk += disk->getFileSize(key_path / "key_metadata.txt");
+
+    return {*header, bytes_on_disk};
+}
+
+void QueryResultCache::compressEntry(const QueryResultCache::Cache::MappedPtr & entry)
+{
+    /// Compress result chunks. Reduces the space consumption of the cache but means reading from it will be slower due to decompression.
+    Chunks compressed_chunks;
+
+    for (const auto & chunk : entry->chunks)
+    {
+        const Columns & columns = chunk.getColumns();
+        Columns compressed_columns;
+        for (const auto & column : columns)
+        {
+            auto compressed_column = column->compress(/*force_compression=*/false);
+            compressed_columns.push_back(compressed_column);
+        }
+        Chunk compressed_chunk(compressed_columns, chunk.getNumRows());
+        compressed_chunks.push_back(std::move(compressed_chunk));
+    }
+    entry->chunks = std::move(compressed_chunks);
+
+}
+
+namespace
+{
+
+bool isDigits(const std::string_view s)
+{
+    if (s.empty())
+        return false;
+    for (char c : s)
+        if (c < '0' || c > '9')
+            return false;
+    return true;
+}
+
+/// A query-result-cache entry directory is named "<low64>_<high64>", optionally followed by a "_subquery"
+/// suffix (see `Key::getKeyPath`): two decimal numbers separated by '_'. Only directories matching this exact
+/// pattern are query-result-cache entries. `loadEntrysFromDisk` removes directories it cannot load, so it must
+/// fail closed and never touch a directory whose name does not match this pattern - in case `query_cache.path`
+/// is misconfigured to point at a non-cache directory, a foreign directory must be skipped, not deleted.
+bool isQueryResultCacheEntryName(const std::string_view name)
+{
+    auto sep = name.find('_');
+    if (sep == std::string_view::npos)
+        return false;
+    if (!isDigits(name.substr(0, sep)))
+        return false;
+
+    auto rest = name.substr(sep + 1);
+    /// The high64 number may be followed by the optional "_subquery" suffix.
+    auto suffix_pos = rest.find('_');
+    if (suffix_pos == std::string_view::npos)
+        return isDigits(rest);
+    return isDigits(rest.substr(0, suffix_pos)) && rest.substr(suffix_pos) == "_subquery";
+}
+
+/// The first-level bucket directory is `ast_hash_str.substr(0, 3)` of the entry name above (see
+/// `Key::getKeyPath`), i.e. 1 to 3 decimal digits.
+bool isQueryResultCacheBucketName(const std::string_view name)
+{
+    return !name.empty() && name.size() <= 3 && isDigits(name);
+}
+
+}
+
+void QueryResultCache::loadEntrysFromDisk()
+{
+    if (!disk)
+        return;
+
+    /// `loadEntrysFromDisk` removes directories under `path` that it cannot load as cache entries, so an unsafe
+    /// `query_cache.path` (a misconfiguration) must never be walked. The constructor already disables the disk
+    /// cache (sets `disk = nullptr`) for an unsafe path, so this is normally unreachable; re-check defensively
+    /// before any `iterateDirectory`/`removeRecursive`. Fail closed: skip loading and cleanup rather than risk
+    /// recursively deleting unrelated data on the configured disk.
+    if (!isQueryResultCacheDiskPathSafe(path))
+    {
+        LOG_ERROR(
+            logger,
+            "Query result cache path '{}' is not a safe relative path within the disk root; "
+            "skipping on-disk cache load and cleanup.",
+            path.string());
+        return;
+    }
+
+    std::vector<String> expired_entrys;
+    std::vector<String> broken_entrys;
+    for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
+    {
+        /// First level: hash buckets named with 1 to 3 decimal digits. Skip (do not remove) anything else.
+        if (!isQueryResultCacheBucketName(it->name()))
+        {
+            LOG_WARNING(logger, "Skipping unexpected entry under query result cache path (not a cache bucket): {}", it->path());
+            continue;
+        }
+
+        for (auto entry_it = disk->iterateDirectory(it->path()); entry_it->isValid(); entry_it->next())
+        {
+            auto entry_path = fs::path(entry_it->path());
+
+            /// Second level: only directories whose names match the cache-entry pattern are query-result-cache
+            /// entries. A directory with a foreign name is logged and skipped, never removed (fail closed).
+            if (!isQueryResultCacheEntryName(entry_it->name()))
+            {
+                LOG_WARNING(logger, "Skipping unexpected entry under query result cache path (not a cache entry): {}", entry_path.string());
+                continue;
+            }
+
+            /// A matching name alone is not proof of ownership. If `query_cache.path` is misconfigured to a
+            /// safe-but-wrong relative directory (one that passes `isQueryResultCacheDiskPathSafe` but already
+            /// holds unrelated data), that directory may contain children whose names happen to match the
+            /// cache-entry pattern, e.g. `999/123_456`. Such a directory has no cache metadata, so the
+            /// deserialization below would throw and it would be removed as "broken" - deleting unrelated data
+            /// on startup. Use `key_metadata.txt` as the ownership marker: `writeDisk` always writes it as the
+            /// first file of every entry (and cleans up partial writes on failure), so a cache-shaped directory
+            /// without it is not a query-result-cache entry. Distinguish "not ours" (no metadata - log and skip,
+            /// never remove) from "ours but broken" (metadata present but unloadable - removed below).
+            if (!disk->existsFile(entry_path / "key_metadata.txt"))
+            {
+                LOG_WARNING(logger, "Skipping unexpected entry under query result cache path (no cache metadata, not a cache entry): {}", entry_path.string());
+                continue;
+            }
+
+            /// A single malformed or partially-written entry must not abort loading of the whole cache (and
+            /// therefore server startup). Parse and deserialize each entry defensively: on any error, log it
+            /// and remove only the broken entry.
+            try
+            {
+                /// The entry directory is named like "<low64>_<high64>", optionally followed by a
+                /// "_subquery" suffix (see `getKeyPath`). Use `entry_it->name()` directly, as path-based
+                /// filename extraction is not stable across disk iterator implementations (some return paths
+                /// with a trailing slash, some without). Only the two leading numbers are parsed here for the
+                /// AST hash; `std::stoull` stops at the first non-digit, so the optional suffix is ignored,
+                /// and `is_subquery` itself is restored from `key_metadata.txt` below.
+                String ast_hash_str = entry_it->name();
+                size_t separator_pos = ast_hash_str.find('_');
+                if (separator_pos == String::npos)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected query result cache entry directory name: {}", ast_hash_str);
+                String low64_str = ast_hash_str.substr(0, separator_pos);
+                String high64_str = ast_hash_str.substr(separator_pos + 1, ast_hash_str.size());
+                IASTHash ast_hash(std::stoull(low64_str), std::stoull(high64_str));
+
+                Key key(ast_hash);
+                {
+                    auto entry_file = disk->readFile(entry_path / "key_metadata.txt", {});
+                    key.deserialize(*entry_file);
+
+                    if (key.expires_at < std::chrono::system_clock::now())
+                    {
+                        expired_entrys.push_back(entry_path);
+                        continue;
+                    }
+                }
+
+                /// When the EntryOnDisk is released, the disk file is also deleted.
+                auto disk_entry = std::shared_ptr<DiskEntry>(
+                    new DiskEntry,
+                    [this, entry_path](DiskEntry * e)
+                    {
+                        try
+                        {
+                            if (!shutdown)
+                                disk->removeRecursive(entry_path);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(logger, "Failed to remove query result cache entry from disk");
+                        }
+                        delete e;
+                    });
+
+                /// Populate only `disk_cache` with the schema and on-disk size. The result is intentionally
+                /// NOT promoted into `memory_cache`: doing so would let a query read a disk-originated result
+                /// after a restart even with `enable_reads_from_query_cache_disk = 0` (it would become a memory
+                /// hit and bypass the per-query setting), and would force startup to deserialize and compress
+                /// every cached result. The full result is materialized lazily by `readFromDisk`.
+                auto [header, bytes_on_disk] = loadDiskEntryHeaderAndSize(key);
+                key.header = std::make_shared<const Block>(header);
+
+                disk_entry->bytes_on_disk = bytes_on_disk;
+                disk_cache.set(key, disk_entry);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(logger, fmt::format("Failed to load query result cache entry from disk, removing it: {}", entry_path.string()));
+                broken_entrys.push_back(entry_path);
+            }
+        }
+    }
+
+    for (const auto & entry_path : broken_entrys)
+    {
+        try
+        {
+            disk->removeRecursive(entry_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(logger, "Failed to remove broken query result cache entry from disk");
+        }
+    }
+
+    for (const auto & entry_path : expired_entrys)
+    {
+        try
+        {
+            disk->removeRecursive(entry_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(logger, "Failed to remove expired query result cache entry from disk");
+        }
+    }
+    LOG_INFO(logger, "Loaded query result cache entries from disk: {} loaded, {} expired, {} broken (removed).", disk_cache.count(), expired_entrys.size(), broken_entrys.size());
+}
+
+bool QueryResultCache::checkAccess(const Key & entry_key, const Key & key) const
+{
+    const bool is_same_user_id = ((!entry_key.user_id.has_value() && !key.user_id.has_value()) || (entry_key.user_id.has_value() && key.user_id.has_value() && *entry_key.user_id == *key.user_id));
+    const bool is_same_current_user_roles = (entry_key.current_user_roles == key.current_user_roles);
+    if (!entry_key.is_shared && (!is_same_user_id || !is_same_current_user_roles))
+    {
+        LOG_TRACE(logger, "Inaccessible query result found for query {}", doubleQuoteString(key.query_string));
+        return false;
+    }
+
+    if (QueryResultCache::IsStale()(entry_key))
+    {
+        LOG_TRACE(logger, "Stale query result found for query {}", doubleQuoteString(key.query_string));
+        return false;
+    }
+    return true;
+}
+
+void QueryResultCache::clear(const std::optional<String> & type, const std::optional<String> & tag)
+{
+    auto clear_cache = [tag](auto & cache)
+    {
+        if (tag)
+        {
+            using CacheType = std::decay_t<decltype(cache)>;
+            using MappedPtr = typename CacheType::MappedPtr;
+            auto predicate = [tag](const Key & key, const MappedPtr &) { return key.tag == tag.value(); };
+            cache.remove(predicate);
+        }
+        else
+        {
+            cache.clear();
+        }
+    };
+
+    /// Hold the cache `mutex` across the whole clear. Clearing/removing a disk entry runs its `DiskEntry`
+    /// deleter, which `removeRecursive`s the entry directory; `readFromDisk` and `writeDisk` run under the same
+    /// `mutex` and rely on that removal being serialized with them. Without this lock
+    /// `SYSTEM DROP QUERY CACHE TYPE 'Disk'` (or `... TAG ...`) could delete files while `readFromDisk` is
+    /// deserializing them, or run between a writer's `createDirectories` and `disk_cache.set`. It also closes a
+    /// contract gap: a writer that already entered `writeDisk` holds the `mutex`, so the drop waits for it and
+    /// then removes the freshly published entry, leaving the disk cache actually empty after the drop returns.
     std::lock_guard lock(mutex);
+
+    if (type)
+    {
+        switch (parseQueryResultCacheType(*type))
+        {
+            case QueryResultCacheType::Memory:
+                clear_cache(memory_cache);
+                break;
+            case QueryResultCacheType::Disk:
+                clear_cache(disk_cache);
+                break;
+        }
+    }
+    else
+    {
+        clear_cache(memory_cache);
+        clear_cache(disk_cache);
+    }
+
     times_executed.clear();
 }
 
 size_t QueryResultCache::maxSizeInBytes() const
 {
-    return cache.maxSizeInBytes();
+    return memory_cache.maxSizeInBytes();
 }
 
 size_t QueryResultCache::sizeInBytes() const
 {
-    return cache.sizeInBytes();
+    return memory_cache.sizeInBytes();
 }
 
 size_t QueryResultCache::count() const
 {
-    return cache.count();
+    return memory_cache.count();
 }
 
 size_t QueryResultCache::recordQueryRun(const Key & key)
@@ -999,9 +2009,34 @@ size_t QueryResultCache::recordQueryRun(const Key & key)
     return times;
 }
 
-std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dump() const
+std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dumpMemoryCache() const
 {
-    return cache.dump();
+    return memory_cache.dump();
+}
+
+std::vector<QueryResultCache::DiskCache::KeyMapped> QueryResultCache::dumpDiskCache() const
+{
+    /// `disk_cache` entries own their on-disk directory through a `removeRecursive` deleter (see `writeDisk`).
+    /// Returning those owning pointers would let `system.query_cache` keep a removed entry alive past a
+    /// concurrent `writeDisk`, which does `disk_cache.remove(key)` and then rewrites the *same* `entry_path`:
+    /// once the dump is destroyed, the stale deleter would `removeRecursive` the freshly rewritten files while
+    /// `disk_cache` still advertises the entry. Take the cache mutex (as every other on-disk operation does)
+    /// and return non-owning value snapshots - a plain copy of `DiskEntry`, which holds only `bytes_on_disk`
+    /// and uses the default deleter - so a system-table dump can never delete a cache entry's files.
+    std::lock_guard lock(mutex);
+    std::vector<DiskCache::KeyMapped> snapshot;
+    for (const auto & [key, disk_entry] : disk_cache.dump())
+        snapshot.push_back({key, std::make_shared<DiskEntry>(*disk_entry)});
+    return snapshot;
+}
+
+QueryResultCacheType QueryResultCache::parseQueryResultCacheType(const String & type) const
+{
+    if (type == "Memory")
+        return QueryResultCacheType::Memory;
+    if (type == "Disk")
+        return QueryResultCacheType::Disk;
+    throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown query cache type: {}", type);
 }
 
 }

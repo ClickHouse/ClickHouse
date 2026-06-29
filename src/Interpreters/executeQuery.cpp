@@ -201,6 +201,8 @@ namespace Setting
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsFloat min_os_cpu_wait_time_ratio_to_throw;
     extern const SettingsFloat max_os_cpu_wait_time_ratio_to_throw;
+    extern const SettingsBool enable_writes_to_query_cache_disk;
+    extern const SettingsBool enable_reads_from_query_cache_disk;
     extern const SettingsBool allow_experimental_time_series_table;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
@@ -1736,7 +1738,11 @@ static BlockIO executeQueryImpl(
                 if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
                 {
                     QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
-                    QueryResultCacheReader reader = query_result_cache->createReader(key);
+                    QueryResultCacheReader reader = query_result_cache->createReader(
+                        key,
+                        settings[Setting::enable_reads_from_query_cache_disk],
+                        settings[Setting::query_cache_max_size_in_bytes],
+                        settings[Setting::query_cache_max_entries]);
 
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1870,12 +1876,13 @@ static BlockIO executeQueryImpl(
                             else
                             {
                                 auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
-                                     key,
-                                     std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
-                                     settings[Setting::query_cache_squash_partial_results],
-                                     settings[Setting::max_block_size],
-                                     settings[Setting::query_cache_max_size_in_bytes],
-                                     settings[Setting::query_cache_max_entries]));
+                                                 key,
+                                                 std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                                                 settings[Setting::query_cache_squash_partial_results],
+                                                 settings[Setting::max_block_size],
+                                                 settings[Setting::query_cache_max_size_in_bytes],
+                                                 settings[Setting::query_cache_max_entries],
+                                                 settings[Setting::enable_writes_to_query_cache_disk]));
                                 res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }

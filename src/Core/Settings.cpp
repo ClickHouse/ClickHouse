@@ -5610,6 +5610,22 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, enable_writes_to_query_cache_disk, false, R"(
+If turned on, results of `SELECT` in the [query cache](../query-cache.md) are stored on disk.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(Bool, enable_reads_from_query_cache_disk, false, R"(
+If turned on, results of `SELECT` queries in the [query cache](../query-cache.md) are loaded from disk.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(Bool, query_cache_for_subqueries, false, R"(
 If turned on, subquery results may be written to and read from the [query cache](../query-cache.md). This enables propagation of `use_query_cache` into all subqueries.
 
