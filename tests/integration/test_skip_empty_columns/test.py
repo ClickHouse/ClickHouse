@@ -28,7 +28,7 @@ SETTINGS = ", ".join(
         "min_rows_for_wide_part = 0",
         "ratio_of_defaults_for_sparse_serialization = 1.0",
         "skip_empty_columns_on_insert = 1",
-        "serialization_info_version = 'with_skipped_columns'",
+        "serialization_info_version = 'with_missing_columns'",
     ]
 )
 
@@ -181,7 +181,7 @@ def test_replicated_merge_preserves_marker(started_cluster):
 def test_mixed_version_version_gate(started_cluster):
     """
     node1 (new binary) uses serialization_info_version='with_types'
-    (below with_skipped_columns) so old_node can read the parts.
+    (below with_missing_columns) so old_node can read the parts.
     No columns should actually be missing — the version gate prevents it.
     Both nodes see identical data.
     """

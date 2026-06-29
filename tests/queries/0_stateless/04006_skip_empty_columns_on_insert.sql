@@ -24,7 +24,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- val1=100, val2='' (default), val3=0.0 (default) → val2, val3 should be skipped
@@ -57,7 +57,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- Both key=0 and val=0 are defaults → one column (the smallest) is kept
@@ -90,7 +90,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- Part 1: a=100, b=0 (default), c='' (default)
@@ -126,7 +126,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- b='' (default) → b should be skipped
@@ -159,7 +159,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- Both nullable cols are NULL (default) → should be skipped
@@ -200,7 +200,7 @@ ORDER BY (key1, key2)
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- key2=0 (default), val=0 (default) → both should be skipped
@@ -235,7 +235,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- Explicitly insert b=0 (type-default). b must NOT be skipped because it has
@@ -268,7 +268,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- Both arrays are empty (default) → should be skipped
@@ -308,7 +308,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- Both tuples are type-defaults → should be skipped
@@ -372,7 +372,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- INSERT SELECT: the block coming from the source may contain ColumnSparse
@@ -408,7 +408,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- a=100, b='' (default), c=0 (default) → b, c should be skipped
@@ -449,7 +449,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- lc1='' (default), lc2='' (default) → both should be skipped
@@ -491,7 +491,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0,
          enable_vertical_merge_algorithm = 1,
          vertical_merge_algorithm_min_rows_to_activate = 1,
@@ -525,7 +525,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0,
          enable_vertical_merge_algorithm = 0;
 
@@ -541,7 +541,7 @@ SELECT * FROM t_skip_empty_horizontal ORDER BY key;
 DROP TABLE t_skip_empty_horizontal;
 
 -- ============================================================================
--- CASE 15: Skipped column retains type-default after ALTER DEFAULT change.
+-- CASE 15: Missing column retains type-default after ALTER DEFAULT change.
 -- When a column is skipped (all values were type-default), changing its DEFAULT
 -- expression must NOT affect the read value — serialization.json records the
 -- column as missing, so the reader fills with type-default, not the expression.
@@ -559,7 +559,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- b=0 (type-default) → b should be skipped
@@ -602,7 +602,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- e = 'zero' has all-zero bytes but must not be skipped (type-default is 'neg').
@@ -632,7 +632,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- b=0 (type-default) → b is skipped.
@@ -672,7 +672,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- b=0 (type-default) in both parts → b is skipped in both.
@@ -713,7 +713,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- b=0 (type-default) → b is skipped.
@@ -731,7 +731,7 @@ DROP TABLE t_skip_empty_rename_default;
 
 -- ============================================================================
 -- CASE 20: The optimization requires serialization_info_version >=
--- 'with_skipped_columns'. When a lower version is configured (here 'with_types',
+-- 'with_missing_columns'. When a lower version is configured (here 'with_types',
 -- e.g. pinned for a rolling upgrade so older servers can read new parts), no
 -- columns are skipped even with skip_empty_columns_on_insert enabled.
 -- ============================================================================
@@ -751,7 +751,7 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          serialization_info_version = 'with_types',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
--- b='' (type-default) but version < with_skipped_columns → b is NOT skipped.
+-- b='' (type-default) but version < with_missing_columns → b is NOT skipped.
 INSERT INTO t_skip_empty_version_gate (key, a, b) VALUES (1, 100, '');
 
 SELECT 'case20_columns_in_part';
@@ -789,7 +789,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- b=0 (type-default) in both parts → b is skipped in both.
@@ -831,7 +831,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case22 (key, a, b) VALUES (1, 100, 0);
@@ -867,7 +867,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case23 (key, a, b) VALUES (1, 100, 0);
@@ -901,7 +901,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case24 (key, a, b) VALUES (1, 100, 0);
@@ -937,7 +937,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case25 (key, a, b) VALUES (1, 100, 0);
@@ -965,7 +965,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case26 (key, a, b) VALUES (1, 100, 0);
@@ -992,7 +992,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case27 (key, a, b) VALUES (1, 100, 0);
@@ -1027,7 +1027,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case28 (key, a, b) VALUES (1, 100, 0);
@@ -1060,7 +1060,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case29 (key, a, b) VALUES (1, 100, 0), (2, 200, 0);
@@ -1092,7 +1092,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case30 (key, a, b) VALUES (1, 100, 0);
@@ -1124,7 +1124,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 CREATE TABLE t_skip_empty_case31_dst
@@ -1138,7 +1138,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- b=0 (missing in src)
@@ -1175,7 +1175,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 CREATE TABLE t_skip_empty_case32_dst
@@ -1189,7 +1189,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case32_src (key, a, b) VALUES (1, 100, 0);
@@ -1225,7 +1225,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 CREATE TABLE t_skip_empty_case33_dst
@@ -1239,7 +1239,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case33_src (key, a, b) VALUES (1, 100, 0);
@@ -1273,7 +1273,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- b=0 (missing)
@@ -1289,7 +1289,7 @@ SELECT key, a, b, c FROM t_skip_empty_case34 ORDER BY key;
 DROP TABLE t_skip_empty_case34;
 
 -- ============================================================================
--- CASE 35: ALTER DROP COLUMN that was missing (missing).
+-- CASE 35: ALTER DROP COLUMN that was missing.
 -- ============================================================================
 DROP TABLE IF EXISTS t_skip_empty_case35;
 
@@ -1304,7 +1304,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case35 (key, a, b) VALUES (1, 100, 0);
@@ -1334,7 +1334,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case36 (key, a, b) VALUES (1, 100, 0);
@@ -1362,7 +1362,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- FixedString(4) type-default is 4 zero bytes; empty string is zero-padded → should be skipped.
@@ -1393,7 +1393,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- Empty map is the type-default → should be skipped.
@@ -1425,7 +1425,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- Part 1: b=0 (missing)
@@ -1461,7 +1461,7 @@ ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_skipped_columns',
+         serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- Date=0 ('1970-01-01'), DateTime=0 ('1970-01-01 00:00:00') → should be skipped.

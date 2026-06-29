@@ -423,7 +423,7 @@ ISerialization::KindStack SerializationInfoByName::getKindStack(const String & c
 MergeTreeSerializationInfoVersion SerializationInfoByName::getVersion() const
 {
     if (!missing_columns.empty())
-        return MergeTreeSerializationInfoVersion::WITH_SKIPPED_COLUMNS;
+        return MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
     return settings.version;
 }
 
@@ -498,7 +498,7 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
         writeChar('}', out);
     }
 
-    if (version >= MergeTreeSerializationInfoVersion::WITH_SKIPPED_COLUMNS && !missing_columns.empty())
+    if (version >= MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS && !missing_columns.empty())
     {
         writeChar(',', out);
         writeJSONKey(KEY_MISSING_COLUMNS, out);
