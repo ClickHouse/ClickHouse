@@ -1,5 +1,8 @@
--- Tags: no-random-merge-tree-settings, long
--- no-random-merge-tree-settings: to stabilize the test
+-- Tags: no-random-merge-tree-settings, no-random-settings, long
+-- no-random-merge-tree-settings / no-random-settings: to stabilize the test. The autopr output-bytes
+-- estimate serializes the aggregation output with the default codec; under the `ZSTD(3)` default it
+-- is very sensitive to block-sizing query settings, so randomized settings make the estimate swing
+-- several-fold and the fixed expectations below cannot hold. Fix the query settings to keep it stable.
 
 SET use_uncompressed_cache=0;
 
