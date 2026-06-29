@@ -1264,12 +1264,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
+            {"add_minmax_index_for_numeric_columns", false, true, "Automatic min-max skipping indices on numeric columns can speed up range-filter queries; the trade-off is some additional storage and ingestion overhead, which may be noticeable on very wide or high-ingest tables. Set to false to revert to the previous behavior."},
             {"allow_experimental_text_index_positions", false, false, "New setting"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
         {
-            {"add_minmax_index_for_numeric_columns", false, true, "Automatic min-max skipping indices on numeric columns can speed up range-filter queries; the trade-off is some additional storage and ingestion overhead, which may be noticeable on very wide or high-ingest tables. Set to false to revert to the previous behavior."},
             {"packed_skip_index_max_bytes", 0, 0, "New setting. Pack any skip-index substream whose serialized on-disk size is at most this many bytes into a single skp_idx.packed archive per part; larger substreams stay in the standalone skp_idx_<name>.idx2 / .mrk2 layout. Decision is made per substream at write time."},
             {"allow_tuple_element_aggregation", false, false, "New setting"},
             {"shared_merge_tree_enable_keeper_parts_extra_data", false, true, "Enable coordinated merges by default"},
