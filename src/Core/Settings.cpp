@@ -4061,6 +4061,38 @@ When enabled together with `read_in_order_use_virtual_row`, emit a virtual row a
 This allows `MergingSortedTransform` to reprioritize sources more frequently, which is useful when downstream filters discard many rows and data is distributed unevenly across parts.
 Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
 )", 0) \
+    DECLARE(Bool, optimize_final_limit_pushdown, false, R"(
+When enabled and the query uses FINAL with ORDER BY + LIMIT on an `AggregatingMergeTree`, `SummingMergeTree`,
+or `CoalescingMergeTree`, the LIMIT is pushed down into the FINAL merge algorithm so it can terminate early
+once enough output rows have been produced, avoiding scanning the entire dataset.
+
+This is only applied when read-in-order optimization is active and the ORDER BY matches the table's
+sorting key. It is safe for Aggregating, Summing, and Coalescing merge modes where each primary key group
+is independent. It is NOT applied to Replacing, Collapsing, or VersionedCollapsing modes which need to
+see all rows.
+
+Possible values:
+
+- 0 — Disabled. FINAL merge always processes all rows (default).
+- 1 — Enabled. FINAL merge stops early once LIMIT rows have been produced.
+)", 0) \
+    DECLARE(Bool, optimize_final_sequential_partitions, false, R"(
+When enabled, together with `optimize_final_limit_pushdown`, `do_not_merge_across_partitions_select_final`,
+and `optimize_read_in_order`, FINAL queries with ORDER BY ... LIMIT will process partitions sequentially
+using a `ConcatProcessor` instead of processing all partitions in parallel. This allows a LIMIT query
+to stop early without reading remaining partitions.
+
+The optimization automatically detects the correct partition order from the minmax index values of the
+partition-related sorting key column. It verifies that all sorting key columns before the partition column
+are fixed (constant due to WHERE), and that adjacent partitions don't overlap on the partition column.
+
+Requires `optimize_final_limit_pushdown` to be enabled (`final_limit` > 0).
+
+Possible values:
+
+- 0 — Disabled. All partitions are processed in parallel (default).
+- 1 — Enabled. Partitions are sorted by minmax index and processed sequentially.
+)", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 

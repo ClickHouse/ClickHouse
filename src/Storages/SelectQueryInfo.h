@@ -93,15 +93,28 @@ struct InputOrderInfo
      */
     const size_t used_prefix_of_sorting_key_size;
 
+    /** Number of leading sorting key columns that are fixed (constant due to
+     * WHERE/PREWHERE conditions). Used by the sequential partition optimization
+     * in FINAL queries to verify that all sorting key columns before the
+     * partition-related column are constant, ensuring that partition ordering
+     * on that column is sufficient for global ordering.
+     *
+     * E.g. if we have sorting key ORDER BY (a, b, c) and WHERE a = 1 AND b = 2,
+     * then num_leading_fixed_sort_key_columns = 2.
+     */
+    const size_t num_leading_fixed_sort_key_columns;
+
     const int direction;
     const UInt64 limit;
 
     InputOrderInfo(
         const SortDescription & sort_description_for_merging_,
         size_t used_prefix_of_sorting_key_size_,
-        int direction_, UInt64 limit_)
+        int direction_, UInt64 limit_,
+        size_t num_leading_fixed_sort_key_columns_ = 0)
         : sort_description_for_merging(sort_description_for_merging_)
         , used_prefix_of_sorting_key_size(used_prefix_of_sorting_key_size_)
+        , num_leading_fixed_sort_key_columns(num_leading_fixed_sort_key_columns_)
         , direction(direction_), limit(limit_)
     {
     }
