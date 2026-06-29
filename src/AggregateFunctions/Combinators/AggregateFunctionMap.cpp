@@ -197,7 +197,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
@@ -464,7 +464,10 @@ public:
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMap>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMap>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumMap`), it aggregates `Map` values key-wise.",
+        .syntax = "<aggregate_function>Map",
+        .related = {"Array"}});
 }
 
 }
