@@ -18,6 +18,8 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `file_name` and `type` are string literals. Supported compression types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
+`'gzip'` compression can run on multiple threads by setting `max_generic_compression_threads` above `1`. The output remains a standard gzip stream readable by any decompressor; only the writing side is parallelized.
+
 `level` is a numeric literal. Positive integers in following ranges are supported: `1-12` for `lz4` type, `1-22` for `zstd` type and `1-9` for other compression types.
 
 ## Implementation Details {#implementation-details}

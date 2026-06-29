@@ -92,6 +92,7 @@ namespace ProfileEvents
 namespace DB::Setting
 {
     extern const SettingsUInt64 iceberg_metadata_staleness_ms;
+    extern const SettingsUInt64 max_generic_compression_threads;
     extern const SettingsUInt64 output_format_compression_level;
 }
 
@@ -271,7 +272,7 @@ void writeMessageToFile(
     if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
-        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
+        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]), /* zstd_window_log */ 0, DBMS_DEFAULT_BUFFER_SIZE, /* existing_memory */ nullptr, /* alignment */ 0, /* compress_empty */ true, settings[Setting::max_generic_compression_threads]);
         compressed_buffer_metadata->write(data.data(), data.size());
         compressed_buffer_metadata->finalize();
     }

@@ -72,6 +72,7 @@ namespace Setting
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsInt64 http_zlib_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
+    extern const SettingsUInt64 max_generic_compression_threads;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool send_progress_in_http_headers;
     extern const SettingsInt64 zstd_window_log_max;
@@ -374,7 +375,8 @@ void HTTPHandler::processQuery(
             DBMS_DEFAULT_BUFFER_SIZE,
             nullptr,
             0,
-            false);
+            false,
+            context->getSettingsRef()[Setting::max_generic_compression_threads]);
         used_output.out_maybe_compressed = used_output.wrap_compressed_holder;
         used_output.out = used_output.wrap_compressed_holder;
     }

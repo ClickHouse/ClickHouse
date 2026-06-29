@@ -133,6 +133,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 max_generic_compression_threads;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -791,7 +792,9 @@ try
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
                     compression_method,
-                    static_cast<int>(compression_level)
+                    static_cast<int>(compression_level),
+                    /* zstd_window_log */ 0, DBMS_DEFAULT_BUFFER_SIZE, /* existing_memory */ nullptr, /* alignment */ 0, /* compress_empty */ true,
+                    client_context->getSettingsRef()[Setting::max_generic_compression_threads]
                 );
 
                 if (query_with_output->isIntoOutfileWithStdout())
@@ -832,7 +835,7 @@ try
         bool select_only_into_file = select_into_file && !select_into_file_and_stdout;
 
         if (!out_file_buf && default_output_compression_method != CompressionMethod::None)
-            out_file_buf = wrapWriteBufferWithCompressionMethod(out_buf, default_output_compression_method, 3, 0);
+            out_file_buf = wrapWriteBufferWithCompressionMethod(out_buf, default_output_compression_method, 3, 0, DBMS_DEFAULT_BUFFER_SIZE, /* existing_memory */ nullptr, /* alignment */ 0, /* compress_empty */ true, client_context->getSettingsRef()[Setting::max_generic_compression_threads]);
 
         auto format_settings = getFormatSettings(client_context);
         format_settings.is_writing_to_terminal = stdout_is_a_tty;

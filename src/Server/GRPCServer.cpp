@@ -73,6 +73,7 @@ namespace Setting
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsUInt64 interactive_delay;
+    extern const SettingsUInt64 max_generic_compression_threads;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
@@ -1295,7 +1296,7 @@ namespace
         nested_write_buffer = static_cast<WriteBufferFromVector<PODArray<char>> *>(write_buffer.get());
         if (output_compression_method != CompressionMethod::None)
         {
-            write_buffer = wrapWriteBufferWithCompressionMethod(std::move(write_buffer), output_compression_method, output_compression_level);
+            write_buffer = wrapWriteBufferWithCompressionMethod(std::move(write_buffer), output_compression_method, output_compression_level, /* zstd_window_log */ 0, DBMS_DEFAULT_BUFFER_SIZE, /* existing_memory */ nullptr, /* alignment */ 0, /* compress_empty */ true, query_context->getSettingsRef()[Setting::max_generic_compression_threads]);
             compressing_write_buffer = write_buffer.get();
         }
 
@@ -1621,7 +1622,7 @@ namespace
         if (output_compression_method != CompressionMethod::None)
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level, /* zstd_window_log */ 0, DBMS_DEFAULT_BUFFER_SIZE, /* existing_memory */ nullptr, /* alignment */ 0, /* compress_empty */ true, query_context->getSettingsRef()[Setting::max_generic_compression_threads]);
         auto format = query_context->getOutputFormat(output_format, *buf, totals);
         format->write(materializeBlock(totals));
         format->finalize();
@@ -1639,7 +1640,7 @@ namespace
         if (output_compression_method != CompressionMethod::None)
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level, /* zstd_window_log */ 0, DBMS_DEFAULT_BUFFER_SIZE, /* existing_memory */ nullptr, /* alignment */ 0, /* compress_empty */ true, query_context->getSettingsRef()[Setting::max_generic_compression_threads]);
         auto format = query_context->getOutputFormat(output_format, *buf, extremes);
         format->write(materializeBlock(extremes));
         format->finalize();

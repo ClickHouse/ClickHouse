@@ -8,6 +8,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ZlibDeflatingWriteBuffer.h>
 #include <IO/ZlibInflatingReadBuffer.h>
+#include <IO/ParallelGzipDeflatingWriteBuffer.h>
 #include <IO/ZstdDeflatingWriteBuffer.h>
 #include <IO/ZstdInflatingReadBuffer.h>
 #include <IO/Lz4DeflatingWriteBuffer.h>
@@ -170,10 +171,18 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
 
 template<typename WriteBufferT>
 std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
-    WriteBufferT && nested, CompressionMethod method, int level, int zstd_window_log, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty)
+    WriteBufferT && nested, CompressionMethod method, int level, int zstd_window_log, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty, size_t compression_threads)
 {
     if (method == DB::CompressionMethod::Gzip || method == CompressionMethod::Zlib)
+    {
+        /// Gzip output can be produced in parallel; the result is an ordinary gzip stream.
+        /// The parallel deflater always emits a gzip wrapper, so restrict it to the compress_empty case
+        /// (the default for file exports); callers that suppress output for empty input, such as the HTTP
+        /// response path with compress_empty=false, keep the serial buffer.
+        if (method == CompressionMethod::Gzip && compression_threads > 1 && compress_empty)
+            return std::make_unique<ParallelGzipDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, compression_threads);
         return std::make_unique<ZlibDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), method, level, buf_size, existing_memory, alignment, compress_empty);
+    }
 
 #if USE_BROTLI
     if (method == DB::CompressionMethod::Brotli)
@@ -196,7 +205,6 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
     if (method == CompressionMethod::Snappy)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 #endif
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 }
 
@@ -209,11 +217,12 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
-    bool compress_empty)
+    bool compress_empty,
+    size_t compression_threads)
 {
     if (method == CompressionMethod::None)
         return nested;
-    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty, compression_threads);
 }
 
 
@@ -225,10 +234,11 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
-    bool compress_empty)
+    bool compress_empty,
+    size_t compression_threads)
 {
     chassert(method != CompressionMethod::None);
-    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty, compression_threads);
 }
 
 }
