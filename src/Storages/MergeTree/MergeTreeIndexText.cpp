@@ -76,6 +76,7 @@ namespace MergeTreeSetting
 
 namespace Setting
 {
+    extern const SettingsUInt64 text_index_max_cardinality_per_token_for_analysis;
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
     extern const SettingsFloat text_index_hint_max_selectivity;
 }
@@ -702,9 +703,62 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
         return std::make_shared<TextIndexPostingsCacheCell>(std::move(postings));
     };
 
-    auto hash = TextIndexPostingsCache::hash(index_id_for_caches, token_info.offsets[block_idx], static_cast<UInt8>(TextIndexPostingsCacheKind::Roaring));
+    auto hash = TextIndexPostingsCache::hash(
+        index_id_for_caches,
+        token_info.offsets[block_idx],
+        static_cast<UInt8>(TextIndexPostingsCacheKind::Roaring));
     auto cell = condition_text.postingsCache()->getOrSet(hash, load_postings);
     return std::get<PostingListPtr>(cell->value);
+}
+
+static UInt128 getRoaringPostingsBlockCacheKey(
+    const TokenPostingsInfo & token_info,
+    size_t block_idx,
+    const String & index_id_for_caches)
+{
+    return TextIndexPostingsCache::hash(
+        index_id_for_caches,
+        token_info.offsets[block_idx],
+        static_cast<UInt8>(TextIndexPostingsCacheKind::Roaring));
+}
+
+static PostingListPtr getCachedPostingsBlock(
+    const MergeTreeIndexConditionText & condition_text,
+    const TokenPostingsInfo & token_info,
+    size_t block_idx,
+    const String & index_id_for_caches)
+{
+    auto hash = getRoaringPostingsBlockCacheKey(token_info, block_idx, index_id_for_caches);
+    auto cell = condition_text.postingsCache()->get(hash);
+    if (!cell)
+        return nullptr;
+
+    return std::get<PostingListPtr>(cell->value);
+}
+
+static PostingListPtr getPostingsBlockForAnalysis(
+    const MergeTreeIndexConditionText & condition_text,
+    MergeTreeIndexReaderStream & stream,
+    MergeTreeIndexDeserializationState & state,
+    const TokenPostingsInfo & token_info,
+    size_t block_idx,
+    PostingsSerialization & postings_serialization,
+    const String & index_id_for_caches,
+    MergeTreeIndexGranuleText::PostingsBlockCache & postings_block_cache,
+    bool allow_cold_postings_read)
+{
+    auto hash = getRoaringPostingsBlockCacheKey(token_info, block_idx, index_id_for_caches);
+    if (auto it = postings_block_cache.find(hash); it != postings_block_cache.end())
+        return it->second;
+
+    auto block = allow_cold_postings_read
+        ? MergeTreeIndexGranuleText::readPostingsBlock(stream, state, token_info, block_idx, postings_serialization, index_id_for_caches)
+        : getCachedPostingsBlock(condition_text, token_info, block_idx, index_id_for_caches);
+
+    if (block)
+        postings_block_cache.emplace(hash, block);
+
+    return block;
 }
 
 void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
@@ -740,12 +794,36 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
     return result;
 }
 
+void MergeTreeIndexGranuleText::setPostingsReadContext(
+    MergeTreeIndexReaderStream & postings_stream,
+    MergeTreeIndexDeserializationState & state,
+    PostingsSerialization & postings_serialization,
+    PostingsBlockCache & postings_block_cache)
+{
+    postings_read_context = PostingsReadContext
+    {
+        .postings_stream = &postings_stream,
+        .state = &state,
+        .postings_serialization = &postings_serialization,
+        .postings_block_cache = &postings_block_cache,
+    };
+}
+
+const MergeTreeIndexGranuleText::PostingsReadContext & MergeTreeIndexGranuleText::getPostingsReadContext() const
+{
+    if (!postings_read_context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index postings read context is not set");
+
+    return *postings_read_context;
+}
+
 bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
 {
     if (query.tokens.empty())
         return false;
 
-    return hasAnyTokensImpl(query);
+    const auto & context = getPostingsReadContext();
+    return hasAnyQueryTokensImplWithPostings(query, context);
 }
 
 bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & query) const
@@ -803,6 +881,12 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     if (query.tokens.empty())
         return true;
 
+    const auto & context = getPostingsReadContext();
+    return hasAllQueryTokensOrEmptyImplWithPostings(query, context);
+}
+
+bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmptyWithoutPostings(const TextSearchQuery & query) const
+{
     const auto & query_builder = analyzer->getQueryBuilder(query);
 
     /// Failure dominates bypass — a proven-empty query stays empty even when pattern analysis is incomplete.
@@ -833,6 +917,195 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     }
 
     return true;
+}
+
+std::optional<bool> MergeTreeIndexGranuleText::tryEvaluateQueryTokensBeforeReadingPostings(const TextSearchQuery & query) const
+{
+    const auto & query_builder = analyzer->getQueryBuilder(query);
+
+    if (query_builder.is_failed)
+        return false;
+
+    if (query_builder.is_bypassed)
+    {
+        if (!query.patterns.empty())
+            return true;
+
+        if (query.search_mode == TextSearchMode::Any)
+            return hasAnyTokensImpl(query);
+
+        return hasAllQueryTokensOrEmptyWithoutPostings(query);
+    }
+
+    if (!current_range.has_value())
+        return true;
+
+    if (!query_builder.rows_range.has_value())
+        return false;
+
+    auto intersection = query_builder.rows_range->intersectWith(*current_range);
+    if (!intersection.has_value())
+        return false;
+
+    if (current_range->end > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index doesn't support row ids larger than UINT32_MAX, got {}", current_range->end);
+
+    return {};
+}
+
+bool MergeTreeIndexGranuleText::hasAnyQueryTokensImplWithPostings(
+    const TextSearchQuery & query,
+    const PostingsReadContext & context) const
+{
+    if (auto result = tryEvaluateQueryTokensBeforeReadingPostings(query))
+        return *result;
+
+    const auto & query_builder = analyzer->getQueryBuilder(query);
+
+    PostingList range_posting;
+    range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
+
+    std::optional<PostingList> result;
+    if (query_builder.postings)
+    {
+        result = *query_builder.postings & range_posting;
+        if (result->cardinality() > 0)
+            return true;
+    }
+
+    if (!query_builder.needReadPostings())
+        return result && result->cardinality() > 0;
+
+    auto & postings_stream = *context.postings_stream;
+    auto & state = *context.state;
+    auto & postings_serialization = *context.postings_serialization;
+    auto & postings_block_cache = *context.postings_block_cache;
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    const UInt64 max_cardinality_per_token_for_analysis = condition_text.getContext()->getSettingsRef()[Setting::text_index_max_cardinality_per_token_for_analysis];
+
+    for (const auto & entry : analyzer->buildPostingsReadPlan(query_builder, *current_range, max_cardinality_per_token_for_analysis))
+    {
+        const auto & token_info = entry.token_info;
+        const auto & blocks_to_read = entry.blocks_to_read;
+        if (blocks_to_read.empty())
+            continue;
+
+        PostingList token_postings;
+        for (const auto block_idx : blocks_to_read)
+        {
+            auto block = getPostingsBlockForAnalysis(
+                condition_text,
+                postings_stream,
+                state,
+                *token_info,
+                block_idx,
+                postings_serialization,
+                index_id_for_caches,
+                postings_block_cache,
+                entry.allow_cold_postings_read);
+
+            if (!block)
+                return true;
+
+            token_postings |= (*block & range_posting);
+        }
+
+        if (token_postings.cardinality() == 0)
+            continue;
+
+        return true;
+    }
+
+    return false;
+}
+
+bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmptyImplWithPostings(
+    const TextSearchQuery & query,
+    const PostingsReadContext & context) const
+{
+    if (auto finished_result = tryEvaluateQueryTokensBeforeReadingPostings(query))
+        return *finished_result;
+
+    const auto & query_builder = analyzer->getQueryBuilder(query);
+
+    PostingList range_posting;
+    range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
+
+    std::optional<PostingList> result;
+    if (query_builder.postings)
+    {
+        result = *query_builder.postings & range_posting;
+        if (result->cardinality() == 0)
+            return false;
+    }
+
+    if (!query_builder.needReadPostings())
+        return result && result->cardinality() > 0;
+
+    auto & postings_stream = *context.postings_stream;
+    auto & state = *context.state;
+    auto & postings_serialization = *context.postings_serialization;
+    auto & postings_block_cache = *context.postings_block_cache;
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    const UInt64 max_cardinality_per_token_for_analysis = condition_text.getContext()->getSettingsRef()[Setting::text_index_max_cardinality_per_token_for_analysis];
+
+    bool has_inconclusive_token = false;
+    for (const auto & entry : analyzer->buildPostingsReadPlan(query_builder, *current_range, max_cardinality_per_token_for_analysis))
+    {
+        const auto & token_info = entry.token_info;
+        const auto & blocks_to_read = entry.blocks_to_read;
+        if (blocks_to_read.empty())
+            return false;
+
+        bool token_is_inconclusive = false;
+        PostingList token_postings;
+        for (const auto block_idx : blocks_to_read)
+        {
+            auto block = getPostingsBlockForAnalysis(
+                condition_text,
+                postings_stream,
+                state,
+                *token_info,
+                block_idx,
+                postings_serialization,
+                index_id_for_caches,
+                postings_block_cache,
+                entry.allow_cold_postings_read);
+
+            if (!block)
+            {
+                token_is_inconclusive = true;
+                break;
+            }
+
+            token_postings |= (*block & range_posting);
+        }
+
+        if (token_is_inconclusive)
+        {
+            has_inconclusive_token = true;
+            continue;
+        }
+
+        if (token_postings.cardinality() == 0)
+            return false;
+
+        if (!result)
+        {
+            result = std::move(token_postings);
+        }
+        else
+        {
+            *result &= token_postings;
+            if (result->cardinality() == 0)
+                return false;
+        }
+    }
+
+    if (has_inconclusive_token)
+        return true;
+
+    return result && result->cardinality() > 0;
 }
 
 

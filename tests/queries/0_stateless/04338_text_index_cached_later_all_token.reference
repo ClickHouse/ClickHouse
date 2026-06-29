@@ -1,0 +1,7 @@
+a	200	2
+b	200	2
+Condition: true
+Granules: 1020/1020
+Name: idx_s
+Condition: (mode: All; tokens: ["a", "b"])
+Granules: 0/1020
