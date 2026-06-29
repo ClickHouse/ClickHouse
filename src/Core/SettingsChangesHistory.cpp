@@ -49,6 +49,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
             {"reattach_tables_before_query_execution", false, false, "New setting for testing table reattachment before query execution."},
             {"reattach_tables_before_query_execution_probability", 0., 0., "New setting for testing table reattachment before query execution."},
+            {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
