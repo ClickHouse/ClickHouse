@@ -36,6 +36,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
     extern const SettingsBool enable_reads_from_columns_cache;
     extern const SettingsBool enable_writes_to_columns_cache;
+    extern const SettingsUInt64 predicate_statistics_sample_rate;
 }
 
 namespace MergeTreeSetting
@@ -133,6 +134,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit];
     result.enable_analyzer = settings[Setting::allow_experimental_analyzer];
     result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
+    result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
     return result;
 }
 

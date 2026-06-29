@@ -119,6 +119,7 @@ static constexpr auto DEFAULT_COLUMNS_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_MMAP_CACHE_MAX_SIZE = 1_KiB; /// chosen by rolling dice
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES = 10'000;
+static constexpr auto DEFAULT_POINT_IN_POLYGON_CACHE_MAX_SIZE = 256_MiB;
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO = 0.5;
