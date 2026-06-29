@@ -76,6 +76,7 @@ namespace Setting
 namespace FailPoints
 {
     extern const char receive_timeout_on_table_status_response[];
+    extern const char unexpected_packet_in_table_status_response[];
 }
 
 namespace ErrorCodes
@@ -818,6 +819,14 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     fiu_do_on(FailPoints::receive_timeout_on_table_status_response, {
         sleepForSeconds(5);
         throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Injected timeout exceeded while reading from socket ({}:{})", host, port);
+    });
+
+    /// Simulate a connection that was returned to the pool out of sync by a previous query, so that
+    /// reading the table status here sees a stale packet instead of the expected response.
+    fiu_do_on(FailPoints::unexpected_packet_in_table_status_response, {
+        throw NetException(
+            ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+            "Injected unexpected packet while reading table status from {}:{}", host, port);
     });
 
     TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
