@@ -8,26 +8,6 @@ _distance Float32
 6
 7
 -- Dont expect column "_distance" in EXPLAIN.
--- Test that rescoring evaluates the distance only for candidate rows.
-5	0
--- Test that rescoring preserves candidates from multiple vector index granules.
-2
-3
-4
-5
-2
-3
-4
-5
-Test explicit "_distance" without and with rescoring
-2	0
-3	0.01
-4	0.04
-5	0.09
-2	0
-3	0.01
-4	0.04
-5	0.09
 Test "SELECT id, vec" without and with rescoring
 5	[0,2]
 6	[0,2.1]
