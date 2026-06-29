@@ -587,3 +587,75 @@ def test_select_whole_tags_still_reconstructs_full_map():
         assert node.query("SELECT mapKeys(tags) FROM prom_whole") == TSV([["['__name__','host','job']"]])
     finally:
         node.query("DROP TABLE IF EXISTS prom_whole SYNC")
+
+
+def test_select_where_metric_name_prefix_pushdown():
+    """`startsWith` / `LIKE 'p%'` / `match('^p')` on `metric_name` are pushed onto the tags scan (`metric_name`
+    is the leading primary-key column) as `<fn>(metric_name, ...) OR metric_name = ''`, and still keep a series
+    whose name lives in the tags Map (empty `metric_name` column)."""
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
+        " ('cpu_usage', {}, [(toDateTime64(1,3),1)]),"
+        " ('cpu_load', {}, [(toDateTime64(1,3),1)]),"
+        " ('mem_free', {}, [(toDateTime64(1,3),1)])"
+    )
+    # A series whose name is in the tags Map (empty `metric_name` column).
+    node.query(
+        "INSERT INTO FUNCTION timeSeriesTags(prometheus) (metric_name, tags) VALUES ('', {'__name__': 'cpu_temp'})"
+    )
+    expected = TSV([["cpu_load"], ["cpu_temp"], ["cpu_usage"]])
+    assert node.query("SELECT metric_name FROM prometheus WHERE startsWith(metric_name, 'cpu') ORDER BY metric_name") == expected
+    assert node.query("SELECT metric_name FROM prometheus WHERE metric_name LIKE 'cpu%' ORDER BY metric_name") == expected
+    assert node.query("SELECT metric_name FROM prometheus WHERE match(metric_name, '^cpu') ORDER BY metric_name") == expected
+
+
+def test_select_where_promoted_tag_prefix_pushdown():
+    """`startsWith` / `LIKE 'p%'` / `match('^p')` on a promoted tag are pushed onto its column as
+    `<fn>(<col>, ...) OR <col> = ''`, keeping series whose tag is in the Map; results match the full evaluation."""
+    node.query("DROP TABLE IF EXISTS prom_pfx SYNC")
+    node.query("CREATE TABLE prom_pfx ENGINE=TimeSeries SETTINGS tags_to_columns={'job': 'job'}")
+    try:
+        node.query(
+            "INSERT INTO prom_pfx (metric_name, tags, time_series) VALUES"
+            " ('m1', {'job':'api'}, [(toDateTime64(1,3),1)]),"
+            " ('m2', {'job':'apex'}, [(toDateTime64(1,3),1)]),"
+            " ('m3', {'job':'web'}, [(toDateTime64(1,3),1)])"
+        )
+        # A series whose `job` is in the Map (empty `job` column).
+        node.query("INSERT INTO FUNCTION timeSeriesTags(prom_pfx) (metric_name, tags) VALUES ('m4', {'job':'apidoc'})")
+
+        expected = TSV([["apex"], ["api"], ["apidoc"]])  # lexicographic ('apex' < 'api'); 'web' excluded
+        assert node.query("SELECT DISTINCT tags['job'] FROM prom_pfx WHERE startsWith(tags['job'], 'ap') ORDER BY 1") == expected
+        assert node.query("SELECT DISTINCT tags['job'] FROM prom_pfx WHERE tags['job'] LIKE 'ap%' ORDER BY 1") == expected
+        assert node.query("SELECT DISTINCT tags['job'] FROM prom_pfx WHERE match(tags['job'], '^ap') ORDER BY 1") == expected
+    finally:
+        node.query("DROP TABLE IF EXISTS prom_pfx SYNC")
+
+
+def test_select_where_selector_regex_pushdown():
+    """Regex matchers in timeSeriesSelectorMatchTags are pushed onto the tags scan: an alternation of literals
+    (e.g. `job=~'api|server'`) becomes an `IN` set, and a general regex becomes a `match`. Results stay correct,
+    including the Map-stored fallback. (A regex matcher is fully anchored, so `api|server` is exactly "api" or
+    "server", not "apidoc".)"""
+    node.query("DROP TABLE IF EXISTS prom_sre SYNC")
+    node.query("CREATE TABLE prom_sre ENGINE=TimeSeries SETTINGS tags_to_columns={'job': 'job'}")
+    try:
+        node.query(
+            "INSERT INTO prom_sre (metric_name, tags, time_series) VALUES"
+            " ('cpu_usage', {'job':'api'}, [(toDateTime64(1,3),1)]),"
+            " ('cpu_load', {'job':'server'}, [(toDateTime64(1,3),1)]),"
+            " ('mem_free', {'job':'web'}, [(toDateTime64(1,3),1)])"
+        )
+        # A series whose name and `job` are in the Map (empty columns).
+        node.query("INSERT INTO FUNCTION timeSeriesTags(prom_sre) (metric_name, tags) VALUES ('cpu_temp', {'job':'apidoc'})")
+
+        # Alternation on a promoted tag -> exactly 'api' or 'server' ('apidoc'/'web' excluded).
+        assert node.query(
+            "SELECT count() FROM prom_sre WHERE timeSeriesSelectorMatchTags('{job=~\"api|server\"}', tags)"
+        ) == "2\n"
+        # A general (prefix) regex on metric_name -> every cpu_* series, including the Map-name one.
+        assert node.query(
+            "SELECT metric_name FROM prom_sre WHERE timeSeriesSelectorMatchTags('{__name__=~\"cpu.*\"}', tags) ORDER BY metric_name"
+        ) == TSV([["cpu_load"], ["cpu_temp"], ["cpu_usage"]])
+    finally:
+        node.query("DROP TABLE IF EXISTS prom_sre SYNC")

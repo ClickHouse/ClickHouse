@@ -80,12 +80,11 @@ public:
             if (matcher.matcher_type == PrometheusQueryTree::MatcherType::RE
                 || matcher.matcher_type == PrometheusQueryTree::MatcherType::NRE)
             {
-                String pattern = matcher.label_value;
-                if (!pattern.starts_with('^'))
-                    pattern.insert(0, "^");
-                if (!pattern.ends_with('$'))
-                    pattern.push_back('$');
-                compiled_regexes[i].emplace(pattern);
+                /// Prometheus fully anchors a label regex and wraps it in a non-capturing group, so the value
+                /// must match `^(?:<re>)$`. The group is required for correctness when `<re>` contains a
+                /// top-level alternation (e.g. `api|server` must mean exactly "api" or "server", not
+                /// "starts with api" or "ends with server").
+                compiled_regexes[i].emplace("^(?:" + matcher.label_value + ")$");
             }
         }
 

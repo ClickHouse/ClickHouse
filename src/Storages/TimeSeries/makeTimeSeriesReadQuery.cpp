@@ -168,19 +168,97 @@ namespace
 
     ASTPtr makeTagsTableElement(const StorageID & tags_table_id, const ASTPtr & index_filter);
 
+    /// If `regex` (a Prometheus label regex, matched fully as `^(?:<regex>)$`) is an alternation of plain
+    /// literals — e.g. `api|server` or a single literal `api` — returns those literals so the matcher can be
+    /// pushed as an `IN` set. Returns nullopt for anything containing a regex metacharacter (groups,
+    /// quantifiers, character classes, anchors, ...), so the caller falls back to a general regex push-down.
+    std::optional<std::vector<String>> extractRegexLiteralAlternatives(const String & regex)
+    {
+        static constexpr std::string_view metacharacters = ".^$*+?()[]{}|\\";
+
+        std::vector<String> alternatives;
+        String current;
+        for (size_t i = 0; i != regex.size();)
+        {
+            char c = regex[i];
+            if (c == '|')
+            {
+                alternatives.push_back(std::move(current));
+                current.clear();
+                ++i;
+            }
+            else if (c == '\\')
+            {
+                /// Only an escaped metacharacter is a literal; `\d`, `\w`, etc. are not.
+                if (i + 1 == regex.size() || metacharacters.find(regex[i + 1]) == std::string_view::npos)
+                    return std::nullopt;
+                current.push_back(regex[i + 1]);
+                i += 2;
+            }
+            else if (metacharacters.find(c) != std::string_view::npos)
+            {
+                return std::nullopt;  /// an unescaped metacharacter -> not a plain alternation
+            }
+            else
+            {
+                current.push_back(c);
+                ++i;
+            }
+        }
+        alternatives.push_back(std::move(current));
+        return alternatives;
+    }
+
+    /// Whether `regex` has a top-level `|` (an alternation not nested inside a group or character class).
+    bool hasTopLevelAlternation(const String & regex)
+    {
+        int depth = 0;
+        bool in_class = false;
+        for (size_t i = 0; i != regex.size(); ++i)
+        {
+            char c = regex[i];
+            if (c == '\\')
+                ++i;  // skip the escaped character
+            else if (in_class)
+                in_class = (c != ']');
+            else if (c == '[')
+                in_class = true;
+            else if (c == '(')
+                ++depth;
+            else if (c == ')' && depth > 0)
+                --depth;
+            else if (c == '|' && depth == 0)
+                return true;
+        }
+        return false;
+    }
+
+    /// Anchors a Prometheus label regex the way the matcher is evaluated (`^(?:<re>)$`), but drops the
+    /// non-capturing group when `<re>` has no top-level alternation. The group is only needed so the anchors
+    /// bind to the whole alternation; without it KeyCondition can derive a prefix range from `^<literal>...$`.
+    String anchorRegexForMatch(const String & regex)
+    {
+        if (hasTopLevelAlternation(regex))
+            return "^(?:" + regex + ")$";
+        return "^" + regex + "$";
+    }
+
     /// Builds an index-usable predicate to push onto the raw "tags" table scan, from the query filter's
-    /// top-level equality conjuncts on key-like columns:
-    ///   - `metric_name = <const>`            -> `metric_name IN ('', <consts>)`
-    ///   - `tags['<tag>'] = <const>`, where `<tag>` is promoted to its own column via `tags_to_columns`,
-    ///                                        -> `<column> IN ('', <consts>)`
-    ///   - `timeSeriesSelectorMatchTags('<selector>', ...)` -> the same, built from the equality (`=`)
-    ///                                        matchers of the constant PromQL selector (regex and negative
-    ///                                        matchers can't use an index and are ignored)
-    /// Conditions on different columns are combined with AND. The empty string keeps rows whose value is
-    /// stored in the `tags` Map instead of the column; correctness is still guaranteed by the outer filter
-    /// on the reconstructed columns, so this only needs to be a sound over-approximation. A column is only
-    /// used by the primary key when it is part of the "tags" table's sorting key. Returns nullptr when no
-    /// such conjunct is found.
+    /// top-level conjuncts on key-like columns. `<col>` below is written in the query as `metric_name` or as
+    /// `tags['<tag>']` where `<tag>` is promoted to its own column via `tags_to_columns`:
+    ///   - `<col> = <const>`                  -> `<col> IN ('', <consts>)`
+    ///   - `timeSeriesSelectorMatchTags('<selector>', ...)` -> the matchers of the constant PromQL selector:
+    ///                                        each `=` (and each `=~` that is an alternation of literals like
+    ///                                        `api|server`) as an `IN`; every other `=~` as a `match` (below);
+    ///                                        negative matchers (`!=`, `!~`) are ignored
+    ///   - `startsWith(<col>, <const>)`, `<col> LIKE <const>`, `match(<col>, <const>)`
+    ///                                        -> `<fn>(<col>, <const>) OR <col> = ''`
+    /// Conditions on different columns/atoms are combined with AND. The empty string keeps rows whose value is
+    /// stored in the `tags` Map instead of the column; correctness is still guaranteed by the outer filter on
+    /// the reconstructed columns, so this only needs to be a sound over-approximation. KeyCondition derives a
+    /// range from `=`/`IN` and from `startsWith`/`LIKE`/`match` with a constant prefix, so a column in the
+    /// "tags" table's sorting key can skip granules for those (other patterns just become a PREWHERE filter).
+    /// Returns nullptr when no such conjunct is found.
     ASTPtr makeTagsTableIndexFilter(const ActionsDAG * filter_actions_dag,
                                     const std::vector<std::pair<String, String>> & tag_columns)
     {
@@ -215,17 +293,62 @@ namespace
         for (const auto & [tag_name, column_name] : tag_columns)
             column_by_tag_name[tag_name] = column_name;
 
+        /// Maps a tag name to the inner column that stores it: `__name__` -> "metric_name", a promoted tag ->
+        /// its column, otherwise none (the tag lives only in the Map, so there's no column to push onto).
+        auto column_of_tag = [&](const String & tag_name) -> std::optional<String>
+        {
+            if (tag_name == TimeSeriesTagNames::MetricName)
+                return String{TimeSeriesColumnNames::MetricName};
+            if (auto it = column_by_tag_name.find(tag_name); it != column_by_tag_name.end())
+                return it->second;
+            return std::nullopt;
+        };
+
+        /// Resolves an expression to the tag it reads: the "metric_name" input -> `__name__`,
+        /// or `arrayElement(tags, '<tag>')` -> `<tag>`. Returns none for anything else.
+        auto expr_tag_name = [&](const ActionsDAG::Node * expr) -> std::optional<String>
+        {
+            if (input_is(expr, TimeSeriesColumnNames::MetricName))
+                return String{TimeSeriesTagNames::MetricName};
+            if (expr->type == ActionsDAG::ActionType::FUNCTION && expr->function_base
+                && expr->function_base->getName() == "arrayElement" && expr->children.size() == 2)
+            {
+                String tag_name;
+                if (input_is(unwrap_alias(expr->children[0]), TimeSeriesColumnNames::Tags)
+                    && get_const_string(unwrap_alias(expr->children[1]), tag_name))
+                    return tag_name;
+            }
+            return std::nullopt;
+        };
+
         /// Inner column name -> the constant values the filter restricts it to. Ordered for stable output.
         std::map<String, std::vector<String>> values_by_column;
 
-        /// Records that the tag `tag_name` is restricted to `value`, if it maps to an indexable column
-        /// (`__name__` -> the "metric_name" column; a promoted tag -> its column; otherwise ignored).
+        /// Extra index-usable conditions that aren't equality (prefix/regex), each `<fn>(<col>, <arg>) OR <col> = ''`.
+        ASTs extra_conditions;
+
+        /// Records `<tag> = <value>` on the tag's column, if it has one.
         auto record_tag_value = [&](const String & tag_name, const String & value)
         {
-            if (tag_name == TimeSeriesTagNames::MetricName)
-                values_by_column[TimeSeriesColumnNames::MetricName].push_back(value);
-            else if (auto it = column_by_tag_name.find(tag_name); it != column_by_tag_name.end())
-                values_by_column[it->second].push_back(value);
+            if (auto column = column_of_tag(tag_name))
+                values_by_column[*column].push_back(value);
+        };
+
+        /// Records `<function_name>(<tag's column>, '<argument>') OR <column> = ''`, if the tag has a column.
+        /// The empty-string branch keeps rows whose value is stored in the Map; the outer filter stays exact.
+        /// Use `= ''`, not the equivalent `empty(col)`: KeyCondition derives a point range from `equals` but
+        /// not from `empty`, and one unanalyzable branch makes the whole OR drop to `true` (no granule skipping).
+        auto record_tag_match = [&](const String & tag_name, const String & function_name, const String & argument)
+        {
+            auto column = column_of_tag(tag_name);
+            if (!column)
+                return;
+            ASTs branches;
+            branches.push_back(makeASTFunction(function_name,
+                make_intrusive<ASTIdentifier>(*column), make_intrusive<ASTLiteral>(Field{argument})));
+            branches.push_back(makeASTFunction("equals",
+                make_intrusive<ASTIdentifier>(*column), make_intrusive<ASTLiteral>(Field{String{}})));
+            extra_conditions.push_back(makeASTForLogicalOr(std::move(branches)));
         };
 
         /// Records the equality matchers of a constant PromQL selector (the argument of
@@ -241,7 +364,26 @@ namespace
             for (const auto & matcher : static_cast<const PrometheusQueryTree::InstantSelector &>(*root).matchers)
             {
                 if (matcher.matcher_type == PrometheusQueryTree::MatcherType::EQ)
+                {
+                    /// `label = '<value>'`.
                     record_tag_value(matcher.label_name, matcher.label_value);
+                }
+                else if (matcher.matcher_type == PrometheusQueryTree::MatcherType::RE)
+                {
+                    /// `label =~ '<regex>'` (fully anchored as `^(?:<regex>)$`). An alternation of plain
+                    /// literals becomes an `IN` set; any other regex is pushed as a `match` on the column
+                    /// (KeyCondition derives a prefix range from it when possible).
+                    if (auto literals = extractRegexLiteralAlternatives(matcher.label_value))
+                    {
+                        for (const auto & literal : *literals)
+                            record_tag_value(matcher.label_name, literal);
+                    }
+                    else
+                    {
+                        record_tag_match(matcher.label_name, "match", anchorRegexForMatch(matcher.label_value));
+                    }
+                }
+                /// Negative matchers (`!=`, `!~`) can't prune via the index and are ignored.
             }
         };
 
@@ -268,18 +410,17 @@ namespace
                 else
                     continue;
 
-                if (input_is(expr, TimeSeriesColumnNames::MetricName))
-                {
-                    record_tag_value(TimeSeriesTagNames::MetricName, value);
-                }
-                else if (expr->type == ActionsDAG::ActionType::FUNCTION && expr->function_base
-                    && expr->function_base->getName() == "arrayElement" && expr->children.size() == 2)
-                {
-                    String tag_name;
-                    if (input_is(unwrap_alias(expr->children[0]), TimeSeriesColumnNames::Tags)
-                        && get_const_string(unwrap_alias(expr->children[1]), tag_name))
-                        record_tag_value(tag_name, value);
-                }
+                if (auto tag = expr_tag_name(expr))
+                    record_tag_value(*tag, value);
+            }
+            /// `startsWith(<col>, <const>)`, `<col> LIKE <const>`, `match(<col>, <const>)`.
+            else if ((function_name == "startsWith" || function_name == "like" || function_name == "match")
+                && node->children.size() == 2)
+            {
+                String argument;
+                if (auto tag = expr_tag_name(unwrap_alias(node->children[0]));
+                    tag && get_const_string(unwrap_alias(node->children[1]), argument))
+                    record_tag_match(*tag, function_name, argument);
             }
             /// `timeSeriesSelectorMatchTags('<selector>', ...)` -> the selector's equality matchers.
             else if (function_name == "timeSeriesSelectorMatchTags" && !node->children.empty())
@@ -290,11 +431,9 @@ namespace
             }
         }
 
-        if (values_by_column.empty())
-            return nullptr;
-
-        /// AND over columns of `<column> IN ('', <values>)`.
         ASTs conditions;
+
+        /// `<column> IN ('', <values>)` for each column with equality conditions.
         for (const auto & [column_name, values] : values_by_column)
         {
             ASTs tuple_args;
@@ -305,6 +444,12 @@ namespace
                 make_intrusive<ASTIdentifier>(column_name),
                 makeASTFunction("tuple", std::move(tuple_args))));
         }
+
+        for (auto & condition : extra_conditions)
+            conditions.push_back(std::move(condition));
+
+        if (conditions.empty())
+            return nullptr;
         return makeASTForLogicalAnd(std::move(conditions));
     }
 

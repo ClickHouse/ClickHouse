@@ -8,6 +8,12 @@ Regex matcher:
 0
 1
 0
+Alternation regex matcher (exact set, not prefix/suffix):
+1
+1
+0
+0
+0
 Empty tag value:
 1
 0

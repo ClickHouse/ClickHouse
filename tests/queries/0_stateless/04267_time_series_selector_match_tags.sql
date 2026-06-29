@@ -12,6 +12,13 @@ SELECT timeSeriesSelectorMatchTags('{__name__="up", job=~"api.*"}', [('job', 'we
 SELECT timeSeriesSelectorMatchTags('{__name__="up", job!~"api.*"}', [('job', 'web')],    '__name__', 'up');
 SELECT timeSeriesSelectorMatchTags('{__name__="up", job!~"api.*"}', [('job', 'api-v1')], '__name__', 'up');
 
+SELECT 'Alternation regex matcher (exact set, not prefix/suffix):';
+SELECT timeSeriesSelectorMatchTags('{__name__="up", job=~"api|server"}', [('job', 'api')],     '__name__', 'up');
+SELECT timeSeriesSelectorMatchTags('{__name__="up", job=~"api|server"}', [('job', 'server')],  '__name__', 'up');
+SELECT timeSeriesSelectorMatchTags('{__name__="up", job=~"api|server"}', [('job', 'apidoc')],  '__name__', 'up');
+SELECT timeSeriesSelectorMatchTags('{__name__="up", job=~"api|server"}', [('job', 'xserver')], '__name__', 'up');
+SELECT timeSeriesSelectorMatchTags('{__name__="up", job=~"api|server"}', [('job', 'web')],     '__name__', 'up');
+
 SELECT 'Empty tag value:';
 SELECT timeSeriesSelectorMatchTags('{__name__="up", missing=""}',  [('job', 'api')], '__name__', 'up');
 SELECT timeSeriesSelectorMatchTags('{__name__="up", missing!=""}', [('job', 'api')], '__name__', 'up');
