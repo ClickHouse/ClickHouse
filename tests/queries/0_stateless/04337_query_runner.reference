@@ -1,0 +1,1 @@
+CREATE TABLE default.runner2\n(\n    `query` String\n)\nENGINE = QueryRunner\nSETTINGS mode = \'synchronous\', threads = 2, max_queue_size = 100\nSQL SECURITY INVOKER

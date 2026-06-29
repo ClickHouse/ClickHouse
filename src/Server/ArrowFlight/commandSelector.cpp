@@ -362,6 +362,7 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"ODBC", "REMOTE TABLE"},
     {"OSS", "REMOTE TABLE"},
     {"PostgreSQL", "REMOTE TABLE"},
+    {"QueryRunner", "REMOTE TABLE"},
     {"RabbitMQ", "REMOTE TABLE"},
     {"Redis", "REMOTE TABLE"},
     {"S3", "REMOTE TABLE"},

@@ -600,7 +600,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     add_empty_if_needed();
 
-    if (sql_security && supportSQLSecurity() && sql_security->as<ASTSQLSecurity &>().type.has_value())
+    if (sql_security && sql_security->as<ASTSQLSecurity &>().type.has_value())
     {
         ostr << settings.nl_or_ws;
         sql_security->format(ostr, settings, state, frame);
