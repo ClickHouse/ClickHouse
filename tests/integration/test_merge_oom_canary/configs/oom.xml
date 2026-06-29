@@ -7,11 +7,4 @@
     <oom_canary_enable>1</oom_canary_enable>
     <oom_canary_size>104857600</oom_canary_size>
     <oom_canary_relaunch>1</oom_canary_relaunch>
-
-    <!-- Everything else is left at ClickHouse defaults: max_server_memory_usage_to_ram_ratio (0.9), the
-         merge memory budget, the MemoryWorker dirty-page purge, jemalloc background threads, the
-         background pool size. The OOM is reached purely through a chaotic, diverse, high-rate allocation
-         workload that outruns the default purge - exactly as the AST fuzzer did - not by tuning any
-         memory setting. (Swap is disabled at the container level via memswap_limit so that, as on the
-         fuzzer's host, hitting the limit means a kernel OOM rather than swapping.) -->
 </clickhouse>
