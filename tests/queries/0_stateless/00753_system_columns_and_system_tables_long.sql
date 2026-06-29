@@ -70,14 +70,16 @@ FORMAT PrettyCompactNoEscapes;
 DROP TABLE IF EXISTS check_system_tables;
 
 SELECT 'Check total_bytes/total_rows for TinyLog';
-CREATE TABLE check_system_tables (key UInt8) ENGINE = TinyLog();
+-- Pin the codec to `LZ4` so `total_bytes` does not depend on the server's default compression codec.
+CREATE TABLE check_system_tables (key UInt8 CODEC(LZ4)) ENGINE = TinyLog();
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 INSERT INTO check_system_tables VALUES (1);
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 DROP TABLE check_system_tables;
 
 SELECT 'Check total_bytes/total_rows for Log';
-CREATE TABLE check_system_tables (key UInt8) ENGINE = Log();
+-- Pin the codec to `LZ4` so `total_bytes` does not depend on the server's default compression codec.
+CREATE TABLE check_system_tables (key UInt8 CODEC(LZ4)) ENGINE = Log();
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 INSERT INTO check_system_tables VALUES (1);
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();

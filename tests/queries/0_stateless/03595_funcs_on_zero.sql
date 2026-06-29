@@ -80,7 +80,7 @@ SELECT entropy(0) FROM system.one;
 SELECT erf(0) FROM system.one;
 SELECT erfc(0) FROM system.one;
 SELECT errorCodeToName(0) FROM system.one;
-SELECT estimateCompressionRatio(0) FROM system.one;
+SELECT estimateCompressionRatio('LZ4')(0) FROM system.one; -- pin the codec so the ratio does not depend on the server's default compression codec
 SELECT exp(0) FROM system.one;
 SELECT exp10(0) FROM system.one;
 SELECT exp2(0) FROM system.one;

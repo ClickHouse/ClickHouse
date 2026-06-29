@@ -2,6 +2,9 @@
 -- ^^ Prevent the data sizes from varying with random parameters.
 
 -- This test validates the storage size of the text index without and with posting list compression.
+-- The text index files are compressed with the server's default codec (`getDefaultCodec`, currently
+-- `ZSTD(3)`), which is not controlled by a column codec or the `default_compression_codec` setting, so
+-- the expected `secondary_indices_compressed_bytes` below reflect that default.
 
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;
@@ -38,8 +41,7 @@ SETTINGS
    max_compress_block_size = 1048576,
    ratio_of_defaults_for_sparse_serialization = 0.95,
    serialization_info_version = 'basic',
-   auto_statistics_types = 'minmax',
-   default_compression_codec = 'LZ4';
+   auto_statistics_types = 'minmax';
 
 CREATE TABLE tab_uncompressed
 (
@@ -65,8 +67,7 @@ SETTINGS
    max_compress_block_size = 1048576,
    ratio_of_defaults_for_sparse_serialization = 0.95,
    serialization_info_version = 'basic',
-   auto_statistics_types = 'minmax',
-   default_compression_codec = 'LZ4';
+   auto_statistics_types = 'minmax';
 
 INSERT INTO tab_bitpacking
 SELECT '2026-01-09 10:00:00', multiIf(number % 3 = 0, 'aa', number % 3 = 1, 'bb', 'cc') AS str
