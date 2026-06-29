@@ -456,8 +456,8 @@ ManifestListConstPtr PaimonMetadata::getManifestList(const String & manifest_lis
     }
 
     LOG_TRACE(log, "Loading manifest list (no cache): {}", manifest_list_path);
-    return std::make_shared<const std::vector<PaimonManifestFileMeta>>(
-        table_client->getManifestMeta(manifest_list_path));
+    auto [manifest_list, _] = table_client->getManifestMeta(manifest_list_path);
+    return std::make_shared<const std::vector<PaimonManifestFileMeta>>(std::move(manifest_list));
 }
 
 ManifestConstPtr PaimonMetadata::getManifest(const String & manifest_path, Int64 schema_id) const

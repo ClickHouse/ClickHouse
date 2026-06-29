@@ -41,30 +41,18 @@ struct PaimonMetadataFilesCacheCell
     > cached_element;
     size_t memory_bytes;
 
-    explicit PaimonMetadataFilesCacheCell(std::vector<PaimonManifestFileMeta> && manifest_list)
+    explicit PaimonMetadataFilesCacheCell(std::vector<PaimonManifestFileMeta> && manifest_list, size_t file_bytes_size)
         : cached_element(std::move(manifest_list))
-        , memory_bytes(
-              getMemorySizeOfManifestList(std::get<std::vector<PaimonManifestFileMeta>>(cached_element))
-              + SIZE_IN_MEMORY_OVERHEAD)
+        , memory_bytes(3 * file_bytes_size + SIZE_IN_MEMORY_OVERHEAD)
     {
     }
 
     explicit PaimonMetadataFilesCacheCell(PaimonManifest && manifest)
         : cached_element(std::move(manifest))
         , memory_bytes(
-              std::get<PaimonManifest>(cached_element).getSizeInMemory()
+              3 * std::get<PaimonManifest>(cached_element).file_bytes_size
               + SIZE_IN_MEMORY_OVERHEAD)
     {
-    }
-
-private:
-    static size_t getMemorySizeOfManifestList(const std::vector<PaimonManifestFileMeta> & manifest_list)
-    {
-        size_t size = sizeof(std::vector<PaimonManifestFileMeta>);
-        size += manifest_list.capacity() * sizeof(PaimonManifestFileMeta);
-        for (const auto & file_meta : manifest_list)
-            size += file_meta.getSizeInMemory();
-        return size;
     }
 };
 
@@ -100,8 +88,8 @@ public:
     {
         auto load_wrapper = [&]()
         {
-            auto manifest_list = load_fn();
-            return std::make_shared<PaimonMetadataFilesCacheCell>(std::move(manifest_list));
+            auto [manifest_list, file_bytes_size] = load_fn();
+            return std::make_shared<PaimonMetadataFilesCacheCell>(std::move(manifest_list), file_bytes_size);
         };
         auto result = Base::getOrSet(key, load_wrapper);
         if (result.second)
