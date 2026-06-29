@@ -229,6 +229,8 @@ void applyParentNullMapToExtractedSubcolumn(
 
 DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
 {
+    if (isArray(prev))
+        return makeNullableAllowingArray(prev);
     if (!canExtractedSubcolumnsBeInsideNullable(prev))
         return prev;
     return makeNullableSafe(prev);
@@ -236,6 +238,8 @@ DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
 
 SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const
 {
+    if (prev_type && isArray(prev_type))
+        return SerializationNullable::create(prev_serialization);
     if (prev_type && !canExtractedSubcolumnsBeInsideNullable(prev_type))
     {
         /// The extracted subcolumn cannot be wrapped into Nullable, but some types can represent NULL
@@ -252,6 +256,8 @@ SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_
 
 ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
 {
+    if (checkAndGetColumn<ColumnArray>(prev.get()))
+        return ColumnNullable::create(prev, null_map);
     if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);
 
