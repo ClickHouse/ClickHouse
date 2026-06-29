@@ -1714,12 +1714,20 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
     const Cluster & cluster,
     const Cluster::ShardInfo & shard_info,
     const StorageID & table_id,
+    const IStorage * owner,
     ContextPtr context)
 {
     if (shard_info.isLocal())
     {
         auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
         if (!storage)
+            return {};
+        /// The local shard can resolve back to the owning `Distributed` table itself (a self-referential
+        /// `Distributed` table). The constructor rejects this only on `CREATE`, not when loading existing
+        /// metadata (e.g. on `ATTACH` or server start), so such a table can exist. Recursing would call
+        /// back into `StorageDistributed::getModificationHash`, which has no depth guard, so fail closed
+        /// on self-reference.
+        if (storage.get() == owner)
             return {};
         auto metadata = storage->getInMemoryMetadataPtr(context, false);
         auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
@@ -1801,7 +1809,7 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
             if (shard_info.getAllNodeCount() > 1)
                 return {};
 
-            auto shard_hash = getModificationHashOfRemoteTableInShard(*cluster, shard_info, remote_table_id, query_context);
+            auto shard_hash = getModificationHashOfRemoteTableInShard(*cluster, shard_info, remote_table_id, this, query_context);
             if (!shard_hash)
                 return {}; /// A shard cannot tell whether it changed - assume the worst for the whole table.
 

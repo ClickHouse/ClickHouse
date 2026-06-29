@@ -89,6 +89,15 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mem_ord (x UInt64) ENGINE = Memory;
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_mem_ord VALUES (1);
 SELECT 'ordinary memory null', modification_hash IS NULL FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_mem_ord';
+
+-- A self-referential Distributed table (its local shard resolves back to itself) must fail closed
+-- (NULL) instead of recursing into its own getModificationHash. CREATE rejects self-reference, but
+-- ATTACH (loading metadata) does not, so such a table can exist. ATTACH with a definition requires an
+-- Ordinary database, which is why this case lives in this section.
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_dist_self (x UInt64)
+    ENGINE = Distributed(test_shard_localhost, {CLICKHOUSE_DATABASE_1:String}, t_dist_self);
+SELECT 'distributed self-ref null', modification_hash IS NULL FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_dist_self';
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- System tables cannot tell whether their data changed: modification_hash is NULL.
