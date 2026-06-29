@@ -1167,17 +1167,19 @@
         /// An absolute docs path is used as is.
         if (cleanPath.startsWith('/')) return base + cleanPath + suffix;
 
-        /// A relative path (`./x`, `../section/x`): its `../` segments cannot be resolved against the
-        /// docs root, because the page they come from lives under a section route. Drop the leading
-        /// `./`/`../` and resolve the first remaining segment to its canonical route when it names a
-        /// known section or is already a route root; otherwise fall back to the docs root.
+        /// A relative path (`./x`, `../section/x`): its `./`/`../` segments cannot be resolved against the
+        /// docs root, because the page they come from lives under a section route that the embedded `source`
+        /// (a code path, not a docs path) does not reveal. Drop the leading `./`/`../` and resolve the first
+        /// remaining segment to its canonical route when it names a known section or is already a route root.
+        /// A bare same-directory link (e.g. `textindexes.md`), or any leading segment we cannot map, has no
+        /// determinable route: rather than emit a fabricated path that 404s, fall back to the docs root.
         const rel = cleanPath.replace(/^(\.\.?\/)+/, '');
         const slash = rel.indexOf('/');
         const head = slash === -1 ? rel : rel.slice(0, slash);
         const tail = slash === -1 ? '' : rel.slice(slash); /// keeps its leading '/'
         if (DOCS_ROUTE_ROOTS.has(head)) return base + '/' + rel + suffix;
         if (DOCS_SECTION_ROUTE[head]) return base + DOCS_SECTION_ROUTE[head] + tail + suffix;
-        return base + '/' + rel + suffix;
+        return base;
     }
 
     /// Turn an inline `code` element into an in-app link when its text is a documented entity.
