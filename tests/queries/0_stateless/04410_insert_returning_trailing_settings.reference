@@ -10,6 +10,19 @@ select returning trailing settings pushed down
 trailing settings still apply to source select
 1
 1
+source settings before returning do not cap returning
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+1
 trailing settings do not affect returning planning
 1
 1
