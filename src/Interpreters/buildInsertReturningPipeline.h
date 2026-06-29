@@ -25,14 +25,16 @@ QueryPipeline buildInsertReturningPipeline(
     QueryPipeline insert_pipeline,
     const ASTPtr & returning_select,
     ContextPtr context,
-    QueryMetadataCachePtr & out_metadata_cache);
+    QueryMetadataCachePtr & out_metadata_cache,
+    const ASTPtr & source_select_settings_ast = nullptr);
 
 /// Build a pulling pipeline for the RETURNING subquery only (used after native-protocol push inserts).
 /// See `buildInsertReturningPipeline` for the meaning of `out_metadata_cache`.
 QueryPipeline buildReturningSelectPipeline(
     const ASTPtr & returning_select,
     ContextPtr context,
-    QueryMetadataCachePtr & out_metadata_cache);
+    QueryMetadataCachePtr & out_metadata_cache,
+    const ASTPtr & source_select_settings_ast = nullptr);
 
 void setupPullingQueryPipeline(
     QueryPipeline & pipeline,

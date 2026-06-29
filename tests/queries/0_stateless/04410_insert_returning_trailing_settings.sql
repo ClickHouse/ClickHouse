@@ -38,6 +38,18 @@ SETTINGS max_result_rows = 1, result_overflow_mode = 'break';
 
 SELECT count() FROM t_ret_settings;
 
+-- Trailing source SETTINGS must not affect RETURNING SELECT normalization/planning.
+-- Session UNION mode is ALL; trailing source settings set DISTINCT only for source phase.
+SELECT 'trailing settings do not affect returning planning';
+TRUNCATE TABLE t_ret_settings;
+SET union_default_mode = 'ALL';
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT 1 UNION SELECT 1)
+SETTINGS union_default_mode = 'DISTINCT';
+SET union_default_mode = '';
+
+SELECT count() FROM t_ret_settings;
+
 -- Trailing SETTINGS after RETURNING apply to the source SELECT only, not to the RETURNING subquery.
 SELECT 'trailing settings do not cap returning';
 TRUNCATE TABLE t_ret_settings;
