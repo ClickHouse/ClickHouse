@@ -11047,6 +11047,14 @@ MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata
 
 std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr /*context*/) const
 {
+    /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
+    /// a same-named table: a DROP + CREATE can keep identical parts and checksums while changing
+    /// query-visible semantics (e.g. switching the engine to `ReplacingMergeTree` or changing its
+    /// version column), and block numbers also restart. The part checksums alone do not capture that, so
+    /// fail closed.
+    if (!getStorageID().hasUUID())
+        return {};
+
     SipHash hash;
 
     /// Table identity: the UUID distinguishes different incarnations of a table with the same name.

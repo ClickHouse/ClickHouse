@@ -10,5 +10,6 @@ order final result changed	1
 url glob null	1
 url failover null	1
 ordinary memory null	1
+ordinary mergetree null	1
 distributed self-ref null	1
 system table null	1

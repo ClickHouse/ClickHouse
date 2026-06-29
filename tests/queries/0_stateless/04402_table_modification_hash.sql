@@ -76,10 +76,11 @@ CREATE TABLE t_url_failover (x UInt64) ENGINE = URL('http://localhost:1/a.csv|ht
 SELECT 'url glob null', modification_hash IS NULL FROM system.tables WHERE database = currentDatabase() AND name = 't_url_glob';
 SELECT 'url failover null', modification_hash IS NULL FROM system.tables WHERE database = currentDatabase() AND name = 't_url_failover';
 
--- Version-only engines (Memory/Log/StripeLog) rely on the table UUID to distinguish incarnations
--- of a same-named table together with a monotonic data_version. In an Ordinary database the UUID is
--- Nil, so DROP + CREATE restarts data_version from the same value and a recreated table holding
--- different data could collide. They fail closed there: modification_hash is NULL.
+-- Every engine relies on the table UUID to distinguish incarnations of a same-named table. In an
+-- Ordinary database the UUID is Nil, so DROP + CREATE can produce the same hash for different data:
+-- the version-only engines (Memory/Log/StripeLog) restart their monotonic data_version, and even
+-- MergeTree can keep identical parts/checksums while changing engine semantics. They all fail closed
+-- there: modification_hash is NULL.
 SET allow_deprecated_database_ordinary = 1;
 -- Creating an Ordinary database emits a one-time server warning that the client forwards to stderr;
 -- silence it so the flaky check (which fails on any stderr) stays green, as 01053 does.
@@ -89,6 +90,9 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mem_ord (x UInt64) ENGINE = Memory;
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_mem_ord VALUES (1);
 SELECT 'ordinary memory null', modification_hash IS NULL FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_mem_ord';
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mt_ord (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_mt_ord VALUES (1);
+SELECT 'ordinary mergetree null', modification_hash IS NULL FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_mt_ord';
 
 -- A self-referential Distributed table (its local shard resolves back to itself) must fail closed
 -- (NULL) instead of recursing into its own getModificationHash. CREATE rejects self-reference, but

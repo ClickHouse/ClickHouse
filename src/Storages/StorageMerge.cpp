@@ -1903,11 +1903,11 @@ std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPt
     }
     catch (...)
     {
-        /// Resolving the source tables can fail. Most importantly, two wrapper tables referencing each
-        /// other - e.g. `m1 = Merge(db, '^m2$')` and `m2 = Merge(db, '^m1$')`, or a `Merge` and a
-        /// `Distributed` pointing at each other - make resolving the source metadata recurse until
-        /// `checkStackSize` throws `TOO_DEEP_RECURSION` (see `getDatabaseIterators`). We cannot compute a
-        /// hash then, so fail closed.
+        /// Ok to ignore: resolving the source tables can fail. Most importantly, two wrapper tables
+        /// referencing each other - e.g. `m1 = Merge(db, '^m2$')` and `m2 = Merge(db, '^m1$')`, or a
+        /// `Merge` and a `Distributed` pointing at each other - make resolving the source metadata recurse
+        /// until `checkStackSize` throws `TOO_DEEP_RECURSION` (see `getDatabaseIterators`). We cannot
+        /// compute a hash then, so fail closed.
         return {};
     }
 }
