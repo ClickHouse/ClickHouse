@@ -208,6 +208,11 @@ Chunk ArrowFlightSource::generate()
                                     FormatSettings::DateTimeOverflowBehavior::Throw,
                                     /* allow_geoparquet_parser = */ false);
 
+    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
+    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
+    ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(*chunk.data);
+
     auto table_res = arrow::Table::FromRecordBatches({chunk.data});
     if (!table_res.ok())
     {

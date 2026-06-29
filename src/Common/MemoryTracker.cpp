@@ -133,6 +133,7 @@ void AllocationTrace::onFreeImpl(void * ptr, size_t size) const
 namespace ProfileEvents
 {
     extern const Event QueryMemoryLimitExceeded;
+    extern const Event GlobalMemoryLimitExceeded;
     extern const Event PageCacheOvercommitResize;
     extern const Event MemoryAllocatedWithoutCheck;
     extern const Event MemoryAllocatedWithoutCheckBytes;
@@ -232,6 +233,8 @@ void MemoryTracker::injectFault() const
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
 
     ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+    if (level == VariableContext::Global)
+        ProfileEvents::increment(ProfileEvents::GlobalMemoryLimitExceeded);
     const auto * description = description_ptr.load(std::memory_order_relaxed);
     throw DB::Exception(
         DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
@@ -240,7 +243,7 @@ void MemoryTracker::injectFault() const
         description ? " memory tracker" : "Memory tracker");
 }
 
-void incrementAllocationWithoutCheck(Int64 size)
+static void incrementAllocationWithoutCheck(Int64 size)
 {
     ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheck);
     if (size < 0)
@@ -348,6 +351,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
 
             ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+            if (level == VariableContext::Global)
+                ProfileEvents::increment(ProfileEvents::GlobalMemoryLimitExceeded);
             const auto * description = description_ptr.load(std::memory_order_relaxed);
             throw DB::Exception(
                 DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
@@ -425,7 +430,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
             }
 
             /// If that wasn't enough, try to stop some query.
-            OvercommitTracker * overcommit_tracker_ptr;
+            OvercommitTracker * overcommit_tracker_ptr = nullptr;
             if (overcommit_result == OvercommitResult::NONE && ((overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))) && query_tracker != nullptr)
                 overcommit_result = overcommit_tracker_ptr->needToStopQuery(query_tracker, size);
 
@@ -440,6 +445,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
                 /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
                 MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
                 ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+                if (level == VariableContext::Global)
+                    ProfileEvents::increment(ProfileEvents::GlobalMemoryLimitExceeded);
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
                 throw DB::Exception(
                     DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,

@@ -2,6 +2,7 @@
 #include <stdexcept>
 
 #include <zlib.h>
+#include <Examples/clickhouse_examples.h>
 
 #include <Common/VectorWithMemoryTracking.h>
 

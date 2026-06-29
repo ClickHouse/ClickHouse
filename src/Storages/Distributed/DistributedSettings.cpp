@@ -44,10 +44,7 @@ DistributedSettings::DistributedSettings(const DistributedSettings & settings)
 {
 }
 
-DistributedSettings::DistributedSettings(DistributedSettings && settings) noexcept
-    : impl(std::make_unique<DistributedSettingsImpl>(std::move(*settings.impl)))
-{
-}
+DistributedSettings::DistributedSettings(DistributedSettings && settings) noexcept = default;
 
 DistributedSettings::~DistributedSettings() = default;
 

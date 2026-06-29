@@ -92,8 +92,8 @@ namespace
 
         struct UploadPartTask
         {
-            size_t part_offset;
-            size_t part_size;
+            size_t part_offset{};
+            size_t part_size{};
             Strings block_ids;
             bool is_finished = false;
         };

@@ -1,0 +1,34 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>card</name>
+            <values>
+                <value>1000000</value>
+                <value>100000</value>
+                <value>10000</value>
+                <value>100</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE test_u64_{card} (k UInt64, o UInt8) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO test_u64_{card} SELECT number % {card}, number % 4 FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_u64_{card} FINAL</fill_query>
+
+    <create_query>CREATE TABLE test_lc_{card} (lc LowCardinality(String)) ENGINE = MergeTree ORDER BY lc</create_query>
+    <fill_query>INSERT INTO test_lc_{card} SELECT toLowCardinality(toString(number % {card})) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_lc_{card} FINAL</fill_query>
+
+    <create_query>CREATE TABLE test_lc_long (lc LowCardinality(String)) ENGINE = MergeTree ORDER BY lc</create_query>
+    <fill_query>INSERT INTO test_lc_long SELECT toLowCardinality(leftPad(toString(number % 200000), 48, '0')) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_lc_long FINAL</fill_query>
+
+    <query>SELECT DISTINCT k FROM test_u64_{card} FORMAT Null</query>
+    <query>SELECT DISTINCT k, o FROM test_u64_{card} FORMAT Null</query>
+    <query>SELECT DISTINCT lc FROM test_lc_{card} FORMAT Null</query>
+    <query>SELECT DISTINCT lc FROM test_lc_long FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_u64_{card}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_lc_{card}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_lc_long</drop_query>
+</test>

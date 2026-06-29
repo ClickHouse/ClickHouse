@@ -70,7 +70,7 @@ protected:
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
 
     DataTypes types;
-    size_t rows;
+    size_t rows{};
 };
 
 }

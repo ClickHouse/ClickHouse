@@ -185,7 +185,7 @@ void SlabsPolygonIndex::indexBuild(const VectorWithMemoryTracking<Polygon> & pol
         if (l == n || sorted_x[l] != all_edges[i].l.x() || sorted_x[r] != all_edges[i].r.x())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Error occurred while building polygon index. Edge {}  is [{}, {}] but found [{}, {}]. l = {}, r = {}",
+                "Error occurred while building polygon index. Edge {} is [{}, {}] but found [{}, {}]. l = {}, r = {}",
                 i, all_edges[i].l.x(), all_edges[i].r.x(), sorted_x[l], sorted_x[r], l, r);
         }
 

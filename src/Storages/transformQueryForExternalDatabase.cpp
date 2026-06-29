@@ -92,7 +92,7 @@ struct ReplaceLiteralToExprVisitorData
             for (auto & argument : func.arguments->children)
             {
                 auto * literal_expr = typeid_cast<ASTLiteral *>(argument.get());
-                UInt64 value;
+                UInt64 value = 0;
                 if (literal_expr && literal_expr->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
                 {
                     /// 1 -> 1=1, 0 -> 1=0.
@@ -414,7 +414,7 @@ String transformQueryForExternalDatabaseImpl(
     }
 
     auto * literal_expr = typeid_cast<ASTLiteral *>(original_where.get());
-    UInt64 value;
+    UInt64 value = 0;
     if (literal_expr && literal_expr->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
     {
         /// WHERE 1 -> WHERE 1=1, WHERE 0 -> WHERE 1=0.

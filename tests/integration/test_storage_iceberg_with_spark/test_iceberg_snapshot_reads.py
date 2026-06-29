@@ -7,7 +7,6 @@ from helpers.iceberg_utils import (
     generate_data,
     get_last_snapshot,
     get_uuid_str,
-    get_uuid_str,
     write_iceberg_from_df,
     default_upload_directory
 )

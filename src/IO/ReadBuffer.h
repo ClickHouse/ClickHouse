@@ -166,7 +166,7 @@ public:
         return bytes_copied;
     }
 
-    /** Reads n bytes, if there are less - throws an exception. */
+    /** Reads n bytes with read, if there are less - throws an exception. */
     void readStrict(char * to, size_t n);
 
     /** A method that can be more efficiently implemented in derived classes, in the case of reading large enough blocks.
@@ -177,12 +177,19 @@ public:
       */
     [[nodiscard]] virtual size_t readBig(char * to, size_t n) { return read(to, n); }
 
+    /** Reads n bytes with readBig, if there are less - throws an exception. */
+    void readBigStrict(char * to, size_t n);
+
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
       * It's used for asynchronous readers with double-buffering.
       * `priority` is the `ThreadPool` priority, with which the prefetch task will be scheduled.
       * Lower value means higher priority.
       */
     virtual void prefetch(Priority) {}
+
+    /// Wait until reading more data from this buffer is expected to complete without blocking.
+    /// The default implementation keeps the previous behavior for buffers that cannot expose readiness.
+    virtual bool poll(size_t /* timeout_microseconds */) { return true; }
 
     /**
      * Set upper bound for read range [..., position).

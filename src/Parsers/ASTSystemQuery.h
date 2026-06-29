@@ -44,6 +44,7 @@ public:
         CLEAR_COMPILED_EXPRESSION_CACHE,
         CLEAR_ICEBERG_METADATA_CACHE,
         CLEAR_PARQUET_METADATA_CACHE,
+        CLEAR_POINT_IN_POLYGON_CACHE,
         CLEAR_FILESYSTEM_CACHE,
         CLEAR_DISTRIBUTED_CACHE,
         CLEAR_DISK_METADATA_CACHE,
@@ -224,7 +225,7 @@ public:
     using InstrumentArgument = std::variant<String, Int64, Float64>;
     String instrumentation_function_name;
     String instrumentation_handler_name;
-    Instrumentation::EntryType instrumentation_entry_type;
+    Instrumentation::EntryType instrumentation_entry_type{};
     std::optional<std::variant<UInt64, Instrumentation::All, String>> instrumentation_point;
     std::vector<InstrumentArgument> instrumentation_arguments;
     String instrumentation_subquery;

@@ -28,7 +28,7 @@ protected:
         String to_str;
         String step_str;
         bool is_timespan = false;
-        double step;
+        double step{};
     };
 
     struct KQLMakeSeries

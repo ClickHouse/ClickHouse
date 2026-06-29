@@ -696,20 +696,11 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                 chassert(isOnS3()); /// What is supported at the moment
                 switch (catalog)
                 {
-                    case LakeCatalog::Glue:
-                        cat = &sc.glue_catalog.value();
-                        break;
-                    case LakeCatalog::Hive:
-                        cat = &sc.hive_catalog.value();
-                        break;
-                    case LakeCatalog::REST:
-                        cat = &sc.rest_catalog.value();
-                        break;
-                    case LakeCatalog::Unity:
-                        cat = &sc.unity_catalog.value();
-                        break;
-                    default:
-                        UNREACHABLE();
+                    case LakeCatalog::Glue: cat = &sc.glue_catalog.value(); break;
+                    case LakeCatalog::Hive: cat = &sc.hive_catalog.value(); break;
+                    case LakeCatalog::REST: cat = &sc.rest_catalog.value(); break;
+                    case LakeCatalog::Unity: cat = &sc.unity_catalog.value(); break;
+                    default: UNREACHABLE();
                 }
                 next_bucket_path = fmt::format(
                     "http://{}:{}/{}/{}{}",

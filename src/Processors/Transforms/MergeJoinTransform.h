@@ -43,7 +43,7 @@ struct JoinKeyRow
 
     void reset();
 
-    std::vector<ColumnPtr> row;
+    Columns row;
 };
 
 /// Remembers previous key if it was joined in previous block
@@ -81,10 +81,10 @@ public:
             chassert(length > 0 && begin + length <= chunk.getNumRows());
         }
 
-        size_t begin;
-        size_t length;
+        size_t begin{};
+        size_t length{};
 
-        size_t current;
+        size_t current{};
         Chunk chunk;
     };
 

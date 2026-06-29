@@ -155,7 +155,7 @@ private:
     {
         SerializationVersion structure_version;
         DataTypePtr variant_type;
-        size_t num_dynamic_types;
+        size_t num_dynamic_types{};
         ColumnDynamic::StatisticsPtr statistics;
 
         /// For flattened serialization only.

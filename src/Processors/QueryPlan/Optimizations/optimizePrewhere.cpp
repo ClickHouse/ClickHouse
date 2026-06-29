@@ -166,7 +166,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     const auto & settings = context->getSettingsRef();
 
     PrewhereInfoPtr existing_prewhere_info = source_step_with_filter->getPrewhereInfo();
-    if (existing_prewhere_info && !settings[Setting::optimize_prewhere_after_pushdown])
+    if (existing_prewhere_info
+        && (!settings[Setting::optimize_prewhere_after_pushdown] || !source_step_with_filter->canUpdatePrewhereInfoMultipleTimes()))
         return;
 
     bool is_final = source_step_with_filter->isQueryWithFinal();

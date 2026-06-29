@@ -104,7 +104,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
 
     String promql_query_string = promql_query_field.safeGet<String>();
 
-    PrometheusQueryEvaluationMode mode;
+    PrometheusQueryEvaluationMode mode = {};
     DateTime64 start_time;
     DateTime64 end_time;
     Decimal64 step;
