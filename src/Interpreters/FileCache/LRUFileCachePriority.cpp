@@ -167,7 +167,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
 
     if (entry->size)
     {
-        notifyUsageChange(entry->key_metadata->origin.user_id, static_cast<Int64>(entry->size), 1);
+        notifyUsageChange(entry->key_metadata, static_cast<Int64>(entry->size), 1);
         state->add(entry->size, /* elements */1, *state_lock);
     }
 
@@ -185,7 +185,7 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
     auto & entry = **it;
     if (entry.size)
     {
-        notifyUsageChange(entry.key_metadata->origin.user_id, -static_cast<Int64>(entry.size.load()), -1);
+        notifyUsageChange(entry.key_metadata, -static_cast<Int64>(entry.size.load()), -1);
         state->sub(entry.size, /* elements */1);
     }
 
@@ -777,7 +777,7 @@ void LRUFileCachePriority::LRUIterator::invalidateImpl() noexcept
 
     const size_t entry_size = entry_ptr->size;
     if (entry_size)
-        cache_priority->notifyUsageChange(entry_ptr->key_metadata->origin.user_id, -static_cast<Int64>(entry_size), -1);
+        cache_priority->notifyUsageChange(entry_ptr->key_metadata, -static_cast<Int64>(entry_size), -1);
 
     entry_ptr->size = 0;
     entry_ptr->setInvalidatedFlag();
@@ -813,7 +813,7 @@ void LRUFileCachePriority::LRUIterator::incrementSize(
         size, entry_ptr->toString());
 
     cache_priority->notifyUsageChange(
-        entry_ptr->key_metadata->origin.user_id,
+        entry_ptr->key_metadata,
         static_cast<Int64>(size),
         static_cast<Int64>(elements));
 
@@ -836,7 +836,7 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
              "Decrement size with {} in LRU queue entry {}",
              size, entry_ptr->toString());
 
-    cache_priority->notifyUsageChange(entry_ptr->key_metadata->origin.user_id, -static_cast<Int64>(size), 0);
+    cache_priority->notifyUsageChange(entry_ptr->key_metadata, -static_cast<Int64>(size), 0);
     cache_priority->state->sub(size, 0);
     entry_ptr->size -= size;
 }

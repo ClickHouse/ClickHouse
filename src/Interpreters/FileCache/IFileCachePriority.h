@@ -482,6 +482,12 @@ protected:
             on_usage_change_callback(user_id, size_delta, elements_delta);
     }
 
+    /// Same as above, but resolves the user id from the (weak) key metadata of a queue entry.
+    /// The weak pointer is locked only when the callback is installed, so this stays zero-overhead
+    /// when the feature is disabled (the default). It never throws, so it is safe to call from
+    /// noexcept paths such as `LRUIterator::invalidateImpl`.
+    void notifyUsageChange(const KeyMetadataWeakPtr & key_metadata, Int64 size_delta, Int64 elements_delta) const;
+
     const QueueType queue_type;
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
