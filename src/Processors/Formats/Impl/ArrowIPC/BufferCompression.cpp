@@ -214,12 +214,14 @@ void decompressBuffersParallel(CompressionCodec codec, const VectorWithMemoryTra
     {
         Decompressor decompressor; /// codec contexts are not thread-safe: one per group
         for (size_t i = lo; i < hi; ++i)
+        {
             /// Run the codec whenever there is a compressed payload, even when the buffer decodes to zero
             /// bytes (`dst_size == 0`): the frame's header, end marker and checksum must still be validated,
             /// otherwise a non-empty frame declaring a zero uncompressed length would have its trailing bytes
             /// accepted unchecked. A job is only ever created for `src_size > 0`, so this validates every one.
             if (jobs[i].src_size > 0)
                 decompressor.decompress(codec, jobs[i].src, jobs[i].src_size, jobs[i].dst, jobs[i].dst_size);
+        }
     });
 }
 
