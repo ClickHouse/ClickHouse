@@ -10,12 +10,17 @@
    `user` and `password` query parameters. SQLancer++'s generic provider only
    passes the URL string (no JDBC Properties) into `DriverManager.getConnection`,
    so the new driver - which requires credentials - needs them embedded here.
-3. Replace the `IS TRUE` postfix in `GeneralNoRECOracle.java` with `= TRUE`.
-   ClickHouse's parser doesn't implement the SQL-standard `IS TRUE` /
-   `IS FALSE` postfix, so without this patch every NoREC oracle query is a
-   guaranteed `SYNTAX_ERROR` and NoREC reports zero oracle pairs. `<expr>
-   = TRUE` is what ClickHouse accepts; precedence and JDBC NULL handling are
-   equivalent for the row-counter.
+3. Replace the `IS TRUE` postfix in `GeneralNoRECOracle.java` with `!= 0`.
+   NoREC's row-counter must agree with `WHERE <expr>`, which ClickHouse
+   evaluates by truthiness (any non-zero numeric is included, `NULL` is
+   excluded). `<expr> != 0` reproduces that exactly: non-zero -> 1,
+   zero -> 0, `NULL` -> `NULL` (counted as not matching), matching `WHERE`.
+   Neither `<expr> IS TRUE` nor `<expr> = TRUE` works here: ClickHouse parses
+   `IS TRUE` as `<expr> <=> true`, i.e. strict equality with `1`, so a truthy
+   but non-`1` value such as `5` or `LN(x)` would compare unequal and produce
+   a false-positive oracle mismatch. (`IS TRUE` itself is only accepted since
+   https://github.com/ClickHouse/ClickHouse/pull/99997; before that the
+   unpatched oracle was a guaranteed `SYNTAX_ERROR`.)
 """
 
 import argparse

@@ -33,10 +33,11 @@ COPY swap-clickhouse-jdbc.py /tmp/swap-clickhouse-jdbc.py
 #   * extends `dbconfigs/jdbc.properties` to embed user/password in the JDBC
 #     URL template, which the modern driver requires;
 #   * rewrites `GeneralNoRECOracle.java`'s `IS TRUE` postfix to `!= 0`,
-#     because ClickHouse's parser doesn't implement the SQL-standard
-#     `IS TRUE`/`IS FALSE` operators and a strict `= TRUE` would produce
-#     false-positive oracle mismatches for `WHERE LN(x)`-style truthy checks
-#     where the value is non-zero but not equal to 1.
+#     because NoREC's row-counter must match `WHERE <expr>` truthiness
+#     (any non-zero numeric is included). ClickHouse parses `IS TRUE` as
+#     `<expr> <=> true`, i.e. strict equality with `1`, so `IS TRUE`/`= TRUE`
+#     would produce false-positive oracle mismatches for `WHERE LN(x)`-style
+#     truthy checks where the value is non-zero but not equal to 1.
 # No SQLancer++ source code references either driver package, so the runtime
 # swap is safe.
 RUN mkdir /sqlancer-pp \
