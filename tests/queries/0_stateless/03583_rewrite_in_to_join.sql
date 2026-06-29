@@ -61,19 +61,22 @@ WITH
     t as (select number from numbers(5))
 SELECT *
 FROM numbers(8)
-WHERE number IN t;
+WHERE number IN t
+ORDER BY number;
 
 -- Tuple
 SELECT *
 FROM numbers(8)
-WHERE (number+1, number+2) IN (select number, number+1 from numbers(5));
+WHERE (number+1, number+2) IN (select number, number+1 from numbers(5))
+ORDER BY number;
 
 -- Tuple and CTE
 WITH
     t as (select number, number+1 from numbers(5))
 SELECT *
 FROM numbers(8)
-WHERE (number+1, number+2) in (t);
+WHERE (number+1, number+2) in (t)
+ORDER BY number;
 
 -- Mismatching number of elements
 SELECT *
