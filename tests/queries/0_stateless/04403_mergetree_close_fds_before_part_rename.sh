@@ -12,7 +12,12 @@
 # inside fails on filesystems backed by Windows (WSL, CIFS/SMB, Docker Desktop bind
 # mounts), breaking INSERT. On ext4/XFS the rename succeeds regardless, so we cannot
 # reproduce the failure directly; instead we assert the invariant that fixes it: once a
-# part has been committed to disk, the server holds no open descriptors into it.
+# part has been committed to disk, the server holds no descriptor open *for writing* into
+# it. We must restrict the check to write descriptors because read descriptors into a
+# committed part are legitimate and expected -- prewarming the mark cache and the primary
+# key cache (and the page cache, SELECTs, merges) open the very same files O_RDONLY right
+# after the part is committed -- whereas only the writer's own leaked descriptors are the
+# bug, and the writer always opens these files O_WRONLY.
 #
 # `sleep_before_commit_local_part_in_replicated_table_ms` pauses the insert *after* the
 # part directory has been renamed but *before* the temporary part (which owns the writer
@@ -35,8 +40,8 @@ SETTINGS
     sleep_before_commit_local_part_in_replicated_table_ms = 6000
 "
 
-# No background merges, so the only descriptors that could point into the part are the
-# writer's own (a read for a merge would otherwise be a false positive).
+# Stop background merges so a merge cannot open the part's files for writing and be
+# mistaken for the writer's leaked descriptors.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP MERGES t_fd_leak"
 
 uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_fd_leak'")
@@ -45,17 +50,27 @@ uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT uuid FROM system.tables WHERE database = 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_fd_leak SELECT number, toString(number) FROM numbers(100)" >/dev/null 2>&1 &
 insert_pid=$!
 
-# While the insert is paused after the rename, look for any open descriptor (across all
-# processes) that still points into this table's committed part data files.
+# While the insert is paused after the rename, look for any descriptor (across all
+# processes) still open *for writing* into this table's committed part data files.
 leaked=0
 for _ in $(seq 1 200); do
-    if ls -l /proc/[0-9]*/fd/ 2>/dev/null \
-        | grep -F -- "$uuid" \
-        | grep -Eq -- '-> .*/(data\.bin|primary\.cidx|primary\.idx|[^/]*\.cmrk[0-9]+)$'
-    then
-        leaked=1
-        break
-    fi
+    # Each candidate line is a '/proc/PID/fd/FD -> /.../data.bin' symlink; keep just the
+    # '/proc/PID/fd/FD' path so we can consult the matching fdinfo for its open mode.
+    while read -r fd_link; do
+        # /proc/PID/fdinfo/FD reports the open flags; the low two bits of the octal
+        # 'flags' field are the access mode (0 = O_RDONLY, 1 = O_WRONLY, 2 = O_RDWR).
+        # Ignore read-only descriptors (cache prewarming, the page cache, SELECTs).
+        flags=$(grep -m1 '^flags:' "${fd_link/\/fd\//\/fdinfo\/}" 2>/dev/null | tr -dc '0-7')
+        [ -n "$flags" ] || continue
+        if [ $(( flags & 3 )) -ne 0 ]; then
+            leaked=1
+            break
+        fi
+    done < <(ls -l /proc/[0-9]*/fd/* 2>/dev/null \
+                | grep -F -- "$uuid" \
+                | grep -E -- '-> .*/(data\.bin|primary\.cidx|primary\.idx|[^/]*\.cmrk[0-9]+)$' \
+                | sed -E 's/ -> .*//; s/.* //')
+    [ "$leaked" -eq 1 ] && break
     # Stop once the insert has finished: the observation window is closed.
     kill -0 "$insert_pid" 2>/dev/null || break
     sleep 0.1
