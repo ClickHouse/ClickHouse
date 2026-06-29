@@ -53,4 +53,20 @@ SELECT DISTINCT count(*) OVER () FROM (SELECT ignore(s IN ('1', '2')) AS c, s FR
 SELECT DISTINCT count(*) OVER () FROM (SELECT toString(ignore(s IN ('1', '2'))) FROM t_window_const);
 SELECT DISTINCT count(*) OVER () FROM (SELECT indexHint(s IN ('1', '2')) FROM t_window_const);
 
+-- A transparent wrapper (identity) is not suitable for constant folding, yet it returns its argument
+-- column unchanged, so over a constant argument it emits a ColumnConst on the replicas just like the
+-- argument does. When that argument holds an IN operator (so it cannot be evaluated while building the
+-- analyze-only header), the header must still keep the constant, otherwise the unused column is pruned
+-- on the coordinator while the replica streams it (the same OutputPort divergence). This holds for an
+-- IN tuple, an IN subquery, and nested wrappers.
+SELECT DISTINCT count(*) OVER () FROM (SELECT identity(ignore(s IN ('1', '2'))) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT identity(ignore(s IN (SELECT toString(number) FROM numbers(3)))) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT identity(identity(ignore(s IN ('1', '2')))) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT identity(ignore(s IN ('1', '2'))) AS c, s FROM t_window_const);
+
+-- identity over a non-constant IN argument stays a plain column (not falsely kept constant): it goes
+-- the same plain-column header path as a bare IN, so it cannot be evaluated here and deterministically
+-- reports CLUSTER_DOESNT_EXIST against a missing cluster after the header is built.
+SELECT DISTINCT count(*) OVER () FROM (SELECT identity(s IN ('1', '2')) FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
+
 DROP TABLE t_window_const;

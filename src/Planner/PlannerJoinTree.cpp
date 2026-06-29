@@ -195,6 +195,16 @@ bool functionResultIsAlwaysConstant(const String & function_name)
     return function_name == "ignore" || function_name == "indexHint";
 }
 
+/// `identity` is a transparent wrapper: it is deliberately not suitable for constant folding, yet
+/// executeImpl returns its argument column unchanged. So when its argument folds to a ColumnConst the
+/// function emits that same ColumnConst on the replicas. Recognize it by name so the analyze-only
+/// header stays constant for shapes like identity(ignore(s IN (...))), matching the real projection
+/// plan even though the analyzer never folds it.
+bool functionIsTransparentConstantWrapper(const String & function_name)
+{
+    return function_name == "identity";
+}
+
 /// Try to fold a projection to its constant column without building an ActionsDAG over the whole
 /// subtree. Returns the constant column (sized for one row) or nullptr if the projection is not a
 /// constant. Used as a fallback for projections that projectionCanBeEvaluatedForConstHeader() rejects
@@ -227,10 +237,16 @@ ColumnPtr tryEvaluateConstantProjectionColumn(const QueryTreeNodePtr & node)
         return nullptr;
     }
 
-    /// Any other function can be constant only if it is suitable for constant folding and every
-    /// argument folds to a constant. This recursion only visits constant arguments, so it covers
-    /// nested cases like toString(ignore(s IN (...))) while never descending into an IN/subquery.
-    if (!function_base->isSuitableForConstantFolding())
+    /// Any other function can be constant only if every argument folds to a constant and the function
+    /// preserves that constness. Two function classes do: those suitable for constant folding, and
+    /// transparent wrappers like identity that are not foldable but return their argument unchanged.
+    /// This recursion only visits the arguments (which must themselves fold to constants), so it covers
+    /// nested cases like toString(ignore(s IN (...))) and identity(ignore(s IN (...))) without ever
+    /// descending into the unevaluable IN/subquery. The final isColumnConst check below is the safety
+    /// net: a wrapper over a non-constant argument never reaches here, because that argument fails to
+    /// fold and we return nullptr first.
+    if (!function_base->isSuitableForConstantFolding()
+        && !functionIsTransparentConstantWrapper(function_node->getFunctionName()))
         return nullptr;
 
     ColumnsWithTypeAndName argument_columns;
