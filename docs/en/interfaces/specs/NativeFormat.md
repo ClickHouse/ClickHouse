@@ -1437,6 +1437,23 @@ flowchart LR
 | `0x02` | NONE   | Body is the raw bytes (no compression). The frame is still emitted; the receiver verifies the checksum. |
 | `0x82` | LZ4    | Body is the **LZ4 block format** — *not* the LZ4 frame format. No magic number. |
 | `0x90` | ZSTD   | Body is a raw zstd single-frame stream (the standard zstd magic number is part of the body). |
+| `0x9d` | PCO    | Body is the ClickHouse `PCO` (pcodec) per-column block; see [per-column codec frames](#per-column-codec-frames) below. |
+
+### Per-column codec frames {#per-column-codec-frames}
+
+`NONE`/`LZ4`/`ZSTD` are the only method bytes a server *emits* into a `Native` stream on the wire: TCP compression and HTTP `compress=1` are restricted to these generic transport codecs (and the transport carries no per-column type, so a type-dependent codec could not run there in any case). The method byte is, however, a single global registry (`src/Compression/CompressionInfo.h`) shared with the on-disk MergeTree compressed format, and a `CompressedReadBuffer` dispatches on it alone. So a `Native` reader on the *accept* side — notably the HTTP `decompress=1` request-body path, which takes the codec from each frame's method byte — will decode any registered method byte, including the per-column codecs (`Delta` `0x92`, `T64` `0x93`, `DoubleDelta` `0x94`, `Gorilla` `0x95`, `FPC` `0x98`, `GCD` `0x9a`, `ALP` `0x9c`, `PCO` `0x9d`, …). These are normally produced only by a column's `CODEC(...)` clause inside a data part, not by the transport.
+
+`PCO` (`0x9d`, a native port of [pcodec](https://github.com/pcodec/pcodec)) is enabled with `allow_experimental_codecs` and specialized for fixed-width numeric columns. Because it must map the column type to a pcodec number type, it *requires* the column type to compress and so is never emitted by the type-less transport path. On decode it needs no type: the element width is carried in the frame body, which is self-describing.
+
+```text
+[1 byte:  W]                element width, one of 1, 2, 4, 8
+[1 byte:  B]                count of raw leading bytes, B = uncompressed_size mod W
+[B bytes: leading bytes]    the partial leading value, copied verbatim
+[rest:    standalone .pco]  pcodec standalone stream encoding (uncompressed_size − B) / W
+                            values of width W
+```
+
+The embedded `.pco` stream is byte-for-byte the reference pcodec standalone format (format major 4 / minor 1, standalone version 3), so it round-trips with the reference implementation in both directions.
 
 ### Checksum {#checksum}
 
