@@ -127,7 +127,3 @@
 # Flaky on macOS (failed 3/20 runs); investigate before unskipping.
 01903_http_fields
 
-# Tagged no-fasttest/long: not executed by the fast-test run anyway, so the skip entry is likely
-# redundant. Confirm the tags and drop from this list.
-02420_stracktrace_debug_symbols
-04097_distributed_join_kinds
