@@ -48,6 +48,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
             {"allow_experimental_json_ast_dialect", false, false, "New setting to enable the `clickhouse_json` value of the `dialect` setting, which interprets queries as JSON ASTs (the output of `parseQueryToJSON`) instead of SQL text."},
+            {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
