@@ -1,4 +1,5 @@
 #include <IO/FetchMachineRunner.h>
+#include <IO/LocalFetchMachineRunner.h>
 
 #include <gtest/gtest.h>
 #include <atomic>
@@ -374,4 +375,65 @@ TEST(FetchMachine, ReleaseEdgePublishesFinalState)
         ASSERT_EQ(m->state.load(), park ? MachineState::AwaitCollect : MachineState::Done);
     }
     EXPECT_EQ(m->runs.load(), 64u);
+}
+
+TEST(FetchMachine, LocalRunnerRunsStepInlineAndSettles)
+{
+    /// The inline runner runs the step on the calling thread INSIDE schedule (no pool), so the
+    /// machine is already settled when schedule returns - and it carries no handle.
+    LocalFetchMachineRunner runner;
+
+    auto m = std::make_shared<CountingMachine>();
+    m->run_step = [self = m.get()]
+    {
+        self->runs.fetch_add(1);
+        return StepResult::AwaitCollect;
+    };
+
+    ASSERT_TRUE(runner.schedule(m));
+    EXPECT_EQ(m->runs.load(), 1u);                          /// ran inline, before any waitReleased
+    EXPECT_EQ(m->state.load(), MachineState::AwaitCollect);
+    EXPECT_EQ(m->current_step, nullptr);                    /// no future to double-join
+    EXPECT_EQ(m->failure, nullptr);
+
+    runner.waitReleased(*m);                                /// no-op: already settled
+    EXPECT_EQ(m->runs.load(), 1u);
+}
+
+TEST(FetchMachine, LocalRunnerDoneReachesTerminalState)
+{
+    LocalFetchMachineRunner runner;
+    auto m = std::make_shared<CountingMachine>();
+    m->run_step = [] { return StepResult::Done; };
+
+    ASSERT_TRUE(runner.schedule(m));
+    EXPECT_EQ(m->state.load(), MachineState::Done);
+    EXPECT_EQ(m->current_step, nullptr);
+}
+
+TEST(FetchMachine, LocalRunnerCapturesStepThrowInFailure)
+{
+    /// A step-body throw must land in `machine.failure` (for the single collect rethrow site),
+    /// NOT propagate out of schedule - else collect would skip its stats-merge + reclaim.
+    LocalFetchMachineRunner runner;
+    auto m = std::make_shared<CountingMachine>();
+    m->run_step = []() -> StepResult { throw std::runtime_error("boom"); };
+
+    bool scheduled = false;
+    ASSERT_NO_THROW(scheduled = runner.schedule(m));
+    EXPECT_TRUE(scheduled);
+    EXPECT_EQ(m->state.load(), MachineState::Failed);
+    EXPECT_NE(m->failure, nullptr);
+}
+
+TEST(FetchMachine, LocalRunnerTryCancelQueuedIsFalseAndWaitIsNoop)
+{
+    /// Nothing is ever queued; the collect verbs are no-ops on an inline machine.
+    LocalFetchMachineRunner runner;
+    auto m = std::make_shared<CountingMachine>();
+    m->run_step = [] { return StepResult::AwaitCollect; };
+
+    ASSERT_TRUE(runner.schedule(m));
+    EXPECT_FALSE(runner.tryCancelQueued(*m));
+    EXPECT_NO_THROW(runner.waitReleased(*m));               /// idempotent / no handle
 }
