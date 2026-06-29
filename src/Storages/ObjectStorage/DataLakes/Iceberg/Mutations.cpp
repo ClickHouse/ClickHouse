@@ -934,22 +934,13 @@ Pipe IcebergMetadata::alterPartition(
 void IcebergMetadata::alterPartitionDropImpl(
     const PartitionCommand & command, ContextPtr context, std::shared_ptr<DataLake::ICatalog> catalog, StorageID storage_id)
 {
-    /// Fetch the state DROP PARTITION will plan from. The lambda is re-invoked on every commit
-    /// retry, so the catalog is consulted fresh each attempt (matching `alter`).
     auto fetch_latest_state = [this, context, catalog, storage_id]() -> std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
     {
         if (!catalog)
         {
-            /// No catalog: the latest local metadata is authoritative. Ignore any explicit
-            /// iceberg_metadata_file_path, which exists only for time-travel reads.
             return getRelevantState(context, /*force_fetch_latest_metadata=*/true, /*ignore_explicit_metadata_file_path=*/true);
         }
 
-        /// Catalog-backed (DatabaseDataLake): the catalog is the commit authority. Plan from the
-        /// metadata location it currently points at, exactly like `alter`, rather than from
-        /// object-storage listing or version-hint.text. Doing otherwise can retry forever against
-        /// the wrong REST parent, or advance a non-transactional catalog from a metadata file that
-        /// was never current there.
         DataLake::TableMetadata table_metadata;
         table_metadata.withDataLakeSpecificProperties().withLocation();
         const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
