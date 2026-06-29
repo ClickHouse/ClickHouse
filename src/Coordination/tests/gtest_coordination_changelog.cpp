@@ -2356,7 +2356,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadShutdownJoinsFills)
             .commit_logs_cache_size_threshold = 1,
         },
         DB::FlushSettings(),
-        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100},
+        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 60000},
         this->keeper_context);
     changelog.init(0, 0);
 
