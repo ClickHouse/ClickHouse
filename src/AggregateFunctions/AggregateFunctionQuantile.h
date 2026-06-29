@@ -29,6 +29,7 @@ namespace ErrorCodes
 template <typename> class QuantileTiming;
 template <typename> class QuantileGK;
 template <typename> class QuantileDD;
+template <typename> class QuantileReq;
 
 /** Generic aggregate function for calculation of quantiles.
   * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
@@ -345,6 +346,9 @@ struct NameQuantilesGK { static constexpr auto name = "quantilesGK"; };
 
 struct NameQuantileDD { static constexpr auto name = "quantileDD"; };
 struct NameQuantilesDD { static constexpr auto name = "quantilesDD"; };
+
+struct NameQuantileReq { static constexpr auto name = "quantileReq"; };
+struct NameQuantilesReq { static constexpr auto name = "quantilesReq"; };
 
 struct NameQuantilePrometheusHistogram { static constexpr auto name = "quantilePrometheusHistogram"; };
 struct NameQuantilesPrometheusHistogram { static constexpr auto name = "quantilesPrometheusHistogram"; };

@@ -38,6 +38,7 @@ void registerAggregateFunctionsQuantileTDigest(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileTDigestWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileBFloat16(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileDD(AggregateFunctionFactory &);
+void registerAggregateFunctionsQuantileReq(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileBFloat16Weighted(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantilePrometheusHistogram(AggregateFunctionFactory &);
@@ -152,6 +153,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionsQuantileTDigestWeighted(factory);
         registerAggregateFunctionsQuantileBFloat16(factory);
         registerAggregateFunctionsQuantileDD(factory);
+        registerAggregateFunctionsQuantileReq(factory);
         registerAggregateFunctionsQuantileBFloat16Weighted(factory);
         registerAggregateFunctionsQuantileApprox(factory);
         registerAggregateFunctionsQuantilePrometheusHistogram(factory);
