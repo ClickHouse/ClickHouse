@@ -92,11 +92,10 @@
 03394_pr_insert_select
 03404_lazy_materialization_distributed
 
-# Test env is missing a Python dep or helper binary here (numpy/pandas, lexer_test, ch symlink);
+# Test env is missing a Python dep or helper binary here (numpy/pandas, ch symlink);
 # present on CI. Re-verify before unskipping.
 02294_anova_cmp
 03321_forwarded_for
-03533_lexer_c_library
 03536_ch_as_client_and_local
 04056_npy_large_shape_validation
 
