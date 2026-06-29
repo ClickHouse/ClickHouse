@@ -577,15 +577,22 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
                 auto replica_log_ptr = zk_res[2 * global_replica_index + 2];
 
                 UInt64 recovery_time = 0;
+                bool unsynced_after_recovery = false;
                 {
+                    /// `ddl_worker` is reset under `ddl_worker_mutex` in shutdown(), so every
+                    /// access to it must hold the lock. Read both members here.
                     std::lock_guard lock(ddl_worker_mutex);
-                    if (replica.is_local && ddl_worker)
-                        recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                    if (ddl_worker)
+                    {
+                        if (replica.is_local)
+                            recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                        unsynced_after_recovery = ddl_worker->isUnsyncedAfterRecovery();
+                    }
                 }
 
                 replicas_info[global_replica_index] = ReplicaInfo{
                     .is_active = replica_active.error == Coordination::Error::ZOK,
-                    .unsynced_after_recovery = ddl_worker && ddl_worker->isUnsyncedAfterRecovery(),
+                    .unsynced_after_recovery = unsynced_after_recovery,
                     .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
                     .recovery_time = recovery_time,
                 };
