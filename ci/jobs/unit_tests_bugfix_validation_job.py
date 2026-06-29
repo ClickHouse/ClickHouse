@@ -260,7 +260,7 @@ def main():
             "Skipped: no changed unit-test files.",
         )
         return
-    print(f"Changed unit-test files:\n  " + "\n  ".join(test_files))
+    print("Changed unit-test files:\n  " + "\n  ".join(test_files))
 
     # 3. Derive the touched test suites and build a gtest filter.
     suites = derive_test_suites(test_files)
