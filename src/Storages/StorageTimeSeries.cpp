@@ -17,12 +17,14 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 #include <Storages/TimeSeries/makeTimeSeriesReadQuery.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
+#include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
 #include <boost/algorithm/string.hpp>
@@ -153,7 +155,9 @@ StorageTimeSeries::StorageTimeSeries(
 
     if (!comment.empty())
         storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals());
+
+    auto timestamp_type = splitTimeSeriesType(normalized_columns.get(TimeSeriesColumnNames::TimeSeries).type).first;
+    storage_metadata.setVirtuals(createVirtuals(timestamp_type));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -531,11 +535,16 @@ void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, con
     }
 }
 
-VirtualColumnsDescription StorageTimeSeries::createVirtuals()
+VirtualColumnsDescription StorageTimeSeries::createVirtuals(const DataTypePtr & timestamp_type)
 {
     VirtualColumnsDescription desc;
     desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
     desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+
+    /// `timestamp` is a filter-only virtual column: it never appears in the output, but a condition on it in
+    /// WHERE selects the time range. The read query pushes such a condition onto the "samples" table (and,
+    /// when enabled, onto the "min_time"/"max_time" columns of the "tags" table).
+    desc.addPersistent(TimeSeriesColumnNames::Timestamp, timestamp_type, /* codec= */ nullptr, /* comment= */ "");
     return desc;
 }
 

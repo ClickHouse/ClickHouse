@@ -456,3 +456,82 @@ def test_select_tags_samples_and_metrics():
         ["cpu_usage",           "{'__name__':'cpu_usage','host':'h1'}", "1", "",              ""],
         ["http_requests_total", "{'__name__':'http_requests_total','job':'api'}", "1", "http_requests", "counter"],
     ])
+
+
+def _insert_two_series_with_timestamps():
+    # 'cpu' has samples at 1000/2000/3000s; 'mem' has samples at 5000/6000s.
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
+        " ('cpu', {'host': 'a'}, [(toDateTime64(1000,3),1.0),(toDateTime64(2000,3),2.0),(toDateTime64(3000,3),3.0)]),"
+        " ('mem', {'host': 'b'}, [(toDateTime64(5000,3),5.0),(toDateTime64(6000,3),6.0)])"
+    )
+
+
+def test_select_where_timestamp_reshapes_time_series():
+    """`timestamp` is a filter-only virtual column: it never appears in the output, but a condition on it
+    selects the time range, so the `time_series` array keeps only in-range samples."""
+    _insert_two_series_with_timestamps()
+    # Lower bound: 'cpu' keeps the samples at 2000 and 3000.
+    assert node.query(
+        "SELECT length(time_series) FROM prometheus WHERE metric_name='cpu' AND timestamp >= toDateTime64(2000,3)"
+    ) == "2\n"
+    # A range (BETWEEN becomes `>=` AND `<=`): only the sample at 2000 survives.
+    assert node.query(
+        "SELECT length(time_series) FROM prometheus"
+        " WHERE metric_name='cpu' AND timestamp BETWEEN toDateTime64(1500,3) AND toDateTime64(2500,3)"
+    ) == "1\n"
+
+
+def test_select_where_timestamp_prunes_series():
+    """A series with no sample in the selected time range is not returned at all."""
+    _insert_two_series_with_timestamps()
+    # Only 'cpu' has samples at or before 3000.
+    assert node.query(
+        "SELECT metric_name FROM prometheus WHERE timestamp <= toDateTime64(3000,3) ORDER BY metric_name"
+    ) == "cpu\n"
+    # Only 'mem' has samples at or after 5000.
+    assert node.query(
+        "SELECT count() FROM prometheus WHERE timestamp >= toDateTime64(5000,3)"
+    ) == "1\n"
+
+
+def test_select_where_timestamp_without_min_max_columns():
+    """The samples-table time filter must work even when the tags table doesn't store `min_time`/`max_time`
+    (so the tags-side range pruning is unavailable)."""
+    node.query("DROP TABLE IF EXISTS prom_no_minmax SYNC")
+    node.query("CREATE TABLE prom_no_minmax ENGINE=TimeSeries SETTINGS store_min_time_and_max_time=0")
+    try:
+        node.query(
+            "INSERT INTO prom_no_minmax (metric_name, tags, time_series) VALUES"
+            " ('cpu', {}, [(toDateTime64(1000,3),1.0),(toDateTime64(2000,3),2.0)])"
+        )
+        assert node.query(
+            "SELECT length(time_series) FROM prom_no_minmax WHERE timestamp >= toDateTime64(2000,3)"
+        ) == "1\n"
+    finally:
+        node.query("DROP TABLE IF EXISTS prom_no_minmax SYNC")
+
+
+def test_select_where_timestamp_general_predicate():
+    """Any deterministic condition over `timestamp` alone is pushed onto the samples table verbatim, so
+    `!=` and function-of-timestamp predicates reshape the `time_series` array correctly (not just the
+    `<`/`<=`/`>`/`>=`/`=` comparisons that also drive the `min_time`/`max_time` pruning)."""
+    _insert_two_series_with_timestamps()
+    # `!=` keeps cpu's samples at 1000 and 3000 (2000 excluded).
+    assert node.query(
+        "SELECT length(time_series) FROM prometheus WHERE metric_name='cpu' AND timestamp != toDateTime64(2000,3)"
+    ) == "2\n"
+    # A function of timestamp: keep samples at or after 2000s (2000000 ms).
+    assert node.query(
+        "SELECT length(time_series) FROM prometheus"
+        " WHERE metric_name='cpu' AND toUnixTimestamp64Milli(timestamp) >= 2000000"
+    ) == "2\n"
+
+
+def test_select_where_timestamp_mixed_with_other_column_rejected():
+    """A `timestamp` condition that also depends on another column can't become a samples-table predicate, so
+    it is rejected rather than silently returning wrong results."""
+    _insert_two_series_with_timestamps()
+    assert "NOT_IMPLEMENTED" in node.query_and_get_error(
+        "SELECT count() FROM prometheus WHERE timestamp > toDateTime64(2000,3) OR metric_name = 'cpu'"
+    )
