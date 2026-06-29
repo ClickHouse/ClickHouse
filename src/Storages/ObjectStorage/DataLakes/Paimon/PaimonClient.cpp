@@ -46,6 +46,8 @@
 #include <fmt/ranges.h>
 
 
+using namespace Paimon;
+
 namespace DB
 {
 namespace ErrorCodes
