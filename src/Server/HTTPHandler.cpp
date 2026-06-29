@@ -438,11 +438,18 @@ void HTTPHandler::processQuery(
                 path_only = "/";
         }
 
-        path_info = parseHTTPPath(
-            path_only,
-            settings[Setting::http_allow_database_as_path],
-            settings[Setting::http_allow_table_as_file],
-            settings[Setting::http_allow_filters_as_path]);
+        /// The legacy query endpoints — `/` and `/query`, plus the `?…` / `/?…` / `/query?…` forms the
+        /// routing filter (`addDefaultHandlersFactory`) claims as the query route — are not table-as-file
+        /// paths. Skip path parsing for them, so e.g. `GET /query?query=SELECT+1` keeps working when the
+        /// user has a path feature enabled; otherwise `parseHTTPPath` would read `query` as a table name
+        /// and the pre-check below would throw `UNKNOWN_TABLE` (or `implicit_table_at_top_level` would
+        /// rewrite a FROM-less query) before the SQL runs.
+        if (!path_only.empty() && path_only != "/" && path_only != "/query")
+            path_info = parseHTTPPath(
+                path_only,
+                settings[Setting::http_allow_database_as_path],
+                settings[Setting::http_allow_table_as_file],
+                settings[Setting::http_allow_filters_as_path]);
     }
 
     /// Resolve the current database from the path and the `database` setting, in that order.
