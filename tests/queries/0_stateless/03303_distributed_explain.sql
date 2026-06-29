@@ -1,4 +1,5 @@
 -- Tags: no-random-settings
+SET explain_query_plan_default = 'legacy';
 
 set enable_analyzer=1;
 

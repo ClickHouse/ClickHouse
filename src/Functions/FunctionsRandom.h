@@ -35,21 +35,22 @@ namespace ErrorCodes
   * This means that the timer must be of sufficient resolution to give different values to each columns.
   */
 
-DECLARE_MULTITARGET_CODE(
-
 struct RandImpl
 {
     /// Fill memory with random data. The memory region must be 15-bytes padded.
     static void execute(char * output, size_t size);
 };
 
-) // DECLARE_MULTITARGET_CODE
-
-template <typename RandImpl, typename ToType, typename Name>
+template <typename RandImplType, typename ToType, typename Name>
 class FunctionRandomImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
+
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionRandomImpl<RandImplType, ToType, Name>>();
+    }
 
     String getName() const override
     {
@@ -80,39 +81,13 @@ public:
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
         vec_to.resize(input_rows_count);
-        RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
+        RandImplType::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
 
         return col_to;
     }
 };
 
 template <typename ToType, typename Name>
-class FunctionRandom : public FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>
-{
-public:
-    explicit FunctionRandom(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::x86_64_v3,
-            FunctionRandomImpl<TargetSpecific::x86_64_v3::RandImpl, ToType, Name>>();
-    #endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionRandom<ToType, Name>>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
-};
+using FunctionRandom = FunctionRandomImpl<RandImpl, ToType, Name>;
 
 }

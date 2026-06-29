@@ -54,6 +54,7 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_version;
 }
 
+void tracingCallback(struct ffi::Event event);
 void tracingCallback(struct ffi::Event event)
 {
     /// Do not pollute logs with very long messages
@@ -624,7 +625,8 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "To enable delta lake writes, use allow_experimental_delta_lake_writes = 1");
+            "Delta Lake writes are a Beta feature disabled by default. "
+            "To enable them, set allow_delta_lake_writes = 1");
     }
 
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
