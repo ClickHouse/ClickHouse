@@ -1084,7 +1084,7 @@ void ReaderExecutor::serveResidentFromPlan(
                         "ReaderExecutor: residency plan promised a hit at [{}, {}) but read() did not "
                         "return it - a pinned cache segment was not honored",
                         sub.offset, sub.end());
-                result.append(resident_chain.extract(sub));
+                result.append(resident_chain.slice(sub));
                 covered.add(sub);
                 out_stats.add(tier_counter, sub.size);
             }
@@ -1170,7 +1170,7 @@ void ReaderExecutor::serveLateHits(ByteRange window, ChainedBuffers & result, In
                                 "ReaderExecutor: cache {} planResidencyView reported a late hit at "
                                 "[{}, {}) but read() did not return it - a held FileSegment was not honored",
                                 cache->name(), sub.offset, sub.end());
-                        result.append(hit_chain.extract(sub));
+                        result.append(hit_chain.slice(sub));
                         covered.add(sub);
                         out_stats.add(tier_counter, sub.size);
                     }
@@ -1351,7 +1351,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
             ChainedBuffers c = sl.writer->waitAndReadSiblingLed(u);
             if (!c.covers(u))
                 continue;  /// tolerate a short commit; the loser-tail fallback below fetches it
-            result.append(c.extract(u));
+            result.append(c.slice(u));
             covered.add(u);
             out_stats.add(Stats::BytesFromFilesystemCache, u.size);
         }
@@ -1743,7 +1743,7 @@ void ReaderExecutor::recreditCommittedPrefixes(
                     ChainedBuffers chunk = w.writer->read(sub);
                     if (!chunk.covers(sub))
                         continue;  /// raced shrink/detach - fall back to the source path
-                    result.append(chunk.extract(sub));
+                    result.append(chunk.slice(sub));
                     covered.add(sub);
                     out_stats.add(tier_counter, sub.size);
                 }
@@ -2760,7 +2760,7 @@ void ReaderExecutor::serveWindowFromCells(
                 ChainedBuffers c = w.writer->waitAndReadSiblingLed(u);
                 if (!c.covers(u))
                     continue;   /// raced reset/short - the foreground fallback re-fetches it
-                out.append(c.extract(u));
+                out.append(c.slice(u));
                 covered.add(u);
                 out_stats.add(tier_counter, u.size);
             }

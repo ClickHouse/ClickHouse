@@ -70,8 +70,8 @@ struct ChainedBufferNode
 ///      contiguous output without sorting.
 ///   2. `intervals` is a sorted, disjoint, merged coverage set —
 ///      `intervals[i].end() < intervals[i+1].offset` (strictly disjoint, no
-///      touching). Coverage queries (`covers` / `gaps` / `coveredBytes` /
-///      `range`) consult this set, so they are O(log intervals) for hits.
+///      touching). Coverage queries (`covers` / `gaps` / `range`) consult
+///      this set, so they are O(log intervals) for hits.
 ///
 /// `advance` / `tryRewind` keep both invariants in sync:
 ///   * `advance(bytes)` moves the cursor forward; nodes whose data falls
@@ -136,11 +136,8 @@ public:
     /// Sub-ranges of `req` not reachable. Empty iff `covers(req)`.
     VectorWithMemoryTracking<ByteRange> gaps(ByteRange req) const;
 
-    /// Number of bytes in `req` reachable from the cursor.
-    size_t coveredBytes(ByteRange req) const;
-
     /// Sum of node sizes still held (counts overlapping bytes twice).
-    /// `coveredBytes(range())` is the unique-byte equivalent.
+    /// The disjoint `intervals` sum is the unique-byte equivalent.
     size_t totalBytes() const;
 
     /// Alias for `atEnd()`; kept for readability at call sites that mean
@@ -154,9 +151,6 @@ public:
     /// cursor starts at the front of its first node. Operates on the
     /// chain's still-reachable bytes (post-advance).
     ChainedBuffers slice(ByteRange req) const;
-
-    /// Same as `slice(req)` but asserts the chain fully covers `req`.
-    ChainedBuffers extract(ByteRange req) const;
 
     /// Flatten this chain's coverage of `req` into `dst`. Asserts `covers(req)` and (debug)
     /// that the chain is non-overlapping. Returns bytes written.

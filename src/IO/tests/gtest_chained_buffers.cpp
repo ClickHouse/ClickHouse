@@ -309,7 +309,7 @@ TEST(ChainedBuffers, AdvanceReleasesBuffer)
 
 TEST(ChainedBuffers, AdvanceUpdatesCoverageAndRange)
 {
-    /// `range` / `covers` / `coveredBytes` must reflect what is still
+    /// `range` / `covers` must reflect what is still
     /// reachable after the cursor advances — NOT the appended coverage.
     /// Regression for the stale-intervals bug that caused
     /// `UNKNOWN_CODEC: codec family 0` in fast-test on
@@ -330,7 +330,6 @@ TEST(ChainedBuffers, AdvanceUpdatesCoverageAndRange)
     EXPECT_EQ(chain.range().size, 200u);
     EXPECT_FALSE(chain.covers({50, 50}));
     EXPECT_TRUE(chain.covers({150, 50}));
-    EXPECT_EQ(chain.coveredBytes({0, 300}), 200u);
 
     /// Advance past the second node — coverage shrinks to [200, 300).
     chain.advance(100);
@@ -456,17 +455,6 @@ namespace
     }
 }
 
-TEST(ChainedBuffers, CoveredBytesMatchesActualCoverage)
-{
-    /// Three 10-byte nodes covering [0, 30). Query coverage of various sub-ranges.
-    auto chain = makeAdjacentChainedBuffers(/*count=*/3, /*node_size=*/10);
-    EXPECT_EQ(chain.coveredBytes({0, 30}), 30u);
-    EXPECT_EQ(chain.coveredBytes({5, 20}), 20u);
-    EXPECT_EQ(chain.coveredBytes({0, 100}), 30u);  // over-asks; covered <= req
-    EXPECT_EQ(chain.coveredBytes({30, 10}), 0u);   // entirely outside
-    EXPECT_EQ(chain.coveredBytes({100, 50}), 0u);
-}
-
 TEST(ChainedBuffers, GapsReturnsMissingRanges)
 {
     /// Two nodes [0, 10) and [20, 30). Gap at [10, 20).
@@ -518,21 +506,6 @@ TEST(ChainedBuffers, CoversIsCorrectInverseOfGaps)
     EXPECT_FALSE(chain.covers({15, 10})); // 5 bytes past the end
     EXPECT_FALSE(chain.covers({20, 1}));  // entirely past
     EXPECT_TRUE(chain.covers({0, 0}));    // empty range trivially covered
-}
-
-TEST(ChainedBuffers, ExtractMatchesSliceWhenCovered)
-{
-    auto chain = makeAdjacentChainedBuffers(3, 10);
-    ChainedBuffers ex = chain.extract({5, 20});
-    ChainedBuffers sl = chain.slice({5, 20});
-    ASSERT_EQ(ex.getNodes().size(), sl.getNodes().size());
-    EXPECT_EQ(ex.totalBytes(), 20u);
-    /// `extract` and `slice` produce equivalent node ranges on full coverage.
-    for (size_t i = 0; i < ex.getNodes().size(); ++i)
-    {
-        EXPECT_EQ(ex.getNodes()[i].logical_offset, sl.getNodes()[i].logical_offset);
-        EXPECT_EQ(ex.getNodes()[i].size, sl.getNodes()[i].size);
-    }
 }
 
 TEST(ChainedBuffers, ShiftAdjustsLogicalOffsets)
@@ -629,7 +602,6 @@ TEST(ChainedBuffers, AppendOverlappingNodeKeepsCoverageIntact)
     chain.append(ChainedBufferNode{buf, 50, 10, 50});
 
     EXPECT_TRUE(chain.covers({0, 100}));
-    EXPECT_EQ(chain.coveredBytes({0, 100}), 100u);
     EXPECT_EQ(chain.range().offset, 0u);
     EXPECT_EQ(chain.range().size, 100u);
 
@@ -1155,7 +1127,6 @@ TEST(ChainedBuffers, AppendEmptyChainedBuffersIsNoOp)
 TEST(ChainedBuffers, ZeroSizeCoverageQueries)
 {
     auto chain = makeAdjacentChainedBuffers(/*count=*/2, /*node_size=*/10);  /// [0, 20)
-    EXPECT_EQ(chain.coveredBytes({5, 0}), 0u);
     EXPECT_TRUE(chain.gaps({5, 0}).empty());
     EXPECT_TRUE(chain.covers({5, 0}));
 }

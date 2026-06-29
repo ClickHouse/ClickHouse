@@ -140,6 +140,16 @@ void preadSegmentNode(
         anchors->set(path, reader);
 }
 
+/// Object-local end of the bytes safely readable from `segment`: a fully
+/// `DOWNLOADED` segment is readable to its inclusive `range().right`, otherwise
+/// only up to the live write offset a concurrent downloader has committed.
+size_t segmentCommittedEnd(const FileSegment & segment)
+{
+    return segment.state() == FileSegmentState::DOWNLOADED
+        ? segment.range().right + 1
+        : segment.getCurrentWriteOffset();
+}
+
 /// Append every committed sub-range of `holder` overlapping `sub_in_object`
 /// (object-local) to `result`, in segment order, via `preadSegmentNode`. Shared by
 /// the read buffer and the write buffer's served-prefix read; they differ only in
@@ -164,9 +174,7 @@ void readOverlappingSegments(
 
         const auto & seg_range = segment->range();
         const size_t seg_left = seg_range.left;
-        const size_t downloaded_end = (state == FileSegmentState::DOWNLOADED)
-            ? seg_range.right + 1
-            : segment->getCurrentWriteOffset();
+        const size_t downloaded_end = segmentCommittedEnd(*segment);
 
         if (downloaded_end <= sub_in_object.offset || seg_left >= sub_in_object.end())
             continue;
@@ -222,10 +230,7 @@ size_t DiskCacheReader::readable() const
         if (seg_range.left >= range_obj_off + hit_range.size)
             break;
 
-        const auto state = segment->state();
-        size_t committed_end_obj = (state == FileSegmentState::DOWNLOADED)
-            ? seg_range.right + 1
-            : segment->getCurrentWriteOffset();
+        const size_t committed_end_obj = segmentCommittedEnd(*segment);
         readable_end = std::max(readable_end, committed_end_obj + object_file_offset);
     }
 
@@ -811,37 +816,33 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
     if (cursor < req_obj_end)
         add_miss_obj(cursor, req_obj_end);
 
-    /// Align each raw miss to the cache boundary (clamped to the object end),
-    /// sort, then merge adjacent/overlapping aligned ranges so they fold
-    /// (alignment folded IN, not a separate `alignToCaches`). Emit file-level
+    /// Align each raw miss to the cache boundary (clamped to the object end) and
+    /// merge adjacent/overlapping aligned ranges in a single pass (alignment folded
+    /// IN, not a separate `alignToCaches`). The raw misses already arrive in
+    /// ascending offset order from the forward segment walk (`cursor` advances
+    /// monotonically), and `roundDownToMultiple` is monotonic, so the aligned
+    /// offsets are non-decreasing — no separate sort is needed. Merge in
+    /// OBJECT-LOCAL space, then translate to file-level when emitting; merging
+    /// against the file-level offsets would mix coordinate spaces and corrupt the
+    /// merge whenever `object_file_offset > 0`. Emit file-level
     /// `MissEntry{aligned, /*writer=*/nullptr}` — `planResidencyView` never opens
     /// writers.
-    VectorWithMemoryTracking<ByteRange> aligned_vec;
-    aligned_vec.reserve(raw_miss_obj.size());
+    VectorWithMemoryTracking<ByteRange> merged_obj;
     for (const auto & m : raw_miss_obj)
     {
         const size_t a_off = FileCacheUtils::roundDownToMultiple(m.offset, boundary_alignment);
         size_t a_end = FileCacheUtils::roundUpToMultiple(m.end(), boundary_alignment);
         a_end = std::min(a_end, object_size);
-        if (a_end > a_off)
-            aligned_vec.push_back(ByteRange{a_off, a_end - a_off});
-    }
-    std::sort(aligned_vec.begin(), aligned_vec.end(),
-        [](const ByteRange & l, const ByteRange & r) { return l.offset < r.offset; });
-    /// Merge adjacent/overlapping aligned ranges in OBJECT-LOCAL space, then
-    /// translate to file-level when emitting. Merging directly against the
-    /// file-level `miss_entries` offsets would mix coordinate spaces and corrupt
-    /// the merge whenever `object_file_offset > 0`.
-    VectorWithMemoryTracking<ByteRange> merged_obj;
-    for (const auto & a : aligned_vec)
-    {
-        if (!merged_obj.empty() && a.offset <= merged_obj.back().end())
+        if (a_end <= a_off)
+            continue;
+
+        if (!merged_obj.empty() && a_off <= merged_obj.back().end())
         {
             auto & last = merged_obj.back();
-            last.size = std::max(last.end(), a.end()) - last.offset;
+            last.size = std::max(last.end(), a_end) - last.offset;
         }
         else
-            merged_obj.push_back(a);
+            merged_obj.push_back(ByteRange{a_off, a_end - a_off});
     }
     for (const auto & m : merged_obj)
         view->miss_entries.push_back(
