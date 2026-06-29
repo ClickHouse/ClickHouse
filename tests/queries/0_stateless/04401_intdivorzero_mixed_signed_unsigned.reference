@@ -1,0 +1,13 @@
+mixed signed/unsigned where divisor casts to -1 (would FPE -> 0)
+0
+0
+mixed signed/unsigned where divisor casts to -1 but no overflow (valid result)
+100
+100
+mixed signed/unsigned without cast to -1 (valid result)
+0
+0
+plain FPE cases still return 0
+0
+0
+0
