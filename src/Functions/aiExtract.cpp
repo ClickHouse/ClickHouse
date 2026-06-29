@@ -24,9 +24,9 @@ class FunctionAiExtract final : public FunctionBaseAI
 public:
     static constexpr auto name = "aiExtract";
 
-    explicit FunctionAiExtract(ContextPtr context) : FunctionBaseAI(context) {}
+    explicit FunctionAiExtract(ContextPtr context_) : FunctionBaseAI(context_) {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiExtract>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiExtract>(context_); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -232,7 +232,7 @@ JSON-encoded schema of the form `'{"field_a": "description of field a", "field_b
 In instruction mode, the function returns the extracted value as a plain string, or an empty string if nothing was found.
 In schema mode, the function returns a JSON object string whose keys match the requested schema; missing fields are `null`.
 
-The first argument is a named collection that specifies the provider, model, endpoint, and API key.
+The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
 )",
         .syntax = "aiExtract(collection, text, instruction_or_schema[, temperature])",
         .arguments = {

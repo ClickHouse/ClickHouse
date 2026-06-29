@@ -49,6 +49,12 @@ protected:
     LoggerPtr log = getLogger("IcebergPositionDeleteTransform");
     static size_t getColumnIndex(const std::shared_ptr<IInputFormat> & delete_source, const String & column_name);
 
+    /// Drops rows whose `file_path` column does not match the current data file path.
+    /// The WHERE filter on `delete_sources` only drives row-group/page pruning at the
+    /// Parquet reader; rows inside surviving row groups still need to be filtered explicitly.
+    /// Returns the number of rows kept (0 if the chunk has no matching rows).
+    size_t filterChunkToCurrentDataFile(Chunk & chunk, size_t filename_column_index) const;
+
     SharedHeader header;
     IcebergDataObjectInfoPtr iceberg_object_info;
     const ObjectStoragePtr object_storage;

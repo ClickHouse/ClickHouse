@@ -9,6 +9,7 @@
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -50,6 +51,8 @@ ASTPtr ASTStorage::clone() const
     auto res = make_intrusive<ASTStorage>(*this);
     res->children.clear();
 
+    /// Children must be added in the canonical order used by `formatImpl` and
+    /// `normalizeChildrenOrder`. `IAST::updateTreeHash` iterates `children` in sequence.
     if (engine)
         res->set(res->engine, engine->clone());
     if (partition_by)
@@ -58,12 +61,12 @@ ASTPtr ASTStorage::clone() const
         res->set(res->primary_key, primary_key->clone());
     if (order_by)
         res->set(res->order_by, order_by->clone());
+    if (unique_key)
+        res->set(res->unique_key, unique_key->clone());
     if (sample_by)
         res->set(res->sample_by, sample_by->clone());
     if (ttl_table)
         res->set(res->ttl_table, ttl_table->clone());
-    if (unique_key)
-        res->set(res->unique_key, unique_key->clone());
 
     if (settings)
         res->set(res->settings, settings->clone());
@@ -162,7 +165,7 @@ class ASTColumnsElement : public IAST
 {
 public:
     String prefix;
-    IAST * elem;
+    IAST * elem{};
 
     String getID(char c) const override { return "ASTColumnsElement for " + elem->getID(c); }
 
@@ -303,7 +306,7 @@ ASTPtr ASTCreateQuery::clone() const
 
     if (dictionary)
     {
-        assert(is_dictionary);
+        chassert(is_dictionary);
         res->set(res->dictionary_attributes_list, dictionary_attributes_list->clone());
         res->set(res->dictionary, dictionary->clone());
     }
@@ -561,9 +564,12 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (targets)
     {
-        targets->formatTarget(ViewTarget::Data, ostr, settings, state, frame);
-        targets->formatTarget(ViewTarget::Tags, ostr, settings, state, frame);
-        targets->formatTarget(ViewTarget::Metrics, ostr, settings, state, frame);
+        for (const auto & target : targets->targets)
+        {
+            /// `To` and `Inner` are formatted separately above (for materialized / window views).
+            if ((target.kind != ViewTarget::To) && (target.kind != ViewTarget::Inner))
+                ASTViewTargets::formatTarget(target, ostr, settings, state, frame);
+        }
     }
 
     if (dictionary)
@@ -700,6 +706,20 @@ void ASTCreateQuery::setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr s
     if (!targets)
         set(targets, make_intrusive<ASTViewTargets>());
     targets->setInnerEngine(target_kind, storage_def);
+}
+
+ASTColumns * ASTCreateQuery::getTargetInnerColumns(ViewTarget::Kind target_kind) const
+{
+    if (targets)
+        return targets->getInnerColumns(target_kind);
+    return nullptr;
+}
+
+void ASTCreateQuery::setTargetInnerColumns(ViewTarget::Kind target_kind, ASTPtr columns_ast)
+{
+    if (!targets)
+        set(targets, make_intrusive<ASTViewTargets>());
+    targets->setInnerColumns(target_kind, columns_ast);
 }
 
 bool ASTCreateQuery::isCreateQueryWithImmediateInsertSelect() const

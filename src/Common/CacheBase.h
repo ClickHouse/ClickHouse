@@ -245,6 +245,25 @@ public:
         cache_policy->remove(predicate);
     }
 
+    /// O(1) "remove iff" by key: looks up the resident under `key` and
+    /// removes it only when `predicate(resident)` returns true. Returns
+    /// whether the entry was removed. Atomic with respect to concurrent
+    /// set/get/remove (single mutex acquisition for lookup + remove).
+    ///
+    /// Note: the predicate is invoked with a `MappedPtr` copy of the stored
+    /// shared_ptr (cache_policy->get also bumps LRU position as a side
+    /// effect), so the predicate sees `use_count() == stored_refs + 1`.
+    /// Callers reasoning about use_count should account for the extra ref.
+    bool removeIfMatches(const Key & key, std::function<bool(const MappedPtr &)> predicate)
+    {
+        std::lock_guard lock(mutex);
+        auto value = cache_policy->get(key);
+        if (!value || !predicate(value))
+            return false;
+        cache_policy->remove(key);
+        return true;
+    }
+
     size_t sizeInBytes() const
     {
         std::lock_guard lock(mutex);

@@ -10,6 +10,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -88,6 +89,9 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
 
     auto * create_function_query = user_defined_function->as<ASTCreateSQLFunctionQuery>();
 
+    if (!create_function_query && user_defined_function->as<ASTCreateWasmFunctionQuery>())
+        return nullptr;
+
     if (!create_function_query)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "The function '{}' is not a SQL defined function and is not supported when 'enable_analyzer' is set to false", function.formatForErrorMessage());
@@ -146,7 +150,10 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         MarkTableIdentifiersVisitor(identifiers_data).visit(function_body_to_update);
 
         /// Common subexpression elimination. Rewrite rules.
-        QueryNormalizer::Data normalizer_data(aliases, {}, true, QueryNormalizer::ExtractedSettings(context_->getSettingsRef()), true, false);
+        /// `source_columns` must be a named local: `QueryNormalizer::Data` stores `source_columns_set`
+        /// by reference, so a `{}` temporary would dangle once this statement ends.
+        NameSet source_columns;
+        QueryNormalizer::Data normalizer_data(aliases, source_columns, true, QueryNormalizer::ExtractedSettings(context_->getSettingsRef()), true, false);
         QueryNormalizer(normalizer_data).visit(function_body_to_update);
     }
 

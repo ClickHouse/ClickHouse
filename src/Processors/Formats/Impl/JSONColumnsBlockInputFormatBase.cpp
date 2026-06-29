@@ -49,7 +49,7 @@ void JSONColumnsReaderBase::skipColumn()
     /// We assume that we already read '[', so we should skip until matched ']'.
     size_t balance = 1;
     bool inside_quotes = false;
-    char * pos;
+    char * pos = nullptr;
     while (!in->eof() && balance)
     {
         if (inside_quotes)

@@ -1,0 +1,24 @@
+min
+1000	2
+2000	3
+max
+1000	998
+2000	999
+argMin
+1000	2
+2000	3
+argMax
+1000	998
+2000	999
+min Float32
+1000	2
+2000	3
+max Float32
+1000	998
+2000	999
+all NaN group min
+1000	nan
+2000	1
+all NaN group max
+1000	nan
+2000	99

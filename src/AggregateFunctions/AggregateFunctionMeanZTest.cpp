@@ -104,7 +104,7 @@ public:
             this->data(place).addX(value);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -178,6 +178,7 @@ AggregateFunctionPtr createAggregateFunctionMeanZTest(
 
 }
 
+void registerAggregateFunctionMeanZTest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMeanZTest(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

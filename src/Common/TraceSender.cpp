@@ -30,6 +30,8 @@ namespace DB
 {
 
 LazyPipeFDs TraceSender::pipe;
+std::atomic<bool> TraceSender::shutdown{false};
+std::atomic<int> TraceSender::in_flight{0};
 
 static thread_local bool inside_send = false;
 void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras)
@@ -45,6 +47,14 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     inside_send = true;
     SCOPE_EXIT({ inside_send = false; });
     DENY_ALLOCATIONS_IN_SCOPE;
+
+    /// Drain bookkeeping for `~TraceCollector`: bump the in-flight counter
+    /// before checking `shutdown`, so the closer either sees us in-flight
+    /// (and waits) or we observe `shutdown` and bail out.
+    in_flight.fetch_add(1);
+    SCOPE_EXIT(in_flight.fetch_sub(1));
+    if (shutdown.load())
+        return;
 
     constexpr size_t buf_size = sizeof(char) /// TraceCollector stop flag
         + sizeof(UInt8)                      /// String size
@@ -72,7 +82,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 
     std::string_view query_id;
     UInt64 cpu_id = CPU::get_cpuid();
-    UInt64 thread_id;
+    UInt64 thread_id = 0;
 
     if (CurrentThread::isInitialized())
     {

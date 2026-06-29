@@ -2,15 +2,11 @@ import logging
 import time
 import socket
 from contextlib import contextmanager
-from multiprocessing.dummy import Pool
 
-import psycopg2
 import pytest
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
-from helpers.network import PartitionManager
 from helpers.postgres_utility import get_postgres_conn
 from helpers.port_forward import PortForward
 
@@ -673,7 +669,7 @@ def test_background_dictionary_reconnect(started_cluster):
 
     postgres_conn.cursor().execute("DROP TABLE IF EXISTS dict")
     postgres_conn.cursor().execute(
-        f"""
+        """
     CREATE TABLE dict (
     id integer NOT NULL, value text NOT NULL, PRIMARY KEY (id))
     """
@@ -732,7 +728,7 @@ def test_background_dictionary_reconnect(started_cluster):
         for _ in range(5):
             try:
                 result = query("SELECT value FROM dict WHERE id = 1")
-            except Exception as e:
+            except Exception:
                 pass
 
         time.sleep(5)
