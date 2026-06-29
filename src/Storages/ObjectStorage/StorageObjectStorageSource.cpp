@@ -108,6 +108,14 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
+/// Upper bound on the effective `s3_list_object_parallelism`. The setting comes straight from the user
+/// and becomes the size (and queue size) of the per-iterator `S3_LIST_POOL` thread pool, so an absurd
+/// value (e.g. set by mistake or a fuzzer) would otherwise try to grab the entire global thread pool for
+/// a single listing — starving the rest of the server — and overflow the buffered-keys bound derived from
+/// it. No real workload needs more than a few dozen parallel listing streams, so we clamp to a generous
+/// cap rather than reject the query, keeping the setting a pure performance knob.
+static constexpr size_t MAX_LIST_OBJECT_PARALLELISM = 1000;
+
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
 {
 #if USE_AVRO
@@ -1321,18 +1329,23 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
 
         recursive = key_with_globs.path == "/**";
 
+        /// Clamp the user-provided parallelism to a sane maximum before it sizes the listing thread pool
+        /// (and the buffered-keys bound below): a huge value must not be able to grab the whole global
+        /// thread pool for a single listing or overflow the bound.
+        const size_t parallelism = std::min(list_object_parallelism, MAX_LIST_OBJECT_PARALLELISM);
+
         /// List the matching files in parallel by walking the "directory" tree (the common prefixes
         /// formed by the '/' delimiter), unless disabled or the path uses the recursive wildcard "**"
         /// (which can match across '/', so it cannot be pruned per directory level and would degrade
         /// to one request per directory).
         const bool use_parallel_listing =
-            list_object_parallelism > 1
+            parallelism > 1
             && object_storage->supportsDelimitedListing()
             && key_with_globs.path.find("**") == std::string::npos;
 
         if (use_parallel_listing)
         {
-            LOG_DEBUG(log, "Listing {} in parallel with {} threads", key_with_globs.path, list_object_parallelism);
+            LOG_DEBUG(log, "Listing {} in parallel with {} threads", key_with_globs.path, parallelism);
 
             /// Capture the object storage by shared_ptr so it outlives the iterator's worker threads.
             auto list_level = [storage = object_storage, list_object_keys_size, with_tags]
@@ -1351,8 +1364,8 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
 
             object_storage_iterator = std::make_shared<ObjectStorageParallelListingIterator>(
                 key_prefix,
-                list_object_parallelism,
-                /* max_buffered_keys */ list_object_keys_size * list_object_parallelism * 2,
+                parallelism,
+                /* max_buffered_keys */ list_object_keys_size * parallelism * 2,
                 std::move(list_level),
                 makeShouldDescendPredicate(key_with_globs.path),
                 /* allow_keyspace_split */ object_storage->supportsListingKeyspaceSplit(),
