@@ -254,8 +254,6 @@ private:
             /// A deferred cache fill whose put step threw - logged, never the
             /// client's error.
             PutFailed,
-            /// Time a scheduled put step spent queued before running.
-            PutWaitMicroseconds,
             /// Long source connections: opened, windows served from an open one,
             /// fallbacks to a one-shot when no slot was free, bytes served through them.
             LongConnectionOpened,
@@ -527,8 +525,6 @@ private:
         /// so its `writerPinAt` finds a still-empty segment - without this, an eviction
         /// sweep between the fill landing and the next read would drop it.
         CacheWriter::CacheSegmentPin fill_pin;
-        /// Queue-wait probe for the put step (into `PutWaitMicroseconds`).
-        Stopwatch put_wait;
         /// `ReaderExecutorPrefetchInFlight` for this machine's lifetime.
         CurrentMetrics::Increment inflight_gauge;
     };
@@ -680,7 +676,7 @@ private:
     /// downloader across tiles - write via `CacheWriter::writeStreaming` (wake prefix readers,
     /// keep the downloader) instead of completing per write.
     void pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
-        const ChainedBuffers & chain, const std::atomic<bool> * interrupt, Stats & out_stats, bool streaming = false);
+        const ChainedBuffers & chain, Stats & out_stats, bool streaming = false);
 
     /// Write `chain ∩ writer-range ∩ window` into ONE writer (the body of the
     /// loops above).

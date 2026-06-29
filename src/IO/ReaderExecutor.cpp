@@ -51,7 +51,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorMachineInterrupted;
     extern const Event ReaderExecutorPartialCollects;
     extern const Event ReaderExecutorPutFailed;
-    extern const Event ReaderExecutorPutWaitMicroseconds;
     extern const Event LongConnectionOpened;
     extern const Event LongConnectionHits;
     extern const Event LongConnectionFallbacks;
@@ -159,7 +158,6 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case MachineInterrupted:        ProfileEvents::increment(ProfileEvents::ReaderExecutorMachineInterrupted, value); break;
         case PartialCollects:           ProfileEvents::increment(ProfileEvents::ReaderExecutorPartialCollects, value); break;
         case PutFailed:                 ProfileEvents::increment(ProfileEvents::ReaderExecutorPutFailed, value); break;
-        case PutWaitMicroseconds:       ProfileEvents::increment(ProfileEvents::ReaderExecutorPutWaitMicroseconds, value); break;
         case LongConnectionOpened:      ProfileEvents::increment(ProfileEvents::LongConnectionOpened, value); break;
         case LongConnectionHits:        ProfileEvents::increment(ProfileEvents::LongConnectionHits, value); break;
         case LongConnectionFallbacks:   ProfileEvents::increment(ProfileEvents::LongConnectionFallbacks, value); break;
@@ -948,9 +946,9 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
     }
     chain = finalizeAssembledWindow(slice_window, pin_frontier, serve_plaintext ? served_plain : result, reached_eof);
     is_plaintext = serve_plaintext;
-    /// The deferred write side of this window: the put step takes the writers and
-    /// the assembled chain to the background. After `finalizeAssembledWindow` - the
-    /// pin was just taken from the plan's writers while they were still here.
+    /// The write side of this window: the put step fills the writers from the assembled
+    /// chain, inline on the read thread. After `finalizeAssembledWindow` - the pin was
+    /// just taken from the plan's writers while they were still here.
     schedulePutStep(std::move(m), result);
     if (data_start_offset)
         chain.shift(-static_cast<ssize_t>(data_start_offset));
@@ -1460,7 +1458,7 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
             const ByteRange piece{off, std::min(tile, led.end() - off)};
             ChainedBuffers run = fetchGapsFromSource(piece, /*from_prefetch=*/true, m.reached_eof, level,
                 m.extent_snapshot, &m.long_conn, &m, m.stats);
-            pushChainToWriters(m.writer_views, piece, run, /*interrupt=*/nullptr, m.stats, /*streaming=*/true);
+            pushChainToWriters(m.writer_views, piece, run, m.stats, /*streaming=*/true);
             led_bytes.append(std::move(run));
             if (m.interrupt_requested.load(std::memory_order_relaxed))
                 break;  /// stop-short on cancel; the scope guard still finishes every elected segment
@@ -1700,17 +1698,10 @@ void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, 
 }
 
 void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
-    const ChainedBuffers & chain, const std::atomic<bool> * interrupt, Stats & out_stats, bool streaming)
+    const ChainedBuffers & chain, Stats & out_stats, bool streaming)
 {
     for (const auto & view : views)
-    {
-        /// Cooperative stop point: stop between writers if interrupted, leaving the
-        /// remaining ones untouched. (The inline fill never sets this - its
-        /// `interrupt_requested` is cleared in `schedulePutStep`.)
-        if (interrupt && interrupt->load(std::memory_order_relaxed))
-            break;
         writeSliceToWriter(view.writer, window, chain, out_stats, streaming);
-    }
 }
 
 void ReaderExecutor::recreditCommittedPrefixes(
@@ -2214,40 +2205,28 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
         return;  /// nothing to fill for this window
 
     m->fill_chain = assembled;
-    /// The machine is being re-armed for a second step: a takeover collect set
-    /// `interrupt_requested` to stop the FETCH - the put must not inherit it.
-    m->interrupt_requested.store(false);
-    m->current_step.reset();
-    m->put_wait.restart();
-    m->run_step = [this, self = m.get()]
-    {
-        self->stats.add(Stats::PutWaitMicroseconds, self->put_wait.elapsedMicroseconds());
-        const size_t fill_end = self->fill_chain.empty()
-            ? self->physical_window.offset
-            : std::min(self->physical_window.end(), self->fill_chain.range().end());
-        pushChainToWriters(self->writer_views, self->physical_window, self->fill_chain,
-            &self->interrupt_requested, self->stats);
-        /// Pin the partial segment under the just-written frontier until the
-        /// reap (see `fill_pin`): the foreground's finalize pinned BEFORE this
-        /// fill landed, so a fresh segment was not pinnable there.
-        for (const auto & view : self->writer_views)
-        {
-            if (view.writer && fill_end >= view.writer->range().offset && fill_end < view.writer->range().end())
-                if (auto pin = view.writer->pin(fill_end))
-                {
-                    self->fill_pin = std::move(pin);
-                    break;
-                }
-        }
-        self->fill_chain = {};
-        return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
-    };
 
     /// Run the fill inline on the read thread - no deferral. A failed fill is logged in
     /// `reapPutMachine`, never thrown: a read must not fail because cache population did.
     try
     {
-        m->run_step();
+        const size_t fill_end = m->fill_chain.empty()
+            ? m->physical_window.offset
+            : std::min(m->physical_window.end(), m->fill_chain.range().end());
+        pushChainToWriters(m->writer_views, m->physical_window, m->fill_chain, m->stats);
+        /// Pin the partial segment under the just-written frontier until the
+        /// reap (see `fill_pin`): the foreground's finalize pinned BEFORE this
+        /// fill landed, so a fresh segment was not pinnable there.
+        for (const auto & view : m->writer_views)
+        {
+            if (view.writer && fill_end >= view.writer->range().offset && fill_end < view.writer->range().end())
+                if (auto pin = view.writer->pin(fill_end))
+                {
+                    m->fill_pin = std::move(pin);
+                    break;
+                }
+        }
+        m->fill_chain = {};
     }
     catch (...)
     {
