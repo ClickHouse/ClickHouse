@@ -25,10 +25,7 @@ def _download_extra_baselines(master_commits: list[str], first_base_commit: str)
     Files are written to TEMP_DIR/base_llvm_coverage_{2..N}.info.
     Returns the number of extra baselines successfully downloaded.
 
-    Note: the .info file is always a complete FT+IT+unit merge regardless of
-    which test jobs were skipped, because _supplement_missing_profdata runs
-    before merge_llvm_coverage.sh on both PR and master runs. No extra
-    profdata-existence probe is needed — the .info is the authoritative artifact.
+    Note: the .info is the authoritative artifact — no profdata-existence probe needed.
     """
     found = 0
     slot = 2
@@ -58,62 +55,6 @@ def _download_extra_baselines(master_commits: list[str], first_base_commit: str)
             dest.unlink(missing_ok=True)
     print(f"Downloaded {found} extra master baseline(s) for cross-validation (target: {_EXTRA_BASELINES_TARGET}).")
     return found
-
-
-def _supplement_with_master_info(master_commits: list[str]) -> None:
-    """Supplement a partial llvm_coverage.info with a complete master baseline.
-
-    When some coverage sub-jobs are skipped (binary unchanged, only one test
-    type changed), merge_llvm_coverage.sh produces a partial llvm_coverage.info
-    covering only the test types that ran. This function downloads the nearest
-    available complete master llvm_coverage.info and merges it in with lcov -a,
-    filling in the skipped test types.
-
-    Working at the .info level (source file + line number) is safe even when the
-    nearest master .info comes from a slightly older commit: line numbers may drift
-    by a small amount for files edited between that commit and the master parent,
-    but this is localised and far safer than merging raw profdata from a different
-    binary (which can silently corrupt counter indices across the whole binary).
-    """
-    pr_info = Path(TEMP_DIR) / "llvm_coverage.info"
-    if not pr_info.exists() or pr_info.stat().st_size == 0:
-        print("No llvm_coverage.info to supplement")
-        return
-
-    master_info_tmp = Path(TEMP_DIR) / "master_supplement.info"
-    found_sha = None
-
-    for sha in master_commits:
-        url = f"{_S3_BASE_URL}/{sha}/llvm_coverage/llvm_coverage.info"
-        check = Shell.get_output(f"wget --spider '{url}' 2>&1 || true", verbose=False)
-        if "200 OK" not in check:
-            continue
-        print(f"Downloading master baseline for supplement from {sha[:12]}...")
-        rc = Shell.run(f"wget --quiet '{url}' -O '{master_info_tmp}'", verbose=False)
-        if rc == 0 and master_info_tmp.exists() and master_info_tmp.stat().st_size > 0:
-            found_sha = sha
-            break
-        master_info_tmp.unlink(missing_ok=True)
-
-    if not found_sha:
-        print("Warning: could not find a master baseline to supplement — coverage may be partial")
-        return
-
-    print(f"Supplementing llvm_coverage.info with master {found_sha[:12]} via lcov -a ...")
-    merged = Path(TEMP_DIR) / "llvm_coverage_supplemented.info"
-    rc = Shell.run(
-        f"lcov -a '{pr_info}' -a '{master_info_tmp}'"
-        f" --ignore-errors inconsistent,corrupt,unsupported"
-        f" -o '{merged}'",
-        verbose=True,
-    )
-    master_info_tmp.unlink(missing_ok=True)
-    if rc == 0 and merged.exists() and merged.stat().st_size > 0:
-        merged.replace(pr_info)
-        print("Supplement complete.")
-    else:
-        merged.unlink(missing_ok=True)
-        print("Warning: lcov -a supplement failed — keeping partial llvm_coverage.info")
 
 
 
@@ -289,50 +230,10 @@ if __name__ == "__main__":
 
     results = []
 
-    # Classify changed paths BEFORE touching profdata so the supplement decision
-    # is based on what the PR actually changed, not on which artifacts arrived.
-    # We use the stored changed_files from store_data.py (available as a pre-hook
-    # key) rather than changes.diff, which is only written after the merge step.
-    _early_changed_paths: set[str] = set()
-    if not is_master_branch:
-        _info_obj = Info()
-        _stored = _info_obj.get_kv_data("changed_files") or []
-        _early_changed_paths = set(_stored)
-
-    _NON_BINARY_TOP_LEVEL_FILES_EARLY = frozenset({
-        "README.md", "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md",
-        "NOTICE", "AUTHORS", "CODE_OF_CONDUCT.md", "SECURITY.md",
-        ".gitignore", ".gitattributes", ".editorconfig",
-        ".dockerignore", ".clang-format", ".clang-tidy",
-    })
-
-    def _is_non_binary_path_early(p: str) -> bool:
-        return (
-            p.startswith("tests/")
-            or p.startswith("ci/") or p.startswith(".github/")
-            or p.startswith("docs/")
-            or (p.startswith("src/") and "/tests/" in p)
-            or ("/" not in p and p in _NON_BINARY_TOP_LEVEL_FILES_EARLY)
-        )
-
-    # True only when every changed path provably cannot affect the binary.
-    # An empty path set (failed lookup) is treated as binary-changing to be safe.
-    _early_binary_unchanged = bool(_early_changed_paths) and all(
-        _is_non_binary_path_early(p) for p in _early_changed_paths
-    )
-
     gen_report_res = Result.from_commands_run(
         name="Generate LLVM Coverage Report",
         command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
     )
-
-    # For binary-unchanged PRs where some test types were skipped, the merge
-    # above produced a partial llvm_coverage.info. Supplement it by downloading
-    # the nearest master llvm_coverage.info (already a complete FT+IT+unit merge)
-    # and combining with lcov -a. This replaces the old profdata-based supplement
-    # which was unsafe because raw profdata counter indices are binary-specific.
-    if not is_master_branch and _early_binary_unchanged:
-        _supplement_with_master_info(master_track_commits)
 
     # Compress and attach the full HTML report archive + files to the generate result.
     # Keeping files/assets inside the same sub-Result ensures upload_result_files_to_s3
