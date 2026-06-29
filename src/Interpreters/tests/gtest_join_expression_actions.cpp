@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <base/defines.h>
+#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -79,3 +81,66 @@ TEST(JoinExpressionActions, DistinctColumnNamesMapToTheirSide)
     EXPECT_TRUE(expression_actions.findNode("b", /*is_input=*/ true).fromLeft());
     EXPECT_TRUE(expression_actions.findNode("c", /*is_input=*/ true).fromRight());
 }
+
+/// A name unique to one header is always resolved by name, even when JoinStepLogical::preCalculateKeys
+/// has appended computed key inputs so the input order is no longer [left columns..., right columns...].
+/// Here the inputs are [left id, right id, left key, right key] while left_header.columns() == 2.
+TEST(JoinExpressionActions, InterleavedInputsWithUniqueNamesMapByName)
+{
+    const auto u64 = std::make_shared<DataTypeUInt64>();
+
+    Block left_header{makeColumn("l_id", u64), makeColumn("l_key", u64)};
+    Block right_header{makeColumn("r_id", u64), makeColumn("r_key", u64)};
+
+    ActionsDAG actions_dag;
+    actions_dag.addInput("l_id", u64);
+    actions_dag.addInput("r_id", u64);
+    actions_dag.addInput("l_key", u64);
+    actions_dag.addInput("r_key", u64);
+
+    JoinExpressionActions expression_actions(left_header, right_header, std::move(actions_dag));
+
+    EXPECT_TRUE(expression_actions.findNode("l_id", /*is_input=*/ true).fromLeft());
+    EXPECT_TRUE(expression_actions.findNode("l_key", /*is_input=*/ true).fromLeft());
+    EXPECT_TRUE(expression_actions.findNode("r_id", /*is_input=*/ true).fromRight());
+    EXPECT_TRUE(expression_actions.findNode("r_key", /*is_input=*/ true).fromRight());
+}
+
+/// A duplicate name must NOT be silently mis-attributed by position when the input layout is not the
+/// canonical [left columns..., right columns...] (e.g. after preCalculateKeys interleaves key inputs).
+/// Such a plan is not produced today (a join carrying the duplicate dummy has no equality keys, so
+/// preCalculateKeys does not run), so rather than guess a side we reject it explicitly. In debug and
+/// sanitizer builds a LOGICAL_ERROR aborts, so this is a death test there; in release it is thrown.
+namespace
+{
+void buildDuplicateNameWithNonCanonicalLayout()
+{
+    const auto u64 = std::make_shared<DataTypeUInt64>();
+    const String dup = "dup";
+
+    /// left_header.columns() == 2, so position would treat inputs[0..1] as left; but the real layout
+    /// here is [left dup, right dup, left key, right key], so position is meaningless.
+    Block left_header{makeColumn(dup, u64), makeColumn("l_key", u64)};
+    Block right_header{makeColumn(dup, u64), makeColumn("r_key", u64)};
+
+    ActionsDAG actions_dag;
+    actions_dag.addInput(dup, u64);
+    actions_dag.addInput(dup, u64);
+    actions_dag.addInput("l_key", u64);
+    actions_dag.addInput("r_key", u64);
+
+    JoinExpressionActions(left_header, right_header, std::move(actions_dag));
+}
+}
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+TEST(JoinExpressionActionsDeathTest, DuplicateNameWithNonCanonicalLayoutThrows)
+{
+    EXPECT_DEATH(buildDuplicateNameWithNonCanonicalLayout(), ".*Cannot determine the source side.*");
+}
+#else
+TEST(JoinExpressionActions, DuplicateNameWithNonCanonicalLayoutThrows)
+{
+    EXPECT_THROW(buildDuplicateNameWithNonCanonicalLayout(), DB::Exception);
+}
+#endif

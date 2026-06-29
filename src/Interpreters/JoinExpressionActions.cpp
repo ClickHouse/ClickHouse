@@ -128,6 +128,25 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
     auto left_column_names = std::ranges::to<std::unordered_set<std::string_view>>(left_header | std::views::transform(&ColumnWithTypeAndName::name));
     auto right_column_names = std::ranges::to<std::unordered_set<std::string_view>>(right_header | std::views::transform(&ColumnWithTypeAndName::name));
 
+    /// A name shared by both headers (the `__join_result_dummy` marker) can only be disambiguated by
+    /// position, and that is sound only while inputs keep the canonical order
+    /// [left header columns..., right header columns...]. JoinStepLogical::preCalculateKeys() appends
+    /// computed key inputs and breaks that order, so verify the layout before trusting position.
+    const bool has_shared_name = std::ranges::any_of(
+        left_column_names, [&](const auto & name) { return right_column_names.contains(name); });
+
+    bool inputs_match_headers_by_position = has_shared_name;
+    for (size_t i = 0; has_shared_name && i < input_nodes.size(); ++i)
+    {
+        const auto & header = i < number_of_left_inputs ? left_header : right_header;
+        const size_t pos = i < number_of_left_inputs ? i : i - number_of_left_inputs;
+        if (input_nodes[i]->result_name != header.getByPosition(pos).name)
+        {
+            inputs_match_headers_by_position = false;
+            break;
+        }
+    }
+
     for (size_t i = 0; i < input_nodes.size(); ++i)
     {
         BitSet rels;
@@ -138,16 +157,16 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
         const bool in_left = left_column_names.contains(column_name);
         const bool in_right = right_column_names.contains(column_name);
         if (in_left && in_right)
-            /// A column name can legitimately appear in BOTH headers: the `__join_result_dummy`
-            /// marker is emitted independently by every child join that has no required output
-            /// columns, so a parent join (e.g. count() over a CROSS join of two such child joins)
-            /// receives it on both inputs. Name alone cannot tell which side a duplicate-named
-            /// input belongs to, so fall back to position: input nodes are ordered as
-            /// [left header columns..., right header columns...] (see JoinStepLogical, which reads
-            /// the first right input as getInputs().at(number_of_left_inputs)). Without this, a
-            /// distributed-plan worker deserializing such a join threw "Left and right columns
-            /// have same names".
+        {
+            /// Duplicate name present on both sides: resolvable only by position, and only when the
+            /// canonical input layout was verified above.
+            if (!inputs_match_headers_by_position)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot determine the source side of duplicated input column '{}': join inputs are "
+                    "not laid out as [left columns..., right columns...]. Left: [{}], right: [{}], dag: {}",
+                    column_name, left_header.dumpNames(), right_header.dumpNames(), actions_dag_.dumpDAG());
             rels.set(i < number_of_left_inputs ? 0 : 1);
+        }
         else if (in_left)
             rels.set(0);
         else if (in_right)
