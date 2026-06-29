@@ -9,6 +9,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -526,6 +527,10 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             return {"timestamp", true};
         case TypeIndex::Time:
             return {"time", true};
+        case TypeIndex::Time64:
+            if (getDecimalScale(*type) <= 6)
+                return {"time", true};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
         case TypeIndex::String:
             return {"string", true};
         case TypeIndex::UUID:
@@ -597,8 +602,63 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
+void validateIcebergTimeOfDayMicroseconds(Int64 microseconds)
+{
+    if (microseconds < 0 || microseconds >= ICEBERG_TIME_OF_DAY_MAX_MICROS)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg time value {} microseconds is out of allowed range [0, {}) for time of day",
+            microseconds,
+            ICEBERG_TIME_OF_DAY_MAX_MICROS);
+}
+
+Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type)
+{
+    if (type->isNullable())
+    {
+        auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
+        return getAvroLogicalType(type_nullable->getNestedType());
+    }
+
+    const WhichDataType which(type);
+    if (which.isTime())
+        return "time-micros";
+    if (which.isTime64())
+    {
+        auto scale = getDecimalScale(*type);
+        if (scale <= 6)
+            return "time-micros";
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported time precision for avro {}({})", type->getName(), scale);
+    }
+    return Poco::Dynamic::Var();
+}
+
 Poco::Dynamic::Var getAvroType(DataTypePtr type)
 {
+    if (type->isNullable())
+    {
+        /// Iceberg manifest partition fields backed by ClickHouse `Nullable(T)`
+        /// must be encoded as an Avro `["null", T]` union so the manifest can
+        /// distinguish NULL from the inner type's default value (issue #105852).
+        auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
+        Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
+        union_array->add("null");
+        union_array->add(getAvroType(type_nullable->getNestedType()));
+        return union_array;
+    }
+
+    const auto logical_type = getAvroLogicalType(type);
+    const auto wrap_with_logical_type = [&](Poco::Dynamic::Var primitive_type)
+    {
+        if (logical_type.isEmpty())
+            return primitive_type;
+
+        Poco::JSON::Object::Ptr type_object = new Poco::JSON::Object;
+        type_object->set(Iceberg::f_type, primitive_type);
+        type_object->set(Iceberg::f_logicalType, logical_type);
+        return Poco::Dynamic::Var(type_object);
+    };
+
     switch (type->getTypeId())
     {
         case TypeIndex::UInt8:
@@ -609,13 +669,21 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
-        case TypeIndex::Time:
             return "int";
         case TypeIndex::UInt64:
         case TypeIndex::Int64:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
             return "long";
+        case TypeIndex::Time:
+            return wrap_with_logical_type("long");
+        case TypeIndex::Time64:
+        {
+            auto scale = getDecimalScale(*type);
+            if (scale <= 6)
+                return wrap_with_logical_type("long");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+        }
         case TypeIndex::Float32:
             return "float";
         case TypeIndex::Float64:
@@ -623,17 +691,6 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::String:
         case TypeIndex::UUID:
             return "string";
-        case TypeIndex::Nullable:
-        {
-            /// Iceberg manifest partition fields backed by ClickHouse `Nullable(T)`
-            /// must be encoded as an Avro `["null", T]` union so the manifest can
-            /// distinguish NULL from the inner type's default value (issue #105852).
-            auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
-            Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
-            union_array->add("null");
-            union_array->add(getAvroType(type_nullable->getNestedType()));
-            return union_array;
-        }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
     }

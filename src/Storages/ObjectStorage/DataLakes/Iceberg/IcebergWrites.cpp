@@ -12,6 +12,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/DataLake/Common.h>
@@ -40,6 +41,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/Decimal.h>
+#include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 #include <base/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -99,6 +101,7 @@ namespace ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace FailPoints
@@ -129,6 +132,8 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::Date32:
         case TypeIndex::Int64:
         case TypeIndex::DateTime64:
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
         case TypeIndex::String:
             return true;
         default:
@@ -144,6 +149,68 @@ std::vector<uint8_t> dumpValue(T value)
     return bytes;
 }
 
+DataTypePtr getTimeTypeOrNull(DataTypePtr type)
+{
+    if (type->isNullable())
+        return getTimeTypeOrNull(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
+
+    const WhichDataType which(type);
+    if (which.isTime() || which.isTime64())
+        return type;
+
+    return nullptr;
+}
+
+Int64 getTimeValueInMicroseconds(const Field & field, DataTypePtr type)
+{
+    if (type->isNullable())
+        return getTimeValueInMicroseconds(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
+
+    const WhichDataType which(type);
+    if (which.isTime())
+    {
+        Int64 seconds = 0;
+        if (field.getType() == Field::Types::Int64)
+            seconds = field.safeGet<Int64>();
+        else if (field.getType() == Field::Types::UInt64)
+            seconds = static_cast<Int64>(field.safeGet<UInt64>());
+        else
+            seconds = field.safeGet<Int32>();
+
+        Int64 microseconds = 0;
+        if (common::mulOverflow(seconds, Int64(1'000'000), microseconds))
+            throw Exception(
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "Time value {} is out of range for Iceberg time (microseconds since midnight)",
+                seconds);
+
+        validateIcebergTimeOfDayMicroseconds(microseconds);
+        return microseconds;
+    }
+
+    if (which.isTime64())
+    {
+        const auto scale = getDecimalScale(*type);
+        if (scale > 6)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+
+        const auto value = field.safeGet<Decimal64>().getValue().value;
+        const auto multiplier = DataTypeTime64::getScaleMultiplier(6 - scale).value;
+
+        Int64 microseconds = 0;
+        if (common::mulOverflow(value, multiplier, microseconds))
+            throw Exception(
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "Time64 value {} is out of range for Iceberg time (microseconds since midnight)",
+                value);
+
+        validateIcebergTimeOfDayMicroseconds(microseconds);
+        return microseconds;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Time or Time64, got {}", type->getName());
+}
+
 std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
 {
     switch (type->getTypeId())
@@ -154,8 +221,12 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Date:
         case TypeIndex::Date32:
             return dumpValue(field.safeGet<Int32>());
+        case TypeIndex::Time:
+            return dumpValue(getTimeValueInMicroseconds(field, type));
         case TypeIndex::Int64:
             return dumpValue(field.safeGet<Int64>());
+        case TypeIndex::Time64:
+            return dumpValue(getTimeValueInMicroseconds(field, type));
         case TypeIndex::DateTime64:
             return dumpValue(field.safeGet<Decimal64>().getValue().value);
         case TypeIndex::String:
@@ -394,6 +465,12 @@ void generateManifestFile(
             /// the surrounding union). Throws on an unsupported value type.
             auto make_value_datum = [&]() -> avro::GenericDatum
             {
+                auto partition_time_type = getTimeTypeOrNull(partition_types[i]);
+                if (!partition_values[i].isNull() && partition_time_type)
+                {
+                    return avro::GenericDatum(getTimeValueInMicroseconds(partition_values[i], partition_types[i]));
+                }
+
                 switch (partition_values[i].getType())
                 {
                     case Field::Types::Int64:

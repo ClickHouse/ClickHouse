@@ -152,6 +152,8 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
             break;
         case TypeIndex::Date32:
             [[fallthrough]];
+        case TypeIndex::Time:
+            [[fallthrough]];
         case TypeIndex::Int32:
             convertAndInsert<T, Int32>(assert_cast<ColumnInt32 &>(column), value, type.idx);
             break;
@@ -172,6 +174,9 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
             break;
         case TypeIndex::DateTime64:
             convertAndInsert<T, Int64>(assert_cast<ColumnDecimal<DateTime64> &>(column), value, type.idx);
+            break;
+        case TypeIndex::Time64:
+            convertAndInsert<T, Int64>(assert_cast<ColumnDecimal<Time64> &>(column), value, type.idx);
             break;
         case TypeIndex::IPv4:
             convertAndInsert<T, UInt32, ColumnIPv4, true>(assert_cast<ColumnIPv4 &>(column), value, type.idx);
@@ -331,6 +336,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return createDecimalDeserializeFn<DataTypeDecimal256>(root_node, target_type, false);
             if (target.isDateTime64())
                 return createDecimalDeserializeFn<DataTypeDateTime64>(root_node, target_type, false);
+            if (target.isTime64())
+                return createDecimalDeserializeFn<DataTypeTime64>(root_node, target_type, false);
             break;
         case avro::AVRO_INT:
             if (target_type->isValueRepresentedByNumber())
@@ -1258,8 +1265,11 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
     {
         case avro::Type::AVRO_INT:
         {
-            if (node->logicalType().type() == avro::LogicalType::DATE)
+            auto logical_type = node->logicalType();
+            if (logical_type.type() == avro::LogicalType::DATE)
                 return {std::make_shared<DataTypeDate32>()};
+            if (logical_type.type() == avro::LogicalType::TIME_MILLIS)
+                return {std::make_shared<DataTypeTime64>(3)};
 
             return {std::make_shared<DataTypeInt32>()};
         }
@@ -1270,6 +1280,10 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
                 return {std::make_shared<DataTypeDateTime64>(3)};
             if (logical_type.type() == avro::LogicalType::TIMESTAMP_MICROS)
                 return {std::make_shared<DataTypeDateTime64>(6)};
+            if (logical_type.type() == avro::LogicalType::TIME_MILLIS)
+                return {std::make_shared<DataTypeTime64>(3)};
+            if (logical_type.type() == avro::LogicalType::TIME_MICROS)
+                return {std::make_shared<DataTypeTime64>(6)};
 
             return std::make_shared<DataTypeInt64>();
         }
