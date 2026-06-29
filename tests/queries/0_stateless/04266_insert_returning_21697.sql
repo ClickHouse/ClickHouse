@@ -60,6 +60,11 @@ TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_memory_usage=1000000) VALUES (104, 'memlimit'); -- { serverError NOT_IMPLEMENTED }
 SELECT count() AS inserted_after_returning_memlimit FROM t_insert_returning WHERE id = 104;
 
+SELECT 'returning memory limit default rejection';
+TRUNCATE TABLE t_insert_returning;
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_memory_usage=DEFAULT) VALUES (114, 'memlimit_default'); -- { serverError NOT_IMPLEMENTED }
+SELECT count() AS inserted_after_returning_memlimit_default FROM t_insert_returning WHERE id = 114;
+
 -- Temporary-data-on-disk limits in the RETURNING subquery are rejected for the same reason (the disk scope is shared
 -- with the INSERT phase), while the INSERT still completes first
 SELECT 'returning temp data limit rejection';

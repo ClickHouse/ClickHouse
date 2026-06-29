@@ -79,6 +79,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr select;
     ASTPtr table_function;
     ASTPtr settings_ast;
+    ASTPtr source_select_settings_ast;
     ASTPtr returning_select;
     ASTPtr partition_by_expr;
     ASTPtr compression;
@@ -280,7 +281,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                                 "You have SETTINGS both before and after the source SELECT, this is not allowed.");
 
             ParserSetQuery parser_settings(true);
-            if (!parser_settings.parse(pos, settings_ast, expected))
+            if (!parser_settings.parse(pos, source_select_settings_ast, expected))
                 return false;
         }
     }
@@ -316,7 +317,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (select)
     {
         /// Copy SETTINGS from the INSERT ... SELECT ... SETTINGS
-        InsertQuerySettingsPushDownVisitor::Data visitor_data{settings_ast};
+        InsertQuerySettingsPushDownVisitor::Data visitor_data{source_select_settings_ast ? source_select_settings_ast : settings_ast};
         InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
     }
 

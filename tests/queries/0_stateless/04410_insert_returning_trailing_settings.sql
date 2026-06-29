@@ -29,6 +29,15 @@ SETTINGS max_threads = 1;
 
 SELECT count() FROM t_ret_settings;
 
+-- Trailing SETTINGS after RETURNING apply to the source SELECT only, not to the RETURNING subquery.
+SELECT 'trailing settings do not cap returning';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT number FROM numbers(10)
+RETURNING (SELECT number FROM numbers(10) ORDER BY number)
+SETTINGS max_result_rows = 1, result_overflow_mode = 'break';
+
+SELECT count() FROM t_ret_settings;
+
 -- INSERT VALUES + RETURNING with a query-level SETTINGS before the data clause still works.
 SELECT 'values returning with settings';
 TRUNCATE TABLE t_ret_settings;

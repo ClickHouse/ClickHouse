@@ -7,6 +7,18 @@ rows after insert
 select returning trailing settings pushed down
 5
 5
+trailing settings do not cap returning
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
 values returning with settings
 1
 10

@@ -107,12 +107,20 @@ namespace
                 settings = node->as<ASTSetQuery>();
 
             if (settings)
+            {
                 for (const auto & change : settings->changes)
                     if (unsupported_settings.contains(change.name))
                         throw Exception(
                             ErrorCodes::NOT_IMPLEMENTED,
                             "Setting '{}' is not supported in the SETTINGS clause of an INSERT ... RETURNING subquery",
                             change.name);
+                for (const auto & default_setting : settings->default_settings)
+                    if (unsupported_settings.contains(default_setting))
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "Setting '{}' is not supported in the SETTINGS clause of an INSERT ... RETURNING subquery",
+                            default_setting);
+            }
 
             for (const auto & child : node->children)
                 walk(child.get());
