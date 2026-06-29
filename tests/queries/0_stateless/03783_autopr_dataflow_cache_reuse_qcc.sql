@@ -6,7 +6,7 @@
 DROP TABLE IF EXISTS t;
 
 -- index_granularity: to be able to produce small blocks from reading
-CREATE TABLE t(key String, value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128;
+CREATE TABLE t(key String, value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128, default_compression_codec='LZ4'; -- parallel-replicas decision uses estimated bytes; pin codec (randomized server-side)
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
