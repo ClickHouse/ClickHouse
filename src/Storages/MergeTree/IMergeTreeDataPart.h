@@ -452,6 +452,13 @@ public:
     UInt64 getExistingBytesOnDisk() const;
 
     size_t getFileSizeOrZero(const String & file_name) const;
+
+    /// Size of a stream's file (data or marks), resolving its on-disk name (original or hashed)
+    /// from checksums; a stream with no checksums entry falls back to the storage (which serves
+    /// e.g. members of skp_idx.packed). Callers get a size without knowing the on-disk name or
+    /// whether the stream is standalone or bundled in an archive.
+    size_t getFileSizeOrZeroResolved(const String & stream_name, const String & extension) const;
+
     auto getFilesChecksums() const { return checksums.files; }
 
     /// Moves a part to detached/ directory and adds prefix to its name
@@ -641,6 +648,11 @@ public:
         const String & name,
         const String & extension,
         const IDataPartStorage & storage_);
+
+    /// Resolve a stream's on-disk name (original or hashed) against this part: checksums first
+    /// (no I/O), then the storage, which also resolves streams with no checksums entry (e.g. a
+    /// substream bundled in skp_idx.packed). Mirrors getFileSizeOrZeroResolved.
+    std::optional<String> getStreamNameOrHashResolved(const String & name, const String & extension) const;
 
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,

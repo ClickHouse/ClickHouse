@@ -1035,6 +1035,68 @@ bool DataPartStorageOnDiskBase::isCaseInsensitive() const
     return getDisk()->isCaseInsensitive();
 }
 
+std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getArchiveReaderForFile(const std::string & name) const
+{
+    /// Prefix gate: only "skp_idx_..." names can be archive members, so unrelated files never load
+    /// or probe skp_idx.packed.
+    if (!looksLikePackedSkipIndexFile(name))
+        return nullptr;
+    auto reader = getSkipIndicesPackedReader();
+    return (reader && reader->exists(name)) ? reader : nullptr;
+}
+
+bool DataPartStorageOnDiskBase::existsFile(const std::string & name) const
+{
+    if (getArchiveReaderForFile(name))
+        return true;
+    return existsFileImpl(name);
+}
+
+size_t DataPartStorageOnDiskBase::getFileSize(const std::string & file_name) const
+{
+    if (auto reader = getArchiveReaderForFile(file_name))
+        return reader->getFileSize(file_name);
+    return getFileSizeImpl(file_name);
+}
+
+void DataPartStorageOnDiskBase::prepareRead(
+    const std::string & name,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    ReadPipeline & pipeline) const
+{
+    if (auto reader = getArchiveReaderForFile(name))
+    {
+        /// Members of skp_idx.packed skip the disk's normal pipeline (filesystem cache, async
+        /// prefetch) and read through PackedFilesReader::readFile, which opens the archive via the
+        /// underlying disk and wraps the result with ReadBufferFromFileView at the right offset.
+        /// The archive's current location is captured here, so the reader holds no path of its own.
+        auto disk = volume->getDisk();
+        String archive_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
+        ReadPipeline::BufferCreator creator =
+            [reader, disk, archive_path, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
+            {
+                return reader->readFile(disk, archive_path, name, s, read_hint);
+            };
+        pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
+        return;
+    }
+    prepareReadImpl(name, settings, read_hint, pipeline);
+}
+
+std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskBase::readFileIfExists(
+    const std::string & name,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint) const
+{
+    if (auto reader = getArchiveReaderForFile(name))
+        return reader->readFile(
+            volume->getDisk(),
+            fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME),
+            name, settings, read_hint);
+    return readFileIfExistsImpl(name, settings, read_hint);
+}
+
 std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndicesPackedReader() const
 {
     std::lock_guard lock(skip_indices_packed_mutex);
@@ -1119,11 +1181,8 @@ void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     if (!source_archive)
         return;
 
-    /// Route reads through readFile (a virtual on the storage), not source_archive->readFile.
-    /// Equivalent on full storage today (the existing looksLikePackedSkipIndexFile overlay ends
-    /// up calling the same archive reader), but storage subclasses where skp_idx.packed isn't a
-    /// flat disk file need this entry point so the virtual readFile can compose the read
-    /// correctly. Keeps the helper subclass-friendly without adding behavioural risk here.
+    /// Route reads through readFile (the storage's overlay), not source_archive->readFile, so a
+    /// storage where skp_idx.packed isn't a flat disk file still composes the read correctly.
     for (const auto & file_name : file_names)
     {
         if (!source_archive->exists(file_name))
