@@ -3,6 +3,9 @@
 #include <Interpreters/FileCache/FileSegmentKeyType.h>
 #include <sys/types.h>
 
+#include <functional>
+#include <optional>
+
 namespace DB
 {
 
@@ -33,4 +36,30 @@ struct FileCacheOriginInfo
     bool operator==(const FileCacheOriginInfo & other) const { return user_id == other.user_id; }
 };
 
+/// Identity of a shared origin in the dedup pool. Origins which agree on all of these fields are
+/// interchangeable, so a single immutable instance is shared by every key with the same
+/// OriginPoolKey. See CacheMetadata::getOrCreateSharedOrigin.
+struct OriginPoolKey
+{
+    FileCacheOriginInfo::UserID user_id;
+    std::optional<FileCacheOriginInfo::Weight> weight;
+    FileCacheOriginInfo::SegmentKeyType segment_type;
+
+    bool operator==(const OriginPoolKey & other) const = default;
+};
+
 }
+
+template <>
+struct std::hash<DB::OriginPoolKey>
+{
+    size_t operator()(const DB::OriginPoolKey & key) const noexcept
+    {
+        size_t h = std::hash<DB::FileCacheOriginInfo::UserID>{}(key.user_id);
+        h ^= std::hash<std::optional<DB::FileCacheOriginInfo::Weight>>{}(key.weight) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<std::underlying_type_t<DB::FileCacheOriginInfo::SegmentKeyType>>{}(
+                 static_cast<std::underlying_type_t<DB::FileCacheOriginInfo::SegmentKeyType>>(key.segment_type))
+             + 0x9e3779b9 + (h << 6) + (h >> 2);
+        return h;
+    }
+};

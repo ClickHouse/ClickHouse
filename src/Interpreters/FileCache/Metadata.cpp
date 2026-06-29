@@ -23,6 +23,7 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheLockKeyMicroseconds;
     extern const Event FilesystemCacheLockMetadataMicroseconds;
+    extern const Event FilesystemCacheLockOriginPoolMicroseconds;
     extern const Event FilesystemCacheCreatedKeyDirectories;
 }
 
@@ -74,6 +75,8 @@ KeyMetadata::KeyMetadata(
     , cache_metadata(cache_metadata_)
     , created_base_directory(created_base_directory_)
 {
+    chassert(origin);
+
     if (*origin == FileCache::getInternalOrigin())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata with internal user id");
 
@@ -98,13 +101,16 @@ void KeyMetadata::assertAccess(const UserID & user_id_) const
     }
 }
 
-CacheMetadata::OriginInfoPtr CacheMetadata::MetadataBucket::getOrCreateSharedOrigin(const OriginInfo & origin)
+CacheMetadata::OriginInfoPtr CacheMetadata::getOrCreateSharedOrigin(const OriginInfo & origin)
 {
-    auto pool_key = std::make_tuple(origin.user_id, origin.weight, origin.segment_type);
-    auto it = origins.find(pool_key);
-    if (it == origins.end())
-        it = origins.emplace(std::move(pool_key), std::make_shared<const OriginInfo>(origin)).first;
-    return it->second;
+    OriginPoolKey pool_key{origin.user_id, origin.weight, origin.segment_type};
+    return origins.withShard(pool_key, [&](auto & map) -> OriginInfoPtr
+    {
+        auto it = map.find(pool_key);
+        if (it == map.end())
+            it = map.emplace(pool_key, std::make_shared<const OriginInfo>(origin)).first;
+        return it->second;
+    });
 }
 
 LockedKeyPtr KeyMetadata::lock()
@@ -189,6 +195,7 @@ CacheMetadata::CacheMetadata(
     , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
     , write_cache_per_user_directory(write_cache_per_user_directory_)
     , log(getLogger("CacheMetadata"))
+    , origins(ProfileEvents::FilesystemCacheLockOriginPoolMicroseconds)
     , download_threads_num(background_download_threads_)
 {
 }
@@ -302,7 +309,7 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
             return nullptr;
 
         it = bucket.emplace(
-            key, std::make_shared<KeyMetadata>(key, bucket.getOrCreateSharedOrigin(origin), this, is_initial_load)).first;
+            key, std::make_shared<KeyMetadata>(key, getOrCreateSharedOrigin(origin), this, is_initial_load)).first;
 
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
     }

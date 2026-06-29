@@ -8,13 +8,13 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/ShardedMap.h>
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool_fwd.h>
 
 #include <map>
 #include <memory>
 #include <optional>
-#include <tuple>
 
 namespace DB
 {
@@ -257,18 +257,19 @@ private:
     {
         CacheMetadataGuard::Lock lock() const;
 
-        /// Return a deduplicated immutable origin, shared by all keys of this bucket with the
-        /// same origin. The pool is sharded per bucket and guarded by the bucket's own lock
-        /// (which the caller already holds), so no separate/global mutex is needed. Distinct
-        /// origins are very few, so per-bucket sharding at most duplicates each origin per bucket.
-        OriginInfoPtr getOrCreateSharedOrigin(const OriginInfo & origin);
-
     private:
-        std::map<std::tuple<OriginInfo::UserID, std::optional<OriginInfo::Weight>, FileSegmentKeyType>, OriginInfoPtr> origins;
         mutable CacheMetadataGuard guard;
     };
     using MetadataBuckets = std::vector<MetadataBucket>;
     MetadataBuckets metadata_buckets{buckets_num};
+
+    /// Return a deduplicated immutable origin, shared by all keys with the same OriginPoolKey.
+    /// The pool is sharded by a hash of the origin's identity (i.e. by client), not by the
+    /// cache key, so each distinct origin is stored exactly once instead of being duplicated
+    /// across the (much more numerous) key buckets.
+    OriginInfoPtr getOrCreateSharedOrigin(const OriginInfo & origin);
+
+    mutable FileCacheUtils::ShardedMap<OriginPoolKey, OriginInfoPtr> origins;
 
     struct DownloadThread
     {
