@@ -29,6 +29,8 @@
 #include <base/UUID.h>
 #include <base/types.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -190,23 +192,87 @@ public:
     }
 
 private:
-    static DataTypePtr getBloomFilterValueType(const DataTypePtr & type)
+    struct BloomFilterStateInfo
+    {
+        DataTypePtr value_type;
+        size_t data_offset = 0;
+    };
+
+    static std::optional<size_t> getNestedStateOffset(
+        const IAggregateFunction & function,
+        const IAggregateFunction & nested_function)
+    {
+        const size_t function_size = function.sizeOfData();
+        const size_t nested_function_size = nested_function.sizeOfData();
+        const String function_name = function.getName();
+        const String nested_function_name = nested_function.getName();
+
+        if (function_size == nested_function_size)
+        {
+            if (function_name == nested_function_name
+                || function_name == nested_function_name + "Array"
+                || function_name == nested_function_name + "If"
+                || function_name == nested_function_name + "Merge"
+                || function_name == nested_function_name + "SimpleState"
+                || function_name == nested_function_name + "State")
+                return 0;
+
+            return {};
+        }
+
+        if (function_size < nested_function_size)
+            return {};
+
+        /// Nullable aggregate function wrappers keep a small prefix before the nested state.
+        /// The nullable adapter for the `If` combinator keeps the public name with the `If`
+        /// suffix while storing the same nested `groupBloomFilter` state after that prefix.
+        if (function_name == nested_function_name || function_name == nested_function_name + "If")
+            return function_size - nested_function_size;
+
+        return {};
+    }
+
+    static BloomFilterStateInfo getBloomFilterStateInfo(const IAggregateFunction & function)
+    {
+        AggregateFunctionPtr nested_function = function.getNestedFunction();
+        if (nested_function)
+        {
+            BloomFilterStateInfo nested_info = getBloomFilterStateInfo(*nested_function);
+            if (!nested_info.value_type)
+                return {};
+
+            std::optional<size_t> nested_offset = getNestedStateOffset(function, *nested_function);
+            if (!nested_offset)
+                return {};
+
+            nested_info.data_offset += *nested_offset;
+            return nested_info;
+        }
+
+        if (function.getName() != AggregateFunctionGroupBloomFilterData::name)
+            return {};
+
+        const DataTypes & arg_data_types = function.getArgumentTypes();
+        if (arg_data_types.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Bloom filter aggregate function {} has no value argument",
+                function.getName());
+
+        return {arg_data_types[0], 0};
+    }
+
+    static BloomFilterStateInfo getBloomFilterStateInfo(const DataTypePtr & type)
     {
         const auto * bloom_type = typeid_cast<const DataTypeAggregateFunction *>(type.get());
         if (!bloom_type)
             return {};
 
-        const auto & base_function = bloom_type->getFunction()->getBaseAggregateFunctionWithSameStateRepresentation();
-        if (base_function.getName() != AggregateFunctionGroupBloomFilterData::name)
-            return {};
+        return getBloomFilterStateInfo(*bloom_type->getFunction());
+    }
 
-        const DataTypes & arg_data_types = base_function.getArgumentTypes();
-        if (arg_data_types.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Bloom filter aggregate function {} has no value argument",
-                base_function.getName());
-
-        return arg_data_types[0];
+    static DataTypePtr getBloomFilterValueType(const DataTypePtr & type)
+    {
+        return getBloomFilterStateInfo(type).value_type;
     }
 
     static bool canCastProbeType(const DataTypePtr & probe_type, const DataTypePtr & bloom_value_type)
@@ -228,19 +294,13 @@ private:
 
     static size_t getBloomFilterDataOffset(const ColumnAggregateFunction & bloom_col)
     {
-        AggregateFunctionPtr function = bloom_col.getAggregateFunction();
-        AggregateFunctionPtr nested_function = function->getNestedFunction();
-        if (!nested_function)
-            return 0;
+        BloomFilterStateInfo info = getBloomFilterStateInfo(*bloom_col.getAggregateFunction());
+        if (!info.value_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Expected a Bloom filter aggregate state column in function {}",
+                name);
 
-        /// Nullable aggregate function wrappers keep a small prefix before the nested state.
-        /// The nested groupBloomFilter state starts after that prefix.
-        size_t function_size = function->sizeOfData();
-        size_t nested_function_size = nested_function->sizeOfData();
-        if (function_size < nested_function_size)
-            return 0;
-
-        return function_size - nested_function_size;
+        return info.data_offset;
     }
 
     static const AggregateFunctionGroupBloomFilterData & getBloomFilterData(

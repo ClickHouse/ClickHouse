@@ -119,7 +119,9 @@ WITH
     (SELECT groupBloomFilterState(100)(toUInt8(42)) FROM numbers(1)) AS uint8_lossy_bf,
     (SELECT groupBloomFilterState(100)(materialize(CAST('hello', 'LowCardinality(Nullable(String))'))) FROM numbers(1)) AS low_cardinality_nullable_string_bf,
     (SELECT groupBloomFilterState(100)(materialize(CAST(NULL, 'Nullable(UInt64)'))) FROM numbers(1)) AS all_null_uint64_bf,
-    (SELECT groupBloomFilterState(100)(materialize(CAST(toDateTime64('2023-01-01 12:00:00.123', 3), 'Nullable(DateTime64(3))'))) FROM numbers(1)) AS nullable_datetime64_bf
+    (SELECT groupBloomFilterState(100)(materialize(CAST(toDateTime64('2023-01-01 12:00:00.123', 3), 'Nullable(DateTime64(3))'))) FROM numbers(1)) AS nullable_datetime64_bf,
+    (SELECT groupBloomFilterArrayState(100)(materialize(CAST([42, NULL], 'Array(Nullable(UInt64))'))) FROM numbers(1)) AS nullable_array_uint64_bf,
+    (SELECT groupBloomFilterIfState(100)(materialize(CAST(42, 'Nullable(UInt64)')), number = 0) FROM numbers(1)) AS nullable_if_uint64_bf
 SELECT
     bloomFilterContains(nullable_string_bf, 'hello'),
     bloomFilterContains(nullable_uint64_bf, toUInt16(42)),
@@ -133,7 +135,10 @@ SELECT
     bloomFilterContains(nullable_string_bf, CAST(NULL, 'Nullable(String)')),
     bloomFilterContains(all_null_uint64_bf, toUInt64(42)),
     bloomFilterContains(nullable_uint64_bf, toUInt64(42)),
-    bloomFilterContains(nullable_datetime64_bf, toDateTime64('2023-01-01 12:00:00.123', 3));
+    bloomFilterContains(nullable_datetime64_bf, toDateTime64('2023-01-01 12:00:00.123', 3)),
+    bloomFilterContains(nullable_array_uint64_bf, toUInt64(42)),
+    bloomFilterContains(nullable_array_uint64_bf, toUInt64(7)),
+    bloomFilterContains(nullable_if_uint64_bf, toUInt64(42));
 
 -- bloomFilterContains with incompatible value type must throw instead of reading a wrong column type
 WITH (SELECT groupBloomFilterState(100)(toUUID('550e8400-e29b-41d4-a716-446655440000')) FROM numbers(1)) AS bf
