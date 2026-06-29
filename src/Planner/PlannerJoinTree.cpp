@@ -16,8 +16,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/identity.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 
@@ -187,36 +185,24 @@ bool projectionCanBeEvaluatedForConstHeader(const QueryTreeNodePtr & node)
     return true;
 }
 
-/// `ignore` and `indexHint` always return a ColumnConst regardless of their arguments. They keep
-/// their FunctionNode form (isSuitableForConstantFolding() == false), so the analyzer does not fold
-/// them into a ConstantNode, yet the real projection plan produces a ColumnConst. Recognize them by
-/// name so the analyze-only header can keep the constant even when an argument subtree contains an
-/// IN operator or subquery that cannot be evaluated here (see projectionCanBeEvaluatedForConstHeader).
-bool functionResultIsAlwaysConstant(const String & function_name)
-{
-    return function_name == "ignore" || function_name == "indexHint";
-}
-
-/// A transparent wrapper is a FunctionIdentityBase (identity, __scalarSubqueryResult, __actionName):
-/// it is deliberately not suitable for constant folding, yet executeImpl returns its argument column
-/// unchanged. So when its argument folds to a ColumnConst the function emits that same ColumnConst on
-/// the replicas. Recognize it by its function class (not by name) so the analyze-only header stays
-/// constant for shapes like identity(ignore(s IN (...))) or __scalarSubqueryResult(ignore(s IN (...))),
-/// matching the real projection plan even though the analyzer never folds it. A type-based check also
-/// covers every current and future FunctionIdentityBase subclass without enumerating names.
-bool functionIsTransparentConstantWrapper(const IFunctionBase & function_base)
-{
-    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function_base);
-    return adaptor && dynamic_cast<const FunctionIdentityBase *>(adaptor->getFunction().get()) != nullptr;
-}
-
 /// Try to fold a projection to its constant column without building an ActionsDAG over the whole
 /// subtree. Returns the constant column (sized for one row) or nullptr if the projection is not a
 /// constant. Used as a fallback for projections that projectionCanBeEvaluatedForConstHeader() rejects
-/// because they hold an IN operator or subquery: an always-constant function such as ignore(s IN (...))
-/// still produces a ColumnConst on the replicas, so the analyze-only header must keep it constant to
-/// avoid a parallel-replicas header divergence. Only constant nodes and functions evaluated entirely
-/// from constants are touched, so the unevaluable IN/subquery argument subtree is never visited.
+/// because they hold an IN operator or subquery: a function whose result is constant regardless of its
+/// arguments (for example ignore(s IN (...)) or __applyFilter('', s IN (...))) still produces a
+/// ColumnConst on the replicas, so the analyze-only header must keep it constant to avoid a
+/// parallel-replicas header divergence. Only constant nodes and functions evaluated from constant or
+/// placeholder arguments are touched, so the unevaluable IN/subquery argument subtree is never visited
+/// nor passed to a function that would inspect its (absent) prepared set.
+///
+/// This mirrors how real planning derives the header in ActionsDAG::evaluatePartialResult: a function
+/// node is executed with the constant columns of the arguments that fold, and a placeholder (non-const,
+/// default-valued) column for the arguments that do not. The result is kept only if it is a ColumnConst.
+/// A function that genuinely depends on a non-constant argument then yields a non-const column and is
+/// left on the plain-column header path, while a function that is constant by its own semantics
+/// (ignore, indexHint, identity over a constant, __applyFilter with an empty id, ...) yields a
+/// ColumnConst. Evaluating against placeholders is safe because the partial evaluation runs with
+/// input_rows_count == 0, exactly like header computation, so no per-row work is performed.
 ColumnPtr tryEvaluateConstantProjectionColumn(const QueryTreeNodePtr & node)
 {
     if (const auto * constant_node = node->as<ConstantNode>())
@@ -230,27 +216,17 @@ ColumnPtr tryEvaluateConstantProjectionColumn(const QueryTreeNodePtr & node)
     if (!function_base)
         return nullptr;
 
+    /// in/globalIn is the very reason this fallback exists (its prepared set is not registered in the
+    /// only_analyze context). It is never a constant column, and executing it requires a ColumnSet that
+    /// we do not have here, so never evaluate it: keep it on the plain-column header path.
+    if (functionIsInOrGlobalInOperator(function_node->getFunctionName()))
+        return nullptr;
+
     auto result_type = function_node->getResultType();
-
-    /// ignore()/indexHint() are constant by their own semantics: do not look at the arguments
-    /// (which may hold an unevaluable IN/subquery), just execute on the empty argument list.
-    if (functionResultIsAlwaysConstant(function_node->getFunctionName()))
-    {
-        auto column = function_base->prepare({})->execute({}, result_type, 1, /* dry_run = */ true);
-        if (column && isColumnConst(*column))
-            return column->cloneResized(1);
-        return nullptr;
-    }
-
-    /// A function preserves constness only if it is suitable for constant folding, or it is a
-    /// transparent wrapper like identity that is not foldable but returns its argument unchanged.
-    if (!function_base->isSuitableForConstantFolding()
-        && !functionIsTransparentConstantWrapper(*function_base))
-        return nullptr;
 
     /// Fold each argument. Some may not fold to a constant (for example a genuinely non-constant
     /// s IN (...) subtree). The recursion only visits arguments and never descends into an
-    /// unevaluable IN/subquery: such a subtree does not fold and yields a null column here.
+    /// unevaluable IN/subquery: such a subtree does not fold and yields a placeholder column here.
     ColumnsWithTypeAndName argument_columns;
     const auto & arguments = function_node->getArguments().getNodes();
     argument_columns.reserve(arguments.size());
@@ -261,41 +237,53 @@ ColumnPtr tryEvaluateConstantProjectionColumn(const QueryTreeNodePtr & node)
         if (!argument_column)
         {
             all_arguments_constant = false;
-            /// getResultType() below is only valid for argument node types that carry a scalar result
-            /// type. The set side of an IN operator is a subquery/table node, for which getResultType()
-            /// throws (QueryNode supports it only for a correlated subquery). Such a function (in/globalIn)
-            /// is never a constant column, so bail to the plain-column header path instead of throwing.
+            /// A non-folding argument becomes a placeholder column built from its result type below.
+            /// getResultType() is only valid for argument node types that carry a scalar result type:
+            /// the set side of an IN operator is a subquery/table node, for which getResultType() throws
+            /// (QueryNode supports it only for a correlated subquery). Bail to the plain-column header
+            /// path instead of throwing for those.
             const auto argument_node_type = argument->getNodeType();
             if (argument_node_type != QueryTreeNodeType::CONSTANT
                 && argument_node_type != QueryTreeNodeType::FUNCTION
                 && argument_node_type != QueryTreeNodeType::COLUMN
                 && argument_node_type != QueryTreeNodeType::LAMBDA)
                 return nullptr;
+            /// Placeholder for a non-constant argument: a default-valued, non-const column of the
+            /// argument's type (the same stand-in ActionsDAG::evaluatePartialResult uses for unknown
+            /// inputs). It lets a constant-by-semantics function still produce its ColumnConst while a
+            /// function that actually depends on the argument yields a non-const column.
+            argument_column = argument->getResultType()->createColumn();
         }
         argument_columns.emplace_back(std::move(argument_column), argument->getResultType(), "");
     }
 
-    /// All arguments are constant: execute the function on them. Covers ordinary foldable functions
-    /// like toString(ignore(s IN (...))) and transparent wrappers like identity(ignore(s IN (...)))
-    /// that return their constant argument unchanged. Mirrors the all-const branch of
-    /// ActionsDAG::addFunctionImpl.
-    if (all_arguments_constant)
+    /// Execute the function with input_rows_count == 0 (header-evaluation mode, no per-row work). When
+    /// all arguments are constant this covers ordinary foldable functions like toString(ignore(s IN (...)))
+    /// and transparent wrappers like identity(ignore(s IN (...))). When some arguments are placeholders
+    /// it covers functions whose result is constant regardless of those arguments: ignore/indexHint
+    /// (always constant), __applyFilter('', ...) (constant when the filter id is empty), and any other
+    /// non-foldable function that emits a ColumnConst on the replicas. The result is kept only if it is a
+    /// ColumnConst, so a function that depends on the placeholder argument correctly stays non-constant.
     {
-        auto column = function_base->prepare(argument_columns)->execute(argument_columns, result_type, 1, /* dry_run = */ true);
+        auto column = function_base->prepare(argument_columns)->execute(argument_columns, result_type, 0, /* dry_run = */ true);
         if (column && isColumnConst(*column))
             return column->cloneResized(1);
-        return nullptr;
     }
 
-    /// Only some arguments are constant. A foldable function may still produce a constant from a
-    /// subset of constant arguments: if(const false, non-const, const) yields the const else branch,
+    /// A foldable function may still derive a constant from only a subset of constant arguments via its
+    /// partial-constant hook: if(const false, non-const, const) yields the const else branch,
     /// and(..., const false) yields false, or(..., const true) yields true. The real projection plan
     /// derives this same constant via getConstantResultForNonConstArguments (passing a null column for
     /// each non-constant argument) in ActionsDAG::addFunctionImpl / evaluatePartialResult, so mirror it
-    /// here to keep the analyze-only header constant. Transparent wrappers do not implement this hook,
-    /// so a wrapper over a non-constant argument correctly stays non-constant.
-    if (function_base->isSuitableForConstantFolding())
+    /// here. Only meaningful when not every argument folded.
+    if (!all_arguments_constant && function_base->isSuitableForConstantFolding())
     {
+        for (auto & argument_column : argument_columns)
+        {
+            /// getConstantResultForNonConstArguments expects a null column for non-constant arguments.
+            if (argument_column.column && !isColumnConst(*argument_column.column))
+                argument_column.column = nullptr;
+        }
         auto column = function_base->getConstantResultForNonConstArguments(argument_columns, result_type);
         if (column && isColumnConst(*column))
             return column->cloneResized(1);

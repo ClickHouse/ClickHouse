@@ -76,6 +76,25 @@ SELECT DISTINCT count(*) OVER () FROM (SELECT __scalarSubqueryResult(ignore(s IN
 SELECT DISTINCT count(*) OVER () FROM (SELECT __scalarSubqueryResult(identity(ignore(s IN ('1', '2')))) FROM t_window_const);
 SELECT DISTINCT count(*) OVER () FROM (SELECT identity(__scalarSubqueryResult(ignore(s IN ('1', '2')))) FROM t_window_const);
 
+-- The constant-by-semantics recognition is not limited to a fixed set of function names: any
+-- non-foldable function whose result is a ColumnConst regardless of its arguments is kept constant by
+-- executing it against placeholder argument columns (the same way real header evaluation does). The
+-- internal direct-callable __applyFilter('', key) returns a ColumnConst(UInt8) for an empty filter id
+-- regardless of its key argument, so over an IN-holding key (which cannot be evaluated while building
+-- the analyze-only header) the header must still keep the constant, otherwise the unused column is
+-- pruned on the coordinator while the replica streams it (the same OutputPort divergence). This holds
+-- for an IN tuple, an IN subquery, an always-constant key, a nested transparent wrapper, and either
+-- nesting order with identity.
+SELECT DISTINCT count(*) OVER () FROM (SELECT __applyFilter('', s IN ('1', '2')) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT __applyFilter('', s IN (SELECT toString(number) FROM numbers(3))) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT __applyFilter('', ignore(s)) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT __applyFilter('', identity(ignore(s IN ('1', '2')))) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT identity(__applyFilter('', s IN ('1', '2'))) FROM t_window_const);
+
+-- __applyFilter with an empty id is constant regardless of its key, so a key that itself holds an IN
+-- subquery still keeps the constant header.
+SELECT DISTINCT count(*) OVER () FROM (SELECT __applyFilter('', identity(ignore(s IN (SELECT toString(number) FROM numbers(3))))) FROM t_window_const);
+
 -- A partial-constant function produces a ColumnConst from only a subset of constant arguments:
 -- if(const false, non-const, const) yields the const else branch, and(.., const false) yields false,
 -- or(.., const true) yields true. The real projection plan derives this via
