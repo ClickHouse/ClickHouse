@@ -74,7 +74,7 @@ public:
         /// The actual joining is done by MergeJoinAlgorithm, which only implements
         /// Any/All/Asof strictness and Inner/Left/Right/Full kind (Asof restricted to Left/Inner).
         /// Decline anything else here so chooseJoinAlgorithm falls back to another algorithm
-        /// instead of building a pipeline that aborts at execution time.
+        /// instead of building a pipeline that raises a query exception later.
         if (!isMergeAlgorithmStrictnessAndKindSupported(table_join->kind(), table_join->strictness()))
             return false;
 
