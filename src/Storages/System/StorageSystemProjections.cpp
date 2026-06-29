@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemProjections.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -301,3 +302,6 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProjections) }

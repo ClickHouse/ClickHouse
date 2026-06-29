@@ -6,7 +6,7 @@ title: 'User Defined Functions (UDFs)'
 doc_type: 'reference'
 ---
 
-import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
+import BetaBadge from '@theme/badges/BetaBadge';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -22,11 +22,10 @@ ClickHouse supports several types of user defined functions (UDFs):
 
 ## Executable User Defined Functions {#executable-user-defined-functions}
 
-<PrivatePreviewBadge/>
+<BetaBadge/>
 
 :::note
-This feature is supported in private preview in ClickHouse Cloud.
-Please contact ClickHouse Support at https://clickhouse.cloud/support to access.
+In ClickHouse Cloud, executable UDFs are in public beta and are created through the Cloud console UI. See [User-defined functions in Cloud](/cloud/features/user-defined-functions) for the Cloud-specific workflow.
 :::
 
 ClickHouse can call any external executable program or script to process data.
