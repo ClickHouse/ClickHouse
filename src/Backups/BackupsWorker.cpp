@@ -662,7 +662,13 @@ void BackupsWorker::doBackup(
     bool is_internal_backup = backup_settings.internal;
 
     /// Record the engine's effective settings for observability (see `system.backups`).
-    setEngineSettings(backup_id, backup->getEngineSettings());
+    /// A non-internal `BACKUP ON CLUSTER` initiator only writes metadata/lock files locally; the data
+    /// files are written by the per-host internal operations (which are filtered out of `system.backups`)
+    /// and those hosts may use different endpoint or global settings. So the initiator's local writer does
+    /// not represent the whole backup; omit the engine settings, as is done for incremental multi-engine backups.
+    const bool is_on_cluster_initiator = on_cluster && !is_internal_backup;
+    if (!is_on_cluster_initiator)
+        setEngineSettings(backup_id, backup->getEngineSettings());
 
     maybeSleepForTesting();
 
@@ -1072,7 +1078,11 @@ void BackupsWorker::doRestore(
     BackupPtr backup = openBackupForReading(backup_info, restore_settings, context);
 
     /// Record the engine's effective settings for observability (see `system.backups`).
-    setEngineSettings(restore_id, backup->getEngineSettings());
+    /// As on the backup path, a non-internal `RESTORE ON CLUSTER` initiator records only its own reader
+    /// while the per-host internal restores do the actual work, so omit the engine settings in that case.
+    const bool is_on_cluster_initiator = on_cluster && !is_internal_restore;
+    if (!is_on_cluster_initiator)
+        setEngineSettings(restore_id, backup->getEngineSettings());
 
     String current_database = context->getCurrentDatabase();
 
