@@ -72,6 +72,8 @@ extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
 extern const Event FilterPartsByVirtualColumnsMicroseconds;
+extern const Event QueryConditionCacheHits;
+extern const Event QueryConditionCacheMisses;
 }
 
 namespace DB
@@ -1443,13 +1445,18 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             auto storage_id = data_part->storage.getStorageID();
             /// Row-level entries are sound under any profile; skip-index entries only under the
             /// matching profile. Merge the two verdicts: a mark must be read iff both say so.
-            auto row_level_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
-            auto skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, profiled_condition_hash);
+            /// This is one logical cache consultation, so it must emit at most one
+            /// QueryConditionCacheHits/Misses event regardless of how many keys are probed: count
+            /// the hit/miss ourselves and suppress the per-read events on both lookups.
+            auto row_level_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash, /*increment_profile_events=*/false);
+            auto skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, profiled_condition_hash, /*increment_profile_events=*/false);
             if (!row_level_marks_opt && !skip_index_marks_opt)
             {
+                ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
                 ++it;
                 continue;
             }
+            ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
             QueryConditionCache::MatchingMarks matching_marks;
             if (row_level_marks_opt && skip_index_marks_opt
