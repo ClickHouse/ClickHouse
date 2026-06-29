@@ -1627,7 +1627,7 @@
      If not specified they will be stored locally. -->
     <!-- <workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path> -->
 
-    <!-- Uncomment if you want data to be compressed 30-100% better.
+    <!-- Uncomment if you want large parts to be compressed even better than the ZSTD(3) default.
          Don't do that if you just started using ClickHouse.
          Note: ClickHouse Cloud https://clickhouse.com/cloud has a stronger compression by default.
       -->
@@ -1640,8 +1640,10 @@
             <min_part_size>10000000000</min_part_size>        <!- - Min part size in bytes. - ->
             <min_part_size_ratio>0.01</min_part_size_ratio>   <!- - Min size of part relative to whole table size. - ->
 
-            <!- - What compression method to use. - ->
+            <!- - What compression method to use. Use a level above the ZSTD(3) default so this case
+                 actually improves compression for large parts. - ->
             <method>zstd</method>
+            <level>10</level>
         </case>
     </compression>
     -->
