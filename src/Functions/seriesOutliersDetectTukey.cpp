@@ -145,8 +145,8 @@ private:
             src_sorted.assign(src_vec.begin() + prev_src_offset, src_vec.begin() + src_offset);
             std::sort(src_sorted.begin(), src_sorted.end());
 
-            Float64 q1;
-            Float64 q2;
+            Float64 q1 = 0;
+            Float64 q2 = 0;
 
             Float64 p1 = static_cast<Float64>(len) * min_percentile;
             if (p1 == static_cast<Float64>(static_cast<Int64>(p1)))

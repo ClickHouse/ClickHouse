@@ -1,11 +1,10 @@
 #include <Processors/Executors/PollingQueue.h>
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <base/defines.h>
-#include <sys/epoll.h>
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -25,15 +24,27 @@ namespace ErrorCodes
 
 PollingQueue::PollingQueue()
 {
+#if defined(OS_LINUX)
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
         throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
+#else
+    /// macOS has no pipe2; create the pipe and set O_NONBLOCK on both ends.
+    if (-1 == pipe(pipe_fd))
+        throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
+    for (int pipe_end_fd : pipe_fd)
+    {
+        int flags = fcntl(pipe_end_fd, F_GETFL, 0);
+        if (-1 == flags || -1 == fcntl(pipe_end_fd, F_SETFL, flags | O_NONBLOCK))
+            throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot make pipe non-blocking");
+    }
+#endif
 
     epoll.add(pipe_fd[0], pipe_fd);
 }
 
 PollingQueue::~PollingQueue()
 {
-    int err;
+    int err = 0;
     err = close(pipe_fd[0]);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(!err || errno == EINTR);
     err = close(pipe_fd[1]);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
@@ -73,7 +84,7 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
 
     lock.unlock();
 
-    epoll_event event;
+    epoll_event event{};
     event.data.ptr = nullptr;
     size_t num_events = epoll.getManyReady(1, &event, timeout);
 

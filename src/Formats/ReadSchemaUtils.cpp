@@ -55,7 +55,7 @@ static std::optional<NamesAndTypesList> getOrderedColumnsList(const NamesAndType
     return res;
 }
 
-bool isRetryableSchemaInferenceError(int code)
+static bool isRetryableSchemaInferenceError(int code)
 {
     return code == ErrorCodes::EMPTY_DATA_PASSED || code == ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA;
 }
@@ -75,14 +75,13 @@ static const std::vector<String> & getFormatsOrderForDetection()
         "Npy",
         "Native",
         "BSONEachRow",
-        "JSONCompact",
         "Values",
-        "TSKV",
         "JSONObjectEachRow",
         "JSONColumns",
         "JSONCompactColumns",
         "JSONCompact",
         "JSON",
+        "TSKV",
     };
 
     return formats_order;
@@ -102,7 +101,7 @@ static const std::vector<String> & getSimilarFormatsSetForDetection()
     return formats_order;
 }
 
-std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
+static std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
     std::optional<String> format_name,
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
@@ -280,7 +279,7 @@ try
                     if (schema_reader && mode == SchemaInferenceMode::DEFAULT)
                     {
                         size_t rows_read = schema_reader->getNumRowsRead();
-                        assert(rows_read <= max_rows_to_read);
+                        chassert(rows_read <= max_rows_to_read);
                         max_rows_to_read -= schema_reader->getNumRowsRead();
                         size_t bytes_read = iterator_data.buf->count();
                         /// We could exceed max_bytes_to_read a bit to complete row parsing.

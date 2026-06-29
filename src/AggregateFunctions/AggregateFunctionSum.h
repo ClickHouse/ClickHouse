@@ -92,7 +92,7 @@ struct AggregateFunctionSumData
     }
 
     /// Vectorized version
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value>
     void NO_SANITIZE_UNDEFINED NO_INLINE
@@ -145,18 +145,12 @@ struct AggregateFunctionSumData
             addManyImpl_x86_64_v4(ptr, start, end);
             return;
         }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            addManyImpl_x86_64_v3(ptr, start, end);
-            return;
-        }
 #endif
 
         addManyImpl(ptr, start, end);
     }
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value, bool add_if_zero>
     void NO_SANITIZE_UNDEFINED NO_INLINE
@@ -248,12 +242,6 @@ struct AggregateFunctionSumData
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalInternalImpl_x86_64_v4<Value, add_if_zero>(ptr, condition_map, start, end);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            addManyConditionalInternalImpl_x86_64_v3<Value, add_if_zero>(ptr, condition_map, start, end);
             return;
         }
 #endif
@@ -567,7 +555,7 @@ public:
                 add(places[offsets[i]] + place_offset, &values, i + 1, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
