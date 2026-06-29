@@ -226,7 +226,21 @@ def main():
                 "  dpkg-buildpackage -b --no-sign &&"
                 "  sudo dpkg -i ../reprepro_$(dpkg-parsechangelog --show-field Version)_$(dpkg-architecture -q DEB_HOST_ARCH).deb"
                 ") ||:",
-            ],
+            ]
+            # The installs above are best-effort (`||:`) so a local dev machine
+            # without sudo/apt is not blocked. For a real release the repo tools
+            # must be present before any mutation (tags, GitHub release, repos),
+            # so verify them here and fail closed. Skipped on dry-run (local
+            # convenience).
+            + (
+                []
+                if args.dry_run
+                else [
+                    "command -v createrepo_c >/dev/null && command -v reprepro >/dev/null"
+                    " || { echo 'ERROR: createrepo_c and reprepro must be installed"
+                    " for a release' >&2; exit 1; }"
+                ]
+            ),
             workdir=REPO_PATH,
         )
 
