@@ -266,6 +266,8 @@ namespace
             calculatePartSize(size);
             createMultipartUpload();
 
+            multipart_tags.resize(num_parts);
+
             size_t position = start_offset;
             size_t end_position = start_offset + size;
 
