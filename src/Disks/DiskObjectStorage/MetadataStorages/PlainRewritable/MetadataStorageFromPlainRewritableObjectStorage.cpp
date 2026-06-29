@@ -349,6 +349,11 @@ std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::ge
     return StoredObjects{StoredObject(object_key, path, object_size.value())};
 }
 
+std::string MetadataStorageFromPlainRewritableObjectStorage::getCommonKeyPrefix() const
+{
+    return object_storage->getCommonKeyPrefix();
+}
+
 Poco::Timestamp MetadataStorageFromPlainRewritableObjectStorage::getLastModified(const std::string & path) const
 {
     if (auto last_modified = getLastModifiedIfExists(path))
@@ -423,7 +428,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
     }
 
     if (!uncommitted_fs_tree->getDirectoryRemoteInfo(path))
-        uncommitted_fs_tree->recordDirectoryPath(path, DirectoryRemoteInfo{ .remote_path = getRandomASCIIString(32), .etag = "", .files = {}});
+        uncommitted_fs_tree->recordDirectoryPath(path, DirectoryRemoteInfo{ .remote_path = getRandomASCIIString(PlainRewritableLayout::DIRECTORY_REMOTE_NAME_LENGTH), .etag = "", .files = {}});
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         /*recursive=*/false,
@@ -445,7 +450,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
     }
 
     if (!uncommitted_fs_tree->getDirectoryRemoteInfo(path))
-        uncommitted_fs_tree->recordDirectoryPath(path, DirectoryRemoteInfo{ .remote_path = getRandomASCIIString(32), .etag = "", .files = {}});
+        uncommitted_fs_tree->recordDirectoryPath(path, DirectoryRemoteInfo{ .remote_path = getRandomASCIIString(PlainRewritableLayout::DIRECTORY_REMOTE_NAME_LENGTH), .etag = "", .files = {}});
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         /*recursive=*/true,
