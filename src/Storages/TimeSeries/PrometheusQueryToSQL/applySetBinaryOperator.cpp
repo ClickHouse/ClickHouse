@@ -94,23 +94,29 @@ void checkArgumentTypes(
     {
         throw Exception(
             ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "Set binary operator '{}' expects two arguments of type {}, got {} and {}",
+            "Binary operator '{}' expects two arguments of type {}, got {} and {}",
             operator_name,
             ResultType::INSTANT_VECTOR,
             left_argument.type,
             right_argument.type);
     }
 
-    if (operator_node->group_left || operator_node->group_right)
+    if (operator_node->group_left)
     {
         throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Set binary operator '{}' does not support group modifiers", operator_name);
+            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Binary operator '{}' doesn't allow group_left", operator_name);
+    }
+
+    if (operator_node->group_right)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Binary operator '{}' doesn't allow group_right", operator_name);
     }
 
     if (operator_node->bool_modifier)
     {
         throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Set binary operator '{}' does not support the bool modifier", operator_name);
+            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Binary operator '{}' doesn't allow bool modifier", operator_name);
     }
 
     (void)context;
