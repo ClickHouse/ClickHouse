@@ -34,6 +34,17 @@ node_precedence = cluster.add_instance(
     ],
 )
 
+# This node backs `user_files_policy` with a local `DiskEncrypted`. It is not remote, so a
+# guard that tested only `disk->isRemote()` would (incorrectly) accept it; the bytes at the
+# backing path are ciphertext, so local-only consumers that bypass `IDisk` must fail closed.
+node_encrypted = cluster.add_instance(
+    "node_encrypted",
+    main_configs=["configs/config.d/storage_configuration_encrypted.xml"],
+    tmpfs=[
+        "/test_user_files_disk_encrypted_backing:size=100M",
+    ],
+)
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -401,6 +412,39 @@ def test_local_partitioned_insert_rejected():
         )
 
 
+def test_local_partitioned_insert_rejected_when_glob_target_exists():
+    """The partitioned-write rejection must not be bypassable by a pre-existing file.
+
+    Regression for `getPathsListOnDisk`: it expanded `{_partition_id}` as an ordinary
+    `{...}` enum glob (to the literal `_partition_id`) before the write-side rejection saw
+    it. If a file matching that expansion (`part__partition_id.csv`) already existed on the
+    disk, the pattern resolved to that single literal file, so `path_for_partitioned_write`
+    no longer contained the wildcard, `INSERT ... PARTITION BY` was no longer recognized as a
+    partitioned write, and all data was silently written into the wrong file instead of
+    throwing the intended unsupported-mode exception."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            # The literal name that `{_partition_id}` expands to.
+            "echo 'preexisting' > /test_user_files_disk1/part__partition_id.csv",
+        ]
+    )
+
+    with pytest.raises(Exception, match="NOT_IMPLEMENTED|not supported with user_files_policy"):
+        node_local.query(
+            "INSERT INTO FUNCTION file('part_{_partition_id}.csv', 'CSV', 'x UInt64') "
+            "PARTITION BY x SELECT number FROM numbers(3)"
+        )
+
+    # The pre-existing file must be untouched: with the bug it would have been overwritten
+    # with the inserted rows (0, 1, 2) instead of the query being rejected.
+    output = node_local.exec_in_container(
+        ["bash", "-c", "cat /test_user_files_disk1/part__partition_id.csv"]
+    )
+    assert output.strip() == "preexisting", output
+
+
 def test_local_truncate_table_routes_through_disk():
     """`TRUNCATE TABLE` for `File` engine must route through `IDisk` so it actually
     empties the underlying file. Without disk-aware truncation, `fs::exists`/`::truncate`
@@ -657,3 +701,42 @@ def test_user_files_policy_precedence_over_bad_local_path():
         ["bash", "-c", "cat /test_user_files_disk_precedence/precedence_test.csv"]
     )
     assert "555" in output
+
+
+def test_encrypted_disk_read_through_idisk_and_reject_local_consumers():
+    """A local `DiskEncrypted` `user_files_policy` is not remote, but its backing path holds
+    ciphertext. The disk-aware `file` path must read/write the logical (decrypted) contents
+    through `IDisk`, while local-only consumers that bypass `IDisk` (here the `filesystem`
+    table function) must fail closed instead of exposing the ciphertext / backing files.
+
+    Regression for the fail-open guard that tested only `disk->isRemote()`: a local encrypted
+    disk passed that test, so `filesystem()` would list and read the encrypted backing
+    directory via `std::filesystem` / `ReadBufferFromFile`."""
+    secret = "secret_plaintext_value"
+
+    # `file()` is disk-aware: write and read round-trip to the logical (decrypted) value.
+    node_encrypted.query(
+        f"INSERT INTO FUNCTION file('enc_test.csv', 'CSV', 'x String') SELECT '{secret}'"
+    )
+    assert (
+        node_encrypted.query(
+            "SELECT * FROM file('enc_test.csv', 'CSV', 'x String')"
+        ).strip()
+        == secret
+    )
+
+    # The bytes physically stored on the backing disk must be ciphertext: the plaintext must
+    # not appear anywhere under the backing directory. This is exactly why local-POSIX
+    # consumers cannot be allowed to read the disk root directly.
+    backing = node_encrypted.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "grep -rl '" + secret + "' /test_user_files_disk_encrypted_backing/ || true",
+        ]
+    )
+    assert backing.strip() == "", f"plaintext leaked to backing store: {backing}"
+
+    # A local-only consumer must reject the encrypted disk (fail closed), not read ciphertext.
+    err = node_encrypted.query_and_get_error("SELECT count() FROM filesystem()")
+    assert "not a plain local filesystem disk" in err, err

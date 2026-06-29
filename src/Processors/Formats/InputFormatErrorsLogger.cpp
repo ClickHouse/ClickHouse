@@ -55,10 +55,10 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : m
         {
             for (const auto & disk : user_files_volume->getDisks())
             {
-                if (disk->isRemote())
+                if (!isPlainLocalDisk(*disk))
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                                     "input_format_record_errors_file_path is not supported "
-                                    "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                                    "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
                                     disk->getName());
             }
         }

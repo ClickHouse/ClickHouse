@@ -83,10 +83,10 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
     {
         for (const auto & disk : user_files_volume->getDisks())
         {
-            if (disk->isRemote())
+            if (!isPlainLocalDisk(*disk))
             {
                 processSQLiteError(fmt::format("SQLite is not supported "
-                                               "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                                               "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
                                                disk->getName()),
                                    throw_on_error);
                 return nullptr;

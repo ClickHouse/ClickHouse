@@ -141,10 +141,10 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
         {
             for (const auto & disk : user_files_volume->getDisks())
             {
-                if (disk->isRemote())
+                if (!isPlainLocalDisk(*disk))
                     throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                         "Static HTTP handler `file://` source is not supported "
-                        "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                        "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
                         disk->getName());
             }
         }

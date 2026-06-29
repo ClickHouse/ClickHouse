@@ -178,10 +178,10 @@ StoragePtr TableFunctionFilesystem::executeImpl(const ASTPtr &, ContextPtr conte
         {
             for (const auto & disk : user_files_volume->getDisks())
             {
-                if (disk->isRemote())
+                if (!isPlainLocalDisk(*disk))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "`filesystem` table function is not supported with non-local "
-                                    "`user_files_policy` disks (disk `{}` is remote)",
+                                    "`user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
                                     disk->getName());
             }
         }

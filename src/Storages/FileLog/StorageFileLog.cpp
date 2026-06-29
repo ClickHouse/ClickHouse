@@ -205,10 +205,11 @@ StorageFileLog::StorageFileLog(
     {
         for (const auto & user_files_disk : user_files_volume->getDisks())
         {
-            if (user_files_disk->isRemote())
+            if (!isPlainLocalDisk(*user_files_disk))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Engine FileLog is not supported with non-local `user_files_policy` disks (disk `{}` is remote)",
+                    "Engine FileLog is not supported with non-local `user_files_policy` disks "
+                    "(disk `{}` is not a plain local filesystem disk)",
                     user_files_disk->getName());
         }
     }

@@ -702,6 +702,18 @@ Strings getPathsListOnDisk(
     size_t & total_bytes_to_read)
 {
     const Disks disks = volume->getDisks();
+
+    /// A `{_partition_id}` wildcard denotes a partitioned write, not a glob to expand.
+    /// Mirror the local `getPathsList`: return the pattern unmodified so the wildcard is
+    /// preserved in `path_for_partitioned_write` and the explicit "partitioned writes are
+    /// not supported with user_files_policy" rejection fires. Otherwise `expandSelectionGlob`
+    /// would expand `{_partition_id}` as an ordinary `{...}` enum glob to the literal
+    /// `_partition_id`; if a file matching that expansion (e.g. `part__partition_id.csv`)
+    /// already exists on disk, the pattern would resolve to that single file, dropping the
+    /// wildcard, bypassing the rejection and writing all data into the wrong file.
+    if (path_with_globs.contains(PartitionedSink::PARTITION_ID_WILDCARD))
+        return {path_with_globs};
+
     const bool has_globs = path_with_globs.find_first_of("*?{") != std::string::npos;
 
     /// A path is treated as "disk-qualified" (already carrying a configured disk's
@@ -1759,10 +1771,10 @@ StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
     {
         for (const auto & disk : user_files_volume->getDisks())
         {
-            if (disk->isRemote())
+            if (!isPlainLocalDisk(*disk))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "`rename_files_after_processing` is not supported "
-                    "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                    "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
                     disk->getName());
         }
     }

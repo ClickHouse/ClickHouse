@@ -1,0 +1,32 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- Plain local disk that physically stores the (encrypted) bytes. -->
+            <user_files_encrypted_backing>
+                <type>local</type>
+                <path>/test_user_files_disk_encrypted_backing/</path>
+            </user_files_encrypted_backing>
+            <!-- A local `DiskEncrypted` wrapper. `isRemote()` returns false (it delegates to
+                 the local backing disk), but the bytes at its backing path are ciphertext, so
+                 local-only consumers that bypass `IDisk` must reject it (fail closed). -->
+            <user_files_encrypted>
+                <type>encrypted</type>
+                <disk>user_files_encrypted_backing</disk>
+                <path>encrypted/</path>
+                <key>1234567812345678</key>
+            </user_files_encrypted>
+        </disks>
+
+        <policies>
+            <user_files_encrypted_policy>
+                <volumes>
+                    <main>
+                        <disk>user_files_encrypted</disk>
+                    </main>
+                </volumes>
+            </user_files_encrypted_policy>
+        </policies>
+    </storage_configuration>
+
+    <user_files_policy>user_files_encrypted_policy</user_files_policy>
+</clickhouse>

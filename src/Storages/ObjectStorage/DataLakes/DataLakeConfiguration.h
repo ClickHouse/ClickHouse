@@ -427,11 +427,11 @@ private:
             {
                 for (const auto & disk : user_files_volume->getDisks())
                 {
-                    if (disk->isRemote())
+                    if (!isPlainLocalDisk(*disk))
                         throw Exception(
                             ErrorCodes::PATH_ACCESS_DENIED,
                             "Local data lake access is not supported with non-local `user_files_policy` disks "
-                            "(disk `{}` is remote)",
+                            "(disk `{}` is not a plain local filesystem disk)",
                             disk->getName());
                 }
             }
