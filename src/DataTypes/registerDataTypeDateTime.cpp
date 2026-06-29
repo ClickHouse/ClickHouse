@@ -347,14 +347,14 @@ ENGINE = MergeTree;
 ```
 
 ```sql
--- Parse DateTime
--- - from an integer interpreted as the number of milliseconds (because of precision 3) since 1970-01-01,
--- - from a decimal interpreted as the number of seconds before the decimal part, and based on the precision after the decimal point,
+-- Parse DateTime64
+-- - from an integer interpreted as the number of seconds since 1970-01-01 (like DateTime),
+-- - from a decimal interpreted as the number of seconds, the fractional part giving sub-second precision,
 -- - from a string.
 
 INSERT INTO dt64
 VALUES
-(1546300800123, 1),
+(1546300800, 1),
 (1546300800.123, 2),
 ('2019-01-01 00:00:00', 3);
 
@@ -363,13 +363,13 @@ SELECT * FROM dt64;
 
 ```text
 ┌───────────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 03:00:00.000 │        1 │
 │ 2019-01-01 03:00:00.123 │        2 │
 │ 2019-01-01 00:00:00.000 │        3 │
 └─────────────────────────┴──────────┘
 ```
 
-- When inserting datetime as an integer, it is treated as an appropriately scaled Unix Timestamp (UTC). `1546300800000` (with precision 3) represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as a string the value will be shown as `'2019-01-01 03:00:00'`. Inserting datetime as a decimal will treat it similarly as an integer, except the value before the decimal point is the Unix Timestamp up to and including the seconds, and after the decimal point will be treated as the precision.
+- When inserting datetime as a number, it is treated as a Unix Timestamp (UTC) in seconds, like `DateTime`. `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as a string the value will be shown as `'2019-01-01 03:00:00'`. Inserting a number with a fractional part works the same way: the part before the decimal point is the Unix Timestamp in seconds and the part after it provides sub-second precision according to the column's precision. (Before version 26.7, a bare unquoted integer was instead interpreted as the raw underlying value at the column precision, so `1546300800000` at precision 3 meant `'2019-01-01 00:00:00'`.)
 - When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and stored as `1546290000000`.
 
 2. Filtering on `DateTime64` values
