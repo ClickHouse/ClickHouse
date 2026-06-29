@@ -129,13 +129,43 @@ def determine_merge_base(info):
     return merge_base
 
 
+# cmake's submodule sanity check (CMakeLists.txt) looks for this file; we use the same
+# marker to verify the before-worktree actually has its submodules populated.
+SUBMODULE_MARKER = "contrib/sysroot/README.md"
+
+
+def ensure_primary_submodules():
+    """Populate the primary checkout's submodule working trees.
+
+    `needs_submodules=True` only restores the submodule *git data* (`.git/modules`) from
+    the S3 cache — the working-tree files still have to be checked out. Without this the
+    primary `contrib/*` directories are empty and there is nothing to hardlink into the
+    before-worktree. Mirrors the CHECKOUT_SUBMODULES stage of
+    ci/jobs/build_clickhouse.py (cache fast-path + full-fetch fallback).
+    """
+    assert Shell.check(
+        "git submodule sync && git submodule init", verbose=True
+    ), "Failed to init submodules in the primary checkout"
+    if os.path.isdir(".git/modules/contrib") and os.listdir(".git/modules/contrib"):
+        print("Submodule cache detected — populating working trees from cache")
+        ok = Shell.check(
+            "git submodule update --depth 1 --single-branch", retries=3, verbose=True
+        )
+    else:
+        ok = Shell.check(
+            "contrib/update-submodules.sh --max-procs 10", retries=3, verbose=True
+        )
+    assert ok, "Failed to populate submodule working trees in the primary checkout"
+
+
 def prepare_before_worktree(merge_base, pr_sha, test_files):
     """Create an isolated worktree at the merge-base with only the test files overlaid.
 
     Submodule working trees are populated by hardlinking from the primary checkout
     (fast, no network) so the build sees contrib sources.  This is content-correct
     whenever the PR did not bump submodule pointers, which is the normal case for a
-    unit-test bugfix.
+    unit-test bugfix.  Returns True iff the worktree ended up with its submodules
+    populated (checked via SUBMODULE_MARKER) — the caller must fail close otherwise.
     """
     Shell.check(f"git worktree remove --force {BEFORE_SRC} ||:", verbose=True)
     Shell.check(f"rm -rf {BEFORE_SRC}", verbose=True)
@@ -153,6 +183,10 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
         verbose=True,
     ), "Failed to overlay unit-test files onto the merge-base worktree"
 
+    # The primary checkout must have populated submodule working trees before we can
+    # hardlink them across (see ensure_primary_submodules).
+    ensure_primary_submodules()
+
     # Populate submodules by hardlinking from the primary checkout.
     sub_paths = Shell.get_output(
         "git config --file .gitmodules --get-regexp '^submodule\\..*\\.path$' "
@@ -167,12 +201,16 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
         # cp -al = recursive hardlink copy (instant, no data duplication).
         Shell.check(f"cp -al '{path}' '{dst}'", verbose=False)
 
+    return os.path.isfile(os.path.join(BEFORE_SRC, SUBMODULE_MARKER))
 
-def build_before_binary(info):
-    """Configure and build only the `unit_tests_dbms` target in the before-worktree.
 
-    Returns the build Result (its .is_ok() tells whether the merge-base could build
-    the overlaid test).
+def configure_before_binary(info):
+    """Run cmake configure for the before-worktree. Returns the cmake Result.
+
+    Kept separate from the compile step on purpose: a configure failure is an
+    environment/infrastructure problem (toolchain, submodules, cache) and must NOT be
+    mistaken for "the test depends on the fix". Only a *compile* failure carries that
+    meaning. See main().
     """
     setup_build_caches_env(info)
     os.makedirs(f"{BEFORE_SRC}/build", exist_ok=True)
@@ -187,17 +225,28 @@ def build_before_binary(info):
         f"{REPO_NORMALIZED}/cmake/", f"{BEFORE_SRC_NORMALIZED}/cmake/"
     )
     cmake_cmd = f"{cmake_flags} {BEFORE_SRC_NORMALIZED} -B {BEFORE_BUILD_NORMALIZED}"
-    build_result = Result.from_commands_run(
-        name="Build before-binary (merge-base + test files, without the fix)",
-        command=[
-            cmake_cmd,
-            "ninja unit_tests_dbms",
-        ],
+    return Result.from_commands_run(
+        name="Configure before-binary (cmake)",
+        command=[cmake_cmd],
+        workdir=BEFORE_BUILD_NORMALIZED,
+        with_log=True,
+    )
+
+
+def compile_before_binary():
+    """Compile only the `unit_tests_dbms` target in the configured before-worktree.
+
+    Returns the ninja Result. A failure here means the overlaid test does not compile
+    against the merge-base sources — strong evidence it depends on code the PR adds.
+    """
+    compile_result = Result.from_commands_run(
+        name="Compile before-binary (ninja unit_tests_dbms, without the fix)",
+        command=["ninja unit_tests_dbms"],
         workdir=BEFORE_BUILD_NORMALIZED,
         with_log=True,
     )
     Shell.check("sccache --show-stats", verbose=True)
-    return build_result
+    return compile_result
 
 
 def run_gtests(binary_path, gtest_filter, name):
@@ -290,28 +339,61 @@ def main():
     merge_base = determine_merge_base(info)
     print(f"PR commit: {pr_sha}")
     print(f"merge-base: {merge_base}")
-    prepare_before_worktree(merge_base, pr_sha, test_files)
-    build_result = build_before_binary(info)
+    submodules_ok = prepare_before_worktree(merge_base, pr_sha, test_files)
 
-    if not build_result.is_ok():
-        # Decision #4: a before-binary that cannot even build is the strongest proof
-        # that the test depends on the fix. Pass the check, but make it crystal clear
-        # the success comes from a BUILD FAILURE, NOT a runtime reproduction.
-        build_result.set_status(Result.Status.OK)
-        build_result.set_label(Result.Label.XFAIL)
-        build_result.set_info(
-            "EXPECTED: the merge-base (without the fix) FAILED TO BUILD the touched "
-            "test — the test depends on code introduced by this PR. The check passes "
-            "because of this build failure. NOTE: the bug was NOT reproduced at "
-            "runtime; the before-binary never ran."
-        )
-        results.append(build_result)
+    # Fail close: building unit_tests_dbms needs submodules. If they are missing, cmake
+    # aborts with a generic "Submodules are not initialized" error that must NOT be
+    # mistaken for "the test depends on the fix". Surface it as an infrastructure error.
+    if not submodules_ok:
         finalize(
-            results,
-            "Bugfix validation passed because the before-binary FAILED TO BUILD "
-            "(test depends on the fix). This is NOT a runtime reproduction.",
+            [
+                Result(
+                    name="Bugfix validation (unit tests)",
+                    status=Result.Status.ERROR,
+                    info=(
+                        f"Submodules were not populated in the before-worktree (missing "
+                        f"'{SUBMODULE_MARKER}'); cannot build the before-binary. This is "
+                        "an infrastructure error — NOT a reproduction."
+                    ),
+                )
+            ],
+            "Bugfix validation inconclusive: submodules missing in the before-worktree.",
         )
         return
+
+    # 4a. Configure. A cmake-configure failure is an environment/infra problem, never
+    # evidence that the test depends on the fix — report it as an error, do not pass.
+    configure_result = configure_before_binary(info)
+    results.append(configure_result)
+    if not configure_result.is_ok():
+        configure_result.set_status(Result.Status.ERROR)
+        finalize(
+            results,
+            "Bugfix validation inconclusive: the before-binary failed to CONFIGURE "
+            "(cmake). This is an infrastructure error, not a reproduction.",
+        )
+        return
+
+    # 4b. Compile. A compile failure means the overlaid test cannot build against the
+    # merge-base sources — the strongest proof that it depends on code this PR adds.
+    compile_result = compile_before_binary()
+    if not compile_result.is_ok():
+        compile_result.set_status(Result.Status.OK)
+        compile_result.set_label(Result.Label.XFAIL)
+        compile_result.set_info(
+            "EXPECTED: the merge-base (without the fix) FAILED TO COMPILE the touched "
+            "test — the test depends on code introduced by this PR. The check passes "
+            "because of this compile failure. NOTE: the bug was NOT reproduced at "
+            "runtime; the before-binary never ran."
+        )
+        results.append(compile_result)
+        finalize(
+            results,
+            "Bugfix validation passed because the before-binary FAILED TO COMPILE the "
+            "touched test (test depends on the fix). This is NOT a runtime reproduction.",
+        )
+        return
+    build_result = compile_result
 
     results.append(build_result)
 
