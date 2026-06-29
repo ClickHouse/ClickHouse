@@ -973,7 +973,8 @@ struct QueryResultCache::HerdCoalescingToken
 class QueryResultCache::HerdCoalescing
 {
 public:
-    HerdCoalescingTokenPtr startAsyncInsert(const HerdCoalescingKey & key, std::chrono::milliseconds timeout);
+    HerdCoalescingTokenPtr startAsyncInsert(
+        const HerdCoalescingKey & key, std::chrono::milliseconds timeout, const std::function<bool()> & is_cancelled);
     void finishAsyncInsert(const HerdCoalescingTokenPtr & token);
     void clear();
 
@@ -998,7 +999,8 @@ void QueryResultCache::HerdCoalescing::wake(const std::vector<TokenPtr> & tokens
         token->cv.notify_all();
 }
 
-QueryResultCache::HerdCoalescingTokenPtr QueryResultCache::HerdCoalescing::startAsyncInsert(const HerdCoalescingKey & key, std::chrono::milliseconds timeout)
+QueryResultCache::HerdCoalescingTokenPtr QueryResultCache::HerdCoalescing::startAsyncInsert(
+    const HerdCoalescingKey & key, std::chrono::milliseconds timeout, const std::function<bool()> & is_cancelled)
 {
     TokenPtr existing_token;
     {
@@ -1013,15 +1015,27 @@ QueryResultCache::HerdCoalescingTokenPtr QueryResultCache::HerdCoalescing::start
     bool timed_out = false;
     {
         std::unique_lock token_lock(token.mutex);
-        /// Loop until the token is done or the timeout is reached.
+        /// Wait in bounded slices until the token is done, the timeout is reached, or the waiting query is cancelled.
+        /// Bounded slices (instead of one long wait_until to the deadline) keep the wait cancellation-aware: a query
+        /// killed while blocked here observes the cancellation within `poll_interval` rather than only when the executor
+        /// finishes or the full `query_cache_herd_wait_timeout` (300s by default) elapses.
         const auto deadline = std::chrono::steady_clock::now() + timeout;
+        const auto poll_interval = std::chrono::milliseconds(100);
         while (!token.done)
         {
-            if (token.cv.wait_until(token_lock, deadline) == std::cv_status::timeout)
+            if (is_cancelled && is_cancelled())
+                /// The waiter was cancelled. Leave the token in place (the executor is still running and other waiters
+                /// depend on it) and return nullptr - the caller's normal execution path then surfaces the cancellation.
+                return nullptr;
+
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= deadline)
             {
                 timed_out = !token.done;
                 break;
             }
+
+            token.cv.wait_for(token_lock, std::min(poll_interval, std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now)));
         }
     }
 
@@ -1167,9 +1181,10 @@ std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dump() const
     return cache.dump();
 }
 
-QueryResultCache::HerdCoalescingTokenPtr QueryResultCache::startAsyncInsert(const HerdCoalescingKey & key, std::chrono::milliseconds timeout)
+QueryResultCache::HerdCoalescingTokenPtr QueryResultCache::startAsyncInsert(
+    const HerdCoalescingKey & key, std::chrono::milliseconds timeout, const std::function<bool()> & is_cancelled)
 {
-    return herd_coalescing->startAsyncInsert(key, timeout);
+    return herd_coalescing->startAsyncInsert(key, timeout, is_cancelled);
 }
 
 void QueryResultCache::finishAsyncInsert(const HerdCoalescingTokenPtr & token)

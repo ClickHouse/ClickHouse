@@ -12,6 +12,7 @@
 #include <base/UUID.h>
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -210,7 +211,10 @@ public:
     /// does not persist for the key (the next query becomes a fresh executor). The executor must pass the returned token
     /// back to finishAsyncInsert: waking is keyed on the token itself, not the map, so a waiter that times out and removes
     /// a stale map entry cannot strand other waiters still blocked on that token.
-    HerdCoalescingTokenPtr startAsyncInsert(const HerdCoalescingKey & key, std::chrono::milliseconds timeout);
+    /// `is_cancelled` (if set) is polled while a waiter blocks: when it becomes true the waiter stops waiting and returns
+    /// nullptr, so query cancellation is observed promptly instead of only when the executor finishes or `timeout` elapses.
+    HerdCoalescingTokenPtr startAsyncInsert(
+        const HerdCoalescingKey & key, std::chrono::milliseconds timeout, const std::function<bool()> & is_cancelled = {});
     void finishAsyncInsert(const HerdCoalescingTokenPtr & token);
 
     /// For debugging and system tables

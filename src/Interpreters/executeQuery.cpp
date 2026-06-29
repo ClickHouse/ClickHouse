@@ -1798,7 +1798,12 @@ static BlockIO executeQueryImpl(
                         qrc_key->user_id,
                         qrc_key->current_user_roles,
                         settings[Setting::query_cache_share_between_users]};
-                    if (auto token = query_result_cache->startAsyncInsert(herd_key, std::chrono::milliseconds(herd_wait_ms)))
+                    /// Keep the herd wait cancellation-aware: if this query is killed while blocked waiting for the
+                    /// executor, observe it promptly instead of after the full `query_cache_herd_wait_timeout`.
+                    QueryStatusPtr herd_wait_process_list_elem = context->getProcessListElement();
+                    auto herd_wait_is_cancelled = [herd_wait_process_list_elem]()
+                    { return herd_wait_process_list_elem && herd_wait_process_list_elem->isKilled(); };
+                    if (auto token = query_result_cache->startAsyncInsert(herd_key, std::chrono::milliseconds(herd_wait_ms), herd_wait_is_cancelled))
                         /// This query is the herd "executor".
                         async_insert_token_to_finish = std::move(token);
                     else
