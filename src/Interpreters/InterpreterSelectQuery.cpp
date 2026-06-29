@@ -135,7 +135,6 @@ namespace Setting
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
-    extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool compile_sort_description;
@@ -646,7 +645,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
-            metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        {
+            const auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
+            metadata_snapshot = in_memory_metadata;
+        }
 
         if (options.only_analyze)
             storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
@@ -782,6 +784,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             {
                 LOG_TRACE(log, "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
 
+                auto custom_key_metadata = storage->getInMemoryMetadataPtr(context, false);
                 parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
                     settings[Setting::parallel_replicas_count],
                     settings[Setting::parallel_replica_offset],
@@ -789,7 +792,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     {settings[Setting::parallel_replicas_mode],
                      settings[Setting::parallel_replicas_custom_key_range_lower],
                      settings[Setting::parallel_replicas_custom_key_range_upper]},
-                    storage->getInMemoryMetadataPtr(context, false)->columns,
+                    custom_key_metadata->columns,
                     context);
             }
             else if (settings[Setting::parallel_replica_offset] > 0)
@@ -2624,7 +2627,6 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
         && (allow_experimental_parallel_reading_from_replicas == 0)
-        && !settings[Setting::allow_experimental_query_deduplication]
         && !empty_result_for_aggregation_by_empty_set
         && storage
         && storage->supportsTrivialCountOptimization(storage_snapshot, getContext())

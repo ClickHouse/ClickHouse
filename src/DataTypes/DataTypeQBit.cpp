@@ -25,11 +25,11 @@ DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimen
     , dimension(dimension_)
 {
     /// Prevents maliciously crafted byte streams from being deserialized into illegal types, which could be exploited to crash the server
-    if (element_type_->getTypeId() != TypeIndex::BFloat16 && element_type_->getTypeId() != TypeIndex::Float32
-        && element_type_->getTypeId() != TypeIndex::Float64)
+    if (element_type_->getTypeId() != TypeIndex::Int8 && element_type_->getTypeId() != TypeIndex::BFloat16
+        && element_type_->getTypeId() != TypeIndex::Float32 && element_type_->getTypeId() != TypeIndex::Float64)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "QBit data type only supports BFloat16, Float32, or Float64 as element type. Got: {}",
+            "QBit data type only supports Int8, BFloat16, Float32, or Float64 as element type. Got: {}",
             element_type_->getName());
 
     /// QBit stores data as a Tuple of binary FixedStrings. Setting custom_serialization
@@ -100,10 +100,11 @@ static DataTypePtr create(const ASTPtr & arguments)
     const DataTypePtr type = DataTypeFactory::instance().get(arguments->children[0]);
     const auto * argument = arguments->children[1]->as<ASTLiteral>();
 
-    if (type->getTypeId() != TypeIndex::BFloat16 && type->getTypeId() != TypeIndex::Float32 && type->getTypeId() != TypeIndex::Float64)
+    if (type->getTypeId() != TypeIndex::Int8 && type->getTypeId() != TypeIndex::BFloat16 && type->getTypeId() != TypeIndex::Float32
+        && type->getTypeId() != TypeIndex::Float64)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "QBit data type only supports BFloat16, Float32, or Float64 as element type. Got: {}",
+            "QBit data type only supports Int8, BFloat16, Float32, or Float64 as element type. Got: {}",
             type->getName());
 
     if (!argument || argument->value.getType() != Field::Types::UInt64 || argument->value.safeGet<UInt64>() == 0)
@@ -129,7 +130,7 @@ To declare a column of `QBit` type, use the following syntax:
 column_name QBit(element_type, dimension)
 ```
 
-* `element_type` – the type of each vector element. The allowed types are `BFloat16`, `Float32` and `Float64`
+* `element_type` – the type of each vector element. The allowed types are `Int8`, `BFloat16`, `Float32` and `Float64`
 * `dimension` – the number of elements in each vector
 
 ## Creating QBit {#creating-qbit}
@@ -169,6 +170,7 @@ SELECT bin(vec.1) FROM test;
 
 The number of accessible subcolumns depends on the element type:
 
+* `Int8`: 8 subcolumns (1-8)
 * `BFloat16`: 16 subcolumns (1-16)
 * `Float32`: 32 subcolumns (1-32)
 * `Float64`: 64 subcolumns (1-64)
