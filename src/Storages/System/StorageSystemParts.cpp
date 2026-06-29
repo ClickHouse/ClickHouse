@@ -217,7 +217,7 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
         {
             Array materialized_indices;
-            auto metadata_snapshot = part->storage.getInMemoryMetadataPtr();
+            auto metadata_snapshot = part->storage.getInMemoryMetadataPtr(context, false);
             for (const auto & index_description : metadata_snapshot->secondary_indices)
             {
                 if (part->hasSecondaryIndex(index_description.name, metadata_snapshot))
