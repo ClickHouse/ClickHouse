@@ -3,7 +3,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -52,17 +51,14 @@ struct ArrayPackBitsImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/, UInt64 fixed_string_size = 0)
     {
-        auto is_number = [&](const auto & types) -> bool
-        {
-            using Types = std::decay_t<decltype(types)>;
-            using DataType = typename Types::LeftType;
-            return IsDataTypeDecimalOrNumber<DataType>;
-        };
-
-        if (!callOnIndexAndDataType<void>(expression_return->getTypeId(), is_number))
+        /// The lambda result is interpreted as integer bits via IColumn::getUInt / getBool. Decimal and DateTime64
+        /// columns do not implement these accessors (they would throw at execution), and floating-point results have
+        /// no meaningful bit interpretation, so the result type is restricted to integers.
+        WhichDataType which(expression_return);
+        if (!which.isInt() && !which.isUInt())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The lambda expression for a bit-packing array function must return a number, got {}",
+                "The lambda expression for a bit-packing array function must return an integer, got {}",
                 expression_return->getName());
 
         if constexpr (std::is_same_v<ResultType, ColumnUInt64>)
@@ -276,7 +272,7 @@ REGISTER_FUNCTION(ArrayPackBits)
 
     FunctionDocumentation::Description description_to_uint64 = R"(
 Applies a lambda function to each element of the array and packs the resulting bits into a `UInt64`.
-For each element the lambda returns a value that is treated as a single bit (zero or non-zero).
+For each element the lambda returns an integer that is treated as a single bit (zero or non-zero).
 Bits are written most-significant-bit first, so the first element occupies the most significant bit; only the first 64 elements are used.
 If the array has fewer than 64 elements the result is the packed bits as a number (the unused high bits are zero).
     )";
@@ -294,7 +290,7 @@ If the array has fewer than 64 elements the result is the packed bits as a numbe
 
     FunctionDocumentation::Description description_to_string = R"(
 Applies a lambda function to each element of the array and packs the resulting bits into a `String`.
-For each element the lambda returns a value that is treated as a single bit (zero or non-zero).
+For each element the lambda returns an integer that is treated as a single bit (zero or non-zero).
 Bits are written most-significant-bit first; the length of the result is `ceil(size_of_array / 8)` bytes.
     )";
     FunctionDocumentation::Syntax syntax_to_string = "arrayPackBitsToString(f, arr)";
@@ -311,7 +307,7 @@ Bits are written most-significant-bit first; the length of the result is `ceil(s
 
     FunctionDocumentation::Description description_to_fixed_string = R"(
 Applies a lambda function to each element of the array and packs the resulting bits into a `FixedString(n)`.
-For each element the lambda returns a value that is treated as a single bit (zero or non-zero).
+For each element the lambda returns an integer that is treated as a single bit (zero or non-zero).
 Bits are written most-significant-bit first. If the array has more than `n * 8` elements the rest are ignored;
 if it has fewer, the result is zero-padded to `n` bytes. The size `n` must be a positive constant.
     )";
@@ -329,7 +325,7 @@ if it has fewer, the result is zero-padded to `n` bytes. The size `n` must be a 
         {description_to_fixed_string, syntax_to_fixed_string, arguments_to_fixed_string, {}, returned_value_to_fixed_string, examples_to_fixed_string, introduced_in, category});
 
     FunctionDocumentation::Description description_groups_to_uint64 = R"(
-The same as `arrayPackBitsToUInt64`, but the lambda returns a number whose low `g` bits form a group, and the groups
+The same as `arrayPackBitsToUInt64`, but the lambda returns an integer whose low `g` bits form a group, and the groups
 are packed contiguously (most-significant-bit first). Because the result is a `UInt64`, only the leading whole groups
 that fit into 64 bits are kept. The group size `g` must be a constant between 1 and 64.
     )";
@@ -347,7 +343,7 @@ that fit into 64 bits are kept. The group size `g` must be a constant between 1 
         {description_groups_to_uint64, syntax_groups_to_uint64, arguments_groups_to_uint64, {}, returned_value_groups_to_uint64, examples_groups_to_uint64, introduced_in, category});
 
     FunctionDocumentation::Description description_groups_to_string = R"(
-The same as `arrayPackBitsToString`, but the lambda returns a number whose low `g` bits form a group, and the groups
+The same as `arrayPackBitsToString`, but the lambda returns an integer whose low `g` bits form a group, and the groups
 are packed contiguously (most-significant-bit first). The length of the result is `ceil(size_of_array * g / 8)` bytes.
 The group size `g` must be a constant between 1 and 64.
     )";
@@ -365,7 +361,7 @@ The group size `g` must be a constant between 1 and 64.
         {description_groups_to_string, syntax_groups_to_string, arguments_groups_to_string, {}, returned_value_groups_to_string, examples_groups_to_string, introduced_in, category});
 
     FunctionDocumentation::Description description_groups_to_fixed_string = R"(
-The same as `arrayPackBitsToFixedString`, but the lambda returns a number whose low `g` bits form a group, and the groups
+The same as `arrayPackBitsToFixedString`, but the lambda returns an integer whose low `g` bits form a group, and the groups
 are packed contiguously (most-significant-bit first) into a `FixedString(n)`. Only the leading whole groups that fit into
 `n` bytes are kept, and the result is zero-padded to `n` bytes. Both the size `n` and the group size `g` must be positive
 constants, and `g` must not exceed 64.

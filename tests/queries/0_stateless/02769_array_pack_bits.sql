@@ -35,3 +35,7 @@ SELECT arrayPackBitsToFixedString(x -> x, 0, [1]); -- { serverError BAD_ARGUMENT
 SELECT arrayPackBitGroupsToUInt64(x -> x, 0, [1]); -- { serverError BAD_ARGUMENTS }
 SELECT arrayPackBitGroupsToUInt64(x -> x, -1, [1]); -- { serverError BAD_ARGUMENTS }
 SELECT arrayPackBitGroupsToUInt64(x -> x, 65, [1]); -- { serverError BAD_ARGUMENTS }
+
+-- the lambda must return an integer; Decimal/Float results are rejected during analysis.
+SELECT arrayPackBitsToUInt64(x -> toFloat64(x), [1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayPackBitGroupsToUInt64(x -> toDecimal64(x, 0), 4, [15]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
