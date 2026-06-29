@@ -663,13 +663,18 @@ void KeeperStorageSnapshot::deserialize(
             }
         }
 
-        /// Handle orphaned nodes — removal requires both:
+        /// Handle orphaned nodes — removal requires all of:
         /// 1. `remove_orphaned_nodes_on_startup` config option enabled (opt-in)
         /// 2. digest disabled (to avoid digest mismatch during rolling upgrades)
+        /// 3. the server is still starting up (`Phase::INIT`). A snapshot deserialized while the
+        ///    server is already `RUNNING` — e.g. a follower applying a leader snapshot in
+        ///    `KeeperStateMachine::apply_snapshot` — must be applied faithfully; silently cleaning
+        ///    orphans there would make the follower diverge from the rest of the cluster.
         if (!orphan_paths.empty())
         {
             const bool remove_enabled = keeper_context->removeOrphanedNodesOnStartup();
-            const bool can_remove = remove_enabled && !keeper_context->digestEnabled();
+            const bool is_startup = keeper_context->getServerState() == KeeperContext::Phase::INIT;
+            const bool can_remove = remove_enabled && !keeper_context->digestEnabled() && is_startup;
 
             if (can_remove)
             {
@@ -733,13 +738,15 @@ void KeeperStorageSnapshot::deserialize(
             {
                 const char * reason = !remove_enabled
                     ? "remove_orphaned_nodes_on_startup is disabled"
-                    : "digest is enabled (set digest_enabled=false)";
+                    : keeper_context->digestEnabled()
+                        ? "digest_enabled is true; set keeper_server.digest_enabled=false to allow removal"
+                        : "removal is only allowed during startup, not while the server is running";
 
                 throw Exception(
                     ErrorCodes::CORRUPTED_DATA,
                     "Found {} orphaned nodes in snapshot but cannot remove them: {}. "
                     "Set 'keeper_server.remove_orphaned_nodes_on_startup' to true and "
-                    "'keeper_server.digest_enabled' to false to allow removal",
+                    "'keeper_server.digest_enabled' to false, then restart, to allow removal",
                     orphan_paths.size(),
                     reason);
             }

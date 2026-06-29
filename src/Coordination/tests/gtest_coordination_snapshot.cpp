@@ -2024,6 +2024,46 @@ TYPED_TEST(CoordinationTest, TestSnapshotOrphanedAncestorNumChildren)
     EXPECT_EQ(a_it->value.numChildren(), static_cast<int32_t>(a_it->value.getChildren().size()));
 }
 
+/// Orphan cleanup is a startup-only recovery operation. A snapshot deserialized while the server
+/// is already RUNNING (e.g. a follower applying a leader snapshot in apply_snapshot) must not be
+/// cleaned locally, otherwise the follower would diverge from the rest of the cluster. Even with
+/// removal enabled and digest disabled, deserialization must throw outside of Phase::INIT.
+TYPED_TEST(CoordinationTest, TestSnapshotOrphanedNodesThrowsWhenRunning)
+{
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
+
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    Storage storage(500, "", this->keeper_context);
+    addNode(storage, "/hello1", "world");
+
+    /// Insert orphaned node
+    using Node = typename Storage::Node;
+    Node orphan;
+    orphan.setData("orphan_data");
+    storage.container.insertOrReplace("/missing/child", orphan);
+
+    DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Removal enabled and digest disabled, but the server is already running — should throw.
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+    this->keeper_context->setServerState(DB::KeeperContext::Phase::RUNNING);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    EXPECT_THROW(manager.deserializeSnapshotFromBuffer(debuf), DB::Exception);
+
+    /// Restore the startup phase so that orphan cleanup is allowed again on startup.
+    this->keeper_context->setServerState(DB::KeeperContext::Phase::INIT);
+    auto debuf_startup = manager.deserializeSnapshotBufferFromDisk(0);
+    EXPECT_NO_THROW(manager.deserializeSnapshotFromBuffer(debuf_startup));
+}
+
 TYPED_TEST(CoordinationTest, TestStorageSnapshotTTLRoundTrip)
 {
     using namespace Coordination;
