@@ -339,7 +339,22 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 
 #if USE_ROCKSDB
     if (settings[FileCacheSetting::use_rocksdb_metadata_index])
-        rocksdb_index = std::make_shared<FileCacheRocksDBIndex>(settings[FileCacheSetting::path], cache_name);
+    {
+        try
+        {
+            rocksdb_index = std::make_shared<FileCacheRocksDBIndex>(settings[FileCacheSetting::path], cache_name);
+        }
+        catch (...)
+        {
+            /// `skip_cache_on_disk_failure` promises to bypass disk IO errors silently.
+            /// If the RocksDB metadata index cannot be opened, fall back to the directory-scan
+            /// load path (`rocksdb_index` stays null) instead of failing server startup.
+            if (!skip_cache_on_disk_failure)
+                throw;
+            tryLogCurrentException(log, "Failed to initialize RocksDB metadata index, falling back to filesystem directory scan");
+            rocksdb_index.reset();
+        }
+    }
 #endif
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSizeLimit, settings[FileCacheSetting::max_size]);
