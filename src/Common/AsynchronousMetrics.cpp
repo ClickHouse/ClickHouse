@@ -1668,10 +1668,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             uint64_t limit = 0;
             tryReadText(limit, *cgroupmem_limit_in_bytes);
 
-            uint64_t usage = cgroupmem_reader->readMemoryUsage();
+            auto stats = cgroupmem_reader->readMemoryUsageAndInactiveFile();
 
             new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
-            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes. "
+            new_values["CGroupMemoryUsed"] = { stats.usage, "The amount of memory used in cgroup, in bytes. "
                 "On cgroup v2 this is anon + sock + non-reclaimable kernel memory; on cgroup v1 this is RSS. "
                 "In both cases the kernel OS page cache (file-backed cache) is excluded." };
 
@@ -1679,8 +1679,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             if (context && context->getPageCache())
                 userspace_page_cache_bytes = context->getPageCache()->sizeInBytes();
 
-            UInt64 cgroup_usage_without_page_cache = (usage > userspace_page_cache_bytes)
-                                                   ? (usage - userspace_page_cache_bytes)
+            UInt64 cgroup_usage_without_page_cache = (stats.usage > userspace_page_cache_bytes)
+                                                   ? (stats.usage - userspace_page_cache_bytes)
                                                    : 0;
 
             new_values["CGroupMemoryUsedWithoutPageCache"] = {
@@ -1689,6 +1689,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 "This is CGroupMemoryUsed minus the userspace page cache size. "
                 "When userspace page cache is disabled, this value equals CGroupMemoryUsed."
             };
+
+            new_values["CGroupMemoryInactiveFile"] = { stats.inactive_file, "The amount of memory used for inactive file pages in cgroup, in bytes. This value can be used together with the total cgroup memory usage to calculate the working set size (WSS) as reported by Kubernetes." };
         }
         catch (...)
         {

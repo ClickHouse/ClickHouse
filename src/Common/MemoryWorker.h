@@ -15,6 +15,12 @@
 namespace DB
 {
 
+struct CgroupsMemoryUsageAndInactive
+{
+    uint64_t usage = 0;
+    uint64_t inactive_file = 0;
+};
+
 struct ICgroupsReader
 {
     enum class CgroupsVersion : uint8_t
@@ -34,6 +40,8 @@ struct ICgroupsReader
     virtual ~ICgroupsReader() = default;
 
     virtual uint64_t readMemoryUsage() = 0;
+
+    virtual CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() = 0;
 
     virtual std::string dumpAllStats() = 0;
 };
