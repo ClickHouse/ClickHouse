@@ -44,11 +44,17 @@ target_include_directories(_h3 SYSTEM PUBLIC "${H3_SOURCE_DIR}/include")
 target_include_directories(_h3 SYSTEM PUBLIC "${H3_BINARY_DIR}/include")
 target_compile_definitions(_h3 PRIVATE H3_HAVE_VLA)
 
-# h3 geo math (latLng/vec2d/vec3d/bbox/faceijk) is heavy on libm sqrt/sin/cos/atan2. Scope the
-# same two FP optimizations used for ClickHouse's own geo functions to this contrib only:
+# h3 geo math (latLng/vec2d/vec3d/bbox/faceijk) is heavy on libm sqrt/sin/cos/atan2 and on
+# per-cell geometry loops (cell area = sum of spherical-triangle areas, cell boundary = per-vertex
+# coordinate transforms). Scope FP optimizations to this contrib only, overriding the global
+# defaults whose cross-platform-determinism cost we accept here:
 #  - -fno-math-errno: drop the per-call errno-guard branch+wrapper (no result change), and
-#  - -ffp-contract=fast: contract the haversine/coordinate math into FMA (overrides the global
-#    -ffp-contract=off, so the cross-platform-determinism cost stays confined to h3).
-target_compile_options(_h3 PRIVATE -fno-math-errno -ffp-contract=fast)
+#  - -fassociative-math + -fno-signed-zeros: together these let the vectorizer turn the per-vertex
+#    geometry and the area reduction into packed SIMD (cellAreaRads2, _hex2dToGeo, _geoToHex2d).
+#    Both are required - an FP reduction needs the `reassoc` and `nsz` fast-math flags as a pair, so
+#    neither flag alone vectorizes anything. This is the main h3 speedup (e.g. h3CellAreaM2 -34%).
+#  - -ffp-contract=fast: contract the remaining scalar/packed mul+add into FMA (overrides the global
+#    -ffp-contract=off). Minor on its own for h3, kept for the FMA fusion in the vectorized loops.
+target_compile_options(_h3 PRIVATE -fno-math-errno -ffp-contract=fast -fassociative-math -fno-signed-zeros)
 
 add_library(ch_contrib::h3 ALIAS _h3)
