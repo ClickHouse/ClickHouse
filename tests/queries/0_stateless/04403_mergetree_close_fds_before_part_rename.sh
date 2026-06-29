@@ -54,8 +54,9 @@ insert_pid=$!
 # processes) still open *for writing* into this table's committed part data files.
 leaked=0
 for _ in $(seq 1 200); do
-    # Each candidate line is a '/proc/PID/fd/FD -> /.../data.bin' symlink; keep just the
-    # '/proc/PID/fd/FD' path so we can consult the matching fdinfo for its open mode.
+    # 'find -lname' lists every '/proc/PID/fd/FD' symlink whose target points into this
+    # table's part data/index/mark files (its glob matches '/' too, so "*$uuid*" spans
+    # the store path).
     while read -r fd_link; do
         # /proc/PID/fdinfo/FD reports the open flags; the low two bits of the octal
         # 'flags' field are the access mode (0 = O_RDONLY, 1 = O_WRONLY, 2 = O_RDWR).
@@ -66,10 +67,11 @@ for _ in $(seq 1 200); do
             leaked=1
             break
         fi
-    done < <(ls -l /proc/[0-9]*/fd/* 2>/dev/null \
-                | grep -F -- "$uuid" \
-                | grep -E -- '-> .*/(data\.bin|primary\.cidx|primary\.idx|[^/]*\.cmrk[0-9]+)$' \
-                | sed -E 's/ -> .*//; s/.* //')
+    done < <(find /proc/[0-9]*/fd -mindepth 1 -maxdepth 1 \( \
+                    -lname "*${uuid}*/data.bin" \
+                 -o -lname "*${uuid}*/primary.cidx" \
+                 -o -lname "*${uuid}*/primary.idx" \
+                 -o -lname "*${uuid}*.cmrk[0-9]*" \) 2>/dev/null)
     [ "$leaked" -eq 1 ] && break
     # Stop once the insert has finished: the observation window is closed.
     kill -0 "$insert_pid" 2>/dev/null || break
