@@ -129,7 +129,8 @@ public:
         return std::make_shared<DataTypeUInt32>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto result_column = ColumnUInt32::create(input_rows_count);
         auto & data = result_column->getData();
@@ -251,7 +252,8 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
 {
     factory.registerFunction<FunctionNaiveBayesClassifier>(FunctionDocumentation{
         .description = "Classifies input text using a Naive Bayes dictionary. "
-                       "Equivalent to dictGet(dictionary_name, 'class_id', input_text).",
+                       "Equivalent to dictGet(dictionary_name, class_attribute, input_text), where class_attribute is the "
+                       "name of the class label attribute configured in the dictionary's layout.",
         .syntax = "naiveBayesClassifier(dictionary_name, input_text)",
         .arguments
         = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
