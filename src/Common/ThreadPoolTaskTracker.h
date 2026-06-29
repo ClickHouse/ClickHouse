@@ -50,14 +50,7 @@ private:
 
     void collectFinishedFutures(bool propagate_exceptions) TSA_REQUIRES(mutex);
 
-    /// Holds the final callback and an explicit promise (whose future is stored in `futures`).
-    /// If the task is dropped without running -- the scheduler throws before enqueue, or the
-    /// thread pool drains the queued job during shutdown -- its destructor satisfies the promise
-    /// with CANNOT_SCHEDULE_TASK. Defined in the .cpp.
     struct FinalTaskState;
-
-    /// Schedules the final task. On scheduler failure the state's promise is satisfied with
-    /// CANNOT_SCHEDULE_TASK instead of being left with a broken promise (see the definition).
     void scheduleFinalTask(std::shared_ptr<FinalTaskState> state);
 
     const bool is_async;

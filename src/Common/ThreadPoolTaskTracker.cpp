@@ -1,12 +1,10 @@
 #include <Common/MemoryTracker.h>
-#include <Common/ThreadPoolTaskTracker.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Exception.h>
-#include <Common/scope_guard_safe.h>
+#include <Common/ThreadPoolTaskTracker.h>
 
 namespace ProfileEvents
 {
-    extern const Event WriteBufferFromS3WaitInflightLimitMicroseconds;
+extern const Event WriteBufferFromS3WaitInflightLimitMicroseconds;
 }
 
 namespace DB
@@ -14,41 +12,27 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_SCHEDULE_TASK;
+extern const int CANNOT_SCHEDULE_TASK;
 }
 
-/// Carries the addFinal callback together with an explicit promise. The future of this promise
-/// is stored in `futures` and waited on by waitAll(). The task runs in exactly one place -- the
-/// lambda handed to the scheduler -- via run(). Every other outcome must still satisfy the promise:
-///   * the scheduler throws before enqueue (e.g. CANNOT_SCHEDULE_TASK from thread-fuzzer fault
-///     injection): scheduleFinalTask satisfies the promise with the in-flight exception;
-///   * the pool accepts the job, then drains it unrun while shutting down (ThreadPool::worker
-///     resets the pending job via job_data.reset()): the captured shared_ptr drops, this object
-///     is destroyed without run() having been called, and the destructor satisfies the promise.
-/// A bare std::packaged_task could not cover the queued-drop case: destroying it unrun stores a
-/// broken-promise std::future_error (a std::logic_error), which waitAll() then surfaces as a
-/// LOGICAL_ERROR and aborts the server in debug/sanitizer builds. Satisfying the promise with a
-/// normal DB::Exception instead lets the waiter observe an ordinary, catchable error.
-/// Mirrors detail::CallbackRunnerTask in threadPoolCallbackRunner.h.
 struct TaskTracker::FinalTaskState
 {
     std::promise<void> promise;
     TaskTracker::Callback callback;
     bool was_run = false;
 
-    explicit FinalTaskState(TaskTracker::Callback && callback_) : callback(std::move(callback_)) {}
+    explicit FinalTaskState(TaskTracker::Callback && callback_)
+        : callback(std::move(callback_))
+    {
+    }
 
     void run()
     {
         was_run = true;
         try
         {
-            /// Release the callback (destroying its captures) BEFORE satisfying the promise:
-            /// set_value can wake a waiter immediately, and a waiter that treats future.get() as
-            /// "done" may tear down state the captures reference. Same ordering run() of
-            /// detail::CallbackRunnerTask keeps. (No ThreadGroupSwitcher here: the scheduler wrapper
-            /// -- threadPoolCallbackRunnerUnsafe -- already runs us inside the right thread group.)
             {
+                /// Destroy the callback's captures before satisfying promise.
                 SCOPE_EXIT_SAFE({ [[maybe_unused]] auto released = std::move(callback); });
                 callback();
             }
@@ -65,19 +49,10 @@ struct TaskTracker::FinalTaskState
         if (was_run)
             return;
 
-        /// The task was dropped without running (the pool was shut down while it was still queued,
-        /// so ThreadPool::worker drains it via job_data.reset()). Mirror the run() path: release the
-        /// callback (destroying its captures) before satisfying the promise, for the same
-        /// waiter-vs-capture-teardown ordering reason. SCOPE_EXIT_SAFE keeps a throwing capture
-        /// destructor from escaping this destructor.
-        { SCOPE_EXIT_SAFE({ [[maybe_unused]] auto released = std::move(callback); }); }
-
-        /// Satisfy the promise with a normal DB::Exception instead of letting ~promise() store a
-        /// broken-promise std::future_error.
-        /// Build the exception_ptr first: constructing the DB::Exception captures a stack trace and
-        /// may itself throw (e.g. std::bad_alloc under shutdown memory pressure). If it does, fall
-        /// back to the in-flight exception so the promise is NEVER left unset (an unset promise here
-        /// recreates the very broken-promise std::future_error this object exists to prevent).
+        /// The task was droped without running. Release the callback and satisfy the promise.
+        {
+            SCOPE_EXIT_SAFE({ [[maybe_unused]] auto released = std::move(callback); });
+        }
         std::exception_ptr eptr;
         try
         {
@@ -86,18 +61,11 @@ struct TaskTracker::FinalTaskState
         }
         catch (...)
         {
+            // make_exception_ptr may throw under memory pressure.
             eptr = std::current_exception();
         }
 
-        try
-        {
-            promise.set_exception(eptr);
-        }
-        catch (...) // NOLINT(bugprone-empty-catch)
-        {
-            /// Ok: set_exception throws only if the promise is already satisfied, impossible here
-            /// because run() (the only other writer) sets was_run first.
-        }
+        promise.set_exception(eptr);
     }
 };
 
@@ -106,7 +74,8 @@ TaskTracker::TaskTracker(ThreadPoolCallbackRunnerUnsafe<void> scheduler_, size_t
     , scheduler(scheduler_ ? std::move(scheduler_) : syncRunner())
     , max_tasks_inflight(max_tasks_inflight_)
     , limited_log(limited_log_)
-{}
+{
+}
 
 TaskTracker::~TaskTracker()
 {
@@ -124,35 +93,22 @@ ThreadPoolCallbackRunnerUnsafe<void> TaskTracker::syncRunner()
         auto package = std::packaged_task<void()>(std::move(callback));
         /// No exceptions are propagated, exceptions are packed to future
         package();
-        return  package.get_future();
+        return package.get_future();
     };
 }
 
 void TaskTracker::scheduleFinalTask(std::shared_ptr<FinalTaskState> state)
 {
-    /// `state`'s future is already in `futures` and will be waited on by waitAll().
     try
     {
         scheduler([s = state]() mutable { s->run(); }, Priority{});
     }
     catch (...)
     {
-        /// Scheduling threw before the job was enqueued (e.g. CANNOT_SCHEDULE_TASK from
-        /// thread-fuzzer fault injection). The task will not run, so satisfy its promise with the
-        /// actual scheduling error -- waitAll() then surfaces CANNOT_SCHEDULE_TASK rather than a
-        /// broken-promise std::future_error or a falsely-successful future. (Running the callback
-        /// inline would make the future succeed and silently mask the real scheduling failure.)
+        /// Scheduler threw before job was enqueued. Make waitAll() surface
+        /// CANNOT_SCHEDULE_TASK rather than a broken-promise error.
         state->was_run = true;
-        try
-        {
-            state->promise.set_exception(std::current_exception());
-        }
-        catch (...) // NOLINT(bugprone-empty-catch)
-        {
-            /// Ok: set_exception throws only if the promise is already satisfied. It is not:
-            /// run() has not been called (scheduling failed before enqueue) and was_run was just
-            /// set so the destructor will not touch the promise either.
-        }
+        state->promise.set_exception(std::current_exception());
     }
 }
 
@@ -179,7 +135,8 @@ void TaskTracker::safeWaitAll()
             {
                 /// Exceptions are not propagated
                 future.get();
-            } catch (...)
+            }
+            catch (...)
             {
                 /// But at least they are printed
                 tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -240,9 +197,10 @@ void TaskTracker::add(Callback && func)
     auto future_placeholder = std::prev(futures.end());
 
     /// preallocation for the second issue
-    FinishedList pre_allocated_finished {future_placeholder};
+    FinishedList pre_allocated_finished{future_placeholder};
 
-    Callback func_with_notification = [this, my_func = std::move(func), my_pre_allocated_finished = std::move(pre_allocated_finished)]() mutable
+    Callback func_with_notification
+        = [this, my_func = std::move(func), my_pre_allocated_finished = std::move(pre_allocated_finished)]() mutable
     {
         SCOPE_EXIT({
             std::shared_ptr<FinalTaskState> maybe_final_task;
@@ -312,7 +270,7 @@ void TaskTracker::waitTilInflightShrink()
     {
         std::unique_lock lock(mutex);
 
-        has_finished.wait(lock, [this] () TSA_REQUIRES(mutex) { return !finished_futures.empty(); });
+        has_finished.wait(lock, [this]() TSA_REQUIRES(mutex) { return !finished_futures.empty(); });
 
         for (auto & it : finished_futures)
         {

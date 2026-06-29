@@ -1,5 +1,4 @@
 #include <Common/ThreadPoolTaskTracker.h>
-#include <Common/Exception.h>
 #include <Common/setThreadName.h>
 
 #include <gtest/gtest.h>
@@ -211,11 +210,7 @@ TEST(TaskTrackerAddFinal, SyncRunnerPriorFailureDoesNotDeadlock)
 namespace
 {
 
-/// A scheduler that runs every callback synchronously and inline (so all task futures get a
-/// proper result), except that it throws DB::Exception(CANNOT_SCHEDULE_TASK) on the Nth schedule
-/// call -- modelling the thread fuzzer's CANNOT_SCHEDULE_TASK fault hitting the scheduling of the
-/// final task. The callback handed to the throwing call is dropped WITHOUT running, exactly as
-/// ThreadPool::scheduleImpl does when it cannot enqueue.
+/// Run callbacks synchronously. On the Nth call, throw CANNOT_SCHEDULE_TASK.
 ThreadPoolCallbackRunnerUnsafe<void> throwingOnNthSchedule(std::shared_ptr<std::atomic<size_t>> calls, size_t throw_on_call)
 {
     return [calls, throw_on_call](std::function<void()> && callback, Priority) mutable -> std::future<void>
@@ -229,13 +224,7 @@ ThreadPoolCallbackRunnerUnsafe<void> throwingOnNthSchedule(std::shared_ptr<std::
     };
 }
 
-/// A scheduler that runs regular tasks inline and succeeds, but on the Nth call ACCEPTS the
-/// callback (moves it in, as a real pool does on enqueue) and then drops it WITHOUT running --
-/// modelling the pool enqueuing the final task and later draining it unrun during shutdown
-/// (ThreadPool::worker resets the pending job via job_data.reset()). The future it returns is the
-/// one the pool would hand back for the enqueue; scheduleFinalTask discards it. Dropping the
-/// callback releases the captured FinalTaskState shared_ptr, so its destructor runs and must
-/// satisfy the final task's already-stored future.
+/// Models the pool enqueueing the final task and later draining it unrun during shutdown.
 ThreadPoolCallbackRunnerUnsafe<void> droppingOnNthSchedule(std::shared_ptr<std::atomic<size_t>> calls, size_t drop_on_call)
 {
     return [calls, drop_on_call](std::function<void()> && callback, Priority) mutable -> std::future<void>
@@ -257,23 +246,11 @@ ThreadPoolCallbackRunnerUnsafe<void> droppingOnNthSchedule(std::shared_ptr<std::
 
 }
 
-/// Regression test for the broken_promise abort (std::future_error code 1001) seen in stress
-/// tests: when scheduling the final task (e.g. the async S3 completeMultipartUpload) failed with
-/// CANNOT_SCHEDULE_TASK, the final packaged task was dropped without running, leaving its
-/// already-stored future with a broken promise. waitAll() then threw std::future_error (a
-/// std::logic_error), aborting the server in debug/sanitizer builds.
-///
-/// Pre-enqueue failure: the scheduler throws before the job is enqueued, so the final task never
-/// runs. waitAll() must observe the real scheduling error (CANNOT_SCHEDULE_TASK) -- NOT a
-/// broken-promise std::future_error, and NOT a falsely-successful future (running the callback
-/// inline would mask the scheduling failure, which is what the original fix did wrong).
-///
-/// All priors finish on the inline scheduler before addFinal is called, so this goes through the
-/// addFinal() run_final_task_now site.
+/// Regression test for the broken_promise abort seen in stress tests.
+/// Case where callback fails when run during addFinal().
 TEST(TaskTrackerAddFinal, FinalTaskScheduleFailureSurfacesCannotScheduleTask)
 {
     auto calls = std::make_shared<std::atomic<size_t>>(0);
-    /// 3 add() calls schedule successfully, the 4th schedule (the final task) throws.
     TaskTracker tracker(throwingOnNthSchedule(calls, /*throw_on_call=*/4), /*max_tasks_inflight=*/0, makeTestLogger());
     ASSERT_TRUE(tracker.isAsync());
 
@@ -285,6 +262,7 @@ TEST(TaskTrackerAddFinal, FinalTaskScheduleFailureSurfacesCannotScheduleTask)
 
     tracker.addFinal([&] { final_ran = true; });
 
+    // Verify the future carries the scheduling error.
     try
     {
         tracker.waitAll();
@@ -300,23 +278,12 @@ TEST(TaskTrackerAddFinal, FinalTaskScheduleFailureSurfacesCannotScheduleTask)
     }
 
     EXPECT_EQ(ran.load(), 3u);
-    /// The final callback never ran: scheduling failed before enqueue, and the future now carries
-    /// the scheduling error rather than a (masking) success.
     EXPECT_FALSE(final_ran.load());
 
     tracker.safeWaitAll();
 }
 
-/// Same pre-enqueue failure, but reached through the async SCOPE_EXIT call site in add() -- the
-/// path that actually fires in the real S3 multipart-upload stress scenario, where regular part
-/// uploads are still in flight when addFinal() registers the completeMultipartUpload task and the
-/// final task is then scheduled from the last finishing part's completion handler.
-///
-/// A real single-thread pool is used. The one regular task blocks on a gate so it is guaranteed
-/// in flight when addFinal() runs (forcing the else branch that registers final_task). Releasing
-/// the gate lets the regular task finish; its SCOPE_EXIT schedules the final task (the 2nd
-/// scheduler call), which throws CANNOT_SCHEDULE_TASK. waitAll() must surface that, not a broken
-/// promise.
+/// Case where callback fails when run during SCOPE_EXIT.
 TEST(TaskTrackerAddFinal, FinalTaskScheduleFailureViaScopeExitSurfacesCannotScheduleTask)
 {
     ThreadPool pool(
@@ -325,11 +292,6 @@ TEST(TaskTrackerAddFinal, FinalTaskScheduleFailureViaScopeExitSurfacesCannotSche
         CurrentMetrics::LocalThreadScheduled,
         /*max_threads=*/ 1);
 
-    /// Decorate the real pool runner: forward regular schedules to the pool, but throw
-    /// CANNOT_SCHEDULE_TASK on the 2nd schedule (the final task). The two schedule calls are
-    /// strictly ordered -- the regular add() schedules synchronously on the test thread (call 1),
-    /// and the final task is only scheduled later from the worker's SCOPE_EXIT (call 2) -- so the
-    /// count deterministically targets the final task even with a real pool.
     auto base = threadPoolCallbackRunnerUnsafe<void>(pool, ThreadName::UNKNOWN);
     auto calls = std::make_shared<std::atomic<size_t>>(0);
     ThreadPoolCallbackRunnerUnsafe<void> scheduler =
@@ -343,18 +305,18 @@ TEST(TaskTrackerAddFinal, FinalTaskScheduleFailureViaScopeExitSurfacesCannotSche
     TaskTracker tracker(scheduler, /*max_tasks_inflight=*/0, makeTestLogger());
     ASSERT_TRUE(tracker.isAsync());
 
+    // Call both add() and addFinal(). Use gate to ensure task is in flight at addFinal time.
     std::promise<void> gate;
     std::shared_future<void> gate_future = gate.get_future().share();
     std::atomic<bool> final_ran{false};
-
-    /// Worker blocks here until the gate is released, so the task is in flight at addFinal time.
     tracker.add([gate_future] { gate_future.wait(); });
-    /// tasks_finished(0) != tasks_added(1) -> addFinal registers final_task (the SCOPE_EXIT site).
     tracker.addFinal([&] { final_ran = true; });
-    /// Release -> regular task finishes -> its SCOPE_EXIT schedules the final task -> 2nd scheduler
-    /// call throws CANNOT_SCHEDULE_TASK (caught in scheduleFinalTask, which sets the promise).
+
+    /// Call set_value(). The regular task will finish and allow scheduling the final task.
+    /// Scheduler throws CANNOT_SCHEDULE_TASK.
     gate.set_value();
 
+    /// Verify waitAll() fails with CANNOT_SCHEDULE_TASK and final task doesn't run.
     try
     {
         tracker.waitAll();
@@ -368,29 +330,14 @@ TEST(TaskTrackerAddFinal, FinalTaskScheduleFailureViaScopeExitSurfacesCannotSche
     {
         EXPECT_EQ(e.code(), ErrorCodes::CANNOT_SCHEDULE_TASK) << e.what();
     }
-
     EXPECT_FALSE(final_ran.load());
-
     tracker.safeWaitAll();
 }
 
-/// Regression test for the post-enqueue / queued-drop gap raised in review: the pool accepts the
-/// final task's lambda, then drops it unrun while shutting down. The scheduler future returned for
-/// the enqueue is discarded, so the ONLY thing that can satisfy the final task's already-stored
-/// future is FinalTaskState's destructor (the captured state is released when the dropped lambda
-/// is destroyed). It must satisfy the promise with a normal CANNOT_SCHEDULE_TASK exception -- NOT
-/// leave it with a broken-promise std::future_error.
-///
-/// A bare std::packaged_task could not cover this: destroying it unrun stores a broken-promise
-/// std::future_error (a std::logic_error), which waitAll() then surfaces as a LOGICAL_ERROR and
-/// aborts the server in debug/sanitizer builds. This asserts waitAll() observes CANNOT_SCHEDULE_TASK
-/// on the queued-drop path, deterministically. (The destructor is call-site independent, so one
-/// site -- addFinal()'s run_final_task_now branch -- is sufficient coverage for this path.)
+/// Regression test for the post-enqueue gap.
 TEST(TaskTrackerAddFinal, FinalTaskDroppedAfterEnqueueSurfacesCannotScheduleTask)
 {
     auto calls = std::make_shared<std::atomic<size_t>>(0);
-    /// No prior add() tasks, so addFinal takes the run_final_task_now branch: the only schedule
-    /// call (call 1) is the final task, which the scheduler accepts and then drops unrun.
     TaskTracker tracker(droppingOnNthSchedule(calls, /*drop_on_call=*/1), /*max_tasks_inflight=*/0, makeTestLogger());
     ASSERT_TRUE(tracker.isAsync());
 
