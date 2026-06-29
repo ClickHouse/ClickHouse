@@ -150,6 +150,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+    extern const SettingsBool stop_refreshable_materialized_views_on_startup;
 }
 
 namespace ServerSetting
@@ -2384,9 +2385,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         }
 
         /// The replacement view's refresher was created paused so it could not touch the target
-        /// before the rename. Resume it now, which schedules the first refresh normally.
-        for (const auto & task : current_context->getRefreshSet().findTasks({create.getDatabase(), table_to_replace_name}))
-            task->start();
+        /// before the rename. Resume it now, unless stop_refreshable_materialized_views_on_startup
+        /// keeps refreshable views stopped, in which case it stays stopped like a plain CREATE.
+        if (!current_context->getGlobalContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+            for (const auto & task : current_context->getRefreshSet().findTasks({create.getDatabase(), table_to_replace_name}))
+                task->start();
 
         create.setTable(table_to_replace_name);
 
