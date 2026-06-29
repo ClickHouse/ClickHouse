@@ -63,7 +63,7 @@ def sync(node, db, table):
 
 def test_replicated_consistent_data(started_cluster):
     """
-    Insert on node1 with some columns skipped (all type-default).
+    Insert on node1 with some columns marked as missing (all type-default).
     Verify node2 syncs and sees the same data.
     After ALTER MODIFY COLUMN ... DEFAULT 999, both nodes must still
     return the original type-default (0), not 999.
@@ -90,7 +90,7 @@ def test_replicated_consistent_data(started_cluster):
         SETTINGS {SETTINGS}"""
     )
 
-    # b=0, c='' → both skipped
+    # b=0, c='' → both marked as missing
     node1.query(f"INSERT INTO {table} VALUES (1, 100, 0, '')")
     sync(node2, db, "t_repl")
 
@@ -120,7 +120,7 @@ def test_replicated_consistent_data(started_cluster):
 
 def test_replicated_merge_preserves_marker(started_cluster):
     """
-    Insert two parts on node1 with column b=0 skipped in both.
+    Insert two parts on node1 with column b=0 missing in both.
     OPTIMIZE FINAL → merge preserves marker.
     Node2 syncs the merged part.
     After ALTER DEFAULT, both nodes still read 0.
@@ -147,7 +147,7 @@ def test_replicated_merge_preserves_marker(started_cluster):
         SETTINGS {SETTINGS}"""
     )
 
-    # Two parts, b=0 in both → b skipped in both
+    # Two parts, b=0 in both → b marked as missing in both
     node1.query(f"INSERT INTO {table} VALUES (1, 100, 0)")
     node1.query(f"INSERT INTO {table} VALUES (2, 200, 0)")
     node1.query(f"OPTIMIZE TABLE {table} FINAL")
@@ -182,7 +182,7 @@ def test_mixed_version_version_gate(started_cluster):
     """
     node1 (new binary) uses serialization_info_version='with_types'
     (below with_skipped_columns) so old_node can read the parts.
-    No columns should actually be skipped — the version gate prevents it.
+    No columns should actually be missing — the version gate prevents it.
     Both nodes see identical data.
     """
     db = "test_t3"
@@ -222,7 +222,7 @@ def test_mixed_version_version_gate(started_cluster):
                  ratio_of_defaults_for_sparse_serialization = 1.0"""
     )
 
-    # Insert on new node — version gate means b is NOT skipped
+    # Insert on new node — version gate means b is NOT marked as missing
     node1.query(f"INSERT INTO {table} VALUES (1, 100, 0)")
     sync(old_node, db, "t_mixed")
 
@@ -231,7 +231,7 @@ def test_mixed_version_version_gate(started_cluster):
     assert q(node1, f"SELECT * FROM {table}") == expected
     assert q(old_node, f"SELECT * FROM {table}") == expected
 
-    # Verify b column IS in the part (not skipped)
+    # Verify b column IS in the part (not marked as missing)
     cols = q(
         node1,
         f"""SELECT column FROM system.parts_columns
@@ -319,7 +319,7 @@ def test_old_parts_use_current_default(started_cluster):
 
 def test_fetched_parts_survive_restart(started_cluster):
     """
-    Insert on node1 with skipped columns.
+    Insert on node1 with missing columns.
     node2 fetches part via SYSTEM SYNC REPLICA.
     Restart node2. Verify data is still correct.
     ALTER DEFAULT. Verify marker still works.
@@ -346,7 +346,7 @@ def test_fetched_parts_survive_restart(started_cluster):
         SETTINGS {SETTINGS}"""
     )
 
-    # b=0, c='' → skipped
+    # b=0, c='' → marked as missing
     node1.query(f"INSERT INTO {table} VALUES (1, 100, 0, '')")
     node1.query(f"INSERT INTO {table} VALUES (2, 200, 0, '')")
     sync(node2, db, "t_restart")
@@ -382,7 +382,7 @@ def test_fetched_parts_survive_restart(started_cluster):
 def test_replace_partition_preserves_marker(started_cluster):
     """
     Two replicated tables with different ZK paths.
-    Insert into table1 with skipped columns.
+    Insert into table1 with missing columns.
     ALTER TABLE table2 REPLACE PARTITION FROM table1.
     Verify table2 reads correctly.
     ALTER DEFAULT on table2 — marker must be preserved.
@@ -406,7 +406,7 @@ def test_replace_partition_preserves_marker(started_cluster):
             SETTINGS {SETTINGS}"""
         )
 
-    # Insert into source — b=0 → skipped
+    # Insert into source — b=0 → marked as missing
     node1.query(f"INSERT INTO {t1} VALUES (1, 100, 0)")
     node1.query(f"INSERT INTO {t1} VALUES (2, 200, 0)")
 

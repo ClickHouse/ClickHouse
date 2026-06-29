@@ -544,7 +544,7 @@ DROP TABLE t_skip_empty_horizontal;
 -- CASE 15: Skipped column retains type-default after ALTER DEFAULT change.
 -- When a column is skipped (all values were type-default), changing its DEFAULT
 -- expression must NOT affect the read value — serialization.json records the
--- column as skipped, so the reader fills with type-default, not the expression.
+-- column as missing, so the reader fills with type-default, not the expression.
 -- ============================================================================
 DROP TABLE IF EXISTS t_skip_empty_alter_default;
 
@@ -568,7 +568,7 @@ INSERT INTO t_skip_empty_alter_default (key, a, b) VALUES (1, 100, 0);
 SELECT 'case15_pre_alter';
 SELECT * FROM t_skip_empty_alter_default ORDER BY key;
 
--- Change the DEFAULT expression for b. The skipped column must still read as 0.
+-- Change the DEFAULT expression for b. The missing column must still read as 0.
 ALTER TABLE t_skip_empty_alter_default MODIFY COLUMN b UInt64 DEFAULT 999;
 
 SELECT 'case15_post_alter';
@@ -614,8 +614,8 @@ SELECT key, a, e FROM t_skip_empty_enum ORDER BY key;
 DROP TABLE t_skip_empty_enum;
 
 -- ============================================================================
--- CASE 17: A skipped column keeps its inserted type-default after an unrelated
--- mutation, even once it later gains a DEFAULT expression. The skipped-columns
+-- CASE 17: A missing column keeps its inserted type-default after an unrelated
+-- mutation, even once it later gains a DEFAULT expression. The missing-columns
 -- marker must be propagated through mutations; otherwise it is dropped and the
 -- read path evaluates the new DEFAULT expression instead of the inserted value.
 -- ============================================================================
@@ -654,8 +654,8 @@ SELECT * FROM t_skip_empty_mutate_default ORDER BY key;
 DROP TABLE t_skip_empty_mutate_default;
 
 -- ============================================================================
--- CASE 18: A column skipped in every source part keeps its inserted type-default
--- after a merge followed by a DEFAULT change. The skipped-columns marker must be
+-- CASE 18: A column missing in every source part keeps its inserted type-default
+-- after a merge followed by a DEFAULT change. The missing-columns marker must be
 -- propagated through the merge; otherwise the merged part is written without it
 -- and the read path evaluates the new DEFAULT expression.
 -- ============================================================================
@@ -695,10 +695,10 @@ SELECT * FROM t_skip_empty_merge_default ORDER BY key;
 DROP TABLE t_skip_empty_merge_default;
 
 -- ============================================================================
--- CASE 19: A skipped column that is renamed on the fly keeps its inserted
+-- CASE 19: A missing column that is renamed on the fly keeps its inserted
 -- type-default after a DEFAULT change on the new name. fillMissingColumns must
 -- translate the requested name back through alter_conversions before consulting
--- the skipped-columns marker (recorded under the original physical name).
+-- the missing-columns marker (recorded under the original physical name).
 -- ============================================================================
 DROP TABLE IF EXISTS t_skip_empty_rename_default;
 
@@ -719,7 +719,7 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
 -- b=0 (type-default) → b is skipped.
 INSERT INTO t_skip_empty_rename_default (key, a, b) VALUES (1, 100, 0);
 
--- Rename the skipped column, then give the new name a DEFAULT expression.
+-- Rename the missing column, then give the new name a DEFAULT expression.
 ALTER TABLE t_skip_empty_rename_default RENAME COLUMN b TO c;
 ALTER TABLE t_skip_empty_rename_default MODIFY COLUMN c UInt64 DEFAULT 999;
 
@@ -765,11 +765,11 @@ SELECT * FROM t_skip_empty_version_gate ORDER BY key;
 DROP TABLE t_skip_empty_version_gate;
 
 -- ============================================================================
--- CASE 21: A skipped column that is renamed on the fly and then merged keeps its
+-- CASE 21: A missing column that is renamed on the fly and then merged keeps its
 -- inserted type-default after a DEFAULT change on the new name. The merge
 -- materializes the rename into the merged part (written at the current metadata
 -- version, so the on-the-fly rename conversion no longer exists on read), so
--- MergeTask must translate each source part's skipped-columns marker through its
+-- MergeTask must translate each source part's missing-columns marker through its
 -- rename map before storing it on the merged part. Otherwise the merged part
 -- records the stale pre-rename name, fillMissingColumns misses it, and the later
 -- ALTER MODIFY COLUMN ... DEFAULT returns the new default instead of the inserted
@@ -796,8 +796,8 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
 INSERT INTO t_skip_empty_rename_merge_default (key, a, b) VALUES (1, 100, 0);
 INSERT INTO t_skip_empty_rename_merge_default (key, a, b) VALUES (2, 200, 0);
 
--- Rename the skipped column, then merge: the merged part is written under the
--- new name c and must carry the skipped-columns marker as c (not the stale b).
+-- Rename the missing column, then merge: the merged part is written under the
+-- new name c and must carry the missing-columns marker as c (not the stale b).
 ALTER TABLE t_skip_empty_rename_merge_default RENAME COLUMN b TO c;
 OPTIMIZE TABLE t_skip_empty_rename_merge_default FINAL;
 
@@ -816,7 +816,7 @@ DROP TABLE t_skip_empty_rename_merge_default;
 
 -- ============================================================================
 -- CASE 22: DETACH TABLE / ATTACH TABLE preserves the missing_columns marker.
--- Re-reading metadata from disk must restore the skipped-columns marker.
+-- Re-reading metadata from disk must restore the missing-columns marker.
 -- ============================================================================
 DROP TABLE IF EXISTS t_skip_empty_case22;
 
@@ -1077,7 +1077,7 @@ SELECT * FROM t_skip_empty_case29 ORDER BY key;
 DROP TABLE t_skip_empty_case29;
 
 -- ============================================================================
--- CASE 30: Multiple mutations in sequence preserve the skipped marker.
+-- CASE 30: Multiple mutations in sequence preserve the missing-columns marker.
 -- ============================================================================
 DROP TABLE IF EXISTS t_skip_empty_case30;
 
@@ -1141,7 +1141,7 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          serialization_info_version = 'with_skipped_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
--- b=0 (skipped in src)
+-- b=0 (missing in src)
 INSERT INTO t_skip_empty_case31_src (key, a, b) VALUES (1, 100, 0);
 
 -- INSERT SELECT: b=0 flows through and should be skipped in dst too.
@@ -1276,7 +1276,7 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          serialization_info_version = 'with_skipped_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
--- b=0 (skipped)
+-- b=0 (missing)
 INSERT INTO t_skip_empty_case34 (key, a, b) VALUES (1, 100, 0);
 
 -- Add a new column with a DEFAULT expression.
@@ -1289,7 +1289,7 @@ SELECT key, a, b, c FROM t_skip_empty_case34 ORDER BY key;
 DROP TABLE t_skip_empty_case34;
 
 -- ============================================================================
--- CASE 35: ALTER DROP COLUMN that was missing (skipped).
+-- CASE 35: ALTER DROP COLUMN that was missing (missing).
 -- ============================================================================
 DROP TABLE IF EXISTS t_skip_empty_case35;
 
@@ -1410,7 +1410,7 @@ SELECT * FROM t_skip_empty_case38 ORDER BY key;
 DROP TABLE t_skip_empty_case38;
 
 -- ============================================================================
--- CASE 39: Multiple INSERTs — some with skipped cols, some without — then merge.
+-- CASE 39: Multiple INSERTs — some with missing cols, some without — then merge.
 -- ============================================================================
 DROP TABLE IF EXISTS t_skip_empty_case39;
 
@@ -1428,11 +1428,11 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          serialization_info_version = 'with_skipped_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
--- Part 1: b=0 (skipped)
+-- Part 1: b=0 (missing)
 INSERT INTO t_skip_empty_case39 (key, a, b) VALUES (1, 10, 0);
 -- Part 2: b=100 (NOT skipped)
 INSERT INTO t_skip_empty_case39 (key, a, b) VALUES (2, 20, 100);
--- Part 3: b=0 (skipped)
+-- Part 3: b=0 (missing)
 INSERT INTO t_skip_empty_case39 (key, a, b) VALUES (3, 30, 0);
 
 SELECT 'case39_pre_merge';
