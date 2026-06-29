@@ -3782,6 +3782,19 @@ function nextDefaultTitle() {
     }
 }
 
+/// Tab titles double as the URL `tab=` key and the startup-reconciliation lookup key, so
+/// they must stay unique: two tabs sharing a title would let a shared/reloaded URL match —
+/// and overwrite — the wrong tab. If `desired` collides with another tab (ignoring the tab
+/// `excludeId`, i.e. the one being renamed), disambiguate by appending " (2)", " (3)", …
+function uniqueTitle(desired, excludeId) {
+    const taken = new Set(tabs.filter(t => t.id !== excludeId).map(t => t.title));
+    if (!taken.has(desired)) return desired;
+    for (let i = 2; ; ++i) {
+        const candidate = desired + ' (' + i + ')';
+        if (!taken.has(candidate)) return candidate;
+    }
+}
+
 function makeTab(title, query) {
     return {
         id: 't' + (++tabSeq),
@@ -3844,12 +3857,17 @@ async function activateTab(id) {
 async function switchToTab(id) {
     if (id === activeTabId) return;
     captureActiveTab();
+    /// Fold the captured editor state of the tab we are leaving back into its own history
+    /// entry, so a later Back/Forward to it restores the latest edit rather than the stale
+    /// last-run/URL snapshot.
+    refreshCurrentHistoryEntry(getActiveTab());
     await activateTab(id);
     syncHistory();
 }
 
 function addTab() {
     captureActiveTab();
+    refreshCurrentHistoryEntry(getActiveTab());
     const tab = makeTab();
     tabs.push(tab);
     activeTabId = tab.id;
@@ -3905,7 +3923,9 @@ function startTitleEdit(tab, titleEl) {
         if (save) {
             /// Collapse any pasted newlines/runs of whitespace into single spaces.
             const v = titleEl.textContent.replace(/\s+/g, ' ').trim();
-            if (v) tab.title = v;
+            /// Keep titles unique (they key the URL `tab=` reconciliation), disambiguating
+            /// a collision rather than letting two tabs share a name.
+            if (v) tab.title = uniqueTitle(v, tab.id);
         }
         renderTabBar();   /// rebuilds the bar, replacing this editable span with a static one
         syncHistory();
@@ -4097,11 +4117,14 @@ function buildHistoryParams(params, tabName) {
 /// are the EDITOR state (also the URL hash and the de-dup key); `result` is the snapshot
 /// that produced the rendered result, carrying its OWN query/params so rendering/download
 /// stay tied to the producing query even if the editor was edited without rerunning.
-/// `titleForDoc` overrides the document title text.
-function writeHistoryEntry(tab, titleForDoc) {
+/// `titleForDoc` overrides the document title text. When `forceReplace` is set, the current
+/// entry is replaced in place even if the query changed (used to refresh the entry of a tab
+/// being left so it carries the latest editor edit rather than the last run/URL snapshot).
+function writeHistoryEntry(tab, titleForDoc, forceReplace) {
     /// Skip a fresh entry if neither the active tab nor its query changed.
     const cur = history.state;
-    const unchanged = cur && cur.tabId === tab.id && cur.query === tab.query;
+    const sameTab = cur && cur.tabId === tab.id;
+    const unchanged = sameTab && cur.query === tab.query;
 
     const state = {
         query: tab.query,
@@ -4116,7 +4139,7 @@ function writeHistoryEntry(tab, titleForDoc) {
     if (history_params.length > 0) history_url += '?' + history_params.join('&');
     history_url += '#' + toBase64(tab.query);
 
-    if (!cur || unchanged) {
+    if (!cur || unchanged || (forceReplace && sameTab)) {
         history.replaceState(state, title, history_url);
     } else {
         history.pushState(state, title, history_url);
@@ -4125,6 +4148,19 @@ function writeHistoryEntry(tab, titleForDoc) {
     tab.lastSavedQuery = tab.query;
     renderTabBar();
     scheduleSave();
+}
+
+/// Refresh the current browser-history entry in place from the given tab's captured editor
+/// state, but only when that entry already belongs to this tab (otherwise there is nothing
+/// to refresh and we must not push a spurious entry). Called when leaving a tab so a later
+/// Back/Forward to its entry restores the latest edit instead of the last run/URL snapshot.
+/// Without this, an edit made after the last run lives only in memory, and the next
+/// `popstate` would restore the stale entry (still holding the old query) and overwrite it.
+function refreshCurrentHistoryEntry(tab) {
+    if (!tab) return;
+    const cur = history.state;
+    if (!cur || cur.tabId !== tab.id) return;
+    writeHistoryEntry(tab, undefined, /*forceReplace=*/ true);
 }
 
 /// Called after an actual run: stash the result snapshot on the active tab (this is
@@ -5878,7 +5914,18 @@ async function reconcileStartup() {
             activeTabId = (loaded.meta && savedTabs.some(t => t.id === loaded.meta.activeTabId))
                 ? loaded.meta.activeTabId : savedTabs[0].id;
         } else {
-            let match = url_tab_name ? savedTabs.find(t => t.title === url_tab_name) : null;
+            let match = null;
+            if (url_tab_name) {
+                /// Tabs are normally kept title-unique (see `uniqueTitle`), but legacy persisted
+                /// state could still hold duplicates. Among same-titled tabs, prefer the one the
+                /// URL actually came from — its query (or last URL-synced query) equals the URL's
+                /// — so a shared/reloaded link lands on its originating tab and stays
+                /// non-destructive, instead of clobbering an unrelated tab that shares the name.
+                const named = savedTabs.filter(t => t.title === url_tab_name);
+                match = named.find(t => t.query === url_query)
+                     || named.find(t => t.lastSavedQuery === url_query)
+                     || named[0] || null;
+            }
             if (match) {
                 /// Named URL: substitute the URL query into that tab ONLY when the URL carries
                 /// a query; a bare ?tab=Name just activates the tab and keeps its saved query.
