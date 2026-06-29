@@ -850,6 +850,24 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                             file_segment.getInfoForLog());
                     }
 
+                    if (remote_metadata.has_value()
+                        && remote_metadata->size > file_segment.getCurrentWriteOffset())
+                    {
+                        /// Object is intact but the predownload stream ended early (premature close) - transient I/O error, not a logic bug
+                        throw Exception(
+                            ErrorCodes::CANNOT_READ_ALL_DATA,
+                            "Connection closed prematurely while predownloading remote object: "
+                            "downloaded until offset {} but need to read until offset {}. "
+                            "Actual object size {}, expected object size {}, last modified {}. "
+                            "Current file segment: {}",
+                            file_segment.getCurrentWriteOffset(),
+                            offset,
+                            remote_metadata->size,
+                            expected_object_size ? std::to_string(*expected_object_size) : "None",
+                            formatRemoteFileLastModified(remote_metadata),
+                            file_segment.getInfoForLog());
+                    }
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Failed to predownload remaining {} bytes. Current file segment: {}, "
@@ -1465,6 +1483,23 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             throw Exception(
                 ErrorCodes::CANNOT_READ_ALL_DATA,
                 "Remote object was truncated between listing and reading: "
+                "read until offset {} but expected to read until position {}. "
+                "Actual object size {}, expected object size {}, last modified {}, stop reason: {}. "
+                "Current file segment: {}",
+                offset, info.read_until_position, remote_metadata->size, file_size_,
+                formatRemoteFileLastModified(remote_metadata),
+                impl_read_stop_reason ? *impl_read_stop_reason : "None",
+                file_segment.getInfoForLog());
+        }
+
+        if (remote_metadata.has_value() && remote_metadata->size > offset)
+        {
+            /// Object is intact but the predownload stream ended early (premature close) - transient I/O error, not a logic bug
+            if (file_segment.isDownloader())
+                file_segment.setDownloadFinishedWithoutContinuation();
+            throw Exception(
+                ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Connection closed prematurely while reading remote object: "
                 "read until offset {} but expected to read until position {}. "
                 "Actual object size {}, expected object size {}, last modified {}, stop reason: {}. "
                 "Current file segment: {}",
