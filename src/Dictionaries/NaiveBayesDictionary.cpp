@@ -290,7 +290,7 @@ ColumnPtr NaiveBayesDictionary::getColumn(
     const DataTypePtr & attribute_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    DefaultOrFilter /* default_or_filter */) const
+    DefaultOrFilter default_or_filter) const
 {
     /// Only the class attribute is computable (it is the predicted class). The count attribute describes the
     /// training source and has no meaning as a per-input prediction.
@@ -309,6 +309,9 @@ ColumnPtr NaiveBayesDictionary::getColumn(
         throw Exception(ErrorCodes::TYPE_MISMATCH, "NaiveBayes dictionary key must be a String column");
 
     const size_t rows = string_col->size();
+
+    if (std::holds_alternative<RefFilter>(default_or_filter))
+        std::get<RefFilter>(default_or_filter).get().assign(rows, static_cast<UInt8>(0));
 
     /// dictGet must return the declared class-attribute type. The predicted class ids are the source class
     /// values, so they fit whichever unsigned width is declared; build the result column in that type.
