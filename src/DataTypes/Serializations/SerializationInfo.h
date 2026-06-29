@@ -7,6 +7,7 @@
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 
 #include <map>
+#include <vector>
 
 namespace Poco::JSON
 {
@@ -133,8 +134,31 @@ public:
 
     bool needsPersistence() const;
 
-    const NameSet & getSkippedColumns() const { return skipped_columns; }
-    void setSkippedColumns(NameSet columns) { skipped_columns = std::move(columns); }
+    /// Describes a column that is absent from the part's data files but whose
+    /// read-time semantics are frozen at write time.
+    struct MissingColumnInfo
+    {
+        String name;
+        enum class DefaultKind : uint8_t
+        {
+            TypeDefault,  /// fill with the type's zero value (0, "", NULL)
+            Expression,   /// evaluate the frozen `expression`
+        };
+        DefaultKind default_kind = DefaultKind::TypeDefault;
+        String expression; /// non-empty only when default_kind == Expression
+
+        bool operator<(const MissingColumnInfo & rhs) const { return name < rhs.name; }
+        bool operator==(const MissingColumnInfo & rhs) const { return name == rhs.name; }
+    };
+    using MissingColumns = std::vector<MissingColumnInfo>;
+
+    const MissingColumns & getMissingColumns() const { return missing_columns; }
+    void setMissingColumns(MissingColumns columns) { missing_columns = std::move(columns); }
+
+    /// Convenience: check whether a column name is recorded as missing.
+    bool isMissingColumn(const String & name) const;
+    /// Get the MissingColumnInfo for a column (nullptr if not found).
+    const MissingColumnInfo * getMissingColumnInfo(const String & name) const;
 
     static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
 
@@ -161,7 +185,7 @@ private:
     ///   or other engines, the correct settings must always be provided for
     ///   consistent serialization behavior.
     Settings settings;
-    NameSet skipped_columns;
+    MissingColumns missing_columns; /// sorted by name for deterministic serialization
 };
 
 }

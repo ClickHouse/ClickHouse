@@ -201,14 +201,14 @@ namespace ErrorCodes
     DECLARE(Bool, skip_empty_columns_on_insert, false, R"(
     If enabled, columns whose values are entirely type-defaults in a given INSERT
     block are not written to the data part on disk. When the part is later read,
-    missing columns are filled with defaults — the same mechanism used by
-    `ALTER TABLE ADD COLUMN`. This saves disk space for sparse-update workloads
+    missing columns are filled with their frozen defaults — the same mechanism used
+    by `ALTER TABLE ADD COLUMN`. This saves disk space for sparse-update workloads
     where most columns in each INSERT are left at their type's default value.
     Columns with `DEFAULT`, `MATERIALIZED`, or `ALIAS` expressions are never
     skipped, because the read path would evaluate the expression instead of
     returning the type-default that was explicitly inserted. Patch parts
     (used by lightweight UPDATE) are also excluded.
-    This optimization records the skipped columns in the part's
+    This optimization records the missing columns in the part's
     `serialization.json` using the `with_skipped_columns` format version, so it
     only takes effect when `serialization_info_version` is set to
     `with_skipped_columns`. With a lower version (for example pinned to a lower
@@ -300,8 +300,8 @@ namespace ErrorCodes
     - `basic` - Basic format.
     - `with_types` - Format with additional `types_serialization_versions` field, allowing per-type serialization versions.
     This makes settings like `string_serialization_version` effective.
-    - `with_skipped_columns` - Everything `with_types` records, plus a `skipped_columns` field
-    listing columns that were omitted from the part because all their values were type-defaults.
+    - `with_skipped_columns` - Everything `with_types` records, plus a `missing_columns` field
+    listing columns that were omitted from the part with their frozen defaults.
     Required to enable `skip_empty_columns_on_insert`.
 
     During rolling upgrades, set this to `basic` so that new servers produce

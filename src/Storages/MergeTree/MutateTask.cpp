@@ -677,14 +677,11 @@ getColumnsForNewDataPart(
                     renamed_columns_to_from.emplace(command.rename_to, original_name);
                     renamed_columns_from_to.emplace(original_name, command.rename_to);
                 }
-                else if (serialization_infos.getSkippedColumns().contains(command.column_name))
+                else if (serialization_infos.isMissingColumn(command.column_name))
                 {
-                    /// A column skipped on INSERT has no data files and is absent
-                    /// from part_columns, but its skipped-columns marker must follow
-                    /// the rename so the read path keeps filling it with the inserted
-                    /// type-default. Record the rename so the marker carried over
-                    /// below is stored under the new name (this also lets chained
-                    /// renames of the same column be tracked correctly).
+                    /// A column marked as missing on INSERT has no data files and is
+                    /// absent from part_columns, but its missing-columns marker must
+                    /// follow the rename so the read path keeps filling it correctly.
                     renamed_columns_to_from.emplace(command.rename_to, command.column_name);
                     renamed_columns_from_to.emplace(command.column_name, command.rename_to);
                 }
@@ -788,33 +785,38 @@ getColumnsForNewDataPart(
         new_serialization_infos.emplace(new_name, std::move(new_info));
     }
 
-    /// Carry over the skipped-columns marker for columns that stay absent from
-    /// the new part. A skipped column has no data files in the source part; if
+    /// Carry over the missing-columns markers for columns that stay absent from
+    /// the new part. A missing column has no data files in the source part; if
     /// this mutation does not materialize it (it is not present in updated_header),
-    /// it remains missing and the read path must keep filling it with the
-    /// inserted type-default. Without this, a column that was skipped on INSERT
-    /// and later gained a DEFAULT expression via ALTER MODIFY COLUMN would read
-    /// the new default expression instead of the inserted type-default after an
-    /// unrelated mutation silently dropped the marker.
+    /// it remains missing and the read path must keep filling it with the frozen
+    /// default. Without this, a column that was marked missing on INSERT and later
+    /// gained a DEFAULT expression via ALTER MODIFY COLUMN would read the new
+    /// default expression instead of the frozen value after an unrelated mutation
+    /// silently dropped the marker.
     {
-        NameSet new_skipped_columns;
-        for (const auto & name : serialization_infos.getSkippedColumns())
+        SerializationInfoByName::MissingColumns new_missing;
+        for (const auto & mc : serialization_infos.getMissingColumns())
         {
-            auto it = renamed_columns_from_to.find(name);
-            auto new_name = it == renamed_columns_from_to.end() ? name : it->second;
+            auto it = renamed_columns_from_to.find(mc.name);
+            auto new_name = it == renamed_columns_from_to.end() ? mc.name : it->second;
 
             /// Column was dropped or is no longer part of the schema.
             if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
                 continue;
             /// Column is materialized by this mutation (present in updated_header),
-            /// so it is written in full and is no longer skipped.
+            /// so it is written in full and is no longer missing.
             if (updated_header.has(new_name))
                 continue;
 
-            new_skipped_columns.insert(new_name);
+            auto entry = mc;
+            entry.name = new_name;
+            new_missing.push_back(std::move(entry));
         }
-        if (!new_skipped_columns.empty())
-            new_serialization_infos.setSkippedColumns(std::move(new_skipped_columns));
+        if (!new_missing.empty())
+        {
+            std::sort(new_missing.begin(), new_missing.end());
+            new_serialization_infos.setMissingColumns(std::move(new_missing));
+        }
     }
 
     /// Column mutations preserve source part serialization settings even when they differ from storage defaults,

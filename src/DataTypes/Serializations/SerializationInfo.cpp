@@ -38,7 +38,13 @@ constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
 constexpr auto KEY_NULLABLE_SERIALIZATION_VERSION = "nullable";
 constexpr auto KEY_MAP_SERIALIZATION_VERSION = "map";
 constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
-constexpr auto KEY_SKIPPED_COLUMNS = "skipped_columns";
+constexpr auto KEY_SKIPPED_COLUMNS = "skipped_columns"; // legacy read compat
+constexpr auto KEY_MISSING_COLUMNS = "missing_columns";
+constexpr auto KEY_MISSING_COL_NAME = "name";
+constexpr auto KEY_MISSING_COL_DEFAULT = "default";
+constexpr auto KEY_MISSING_COL_EXPRESSION = "expression";
+constexpr auto VALUE_TYPE_DEFAULT = "type_default";
+constexpr auto VALUE_EXPRESSION = "expression";
 
 void writeJSONKey(std::string_view key, WriteBuffer & out)
 {
@@ -417,14 +423,30 @@ ISerialization::KindStack SerializationInfoByName::getKindStack(const String & c
 
 MergeTreeSerializationInfoVersion SerializationInfoByName::getVersion() const
 {
-    if (!skipped_columns.empty())
+    if (!missing_columns.empty())
         return MergeTreeSerializationInfoVersion::WITH_SKIPPED_COLUMNS;
     return settings.version;
 }
 
 bool SerializationInfoByName::needsPersistence() const
 {
-    return !empty() || !skipped_columns.empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
+    return !empty() || !missing_columns.empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
+}
+
+bool SerializationInfoByName::isMissingColumn(const String & name) const
+{
+    return getMissingColumnInfo(name) != nullptr;
+}
+
+const SerializationInfoByName::MissingColumnInfo * SerializationInfoByName::getMissingColumnInfo(const String & name) const
+{
+    /// missing_columns is sorted by name, use binary search
+    auto it = std::lower_bound(
+        missing_columns.begin(), missing_columns.end(), name,
+        [](const MissingColumnInfo & info, const String & n) { return info.name < n; });
+    if (it != missing_columns.end() && it->name == name)
+        return &(*it);
+    return nullptr;
 }
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
@@ -477,27 +499,34 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
         writeChar('}', out);
     }
 
-    if (version >= MergeTreeSerializationInfoVersion::WITH_SKIPPED_COLUMNS && !skipped_columns.empty())
+    if (version >= MergeTreeSerializationInfoVersion::WITH_SKIPPED_COLUMNS && !missing_columns.empty())
     {
         writeChar(',', out);
-        writeJSONKey(KEY_SKIPPED_COLUMNS, out);
+        writeJSONKey(KEY_MISSING_COLUMNS, out);
         writeChar('[', out);
 
-        /// serialization.json is hashed into the part checksums, so the order
-        /// must be deterministic. skipped_columns is a NameSet (hash set) whose
-        /// iteration order is unspecified, which would make otherwise identical
-        /// parts produce different checksums and break replicated merges.
-        std::vector<std::string_view> sorted_skipped(skipped_columns.begin(), skipped_columns.end());
-        std::sort(sorted_skipped.begin(), sorted_skipped.end());
-
-        bool first_skipped = true;
-        for (const auto & name : sorted_skipped)
+        /// missing_columns is kept sorted by name for deterministic checksums.
+        bool first_missing = true;
+        for (const auto & mc : missing_columns)
         {
-            if (!first_skipped)
+            if (!first_missing)
                 writeChar(',', out);
-            first_skipped = false;
+            first_missing = false;
 
-            writeJSONString(name, out, {});
+            writeChar('{', out);
+            writeJSONKeyValue(KEY_MISSING_COL_NAME, mc.name, out);
+            writeChar(',', out);
+            if (mc.default_kind == MissingColumnInfo::DefaultKind::TypeDefault)
+            {
+                writeJSONKeyValue(KEY_MISSING_COL_DEFAULT, std::string_view(VALUE_TYPE_DEFAULT), out);
+            }
+            else
+            {
+                writeJSONKeyValue(KEY_MISSING_COL_DEFAULT, std::string_view(VALUE_EXPRESSION), out);
+                writeChar(',', out);
+                writeJSONKeyValue(KEY_MISSING_COL_EXPRESSION, mc.expression, out);
+            }
+            writeChar('}', out);
         }
         writeChar(']', out);
     }
@@ -512,7 +541,7 @@ SerializationInfoByName SerializationInfoByName::clone() const
     SerializationInfoByName res(settings);
     for (const auto & [name, info] : *this)
         res.emplace(name, info->clone());
-    res.skipped_columns = skipped_columns;
+    res.missing_columns = missing_columns;
     return res;
 }
 
@@ -535,7 +564,8 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     Poco::JSON::Array::Ptr columns_array;
     Poco::JSON::Object::Ptr type_versions_obj;
-    Poco::JSON::Array::Ptr skipped_columns_array;
+    Poco::JSON::Array::Ptr missing_columns_array;
+    Poco::JSON::Array::Ptr legacy_skipped_columns_array;
     bool propagate_types_serialization_versions_to_nested_types = false;
     for (const auto & [key, value] : *object)
     {
@@ -555,9 +585,14 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         {
             propagate_types_serialization_versions_to_nested_types = value.extract<bool>();
         }
+        else if (key == KEY_MISSING_COLUMNS)
+        {
+            missing_columns_array = value.extract<Poco::JSON::Array::Ptr>();
+        }
         else if (key == KEY_SKIPPED_COLUMNS)
         {
-            skipped_columns_array = value.extract<Poco::JSON::Array::Ptr>();
+            /// Legacy format: plain string array of column names (all type_default).
+            legacy_skipped_columns_array = value.extract<Poco::JSON::Array::Ptr>();
         }
         else
         {
@@ -646,10 +681,38 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         }
     }
 
-    if (skipped_columns_array)
+    if (missing_columns_array)
     {
-        for (const auto & elem : *skipped_columns_array)
-            infos.skipped_columns.insert(elem.extract<String>());
+        for (const auto & elem : *missing_columns_array)
+        {
+            auto elem_object = elem.extract<Poco::JSON::Object::Ptr>();
+            MissingColumnInfo mc;
+            mc.name = elem_object->getValue<String>(KEY_MISSING_COL_NAME);
+            auto default_str = elem_object->getValue<String>(KEY_MISSING_COL_DEFAULT);
+            if (default_str == VALUE_EXPRESSION)
+            {
+                mc.default_kind = MissingColumnInfo::DefaultKind::Expression;
+                mc.expression = elem_object->getValue<String>(KEY_MISSING_COL_EXPRESSION);
+            }
+            else
+            {
+                mc.default_kind = MissingColumnInfo::DefaultKind::TypeDefault;
+            }
+            infos.missing_columns.push_back(std::move(mc));
+        }
+        std::sort(infos.missing_columns.begin(), infos.missing_columns.end());
+    }
+    else if (legacy_skipped_columns_array)
+    {
+        /// Backward compat: old format was a plain array of column name strings.
+        for (const auto & elem : *legacy_skipped_columns_array)
+        {
+            MissingColumnInfo mc;
+            mc.name = elem.extract<String>();
+            mc.default_kind = MissingColumnInfo::DefaultKind::TypeDefault;
+            infos.missing_columns.push_back(std::move(mc));
+        }
+        std::sort(infos.missing_columns.begin(), infos.missing_columns.end());
     }
 
     return infos;

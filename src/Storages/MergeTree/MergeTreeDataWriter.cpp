@@ -745,7 +745,19 @@ static void skipEmptyColumnsOnInsert(
     columns = std::move(filtered);
     for (const auto & name : empty_columns)
         infos.erase(name);
-    infos.setSkippedColumns(std::move(empty_columns));
+
+    /// Build sorted MissingColumns from the removed names.
+    SerializationInfoByName::MissingColumns mc;
+    mc.reserve(empty_columns.size());
+    for (const auto & name : empty_columns)
+    {
+        SerializationInfoByName::MissingColumnInfo info;
+        info.name = name;
+        info.default_kind = SerializationInfoByName::MissingColumnInfo::DefaultKind::TypeDefault;
+        mc.push_back(std::move(info));
+    }
+    std::sort(mc.begin(), mc.end());
+    infos.setMissingColumns(std::move(mc));
 }
 
 

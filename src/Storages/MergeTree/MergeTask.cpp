@@ -837,7 +837,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
-    NameSet source_skipped_columns;
+    NameSet source_missing_column_names;
+    /// Collect MissingColumnInfo with the most recent info per column name.
+    /// For merge, all sources should agree (they were all written with TypeDefault
+    /// when skip_empty_columns_on_insert fired), but use a map to handle renames.
+    std::map<String, SerializationInfoByName::MissingColumnInfo> source_missing_map;
     for (const auto & part : global_ctx->future_part->parts)
     {
         if (!info_settings.isAlwaysDefault())
@@ -856,62 +860,57 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         auto part_alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context);
 
-        /// Collect the union of columns that were skipped on INSERT (their values
-        /// were all type-defaults and no data files were written) across all
-        /// source parts. Collected unconditionally — even when serialization info
-        /// is otherwise always-default — because dropping the marker would change
-        /// the data read back after a later ALTER MODIFY COLUMN ... DEFAULT.
-        ///
-        /// The marker is recorded under the physical column names that existed
-        /// when the part was written. The merge materializes any on-the-fly
-        /// ALTER RENAME COLUMN into the merged part (which is written at the
-        /// current metadata version, so the rename conversion no longer exists on
-        /// read), so translate each skipped name through this part's rename map to
-        /// the current name before unioning it. Otherwise the merged part would
-        /// record the stale pre-rename name, the read path would miss it, and a
-        /// later ALTER MODIFY COLUMN ... DEFAULT on the renamed column would read
-        /// the new default expression instead of the inserted type-default.
-        for (const auto & name : part->getSerializationInfos().getSkippedColumns())
+        /// Collect the union of columns that were marked as missing across all
+        /// source parts. Translate names through rename conversions so the merged
+        /// part records the current column name.
+        for (const auto & mc : part->getSerializationInfos().getMissingColumns())
         {
             /// A column dropped (or cleared) by a pending mutation has stale data
-            /// in this part, so its skipped marker must not be carried into the
-            /// merged part. Otherwise, after DROP COLUMN `b` then a merge then
-            /// ADD COLUMN `b` ... DEFAULT 999, the merged part would record a stale
-            /// `b` marker (the drop conversion is gone after the merge), and the
-            /// re-added `b` would read the inserted type-default instead of 999.
-            if (part_alter_conversions->isColumnDropped(name))
+            /// in this part, so its missing marker must not be carried into the
+            /// merged part.
+            if (part_alter_conversions->isColumnDropped(mc.name))
                 continue;
 
-            if (part_alter_conversions->columnHasNewName(name))
-                source_skipped_columns.insert(part_alter_conversions->getColumnNewName(name));
-            else
-                source_skipped_columns.insert(name);
+            String current_name = mc.name;
+            if (part_alter_conversions->columnHasNewName(mc.name))
+                current_name = part_alter_conversions->getColumnNewName(mc.name);
+
+            source_missing_column_names.insert(current_name);
+            if (!source_missing_map.contains(current_name))
+            {
+                auto entry = mc;
+                entry.name = current_name;
+                source_missing_map.emplace(current_name, std::move(entry));
+            }
         }
 
         global_ctx->alter_conversions.push_back(std::move(part_alter_conversions));
     }
 
-    /// Carry the skipped-columns marker through the merge for any skipped source
-    /// column that ends up absent from the merged part. A column stays absent
-    /// when it is missing from every source part and has no DEFAULT expression at
-    /// merge time, in which case it was added to expired_columns and removed from
-    /// storage_columns above. If instead the column is materialized during the
-    /// merge (present in the final column list — for example because another part
-    /// holds real data, or it gained a DEFAULT expression), the type-defaults are
-    /// written to disk and the marker is no longer needed.
-    if (!source_skipped_columns.empty())
+    /// Carry missing-columns markers through the merge for columns that remain
+    /// absent from the merged part.
+    if (!source_missing_column_names.empty())
     {
         NameSet final_columns;
         for (const auto & column : global_ctx->storage_columns)
             final_columns.insert(column.name);
 
-        NameSet skipped_in_merged;
-        for (const auto & name : source_skipped_columns)
+        SerializationInfoByName::MissingColumns merged_missing;
+        for (const auto & name : source_missing_column_names)
+        {
             if (!final_columns.contains(name))
-                skipped_in_merged.insert(name);
+            {
+                auto it = source_missing_map.find(name);
+                if (it != source_missing_map.end())
+                    merged_missing.push_back(it->second);
+            }
+        }
 
-        if (!skipped_in_merged.empty())
-            infos.setSkippedColumns(std::move(skipped_in_merged));
+        if (!merged_missing.empty())
+        {
+            std::sort(merged_missing.begin(), merged_missing.end());
+            infos.setMissingColumns(std::move(merged_missing));
+        }
     }
 
     if (global_ctx->new_data_part->info.isPatch())
