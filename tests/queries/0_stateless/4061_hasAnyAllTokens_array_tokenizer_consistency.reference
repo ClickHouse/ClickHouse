@@ -1,0 +1,16 @@
+has baseline projection
+47
+hasAnyTokens projection
+47
+hasAllTokens projection
+47
+hasAnyTokens WHERE use_skip_indexes=1
+47
+hasAnyTokens WHERE use_skip_indexes=0
+47
+hasAllTokens WHERE use_skip_indexes=1
+47
+hasAllTokens WHERE use_skip_indexes=0
+47
+hasAnyTokens projection explicit array tokenizer (workaround)
+47

@@ -165,8 +165,10 @@ DataTypePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::getReturnT
 template <class HasTokensTraits>
 FunctionBasePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const
 {
+    const auto input_type = removeNullable(arguments[arg_input].type);
+    const bool input_is_array = checkAndGetDataType<DataTypeArray>(input_type.get()) != nullptr;
     const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column
-        ? SplitByNonAlphaTokenizer::getExternalName()
+        ? (input_is_array ? ArrayTokenizer::getExternalName() : SplitByNonAlphaTokenizer::getExternalName())
         : arguments[arg_tokenizer].column->getDataAt(0);
 
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
