@@ -69,6 +69,15 @@ public:
     /// Writes a row about login failure into session log (if enabled)
     void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
 
+    /// Records a `LoginFailure` entry in the audit log (only) for authentication failures that
+    /// happen during protocol negotiation, before `Session::authenticate` is reached — for
+    /// example an unsupported authentication method for the protocol, a too-old client, or a
+    /// malformed authentication packet. Idempotent within a session: at most one audit
+    /// `LoginFailure` is emitted, so it is safe to call from a catch-all that may also wrap
+    /// `getAuthenticationTypesOrLogInFailure` or `Session::authenticate`, both of which already
+    /// audit the failure themselves.
+    void recordAuditLoginFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address) const;
+
     /// Remembers the TLS client certificate presented on this connection (if any), so that
     /// session_log records it for the login/logout events of this session.
     void setClientCertificate(const X509Certificate & certificate);
@@ -119,6 +128,9 @@ private:
     DB::AuditLog * getAuditLogIfEnabled() const;
 
     mutable bool notified_session_log_about_login = false;
+    /// Ensures at most one `LoginFailure` line is written to the audit log per session,
+    /// even when a single failed authentication propagates through several catch layers.
+    mutable bool audit_login_failure_recorded = false;
     const UUID auth_id;
     const ContextPtr global_context;
 

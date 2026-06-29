@@ -1690,12 +1690,20 @@ public:
         }
         catch (const Exception&)
         {
+            /// Audit authentication failures that happen during the selected method's negotiation
+            /// before Session::authenticate is reached (for example a non-password/closed client
+            /// message). recordAuditLoginFailure is idempotent, so failures already audited by
+            /// getAuthenticationTypesOrLogInFailure or Session::authenticate are not logged twice.
+            session.recordAuditLoginFailure(user_name, address);
             mt.send(Messaging::ErrorOrNoticeResponse(Messaging::ErrorOrNoticeResponse::ERROR, "28P01", "Invalid user or password"),
                     true);
 
             throw;
         }
 
+        /// The user exists but none of its authentication methods can be used by the PostgreSQL
+        /// wire protocol; this is still a failed login attempt and must be audited.
+        session.recordAuditLoginFailure(user_name, address);
         mt.send(Messaging::ErrorOrNoticeResponse(Messaging::ErrorOrNoticeResponse::ERROR, "0A000", "Authentication method is not supported"),
                 true);
 

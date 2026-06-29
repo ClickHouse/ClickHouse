@@ -360,14 +360,7 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     }
     catch (const Exception & e)
     {
-        if (auto * audit_log = getAuditLogIfEnabled())
-        {
-            const auto & client_info = getClientInfo();
-            std::string host = client_info.current_address
-                ? client_info.current_address->host().toString()
-                : address.host().toString();
-            LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure", escapeForAuditField(user_name), host);
-        }
+        recordAuditLoginFailure(user_name, address);
 
         LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
@@ -441,12 +434,7 @@ void Session::checkIfUserIsStillValid()
 
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
-    if (auto * audit_log = getAuditLogIfEnabled())
-    {
-        LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure",
-                escapeForAuditField(user_name.has_value() ? user_name.value() : ""),
-                address_.host().toString());
-    }
+    recordAuditLoginFailure(user_name, address_);
 
     LOG_DEBUG(log, "Authentication failed with error: {}", e.what());
     if (auto session_log = getSessionLog())
@@ -455,6 +443,24 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
         auto info_for_log = *prepared_client_info;
         info_for_log.current_address = std::make_shared<Poco::Net::SocketAddress>(address_);
         session_log->addLoginFailure(auth_id, info_for_log, user_name, e, certificate_info);
+    }
+}
+
+void Session::recordAuditLoginFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address) const
+{
+    /// Emit at most one audit `LoginFailure` per session. A single failed authentication can be
+    /// observed by more than one layer (the per-protocol handler, `Session::authenticate`, and
+    /// `getAuthenticationTypesOrLogInFailure`); without this latch the same failure would be
+    /// written to the audit log several times.
+    if (audit_login_failure_recorded)
+        return;
+
+    if (auto * audit_log = getAuditLogIfEnabled())
+    {
+        LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure",
+                escapeForAuditField(user_name.value_or("")),
+                address.host().toString());
+        audit_login_failure_recorded = true;
     }
 }
 

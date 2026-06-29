@@ -438,6 +438,11 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     }
     catch (const Exception & exc)
     {
+        /// Audit failures that happen during MySQL authentication negotiation before
+        /// Session::authenticate is reached (for example an auth-switch/capability error in the
+        /// selected plugin). recordAuditLoginFailure is idempotent, so failures already audited
+        /// by getAuthenticationTypesOrLogInFailure or Session::authenticate are not logged twice.
+        session->recordAuditLoginFailure(user_name, socket().peerAddress());
         LOG_ERROR(log, "Authentication for user {} failed.", user_name);
         packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
         throw;
