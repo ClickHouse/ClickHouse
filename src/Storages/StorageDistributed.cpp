@@ -41,6 +41,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTGroupByElement.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -465,12 +466,47 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
+    /// `WITH CLUSTER` requires a global merge on the initiator; any shard-side
+    /// stage `>= WithMergeableStateAfterAggregation` would either run the cluster
+    /// step shard-locally or finalize aggregates first. Cap the shard stage at
+    /// `WithMergeableState` to override every pushdown path.
+    auto has_with_cluster = [&]
+    {
+        if (query_info.query_tree)
+        {
+            if (const auto * qn = query_info.query_tree->as<QueryNode>())
+                if (qn->hasGroupByWithCluster())
+                    return true;
+        }
+        if (query_info.query)
+        {
+            if (const auto * select = query_info.query->as<ASTSelectQuery>())
+            {
+                if (auto group_by = select->groupBy())
+                {
+                    for (const auto & elem : group_by->children)
+                    {
+                        const auto * gbe = elem->as<ASTGroupByElement>();
+                        if (gbe && gbe->with_cluster)
+                            return true;
+                    }
+                }
+            }
+        }
+        return false;
+    };
+
     const auto & settings = local_context->getSettingsRef();
     ClusterPtr cluster = getCluster();
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
     query_info.cluster = cluster;
+
+    /// `StorageDistributed::read` dereferences `query_info.getCluster()` later,
+    /// so the WITH CLUSTER early return must come after the assignment above.
+    if (has_with_cluster())
+        return std::min(to_stage, QueryProcessingStage::WithMergeableState);
 
     if (!local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
     {
@@ -630,6 +666,11 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     if (query_node.isGroupByWithTotals() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube())
         return {};
 
+    // Sharding-key match doesn't guarantee correctness for WITH CLUSTER:
+    // clusters can connect different key values across shard boundaries.
+    if (query_node.hasGroupByWithCluster())
+        return {};
+
     // Window functions are not supported.
     if (hasWindowFunctionNodes(query_info.query_tree))
         return {};
@@ -707,6 +748,18 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     // - TODO: WITH ROLLUP can be implemented (I guess)
     if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
         return {};
+
+    // Same reasoning as the analyzer path above.
+    if (select.groupBy())
+    {
+        for (const auto & elem : select.groupBy()->children)
+        {
+            const auto * gbe = elem->as<ASTGroupByElement>();
+            if (gbe && gbe->with_cluster)
+                return {};
+        }
+    }
+
     // Window functions are not supported.
     if (query_info.has_window)
         return {};

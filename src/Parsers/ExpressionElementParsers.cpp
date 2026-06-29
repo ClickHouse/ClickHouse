@@ -23,6 +23,7 @@
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTGroupByElement.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -2482,6 +2483,52 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     node = elem;
 
+    return true;
+}
+
+bool ParserGroupByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserExpressionWithOptionalAlias expr_parser(false);
+    ParserKeyword s_with(Keyword::WITH);
+    ParserKeyword s_cluster(Keyword::CLUSTER);
+    ParserNumber number_parser;
+
+    ASTPtr expr_elem;
+    if (!expr_parser.parse(pos, expr_elem, expected))
+        return false;
+
+    bool with_cluster = false;
+    ASTPtr distance;
+
+    Pos saved_pos = pos;
+    if (s_with.ignore(pos, expected))
+    {
+        if (s_cluster.ignore(pos, expected))
+        {
+            if (!number_parser.parse(pos, distance, expected))
+                return false;
+            with_cluster = true;
+        }
+        else
+        {
+            /// Restore so WITH ROLLUP/CUBE/TOTALS can be parsed at the SELECT level.
+            pos = saved_pos;
+        }
+    }
+
+    /// Wrap in `ASTGroupByElement` only when `WITH CLUSTER` is present, otherwise
+    /// the legacy positional rewrite and sharding-key matching break on the wrapper.
+    if (!with_cluster)
+    {
+        node = expr_elem;
+        return true;
+    }
+
+    auto elem = make_intrusive<ASTGroupByElement>();
+    elem->children.push_back(expr_elem);
+    elem->with_cluster = true;
+    elem->setClusterDistance(distance);
+    node = elem;
     return true;
 }
 

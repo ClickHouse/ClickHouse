@@ -46,6 +46,7 @@ enum class QueryTreeNodeType : uint8_t
     CROSS_JOIN,
     JOIN,
     UNION,
+    GROUP_BY_ELEMENT,
 };
 
 /// Convert query tree node type to string

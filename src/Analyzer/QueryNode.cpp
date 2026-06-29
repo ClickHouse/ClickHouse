@@ -17,12 +17,15 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTGroupByElement.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/InterpolateNode.h>
@@ -359,6 +362,9 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_group_by_with_cube == rhs_typed.is_group_by_with_cube &&
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
         is_group_by_all == rhs_typed.is_group_by_all &&
+        group_by_cluster_key_index == rhs_typed.group_by_cluster_key_index &&
+        group_by_cluster_distance == rhs_typed.group_by_cluster_distance &&
+        group_by_cluster_dimensions == rhs_typed.group_by_cluster_dimensions &&
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
         projection_columns == rhs_typed.projection_columns &&
@@ -406,6 +412,15 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_group_by_with_cube);
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
+    /// Hash cluster fields only when the modifier is set, otherwise non-cluster
+    /// queries would get a different hash than before the feature existed and
+    /// hash-sensitive optimizations (e.g. CNF condition ordering) would shift.
+    if (hasGroupByWithCluster())
+    {
+        state.update(group_by_cluster_key_index);
+        state.update(group_by_cluster_distance);
+        state.update(group_by_cluster_dimensions);
+    }
     state.update(is_order_by_all);
     state.update(is_limit_by_all);
 
@@ -437,6 +452,9 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_with_cube = is_group_by_with_cube;
     result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     result_query_node->is_group_by_all = is_group_by_all;
+    result_query_node->group_by_cluster_key_index = group_by_cluster_key_index;
+    result_query_node->group_by_cluster_distance = group_by_cluster_distance;
+    result_query_node->group_by_cluster_dimensions = group_by_cluster_dimensions;
     result_query_node->is_order_by_all = is_order_by_all;
     result_query_node->is_limit_by_all = is_limit_by_all;
     result_query_node->cte_name = cte_name;
@@ -530,7 +548,59 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, getWhere()->toAST(options));
 
     if (!is_group_by_all && hasGroupBy())
-        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, getGroupBy().toAST(options));
+    {
+        if (hasGroupByWithCluster())
+        {
+            /// Re-attach `WITH CLUSTER` to the cluster key element. For 2D the analyzer
+            /// expanded `(x, y)` into two scalar keys, so the tuple has to be rebuilt
+            /// here — otherwise the AST would round-trip as 1D on the first scalar.
+            auto group_by_ast = make_intrusive<ASTExpressionList>(',');
+            const auto & group_by_nodes = getGroupBy().getNodes();
+            const int n = static_cast<int>(group_by_nodes.size());
+            const int dims = static_cast<int>(group_by_cluster_dimensions);
+
+            int i = 0;
+            while (i < n)
+            {
+                if (i == group_by_cluster_key_index)
+                {
+                    auto elem = make_intrusive<ASTGroupByElement>();
+                    if (dims == 2 && i + 1 < n)
+                    {
+                        auto tuple_function = make_intrusive<ASTFunction>();
+                        tuple_function->name = "tuple";
+                        auto tuple_args = make_intrusive<ASTExpressionList>(',');
+                        tuple_args->children.push_back(group_by_nodes[i]->toAST(options));
+                        tuple_args->children.push_back(group_by_nodes[i + 1]->toAST(options));
+                        tuple_function->arguments = tuple_args;
+                        tuple_function->children.push_back(std::move(tuple_args));
+
+                        elem->children.push_back(std::move(tuple_function));
+                        i += 2;
+                    }
+                    else
+                    {
+                        elem->children.push_back(group_by_nodes[i]->toAST(options));
+                        i += 1;
+                    }
+                    elem->with_cluster = true;
+                    elem->setClusterDistance(make_intrusive<ASTLiteral>(Field(group_by_cluster_distance)));
+                    group_by_ast->children.push_back(std::move(elem));
+                }
+                else
+                {
+                    /// Non-cluster keys emitted bare to match `ParserGroupByElement`.
+                    group_by_ast->children.push_back(group_by_nodes[i]->toAST(options));
+                    i += 1;
+                }
+            }
+            select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_by_ast));
+        }
+        else
+        {
+            select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, getGroupBy().toAST(options));
+        }
+    }
 
     if (hasHaving())
         select_query->setExpression(ASTSelectQuery::Expression::HAVING, getHaving()->toAST(options));

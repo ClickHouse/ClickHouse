@@ -260,6 +260,33 @@ public:
         is_group_by_all = is_group_by_all_value;
     }
 
+    bool hasGroupByWithCluster() const
+    {
+        return group_by_cluster_key_index >= 0;
+    }
+
+    int getGroupByClusterKeyIndex() const
+    {
+        return group_by_cluster_key_index;
+    }
+
+    Float64 getGroupByClusterDistance() const
+    {
+        return group_by_cluster_distance;
+    }
+
+    void setGroupByClusterInfo(int key_index, Float64 distance)
+    {
+        group_by_cluster_key_index = key_index;
+        group_by_cluster_distance = distance;
+    }
+
+    /// 1 — scalar key, 2 — inline `(x, y)` tuple (Euclidean clustering).
+    size_t getGroupByClusterDimensions() const { return group_by_cluster_dimensions; }
+    void setGroupByClusterDimensions(size_t dims) { group_by_cluster_dimensions = dims; }
+
+    void setGroupByClusterKeyIndex(int key_index) { group_by_cluster_key_index = key_index; }
+
     /// Returns true, if query node has ORDER BY ALL modifier, false otherwise
     bool isOrderByAll() const
     {
@@ -705,6 +732,9 @@ private:
     bool is_group_by_with_cube = false;
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
+    int group_by_cluster_key_index = -1;
+    Float64 group_by_cluster_distance = 0;
+    size_t group_by_cluster_dimensions = 1;
     bool is_order_by_all = false;
     bool is_limit_by_all = false;
 

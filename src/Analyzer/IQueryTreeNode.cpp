@@ -43,6 +43,7 @@ const char * toString(QueryTreeNodeType type)
         case QueryTreeNodeType::CROSS_JOIN: return "CROSS_JOIN";
         case QueryTreeNodeType::JOIN: return "JOIN";
         case QueryTreeNodeType::UNION: return "UNION";
+        case QueryTreeNodeType::GROUP_BY_ELEMENT: return "GROUP_BY_ELEMENT";
     }
 }
 

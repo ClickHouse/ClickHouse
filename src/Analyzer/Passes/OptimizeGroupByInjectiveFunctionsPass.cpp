@@ -47,6 +47,13 @@ public:
         if (query->isGroupByWithCube() || query->isGroupByWithRollup())
             return;
 
+        /// `WITH CLUSTER` holds a positional cluster-key index into the resolved GROUP BY list.
+        /// Removing or reordering keys here would invalidate it and make the planner fail to
+        /// resolve the cluster key. Leave the GROUP BY keys of a cluster query intact, mirroring
+        /// the guard already present in `AggregateFunctionOfGroupByKeysPass`.
+        if (query->hasGroupByWithCluster())
+            return;
+
         bool allow_suspicious_types = getSettings()[Setting::allow_suspicious_types_in_group_by];
 
         auto & group_by = query->getGroupBy().getNodes();

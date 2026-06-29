@@ -9,6 +9,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTGroupByElement.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -755,6 +756,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     max_streams = getMaxThreadsForAvailableMemory(
         settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
     ASTSelectQuery & query = getSelectQuery();
+
+    /// WITH CLUSTER is only implemented for the new analyzer.
+    if (auto group_by = query.groupBy())
+    {
+        for (const auto & elem : group_by->children)
+        {
+            const auto * gbe = elem->as<ASTGroupByElement>();
+            if (gbe && gbe->with_cluster)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "GROUP BY ... WITH CLUSTER requires the new analyzer "
+                    "(`SET enable_analyzer = 1`)");
+        }
+    }
+
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     if (storage)

@@ -3482,6 +3482,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             [[fallthrough]];
         case QueryTreeNodeType::SORT:
             [[fallthrough]];
+        case QueryTreeNodeType::GROUP_BY_ELEMENT:
+            [[fallthrough]];
         case QueryTreeNodeType::INTERPOLATE:
             [[fallthrough]];
         case QueryTreeNodeType::WINDOW:
@@ -3905,6 +3907,19 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
   */
 void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
 {
+    /// `WITH CLUSTER` runs after `Aggregating` and needs mergeable states;
+    /// ROLLUP/CUBE/GROUPING SETS/TOTALS finalize aggregates earlier and would
+    /// hit a `LOGICAL_ERROR` in `mergeAggregateStates`.
+    if (query_node_typed.hasGroupByWithCluster() &&
+        (query_node_typed.isGroupByWithRollup()
+         || query_node_typed.isGroupByWithCube()
+         || query_node_typed.isGroupByWithGroupingSets()
+         || query_node_typed.isGroupByWithTotals()))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "GROUP BY ... WITH CLUSTER cannot be combined with WITH ROLLUP, WITH CUBE, GROUPING SETS or WITH TOTALS");
+    }
+
     QueryTreeNodes nullable_group_by_keys;
 
     if (query_node_typed.isGroupByWithGroupingSets())
@@ -3940,6 +3955,78 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
         // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
         auto & group_by_list = query_node_typed.getGroupBy().getNodes();
+
+        /// Record `cluster_dims` (1 or 2 for inline tuples) and shift `cluster_idx`
+        /// to compensate for tuple-expansion of preceding keys.
+        if (query_node_typed.hasGroupByWithCluster())
+        {
+            int orig_cluster_idx = query_node_typed.getGroupByClusterKeyIndex();
+            size_t cluster_dims = 1;
+            int new_cluster_idx = 0;
+            for (int i = 0; i < orig_cluster_idx && i < static_cast<int>(group_by_list.size()); ++i)
+            {
+                const auto & elem = group_by_list[i];
+                if (auto * fn = elem->as<FunctionNode>(); fn != nullptr && fn->getFunctionName() == "tuple")
+                    new_cluster_idx += static_cast<int>(fn->getArguments().getNodes().size());
+                else
+                    new_cluster_idx += 1;
+            }
+            if (orig_cluster_idx >= 0 && orig_cluster_idx < static_cast<int>(group_by_list.size()))
+            {
+                const auto & cluster_elem = group_by_list[orig_cluster_idx];
+
+                /// Wider-than-64-bit numerics (`Int128/256`, `UInt128/256`,
+                /// `Decimal64/128/256`) lose precision before their natural range
+                /// when forced through `getFloat64` — reject them here so the user
+                /// gets a clear error instead of silent misclustering.
+                auto is_supported_scalar = [](const DataTypePtr & t)
+                {
+                    WhichDataType which(t);
+                    return which.isNativeInteger()
+                        || which.isFloat()
+                        || which.isDecimal32()
+                        || which.isDateOrDate32()
+                        || which.isDateTimeOrDateTime64()
+                        || which.isTimeOrTime64();
+                };
+
+                if (auto * fn = cluster_elem->as<FunctionNode>(); fn != nullptr && fn->getFunctionName() == "tuple")
+                {
+                    const auto & args = fn->getArguments().getNodes();
+                    if (args.size() != 2)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "GROUP BY ... WITH CLUSTER on a tuple expects exactly 2 elements, got {}",
+                            args.size());
+                    for (size_t i = 0; i < args.size(); ++i)
+                    {
+                        const auto & arg_type = args[i]->getResultType();
+                        if (!is_supported_scalar(arg_type))
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "GROUP BY ... WITH CLUSTER on a tuple requires numeric / temporal elements; "
+                                "element {} has type {}",
+                                i, arg_type->getName());
+                    }
+                    cluster_dims = 2;
+                }
+                else
+                {
+                    const auto & key_type = cluster_elem->getResultType();
+                    WhichDataType which(key_type);
+                    if (which.isTuple())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "GROUP BY ... WITH CLUSTER on a tuple-typed column is not supported. "
+                            "Use an inline tuple expression, e.g. `GROUP BY (p.1, p.2) WITH CLUSTER d`, "
+                            "to enable 2D Euclidean clustering.");
+                    if (!is_supported_scalar(key_type) && !which.isStringOrFixedString())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "GROUP BY ... WITH CLUSTER key must be a numeric / temporal / String / FixedString scalar, got {}",
+                            key_type->getName());
+                }
+            }
+            query_node_typed.setGroupByClusterKeyIndex(new_cluster_idx);
+            query_node_typed.setGroupByClusterDimensions(cluster_dims);
+        }
+
         expandTuplesInList(group_by_list);
 
         for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
