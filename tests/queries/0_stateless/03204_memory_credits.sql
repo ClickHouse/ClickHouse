@@ -3,7 +3,7 @@
 
 SET log_queries = 1;
 
-SELECT count() FROM (SELECT number FROM numbers(10000000) GROUP BY number % 100000) FORMAT Null
+SELECT count() FROM (SELECT number % 1000000 AS k FROM numbers(10000000) GROUP BY k) FORMAT Null
 SETTINGS max_threads = 4, log_comment = '03204_memory_credits';
 
 SYSTEM FLUSH LOGS;
