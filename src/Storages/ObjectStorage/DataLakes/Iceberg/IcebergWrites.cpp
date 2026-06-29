@@ -120,9 +120,71 @@ static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 namespace
 {
 
-/// Encode one partition tuple (a vector of `Field`s, in spec order) into the
-/// manifest entry's `partition` Avro record. Shared by the regular write path
-/// (INSERT) and the EXISTING-rewrite path (DROP PARTITION).
+avro::GenericDatum convertToAvro(const Field & field, const DataTypePtr & type)
+{
+    auto check_and_cast = []<typename To>(const Field & value, To & result)
+    {
+        switch (value.getType())
+        {
+            case Field::Types::Int64: {
+                if (value < std::numeric_limits<To>::min() || value > std::numeric_limits<To>::max())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition value {} does not fit into an Avro field", value);
+
+                result = static_cast<To>(value.safeGet<Int64>());
+                break;
+            }
+            case Field::Types::UInt64: {
+                const auto unsigned_value = value.safeGet<UInt64>();
+
+                if (unsigned_value > static_cast<UInt64>(std::numeric_limits<To>::max()))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS, "Partition value {} cannot be represented by Iceberg's signed long", unsigned_value);
+
+                result = static_cast<To>(unsigned_value);
+                break;
+            }
+            default:
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Field {} cannot be casted to int/long avro's type", value.getType());
+        }
+    };
+
+    switch (removeNullable(type)->getTypeId())
+    {
+        /// Avro `int` (32-bit) — see `getAvroType`.
+        case TypeIndex::UInt8:
+        case TypeIndex::Int8:
+        case TypeIndex::UInt16:
+        case TypeIndex::Int16:
+        case TypeIndex::UInt32:
+        case TypeIndex::Int32:
+        case TypeIndex::Date:
+        case TypeIndex::Date32:
+        case TypeIndex::Time: {
+            Int32 value = 0;
+            check_and_cast(field, value);
+            return avro::GenericDatum(value);
+        }
+        /// Avro `long` (64-bit).
+        case TypeIndex::UInt64:
+        case TypeIndex::Int64:
+        case TypeIndex::DateTime:
+        case TypeIndex::DateTime64: {
+            Int64 value = 0;
+            check_and_cast(field, value);
+            return avro::GenericDatum(value);
+        }
+        case TypeIndex::Float32:
+            return avro::GenericDatum(static_cast<float>(field.safeGet<Float64>()));
+        case TypeIndex::Float64:
+            return avro::GenericDatum(field.safeGet<Float64>());
+        case TypeIndex::String:
+            return avro::GenericDatum(field.safeGet<String>());
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type to write into avro file {}", type->getName());
+    }
+}
+
 void writePartitionRecord(
     avro::GenericRecord & partition_record,
     const std::vector<String> & partition_columns,
@@ -131,116 +193,43 @@ void writePartitionRecord(
 {
     for (size_t i = 0; i < partition_columns.size(); ++i)
     {
-        /// Build the Avro datum that holds the actual partition value (without the surrounding union).
-        /// The Avro width is chosen from the partition column type, mirroring `getAvroType`, NOT from the
-        /// `Field` tag: ClickHouse stores `UInt8/16/32` (and `Date`) as `Field::UInt64`, so keying on the
-        /// tag would emit an Avro `long` for a field declared `int` and corrupt the survivor manifest.
-        auto read_int = [&]() -> Int64
-        {
-            const Field & value = partition_values.at(i);
-            /// `DateTime64`/`Time64` partition values are stored as a `Decimal64` `Field`, but Iceberg
-            /// encodes them as an Avro `long` (the underlying integer ticks), so unwrap the decimal here.
-            if (value.getType() == Field::Types::Decimal64)
-                return value.safeGet<Decimal64>().getValue().value;
-            if (value.getType() == Field::Types::Decimal32)
-                return value.safeGet<Decimal32>().getValue().value;
-            if (value.getType() == Field::Types::UInt64)
-            {
-                const UInt64 unsigned_value = value.safeGet<UInt64>();
-                if (unsigned_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Partition value {} of column {} cannot be represented by Iceberg's signed long",
-                        unsigned_value,
-                        partition_columns[i]);
-                return static_cast<Int64>(unsigned_value);
-            }
-            return value.safeGet<Int64>();
-        };
-
-        auto make_value_datum = [&]() -> avro::GenericDatum
-        {
-            switch (removeNullable(partition_types[i])->getTypeId())
-            {
-                /// Avro `int` (32-bit) — see `getAvroType`.
-                case TypeIndex::UInt8:
-                case TypeIndex::Int8:
-                case TypeIndex::UInt16:
-                case TypeIndex::Int16:
-                case TypeIndex::UInt32:
-                case TypeIndex::Int32:
-                case TypeIndex::Date:
-                case TypeIndex::Date32:
-                case TypeIndex::Time:
-                {
-                    const Int64 value = read_int();
-                    if (value < std::numeric_limits<Int32>::min() || value > std::numeric_limits<Int32>::max())
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Partition value {} of column {} does not fit into an Avro int field",
-                            value,
-                            partition_columns[i]);
-                    return avro::GenericDatum(static_cast<int32_t>(value));
-                }
-                /// Avro `long` (64-bit).
-                case TypeIndex::UInt64:
-                case TypeIndex::Int64:
-                case TypeIndex::DateTime:
-                case TypeIndex::DateTime64:
-                    return avro::GenericDatum(read_int());
-                case TypeIndex::Float32:
-                    return avro::GenericDatum(static_cast<float>(partition_values[i].safeGet<Float64>()));
-                case TypeIndex::Float64:
-                    return avro::GenericDatum(partition_values[i].safeGet<Float64>());
-                case TypeIndex::String:
-                    return avro::GenericDatum(partition_values[i].safeGet<String>());
-                default:
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Unsupported type to write into avro file {}",
-                        partition_types[i]->getName());
-            }
-        };
-
-        const bool is_nullable_partition = partition_types[i]->isNullable();
         const bool is_null_value = partition_values[i].getType() == Field::Types::Null;
+        const bool is_nullable_partition = partition_types[i]->isNullable();
 
-        if (is_nullable_partition)
+        if (!is_nullable_partition && is_null_value)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Got NULL partition value for non-nullable partition column {}", partition_columns[i]);
+
+        if (!is_nullable_partition)
         {
-            /// Nullable partition columns are encoded as Avro `["null", T]`
-            /// unions. NULL selects branch 0; a concrete value selects branch 1.
-            /// See issue #105852: before this change, NULL partition values were
-            /// silently written as 0 because the schema was non-nullable.
-            size_t field_index = 0;
-            if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Partition field {} not found in manifest schema",
-                    partition_columns[i]);
+            partition_record.field(partition_columns[i]) = convertToAvro(partition_values[i], partition_types[i]);
+            continue;
+        }
 
-            const avro::NodePtr & union_schema = partition_record.schema()->leafAt(static_cast<UInt32>(field_index));
+        /// Nullable partition columns are encoded as Avro `["null", T]`
+        /// unions. NULL selects branch 0; a concrete value selects branch 1.
+        /// See issue #105852: before this change, NULL partition values were
+        /// silently written as 0 because the schema was non-nullable.
+        size_t field_index = 0;
+        if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Partition field {} not found in manifest schema",
+                partition_columns[i]);
 
-            avro::GenericUnion union_field(union_schema);
-            if (is_null_value)
-            {
-                union_field.selectBranch(0);
-            }
-            else
-            {
-                union_field.selectBranch(1);
-                union_field.datum() = make_value_datum();
-            }
-            partition_record.field(partition_columns[i]) = avro::GenericDatum(union_schema, union_field);
+        const avro::NodePtr & union_schema = partition_record.schema()->leafAt(static_cast<UInt32>(field_index));
+
+        avro::GenericUnion union_field(union_schema);
+        if (is_null_value)
+        {
+            union_field.selectBranch(0);
         }
         else
         {
-            if (is_null_value)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Got NULL partition value for non-nullable partition column {}",
-                    partition_columns[i]);
-            partition_record.field(partition_columns[i]) = make_value_datum();
+            union_field.selectBranch(1);
+            union_field.datum() = convertToAvro(partition_values[i], partition_types[i]);
         }
+        partition_record.field(partition_columns[i]) = avro::GenericDatum(union_schema, union_field);
     }
 }
 
