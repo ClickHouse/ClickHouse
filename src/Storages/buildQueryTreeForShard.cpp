@@ -1034,8 +1034,12 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     const Block & shard_header,
-    const Block & expected_header)
+    const Block & expected_header,
+    std::unordered_map<String, String> * duplicate_to_representative)
 {
+    if (duplicate_to_representative)
+        duplicate_to_representative->clear();
+
     if (!planner_context || !query_tree)
         return {};
 
@@ -1113,11 +1117,23 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
 
     ActionsDAG::NodeRawConstPtrs outputs;
     outputs.reserve(expected_header.columns());
+    /// The first expected column mapping onto a given shard column is its "representative"; any later expected column
+    /// mapping onto the same shard column is a duplicate of that representative. Report those duplicates so a downstream
+    /// aggregation merge can bucket by only the representative key columns (matching the shard's collapsed bucketing).
+    std::unordered_map<size_t, String> representative_for_shard_index;
     for (size_t i = 0; i < expected_header.columns(); ++i)
     {
         const auto & expected_name = expected_header.getByPosition(i).name;
-        const auto * source_node = shard_input_nodes[shard_index_for_expected[i]];
+        const size_t shard_index = shard_index_for_expected[i];
+        const auto * source_node = shard_input_nodes[shard_index];
         outputs.push_back(&dag.addAlias(*source_node, expected_name));
+
+        if (duplicate_to_representative)
+        {
+            auto [it, inserted] = representative_for_shard_index.emplace(shard_index, expected_name);
+            if (!inserted && it->second != expected_name)
+                duplicate_to_representative->emplace(expected_name, it->second);
+        }
     }
 
     dag.getOutputs() = std::move(outputs);

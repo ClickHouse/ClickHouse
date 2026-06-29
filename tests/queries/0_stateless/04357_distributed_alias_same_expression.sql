@@ -63,6 +63,29 @@ SELECT a1, a2, b FROM dist_same_expr ORDER BY dt DESC LIMIT 1;
 SELECT a1, a2 FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1;
 SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1;
 
+-- GROUP BY on duplicate ALIAS columns under two-level / memory-efficient distributed aggregation. The shard inlines
+-- a1, a2 into the same expression and deduplicates the GROUP BY to a single key before computing its two-level bucket
+-- numbers, while the initiator keeps a1 and a2 distinct. The initiator must therefore merge (and bucket) by only the
+-- single collapsed key, otherwise equal groups coming from different shards land in different two-level buckets and are
+-- never merged - returning a group once per shard with a split count instead of one merged row.
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1
+    SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, prefer_localhost_replica = 0, distributed_aggregation_memory_efficient = 1;
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1
+    SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, prefer_localhost_replica = 0, distributed_aggregation_memory_efficient = 0;
+
+-- GROUP BY duplicate ALIAS columns WITH ROLLUP / WITH CUBE. The merge over the collapsed key set must reconstruct the
+-- duplicate key columns back into the canonical aggregated layout (all GROUP BY keys first, then the aggregate-state
+-- columns) before the ROLLUP/CUBE step, which reads the merged block positionally (the first keys_size columns as keys,
+-- the rest as aggregate states). If the dropped duplicate key were appended after the aggregate states instead, the
+-- count() state would be read as key #2 and the reconstructed a2 as the aggregate state, throwing 'Bad cast ... to
+-- ColumnAggregateFunction' or producing wrong rollup/cube totals.
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 WITH ROLLUP ORDER BY a1, a2, c
+    SETTINGS prefer_localhost_replica = 0;
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 WITH CUBE ORDER BY a1, a2, c
+    SETTINGS prefer_localhost_replica = 0;
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 WITH ROLLUP ORDER BY a1, a2, c
+    SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1;
+
 -- The collapse may happen inside a subquery that feeds an outer query. The subquery's distributed read is
 -- renumbered independently from the initiator's query tree, so reconciling the collapsed shard header by column
 -- name has to account for the differing `__tableN` table aliases.

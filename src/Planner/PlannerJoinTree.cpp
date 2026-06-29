@@ -1534,6 +1534,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         table_expression->formatASTForErrorMessage());
     }
 
+    /// Filled by `buildShardCollapseFanOut` below: duplicate GROUP BY key columns the shard collapsed before bucketing.
+    /// Propagated to the outer planner so a distributed aggregation merge buckets by only the representative keys.
+    std::unordered_map<String, String> shard_collapse_duplicate_keys;
+
     if (till_stage == QueryProcessingStage::FetchColumns)
     {
         ActionsDAG rename_actions_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
@@ -1611,7 +1615,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     select_query_info.query_tree,
                     select_query_info.planner_context,
                     *query_plan.getCurrentHeader(),
-                    *expected_header))
+                    *expected_header,
+                    &shard_collapse_duplicate_keys))
             {
                 auto fan_out_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(*fan_out_actions_dag));
                 fan_out_step->setStepDescription("Reconstruct deduplicated duplicate-ALIAS columns");
@@ -1662,6 +1667,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         .useful_sets = std::move(useful_sets),
         .query_node_to_plan_step_mapping = std::move(query_node_to_plan_step_mapping),
         .source_constants = std::move(source_constants),
+        .shard_collapse_duplicate_keys = std::move(shard_collapse_duplicate_keys),
     };
 }
 

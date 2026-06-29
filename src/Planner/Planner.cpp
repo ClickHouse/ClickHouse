@@ -755,7 +755,8 @@ void addAggregationStep(QueryPlan & query_plan,
 void addMergingAggregatedStep(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const std::unordered_map<String, String> & shard_collapse_duplicate_keys)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -775,7 +776,61 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
       * but it can work more slowly.
       */
 
-    const auto & keys = aggregation_analysis_result.aggregation_keys;
+    const auto & analysis_keys = aggregation_analysis_result.aggregation_keys;
+
+    /// When the query reads from a Distributed table whose duplicate-ALIAS GROUP BY keys the shard collapsed into a
+    /// single key before computing two-level bucket numbers (see `buildShardCollapseFanOut`), the initiator must merge
+    /// by only the representative key columns. Otherwise the initiator would bucket by more key columns than the shard
+    /// did, so equal groups from different shards could land in different two-level buckets and never merge.
+    /// `merge_keys` drops the duplicate keys; the dropped columns are reconstructed (aliased to their representative)
+    /// after the merge so the output header is unchanged.
+    Names merge_keys;
+    std::vector<std::pair<String /*duplicate*/, String /*representative*/>> dropped_duplicate_keys;
+    if (!shard_collapse_duplicate_keys.empty() && aggregation_analysis_result.grouping_sets_parameters_list.empty())
+    {
+        const NameSet analysis_keys_set(analysis_keys.begin(), analysis_keys.end());
+        merge_keys.reserve(analysis_keys.size());
+        for (const auto & key : analysis_keys)
+        {
+            auto it = shard_collapse_duplicate_keys.find(key);
+            /// Drop `key` only when it is a recognized duplicate AND its representative is itself a merge key, so the
+            /// representative remains available to reconstruct the dropped column after merging.
+            if (it != shard_collapse_duplicate_keys.end() && analysis_keys_set.contains(it->second))
+                dropped_duplicate_keys.emplace_back(key, it->second);
+            else
+                merge_keys.push_back(key);
+        }
+        if (dropped_duplicate_keys.empty())
+            merge_keys = analysis_keys;
+    }
+    else
+    {
+        merge_keys = analysis_keys;
+    }
+
+    const auto & keys = merge_keys;
+
+    /// Drop the duplicate key columns from the input before merging so the merge sees the same key layout the shard
+    /// produced (representative keys followed by aggregate states). They are reconstructed right after the merge.
+    /// The aggregate columns are unaffected: they are matched by name in the merge, not by position.
+    if (!dropped_duplicate_keys.empty())
+    {
+        NameSet drop_set;
+        for (const auto & [duplicate_name, representative_name] : dropped_duplicate_keys)
+            drop_set.insert(duplicate_name);
+
+        ActionsDAG drop_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+        ActionsDAG::NodeRawConstPtrs kept_outputs;
+        kept_outputs.reserve(drop_dag.getOutputs().size());
+        for (const auto * output : drop_dag.getOutputs())
+            if (!drop_set.contains(output->result_name))
+                kept_outputs.push_back(output);
+        drop_dag.getOutputs() = std::move(kept_outputs);
+
+        auto drop_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(drop_dag));
+        drop_step->setStepDescription("Drop collapsed duplicate-ALIAS GROUP BY keys before merge");
+        query_plan.addStep(std::move(drop_step));
+    }
 
     /// For count() without parameters try to use just one thread
     /// Typically this will either be a trivial count or a really small number of states
@@ -820,6 +875,61 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         settings[Setting::aggregation_in_order_max_block_bytes],
         settings[Setting::enable_memory_bound_merging_of_aggregation_results]);
     query_plan.addStep(std::move(merging_aggregated));
+
+    /// Reconstruct the canonical aggregated layout the rest of the plan expects: all original aggregation keys first,
+    /// in their declared order, then the aggregate-state columns. The merge produced [representative keys, aggregate
+    /// states] (dropping the duplicate keys); each dropped key is identical to its representative (which the merge
+    /// kept), so it is restored as an alias and placed back in its original key position. Emitting the full
+    /// [keys..., aggregate states...] layout (rather than appending the duplicates at the end) is required because a
+    /// following ROLLUP/CUBE step reads the merged block positionally - the first keys_size columns as the GROUP BY
+    /// keys and the remaining columns as aggregate states - and ROLLUP/CUBE reach this path with an empty
+    /// grouping_sets_parameters_list, so they are not excluded by the guard above.
+    if (!dropped_duplicate_keys.empty())
+    {
+        std::unordered_map<std::string_view, String> representative_by_duplicate;
+        for (const auto & [duplicate_name, representative_name] : dropped_duplicate_keys)
+            representative_by_duplicate.emplace(duplicate_name, representative_name);
+
+        ActionsDAG reconstruct_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+        std::unordered_map<std::string_view, const ActionsDAG::Node *> output_by_name;
+        for (const auto * output : reconstruct_dag.getOutputs())
+            output_by_name.emplace(output->result_name, output);
+
+        const NameSet analysis_keys_set(analysis_keys.begin(), analysis_keys.end());
+
+        ActionsDAG::NodeRawConstPtrs new_outputs;
+        new_outputs.reserve(reconstruct_dag.getOutputs().size() + dropped_duplicate_keys.size());
+
+        /// 1. All original aggregation keys, in their declared order: a representative is kept as-is, a dropped
+        ///    duplicate is restored as an alias of its representative.
+        for (const auto & key : analysis_keys)
+        {
+            auto dup_it = representative_by_duplicate.find(key);
+            if (dup_it != representative_by_duplicate.end())
+            {
+                auto rep_it = output_by_name.find(dup_it->second);
+                if (rep_it != output_by_name.end())
+                    new_outputs.push_back(&reconstruct_dag.addAlias(*rep_it->second, key));
+            }
+            else
+            {
+                auto it = output_by_name.find(key);
+                if (it != output_by_name.end())
+                    new_outputs.push_back(it->second);
+            }
+        }
+
+        /// 2. The aggregate-state columns (everything in the merge output that is not a GROUP BY key), in order.
+        for (const auto * output : reconstruct_dag.getOutputs())
+            if (!analysis_keys_set.contains(output->result_name))
+                new_outputs.push_back(output);
+
+        reconstruct_dag.getOutputs() = std::move(new_outputs);
+
+        auto reconstruct_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(reconstruct_dag));
+        reconstruct_step->setStepDescription("Reconstruct collapsed duplicate-ALIAS GROUP BY keys");
+        query_plan.addStep(std::move(reconstruct_step));
+    }
 }
 
 void addTotalsHavingStep(QueryPlan & query_plan,
@@ -2353,7 +2463,7 @@ void Planner::buildPlanForQueryNode()
         if (expression_analysis_result.hasAggregation())
         {
             const auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
-            addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
+            addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, join_tree_query_plan.shard_collapse_duplicate_keys);
         }
     }
 
@@ -2466,7 +2576,7 @@ void Planner::buildPlanForQueryNode()
 
             if (!query_processing_info.isFirstStage())
             {
-                addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
+                addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, join_tree_query_plan.shard_collapse_duplicate_keys);
             }
 
             bool having_executed = false;
