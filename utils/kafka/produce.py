@@ -1,15 +1,15 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# `pip install …`
-import kafka  # … kafka-python
-
 import argparse
-from concurrent.futures import ThreadPoolExecutor
 import enum
 import multiprocessing
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
+
+# `pip install …`
+import kafka  # … kafka-python
 
 
 class Sync(enum.Enum):

@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -36,7 +37,9 @@ def cleanup_after_test():
         yield
     finally:
         instance.query("DROP USER IF EXISTS A, B, C")
-        instance.query("DROP TABLE IF EXISTS test.view_1")
+        instance.query("DROP DATABASE IF EXISTS test_fs_db")
+
+        instance.query("DROP TABLE IF EXISTS test.view_1, test.view_2, default.table")
 
 
 def test_smoke():
@@ -144,7 +147,8 @@ def test_allowed_grantees():
 
     instance.query("ALTER USER A GRANTEES ANY EXCEPT B")
     assert (
-        instance.query("SHOW CREATE USER A") == "CREATE USER A GRANTEES ANY EXCEPT B\n"
+        instance.query("SHOW CREATE USER A")
+        == "CREATE USER A IDENTIFIED WITH no_password GRANTEES ANY EXCEPT B\n"
     )
     expected_error = "user `B` is not allowed as grantee"
     assert expected_error in instance.query_and_get_error(
@@ -157,7 +161,10 @@ def test_allowed_grantees():
     instance.query("REVOKE SELECT ON test.table FROM B", user="A")
 
     instance.query("ALTER USER A GRANTEES ANY")
-    assert instance.query("SHOW CREATE USER A") == "CREATE USER A\n"
+    assert (
+        instance.query("SHOW CREATE USER A")
+        == "CREATE USER A IDENTIFIED WITH no_password\n"
+    )
     instance.query("GRANT SELECT ON test.table TO B", user="A")
     assert instance.query("SELECT * FROM test.table", user="B") == "1\t5\n2\t10\n"
 
@@ -169,7 +176,8 @@ def test_allowed_grantees():
 
     instance.query("CREATE USER C GRANTEES ANY EXCEPT C")
     assert (
-        instance.query("SHOW CREATE USER C") == "CREATE USER C GRANTEES ANY EXCEPT C\n"
+        instance.query("SHOW CREATE USER C")
+        == "CREATE USER C IDENTIFIED WITH no_password GRANTEES ANY EXCEPT C\n"
     )
     instance.query("GRANT SELECT ON test.table TO C WITH GRANT OPTION")
     assert instance.query("SELECT * FROM test.table", user="C") == "1\t5\n2\t10\n"
@@ -185,7 +193,7 @@ def test_grant_all_on_table():
     instance.query("GRANT ALL ON test.table TO B", user="A")
     assert (
         instance.query("SHOW GRANTS FOR B")
-        == "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM FLUSH DISTRIBUTED, SYSTEM UNLOAD PRIMARY KEY, dictGet ON test.`table` TO B\n"
+        == "GRANT CHECK, SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM REDUCE BLOCKING PARTS, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM RESTORE DATABASE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM FLUSH DISTRIBUTED, SYSTEM FLUSH OBJECT STORAGE QUEUE, SYSTEM LOAD PRIMARY KEY, SYSTEM UNLOAD PRIMARY KEY, dictGet ON test.`table` TO B\n"
     )
     instance.query("REVOKE ALL ON test.table FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
@@ -359,6 +367,8 @@ def test_implicit_create_view_grant():
     instance.query("GRANT CREATE VIEW ON test.* TO B", user="A")
     instance.query("CREATE VIEW test.view_2 AS SELECT 1", user="B")
     assert instance.query("SELECT * FROM test.view_2") == "1\n"
+    instance.query("DROP USER A")
+    instance.query("DROP VIEW test.view_2")
 
 
 def test_implicit_create_temporary_table_grant():
@@ -377,6 +387,26 @@ def test_implicit_create_temporary_table_grant():
         "CREATE TEMPORARY TABLE tmp(name String)", user="A"
     )
 
+def test_implicit_create_temporary_view_grant():
+    instance.query("CREATE USER A")
+    expected_error = "Not enough privileges"
+
+    # No privs -> should fail
+    assert expected_error in instance.query_and_get_error(
+        "CREATE TEMPORARY VIEW tmp(name String) AS SELECT 'x'", user="A"
+    )
+
+    # Grant the correct privilege for temp views
+    instance.query("GRANT CREATE VIEW ON *.* TO A")
+
+    # Now it should succeed
+    instance.query("CREATE TEMPORARY VIEW tmp(name String) AS SELECT 'x'", user="A")
+
+    # Revoke and ensure it fails again
+    instance.query("REVOKE CREATE VIEW ON *.* FROM A")
+    assert expected_error in instance.query_and_get_error(
+        "CREATE TEMPORARY VIEW tmp2(name String) AS SELECT 'y'", user="A"
+    )
 
 def test_introspection():
     instance.query("CREATE USER A")
@@ -385,15 +415,22 @@ def test_introspection():
     instance.query("GRANT CREATE ON *.* TO B WITH GRANT OPTION")
 
     assert instance.query("SHOW USERS") == TSV(["A", "B", "default"])
-    assert instance.query("SHOW CREATE USERS A") == TSV(["CREATE USER A"])
-    assert instance.query("SHOW CREATE USERS B") == TSV(["CREATE USER B"])
+    assert instance.query("SHOW CREATE USERS A") == TSV(
+        ["CREATE USER A IDENTIFIED WITH no_password"]
+    )
+    assert instance.query("SHOW CREATE USERS B") == TSV(
+        ["CREATE USER B IDENTIFIED WITH no_password"]
+    )
     assert instance.query("SHOW CREATE USERS A,B") == TSV(
-        ["CREATE USER A", "CREATE USER B"]
+        [
+            "CREATE USER A IDENTIFIED WITH no_password",
+            "CREATE USER B IDENTIFIED WITH no_password",
+        ]
     )
     assert instance.query("SHOW CREATE USERS") == TSV(
         [
-            "CREATE USER A",
-            "CREATE USER B",
+            "CREATE USER A IDENTIFIED WITH no_password",
+            "CREATE USER B IDENTIFIED WITH no_password",
             "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE `default`",
         ]
     )
@@ -452,8 +489,8 @@ def test_introspection():
     assert expected_error in instance.query_and_get_error("SHOW GRANTS FOR B", user="A")
 
     expected_access1 = (
-        "CREATE USER A\n"
-        "CREATE USER B\n"
+        "CREATE USER A IDENTIFIED WITH no_password\n"
+        "CREATE USER B IDENTIFIED WITH no_password\n"
         "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE `default`"
     )
     expected_access2 = (
@@ -471,8 +508,8 @@ def test_introspection():
             [
                 "A",
                 "local_directory",
-                "no_password",
-                "{}",
+                "['no_password']",
+                "['{}']",
                 "['::/0']",
                 "[]",
                 "[]",
@@ -484,8 +521,8 @@ def test_introspection():
             [
                 "B",
                 "local_directory",
-                "no_password",
-                "{}",
+                "['no_password']",
+                "['{}']",
                 "['::/0']",
                 "[]",
                 "[]",
@@ -501,8 +538,8 @@ def test_introspection():
         "SELECT * from system.grants WHERE user_name IN ('A', 'B') ORDER BY user_name, access_type, grant_option"
     ) == TSV(
         [
-            ["A", "\\N", "SELECT", "test", "table", "\\N", 0, 0],
-            ["B", "\\N", "CREATE", "\\N", "\\N", "\\N", 0, 1],
+            ["A", "\\N", "SELECT", "", "test", "table", "\\N", 0, 0, 0],
+            ["B", "\\N", "CREATE", "", "\\N", "\\N", "\\N", 0, 1, 0],
         ]
     )
 
@@ -530,6 +567,7 @@ def test_current_database():
     assert "Not enough privileges" in instance.query_and_get_error(
         "SELECT * FROM table", user="A"
     )
+    instance.query("DROP TABLE default.table SYNC")
 
 
 def test_grant_with_replace_option():
@@ -789,3 +827,50 @@ def test_table_engine_and_source_grant():
     )
 
     instance.query("DROP TABLE test.table1")
+
+
+def test_source_grant_bridges_to_table_engine():
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE TABLE ON test.table1 TO A")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE TABLE test.table1(a Integer) engine=URL('http://localhost:65535/dummy', 'CSV')",
+        user="A",
+    )
+
+    instance.query("GRANT READ, WRITE ON URL TO A")
+
+    instance.query(
+        "CREATE TABLE test.table1(a Integer) engine=URL('http://localhost:65535/dummy', 'CSV')",
+        user="A",
+    )
+
+    instance.query("DROP TABLE test.table1")
+
+    instance.query("REVOKE READ, WRITE ON URL FROM A")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE TABLE test.table1(a Integer) engine=URL('http://localhost:65535/dummy', 'CSV')",
+        user="A",
+    )
+
+
+def test_source_grant_bridges_to_database_engine():
+    # When table_engines_require_grant = true, database engines with source_access_type
+    # should also be grantable via source READ/WRITE grants (same as table engines).
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE DATABASE ON *.* TO A")
+
+    # No source grant → blocked.
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE DATABASE test_fs_db ENGINE = Filesystem",
+        user="A",
+    )
+
+    # Grant FILE source access → Filesystem database engine is now allowed.
+    instance.query("GRANT READ, WRITE ON FILE TO A")
+
+    instance.query("CREATE DATABASE test_fs_db ENGINE = Filesystem", user="A")
+    instance.query("DROP DATABASE test_fs_db")

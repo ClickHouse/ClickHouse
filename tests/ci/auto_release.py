@@ -5,13 +5,12 @@ import os
 import sys
 from typing import List
 
+from ci_buddy import CIBuddy
+from ci_utils import GH, Shell
+from env_helper import GITHUB_REPOSITORY
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
-from ci_utils import Shell
-from env_helper import GITHUB_REPOSITORY
 from report import SUCCESS
-from ci_buddy import CIBuddy
-from ci_config import CI
 
 
 def parse_args():
@@ -44,8 +43,9 @@ def parse_args():
     return parser.parse_args(), parser
 
 
-MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 5
+MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 8
 AUTORELEASE_INFO_FILE = "/tmp/autorelease_info.json"
+AUTORELEASE_MATRIX_PARAMS = "/tmp/autorelease_params.json"
 
 
 @dataclasses.dataclass
@@ -57,6 +57,7 @@ class ReleaseParams:
     commit_sha: str
     commits_to_branch_head: int
     latest: bool
+    description: str = ""
 
     def to_dict(self):
         return dataclasses.asdict(self)
@@ -74,6 +75,14 @@ class AutoReleaseInfo:
         with open(AUTORELEASE_INFO_FILE, "w", encoding="utf-8") as f:
             print(json.dumps(dataclasses.asdict(self), indent=2), file=f)
 
+        # dump file for GH action matrix that is similar to the file above but with dropped not ready release branches
+        params = dataclasses.asdict(self)
+        params["releases"] = [
+            release for release in params["releases"] if release["ready"]
+        ]
+        with open(AUTORELEASE_MATRIX_PARAMS, "w", encoding="utf-8") as f:
+            print(json.dumps(params, indent=2), file=f)
+
     @staticmethod
     def from_file() -> "AutoReleaseInfo":
         with open(AUTORELEASE_INFO_FILE, "r", encoding="utf-8") as json_file:
@@ -86,6 +95,16 @@ def _prepare(token):
     assert len(token) > 10
     os.environ["GH_TOKEN"] = token
     Shell.check("gh auth status")
+
+    # Check all previous version bump prs were merged
+    open_version_change_prs = Shell.get_output(
+        'gh pr list  --state open --search "Update version_date.tsv" --json number,title'
+    )
+    if open_version_change_prs != "[]":
+        CIBuddy(dry_run=False).post_critical(
+            "Found not merged version bump PRs", body=open_version_change_prs
+        )
+        raise RuntimeError()
 
     gh = GitHub(token)
     prs = gh.get_release_pulls(GITHUB_REPOSITORY)
@@ -102,7 +121,6 @@ def _prepare(token):
         refs = list(repo.get_git_matching_refs(f"tags/v{pr.head.ref}"))
         assert refs
 
-        refs.sort(key=lambda ref: ref.ref)
         latest_release_tag_ref = refs[-1]
         latest_release_tag = repo.get_git_tag(latest_release_tag_ref.object.sha)
 
@@ -110,6 +128,10 @@ def _prepare(token):
             f"git rev-list --first-parent {latest_release_tag.tag}..origin/{pr.head.ref}",
         ).split("\n")
         commit_num = len(commits)
+        if latest_release_tag.tag.endswith("new"):
+            print("It's a new release branch - skip auto release for it")
+            continue
+
         print(
             f"Previous release [{latest_release_tag.tag}] was [{commit_num}] commits ago, date [{latest_release_tag.tagger.date}]"
         )
@@ -119,6 +141,7 @@ def _prepare(token):
         commit_ci_status = ""
         commits_to_branch_head = 0
 
+        description = ""
         for idx, commit in enumerate(
             commits_to_check[:MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE]
         ):
@@ -127,23 +150,25 @@ def _prepare(token):
             )
             commit_num -= 1
 
-            is_completed = CI.GH.check_wf_completed(token=token, commit_sha=commit)
+            is_completed = GH.check_wf_completed(token=token, commit_sha=commit)
             if not is_completed:
                 print(f"CI is in progress for [{commit}] - check previous commit")
                 commits_to_branch_head += 1
                 continue
 
-            commit_ci_status = CI.GH.get_commit_status_by_name(
-                token=token,
-                commit_sha=commit,
-                status_name=(CI.JobNames.BUILD_CHECK, "ClickHouse build check"),
-            )
-            commit_sha = commit
-            if commit_ci_status == SUCCESS:
+            failed_jobs = GH.get_failed_statuses(token=token, commit_sha=commit)
+            if not failed_jobs:
+                commit_sha = commit
+                commit_ci_status = SUCCESS
                 break
-
-            print(f"CI status [{commit_ci_status}] - skip")
-            commits_to_branch_head += 1
+            else:
+                print(
+                    f"CI failed for [{commit}]: {failed_jobs} - check previous commit"
+                )
+                # Save the description from the most recent failed commit
+                if not description:
+                    description = f"Failed jobs: {failed_jobs}"
+                commits_to_branch_head += 1
 
         ready = False
         if commit_ci_status == SUCCESS and commit_sha:
@@ -163,6 +188,7 @@ def _prepare(token):
                 num_patches=commit_num,
                 commits_to_branch_head=commits_to_branch_head,
                 latest=False,
+                description=description if not ready else "",
             )
         )
 
@@ -200,7 +226,7 @@ def main():
             )
         else:
             CIBuddy(dry_run=False).post_info(
-                title=f"Autorelease completed",
+                title="Autorelease completed",
                 body="",
                 with_wf_link=True,
             )

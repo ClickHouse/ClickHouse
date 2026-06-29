@@ -1,8 +1,13 @@
 #include <Processors/ForkProcessor.h>
-
+#include <Processors/Port.h>
 
 namespace DB
 {
+
+ForkProcessor::ForkProcessor(const Block & header, size_t num_outputs)
+    : IProcessor(InputPorts{header}, OutputPorts(num_outputs, header))
+{
+}
 
 ForkProcessor::Status ForkProcessor::prepare()
 {

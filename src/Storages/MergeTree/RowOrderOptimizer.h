@@ -1,11 +1,13 @@
 #pragma once
 
-#include <Columns/IColumn.h>
-#include <Core/Block.h>
-#include <Core/SortDescription.h>
+#include <Common/PODArray_fwd.h>
 
 namespace DB
 {
+
+class Block;
+using IColumnPermutation = PaddedPODArray<size_t>;
+class SortDescription;
 
 class RowOrderOptimizer
 {
@@ -20,7 +22,7 @@ public:
     /// - Determine (estimate) for each equal range the cardinality of each non-sorting-key column.
     /// - The simple heuristics applied is that non-sorting key columns will be sorted (within each equal range) in order of ascending
     ///   cardinality. This maximizes the length of equal-value runs within the non-sorting-key columns, leading to better compressability.
-    static void optimize(const Block & block, const SortDescription & sort_description, IColumn::Permutation & permutation);
+    static void optimize(const Block & block, const SortDescription & sort_description, IColumnPermutation & permutation);
 };
 
 }

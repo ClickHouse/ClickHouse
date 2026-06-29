@@ -25,8 +25,13 @@ bool lessOp(A a, B b)
         return a < b;
 
     /// float vs float
-    if constexpr (std::is_floating_point_v<A> && std::is_floating_point_v<B>)
+    if constexpr (is_floating_point<A> && is_floating_point<B>)
+    {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
         return a < b;
+#pragma clang diagnostic pop
+    }
 
     /// anything vs NaN
     if (isNaN(a) || isNaN(b))
@@ -49,7 +54,7 @@ bool lessOp(A a, B b)
     }
 
     /// int vs float
-    if constexpr (is_integer<A> && std::is_floating_point_v<B>)
+    if constexpr (is_integer<A> && is_floating_point<B>)
     {
         if constexpr (sizeof(A) <= 4)
             return static_cast<double>(a) < static_cast<double>(b);
@@ -57,7 +62,7 @@ bool lessOp(A a, B b)
         return DecomposedFloat<B>(b).greater(a);
     }
 
-    if constexpr (std::is_floating_point_v<A> && is_integer<B>)
+    if constexpr (is_floating_point<A> && is_integer<B>)
     {
         if constexpr (sizeof(B) <= 4)
             return static_cast<double>(a) < static_cast<double>(b);
@@ -65,8 +70,8 @@ bool lessOp(A a, B b)
         return DecomposedFloat<A>(a).less(b);
     }
 
-    static_assert(is_integer<A> || std::is_floating_point_v<A>);
-    static_assert(is_integer<B> || std::is_floating_point_v<B>);
+    static_assert(is_integer<A> || is_floating_point<A>);
+    static_assert(is_integer<B> || is_floating_point<B>);
     UNREACHABLE();
 }
 
@@ -101,8 +106,13 @@ bool equalsOp(A a, B b)
         return a == b;
 
     /// float vs float
-    if constexpr (std::is_floating_point_v<A> && std::is_floating_point_v<B>)
+    if constexpr (is_floating_point<A> && is_floating_point<B>)
+    {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
         return a == b;
+#pragma clang diagnostic pop
+    }
 
     /// anything vs NaN
     if (isNaN(a) || isNaN(b))
@@ -125,7 +135,7 @@ bool equalsOp(A a, B b)
     }
 
     /// int vs float
-    if constexpr (is_integer<A> && std::is_floating_point_v<B>)
+    if constexpr (is_integer<A> && is_floating_point<B>)
     {
         if constexpr (sizeof(A) <= 4)
             return static_cast<double>(a) == static_cast<double>(b);
@@ -133,7 +143,7 @@ bool equalsOp(A a, B b)
         return DecomposedFloat<B>(b).equals(a);
     }
 
-    if constexpr (std::is_floating_point_v<A> && is_integer<B>)
+    if constexpr (is_floating_point<A> && is_integer<B>)
     {
         if constexpr (sizeof(B) <= 4)
             return static_cast<double>(a) == static_cast<double>(b);
@@ -163,7 +173,7 @@ inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
         return true;
     }
 
-    if constexpr (std::is_floating_point_v<From> && std::is_floating_point_v<To>)
+    if constexpr (is_floating_point<From> && is_floating_point<To>)
     {
         /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
         if (isNaN(value))
@@ -209,12 +219,21 @@ template <typename A, typename B> struct EqualsOp
     using SymmetricOp = EqualsOp<B, A>;
 
     static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); }
+    static constexpr bool compilable = true;
+};
+
+template <typename A, typename B> struct IsNotDistinctFromOp
+{
+    using SymmetricOp = IsNotDistinctFromOp<B, A>;
+    static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); }
+    static constexpr bool compilable = true;
 };
 
 template <typename A, typename B> struct NotEqualsOp
 {
     using SymmetricOp = NotEqualsOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::notEqualsOp(a, b); }
+    static constexpr bool compilable = true;
 };
 
 template <typename A, typename B> struct GreaterOp;
@@ -223,12 +242,14 @@ template <typename A, typename B> struct LessOp
 {
     using SymmetricOp = GreaterOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::lessOp(a, b); }
+    static constexpr bool compilable = true;
 };
 
 template <typename A, typename B> struct GreaterOp
 {
     using SymmetricOp = LessOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::greaterOp(a, b); }
+    static constexpr bool compilable = true;
 };
 
 template <typename A, typename B> struct GreaterOrEqualsOp;
@@ -237,12 +258,14 @@ template <typename A, typename B> struct LessOrEqualsOp
 {
     using SymmetricOp = GreaterOrEqualsOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::lessOrEqualsOp(a, b); }
+    static constexpr bool compilable = true;
 };
 
 template <typename A, typename B> struct GreaterOrEqualsOp
 {
     using SymmetricOp = LessOrEqualsOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::greaterOrEqualsOp(a, b); }
+    static constexpr bool compilable = true;
 };
 
 }

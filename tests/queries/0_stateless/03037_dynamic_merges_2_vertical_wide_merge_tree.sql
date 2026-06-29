@@ -1,4 +1,5 @@
 -- Tags: long, no-tsan, no-msan, no-ubsan, no-asan
+-- Random settings limits: index_granularity=(100, None); merge_max_block_size=(100, None)
 
 set allow_experimental_dynamic_type = 1;
 

@@ -1,15 +1,16 @@
 import argparse
 import time
 from pathlib import Path
+from shutil import copy2, rmtree
 from typing import Optional
-from shutil import copy2
+
+from ci_utils import Shell, WithIter
 from create_release import (
     PackageDownloader,
-    ReleaseInfo,
     ReleaseContextManager,
+    ReleaseInfo,
     ReleaseProgress,
 )
-from ci_utils import WithIter, Shell
 
 
 class MountPointApp(metaclass=WithIter):
@@ -54,21 +55,27 @@ class R2MountPoint:
                     "-o passwd_file /home/ubuntu/.passwd-s3fs_packages "
                 )
             # without -o nomultipart there are errors like "Error 5 writing to /home/ubuntu/***.deb: Input/output error"
-            self.mount_cmd = f"s3fs {self.bucket_name} {self.MOUNT_POINT} -o url={self.API_ENDPOINT} -o use_path_request_style -o umask=0000 -o nomultipart -o logfile={self.LOG_FILE} {self.aux_mount_options}"
+            self.mount_cmd = (
+                f"s3fs {self.bucket_name} {self.MOUNT_POINT} -o url={self.API_ENDPOINT} "
+                f"-o use_path_request_style -o umask=0000 -o nomultipart "
+                f"-o logfile={self.LOG_FILE} {self.aux_mount_options}"
+            )
         elif self.app == MountPointApp.GEESEFS:
             self.cache_dir = "/home/ubuntu/geesefs_cache"
             self.aux_mount_options += (
                 f" --cache={self.cache_dir} " if self.CACHE_ENABLED else ""
             )
             if not dry_run:
-                self.aux_mount_options += f" --shared-config=/home/ubuntu/.r2_auth "
+                self.aux_mount_options += " --shared-config=/home/ubuntu/.r2_auth "
             else:
-                self.aux_mount_options += (
-                    f" --shared-config=/home/ubuntu/.r2_auth_test "
-                )
+                self.aux_mount_options += " --shared-config=/home/ubuntu/.r2_auth_test "
             if self.DEBUG:
                 self.aux_mount_options += " --debug_s3 "
-            self.mount_cmd = f"geesefs --endpoint={self.API_ENDPOINT} --cheap --memory-limit=1000 --gc-interval=100 --max-flushers=10 --max-parallel-parts=1 --max-parallel-copy=10 --log-file={self.LOG_FILE} {self.aux_mount_options} {self.bucket_name} {self.MOUNT_POINT}"
+            self.mount_cmd = (
+                f"geesefs --endpoint={self.API_ENDPOINT} --cheap --memory-limit=1000 "
+                f"--gc-interval=100 --max-flushers=10 --max-parallel-parts=1 --max-parallel-copy=10 "
+                f"--log-file={self.LOG_FILE} {self.aux_mount_options} {self.bucket_name} {self.MOUNT_POINT}"
+            )
         else:
             assert False
 
@@ -119,6 +126,10 @@ class DebianArtifactory:
             version=release_info.version,
         )
 
+    # Fingerprint of the GPG key used to sign the ClickHouse Debian repository.
+    _SIGN_KEY = "8919F6BD2B48D754"
+    _KEYRING_PATH = "/etc/apt/keyrings/clickhouse-keyring.gpg"
+
     def export_packages(self):
         assert self.pd.local_deb_packages_ready(), "BUG: Packages are not downloaded"
         print("Start adding packages")
@@ -131,6 +142,7 @@ class DebianArtifactory:
         Shell.check(cmd, strict=True, verbose=True)
         Shell.check("sync")
 
+        codenames_to_check = [self.codename]
         if self.codename == RepoCodenames.LTS:
             packages_with_version = [
                 package + "=" + self.version for package in self.pd.get_packages_names()
@@ -141,23 +153,60 @@ class DebianArtifactory:
             cmd = f"{REPREPRO_CMD_PREFIX} copy {RepoCodenames.STABLE} {RepoCodenames.LTS} {' '.join(packages_with_version)}"
             print("Running copy command:")
             print(f"  {cmd}")
-            Shell.check(cmd, strict=True)
+            Shell.check(cmd, strict=True, verbose=True)
             Shell.check("sync")
+            codenames_to_check.append(RepoCodenames.STABLE)
+
+        # Verify that reprepro signed the InRelease files. An unsigned repo would
+        # silently break installation for all clients; catch it here rather than
+        # at test time.
+        for codename in codenames_to_check:
+            inrelease = f"{R2MountPoint.MOUNT_POINT}/deb/dists/{codename}/InRelease"
+            Shell.check(
+                f"grep -q 'BEGIN PGP SIGNATURE' {inrelease}",
+                strict=True,
+                verbose=True,
+            )
+
+        time.sleep(10)
+        Shell.check(f"lsof +D {R2MountPoint.MOUNT_POINT}", verbose=True)
 
     def test_packages(self):
-        Shell.check("docker pull ubuntu:latest", strict=True)
+        Shell.check("docker pull ubuntu:latest", strict=True, verbose=True)
         print(f"Test packages installation, version [{self.version}]")
-        debian_command = f"echo 'deb {self.repo_url} stable main' | tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; apt-get install -y clickhouse-common-static={self.version} clickhouse-client={self.version}"
-        cmd = f'docker run --rm ubuntu:latest bash -c "apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command}"'
+        # `apt-key` was removed in Ubuntu 24.04. Use the modern approach:
+        # fetch the ASCII-armored key over HTTP (no dirmngr needed) and dearmor it
+        # into a dedicated keyring, then reference it with [signed-by=].
+        setup_key = (
+            f"mkdir -p /etc/apt/keyrings && "
+            f"curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x{self._SIGN_KEY}' "
+            f"| gpg --dearmor -o {self._KEYRING_PATH}"
+        )
+        debian_command = (
+            f"echo 'deb [signed-by={self._KEYRING_PATH}] {self.repo_url} stable main' | "
+            "tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; "
+            f"apt-get install -y clickhouse-common-static={self.version} clickhouse-client={self.version}"
+        )
+        cmd = (
+            "docker run --rm ubuntu:latest bash -c "
+            f'"apt update -y; apt install -y curl gnupg ca-certificates; {setup_key}; {debian_command}"'
+        )
         print("Running test command:")
         print(f"  {cmd}")
-        assert Shell.check(cmd)
-        print(f"Test packages installation, version [latest]")
-        debian_command_2 = f"echo 'deb {self.repo_url} stable main' | tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; apt-get install -y clickhouse-common-static clickhouse-client"
-        cmd = f'docker run --rm ubuntu:latest bash -c "apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command_2}"'
+        assert Shell.check(cmd, verbose=True)
+        print("Test packages installation, version [latest]")
+        debian_command_2 = (
+            f"echo 'deb [signed-by={self._KEYRING_PATH}] {self.repo_url} stable main' | "
+            "tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; "
+            "apt-get install -y clickhouse-common-static clickhouse-client"
+        )
+        cmd = (
+            "docker run --rm ubuntu:latest bash -c "
+            f'"apt update -y; apt install -y curl gnupg ca-certificates; {setup_key}; {debian_command_2}"'
+        )
         print("Running test command:")
         print(f"  {cmd}")
-        assert Shell.check(cmd)
+        assert Shell.check(cmd, verbose=True)
         self.release_info.debian = debian_command
         self.release_info.dump()
 
@@ -178,6 +227,7 @@ class RpmArtifactory:
     )
     _PROD_REPO_URL = "https://packages.clickhouse.com/rpm/clickhouse.repo"
     _SIGN_KEY = "885E2BDCF96B0B45ABF058453E4AD4719DDE9A38"
+    FEDORA_VERSION = 40
 
     def __init__(self, release_info: ReleaseInfo, dry_run: bool):
         self.release_info = release_info
@@ -207,6 +257,13 @@ class RpmArtifactory:
         for package in paths:
             _copy_if_not_exists(Path(package), dest_dir)
 
+        # Remove stale temp repodata directory left by a previous interrupted run; createrepo_c
+        # refuses to start when it already exists, mistaking it for a concurrent process.
+        stale_repodata = dest_dir / ".repodata"
+        if stale_repodata.exists():
+            print(f"Removing stale temp repodata directory: {stale_repodata}")
+            rmtree(stale_repodata)
+
         # switching between different fuse providers invalidates --update option (apparently some fuse(s) can mess around with mtime)
         #   add --skip-stat to skip mtime check
         commands = (
@@ -227,19 +284,19 @@ class RpmArtifactory:
         Shell.check("sync")
 
     def test_packages(self):
-        Shell.check("docker pull fedora:latest", strict=True)
+        Shell.check(f"docker pull fedora:{self.FEDORA_VERSION}", strict=True, verbose=True)
         print(f"Test package installation, version [{self.version}]")
         rpm_command = f"dnf config-manager --add-repo={self.repo_url} && dnf makecache && dnf -y install clickhouse-client-{self.version}-1"
-        cmd = f'docker run --rm fedora:latest /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command}"'
+        cmd = f'docker run --rm fedora:{self.FEDORA_VERSION} /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command}"'
         print("Running test command:")
         print(f"  {cmd}")
-        assert Shell.check(cmd)
-        print(f"Test package installation, version [latest]")
+        assert Shell.check(cmd, verbose=True)
+        print("Test package installation, version [latest]")
         rpm_command_2 = f"dnf config-manager --add-repo={self.repo_url} && dnf makecache && dnf -y install clickhouse-client"
-        cmd = f'docker run --rm fedora:latest /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command_2}"'
+        cmd = f'docker run --rm fedora:{self.FEDORA_VERSION} /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command_2}"'
         print("Running test command:")
         print(f"  {cmd}")
-        assert Shell.check(cmd)
+        assert Shell.check(cmd, verbose=True)
         self.release_info.rpm = rpm_command
         self.release_info.dump()
 
@@ -357,7 +414,7 @@ if __name__ == "__main__":
     """
     S3FS - very slow with a big repo
     RCLONE - fuse had many different errors with r2 remote and completely removed
-    GEESEFS ? 
+    GEESEFS ?
     """
     mp = R2MountPoint(MountPointApp.GEESEFS, dry_run=args.dry_run)
     if args.export_debian:

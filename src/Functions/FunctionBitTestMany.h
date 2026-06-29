@@ -4,7 +4,6 @@
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/range.h>
 
@@ -22,7 +21,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name>
-struct FunctionBitTestMany : public IFunction
+struct FunctionBitTestMany final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -57,6 +56,11 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto * value_col = arguments.front().column.get();
@@ -84,7 +88,7 @@ private:
     {
         if (const auto value_col = checkAndGetColumn<ColumnVector<T>>(value_col_untyped))
         {
-            bool is_const;
+            bool is_const = false;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto & val = value_col->getData();
 
@@ -106,9 +110,9 @@ private:
 
             return out_col;
         }
-        else if (const auto value_col_const = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
+        if (const auto value_col_const = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
-            bool is_const;
+            bool is_const = false;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto val = value_col_const->template getValue<T>();
 
@@ -116,18 +120,16 @@ private:
             {
                 return result_type->createColumnConst(input_rows_count, toField(Impl::apply(val, const_mask)));
             }
-            else
-            {
-                const auto mask = createMask<T>(input_rows_count, arguments);
-                auto out_col = ColumnVector<UInt8>::create(input_rows_count);
 
-                auto & out = out_col->getData();
+            const auto mask = createMask<T>(input_rows_count, arguments);
+            auto out_col = ColumnVector<UInt8>::create(input_rows_count);
 
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    out[i] = Impl::apply(val, mask[i]);
+            auto & out = out_col->getData();
 
-                return out_col;
-            }
+            for (size_t i = 0; i < input_rows_count; ++i)
+                out[i] = Impl::apply(val, mask[i]);
+
+            return out_col;
         }
 
         return nullptr;
@@ -145,7 +147,7 @@ private:
             {
                 const auto pos = pos_col_const->getUInt(0);
                 if (pos < 8 * sizeof(ValueType))
-                    mask = mask | (ValueType(1) << pos);
+                    mask = static_cast<ValueType>(mask | (static_cast<ValueType>(1) << pos));
                 else
                     throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
                                    "The bit position argument {} is out of bounds for number", static_cast<UInt64>(pos));
@@ -188,24 +190,26 @@ private:
 
             for (size_t i = 0; i < mask.size(); ++i)
                 if (pos[i] < 8 * sizeof(ValueType))
-                    mask[i] = mask[i] | (ValueType(1) << pos[i]);
+                    mask[i] = static_cast<ValueType>(mask[i] | (static_cast<ValueType>(1) << pos[i]));
                 else
                     throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
                                     "The bit position argument {} is out of bounds for number", static_cast<UInt64>(pos[i]));
 
             return true;
         }
-        else if (const auto pos_col_const = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
+        if (const auto pos_col_const = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
         {
             const auto & pos = pos_col_const->template getValue<PosType>();
             if (pos >= 8 * sizeof(ValueType))
-                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                                "The bit position argument {} is out of bounds for number", static_cast<UInt64>(pos));
+                throw Exception(
+                    ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                    "The bit position argument {} is out of bounds for number",
+                    static_cast<UInt64>(pos));
 
             const auto new_mask = ValueType(1) << pos;
 
             for (size_t i = 0; i < mask.size(); ++i)
-                mask[i] = mask[i] | new_mask;
+                mask[i] = static_cast<ValueType>(mask[i] | new_mask);
 
             return true;
         }

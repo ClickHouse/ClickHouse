@@ -12,8 +12,8 @@ class ASTFunction;
 class ASTStatisticsDeclaration : public IAST
 {
 public:
-    IAST * columns;
-    IAST * types;
+    IAST * columns{};
+    IAST * types{};
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Stat"; }
@@ -22,7 +22,9 @@ public:
     std::vector<String> getTypeNames() const;
 
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

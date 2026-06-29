@@ -1,6 +1,9 @@
 -- Tags: long
+SET enable_analyzer = 1;
 
 -- https://github.com/ClickHouse/ClickHouse/issues/21557
+
+set ignore_format_null_for_explain = 0;
 
 EXPLAIN SYNTAX
 WITH

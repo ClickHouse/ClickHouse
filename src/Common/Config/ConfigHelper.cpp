@@ -36,6 +36,11 @@ Poco::AutoPtr<Poco::Util::AbstractConfiguration> clone(const Poco::Util::Abstrac
     return res;
 }
 
+Poco::AutoPtr<Poco::Util::AbstractConfiguration> createEmpty()
+{
+    return new Poco::Util::XMLConfiguration();
+}
+
 bool getBool(const Poco::Util::AbstractConfiguration & config, const std::string & key, bool default_, bool empty_as)
 {
     if (!config.has(key))

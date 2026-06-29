@@ -76,6 +76,8 @@ public:
 
     const std::string & getFailMessage() const { return fail_message; }
 
+    void resumeConnectionWithForceOption(bool force_connected_) {force_connected = force_connected_; resume();}
+
 private:
     bool checkBeforeTaskResume() override;
 
@@ -115,7 +117,7 @@ private:
     /// We use timer descriptor for checking socket receive timeout.
     TimerDescriptor timeout_descriptor;
     Poco::Timespan timeout;
-    AsyncEventTimeoutType timeout_type;
+    AsyncEventTimeoutType timeout_type{};
 
     /// In read callback we add socket file descriptor and timer descriptor with receive timeout
     /// in epoll, so we can return epoll file descriptor outside for polling.
@@ -125,6 +127,7 @@ private:
 
     bool is_finished = false;
     bool restarted = false;
+    bool force_connected = false;
 };
 
 #endif

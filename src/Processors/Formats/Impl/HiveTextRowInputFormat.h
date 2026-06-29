@@ -14,13 +14,13 @@ namespace DB
 class HiveTextRowInputFormat final : public CSVRowInputFormat
 {
 public:
-    HiveTextRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_, const FormatSettings & format_settings_);
+    HiveTextRowInputFormat(SharedHeader header_, ReadBuffer & in_, const Params & params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "HiveTextRowInputFormat"; }
 
 private:
     HiveTextRowInputFormat(
-        const Block & header_, std::shared_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_);
+        SharedHeader header_, std::shared_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_);
 };
 
 class HiveTextFormatReader final : public CSVFormatReader

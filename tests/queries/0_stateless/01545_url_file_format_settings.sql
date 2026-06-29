@@ -1,3 +1,7 @@
+-- Tags: no-parallel
+
+set use_hive_partitioning=0; -- required because of "?query=select"
+
 create table file_delim(a int, b int) engine File(CSV, '01545_url_file_format_settings.csv') settings format_csv_delimiter = '|';
 
 truncate table file_delim;

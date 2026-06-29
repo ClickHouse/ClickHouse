@@ -1,6 +1,5 @@
 <test>
     <settings>
-        <allow_experimental_bigint_types>1</allow_experimental_bigint_types>
         <max_memory_usage>15G</max_memory_usage>
     </settings>
 

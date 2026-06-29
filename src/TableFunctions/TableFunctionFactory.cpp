@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/KnownObjectNames.h>
 #include <Core/Settings.h>
@@ -11,6 +12,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -37,14 +42,17 @@ TableFunctionPtr TableFunctionFactory::get(
     ContextPtr context) const
 {
     const auto * table_function = ast_function->as<ASTFunction>();
+    if (!table_function)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Expected a table function (ASTFunction) but got '{}'", ast_function->formatForErrorMessage());
+
     auto res = tryGet(table_function->name, context);
     if (!res)
     {
         auto hints = getHints(table_function->name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}. Maybe you meant: {}", table_function->name, toString(hints));
-        else
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function->name);
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function->name);
     }
 
     res->parseArguments(ast_function, context);
@@ -75,8 +83,8 @@ TableFunctionPtr TableFunctionFactory::tryGet(
 
     if (CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef().log_queries)
+        auto query_context = CurrentThread::get().tryGetQueryContext();
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, name);
     }
 
@@ -85,7 +93,35 @@ TableFunctionPtr TableFunctionFactory::tryGet(
 
 bool TableFunctionFactory::isTableFunctionName(const std::string & name) const
 {
-    return table_functions.contains(name);
+    String canonical_name = getAliasToOrName(name);
+    if (table_functions.contains(canonical_name))
+        return true;
+    return case_insensitive_table_functions.contains(Poco::toLower(canonical_name));
+}
+
+std::optional<FunctionDocumentation> TableFunctionFactory::tryGetDocumentation(const String & name) const
+{
+    return tryGetDocumentationImpl(name);
+}
+
+std::optional<FunctionDocumentation> TableFunctionFactory::tryGetDocumentationImpl(const String & name_param) const
+{
+    String name = getAliasToOrName(name_param);
+    Value found;
+
+    /// Find by exact match.
+    if (auto it = table_functions.find(name); it != table_functions.end())
+    {
+        found = it->second;
+    }
+
+    if (auto jt = case_insensitive_table_functions.find(Poco::toLower(name)); jt != case_insensitive_table_functions.end())
+        found = jt->second;
+
+    if (found.creator)
+        return found.documentation;
+
+    return {};
 }
 
 std::optional<TableFunctionProperties> TableFunctionFactory::tryGetProperties(const String & name) const

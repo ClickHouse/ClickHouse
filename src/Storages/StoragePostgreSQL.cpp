@@ -1,4 +1,4 @@
-#include "StoragePostgreSQL.h"
+#include <Storages/StoragePostgreSQL.h>
 
 #if USE_LIBPQXX
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -8,11 +8,13 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/thread_local_rng.h>
 
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -49,15 +51,27 @@
 
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
+#include <base/range.h>
+
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool external_table_functions_use_nulls;
+    extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const SettingsUInt64 postgresql_connection_pool_retries;
+    extern const SettingsUInt64 postgresql_connection_pool_size;
+    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
+}
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 StoragePostgreSQL::StoragePostgreSQL(
@@ -70,12 +84,12 @@ StoragePostgreSQL::StoragePostgreSQL(
     ContextPtr context_,
     const String & remote_table_schema_,
     const String & on_conflict_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
     , on_conflict(on_conflict_)
     , pool(std::move(pool_))
-    , log(getLogger("StoragePostgreSQL (" + table_id_.table_name + ")"))
+    , log(getLogger("StoragePostgreSQL (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -89,7 +103,16 @@ StoragePostgreSQL::StoragePostgreSQL(
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StoragePostgreSQL::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 ColumnsDescription StoragePostgreSQL::getTableStructureFromData(
@@ -98,7 +121,7 @@ ColumnsDescription StoragePostgreSQL::getTableStructureFromData(
     const String & schema,
     const ContextPtr & context_)
 {
-    const bool use_nulls = context_->getSettingsRef().external_table_functions_use_nulls;
+    const bool use_nulls = context_->getSettingsRef()[Setting::external_table_functions_use_nulls];
     auto connection_holder = pool_->get();
     auto columns_info = fetchPostgreSQLTableStructure(
             connection_holder->get(), table, schema, use_nulls).physical_columns;
@@ -120,21 +143,36 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
+        SharedHeader sample_block,
         size_t max_block_size_,
         String remote_table_schema_,
         String remote_table_name_,
-        postgres::ConnectionHolderPtr connection_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
+        postgres::PoolWithFailoverPtr pool_
+    )
+        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
         , remote_table_schema(remote_table_schema_)
         , remote_table_name(remote_table_name_)
-        , connection(std::move(connection_))
+        , pool(std::move(pool_))
     {
     }
 
     std::string getName() const override { return "ReadFromPostgreSQL"; }
+
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<ReadFromPostgreSQL>(
+            requiredSourceColumns(),
+            query_info,
+            storage_snapshot,
+            context,
+            getOutputHeader(),
+            max_block_size,
+            remote_table_schema,
+            remote_table_name,
+            pool);
+    }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -156,19 +194,19 @@ public:
             transform_query_limit);
         LOG_TRACE(logger, "Query: {}", query);
 
-        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(std::move(connection), query, getOutputStream().header, max_block_size)));
+        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, getOutputHeader(), max_block_size)));
     }
 
     LoggerPtr logger;
     size_t max_block_size;
     String remote_table_schema;
     String remote_table_name;
-    postgres::ConnectionHolderPtr connection;
+    postgres::PoolWithFailoverPtr pool;
 };
 
 }
 
-void StoragePostgreSQL::read(
+void StoragePostgreSQL::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -195,16 +233,16 @@ void StoragePostgreSQL::read(
         query_info,
         storage_snapshot,
         local_context,
-        sample_block,
+        std::make_shared<const Block>(sample_block),
         max_block_size,
         remote_table_schema,
         remote_table_name,
-        pool->get());
+        pool);
     query_plan.addStep(std::move(reading));
 }
 
 
-class PostgreSQLSink : public SinkToStorage
+class PostgreSQLSink final : public SinkToStorage
 {
 
 using Row = std::vector<std::optional<std::string>>;
@@ -216,7 +254,7 @@ public:
         const String & remote_table_name_,
         const String & remote_table_schema_,
         const String & on_conflict_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , metadata_snapshot(metadata_snapshot_)
         , connection_holder(std::move(connection_holder_))
         , remote_table_name(remote_table_name_)
@@ -246,7 +284,8 @@ public:
         }
 
         const auto columns = block.getColumns();
-        const size_t num_rows = block.rows(), num_cols = block.columns();
+        const size_t num_rows = block.rows();
+        const size_t num_cols = block.columns();
         const auto data_types = block.getDataTypes();
 
         /// std::optional lets libpqxx to know if value is NULL
@@ -277,7 +316,18 @@ public:
                 }
             }
 
-            inserter->insert(row);
+            try
+            {
+                inserter->insert(row);
+            }
+            catch (const pqxx::argument_error & e)
+            {
+                /// libpqxx throws pqxx::argument_error when the string contains invalid UTF-8.
+                /// Since pqxx::argument_error is a std::invalid_argument, which is a std::logic_error,
+                /// and unhandled std::logic_error is treated as a "Logical error" with code 1001,
+                /// we need to wrap it into a DB::Exception.
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot insert data into PostgreSQL: {}", e.what());
+            }
         }
     }
 
@@ -328,7 +378,7 @@ public:
     static void parseArrayContent(const Array & array_field, const DataTypePtr & data_type, WriteBuffer & ostr)
     {
         auto nested_type = typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType();
-        auto array_column = ColumnArray::create(createNested(nested_type));
+        auto array_column = ColumnArray::create(nested_type->createColumn());
         array_column->insert(array_field);
 
         const IColumn & nested_column = array_column->getData();
@@ -337,22 +387,13 @@ public:
         FormatSettings settings;
         settings.pretty.charset = FormatSettings::Pretty::Charset::ASCII;
 
-        if (nested_type->isNullable())
-            nested_type = static_cast<const DataTypeNullable *>(nested_type.get())->getNestedType();
-
-        /// UUIDs inside arrays are expected to be unquoted in PostgreSQL.
-        const bool quoted = !isUUID(nested_type);
-
         writeChar('{', ostr);
         for (size_t i = 0, size = array_field.size(); i < size; ++i)
         {
             if (i != 0)
                 writeChar(',', ostr);
 
-            if (quoted)
-                serialization->serializeTextQuoted(nested_column, i, ostr, settings);
-            else
-                serialization->serializeText(nested_column, i, ostr, settings);
+            serialization->serializeText(nested_column, i, ostr, settings);
         }
         writeChar('}', ostr);
     }
@@ -378,6 +419,7 @@ public:
         else if (which.isFloat32())                      nested_column = ColumnFloat32::create();
         else if (which.isFloat64())                      nested_column = ColumnFloat64::create();
         else if (which.isDate())                         nested_column = ColumnUInt16::create();
+        else if (which.isDate32())                       nested_column = ColumnInt32::create();
         else if (which.isDateTime())                     nested_column = ColumnUInt32::create();
         else if (which.isUUID())                         nested_column = ColumnUUID::create();
         else if (which.isDateTime64())
@@ -408,10 +450,11 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type conversion not supported");
 
         if (is_nullable)
-            return ColumnNullable::create(std::move(nested_column), ColumnUInt8::create(nested_column->size(), 0));
+            return ColumnNullable::create(std::move(nested_column), ColumnUInt8::create(nested_column->size(), static_cast<UInt8>(0)));
 
         return nested_column;
     }
+
 
 private:
     struct Inserter
@@ -540,7 +583,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     }
     else
     {
-        size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
+        size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(
             configuration.addresses_expr, max_addresses, 5432);
     }
@@ -556,10 +599,10 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, const StorageID * table_id)
 {
     StoragePostgreSQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
         configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, context);
     }
@@ -579,7 +622,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
-        size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
+        size_t max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 5432);
         if (configuration.addresses.size() == 1)
@@ -604,18 +647,20 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
 }
 
 
+void registerStoragePostgreSQL(StorageFactory & factory);
 void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
-        const auto & settings = args.getContext()->getSettingsRef();
-        auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
-            settings.postgresql_connection_pool_size,
-            settings.postgresql_connection_pool_wait_timeout,
-            settings.postgresql_connection_pool_retries,
-            settings.postgresql_connection_pool_auto_close_connection,
-            settings.postgresql_connection_attempt_timeout);
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &args.table_id);
+        const auto & settings = args.getLocalContext()->getSettingsRef();
+        auto pool = std::make_shared<postgres::PoolWithFailover>(
+            configuration,
+            settings[Setting::postgresql_connection_pool_size],
+            settings[Setting::postgresql_connection_pool_wait_timeout],
+            settings[Setting::postgresql_connection_pool_retries],
+            settings[Setting::postgresql_connection_pool_auto_close_connection],
+            settings[Setting::postgresql_connection_attempt_timeout]);
 
         return std::make_shared<StoragePostgreSQL>(
             args.table_id,
@@ -630,8 +675,231 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     },
     {
         .supports_schema_inference = true,
-        .source_access_type = AccessType::POSTGRES,
-    });
+        .source_access_type = AccessTypeObjects::Source::POSTGRES,
+    },
+    Documentation{
+        .description = R"DOCS_MD(
+The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
+
+:::note
+Currently, only PostgreSQL versions 12 and up are supported for the table engine.
+:::
+
+:::tip
+Check out our [Managed Postgres](/docs/cloud/managed-postgres) service. Backed by NVMe storage that is physically co-located with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS and allows you to replicate your Postgres data to ClickHouse using the Postgres CDC connector in ClickPipes.
+:::
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = PostgreSQL({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
+```
+
+See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+
+The table structure can differ from the original PostgreSQL table structure:
+
+- Column names should be the same as in the original PostgreSQL table, but you can use just some of these columns and in any order.
+- Column types may differ from those in the original PostgreSQL table. ClickHouse tries to [cast](../../../engines/database-engines/postgresql.md#data_types-support) values to the ClickHouse data types.
+- The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+
+**Engine Parameters**
+
+- `host:port` — PostgreSQL server address.
+- `database` — Remote database name.
+- `table` — Remote table name.
+- `user` — PostgreSQL user.
+- `password` — User password.
+- `schema` — Non-default table schema. Optional.
+- `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
+
+[Named collections](/operations/named-collections.md) (available since version 21.11) are recommended for production environment. Here is an example:
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <schema>schema1</schema>
+    </postgres_creds>
+</named_collections>
+```
+
+Some parameters can be overridden by key value arguments:
+```sql
+SELECT * FROM postgresql(postgres_creds, table='table1');
+```
+
+## Implementation details {#implementation-details}
+
+`SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
+
+Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
+
+All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
+
+`INSERT` queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.
+
+PostgreSQL `Array` types are converted into ClickHouse arrays.
+
+:::note
+Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
+:::
+
+Supports multiple replicas that must be listed by `|`. For example:
+
+```sql
+CREATE TABLE test_replicas (id UInt32, name String) ENGINE = PostgreSQL(`postgres{2|3|4}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword');
+```
+
+Replicas priority for PostgreSQL dictionary source is supported. The bigger the number in map, the less the priority. The highest priority is `0`.
+
+In the example below replica `example01-1` has the highest priority:
+
+```xml
+<postgresql>
+    <port>5432</port>
+    <user>clickhouse</user>
+    <password>qwerty</password>
+    <replica>
+        <host>example01-1</host>
+        <priority>1</priority>
+    </replica>
+    <replica>
+        <host>example01-2</host>
+        <priority>2</priority>
+    </replica>
+    <db>db_name</db>
+    <table>table_name</table>
+    <where>id=10</where>
+    <invalidate_query>SQL_QUERY</invalidate_query>
+</postgresql>
+</source>
+```
+
+## Usage example {#usage-example}
+
+### Table in PostgreSQL {#table-in-postgresql}
+
+```text
+postgres=# CREATE TABLE "public"."test" (
+"int_id" SERIAL,
+"int_nullable" INT NULL DEFAULT NULL,
+"float" FLOAT NOT NULL,
+"str" VARCHAR(100) NOT NULL DEFAULT '',
+"float_nullable" FLOAT NULL DEFAULT NULL,
+PRIMARY KEY (int_id));
+
+CREATE TABLE
+
+postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
+INSERT 0 1
+
+postgresql> SELECT * FROM test;
+int_id | int_nullable | float | str  | float_nullable
+--------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+(1 row)
+```
+
+### Creating Table in ClickHouse, and connecting to  PostgreSQL table created above {#creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above}
+
+This example uses the [PostgreSQL table engine](/engines/table-engines/integrations/postgresql.md) to connect the ClickHouse table to the PostgreSQL table and use both SELECT and INSERT statements to the PostgreSQL database:
+
+```sql
+CREATE TABLE default.postgresql_table
+(
+    `float_nullable` Nullable(Float32),
+    `str` String,
+    `int_id` Int32
+)
+ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
+```
+
+### Inserting initial data from PostgreSQL table into ClickHouse table, using a SELECT query {#inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query}
+
+The [postgresql table function](/sql-reference/table-functions/postgresql.md) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse. Since we will be copying the data from PostgreSQL to ClickHouse, we will use a MergeTree table engine in ClickHouse and call it postgresql_copy:
+
+```sql
+CREATE TABLE default.postgresql_copy
+(
+    `float_nullable` Nullable(Float32),
+    `str` String,
+    `int_id` Int32
+)
+ENGINE = MergeTree
+ORDER BY (int_id);
+```
+
+```sql
+INSERT INTO default.postgresql_copy
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
+```
+
+### Inserting incremental data from PostgreSQL table into ClickHouse table {#inserting-incremental-data-from-postgresql-table-into-clickhouse-table}
+
+If then performing ongoing synchronization between the PostgreSQL table and ClickHouse table after the initial insert, you can use a WHERE clause in ClickHouse to insert only data added to PostgreSQL based on a timestamp or unique sequence ID.
+
+This would require keeping track of the max ID or timestamp previously added, such as the following:
+
+```sql
+SELECT max(`int_id`) AS maxIntID FROM default.postgresql_copy;
+```
+
+Then inserting values from PostgreSQL table greater than the max
+
+```sql
+INSERT INTO default.postgresql_copy
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password')
+WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
+```
+
+### Selecting data from the resulting ClickHouse table {#selecting-data-from-the-resulting-clickhouse-table}
+
+```sql
+SELECT * FROM postgresql_copy WHERE str IN ('test');
+```
+
+```text
+┌─float_nullable─┬─str──┬─int_id─┐
+│           ᴺᵁᴸᴸ │ test │      1 │
+└────────────────┴──────┴────────┘
+```
+
+### Using non-default schema {#using-non-default-schema}
+
+```text
+postgres=# CREATE SCHEMA "nice.schema";
+
+postgres=# CREATE TABLE "nice.schema"."nice.table" (a integer);
+
+postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(0, 99) as t(i)
+```
+
+```sql
+CREATE TABLE pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
+```
+
+**See Also**
+
+- [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
+- [Using PostgreSQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/postgresql)
+
+## Related content {#related-content}
+
+- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+- Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)
+)DOCS_MD",
+        .syntax = "ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password'[, 'schema', 'on_conflict'])",
+        .related = {"MySQL", "SQLite", "MaterializedPostgreSQL"}});
 }
 
 }

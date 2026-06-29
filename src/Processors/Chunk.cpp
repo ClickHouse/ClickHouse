@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
@@ -62,8 +63,8 @@ void Chunk::checkNumRowsIsConsistent()
     {
         auto & column = columns[i];
         if (column->size() != num_rows)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk column {}: expected {}, got {}",
-                            column->getName() + " position " + toString(i), toString(num_rows), toString(column->size()));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk {} column {} at position {}: expected {}, got {}",
+                dumpStructure(), column->getName(), i, num_rows, column->size());
     }
 }
 
@@ -100,8 +101,8 @@ void Chunk::addColumn(ColumnPtr column)
     if (empty())
         num_rows = column->size();
     else if (column->size() != num_rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk column {}, got {}",
-                        column->getName()+ ": expected " + toString(num_rows), toString(column->size()));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk {} column {}: expected {}, got {}",
+            dumpStructure(), column->getName(), num_rows, column->size());
 
     columns.emplace_back(std::move(column));
 }
@@ -155,8 +156,14 @@ UInt64 Chunk::allocatedBytes() const
 std::string Chunk::dumpStructure() const
 {
     WriteBufferFromOwnString out;
+    bool first = true;
     for (const auto & column : columns)
-        out << ' ' << column->dumpStructure();
+    {
+        if (!first)
+            out << ", ";
+        out << column->dumpStructure();
+        first = false;
+    }
 
     return out.str();
 }
@@ -178,22 +185,6 @@ void Chunk::append(const Chunk & chunk, size_t from, size_t length)
     setColumns(std::move(mutable_columns), rows);
 }
 
-void ChunkMissingValues::setBit(size_t column_idx, size_t row_idx)
-{
-    RowsBitMask & mask = rows_mask_by_column_id[column_idx];
-    mask.resize(row_idx + 1);
-    mask[row_idx] = true;
-}
-
-const ChunkMissingValues::RowsBitMask & ChunkMissingValues::getDefaultsBitmask(size_t column_idx) const
-{
-    static RowsBitMask none;
-    auto it = rows_mask_by_column_id.find(column_idx);
-    if (it != rows_mask_by_column_id.end())
-        return it->second;
-    return none;
-}
-
 void convertToFullIfConst(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
@@ -209,6 +200,32 @@ void convertToFullIfSparse(Chunk & chunk)
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = recursiveRemoveSparse(column);
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
+void removeSpecialColumnRepresentations(Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = removeSpecialRepresentations(column);
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
+void materializeChunk(Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
+void compactReplicatedColumns(Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    compactReplicatedColumns(columns);
     chunk.setColumns(std::move(columns), num_rows);
 }
 

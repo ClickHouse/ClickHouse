@@ -1,5 +1,6 @@
 import pytest
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
+
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -74,3 +75,6 @@ def test_replicated_merge_tree_defaults_compatibility(started_cluster):
 
     node1.query(create_query.format(replica=1))
     assert node1.query("EXISTS TABLE test.table") == "1\n"
+
+    node1.query("DROP DATABASE test")
+    node2.query("DROP DATABASE test")

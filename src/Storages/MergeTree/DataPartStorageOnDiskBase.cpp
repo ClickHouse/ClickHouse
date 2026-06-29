@@ -1,21 +1,32 @@
 #include <string_view>
-#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Disks/TemporaryFileOnDisk.h>
-#include <IO/WriteBufferFromFileBase.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <Common/logger_useful.h>
-#include <Common/formatReadable.h>
-#include <Interpreters/Context.h>
-#include <Storages/MergeTree/Backup.h>
-#include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/BackupSettings.h>
+#include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Disks/TemporaryFileOnDisk.h>
+#include <IO/Expect404ResponseScope.h>
+#include <IO/HashingWriteBuffer.h>
+#include <IO/PackedFilesReader.h>
+#include <IO/PackedFilesWriter.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadPipeline.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/copyData.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
+#include <Storages/MergeTree/Backup.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -27,6 +38,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int CORRUPTED_DATA;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
+    const std::string & name,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint) const
+{
+    ReadPipeline pipeline;
+    prepareRead(name, settings, read_hint, pipeline);
+    return pipeline.build();
 }
 
 DataPartStorageOnDiskBase::DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_)
@@ -59,9 +80,19 @@ std::string DataPartStorageOnDiskBase::getRelativePath() const
     return fs::path(root_path) / part_dir / "";
 }
 
+std::string DataPartStorageOnDiskBase::getParentDirectory() const
+{
+    /// Cut last "/" if it exists (it shouldn't). Otherwise fs::path behave differently.
+    fs::path part_dir_without_slash = part_dir.ends_with("/") ? part_dir.substr(0, part_dir.size() - 1) : part_dir;
+
+    if (part_dir_without_slash.has_parent_path())
+        return part_dir_without_slash.parent_path();
+    return "";
+}
+
 std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken) const
 {
-    assert(!broken || detached);
+    chassert(!broken || detached);
     String res;
 
     auto full_relative_path = fs::path(root_path);
@@ -75,7 +106,7 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
     {
         res = getPartDirForPrefix(prefix, detached, try_no);
 
-        if (!volume->getDisk()->exists(full_relative_path / res))
+        if (!volume->getDisk()->existsDirectory(full_relative_path / res))
             return res;
 
         /// If part with compacted storage is broken then we probably
@@ -121,7 +152,7 @@ String DataPartStorageOnDiskBase::getPartDirForPrefix(const String & prefix, boo
         res += part_dir;
 
     if (try_no)
-        res += "_try" + DB::toString(try_no);
+        res += DetachedPartInfo::TRY_N_SUFFIX + DB::toString(try_no);
 
     return res;
 }
@@ -133,16 +164,16 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
     /// We cannot know for sure that content of detached part is the same,
     /// but in most cases it's enough to compare checksums.txt and list of files.
 
-    if (!exists("checksums.txt"))
+    if (!existsFile("checksums.txt"))
         return false;
 
     auto storage_from_detached = create(volume, fs::path(root_path) / MergeTreeData::DETACHED_DIR_NAME, detached_part_path, /*initialize=*/ true);
-    if (!storage_from_detached->exists("checksums.txt"))
+    if (!storage_from_detached->existsFile("checksums.txt"))
         return false;
 
     if (!original_checksums_content)
     {
-        auto in = storage_from_detached->readFile("checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
+        auto in = storage_from_detached->readFile("checksums.txt", /* settings */ {}, /* read_hint */ {});
         original_checksums_content.emplace();
         readStringUntilEOF(*original_checksums_content, *in);
     }
@@ -152,7 +183,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
 
     String detached_checksums_content;
     {
-        auto in = readFile("checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
+        auto in = readFile("checksums.txt", /* settings */ {}, /* read_hint */ {});
         readStringUntilEOF(detached_checksums_content, *in);
     }
 
@@ -178,6 +209,15 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
 void DataPartStorageOnDiskBase::setRelativePath(const std::string & path)
 {
     part_dir = path;
+    /// Unlike rename/changeRootPath, this can repoint the storage at an unrelated directory whose
+    /// archive has a different index, so the cached reader must be dropped. The reset is safe for
+    /// concurrent readers because the reader is shared-owned: a reader still using it keeps it
+    /// alive until done.
+    {
+        std::lock_guard lock(skip_indices_packed_mutex);
+        skip_indices_packed_probed = false;
+        skip_indices_packed_reader.reset();
+    }
 }
 
 std::string DataPartStorageOnDiskBase::getPartDirectory() const
@@ -197,7 +237,7 @@ Poco::Timestamp DataPartStorageOnDiskBase::getLastModified() const
 
 static UInt64 calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from)
 {
-    if (disk->isFile(from))
+    if (disk->existsFile(from))
         return disk->getFileSize(from);
 
     std::vector<std::string> files;
@@ -222,7 +262,7 @@ std::string DataPartStorageOnDiskBase::getDiskName() const
 
 std::string DataPartStorageOnDiskBase::getDiskType() const
 {
-    return volume->getDisk()->getDataSourceDescription().toString();
+    return volume->getDisk()->getDataSourceDescription().name();
 }
 
 bool DataPartStorageOnDiskBase::isStoredOnRemoteDisk() const
@@ -257,16 +297,6 @@ bool DataPartStorageOnDiskBase::isReadonly() const
     return volume->getDisk()->isReadOnly() || volume->getDisk()->isWriteOnce();
 }
 
-void DataPartStorageOnDiskBase::syncRevision(UInt64 revision) const
-{
-    volume->getDisk()->syncRevision(revision);
-}
-
-UInt64 DataPartStorageOnDiskBase::getRevision() const
-{
-    return volume->getDisk()->getRevision();
-}
-
 std::string DataPartStorageOnDiskBase::getDiskPath() const
 {
     return volume->getDisk()->getPath();
@@ -292,6 +322,7 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
     ReplicatedFilesDescription description;
     auto relative_path = fs::path(root_path) / part_dir;
     auto disk = volume->getDisk();
+    auto read_settings = getReadSettings();
 
     auto actual_file_names = getActualFileNamesOnDisk(file_names);
     for (const auto & name : actual_file_names)
@@ -302,9 +333,9 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
         auto & file_desc = description.files[name];
 
         file_desc.file_size = file_size;
-        file_desc.input_buffer_getter = [disk, path, file_size]
+        file_desc.input_buffer_getter = [disk, path, file_size, read_settings]
         {
-            return disk->readFile(path, ReadSettings{}.adjustBufferSize(file_size), file_size, file_size);
+            return disk->readFile(path, read_settings.adjustBufferSize(file_size), file_size);
         };
     }
 
@@ -359,7 +390,6 @@ void DataPartStorageOnDiskBase::backup(
     const NameSet & files_without_checksums,
     const String & path_in_backup,
     const BackupSettings & backup_settings,
-    const ReadSettings & read_settings,
     bool make_temporary_hard_links,
     BackupEntries & backup_entries,
     TemporaryFilesOnDisks * temp_dirs,
@@ -375,7 +405,7 @@ void DataPartStorageOnDiskBase::backup(
     std::shared_ptr<TemporaryFileOnDisk> temp_dir_owner;
     if (make_temporary_hard_links)
     {
-        assert(temp_dirs);
+        chassert(temp_dirs);
         auto temp_dir_it = temp_dirs->find(disk);
         if (temp_dir_it == temp_dirs->end())
             temp_dir_it = temp_dirs->emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
@@ -405,18 +435,14 @@ void DataPartStorageOnDiskBase::backup(
     files_to_backup = getActualFileNamesOnDisk(files_to_backup);
 
     bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
+    bool allow_checksums_from_remote_paths = backup_settings.allow_checksums_from_remote_paths;
 
     auto backup_file = [&](const String & filepath)
     {
         auto filepath_on_disk = part_path_on_disk / filepath;
         auto filepath_in_backup = part_path_in_backup / filepath;
 
-        if (files_without_checksums.contains(filepath))
-        {
-            backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, read_settings, copy_encrypted));
-            return;
-        }
-        else if (is_projection_part && allow_backup_broken_projection && !disk->exists(filepath_on_disk))
+        if (is_projection_part && allow_backup_broken_projection && !disk->existsFile(filepath_on_disk))
             return;
 
         if (make_temporary_hard_links)
@@ -436,7 +462,8 @@ void DataPartStorageOnDiskBase::backup(
             file_hash = it->second.file_hash;
         }
 
-        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, copy_encrypted, file_size, file_hash);
+        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(
+            disk, filepath_on_disk, copy_encrypted, file_size, file_hash, allow_checksums_from_remote_paths);
 
         if (temp_dir_owner)
             backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
@@ -503,14 +530,14 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     if (params.external_transaction)
     {
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
     else
     {
         disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
+        disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
@@ -559,14 +586,14 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     if (params.external_transaction)
     {
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
     else
     {
         dst_disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        dst_disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
+        dst_disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
@@ -590,7 +617,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     String path_to_clone = fs::path(to) / dir_path / "";
     auto src_disk = volume->getDisk();
 
-    if (dst_disk->exists(path_to_clone))
+    if (dst_disk->existsDirectory(path_to_clone))
     {
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
                         "Cannot clone part {} from '{}' to '{}': path '{}' already exists",
@@ -629,7 +656,7 @@ void DataPartStorageOnDiskBase::rename(
 
     String to = fs::path(new_root_path) / new_part_dir / "";
 
-    if (volume->getDisk()->exists(to))
+    if (volume->getDisk()->existsDirectory(to))
     {
         /// FIXME it should be logical error
         if (remove_new_dir_if_exists)
@@ -670,6 +697,18 @@ void DataPartStorageOnDiskBase::rename(
 
     part_dir = new_part_dir;
     root_path = new_root_path;
+
+    /// A successfully-loaded reader stays valid: its archive index is path-independent and reads
+    /// resolve the archive's current location through readFile, so keep it (dropping it could also
+    /// race a concurrent query holding it). But a cached *miss* may be stale: a probe that ran while
+    /// this rename was in progress could have built packed_path from the old location and found no
+    /// file. Clear that stale miss (only when there is no reader) so the next access re-probes the
+    /// new path.
+    {
+        std::lock_guard lock(skip_indices_packed_mutex);
+        if (!skip_indices_packed_reader)
+            skip_indices_packed_probed = false;
+    }
 }
 
 void DataPartStorageOnDiskBase::remove(
@@ -699,9 +738,9 @@ void DataPartStorageOnDiskBase::remove(
 
     if (!has_delete_prefix)
     {
-        if (part_dir_without_slash.has_parent_path())
+        auto parent_path = getParentDirectory();
+        if (!parent_path.empty())
         {
-            auto parent_path = part_dir_without_slash.parent_path();
             if (parent_path == MergeTreeData::DETACHED_DIR_NAME)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
@@ -709,7 +748,7 @@ void DataPartStorageOnDiskBase::remove(
                     part_dir,
                     root_path);
 
-            part_dir_without_slash = parent_path / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
+            part_dir_without_slash = fs::path(parent_path) / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
         }
         else
         {
@@ -718,7 +757,7 @@ void DataPartStorageOnDiskBase::remove(
 
         to = fs::path(root_path) / part_dir_without_slash;
 
-        if (disk->exists(to))
+        if (disk->existsDirectory(to))
         {
             LOG_WARNING(log, "Directory {} (to which part must be renamed before removing) already exists. "
                         "Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, to));
@@ -728,6 +767,15 @@ void DataPartStorageOnDiskBase::remove(
                 disk->removeSharedRecursive(
                     fs::path(to) / "", !can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove);
             }
+            catch (const fs::filesystem_error & e)
+            {
+                if (e.code() == std::errc::no_such_file_or_directory)
+                {
+                    /// If the directory was already removed (e.g. by clearOldTemporaryDirectories), nothing to do.
+                }
+                else
+                    throw;
+            }
             catch (...)
             {
                 LOG_ERROR(
@@ -736,28 +784,32 @@ void DataPartStorageOnDiskBase::remove(
             }
         }
 
-        if (!disk->exists(from))
+        if (!disk->existsDirectory(from))
         {
-            LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+            LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
             /// We will never touch this part again, so unlocking it from zero-copy
             if (!can_remove_description)
                 can_remove_description.emplace(can_remove_callback());
             return;
         }
 
+        /// Evaluate can_remove_callback before moving the directory so zero-copy reference checks
+        /// use the current (existing) path. We intentionally don't update part_dir to avoid races.
+        if (!can_remove_description)
+            can_remove_description.emplace(can_remove_callback());
+
         try
         {
             disk->moveDirectory(from, to);
-            part_dir = part_dir_without_slash;
+            /// NOTE: we intentionally don't update part_dir here because it would cause a data race
+            /// with concurrent readers (e.g. system.parts table queries calling getFullPath()).
+            /// The part is being removed anyway, so the path doesn't need to be updated.
         }
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
             {
-                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
-                /// We will never touch this part again, so unlocking it from zero-copy
-                if (!can_remove_description)
-                    can_remove_description.emplace(can_remove_callback());
+                LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
                 return;
             }
             throw;
@@ -766,12 +818,8 @@ void DataPartStorageOnDiskBase::remove(
         {
             if (e.code() == std::errc::no_such_file_or_directory)
             {
-                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
+                LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
                           "Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
-                /// We will never touch this part again, so unlocking it from zero-copy
-                if (!can_remove_description)
-                    can_remove_description.emplace(can_remove_callback());
-
                 return;
             }
             throw;
@@ -820,12 +868,12 @@ void DataPartStorageOnDiskBase::remove(
 
             /// If we have a directory with suffix '.proj' it is likely a projection.
             /// Try to load checksums for it (to avoid recursive removing fallback).
-            if (projection_storage->exists(checksums_name))
+            if (projection_storage->existsFile(checksums_name))
             {
                 try
                 {
                     MergeTreeDataPartChecksums tmp_checksums;
-                    auto in = projection_storage->readFile(checksums_name, {}, {}, {});
+                    auto in = projection_storage->readFile(checksums_name, {}, {});
                     tmp_checksums.read(*in);
 
                     clearDirectory(fs::path(to) / name, *can_remove_description, tmp_checksums, is_temp, log);
@@ -855,11 +903,23 @@ void DataPartStorageOnDiskBase::clearDirectory(
     /// It does not make sense to try fast path for incomplete temporary parts, because some files are probably absent.
     /// Sometimes we add something to checksums.files before actually writing checksums and columns on disk.
     /// Also sometimes we write checksums.txt and columns.txt in arbitrary order, so this check becomes complex...
-    bool incomplete_temporary_part = is_temp && (!disk->exists(fs::path(dir) / "checksums.txt") || !disk->exists(fs::path(dir) / "columns.txt"));
+    bool incomplete_temporary_part = is_temp && (!disk->existsFile(fs::path(dir) / "checksums.txt") || !disk->existsFile(fs::path(dir) / "columns.txt"));
     if (checksums.empty() || incomplete_temporary_part)
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        try
+        {
+            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                /// If the directory was already removed (e.g. by clearOldTemporaryDirectories), nothing to do.
+            }
+            else
+                throw;
+        }
         return;
     }
 
@@ -875,16 +935,12 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
-        {
-            if (isGinFile(file) && (!disk->isFile(fs::path(dir) / file)))
-                continue;
-
             request.emplace_back(fs::path(dir) / file);
-        }
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
-        request.emplace_back(fs::path(dir) / "txn_version.txt", true);
+        request.emplace_back(fs::path(dir) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
+        request.emplace_back(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, true);
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);
@@ -894,7 +950,19 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Recursive directory removal does many excessive "stat" syscalls under the hood.
 
         LOG_ERROR(log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, dir), getCurrentExceptionMessage(false));
-        disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        try
+        {
+            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                /// If the directory was already removed (e.g. by clearOldTemporaryDirectories), nothing to do.
+            }
+            else
+                throw;
+        }
     }
 }
 
@@ -922,6 +990,14 @@ void DataPartStorageOnDiskBase::changeRootPath(const std::string & from_root, co
         --dst_size;
 
     root_path = to_root.substr(0, dst_size) + root_path.substr(prefix_size);
+
+    /// See rename: keep a successfully-loaded (path-independent) reader, but clear a stale cached
+    /// miss so the next access re-probes the new path.
+    {
+        std::lock_guard lock(skip_indices_packed_mutex);
+        if (!skip_indices_packed_reader)
+            skip_indices_packed_probed = false;
+    }
 }
 
 SyncGuardPtr DataPartStorageOnDiskBase::getDirectorySyncGuard() const
@@ -929,9 +1005,9 @@ SyncGuardPtr DataPartStorageOnDiskBase::getDirectorySyncGuard() const
     return volume->getDisk()->getDirectorySyncGuard(fs::path(root_path) / part_dir);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskBase::writeTransactionFile(WriteMode mode) const
+std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskBase::writeTransactionFile(const String & txn_file_name, WriteMode mode) const
 {
-    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / "txn_version.txt", 256, mode);
+    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / txn_file_name, 256, mode);
 }
 
 void DataPartStorageOnDiskBase::removeRecursive()
@@ -952,6 +1028,183 @@ void DataPartStorageOnDiskBase::createDirectories()
 bool DataPartStorageOnDiskBase::hasActiveTransaction() const
 {
     return transaction != nullptr;
+}
+
+bool DataPartStorageOnDiskBase::isCaseInsensitive() const
+{
+    return getDisk()->isCaseInsensitive();
+}
+
+std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndicesPackedReader() const
+{
+    std::lock_guard lock(skip_indices_packed_mutex);
+    if (skip_indices_packed_probed)
+        return skip_indices_packed_reader;
+
+    auto component_guard = Coordination::setCurrentComponent("DataPartStorageOnDiskBase::getSkipIndicesPackedReader");
+
+    const String packed_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
+    auto disk = volume->getDisk();
+    if (disk->existsFile(packed_path))
+    {
+        /// On shared storage another replica may delete or relocate skp_idx.packed between the
+        /// existence check above and the open below, so the open fails with a "no such key" error.
+        /// Expect404ResponseScope keeps that 404 from being logged or counted as a DiskS3NoSuchKeyError
+        /// (which fails stress tests); catching alone is not enough. If the archive is still present
+        /// it is a genuine read error -> rethrow. Otherwise it was removed or moved: do NOT cache a
+        /// miss (return without setting probed), so the next access re-probes against the current
+        /// path -- after a rename the archive lives at the new path and must not be lost. A part that
+        /// genuinely has no archive is cached as a miss via the existsFile-false branch above, so this
+        /// does not loop.
+        Expect404ResponseScope scope;
+        try
+        {
+            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(disk, packed_path, ReadSettings{});
+        }
+        catch (const Exception &)
+        {
+            if (disk->existsFile(packed_path))
+                throw;
+            return nullptr;
+        }
+    }
+
+    skip_indices_packed_probed = true;
+    return skip_indices_packed_reader;
+}
+
+void DataPartStorageOnDiskBase::seedSkipIndicesPackedReader(const PackedFilesIO::Index & index) const
+{
+    std::lock_guard lock(skip_indices_packed_mutex);
+    skip_indices_packed_reader = std::make_shared<PackedFilesReader>(index);
+    skip_indices_packed_probed = true;
+}
+
+void DataPartStorageOnDiskBase::seedSkipIndicesPackedReaderFrom(const IDataPartStorage & source) const
+{
+    const auto * source_disk = dynamic_cast<const DataPartStorageOnDiskBase *>(&source);
+    if (!source_disk)
+        return;
+
+    /// Same-class access to the protected probe is allowed; this also triggers the source's lazy
+    /// load if it hasn't been read yet.
+    auto source_archive = source_disk->getSkipIndicesPackedReader();
+    if (!source_archive)
+        return;
+
+    seedSkipIndicesPackedReader(source_archive->getIndex());
+}
+
+bool DataPartStorageOnDiskBase::isFileInPackedSkipIndicesArchive(const std::string & name) const
+{
+    auto reader = getSkipIndicesPackedReader();
+    return reader != nullptr && reader->exists(name);
+}
+
+bool DataPartStorageOnDiskBase::hasSkipIndicesPackedArchive() const
+{
+    return getSkipIndicesPackedReader() != nullptr;
+}
+
+void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
+    const NameSet & file_names,
+    PackedFilesWriter & target,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings) const
+{
+    if (file_names.empty())
+        return;
+
+    auto source_archive = getSkipIndicesPackedReader();
+    if (!source_archive)
+        return;
+
+    /// Route reads through readFile (a virtual on the storage), not source_archive->readFile.
+    /// Equivalent on full storage today (the existing looksLikePackedSkipIndexFile overlay ends
+    /// up calling the same archive reader), but storage subclasses where skp_idx.packed isn't a
+    /// flat disk file need this entry point so the virtual readFile can compose the read
+    /// correctly. Keeps the helper subclass-friendly without adding behavioural risk here.
+    for (const auto & file_name : file_names)
+    {
+        if (!source_archive->exists(file_name))
+            continue;
+
+        const auto file_size = source_archive->getFileSize(file_name);
+        auto src = readFile(file_name, read_settings, file_size);
+        auto dst = target.writeFile(file_name, write_settings);
+        copyData(*src, *dst);
+        dst->finalize();
+    }
+}
+
+void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
+    const NameSet & dropped_skip_index_archive_file_names,
+    IDataPartStorage & new_storage,
+    const WriteSettings & write_settings,
+    const ReadSettings & read_settings,
+    MergeTreeDataPartChecksums & checksums,
+    bool sync) const
+{
+    auto source_archive = getSkipIndicesPackedReader();
+    if (!source_archive)
+        return;
+
+    const String packed_filename{SKIP_INDICES_PACKED_FILENAME};
+    /// Drop the inherited archive entry up front; we either re-add it below with the new
+    /// contents or, if all virtual files were dropped, leave it removed so the new part
+    /// reflects "no skip-index archive at all".
+    checksums.remove(packed_filename);
+
+    PackedFilesWriter writer;
+    bool any_kept = false;
+
+    for (const auto & file_name : source_archive->getFileNames())
+    {
+        /// Exact match: dropped_skip_index_archive_file_names lists the full virtual filenames inside the
+        /// archive, not name prefixes. This is what prevents an index named "a" from also
+        /// dropping files belonging to "a.b" when escape_index_filenames is off.
+        if (dropped_skip_index_archive_file_names.contains(file_name))
+            continue;
+
+        any_kept = true;
+        const auto file_size = source_archive->getFileSize(file_name);
+        /// See copyPackedSkipIndicesFilesInto: go through the storage's readFile so subclasses
+        /// that need to compose the read (e.g. archive-in-archive) get a chance to intervene.
+        auto src = readFile(file_name, read_settings, file_size);
+        auto dst = writer.writeFile(file_name, write_settings);
+        copyData(*src, *dst);
+        dst->finalize();
+    }
+
+    if (!any_kept)
+        return;
+
+    auto out = new_storage.writeFile(packed_filename, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+    HashingWriteBuffer hashing(*out);
+    auto [packed_index, _] = writer.finalize(hashing);
+    hashing.finalize();
+
+    auto & checksum = checksums.files[packed_filename];
+    checksum.file_size = hashing.count();
+    checksum.file_hash = hashing.getHash();
+
+    out->finalize();
+    /// Match the rest of the mutated part's durability: with need_sync=true the caller fsyncs
+    /// other on-disk artifacts (checksums.txt, column streams), so the rewritten archive must
+    /// reach the device too. Otherwise a crash between finalize and checksum publication could
+    /// leave the new part referencing an archive whose contents weren't flushed.
+    if (sync)
+        out->sync();
+
+    /// Seed new_storage's reader from the in-memory index, mirroring fillSkipIndicesChecksums.
+    /// On object-storage disks with a non-fake transaction (Keeper metadata) the archive's
+    /// metadata isn't committed until the part transaction commits, which happens after
+    /// finalizeMutatedPart. With columns_and_secondary_indices_sizes_lazy_calculation=0 the
+    /// size accounting runs inside finalizeMutatedPart, before that commit; without this seed
+    /// getSkipIndicesPackedReader probes the disk, misses the not-yet-committed archive, caches
+    /// nullptr, and the surviving packed index's size is latched at zero.
+    if (auto * disk_storage = dynamic_cast<DataPartStorageOnDiskBase *>(&new_storage))
+        disk_storage->seedSkipIndicesPackedReader(packed_index);
 }
 
 }

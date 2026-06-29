@@ -1,15 +1,9 @@
 #!/usr/bin/env python3
 
-import logging
-import random
-import string
-import time
 
 import pytest
-from multiprocessing.dummy import Pool
-from helpers.cluster import ClickHouseCluster
-import minio
 
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -46,6 +40,8 @@ def test_replicated_db_and_ttl(started_cluster):
     )
 
     node1.query("INSERT INTO 02908_main VALUES (1)")
-    node1.query("INSERT INTO 02908_dependent VALUES (1, now())")
+    node1.query("INSERT INTO 02908_dependent VALUES (1, now()-30)")
+    node1.query("INSERT INTO 02908_dependent VALUES (2, now()+30)")
 
+    node1.query("OPTIMIZE TABLE 02908_dependent FINAL")
     node1.query("SELECT * FROM 02908_dependent")

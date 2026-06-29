@@ -1,0 +1,3 @@
+`test_table with spaces`	6
+`test_table with spaces`	9
+`this.is.a.valid.databasename`.`test_table with spaces`	6

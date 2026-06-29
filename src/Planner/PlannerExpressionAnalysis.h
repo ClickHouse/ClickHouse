@@ -1,16 +1,16 @@
 #pragma once
 
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/InterpolateDescription.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Interpreters/ActionsDAG.h>
 
-#include <Planner/PlannerContext.h>
 #include <Planner/PlannerAggregation.h>
-#include <Planner/PlannerWindowFunctions.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
+#include <Planner/PlannerWindowFunctions.h>
 
 namespace DB
 {
@@ -18,6 +18,7 @@ namespace DB
 struct ProjectionAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr projection_actions;
+    CorrelatedSubtrees correlated_subtrees;
     Names projection_column_names;
     NamesWithAliases projection_column_names_with_display_aliases;
     ActionsAndProjectInputsFlagPtr project_names_actions;
@@ -26,6 +27,7 @@ struct ProjectionAnalysisResult
 struct FilterAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr filter_actions;
+    CorrelatedSubtrees correlated_subtrees;
     std::string filter_column_name;
     bool remove_filter_column = false;
 };
@@ -49,6 +51,7 @@ struct SortAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_order_by_actions;
     bool has_with_fill = false;
+    ActionsAndProjectInputsFlagPtr before_interpolate_actions;
 };
 
 struct LimitByAnalysisResult
@@ -185,10 +188,13 @@ private:
     LimitByAnalysisResult limit_by_analysis_result;
 };
 
-/// Build expression analysis result for query tree, join tree input columns and planner context
+/// Build expression analysis result for query tree, join tree input columns and planner context.
+/// `source_constants` (see `JoinTreeQueryPlan::source_constants`) are constant columns the chain
+/// keeps flowing rather than fold-and-drop, so a distributed shard delivers what the initiator expects.
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context,
-    const PlannerQueryProcessingInfo & planner_query_processing_info);
+    const PlannerQueryProcessingInfo & planner_query_processing_info,
+    const NameSet & source_constants = {});
 
 }

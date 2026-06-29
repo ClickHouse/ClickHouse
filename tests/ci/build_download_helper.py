@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
-
-import json
 import logging
-import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Union
+from typing import Any
 
 import requests
-
-from ci_config import CI
 
 try:
     # A work around for scripts using this downloading module without required deps
@@ -26,6 +21,10 @@ except ImportError:
 
 
 DOWNLOAD_RETRIES_COUNT = 5
+# Cap the exponential backoff so that increasing the number of retries extends
+# the total time we keep trying through a transient outage instead of exploding
+# the per-attempt sleep.
+DOWNLOAD_RETRY_MAX_BACKOFF = 60
 
 logger = logging.getLogger(__name__)
 
@@ -122,24 +121,11 @@ def get_gh_api(
     raise APIException(f"Unable to request data from GH API: {url}") from exc
 
 
-def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str]:
-    for root, _, files in os.walk(reports_path):
-        for file in files:
-            if file.endswith(f"_{build_name}.json"):
-                logger.info("Found build report json %s for %s", file, build_name)
-                with open(
-                    os.path.join(root, file), "r", encoding="utf-8"
-                ) as file_handler:
-                    build_report = json.load(file_handler)
-                    return build_report["build_urls"]  # type: ignore
-
-    logger.info("A build report is not found for %s", build_name)
-    return []
-
-
-def download_build_with_progress(url: str, path: Path) -> None:
+def download_build_with_progress(
+    url: str, path: Path, retries: int = DOWNLOAD_RETRIES_COUNT
+) -> None:
     logger.info("Downloading from %s to temp path %s", url, path)
-    for i in range(DOWNLOAD_RETRIES_COUNT):
+    for i in range(retries):
         try:
             response = get_with_retries(url, retries=1, stream=True)
             total_length = int(response.headers.get("content-length", 0))
@@ -152,14 +138,15 @@ def download_build_with_progress(url: str, path: Path) -> None:
                 return
 
             with open(path, "wb") as f:
+                dl = 0
                 if total_length == 0:
                     logger.info(
                         "No content-length, will download file without progress"
                     )
-                    f.write(response.content)
+                    content = response.content
+                    dl = len(content)
+                    f.write(content)
                 else:
-                    dl = 0
-
                     logger.info("Content length is %ld bytes", total_length)
                     for data in response.iter_content(chunk_size=4096):
                         dl += len(data)
@@ -171,6 +158,14 @@ def download_build_with_progress(url: str, path: Path) -> None:
                             space_str = " " * (50 - done)
                             sys.stdout.write(f"\r[{eq_str}{space_str}] {percent}%")
                             sys.stdout.flush()
+
+            # A truncated response is a transient failure too: without this check a
+            # short read produces a corrupt file that only fails much later (e.g. as
+            # an opaque `dpkg` error), hiding the real download problem.
+            if total_length and dl != total_length:
+                raise DownloadException(
+                    f"Downloaded {dl} of {total_length} bytes from {url}"
+                )
             break
         except Exception as e:
             if sys.stdout.isatty():
@@ -178,102 +173,32 @@ def download_build_with_progress(url: str, path: Path) -> None:
             if path.exists():
                 path.unlink()
 
-            if i + 1 < DOWNLOAD_RETRIES_COUNT:
-                time.sleep(3)
+            # A 404 means the artifact genuinely does not exist (e.g. packages were
+            # not uploaded for this tag yet). Retrying cannot help, so fail fast with
+            # a clear, attributable message instead of burning the whole retry budget.
+            status_code = getattr(getattr(e, "response", None), "status_code", None)
+            if status_code == 404:
+                raise DownloadException(
+                    f"Cannot download {url}: the file does not exist (HTTP 404)"
+                ) from e
+
+            if i + 1 < retries:
+                sleep_time = min(3 * (2**i), DOWNLOAD_RETRY_MAX_BACKOFF)
+                logger.warning(
+                    "Download attempt %i of %i for %s failed (%s), retrying in %i seconds",
+                    i + 1,
+                    retries,
+                    url,
+                    e,
+                    sleep_time,
+                )
+                time.sleep(sleep_time)
             else:
                 raise DownloadException(
-                    f"Cannot download dataset from {url}, all retries exceeded"
+                    f"Cannot download {url}, all {retries} retries exceeded; "
+                    f"last error: {e}"
                 ) from e
 
     if sys.stdout.isatty():
         sys.stdout.write("\n")
     logger.info("Downloading finished")
-
-
-def download_builds(
-    result_path: Path, build_urls: List[str], filter_fn: Callable[[str], bool]
-) -> None:
-    for url in build_urls:
-        if filter_fn(url):
-            fname = os.path.basename(url.replace("%2B", "+").replace("%20", " "))
-            logger.info("Will download %s to %s", fname, result_path)
-            download_build_with_progress(url, result_path / fname)
-
-
-def download_builds_filter(
-    check_name: str,
-    reports_path: Union[Path, str],
-    result_path: Path,
-    filter_fn: Callable[[str], bool] = lambda _: True,
-) -> None:
-    build_name = CI.get_required_build_name(check_name)
-    urls = read_build_urls(build_name, reports_path)
-    logger.info("The build report for %s contains the next URLs: %s", build_name, urls)
-
-    if not urls:
-        raise DownloadException("No build URLs found")
-
-    download_builds(result_path, urls, filter_fn)
-
-
-def download_all_deb_packages(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name, reports_path, result_path, lambda x: x.endswith("deb")
-    )
-
-
-def download_unit_tests(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name, reports_path, result_path, lambda x: x.endswith("unit_tests_dbms")
-    )
-
-
-def download_clickhouse_binary(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name, reports_path, result_path, lambda x: x.endswith("clickhouse")
-    )
-
-
-def get_clickhouse_binary_url(
-    check_name: str, reports_path: Union[Path, str]
-) -> Optional[str]:
-    build_name = CI.get_required_build_name(check_name)
-    urls = read_build_urls(build_name, reports_path)
-    logger.info("The build report for %s contains the next URLs: %s", build_name, urls)
-    for url in urls:
-        check_url = url
-        if "?" in check_url:
-            check_url = check_url.split("?")[0]
-
-        if check_url.endswith("clickhouse"):
-            return url
-
-    return None
-
-
-def download_performance_build(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name,
-        reports_path,
-        result_path,
-        lambda x: x.endswith("performance.tar.zst"),
-    )
-
-
-def download_fuzzers(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name,
-        reports_path,
-        result_path,
-        lambda x: x.endswith(("_fuzzer", ".dict", ".options", "_seed_corpus.zip")),
-    )

@@ -1,0 +1,41 @@
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+DROP TABLE IF EXISTS t3;
+
+SET enable_analyzer = 1;
+
+CREATE TABLE t1 ( k String, a Int32 ) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t1 VALUES ('a', 1);
+
+CREATE TABLE t2 ( k String, b UInt32 ) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t2 VALUES ('a', 2);
+
+CREATE TABLE t3 ( k String, c Nullable(Int32) ) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t3 VALUES ('a', 3);
+
+{% for query_plan_join_swap_table in ['true', 'false'] -%}
+{% for join_algorithm in ['hash', 'full_sorting_merge'] -%}
+
+SET query_plan_join_swap_table = {{ query_plan_join_swap_table }};
+SET join_algorithm = '{{ join_algorithm }}';
+
+SELECT a, b, c
+FROM t1
+LEFT JOIN t2 ON t1.k = t2.k
+LEFT JOIN t3 ON t1.k = t3.k
+;
+
+SELECT ct1, ct2, ct3, ct4, ct5, ct6, ct7, ct8, ct9
+FROM (SELECT materialize(1) AS ct1, materialize('a') AS k) AS t1
+LEFT JOIN (SELECT materialize(2) AS ct2, materialize('a') AS k) AS t2 ON t1.k = t2.k
+LEFT JOIN (SELECT materialize(3) AS ct3, materialize('a') AS k) AS t3 ON t1.k = t3.k
+LEFT JOIN (SELECT materialize(4) AS ct4, materialize('a') AS k) AS t4 ON t1.k = t4.k
+LEFT JOIN (SELECT materialize(5) AS ct5, materialize('a') AS k) AS t5 ON t2.k = t5.k
+LEFT JOIN (SELECT materialize(6) AS ct6, materialize('a') AS k) AS t6 ON t3.k = t6.k
+LEFT JOIN (SELECT materialize(7) AS ct7, materialize('a') AS k) AS t7 ON t3.k = t7.k
+LEFT JOIN (SELECT materialize(8) AS ct8, materialize('a') AS k) AS t8 ON t3.k = t8.k
+LEFT JOIN (SELECT materialize(9) AS ct9, materialize('a') AS k) AS t9 ON t5.k = t9.k
+;
+
+{% endfor -%}
+{% endfor -%}

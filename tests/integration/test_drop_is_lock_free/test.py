@@ -1,10 +1,10 @@
-import time
-import pytest
 import logging
-from contextlib import contextmanager
+import time
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)

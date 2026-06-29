@@ -2,17 +2,13 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
@@ -22,6 +18,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool splitby_max_substrings_includes_remaining_string;
+}
 
 namespace ErrorCodes
 {
@@ -44,6 +44,7 @@ namespace ErrorCodes
   * - otherwise, an empty array
   *
   * alphaTokens(s[, max_substrings])            - select from the string subsequence `[a-zA-Z]+`.
+  * sparseGrams(s[, min_length])                - find all substrings where border ngrams hashes are bigger than internal.
   *
   * URL functions are located separately.
   */
@@ -51,7 +52,7 @@ namespace ErrorCodes
 
 /// A function that takes a string, and returns an array of substrings created by some generator.
 template <typename Generator>
-class FunctionTokens : public IFunction
+class FunctionTokens final : public IFunction
 {
 private:
     using Pos = const char *;
@@ -64,7 +65,7 @@ public:
     explicit FunctionTokens<Generator>(ContextPtr context)
     {
         const Settings & settings = context->getSettingsRef();
-        max_substrings_includes_remaining_string = settings.splitby_max_substrings_includes_remaining_string;
+        max_substrings_includes_remaining_string = settings[Setting::splitby_max_substrings_includes_remaining_string];
     }
 
     String getName() const override { return name; }
@@ -86,7 +87,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        Generator generator;
+        Generator generator{};
         generator.init(arguments, max_substrings_includes_remaining_string);
 
         const auto & array_argument = arguments[generator.strings_argument_position];
@@ -121,19 +122,20 @@ public:
             {
                 Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
                 current_src_offset = src_offsets[i];
-                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]) - 1;
+                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
 
                 generator.set(pos, end);
                 size_t j = 0;
                 while (generator.get(token_begin, token_end))
                 {
+                    chassert(token_begin >= pos && token_end >= token_begin);
+                    chassert(token_end <= end);
                     size_t token_size = token_end - token_begin;
 
-                    res_strings_chars.resize(res_strings_chars.size() + token_size + 1);
+                    res_strings_chars.resize(res_strings_chars.size() + token_size);
                     memcpySmallAllowReadWriteOverflow15(&res_strings_chars[current_dst_strings_offset], token_begin, token_size);
-                    res_strings_chars[current_dst_strings_offset + token_size] = 0;
 
-                    current_dst_strings_offset += token_size + 1;
+                    current_dst_strings_offset += token_size;
                     res_strings_offsets.push_back(current_dst_strings_offset);
                     ++j;
                 }
@@ -144,7 +146,7 @@ public:
 
             return col_res;
         }
-        else if (col_str_const)
+        if (col_str_const)
         {
             String src = col_str_const->getValue<String>();
             Array dst;
@@ -158,9 +160,12 @@ public:
 
             return result_type->createColumnConst(col_str_const->size(), dst);
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {} of arguments of function {}",
-                    array_argument.column->getName(), array_argument.column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal columns {}, {} of arguments of function {}",
+            array_argument.column->getName(),
+            array_argument.column->getName(),
+            getName());
     }
 };
 

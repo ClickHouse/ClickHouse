@@ -13,20 +13,12 @@ public:
     explicit FunctionToExecutableFunctionAdaptor(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
 
     String getName() const override { return function->getName(); }
+    void cancelExecution() const override { function->cancelExecution(); }
 
 protected:
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final
-    {
-        checkFunctionArgumentSizes(arguments, input_rows_count);
-        return function->executeImpl(arguments, result_type, input_rows_count);
-    }
-
-    ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final
-    {
-        checkFunctionArgumentSizes(arguments, input_rows_count);
-        return function->executeImplDryRun(arguments, result_type, input_rows_count);
-    }
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
+    ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
 
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForNothing() const final { return function->useDefaultImplementationForNothing(); }
@@ -35,6 +27,8 @@ protected:
     bool useDefaultImplementationForSparseColumns() const final { return function->useDefaultImplementationForSparseColumns(); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
     bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
+    /// TODO: replace isSuitableForShortCircuitArgumentsExecution with a dedicated canThrow interface on functions.
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return function->isSuitableForShortCircuitArgumentsExecution(arguments); }
 
 private:
     std::shared_ptr<IFunction> function;
@@ -56,6 +50,11 @@ public:
     const FunctionPtr & getFunction() const { return function; }
 
 #if USE_EMBEDDED_COMPILER
+
+    ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & types) const override
+    {
+        return function->getArgumentsThatDontParticipateInCompilation(types);
+    }
 
     bool isCompilable() const override { return function->isCompilable(getArgumentTypes(), getResultType()); }
 
@@ -92,6 +91,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & args) const override { return function->isSuitableForShortCircuitArgumentsExecution(args); }
 
+    bool isNameInsensitive() const override { return function->isNameInsensitive(); }
+
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
 
     bool hasInformationAboutPreimage() const override { return function->hasInformationAboutPreimage(); }
@@ -101,7 +102,7 @@ public:
         return function->getMonotonicityForRange(type, left, right);
     }
 
-    OptionalFieldInterval getPreimage(const IDataType & type, const Field & point) const override
+    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
     {
         return function->getPreimage(type, point);
     }
@@ -114,7 +115,7 @@ private:
 
 /// Following class implement IFunctionOverloadResolver via IFunction.
 
-class FunctionToOverloadResolverAdaptor : public IFunctionOverloadResolver
+class FunctionToOverloadResolverAdaptor final : public IFunctionOverloadResolver
 {
 public:
     explicit FunctionToOverloadResolverAdaptor(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
@@ -126,6 +127,11 @@ public:
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
+    bool isServerConstant() const override { return function->isServerConstant(); }
+    bool isShortCircuit(IFunctionBase::ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
+    bool isHigherOrderFunction() const override { return function->isHigherOrderFunction(); }
+    bool allowsOmittingParentheses() const override { return function->allowsOmittingParentheses(); }
+
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return function->getArgumentsThatAreAlwaysConstant(); }
@@ -142,6 +148,9 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return function->useDefaultImplementationForLowCardinalityColumns(); }
     bool useDefaultImplementationForSparseColumns() const override { return function->useDefaultImplementationForSparseColumns(); }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return function->canBeExecutedOnLowCardinalityDictionary(); }
+    bool useDefaultImplementationForDynamic() const override { return function->useDefaultImplementationForDynamic(); }
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return function->getReturnTypeForDefaultImplementationForDynamic(); }
+    bool useDefaultImplementationForVariant() const override { return function->useDefaultImplementationForVariant(); }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {

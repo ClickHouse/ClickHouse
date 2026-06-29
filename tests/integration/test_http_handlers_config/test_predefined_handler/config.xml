@@ -33,5 +33,33 @@
                 <query>INSERT INTO test_table(id, data) SELECT {id:UInt32}, {_request_body:String}</query>
             </handler>
         </rule>
+
+        <rule>
+            <methods>GET</methods>
+            <url>/test_predefined_handler_auth_with_password</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <user>with_password</user>
+                <query>SELECT currentUser()</query>
+            </handler>
+        </rule>
+        <rule>
+            <methods>GET</methods>
+            <url>/test_predefined_handler_auth_with_password_fail</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <user>incorrect_user</user>
+                <query>SELECT currentUser()</query>
+            </handler>
+        </rule>
+        <rule>
+            <methods>GET</methods>
+            <url>/test_predefined_handler_auth_without_password</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <user>without_password</user>
+                <query>SELECT currentUser()</query>
+            </handler>
+        </rule>
     </http_handlers>
 </clickhouse>

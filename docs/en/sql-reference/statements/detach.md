@@ -1,15 +1,17 @@
 ---
-slug: /en/sql-reference/statements/detach
+description: 'Documentation for Detach'
+sidebar_label: 'DETACH'
 sidebar_position: 43
-sidebar_label: DETACH
-title: "DETACH Statement"
+slug: /sql-reference/statements/detach
+title: 'DETACH Statement'
+doc_type: 'reference'
 ---
 
 Makes the server "forget" about the existence of a table, a materialized view, a dictionary, or a database.
 
 **Syntax**
 
-``` sql
+```sql
 DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
 ```
 
@@ -30,16 +32,12 @@ The `SYNC` modifier executes the action without delay.
 
 Creating a table:
 
-Query:
-
-``` sql
-CREATE TABLE test ENGINE = Log AS SELECT * FROM numbers(10);
+```sql title="Query"
+CREATE TABLE test ENGINE = MergeTree ORDER BY () AS SELECT * FROM numbers(10);
 SELECT * FROM test;
 ```
 
-Result:
-
-``` text
+```text title="Response"
 ┌─number─┐
 │      0 │
 │      1 │
@@ -56,21 +54,21 @@ Result:
 
 Detaching the table:
 
-Query:
-
-``` sql
+```sql title="Query"
 DETACH TABLE test;
 SELECT * FROM test;
 ```
 
-Result:
-
-``` text
+```text title="Response"
 Received exception from server (version 21.4.1):
 Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.test does not exist.
 ```
 
+:::note
+In ClickHouse Cloud users should use the `PERMANENTLY` clause e.g. `DETACH TABLE <table> PERMANENTLY`. If this clause is not used, tables will be reattached on cluster restart e.g. during upgrades.
+:::
+
 **See Also**
 
-- [Materialized View](../../sql-reference/statements/create/view.md#materialized)
-- [Dictionaries](../../sql-reference/dictionaries/index.md)
+- [Materialized View](/sql-reference/statements/create/view#materialized-view)
+- [Dictionaries](./create/dictionary/overview.md)

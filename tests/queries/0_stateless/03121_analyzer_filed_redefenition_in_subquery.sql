@@ -28,7 +28,6 @@ FROM
 );
 
 -- query 3
--- it works with old analyzer
 SELECT my_field
 FROM
 (
@@ -36,4 +35,4 @@ FROM
         *,
         'redefined' AS my_field
 	from (select * from test_subquery)
-); -- {serverError AMBIGUOUS_COLUMN_NAME}
+);

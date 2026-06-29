@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -107,7 +108,7 @@ def started_cluster():
         cluster.start()
         for _, node in cluster.instances.items():
             node.query(
-                f"""
+                """
                 create table dist_local (c1 Int32, c2 String) engine=MergeTree() order by c1;
                 create table dist (c1 Int32, c2 String) engine=Distributed(test_cluster, currentDatabase(), dist_local, c1);
                 create table replica_dist_local (c1 Int32, c2 String) engine=MergeTree() order by c1;

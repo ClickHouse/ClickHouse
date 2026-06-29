@@ -1,3 +1,5 @@
+#include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/AsynchronousMetrics.h>
@@ -9,12 +11,18 @@ namespace DB
 
 ColumnsDescription StorageSystemAsynchronousMetrics::getColumnsDescription()
 {
-    return ColumnsDescription
+    auto description = ColumnsDescription
     {
         {"metric", std::make_shared<DataTypeString>(), "Metric name."},
         {"value", std::make_shared<DataTypeFloat64>(), "Metric value."},
         {"description", std::make_shared<DataTypeString>(), "Metric description."},
     };
+
+    description.setAliases({
+        {"name", std::make_shared<DataTypeString>(), "metric"}
+    });
+
+    return description;
 }
 
 
@@ -35,3 +43,6 @@ void StorageSystemAsynchronousMetrics::fillData(MutableColumns & res_columns, Co
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemAsynchronousMetrics) }

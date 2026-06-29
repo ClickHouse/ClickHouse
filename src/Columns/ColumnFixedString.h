@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/PODArray.h>
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Columns/IColumn.h>
@@ -24,7 +24,7 @@ public:
     using Chars = PaddedPODArray<UInt8>;
 
 private:
-    /// Bytes of rows, laid in succession. The strings are stored without a trailing zero byte.
+    /// Bytes of strings, laid in succession. The strings are stored without a trailing zero byte.
     /** NOTE It is required that the offset and type of chars in the object be the same as that of `data in ColumnUInt8`.
       * Used in `packFixed` function (AggregationCommon.h)
       */
@@ -87,9 +87,11 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
-    StringRef getDataAt(size_t index) const override
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override;
+
+    std::string_view getDataAt(size_t index) const override
     {
-        return StringRef(&chars[n * index], n);
+        return {reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
     bool isDefaultAt(size_t index) const override;
@@ -124,16 +126,20 @@ public:
 
     void popBack(size_t elems) override
     {
+        if (elems > size())
+            throwCannotPopBack(n, getName(), size());
+
         chars.resize_assume_reserved(chars.size() - n * elems);
     }
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override;
 
@@ -147,6 +153,13 @@ public:
         chassert(this->n == rhs.n);
         return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isComparatorCompilable() const override;
+    llvm::Value * compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const override;
+#endif
+
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, Permutation & res) const override;
@@ -164,6 +177,8 @@ public:
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
+    void filter(const IColumn::Filter & filt) override;
+
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
@@ -175,7 +190,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     void reserve(size_t size) override
     {
@@ -197,7 +212,7 @@ public:
         chars.resize(n * size);
     }
 
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool structureEquals(const IColumn & rhs) const override
     {
@@ -206,11 +221,14 @@ public:
         return false;
     }
 
+    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
+
     bool canBeInsideNullable() const override { return true; }
 
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return n; }
     std::string_view getRawData() const override { return {reinterpret_cast<const char *>(chars.data()), chars.size()}; }
+    std::span<char> insertRawUninitialized(size_t count) override;
 
     /// Specialized part of interface, not from IColumn.
     void insertString(const String & string) { insertData(string.c_str(), string.size()); }

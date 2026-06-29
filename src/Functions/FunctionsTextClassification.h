@@ -6,12 +6,16 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context_fwd.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_nlp_functions;
+}
+
 /// Functions for text classification with different result types
 
 namespace ErrorCodes
@@ -22,14 +26,14 @@ extern const int SUPPORT_IS_DISABLED;
 }
 
 template <typename Impl, typename Name>
-class FunctionTextClassificationString : public IFunction
+class FunctionTextClassificationString final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
 
     static FunctionPtr create(ContextPtr context)
     {
-        if (!context->getSettingsRef().allow_experimental_nlp_functions)
+        if (!context->getSettingsRef()[Setting::allow_experimental_nlp_functions])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Natural language processing function '{}' is experimental. "
                             "Set `allow_experimental_nlp_functions` setting to enable it", name);
@@ -71,14 +75,14 @@ public:
 };
 
 template <typename Impl, typename Name>
-class FunctionTextClassificationFloat : public IFunction
+class FunctionTextClassificationFloat final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
 
     static FunctionPtr create(ContextPtr context)
     {
-        if (!context->getSettingsRef().allow_experimental_nlp_functions)
+        if (!context->getSettingsRef()[Setting::allow_experimental_nlp_functions])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Natural language processing function '{}' is experimental. "
                             "Set `allow_experimental_nlp_functions` setting to enable it", name);

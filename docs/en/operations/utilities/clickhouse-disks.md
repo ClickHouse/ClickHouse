@@ -1,31 +1,39 @@
 ---
-slug: /en/operations/utilities/clickhouse-disks
+description: 'Documentation for Clickhouse-disks'
+sidebar_label: 'clickhouse-disks'
 sidebar_position: 59
-sidebar_label: clickhouse-disks
+slug: /operations/utilities/clickhouse-disks
+title: 'Clickhouse-disks'
+doc_type: 'reference'
 ---
-
-# Clickhouse-disks
 
 A utility providing filesystem-like operations for ClickHouse disks. It can work in both interactive and not interactive modes.
 
-## Program-wide options
+## Program-wide options {#program-wide-options}
 
 * `--config-file, -C` -- path to ClickHouse config, defaults to `/etc/clickhouse-server/config.xml`.
 * `--save-logs` -- Log progress of invoked commands to `/var/log/clickhouse-server/clickhouse-disks.log`.
-* `--log-level` -- What [type](../server-configuration-parameters/settings#server_configuration_parameters-logger) of events to log, defaults to `none`.
+* `--log-level` -- What [type](../server-configuration-parameters/settings#logger) of events to log, defaults to `none`.
 * `--disk` -- what disk to use for `mkdir, move, read, write, remove` commands. Defaults to `default`.
 * `--query, -q` -- single query that can be executed without launching interactive mode
 * `--help, -h` -- print all the options and commands with description
 
-## Default Disks
-After the launch two disks are initialized. The first one is a disk `local` that is supposed to imitate local file system from which clickhouse-disks utility was launched. The second one is a disk `default` that is mounted to the local filesystem in the directory that can be found in config as a parameter `clickhouse/path` (default value is `/var/lib/clickhouse`).
+## Lazy initialization {#lazy-initialization}
+All disks which are available in config are initialized lazily. This means that the corresponding object for a disk is initialized only when corresponding disk is used in some command. This is done to make the utility more robust and to avoid touching of disks which are described in config but not used by a user and can fail during initialization. However, there should be a disk which is initialized at the clickhouse-disks launch. This disk is specified with parameter `--disk` through command-line (default value is `default`).
 
-## Clickhouse-disks state
+## Default Disks {#default-disks}
+After launching, there are two disks that are not specified in the configuration but are available for initialization.
+
+1. **`local` Disk**: This disk is designed to mimic the local file system from which the `clickhouse-disks` utility was launched. Its initial path is the directory from which `clickhouse-disks` was started, and it is mounted at the root directory of the file system.
+
+2. **`default` Disk**: This disk is mounted to the local file system in the directory specified by the `clickhouse/path` parameter in the configuration (the default value is `/var/lib/clickhouse`). Its initial path is set to `/`.
+
+## Clickhouse-disks state {#clickhouse-disks-state}
 For each disk that was added the utility stores current directory (as in a usual filesystem). User can change current directory and switch between disks.
 
-State is reflected in a prompt "`disk_name`:`path_name`" 
+State is reflected in a prompt "`disk_name`:`path_name`"
 
-## Commands
+## Commands {#commands}
 
 In these documentation file all mandatory positional arguments are referred as `<parameter>`, named arguments are referred as `[--parameter value]`. All positional parameters could be mentioned as a named parameter with a corresponding name.
 
@@ -35,8 +43,10 @@ In these documentation file all mandatory positional arguments are referred as `
   Recursively copy data from `path-from` at disk `disk_1` (default value is a current disk (parameter `disk` in a non-interactive mode))
   to `path-to` at disk `disk_2` (default value is a current disk (parameter `disk` in a non-interactive mode)).
 * `current_disk_with_path (current, current_disk, current_path)`
-  Print current state in format: 
+  Print current state in format:
     `Disk: "current_disk" Path: "current path on current disk"`
+* `du [--human-readable] [<path>]`
+  Print the total size in bytes for the file or directory at `path` on a current disk. For a directory the size of all files it contains is summed up recursively. If `path` is not specified, the current directory is used. With `--human-readable` (`-h`) the size is printed in a human-readable format (e.g. `1.23 GiB`).
 * `help [<command>]`
   Print help message about command `command`. If `command` is not specified print information about all commands.
 * `move (mv) <path-from> <path-to>`.
@@ -53,7 +63,15 @@ In these documentation file all mandatory positional arguments are referred as `
   Create a directory. Non-recursive by default.
 * `read (r) <path-from> [--path-to path]`
   Read a file from `path-from` to `path` (`stdout` if not supplied).
+* `read-bitmap <path-from> [--values]`
+  Inspect a delete-bitmap (`.rbm`) sidecar at `path-from`. Prints the magic and version, the CRC validity, the cardinality (number of deleted rows) and the row range. With `--values` it also dumps all set bits (the deleted row offsets) in ascending order.
 * `switch-disk [--path path] <disk>`
-  Switch to disk `disk` on path `path` (if `path` is not specified default value is a previous path on disk `disk`). 
+  Switch to disk `disk` on path `path` (if `path` is not specified default value is a previous path on disk `disk`).
 * `write (w) [--path-from path] <path-to>`.
   Write a file from `path` (`stdin` if `path` is not supplied, input must finish by Ctrl+D) to `path-to`.
+* `wc <path> [--bytes] [--lines] [--words]`
+  Count bytes, lines and words in the file at `path` on the current disk (like Unix `wc`). With no flag all three counts are printed in the order of lines, words, then bytes. Use `--bytes` (`-c`), `--lines` (`-l`), `--words` (`-w`) to select specific counts.
+* `sed <expression> <path>`
+  Apply the `sed` `expression` to the file at `path` on the current disk, in place. Requires `sed` to be installed on the host. Only a single `sed` expression with no options is supported (e.g. `'s/foo/bar/g'`, `'/foo/d'`), not multiple expressions (`-e ... -e ...`) or options combined with an address (e.g. `-n` with `4,10p`).
+* `read-checksums <path>`
+  Read a `checksums.txt` file of a `MergeTree` data part on a current disk and print it to `stdout` as a tab-separated, human-readable table with the columns `name`, `file_size`, `file_hash`, `uncompressed_size`, and `uncompressed_hash`. The last two columns are present only for compressed files.

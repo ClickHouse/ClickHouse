@@ -1,8 +1,8 @@
 import concurrent.futures
 
 import pytest
-from helpers.cluster import ClickHouseCluster
 
+from helpers.cluster import ClickHouseCluster
 
 MAX_THREADS = 60
 
@@ -48,7 +48,7 @@ def test_query_exception_on_thread_pool_full(started_cluster):
     prepare_cluster()
     # Generate some sample data so sleepEachRow in do_slow_select works
     node1.query(
-        f"INSERT INTO test_threads_busy VALUES ('2024-01-01', 1, 'thread-test')"
+        "INSERT INTO test_threads_busy VALUES ('2024-01-01', 1, 'thread-test')"
     )
 
     futures = []

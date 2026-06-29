@@ -1,18 +1,12 @@
 #pragma once
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
-#include <base/StringRef.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -32,7 +26,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name>
-class FunctionsStringSearchToString : public IFunction
+class FunctionsStringSearchToString final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -60,6 +54,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
@@ -79,9 +78,8 @@ public:
 
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 

@@ -1,6 +1,7 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
+
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -70,7 +71,7 @@ def test_skip_unavailable_shards(start_cluster, prefer_localhost_replica):
     table_name = "test_table"
     create_tables(cluster, table_name)
 
-    expected_result = f"2003\t-999\t999\t3\n"
+    expected_result = "2003\t-999\t999\t3\n"
 
     # w/o parallel replicas
     assert (
@@ -85,7 +86,7 @@ def test_skip_unavailable_shards(start_cluster, prefer_localhost_replica):
         node1.query(
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
+                "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
                 "prefer_localhost_replica": prefer_localhost_replica,
                 "skip_unavailable_shards": 1,
@@ -119,7 +120,7 @@ def test_error_on_unavailable_shards(start_cluster, prefer_localhost_replica):
         node1.query(
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
+                "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
                 "prefer_localhost_replica": prefer_localhost_replica,
                 "skip_unavailable_shards": 0,
@@ -139,7 +140,7 @@ def test_no_unavailable_shards(start_cluster, skip_unavailable_shards):
     table_name = "test_table"
     create_tables(cluster, table_name)
 
-    expected_result = f"2003\t-999\t999\t3\n"
+    expected_result = "2003\t-999\t999\t3\n"
 
     # w/o parallel replicas
     assert (
@@ -154,7 +155,7 @@ def test_no_unavailable_shards(start_cluster, skip_unavailable_shards):
         node1.query(
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
+                "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
                 "prefer_localhost_replica": 0,
                 "skip_unavailable_shards": skip_unavailable_shards,

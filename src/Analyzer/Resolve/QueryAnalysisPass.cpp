@@ -1,6 +1,6 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
-#include <Analyzer/createUniqueTableAliases.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
 
 namespace DB
 {
@@ -16,7 +16,7 @@ void QueryAnalysisPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr conte
 {
     QueryAnalyzer analyzer(only_analyze);
     analyzer.resolve(query_tree_node, table_expression, context);
-    createUniqueTableAliases(query_tree_node, table_expression, context);
+    createUniqueAliasesIfNecessary(query_tree_node, context);
 }
 
 }

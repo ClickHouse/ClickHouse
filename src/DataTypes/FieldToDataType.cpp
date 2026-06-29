@@ -131,6 +131,34 @@ DataTypePtr FieldToDataType<on_error>::operator() (const DecimalField<Decimal256
 }
 
 template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const Decimal32 &, UInt32 scale) const
+{
+    using Type = DataTypeDecimal<Decimal32>;
+    return std::make_shared<Type>(Type::maxPrecision(), scale);
+}
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const Decimal64 &, UInt32 scale) const
+{
+    using Type = DataTypeDecimal<Decimal64>;
+    return std::make_shared<Type>(Type::maxPrecision(), scale);
+}
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const Decimal128 &, UInt32 scale) const
+{
+    using Type = DataTypeDecimal<Decimal128>;
+    return std::make_shared<Type>(Type::maxPrecision(), scale);
+}
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const Decimal256 &, UInt32 scale) const
+{
+    using Type = DataTypeDecimal<Decimal256>;
+    return std::make_shared<Type>(Type::maxPrecision(), scale);
+}
+
+template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
 {
     DataTypes element_types;
@@ -164,8 +192,8 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
 
     for (const auto & elem : map)
     {
-        const auto & tuple = elem.safeGet<const Tuple &>();
-        assert(tuple.size() == 2);
+        const auto & tuple = elem.safeGet<Tuple>();
+        chassert(tuple.size() == 2);
         key_types.push_back(applyVisitor(*this, tuple[0]));
         value_types.push_back(applyVisitor(*this, tuple[1]));
     }

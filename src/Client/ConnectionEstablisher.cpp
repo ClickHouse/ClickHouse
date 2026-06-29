@@ -1,6 +1,8 @@
 #include <Client/ConnectionEstablisher.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 
 namespace ProfileEvents
@@ -14,6 +16,10 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
+}
 
 namespace ErrorCodes
 {
@@ -21,6 +27,13 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
+    extern const int CANNOT_READ_FROM_SOCKET;
+    extern const int CANNOT_WRITE_TO_SOCKET;
+}
+
+namespace FailPoints
+{
+    extern const char replicated_merge_tree_all_replicas_stale[];
 }
 
 ConnectionEstablisher::ConnectionEstablisher(
@@ -39,7 +52,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     {
         ProfileEvents::increment(ProfileEvents::DistributedConnectionTries);
         result.entry = pool->get(*timeouts, settings, force_connected);
-        AsyncCallbackSetter async_setter(&*result.entry, std::move(async_callback));
+        AsyncCallbackSetter<Connection> async_setter(&*result.entry, std::move(async_callback));
 
         UInt64 server_revision = 0;
         if (table_to_check)
@@ -47,7 +60,9 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
-            result.entry->forceConnected(*timeouts);
+            if (!force_connected)
+                result.entry->forceConnected(*timeouts);
+
             ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
             result.is_usable = true;
             result.is_up_to_date = true;
@@ -78,7 +93,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             LOG_TRACE(log, "Table {}.{} is readonly on server {}", table_to_check->database, table_to_check->table, result.entry->getDescription());
         }
 
-        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
+        const UInt64 max_allowed_delay = settings[Setting::max_replica_delay_for_distributed_queries];
         if (!max_allowed_delay)
         {
             result.is_up_to_date = true;
@@ -87,7 +102,15 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
         const UInt32 delay = table_status_it->second.absolute_delay;
         if (delay < max_allowed_delay)
+        {
             result.is_up_to_date = true;
+
+            fiu_do_on(FailPoints::replicated_merge_tree_all_replicas_stale,
+            {
+                result.delay = 1;
+                result.is_up_to_date = false;
+            });
+        }
         else
         {
             result.is_up_to_date = false;
@@ -102,7 +125,8 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
         if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
-            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR)
+            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR
+            && e.code() != ErrorCodes::CANNOT_READ_FROM_SOCKET && e.code() != ErrorCodes::CANNOT_WRITE_TO_SOCKET)
             throw;
 
         fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);
@@ -133,7 +157,8 @@ void ConnectionEstablisherAsync::Task::run(AsyncCallback async_callback, Suspend
 {
     connection_establisher_async.reset();
     connection_establisher_async.connection_establisher.setAsyncCallback(async_callback);
-    connection_establisher_async.connection_establisher.run(connection_establisher_async.result, connection_establisher_async.fail_message);
+    connection_establisher_async.connection_establisher.run(connection_establisher_async.result,
+        connection_establisher_async.fail_message, connection_establisher_async.force_connected);
     connection_establisher_async.is_finished = true;
 }
 
@@ -150,7 +175,11 @@ void ConnectionEstablisherAsync::processAsyncEvent(int fd, Poco::Timespan socket
 void ConnectionEstablisherAsync::clearAsyncEvent()
 {
     timeout_descriptor.reset();
-    epoll.remove(socket_fd);
+    if (socket_fd != -1)
+    {
+        epoll.remove(socket_fd);
+        socket_fd = -1;
+    }
 }
 
 bool ConnectionEstablisherAsync::checkBeforeTaskResume()
@@ -187,13 +216,36 @@ bool ConnectionEstablisherAsync::checkTimeout()
             is_timeout_alarmed = true;
     }
 
-    if (is_timeout_alarmed && !is_socket_ready && !haveMoreAddressesToConnect())
+    if (is_timeout_alarmed && !is_socket_ready)
     {
+        if (haveMoreAddressesToConnect())
+        {
+            /// There are more addresses to try. Set a flag on the Connection so that
+            /// when the fiber resumes, it will throw a timeout exception and the
+            /// Connection::connect() loop can try the next address.
+            if (!result.entry.isNull())
+                result.entry->setAddressConnectTimeoutExpired();
+            /// Reset the timer and remove socket from epoll so we can try the next address.
+            timeout_descriptor.reset();
+            if (socket_fd != -1)
+            {
+                epoll.remove(socket_fd);
+                socket_fd = -1;
+            }
+            /// Return true to resume the fiber, which will throw the timeout exception.
+            return true;
+        }
+
+        /// No more addresses to try - fail the connection attempt.
         /// In not async case timeout exception would be thrown and caught in ConnectionEstablisher::run,
         /// but in async case we process timeout outside and cannot throw exception. So, we just save fail message.
         fail_message = getSocketTimeoutExceededMessageByTimeoutType(timeout_type, timeout, socket_description);
 
-        epoll.remove(socket_fd);
+        if (socket_fd != -1)
+        {
+            epoll.remove(socket_fd);
+            socket_fd = -1;
+        }
         /// Restart task, so the connection process will start from the beginning in the next resume().
         restart();
         /// The result should be Null in case of timeout.

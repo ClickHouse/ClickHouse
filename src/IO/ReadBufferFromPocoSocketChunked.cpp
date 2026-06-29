@@ -42,7 +42,7 @@ bool ReadBufferFromPocoSocketChunked::hasBufferedData() const
     return chunked && (static_cast<size_t>(data_end - working_buffer.end()) > sizeof(next_chunk));
 }
 
-bool ReadBufferFromPocoSocketChunked::poll(size_t timeout_microseconds) const
+bool ReadBufferFromPocoSocketChunked::poll(size_t timeout_microseconds)
 {
     if (chunked)
         if (available() || static_cast<size_t>(data_end - working_buffer.end()) > sizeof(next_chunk))
@@ -113,8 +113,7 @@ bool ReadBufferFromPocoSocketChunked::nextImpl()
             else
                 c_pos = pos + sizeof(next_chunk); // bypass chunk end marker
 
-            if (c_pos > data_end)
-                c_pos = data_end;
+            c_pos = std::min(c_pos, data_end);
 
             if (!loadNextChunk(c_pos))
                 return false;

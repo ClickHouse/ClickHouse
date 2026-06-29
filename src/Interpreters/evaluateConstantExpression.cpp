@@ -1,8 +1,13 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/TableNode.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -14,28 +19,49 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/Set.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/StorageDummy.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <optional>
 #include <unordered_map>
 
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool normalize_function_names;
+    extern const SettingsBool allow_experimental_analyzer;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
@@ -49,7 +75,7 @@ static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLitera
     return {res, type};
 }
 
-std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
+static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
 {
     if (ASTLiteral * literal = node->as<ASTLiteral>())
         return getFieldAndDataTypeFromLiteral(literal);
@@ -71,33 +97,86 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(ast);
 
-    /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
-    /// already normalized on initiator node, or not normalized and should remain unnormalized for
-    /// compatibility.
-    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
-        FunctionNameNormalizer::visit(ast.get());
-
-    auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
-    if (!syntax_result)
-        return {};
-
-    /// AST potentially could be transformed to literal during TreeRewriter analyze.
-    /// For example if we have SQL user defined function that return literal AS subquery.
-    if (ASTLiteral * literal = ast->as<ASTLiteral>())
-        return getFieldAndDataTypeFromLiteral(literal);
-
-    auto actions = ExpressionAnalyzer(ast, syntax_result, context).getConstActionsDAG();
+    String result_name;
 
     ColumnPtr result_column;
     DataTypePtr result_type;
-    String result_name = ast->getColumnName();
-    for (const auto & action_node : actions.getOutputs())
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        if ((action_node->result_name == result_name) && action_node->column)
+        /// In the analyzer code path `result_name` is only used for diagnostic messages below,
+        /// not to match the output column (unlike the non-analyzer path). Avoid calling
+        /// `getColumnName`, because it throws a logical error for arguments that are not
+        /// column expressions (e.g. `*` or an empty expression list coming from a table
+        /// function argument), while a regular exception is later produced by `buildQueryTree`.
+        result_name = ast->formatForLogging();
+
+        auto execution_context = Context::createCopy(context);
+        auto expression = buildQueryTree(ast, execution_context);
+
+        ColumnsDescription fake_column_descriptions(source_columns);
+        auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
+        QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+
+        QueryAnalyzer analyzer(false);
+        analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
+
+        GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+        auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+
+        collectSourceColumns(expression, planner_context, false /*keep_alias_columns*/);
+        collectSets(expression, *planner_context);
+
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+            expression,
+            /*input_columns=*/{},
+            planner_context,
+            empty_correlated_columns_set);
+        correlated_subtrees.assertEmpty("in constant expression without query context");
+
+        if (actions.getOutputs().size() != 1)
         {
-            result_column = action_node->column;
-            result_type = action_node->result_type;
-            break;
+            // Expression can return more than one column using untuple()
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Constant expression returns more than 1 column: {}", ast->formatForLogging());
+        }
+
+        const auto & output = actions.getOutputs()[0];
+        if (output->column)
+        {
+            result_column = output->column;
+            result_type = output->result_type;
+        }
+    }
+    else
+    {
+        /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
+        /// already normalized on initiator node, or not normalized and should remain unnormalized for
+        /// compatibility.
+        if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
+            && context->getSettingsRef()[Setting::normalize_function_names])
+            FunctionNameNormalizer::visit(ast.get());
+
+        result_name = ast->getColumnName();
+
+        auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
+        if (!syntax_result)
+            return {};
+
+        /// AST potentially could be transformed to literal during TreeRewriter analyze.
+        /// For example if we have SQL user defined function that return literal AS subquery.
+        if (ASTLiteral * literal = ast->as<ASTLiteral>())
+            return getFieldAndDataTypeFromLiteral(literal);
+
+        auto actions = ExpressionAnalyzer(ast, syntax_result, context).getConstActionsDAG();
+
+        for (const auto & action_node : actions.getOutputs())
+        {
+            if ((action_node->result_name == result_name) && action_node->column)
+            {
+                result_column = action_node->column;
+                result_type = action_node->result_type;
+                break;
+            }
         }
     }
 
@@ -105,6 +184,12 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
                         "is not a constant expression (result column not found): {}", result_name);
+
+    /// All constant (literal) columns in block are added with size 1.
+    /// But if there was no columns in block before executing a function, the result has size 0.
+    /// Change the size to 1.
+    if (result_column->empty() && isColumnConst(*result_column))
+        result_column = result_column->cloneResized(1);
 
     if (result_column->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -138,13 +223,13 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
         return node;
-    return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
+    return make_intrusive<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const ContextPtr & context)
 {
     if (const auto * id = node->as<ASTIdentifier>())
-        return std::make_shared<ASTLiteral>(id->name());
+        return make_intrusive<ASTLiteral>(id->name());
 
     return evaluateConstantExpressionAsLiteral(node, context);
 }
@@ -253,7 +338,7 @@ namespace
             --limit;
             return analyzeEquals(identifier, literal, expr);
         }
-        else if (fn->name == "in")
+        if (fn->name == "in")
         {
             const auto * left = fn->arguments->children.front().get();
             const auto * right = fn->arguments->children.back().get();
@@ -297,7 +382,7 @@ namespace
             {
                 if (tuple_literal->value.getType() == Field::Types::Tuple)
                 {
-                    const auto & tuple = tuple_literal->value.safeGet<const Tuple &>();
+                    const auto & tuple = tuple_literal->value.safeGet<Tuple>();
                     for (const auto & child : tuple)
                     {
                         const auto dnf = analyzeEquals(identifier, child, expr);
@@ -323,7 +408,7 @@ namespace
 
             return result;
         }
-        else if (fn->name == "or")
+        if (fn->name == "or")
         {
             const auto * args = fn->children.front()->as<ASTExpressionList>();
 
@@ -349,7 +434,7 @@ namespace
 
             return result;
         }
-        else if (fn->name == "and")
+        if (fn->name == "and")
         {
             const auto * args = fn->children.front()->as<ASTExpressionList>();
 
@@ -465,7 +550,11 @@ namespace
         {
             if (const auto * node = findMatch(key, matches))
             {
-                ColumnPtr column = col->getPtr();
+                /// ActionsDAG::addColumn normalizes ColumnConst to size 0; expand to size 1
+                /// because the conjunction map is consumed by evaluatePartialResult with
+                /// input_rows_count == 1, and downstream consumers (e.g. createBlockSelector)
+                /// rely on the column's row count.
+                ColumnPtr column = ColumnConst::create(col->getDataColumnPtr(), 1);
                 if (!value->result_type->equals(*node->result_type))
                 {
                     auto inner = tryCastColumn(col->getDataColumnPtr(), value->result_type, node->result_type);
@@ -494,19 +583,17 @@ namespace
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return {};
 
-        auto col = value->column;
-        if (const auto * col_const = typeid_cast<const ColumnConst *>(col.get()))
-            col = col_const->getDataColumnPtr();
-
+        const auto & col = value->column->getDataColumnPtr();
         const auto * col_set = typeid_cast<const ColumnSet *>(col.get());
         if (!col_set || !col_set->getData())
             return {};
 
-        auto * set_from_tuple = typeid_cast<FutureSetFromTuple *>(col_set->getData().get());
-        if (!set_from_tuple)
-            return {};
+        SetPtr set = nullptr;
+        if (auto * set_from_tuple = typeid_cast<FutureSetFromTuple *>(col_set->getData().get()))
+            set = set_from_tuple->buildOrderedSetInplace(context);
+        else
+            set = col_set->getData().get()->get();
 
-        SetPtr set = set_from_tuple->buildOrderedSetInplace(context);
         if (!set || !set->hasExplicitSetElements())
             return {};
 
@@ -535,15 +622,15 @@ namespace
         if (column->size() > max_elements)
             return {};
 
-        ColumnPtr casted_col;
+        ColumnPtr cast_col;
         const NullMap * null_map = nullptr;
 
         if (!type->equals(*node->result_type))
         {
-            casted_col = tryCastColumn(column, value->result_type, node->result_type);
-            if (!casted_col)
+            cast_col = tryCastColumn(column, type, node->result_type);
+            if (!cast_col)
                 return {};
-            const auto & col_nullable = assert_cast<const ColumnNullable &>(*casted_col);
+            const auto & col_nullable = assert_cast<const ColumnNullable &>(*cast_col);
             null_map = &col_nullable.getNullMapData();
             column = col_nullable.getNestedColumnPtr();
         }
@@ -552,7 +639,7 @@ namespace
         if (node->result_type->isNullable() && set->hasNull())
         {
             auto col_null = node->result_type->createColumnConst(1, Field());
-            res.push_back({ConjunctionMap{{node, {col_null, node->result_type, node->result_name}}}});
+            res.push_back({ConjunctionMap{{node, {std::move(col_null), node->result_type, node->result_name}}}});
         }
 
         size_t num_rows = column->size();
@@ -624,8 +711,11 @@ namespace
                 if (lists.empty())
                     return {};
 
+                /// clang-tidy says the comparator might be called on moved-from object of type 'std::list'
+                /// NOLINTBEGIN(clang-analyzer-cplusplus.Move)
                 std::sort(lists.begin(), lists.end(),
                     [](const auto & lhs, const auto & rhs) { return lhs.size() < rhs.size(); });
+                /// NOLINTEND(clang-analyzer-cplusplus.Move)
 
                 DisjunctionList res;
                 bool first = true;
@@ -649,7 +739,7 @@ namespace
         }
         else if (node->type == ActionsDAG::ActionType::COLUMN)
         {
-            if (isColumnConst(*node->column) && node->result_type->canBeUsedInBooleanContext())
+            if (node->result_type->canBeUsedInBooleanContext())
             {
                 if (!node->column->getBool(0))
                     return DisjunctionList{};
@@ -663,7 +753,7 @@ namespace
         const ActionsDAG::NodeRawConstPtrs & target_expr,
         ConjunctionMap && conjunction)
     {
-        auto columns = ActionsDAG::evaluatePartialResult(conjunction, target_expr, /* input_rows_count= */ 1, /* throw_on_error= */ false);
+        auto columns = ActionsDAG::evaluatePartialResult(conjunction, target_expr, /* input_rows_count= */ 1);
         for (const auto & column : columns)
             if (!column.column)
                 return {};
@@ -678,10 +768,13 @@ std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
     const ContextPtr & context,
     size_t max_elements)
 {
-    auto inverted_dag = KeyCondition::cloneASTWithInversionPushDown({predicate}, context);
-    auto matches = matchTrees(expr, inverted_dag, false);
+    if (!predicate)
+        return {};
 
-    auto predicates = analyze(inverted_dag.getOutputs().at(0), matches, context, max_elements);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
+    auto matches = matchTrees(expr, *filter_dag.dag, false);
+
+    auto predicates = analyze(filter_dag.predicate, matches, context, max_elements);
 
     if (!predicates)
         return {};
@@ -794,8 +887,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
         // Check if it's always true or false.
         if (literal->value.getType() == Field::Types::UInt64 && literal->value.safeGet<UInt64>() == 0)
             return {result};
-        else
-            return {};
+        return {};
     }
 
     return {result};

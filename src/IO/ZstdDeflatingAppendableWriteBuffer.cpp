@@ -1,7 +1,6 @@
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
 #include <Common/Exception.h>
-#include "IO/ReadBufferFromFileBase.h"
-#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 namespace DB
 {
@@ -88,11 +87,6 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
 
 }
 
-ZstdDeflatingAppendableWriteBuffer::~ZstdDeflatingAppendableWriteBuffer()
-{
-    finalize();
-}
-
 void ZstdDeflatingAppendableWriteBuffer::finalizeImpl()
 {
     if (first_write)
@@ -103,18 +97,9 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeImpl()
     }
     else
     {
-        try
-        {
-            finalizeBefore();
-            out->finalize();
-            finalizeAfter();
-        }
-        catch (...)
-        {
-            /// Do not try to flush next time after exception.
-            out->position() = out->buffer().begin();
-            throw;
-        }
+        finalizeBefore();
+        out->finalize();
+        finalizeAfter();
     }
 }
 
@@ -165,6 +150,9 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeAfter()
 
 void ZstdDeflatingAppendableWriteBuffer::finalizeZstd()
 {
+    if (!cctx)
+        return;
+
     try
     {
         size_t err = ZSTD_freeCCtx(cctx);
@@ -179,6 +167,8 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeZstd()
         /// since all data already written to the stream.
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    cctx = nullptr;
 }
 
 void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock()
@@ -201,7 +191,7 @@ bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
     auto fsize = reader->getFileSize();
     if (fsize > 3)
     {
-        std::array<char, 3> result;
+        std::array<char, 3> result{};
         reader->seek(fsize - 3, SEEK_SET);
         reader->readStrict(result.data(), 3);
 
@@ -210,14 +200,24 @@ bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
         /// But in this case file still corrupted and we have to remove it.
         return result != ZSTD_CORRECT_TERMINATION_LAST_BLOCK;
     }
-    else if (fsize > 0)
+    if (fsize > 0)
     {
         throw Exception(
             ErrorCodes::ZSTD_ENCODER_FAILED,
             "Trying to write to non-empty file '{}' with tiny size {}. It can lead to data corruption",
-            out->getFileName(), fsize);
+            out->getFileName(),
+            fsize);
     }
     return false;
 }
 
+void ZstdDeflatingAppendableWriteBuffer::cancelImpl() noexcept
+{
+    BufferWithOwnMemory<WriteBuffer>::cancelImpl();
+
+    out->cancel();
+
+    /// To free cctx
+    finalizeZstd();
+}
 }

@@ -207,7 +207,7 @@ FROM
         a AS alias_of_a,
         sum(b)
     FROM test_rewrite_uniq_to_count
-    GROUP BY alias_of_a
+    GROUP BY a AS alias_of_a
 ) AS t
 SETTINGS enable_analyzer = 0
 3

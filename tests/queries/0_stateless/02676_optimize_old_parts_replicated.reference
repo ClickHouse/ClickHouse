@@ -3,5 +3,10 @@ Without merge
 With merge replicated any part range
 1
 With merge replicated partition only
+2
 1
 1
+With merge replicated partition only and disable limit
+2
+With merge replicated partition only and enable limit
+3

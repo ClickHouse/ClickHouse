@@ -4,7 +4,9 @@
 
 namespace DB
 {
+
 class ISchedulerQueue;
+class IAllocationQueue;
 using ResourceCost = Int64;
 
 /*
@@ -12,14 +14,36 @@ using ResourceCost = Int64;
  */
 struct ResourceLink
 {
-    ISchedulerQueue * queue = nullptr;
+    /// Queue to enqueue resource requests to. Only one of the two fields is set.
+    ISchedulerQueue * queue = nullptr; // queue for time-shared resources (CPU, network, etc)
+    IAllocationQueue * allocation_queue = nullptr; // queue for space-shared resources (memory, disk, etc)
+
     bool operator==(const ResourceLink &) const = default;
 
-    void adjust(ResourceCost estimated_cost, ResourceCost real_cost) const;
+    explicit operator bool() const
+    {
+        return queue != nullptr || allocation_queue != nullptr;
+    }
 
-    void consumed(ResourceCost cost) const;
+    void reset()
+    {
+        queue = nullptr;
+        allocation_queue = nullptr;
+    }
+};
 
-    void accumulate(ResourceCost cost) const;
+/*
+ * Everything required for IO scheduling.
+ * Note that raw pointer are stored inside, so make sure that `ClassifierPtr` that produced
+ * resource links will outlive them. Usually classifier is stored in query `Context`.
+ */
+struct IOSchedulingSettings
+{
+    ResourceLink read_resource_link;
+    ResourceLink write_resource_link;
+
+    bool operator==(const IOSchedulingSettings &) const = default;
+    explicit operator bool() const { return read_resource_link && write_resource_link; }
 };
 
 }

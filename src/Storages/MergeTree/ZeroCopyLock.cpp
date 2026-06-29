@@ -1,4 +1,4 @@
-#include "ZeroCopyLock.h"
+#include <Storages/MergeTree/ZeroCopyLock.h>
 
 namespace DB
 {
