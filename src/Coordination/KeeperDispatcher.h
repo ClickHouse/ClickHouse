@@ -44,6 +44,8 @@ private:
 
     /// Cleaning old dead sessions
     ThreadFromGlobalPool session_cleaner_thread;
+    /// TTL expiry: leader enqueues TryRemove for expired empty nodes
+    ThreadFromGlobalPool ttl_garbage_collector_thread;
     /// Dumping new snapshots to disk
     ThreadFromGlobalPool snapshot_thread;
     /// Apply or wait for configuration changes
@@ -89,6 +91,8 @@ private:
     /// Verify some logical issues in command, like duplicate ids, wrong leadership transfer and etc
     void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
+
+    void garbageCollectorThread(size_t batch_size);
 
     void onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept;
 
@@ -196,7 +200,7 @@ public:
 
     Keeper4LWInfo getKeeper4LWInfo() const;
 
-    const IKeeperStateMachine & getStateMachine() const
+    const KeeperStateMachine & getStateMachine() const
     {
         return *server->getKeeperStateMachine();
     }

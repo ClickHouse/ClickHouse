@@ -48,6 +48,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheGetMicroseconds;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadRun;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds;
+    extern const Event FilesystemCacheFreeSpaceKeepingThreadErrors;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
     extern const Event FilesystemCacheBackgroundEvictedFileSegments;
     extern const Event FilesystemCacheBackgroundEvictedBytes;
@@ -62,6 +63,9 @@ namespace CurrentMetrics
     extern const Metric FilesystemCacheDownloadQueueElements;
     extern const Metric FilesystemCacheReserveThreads;
     extern const Metric FilesystemCacheSizeLimit;
+    extern const Metric FilesystemCacheEvictionThreads;
+    extern const Metric FilesystemCacheEvictionThreadsActive;
+    extern const Metric FilesystemCacheEvictionThreadsScheduled;
 }
 
 
@@ -99,6 +103,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsDouble keep_free_space_size_ratio;
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsUInt64 keep_free_space_remove_batch;
+    extern const FileCacheSettingsNonZeroUInt64 keep_free_space_eviction_threads;
     extern const FileCacheSettingsNonZeroUInt64 invalidated_entries_cleanup_interval_ms;
     extern const FileCacheSettingsNonZeroUInt64 invalidated_entries_cleanup_threshold;
     extern const FileCacheSettingsNonZeroUInt64 invalidated_entries_cleanup_remove_batch;
@@ -218,6 +223,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , keep_current_size_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_size_ratio])
     , keep_current_elements_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_elements_ratio])
     , keep_up_free_space_remove_batch(settings[FileCacheSetting::keep_free_space_remove_batch])
+    , keep_up_free_space_eviction_threads(settings[FileCacheSetting::keep_free_space_eviction_threads])
     , use_split_cache(settings[FileCacheSetting::use_split_cache])
     , split_cache_ratio(settings[FileCacheSetting::split_cache_ratio])
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
@@ -472,6 +478,14 @@ void FileCache::initializeImpl(bool load_metadata)
 
     if (keep_current_size_to_max_ratio != 1 || keep_current_elements_to_max_ratio != 1)
     {
+        eviction_pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::FilesystemCacheEvictionThreads,
+            CurrentMetrics::FilesystemCacheEvictionThreadsActive,
+            CurrentMetrics::FilesystemCacheEvictionThreadsScheduled,
+            /* max_threads */keep_up_free_space_eviction_threads,
+            /* max_free_threads */0,
+            /* queue_size */keep_up_free_space_eviction_threads);
+
         keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
         keep_up_free_space_ratio_task->schedule();
     }
@@ -1476,12 +1490,24 @@ bool FileCache::doEviction(
     return true;
 }
 
+namespace
+{
+/// Reschedule delays (ms) and the state-lock acquire timeout for background free-space keeping.
+constexpr size_t free_space_keeping_reschedule_ms = 5000;
+constexpr size_t free_space_keeping_lock_failed_reschedule_ms = 1000;
+constexpr size_t free_space_keeping_state_lock_timeout_ms = 1000;
+
+/// A batch handed to a remover: file segments to delete, plus zero-size queue entries to drop.
+struct EvictionBatch
+{
+    EvictionCandidatesPtr candidates;
+    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
+};
+using EvictionBatchPtr = std::unique_ptr<EvictionBatch>;
+}
+
 void FileCache::freeSpaceRatioKeepingThreadFunc()
 {
-    static constexpr auto lock_failed_reschedule_ms = 1000;
-    static constexpr auto space_ratio_satisfied_reschedule_ms = 5000;
-    static constexpr auto general_reschedule_ms = 5000;
-
     if (shutdown)
         return;
 
@@ -1489,125 +1515,257 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     Stopwatch watch;
+    size_t reschedule_ms = free_space_keeping_reschedule_ms;
 
-    std::unique_ptr<EvictionInfo> eviction_info;
+    /// The task must never throw out: otherwise it stops being rescheduled and background
+    /// keeping dies for the lifetime of the cache.
+    try
     {
-        auto lock = cache_state_guard.tryLock();
-
-        /// To avoid deteriorating contention on cache,
-        /// proceed only if cache is not heavily used.
-        if (!lock)
-        {
-            keep_up_free_space_ratio_task->scheduleAfter(lock_failed_reschedule_ms);
-            return;
-        }
-
-        const size_t size_limit = main_priority->getSizeLimit(lock);
-        const size_t elements_limit = main_priority->getElementsLimit(lock);
-
-        const size_t desired_size = std::lround(keep_current_size_to_max_ratio * static_cast<double>(size_limit));
-        const size_t desired_elements_num = std::lround(keep_current_elements_to_max_ratio * static_cast<double>(elements_limit));
-
-        const size_t current_size = main_priority->getSize(lock);
-        const size_t current_elements_num = main_priority->getElementsCount(lock);
-
-        const size_t size_to_evict = current_size && (current_size > desired_size)
-            ? current_size - desired_size
-            : 0;
-        const size_t elements_to_evict = current_elements_num && (current_elements_num > desired_elements_num)
-            ? current_elements_num - desired_elements_num
-            : 0;
-
-        if (!size_to_evict && !elements_to_evict)
-        {
-            /// Nothing to free - all limits are satisfied.
-            keep_up_free_space_ratio_task->scheduleAfter(space_ratio_satisfied_reschedule_ms);
-            return;
-        }
-
-        LOG_TRACE(
-            log, "Starting an iteration to maintain desired size. "
-            "Current size {}/{}, elements {}/{}. Desired size: {}, desired elements: {}",
-            main_priority->getSize(lock), size_limit,
-            main_priority->getElementsCount(lock), elements_limit,
-            desired_size, desired_elements_num);
-
-        eviction_info = main_priority->collectEvictionInfo(
-            size_to_evict,
-            elements_to_evict,
-            /* reservee */nullptr,
-            /* is_total_space_cleanup */true,
-            getInternalOrigin(),
-            lock);
+        freeSpaceRatioImpl(reschedule_ms);
     }
-
-    chassert(!eviction_info->hasHoldSpace());
-    chassert(eviction_info->requiresEviction());
-
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadRun);
-
-    FileCacheReserveStat stat;
-    EvictionCandidates eviction_candidates(&FileCache::onSegmentEvicted);
-
-    IFileCachePriority::CollectStatus desired_size_status =  IFileCachePriority::CollectStatus::CANNOT_EVICT;
-    /// Collect at most `keep_up_free_space_remove_batch` elements to evict,
-    /// (we use batches to make sure we do not block cache for too long,
-    /// by default the batch size is quite small).
-
-    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
-    main_priority->collectCandidatesForEviction(
-        *eviction_info,
-        stat,
-        eviction_candidates,
-        invalidated_entries,
-        /* reservee */nullptr,
-        /* continue_from_last_eviction_pos */false,
-        /* max_candidates_size */keep_up_free_space_remove_batch,
-        /* is_total_space_cleanup */true,
-        getInternalOrigin(),
-        cache_guard,
-        cache_state_guard);
-
-    if (eviction_candidates.size() > 0)
+    catch (...)
     {
-        desired_size_status = IFileCachePriority::CollectStatus::SUCCESS;
-        eviction_candidates.evict();
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadErrors);
+        tryLogCurrentException(log, "Error in free space ratio keeping thread");
     }
-
-    /// Take lock again to finalize eviction,
-    /// e.g. to update the in-memory state.
-    {
-        auto lock = cache_guard.writeLock();
-        eviction_candidates.afterEvictWrite(lock);
-        IFileCachePriority::removeEntries(invalidated_entries, lock);
-    }
-    eviction_candidates.afterEvictState(cache_state_guard.lock());
-
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedFileSegments, eviction_candidates.size());
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedBytes, eviction_candidates.bytes());
 
     watch.stop();
     ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds, watch.elapsedMilliseconds());
 
-    LOG_TRACE(log, "Free space ratio keeping thread finished with status `{}` in {} ms",
-              desired_size_status, watch.elapsedMilliseconds());
+    [[maybe_unused]] bool scheduled = keep_up_free_space_ratio_task->scheduleAfter(reschedule_ms);
+    chassert(scheduled);
+}
 
-    [[maybe_unused]] bool scheduled = false;
-    switch (desired_size_status)
+std::unique_ptr<EvictionInfo> FileCache::collectFreeSpaceEvictionInfo(
+    const CacheStateGuard::Lock & lock, size_t in_flight_size, size_t in_flight_elements)
+{
+    const size_t size_limit = main_priority->getSizeLimit(lock);
+    const size_t elements_limit = main_priority->getElementsLimit(lock);
+
+    const size_t desired_size = std::lround(keep_current_size_to_max_ratio * static_cast<double>(size_limit));
+    const size_t desired_elements = std::lround(keep_current_elements_to_max_ratio * static_cast<double>(elements_limit));
+
+    /// Discount what is already collected: its space will be freed once the in-flight removals finalize.
+    const size_t current_size = main_priority->getSize(lock);
+    const size_t current_elements = main_priority->getElementsCount(lock);
+    const size_t projected_size = current_size > in_flight_size ? current_size - in_flight_size : 0;
+    const size_t projected_elements = current_elements > in_flight_elements ? current_elements - in_flight_elements : 0;
+
+    const size_t size_to_evict = projected_size > desired_size ? projected_size - desired_size : 0;
+    const size_t elements_to_evict = projected_elements > desired_elements ? projected_elements - desired_elements : 0;
+
+    if (!size_to_evict && !elements_to_evict)
+        return nullptr;
+
+    auto eviction_info = main_priority->collectEvictionInfo(
+        size_to_evict, elements_to_evict, /* reservee */nullptr,
+        /* is_total_space_cleanup */true, getInternalOrigin(), lock);
+
+    chassert(eviction_info);
+    chassert(!eviction_info->hasHoldSpace());
+    chassert(eviction_info->requiresEviction());
+    return eviction_info;
+}
+
+void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
+{
+    /// First eviction info, collected against the live size (nothing in flight yet).
+    /// Kept and reused for the first loop iteration below instead of being recomputed.
+    std::unique_ptr<EvictionInfo> eviction_info;
     {
-        case IFileCachePriority::CollectStatus::SUCCESS: [[fallthrough]];
-        case IFileCachePriority::CollectStatus::CANNOT_EVICT:
+        auto lock = cache_state_guard.tryLockFor(std::chrono::milliseconds(free_space_keeping_state_lock_timeout_ms));
+        if (!lock)
         {
-            scheduled = keep_up_free_space_ratio_task->scheduleAfter(general_reschedule_ms);
-            break;
+            reschedule_ms = free_space_keeping_lock_failed_reschedule_ms;
+            return;
         }
-        case IFileCachePriority::CollectStatus::REACHED_MAX_CANDIDATES_LIMIT:
+        eviction_info = collectFreeSpaceEvictionInfo(lock, 0, 0);
+    }
+    if (!eviction_info)
+        return;
+
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadRun);
+
+    /// Outcome of the drain loop below, reported in the final log line:
+    /// - SUCCESS: drained until nothing more needs to be evicted;
+    /// - CANNOT_EVICT: bailed out early (could not acquire the state lock, or shutdown).
+    auto status = IFileCachePriority::CollectStatus::SUCCESS;
+
+    const size_t queue_capacity = std::max<size_t>(2 * keep_up_free_space_eviction_threads, 2);
+    /// Stages done by a single main thread and N evicting thread:
+    /// 1. Main thread iterates eviction candidates and pushes to candidates_to_evict.
+    /// 2. Evicting thread pops from removal queue, evicts and pushes to pending_finalization_queue for finalization.
+    /// 3. Main thread also pops from removed queue and finalizes removal.
+    ConcurrentBoundedQueue<EvictionBatchPtr> pending_eviction_queue(queue_capacity);
+    ConcurrentBoundedQueue<EvictionBatchPtr> pending_finalization_queue(queue_capacity);
+
+    std::atomic<size_t> running_removers = 0;
+    bool removers_scheduled = false;
+
+    /// Collected but not yet finalized (full batch sizes);
+    /// discounted from the live size when deciding how much more to evict.
+    size_t in_flight_size = 0;
+    size_t in_flight_elements = 0;
+    /// Actually removed from disk (failures excluded); for stats only.
+    size_t evicted_size = 0;
+    size_t evicted_elements = 0;
+
+    auto finalize_removed = [&](bool blocking)
+    {
+        EvictionBatchPtr batch;
+        while (blocking ? pending_finalization_queue.pop(batch) : pending_finalization_queue.tryPop(batch))
         {
-            scheduled = keep_up_free_space_ratio_task->schedule();
-            break;
+            /// The batch leaves the pipeline regardless of the outcome below.
+            in_flight_size -= batch->candidates->bytes();
+            in_flight_elements -= batch->candidates->size();
+            try
+            {
+                {
+                    auto lock = cache_guard.writeLock();
+                    batch->candidates->afterEvictWrite(lock);
+                    IFileCachePriority::removeEntries(batch->invalidated_entries, lock);
+                }
+                batch->candidates->afterEvictState(cache_state_guard.lock());
+
+                /// Per-segment eviction metrics are updated in `onSegmentEvictedInTheBackground`.
+                /// Here we only sum the actually removed amount (failures excluded) for the log.
+                const auto failed = batch->candidates->getFailedCandidates();
+                evicted_size += batch->candidates->bytes() - failed.total_cache_size;
+                evicted_elements += batch->candidates->size() - failed.total_cache_elements;
+            }
+            catch (...)
+            {
+                ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadErrors);
+                tryLogCurrentException(log, "Failed to finalize evicted file segments");
+                chassert(false);
+            }
+        }
+    };
+
+    try
+    {
+        for (size_t i = 0; i < keep_up_free_space_eviction_threads; ++i)
+        {
+            eviction_pool->scheduleOrThrowOnError([&]
+            {
+                try
+                {
+                    EvictionBatchPtr batch;
+                    while (pending_eviction_queue.pop(batch))
+                    {
+                        try
+                        {
+                            batch->candidates->evict();
+                        }
+                        catch (...)
+                        {
+                            ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadErrors);
+                            tryLogCurrentException(log, "Failed to evict file segments in background");
+                        }
+                        if (!pending_finalization_queue.push(std::move(batch)))
+                        {
+                            /// Queue if finished, nothing will come anymore.
+                            break;
+                        }
+                    }
+                }
+                catch (...)
+                {
+                    ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadErrors);
+                    tryLogCurrentException(log, "Background eviction remover failed");
+                }
+
+                /// The last remover to exit closes the result queue so the collector's drain ends.
+                if (running_removers.fetch_sub(1) == 1)
+                    pending_finalization_queue.finish();
+            });
+            ++running_removers;
+            removers_scheduled = true;
+        }
+
+        while (!shutdown)
+        {
+            /// On the first iteration `eviction_info` is the one collected above; afterwards it is
+            /// recomputed against the live size, discounting what is already in flight.
+            if (!eviction_info)
+            {
+                /// Finalize what the removers have deleted, then re-evaluate against the live size.
+                finalize_removed(/* blocking */false);
+
+                auto lock = cache_state_guard.tryLockFor(std::chrono::milliseconds(free_space_keeping_state_lock_timeout_ms));
+                if (!lock)
+                {
+                    reschedule_ms = free_space_keeping_lock_failed_reschedule_ms;
+                    status = IFileCachePriority::CollectStatus::CANNOT_EVICT;
+                    break;
+                }
+                eviction_info = collectFreeSpaceEvictionInfo(lock, in_flight_size, in_flight_elements);
+                if (!eviction_info)
+                    break;
+            }
+
+            LOG_TRACE(log, "Collecting eviction candidates to keep free space ({}), in flight: {}/{} (size/elements)",
+                      eviction_info->toString(), in_flight_size, in_flight_elements);
+
+            auto batch = std::make_unique<EvictionBatch>();
+            batch->candidates = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvictedInTheBackground);
+            FileCacheReserveStat stat;
+            main_priority->collectCandidatesForEviction(
+                *eviction_info, stat, *batch->candidates, batch->invalidated_entries,
+                /* reservee */nullptr, /* continue_from_last_eviction_pos */true,
+                /* max_candidates_size */keep_up_free_space_remove_batch,
+                /* is_total_space_cleanup */true, getInternalOrigin(),
+                cache_guard, cache_state_guard);
+
+            /// Consumed: the next iteration recomputes against the updated live size.
+            eviction_info.reset();
+
+            const size_t batch_size = batch->candidates->size();
+            if (batch_size == 0)
+            {
+                /// Zero-size (already invalidated) entries have no file to delete.
+                if (!batch->invalidated_entries.empty())
+                {
+                    IFileCachePriority::removeEntries(batch->invalidated_entries, cache_guard.writeLock());
+                    continue;
+                }
+                /// Eviction was required (`eviction_info` was non-null) but nothing could be
+                /// collected: the cache is still above the target with no releasable candidates.
+                /// Report CANNOT_EVICT so the final log line does not claim the target was drained.
+                status = IFileCachePriority::CollectStatus::CANNOT_EVICT;
+                break;
+            }
+
+            const size_t batch_bytes = batch->candidates->bytes();
+
+            /// Keep finalizing while waiting for room, so removers never block on a full queue.
+            while (!pending_eviction_queue.tryPush(std::move(batch), 10))
+                finalize_removed(/* blocking */false);
+
+            in_flight_size += batch_bytes;
+            in_flight_elements += batch_size;
         }
     }
-    chassert(scheduled);
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadErrors);
+        tryLogCurrentException(log, "Error while collecting background eviction candidates");
+        status = IFileCachePriority::CollectStatus::CANNOT_EVICT;
+    }
+
+    /// Interrupted by shutdown before the drain could complete.
+    if (shutdown)
+        status = IFileCachePriority::CollectStatus::CANNOT_EVICT;
+
+    /// Let the removers finish the queued batches, finalize all of them, then join.
+    pending_eviction_queue.finish();
+    if (!removers_scheduled)
+        pending_finalization_queue.finish();
+    finalize_removed(/* blocking */true);
+    eviction_pool->wait();
+
+    LOG_TRACE(log, "Free space ratio keeping thread finished with status `{}`, evicted {} file segments ({} bytes)",
+              status, evicted_elements, evicted_size);
 }
 
 void FileCache::iterate(IterateFunc && func, const UserID & user_id)
@@ -2155,6 +2313,13 @@ void FileCache::onSegmentEvicted(const FileSegment & segment)
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment.getReservedSize());
 }
 
+void FileCache::onSegmentEvictedInTheBackground(const FileSegment & segment)
+{
+    onSegmentEvicted(segment);
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedFileSegments);
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedBytes, segment.getReservedSize());
+}
+
 void FileCache::deactivateBackgroundOperations()
 {
     shutdown.store(true);
@@ -2166,6 +2331,9 @@ void FileCache::deactivateBackgroundOperations()
     metadata.shutdown();
     if (keep_up_free_space_ratio_task)
         keep_up_free_space_ratio_task->deactivate();
+    /// The task is stopped, so no new eviction jobs can be scheduled - drain the rest.
+    if (eviction_pool)
+        eviction_pool->wait();
     if (main_priority)
         main_priority->deactivateBackgroundOperations();
 }

@@ -69,3 +69,78 @@ def test_alias_empty_args_with_replicated(started_cluster):
     assert node1.query("SELECT * FROM d0.alias_table") == "1\n"
     
     node1.query("DROP DATABASE d0 SYNC")
+
+
+def test_alias_with_parallel_replicas(started_cluster):
+    """Verify that an Alias support parallel replicas read."""
+    node1.query(
+        "CREATE DATABASE test_pr ENGINE = Replicated('/clickhouse/databases/test_pr', '{shard}', '{replica}')"
+    )
+    node2.query(
+        "CREATE DATABASE test_pr ENGINE = Replicated('/clickhouse/databases/test_pr', '{shard}', '{replica}')"
+    )
+
+    node1.query(
+        "CREATE TABLE test_pr.base_table (id UInt32, value String) "
+        "ENGINE = ReplicatedMergeTree ORDER BY id "
+        "SETTINGS index_granularity = 1"
+    )
+    node1.query("CREATE TABLE test_pr.alias_table ENGINE = Alias('base_table')")
+    # Ensure alias_table DDL has replicated to node2 before we send it work.
+    node2.query("SYSTEM SYNC DATABASE REPLICA test_pr")
+
+    node1.query(
+        "INSERT INTO test_pr.base_table SELECT number, toString(number) FROM numbers(1000)"
+    )
+    node2.query("SYSTEM SYNC REPLICA test_pr.base_table")
+
+    result = node1.query(
+        "SELECT sum(id) FROM test_pr.alias_table",
+        settings={
+            "enable_parallel_replicas": 1,
+            "max_parallel_replicas": 2,
+            "cluster_for_parallel_replicas": "test_cluster",
+            "log_comment": "test_alias_parallel_replicas",
+        },
+    )
+
+    assert result.strip() == "499500"
+
+    # Verify parallel replicas were actually used
+    node1.query("SYSTEM FLUSH LOGS")
+    used_count = node1.query(
+        "SELECT ProfileEvents['ParallelReplicasUsedCount'] "
+        "FROM system.query_log "
+        "WHERE log_comment = 'test_alias_parallel_replicas' "
+        "  AND is_initial_query = 1 "
+        "  AND type = 'QueryFinish' "
+        "ORDER BY query_start_time DESC LIMIT 1"
+    )
+    assert int(used_count.strip()) > 0, (
+        f"Expected ParallelReplicasUsedCount > 0, got {used_count.strip()}"
+    )
+
+    node1.query("DROP DATABASE test_pr SYNC")
+    node2.query("DROP DATABASE test_pr SYNC")
+
+
+def test_alias_check_table(started_cluster):
+    """Verify that CHECK TABLE and CHECK DATABASE correctly delegate to the target table when the database contains an Alias table."""
+    node1.query("CREATE DATABASE check_db")
+    node1.query(
+        "CREATE TABLE check_db.base_table (id UInt32) ENGINE = MergeTree ORDER BY id"
+    )
+    node1.query("CREATE TABLE check_db.alias_table ENGINE = Alias('base_table')")
+    node1.query("INSERT INTO check_db.base_table VALUES (1), (2), (3)")
+
+    # CHECK TABLE on alias must delegate to the target and report success.
+    result = node1.query(
+        "CHECK TABLE check_db.alias_table",
+        settings={"check_query_single_value_result": 1},
+    )
+    assert result.strip() == "1", f"Expected 1, got: {result.strip()}"
+
+    # CHECK DATABASE must not abort when the database contains alias tables.
+    node1.query("CHECK DATABASE check_db")
+
+    node1.query("DROP DATABASE check_db SYNC")

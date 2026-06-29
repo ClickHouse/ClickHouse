@@ -8,6 +8,8 @@
 
 DROP TABLE IF EXISTS users_86313;
 
+SET explain_query_plan_default = 'legacy';
+
 CREATE TABLE users_86313 (uid Int16, name String, age Int16, time Int8, PRIMARY KEY(time, age, name)) ENGINE = MergeTree;
 
 INSERT INTO users_86313 VALUES (1231, 'Ksenia', 33, 2);
