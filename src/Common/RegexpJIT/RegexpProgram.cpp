@@ -683,10 +683,10 @@ static CharSet analyzeFirst(std::vector<Op> & ops, const CharSet & follow, int &
 
 /// RE2 runs case-insensitive matching in UTF-8 mode with Unicode-aware (simple) case folding. The only
 /// ASCII letters whose fold class reaches outside ASCII are `k`/`K` (which also fold to U+212A KELVIN
-/// SIGN) and `s`/`S` (which also fold to U+017F LATIN SMALL LETTER LONG S). Our matcher folds ASCII
-/// only, so a case-insensitive pattern whose matching depends on `k`/`s` - a literal byte, or a
-/// character set that includes one of them - can match (or, for a maximal run, fail to stop at) those
-/// code points differently from RE2. Detect that and fall back to the general engine.
+/// SIGN, UTF-8 `E2 84 AA`) and `s`/`S` (which also fold to U+017F LATIN SMALL LETTER LONG S, UTF-8
+/// `C5 BF`). Our matcher folds ASCII only and scans byte-wise, so it can match (or, for a maximal run,
+/// fail to stop at) those code points differently from RE2. Detect that and fall back to the general
+/// engine.
 static bool caseInsensitiveTouchesNonAsciiFold(const std::vector<Op> & ops)
 {
     for (const Op & op : ops)
@@ -694,14 +694,27 @@ static bool caseInsensitiveTouchesNonAsciiFold(const std::vector<Op> & ops)
         switch (op.kind)
         {
             case OpKind::Literal:
+                /// A literal byte `k`/`s` matches only `k`/`K` (`s`/`S`) byte-wise, never the multi-byte
+                /// fold code point, while RE2 would also match it.
                 for (uint8_t c : op.literal)
                     if (c == 'k' || c == 'K' || c == 's' || c == 'S')
                         return true;
                 break;
             case OpKind::CharQuant:
-                if (op.set.contains('k') || op.set.contains('K') || op.set.contains('s') || op.set.contains('S'))
+            {
+                /// A byte-wise scan agrees with RE2 on a fold code point only when the set's membership of
+                /// the ASCII letter equals its membership of every byte of that code point's UTF-8 encoding.
+                /// Checking only `set.contains('k'/'s')` (as a previous version did) misses negated classes:
+                /// e.g. `(?i)[^a-z]` excludes `k`/`s` after folding and inversion, yet its inverted bitmap
+                /// contains the high bytes of KELVIN SIGN / LONG S, so the matcher would accept those bytes
+                /// while RE2 (folding them to `k`/`s`) rejects them.
+                const CharSet & set = op.set;
+                const bool kelvin_matches_as_k = set.contains(0xE2) && set.contains(0x84) && set.contains(0xAA);
+                const bool long_s_matches_as_s = set.contains(0xC5) && set.contains(0xBF);
+                if (set.contains('k') != kelvin_matches_as_k || set.contains('s') != long_s_matches_as_s)
                     return true;
                 break;
+            }
             case OpKind::Optional:
                 if (caseInsensitiveTouchesNonAsciiFold(op.body))
                     return true;

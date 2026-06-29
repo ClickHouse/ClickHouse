@@ -37,6 +37,10 @@ USER
 1
 1
 1
+-- case-insensitive negated classes must fall back too: a byte-wise scan would let `[^a-z]` accept the bytes of KELVIN SIGN / LONG S, while RE2 folds them to k/s and rejects them
+1
+1
+1
 -- oversized patterns fall back to RE2 before JIT code generation (bounded LLVM compilation)
 1
 0

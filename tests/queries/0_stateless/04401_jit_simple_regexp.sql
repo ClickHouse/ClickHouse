@@ -58,6 +58,18 @@ SELECT
     (SELECT extract(concat('a', char(0xE2, 0x84, 0xAA), 'b'), '(?i)^([a-z]+)') SETTINGS compile_regular_expressions = 1)
   = (SELECT extract(concat('a', char(0xE2, 0x84, 0xAA), 'b'), '(?i)^([a-z]+)') SETTINGS compile_regular_expressions = 0);
 
+SELECT '-- case-insensitive negated classes must fall back too: a byte-wise scan would let `[^a-z]` accept the bytes of KELVIN SIGN / LONG S, while RE2 folds them to k/s and rejects them';
+SELECT
+    (SELECT match(char(0xE2, 0x84, 0xAA), '(?i)^[^a-z]+$') SETTINGS compile_regular_expressions = 1)
+  = (SELECT match(char(0xE2, 0x84, 0xAA), '(?i)^[^a-z]+$') SETTINGS compile_regular_expressions = 0);
+SELECT
+    (SELECT match(char(0xC5, 0xBF), '(?i)^[^a-z]+$') SETTINGS compile_regular_expressions = 1)
+  = (SELECT match(char(0xC5, 0xBF), '(?i)^[^a-z]+$') SETTINGS compile_regular_expressions = 0);
+-- A negated class that does not depend on k/s stays compiled and keeps matching high bytes, exactly like RE2.
+SELECT
+    (SELECT match(char(0xE2, 0x84, 0xAA), '(?i)^[^/]+$') SETTINGS compile_regular_expressions = 1)
+  = (SELECT match(char(0xE2, 0x84, 0xAA), '(?i)^[^/]+$') SETTINGS compile_regular_expressions = 0);
+
 SELECT '-- oversized patterns fall back to RE2 before JIT code generation (bounded LLVM compilation)';
 -- A `^` + large literal + `$` is in the supported subset but must not be compiled (one comparison per
 -- byte would make LLVM build an enormous function); it falls back to RE2 and stays correct.
