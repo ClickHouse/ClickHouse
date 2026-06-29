@@ -1593,6 +1593,13 @@ static void wrapPerArmConstructionSettings(
         }
         return;
     }
+    if (ast->as<ASTAlterQuery>())
+    {
+        /// As in `wrapNestedConstructionSettings`: an `ALTER … MODIFY QUERY` stores a view query as a
+        /// *definition*, so its construction settings — including one on a non-last `UNION` arm — must
+        /// be rejected in `AlterCommand::parse`, not materialized here. Do not descend.
+        return;
+    }
 
     /// Bottom-up: handle inner-most unions before their parents.
     for (auto & child : ast->children)

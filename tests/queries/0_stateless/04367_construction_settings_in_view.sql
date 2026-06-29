@@ -29,6 +29,8 @@ CREATE MATERIALIZED VIEW mv_alter TO t_dst AS SELECT x FROM t_src;
 ALTER TABLE mv_alter MODIFY QUERY SELECT x FROM t_src SETTINGS limit = 1; -- { serverError NOT_IMPLEMENTED }
 -- the construction setting can hide in a nested subquery's own SETTINGS; reject that too
 ALTER TABLE mv_alter MODIFY QUERY SELECT x FROM (SELECT x FROM t_src SETTINGS limit = 1); -- { serverError NOT_IMPLEMENTED }
+-- ... or on a non-last UNION arm (materialized by the per-arm pass); reject that too
+ALTER TABLE mv_alter MODIFY QUERY (SELECT x FROM t_src SETTINGS limit = 1) UNION ALL SELECT x FROM t_src; -- { serverError NOT_IMPLEMENTED }
 -- a MODIFY QUERY without construction settings still works
 ALTER TABLE mv_alter MODIFY QUERY SELECT x FROM t_src WHERE x > 5;
 DROP TABLE mv_alter;
