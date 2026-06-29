@@ -49,6 +49,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool validate_enum_literals_in_operators;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace ErrorCodes
@@ -56,6 +57,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_DEEP_RECURSION;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -408,18 +410,35 @@ bool generatedInSetIsSafeToInject(
     for (const auto & elem : set_columns)
         columns.push_back(elem.column);
 
-    /// Build the set with unlimited (non-throwing) limits, then compare its
+    /// Build the set the way `FutureSetFromTuple` would, then compare its
     /// measured size against the user's limits using the same `>` boundary the
     /// `throw` path uses, so the decision is exact for both overflow modes.
-    Set set(SizeLimits{}, 0, settings[Setting::transform_null_in]);
-    set.setHeader(header);
-    set.insertFromColumns(columns);
-    set.finishInsert();
+    ///
+    /// The probe is built with unlimited `SizeLimits` so its full size can be
+    /// measured exactly, but building it must itself fail closed. The frontier
+    /// holds up to `recursive_cte_max_in_filter_cardinality` values, so with
+    /// large `String` keys and a tight `max_memory_usage` materializing the
+    /// hash table can hit `MEMORY_LIMIT_EXCEEDED` — the memory tracker fires
+    /// during the build, before the comparison below. The unoptimized scan
+    /// never builds this set, so such a failure must skip injection (plain
+    /// scan), not fail the recursive query — exactly like the conversion guard
+    /// above.
+    try
+    {
+        Set set(SizeLimits{}, 0, settings[Setting::transform_null_in]);
+        set.setHeader(header);
+        set.insertFromColumns(columns);
+        set.finishInsert();
 
-    if (max_rows != 0 && set.getTotalRowCount() > max_rows)
+        if (max_rows != 0 && set.getTotalRowCount() > max_rows)
+            return false;
+        if (max_bytes != 0 && set.getTotalByteCount() > max_bytes)
+            return false;
+    }
+    catch (...)
+    {
         return false;
-    if (max_bytes != 0 && set.getTotalByteCount() > max_bytes)
-        return false;
+    }
     return true;
 }
 
@@ -493,6 +512,31 @@ public:
                 ctx = it->second;
                 return;
             }
+
+            /// `allow_experimental_parallel_reading_from_replicas = 2` is the
+            /// forcing mode, documented as "enabled, throw an exception in case
+            /// of failure". Recursive steps cannot use parallel replicas (the
+            /// stale GLOBAL JOIN cache described above would return wrong
+            /// results), so the request cannot be honoured. Silently
+            /// downgrading to a plain run would break that force-or-throw
+            /// contract, so fail closed with a clear error rather than pretend
+            /// it succeeded.
+            ///
+            /// The throw is gated on `canUseTaskBasedParallelReplicas` so it
+            /// fires under exactly the same condition as every other forced
+            /// mode rejection in the planner (e.g. FINAL / JOIN / IN-subquery
+            /// in `Planner::buildPlanForQueryNode`): only when parallel replicas
+            /// would actually be engaged for this context. A bare
+            /// `... = 2` with the default `max_parallel_replicas = 1` is a no-op
+            /// everywhere else, so it must stay a no-op here too and just be
+            /// disabled below (as mode `1`, best-effort, always is).
+            if (ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] >= 2
+                && ctx->canUseTaskBasedParallelReplicas())
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Parallel replicas (allow_experimental_parallel_reading_from_replicas = 2) are not supported for the "
+                    "recursive part of a recursive CTE. Set it to 0 or 1 to run the query.");
+
             auto new_ctx = Context::createCopy(ctx);
             new_ctx->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
             context_copies.emplace(ctx.get(), new_ctx);

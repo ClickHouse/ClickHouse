@@ -429,6 +429,60 @@ SETTINGS validate_enum_literals_in_operators = 1;
 
 DROP TABLE enum_edges;
 
+-- A byte-heavy generated `IN` set with a tiny `max_bytes_in_set` must fail
+-- closed to a plain scan, exactly like the row-count guard above. The working
+-- frontier holds wide `String` keys, so the generated set's measured byte size
+-- dwarfs `max_bytes_in_set = 1`; injecting it would throw
+-- `SET_SIZE_LIMIT_EXCEEDED` (`set_overflow_mode = 'throw'`), so the optimization
+-- skips injection for the step and scans plainly, still traversing the chain
+-- correctly. Building the probe set that makes this decision must itself never
+-- throw (e.g. it can hit `max_memory_usage` while materializing many wide
+-- keys); the unoptimized scan never builds that set, so a failure there falls
+-- back to the plain scan rather than failing the query.
+DROP TABLE IF EXISTS str_chain;
+CREATE TABLE str_chain (cur String, nxt String) ENGINE = MergeTree ORDER BY cur;
+INSERT INTO str_chain
+    SELECT repeat('k', 2000) || toString(number) AS cur,
+           repeat('k', 2000) || toString(number + 1) AS nxt
+    FROM numbers(6);
+
+WITH RECURSIVE str_walk AS
+(
+    SELECT repeat('k', 2000) || '0' AS cur
+  UNION ALL
+    SELECT e.nxt AS cur
+    FROM str_chain AS e
+    INNER JOIN str_walk AS w ON e.cur = w.cur
+)
+SELECT count() FROM str_walk
+SETTINGS max_bytes_in_set = 1, set_overflow_mode = 'throw';
+
+DROP TABLE str_chain;
+
+-- Forced parallel replicas (`allow_experimental_parallel_reading_from_replicas
+-- = 2`) cannot be satisfied for the recursive part of a recursive CTE: every
+-- recursive step disables parallel replicas to avoid reusing a stale cached
+-- GLOBAL JOIN table (which would return wrong results). The forcing mode is
+-- documented as "enabled, throw an exception in case of failure", so the query
+-- must fail closed with `SUPPORT_IS_DISABLED` rather than silently run without
+-- the requested parallel replicas. The rejection is gated on parallel replicas
+-- actually being usable (`max_parallel_replicas > 1` etc.), matching every
+-- other forced-mode rejection in the planner; mode `1` (best-effort, silent
+-- fallback) is exercised by the other queries above.
+WITH RECURSIVE traverse_pr AS
+(
+    SELECT to_id AS current_id
+    FROM edges
+    WHERE from_id = 0
+  UNION ALL
+    SELECT e.to_id AS current_id
+    FROM edges AS e
+    INNER JOIN traverse_pr AS t ON e.from_id = t.current_id
+)
+SELECT current_id FROM traverse_pr ORDER BY current_id
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
 DROP TABLE edges;
 DROP TABLE two_hop;
 DROP TABLE t_a;
