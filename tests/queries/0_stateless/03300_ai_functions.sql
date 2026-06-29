@@ -48,7 +48,7 @@ CREATE NAMED COLLECTION ai_no_provider AS
     api_key = 'fake-key';
 
 SELECT '-- Named collection missing provider';
-SELECT aiGenerate('ai_no_provider', x) FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('ai_no_provider', 'hi'); -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_no_provider;
 
@@ -59,7 +59,7 @@ CREATE NAMED COLLECTION ai_no_endpoint AS
     api_key = 'fake-key';
 
 SELECT '-- Named collection missing endpoint';
-SELECT aiGenerate('ai_no_endpoint', x) FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('ai_no_endpoint', 'hi'); -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_no_endpoint;
 
@@ -70,7 +70,7 @@ CREATE NAMED COLLECTION ai_no_model AS
     api_key = 'fake-key';
 
 SELECT '-- Named collection missing model';
-SELECT aiGenerate('ai_no_model', x) FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('ai_no_model', 'hi'); -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_no_model;
 
@@ -81,7 +81,7 @@ CREATE NAMED COLLECTION ai_no_api_key AS
     model = 'test-model';
 
 SELECT '-- Named collection missing api_key';
-SELECT aiGenerate('ai_no_api_key', x) FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('ai_no_api_key', 'hi'); -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_no_api_key;
 
@@ -150,7 +150,11 @@ CREATE NAMED COLLECTION ai_bad_provider AS
     api_key = 'fake-key';
 
 SELECT '-- Unknown provider name';
-SELECT aiGenerate('ai_bad_provider', x) FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiGenerate('ai_bad_provider', 'hi'); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- Unknown provider name on empty input';
+SELECT aiGenerate('ai_bad_provider', x) FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
+SELECT aiEmbed('ai_bad_provider', x) FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_bad_provider;
 
@@ -167,6 +171,10 @@ CREATE NAMED COLLECTION ai_anthropic AS
 
 SELECT '-- Anthropic provider resolves';
 SELECT count() FROM (SELECT aiGenerate('ai_anthropic', x) AS result FROM tab);
+
+SELECT '-- aiEmbed rejects anthropic provider';
+SELECT aiEmbed('ai_anthropic', 'hi'); -- { serverError NOT_IMPLEMENTED }
+SELECT aiEmbed('ai_anthropic', x) FROM (SELECT '' AS x WHERE 0); -- { serverError NOT_IMPLEMENTED }
 
 DROP NAMED COLLECTION ai_anthropic;
 
@@ -229,7 +237,8 @@ WHERE name IN (
     'ai_function_max_input_tokens_per_query',
     'ai_function_max_output_tokens_per_query',
     'ai_function_max_api_calls_per_query',
-    'ai_function_throw_on_quota_exceeded'
+    'ai_function_throw_on_quota_exceeded',
+    'ai_function_embedding_max_batch_size'
 )
 ORDER BY name;
 
@@ -302,16 +311,21 @@ SELECT '-- aiExtract: JSON schema mode accepted';
 SELECT count() FROM (SELECT aiExtract('ai_credentials', x, '{"topic":"main topic","sentiment":"pos/neg"}') AS result FROM tab);
 
 SELECT '-- aiExtract: malformed JSON schema';
-SELECT aiExtract('ai_credentials', x, '{invalid') FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiExtract('ai_credentials', 'hi', '{invalid'); -- { serverError BAD_ARGUMENTS }
+
+-- `instruction_or_schema` is a row-independent constant, so a malformed schema must fail
+-- the query even when the source has zero rows.
+SELECT '-- aiExtract: malformed JSON schema on empty input';
+SELECT aiExtract('ai_credentials', x, '{invalid') FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- aiExtract: JSON schema with non-string value';
-SELECT aiExtract('ai_credentials', x, '{"a":null}') FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiExtract('ai_credentials', 'hi', '{"a":null}'); -- { serverError BAD_ARGUMENTS }
 
 -- Leading whitespace before the `{` must still be routed to schema mode, otherwise a malformed
 -- JSON would be silently accepted as a free-text instruction.
 SELECT '-- aiExtract: schema mode detection ignores leading whitespace';
-SELECT aiExtract('ai_credentials', x, '   {invalid') FROM tab; -- { serverError BAD_ARGUMENTS }
-SELECT aiExtract('ai_credentials', x, '\n\t {invalid') FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiExtract('ai_credentials', 'hi', '   {invalid'); -- { serverError BAD_ARGUMENTS }
+SELECT aiExtract('ai_credentials', 'hi', '\n\t {invalid'); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- aiExtract: with temperature';
 SELECT count() FROM (SELECT aiExtract('ai_credentials', x, 'main topic', 0.0) AS result FROM tab);
@@ -349,7 +363,156 @@ SELECT '-- aiTranslate: with instructions and temperature';
 SELECT count() FROM (SELECT aiTranslate('ai_credentials', x, 'French', 'keep proper nouns', 0.3) AS result FROM tab);
 
 -- =============================================================================
--- 17. Re-disable the setting mid-session
+-- 17. aiEmbed
+-- =============================================================================
+
+SELECT '-- aiEmbed: registered';
+SELECT name FROM system.functions WHERE name = 'aiEmbed';
+
+SELECT '-- aiEmbed: too few arguments';
+SELECT aiEmbed('ai_credentials'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- aiEmbed: too many arguments';
+SELECT aiEmbed('ai_credentials', 'x', 256, 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- aiEmbed: non-constant dimensions';
+SELECT aiEmbed('ai_credentials', x, toUInt64(number)) FROM (SELECT x, 0 AS number FROM tab); -- { serverError ILLEGAL_COLUMN }
+
+SELECT '-- aiEmbed: wrong type for dimensions (signed integer)';
+SELECT aiEmbed('ai_credentials', x, -1) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- aiEmbed: wrong type for dimensions (string)';
+SELECT aiEmbed('ai_credentials', x, '256') FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- aiEmbed: non-constant collection';
+SELECT aiEmbed(x, x) FROM tab; -- { serverError ILLEGAL_COLUMN }
+
+SELECT '-- aiEmbed: return type';
+DROP TABLE IF EXISTS _03300_ret_embed;
+CREATE TABLE _03300_ret_embed ENGINE = Memory AS
+    SELECT aiEmbed('ai_credentials', x) AS result FROM tab;
+SELECT name, type FROM system.columns
+    WHERE database = currentDatabase() AND table = '_03300_ret_embed';
+DROP TABLE IF EXISTS _03300_ret_embed;
+
+SELECT '-- aiEmbed: return type with dimensions';
+DROP TABLE IF EXISTS _03300_ret_embed_dim;
+CREATE TABLE _03300_ret_embed_dim ENGINE = Memory AS
+    SELECT aiEmbed('ai_credentials', x, 256) AS result FROM tab;
+SELECT name, type FROM system.columns
+    WHERE database = currentDatabase() AND table = '_03300_ret_embed_dim';
+DROP TABLE IF EXISTS _03300_ret_embed_dim;
+
+SELECT '-- aiEmbed: empty input executes';
+SELECT count() FROM (SELECT aiEmbed('ai_credentials', x) AS result FROM tab);
+
+SELECT '-- aiEmbed: empty input with dimensions';
+SELECT count() FROM (SELECT aiEmbed('ai_credentials', x, 128) AS result FROM tab);
+
+-- `dimensions` is a row-independent constant, so an out-of-range value must fail
+-- the query even when the source has zero rows.
+SELECT '-- aiEmbed: out-of-range dimensions on empty input';
+SELECT aiEmbed('ai_credentials', x, 18446744073709551615) FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- aiEmbed: nonexistent named collection';
+SELECT aiEmbed('nonexistent_collection_xyz', 'hello'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+
+SELECT '-- aiEmbed: batch size setting default';
+SELECT default FROM system.settings WHERE name = 'ai_function_embedding_max_batch_size';
+
+-- `Nullable(Array(...))` is not a valid ClickHouse type, so `aiEmbed` must keep its
+-- return type as non-Nullable `Array(Float32)` even when given `Nullable(String)`,
+-- and NULL inputs must map to `[]` at execute time.
+SELECT '-- aiEmbed: Nullable(String) input return type';
+DROP TABLE IF EXISTS _03300_embed_null_in;
+DROP TABLE IF EXISTS _03300_embed_null_out;
+CREATE TABLE _03300_embed_null_in (x Nullable(String)) ENGINE = Memory;
+INSERT INTO _03300_embed_null_in VALUES (NULL);
+CREATE TABLE _03300_embed_null_out ENGINE = Memory AS
+    SELECT aiEmbed('ai_credentials', x) AS result FROM _03300_embed_null_in;
+SELECT name, type FROM system.columns
+    WHERE database = currentDatabase() AND table = '_03300_embed_null_out';
+
+SELECT '-- aiEmbed: NULL input → []';
+SELECT length(result) FROM _03300_embed_null_out;
+
+DROP TABLE IF EXISTS _03300_embed_null_out;
+DROP TABLE IF EXISTS _03300_embed_null_in;
+
+-- =============================================================================
+-- 17b. AI functions in column DEFAULTs: CREATE + INSERT + SELECT must complete.
+-- The HTTP call fails (no provider on localhost:1); `ai_function_throw_on_error = 0`
+-- swallows the error so the INSERT still succeeds, with `[]` / "" for the row.
+-- =============================================================================
+
+SET ai_function_throw_on_error = 0;
+SET ai_function_request_timeout_sec = 3;
+
+SELECT '-- aiEmbed: DEFAULT survives INSERT (no server crash)';
+DROP TABLE IF EXISTS _03300_embed_default;
+CREATE TABLE _03300_embed_default
+(
+    id UInt32,
+    doc String,
+    vector Array(Float32) DEFAULT aiEmbed('ai_credentials', doc)
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_embed_default (id, doc) VALUES (1, 'hello world');
+SELECT id, length(vector) FROM _03300_embed_default;
+DROP TABLE _03300_embed_default;
+
+SELECT '-- aiGenerate: DEFAULT survives INSERT (no server crash)';
+DROP TABLE IF EXISTS _03300_generate_default;
+CREATE TABLE _03300_generate_default
+(
+    id UInt32,
+    doc String,
+    summary String DEFAULT aiGenerate('ai_credentials', doc)
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_generate_default (id, doc) VALUES (1, 'hello world');
+SELECT id, length(summary) FROM _03300_generate_default;
+DROP TABLE _03300_generate_default;
+
+SELECT '-- aiClassify: DEFAULT survives INSERT (no server crash)';
+DROP TABLE IF EXISTS _03300_classify_default;
+CREATE TABLE _03300_classify_default
+(
+    id UInt32,
+    doc String,
+    label String DEFAULT aiClassify('ai_credentials', doc, ['positive', 'negative'])
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_classify_default (id, doc) VALUES (1, 'hello world');
+SELECT id, length(label) FROM _03300_classify_default;
+DROP TABLE _03300_classify_default;
+
+SELECT '-- aiExtract: DEFAULT survives INSERT (no server crash)';
+DROP TABLE IF EXISTS _03300_extract_default;
+CREATE TABLE _03300_extract_default
+(
+    id UInt32,
+    doc String,
+    extracted String DEFAULT aiExtract('ai_credentials', doc, 'main topic')
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_extract_default (id, doc) VALUES (1, 'hello world');
+SELECT id, length(extracted) FROM _03300_extract_default;
+DROP TABLE _03300_extract_default;
+
+SELECT '-- aiTranslate: DEFAULT survives INSERT (no server crash)';
+DROP TABLE IF EXISTS _03300_translate_default;
+CREATE TABLE _03300_translate_default
+(
+    id UInt32,
+    doc String,
+    translation String DEFAULT aiTranslate('ai_credentials', doc, 'French')
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_translate_default (id, doc) VALUES (1, 'hello world');
+SELECT id, length(translation) FROM _03300_translate_default;
+DROP TABLE _03300_translate_default;
+
+SET ai_function_throw_on_error = 1;
+SET ai_function_request_timeout_sec = 60;
+
+-- =============================================================================
+-- 18. Re-disable the setting mid-session
 -- =============================================================================
 
 SET allow_experimental_ai_functions = 0;
