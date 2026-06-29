@@ -30,7 +30,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # example throws outside the lambda's `try`/`catch`), the query hangs or
 # crashes; if it is correct, it surfaces as a normal `MEMORY_LIMIT_EXCEEDED`.
 
-CONFIG_FILE=$(mktemp -p "${CLICKHOUSE_TMP:-.}" 04240_config.XXXXXX.xml)
+CONFIG_FILE=$(mktemp -p "${CLICKHOUSE_TMP:-.}" 04491_config.XXXXXX.xml)
 trap 'rm -f "$CONFIG_FILE"' EXIT
 
 cat > "$CONFIG_FILE" <<'EOF'
