@@ -515,6 +515,9 @@ public:
     LogEntriesPtr serveReadAhead(int32_t peer_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
     bool isReadAheadEnabled() const;
 
+    /// Must be called under exclusive changelog_lock.
+    void refreshCache();
+
     /// Return entry at position index
     LogEntryPtr entryAt(uint64_t index) const;
 

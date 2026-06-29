@@ -112,12 +112,42 @@ def test_readahead_catchup(started_cluster):
         f"Expected at least 4 log files, got {len(log_files)}: {log_files}"
     )
 
-    # --- Step 2: start node3 (empty log) and wait for it to catch up ---
+    # --- Step 2: capture baseline counters, then start node3 ---
+    # node2 is already an active follower during step 1 and can accumulate
+    # KeeperLogsReadAheadFillDecodedEntries before node3 starts; assert a delta.
+    def get_counter(node, event):
+        r = node.query(f"SELECT value FROM system.events WHERE event = '{event}'")
+        return int(r.strip()) if r.strip() else 0
+
+    baseline_decoded = get_counter(leader, "KeeperLogsReadAheadFillDecodedEntries")
+    baseline_cursors = get_counter(leader, "KeeperLogsReadAheadCursorsInstalled")
+    print(
+        f"Leader read-ahead baseline (before node3 start): "
+        f"decoded={baseline_decoded}, cursors_installed={baseline_cursors}"
+    )
+
     node3.start_clickhouse()
     keeper_utils.wait_until_connected(cluster, node3)
 
-    # Give the read-ahead fill task a moment to finish streaming.
-    time.sleep(2)
+    # Poll until the decoded-entries counter grows beyond the baseline.
+    deadline = time.time() + 30
+    decoded_delta = 0
+    while time.time() < deadline:
+        decoded_delta = get_counter(leader, "KeeperLogsReadAheadFillDecodedEntries") - baseline_decoded
+        if decoded_delta > 0:
+            break
+        time.sleep(0.5)
+
+    cursors_delta = get_counter(leader, "KeeperLogsReadAheadCursorsInstalled") - baseline_cursors
+    reopens = get_counter(leader, "KeeperLogsReadAheadFillReopens")
+    print(
+        f"Leader read-ahead delta after node3 catch-up: "
+        f"decoded_delta={decoded_delta}, cursors_delta={cursors_delta}, reopens={reopens}"
+    )
+    assert decoded_delta > 0, (
+        "KeeperLogsReadAheadFillDecodedEntries did not increase after node3 started: "
+        "read-ahead did not fire when streaming to the lagging follower"
+    )
 
     # --- Step 3: verify correctness — node3 must serve every written znode ---
     zk3 = get_zk(node3)
@@ -135,23 +165,3 @@ def test_readahead_catchup(started_cluster):
     finally:
         zk3.stop()
         zk3.close()
-
-    # --- Step 4: verify read-ahead was exercised on the leader ---
-    # NuRaft calls log_entries_ext(start, end, batch_hint, peer_id=follower_id) on the leader
-    # when streaming log entries to a follower. The fill task and its counters therefore
-    # run on the leader, not on the catching-up follower.
-    def get_counter(node, event):
-        r = node.query(f"SELECT value FROM system.events WHERE event = '{event}'")
-        return int(r.strip()) if r.strip() else 0
-
-    decoded = get_counter(leader, "KeeperLogsReadAheadFillDecodedEntries")
-    reopens = get_counter(leader, "KeeperLogsReadAheadFillReopens")
-    cursors = get_counter(leader, "KeeperLogsReadAheadCursorsInstalled")
-    print(
-        f"Leader read-ahead stats: "
-        f"decoded={decoded}, reopens={reopens}, cursors_installed={cursors}"
-    )
-    assert decoded > 0, (
-        "KeeperLogsReadAheadFillDecodedEntries is 0 on the leader: "
-        "read-ahead did not fire when streaming to node3"
-    )
