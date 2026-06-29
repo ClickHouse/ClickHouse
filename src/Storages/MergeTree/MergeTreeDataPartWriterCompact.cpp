@@ -7,6 +7,7 @@
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
 #include <Common/FailPoint.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -98,6 +99,16 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
         UInt64 codec_id = compression_codec->getHash();
+        /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
+        /// object, so they must not be shared between streams. Make the key unique per stream so that
+        /// every such stream gets its own codec instance, while still being tracked for finalize/cancel.
+        if (compression_codec->needsVectorDimensionUpfront())
+        {
+            SipHash codec_hash;
+            codec_hash.update(codec_id);
+            codec_hash.update(stream_name.data(), stream_name.size());
+            codec_id = codec_hash.get64();
+        }
         /// Exception safety: if `make_shared` throws, the map is not modified, avoiding null entries in `cancel`.
         auto it = streams_by_codec.find(codec_id);
         if (it == streams_by_codec.end())

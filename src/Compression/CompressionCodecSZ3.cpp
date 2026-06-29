@@ -1,8 +1,8 @@
 #include "config.h"
 
 #if USE_SZ3
+#    include <array>
 #    include <cstring>
-#    include <vector>
 #    include <Compression/CompressionFactory.h>
 #    include <Compression/CompressionInfo.h>
 #    include <Compression/ICompressionCodec.h>
@@ -16,11 +16,14 @@
 #    include <Parsers/ASTLiteral.h>
 #    include <Parsers/IAST.h>
 #    include "Common/Exception.h"
+#    include <Common/PODArray.h>
 #    include <Common/SipHash.h>
 #    include "base/types.h"
 
 #    include <SZ3/api/sz.hpp>
 #    include <SZ3/utils/Config.hpp>
+
+#    include <zstd.h>
 
 namespace DB
 {
@@ -40,7 +43,9 @@ public:
 
 protected:
     bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return true; }
+    /// SZ3 only applies to floating-point data, so it is not a generic codec. This also prevents it
+    /// from being selected for structural substreams (e.g. array sizes) where only generic codecs are allowed.
+    bool isGenericCompression() const override { return false; }
     /// SZ3 is still under development, it writes its current version into the serialized compressed data.
     /// Therefore, update SZ3 with care to avoid breaking existing persistencies.
     /// We mark it as experimental for now.
@@ -116,18 +121,20 @@ void CompressionCodecSZ3::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecSZ3::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    return sizeof(UInt8) + sizeof(SZ3::Config) + uncompressed_size;
+    /// `SZ_compress` can fall back to a lossless path and its worst-case output is
+    /// `4096 + config.size_est() + ZSTD_compressBound(num * sizeof(T))` (see `SZ_compress_size_bound`),
+    /// which can exceed `uncompressed_size`. `size_est()` is bounded by `sizeof(SZ3::Config)` and
+    /// `num * sizeof(T)` equals `uncompressed_size`, so reserve a conservative upper bound (plus our
+    /// own leading byte for the float width).
+    return sizeof(UInt8) + 4096 + sizeof(SZ3::Config) + static_cast<UInt32>(ZSTD_compressBound(uncompressed_size));
 }
 
 UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     SZ3::Config config;
 
-    std::vector<size_t> result_dimensions;
     size_t num_floats = (source_size / float_width) / dimension.value_or(1);
-
-    result_dimensions.push_back(num_floats);
-    result_dimensions.push_back(dimension.value_or(1));
+    std::array<size_t, 2> result_dimensions{num_floats, dimension.value_or(1)};
 
     config.setDims(result_dimensions.begin(), result_dimensions.end());
 
@@ -148,8 +155,12 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
         case SZ3::EB_L2NORM:
             config.l2normErrorBound = error_value;
             break;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid error bound mode");
+        case SZ3::EB_ABS_AND_REL:
+        case SZ3::EB_ABS_OR_REL:
+            /// Combined modes need both bounds; the codec takes a single value, so apply it to both.
+            config.absErrorBound = error_value;
+            config.relErrorBound = error_value;
+            break;
     }
 
     std::unique_ptr<char[]> compressed;
@@ -228,8 +239,9 @@ UInt32 CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_
     ///  1. copy the data into a zero-padded buffer, so that small over-reads during parsing stay in valid memory;
     ///  2. validate the parsed configuration against the trusted `uncompressed_size` before decompressing.
     static constexpr size_t padding = 64;
-    std::vector<char> buffer(static_cast<size_t>(source_size) + padding, 0);
+    PODArray<char> buffer(static_cast<size_t>(source_size) + padding);
     memcpy(buffer.data(), source, source_size);
+    memset(buffer.data() + source_size, 0, padding);
     const char * const data = buffer.data();
 
     /// SZ3 supports 1 to 4 dimensions and encodes them with a per-value bit width of at most 64 (size_t).
@@ -257,6 +269,19 @@ UInt32 CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
             "SZ3 element count {} does not match the expected {}", config.num, expected_num);
+
+    /// SZ3 also drives some algorithms (e.g. blockwise decomposition) from `config.dims` rather than
+    /// `config.num`, so the product of the dimensions must match the expected element count too (with
+    /// an overflow check), otherwise a crafted block could still write past `dest`.
+    size_t dims_product = 1;
+    for (size_t dim : config.dims)
+    {
+        if (dim == 0 || dims_product > expected_num / dim)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "SZ3 dimensions do not match the expected element count");
+        dims_product *= dim;
+    }
+    if (dims_product != expected_num)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "SZ3 dimensions do not match the expected element count");
 
     /// Prevent the (size_t) underflow of the payload size computed inside SZ_decompress.
     if (config.size_est() > source_size)
