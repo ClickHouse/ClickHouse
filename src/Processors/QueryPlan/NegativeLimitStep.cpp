@@ -68,6 +68,24 @@ void NegativeLimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("With Ties", with_ties);
 }
 
+/// Wire format and cross-version compatibility.
+///
+/// The serialized layout is `flags` (one byte), then `limit` and `offset` (varuint), then -
+/// only when bit 0 of `flags` is set - a trailing `SortDescription` for `WITH TIES`.
+/// The leading `flags` byte has been part of the format since negative `LIMIT` was introduced
+/// (it was always written, reserved for exactly this kind of extension), so the byte stream is
+/// self-describing: a reader that understands the `flags` byte always knows whether the trailing
+/// `SortDescription` follows, and there is never an ambiguity that could desynchronize the stream.
+///
+/// This makes the change forward-compatible without bumping `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`.
+/// A server that predates `WITH TIES` reads the `flags` byte, sees a non-zero value, and rejects it
+/// with `CORRUPTED_DATA` *before* reading `limit`/`offset` (see the guard below, which on the old
+/// server reads `if (flags != 0)`). So a newer initiator that sends a `WITH TIES` negative-`LIMIT`
+/// plan to such a server fails closed - the distributed query errors cleanly instead of
+/// misinterpreting the trailing bytes. This is intentionally finer-grained than a version bump:
+/// bumping the plan version would make the old server reject *every* serialized plan from the newer
+/// initiator (including plain negative `LIMIT`), whereas the `flags` byte rejects only the plans
+/// that genuinely use the unsupported feature.
 void NegativeLimitStep::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
@@ -89,6 +107,8 @@ QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
 
     bool with_ties_v = bool(flags & 1);
 
+    /// Reject any flag bit we do not understand before reading the rest of the payload, so that an
+    /// unknown extension fails closed rather than desynchronizing the stream. See the comment above.
     if (flags & ~UInt8(1))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "NegativeLimitStep: unsupported flags={} in this version", static_cast<size_t>(flags));
 
