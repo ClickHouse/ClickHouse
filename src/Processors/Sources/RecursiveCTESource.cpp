@@ -248,13 +248,28 @@ std::vector<CTEJoinKey> collectCTEJoinKeys(
 }
 
 /// Read deduplicated values of a column from a `StorageMemory`-backed temporary
-/// table. Returns nullopt if the number of distinct values exceeds
-/// `max_cardinality` — the caller then skips filter injection for the step.
+/// table. Returns nullopt — so the caller skips filter injection for the step
+/// and falls back to a plain scan — when the generated set would be too large
+/// to build safely:
+///  - the number of distinct values exceeds `max_cardinality`, or
+///  - the accumulated byte size of the distinct values exceeds `max_bytes`
+///    (the effective `max_bytes_in_set`; `0` means unlimited).
+///
+/// The byte budget bounds the work *while the values are being collected*, so a
+/// frontier of wide keys under a tight `max_bytes_in_set` fails closed before
+/// the full set is materialized here and re-materialized as the RHS tuple — the
+/// unoptimized recursive scan never builds either, so it must not pay for them.
+/// The check is conservative: it measures the unconverted key bytes, an upper
+/// bound on the set the planner builds after converting to the storage column
+/// type, so it can only skip the optimization earlier, never inject an oversized
+/// set (the exact post-conversion check in `generatedInSetIsSafeToInject` still
+/// runs for everything that passes here).
 std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
     const StoragePtr & storage,
     const String & column_name,
     const ContextPtr & context,
-    size_t max_cardinality)
+    size_t max_cardinality,
+    size_t max_bytes)
 {
     auto * memory_storage = typeid_cast<StorageMemory *>(storage.get());
     if (!memory_storage)
@@ -268,6 +283,7 @@ std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
         return std::vector<Field>{};
 
     std::set<Field> unique_values;
+    size_t accumulated_bytes = 0;
 
     for (const auto & block : *snapshot_data.blocks)
     {
@@ -279,7 +295,12 @@ std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
         {
             Field value;
             column->get(i, value);
-            unique_values.insert(std::move(value));
+            if (unique_values.insert(std::move(value)).second)
+            {
+                accumulated_bytes += column->byteSizeAt(i);
+                if (max_bytes != 0 && accumulated_bytes > max_bytes)
+                    return std::nullopt;
+            }
 
             if (unique_values.size() > max_cardinality)
                 return std::nullopt;
@@ -522,16 +543,27 @@ public:
             /// contract, so fail closed with a clear error rather than pretend
             /// it succeeded.
             ///
-            /// The throw is gated on `canUseTaskBasedParallelReplicas` so it
-            /// fires under exactly the same condition as every other forced
-            /// mode rejection in the planner (e.g. FINAL / JOIN / IN-subquery
-            /// in `Planner::buildPlanForQueryNode`): only when parallel replicas
-            /// would actually be engaged for this context. A bare
-            /// `... = 2` with the default `max_parallel_replicas = 1` is a no-op
-            /// everywhere else, so it must stay a no-op here too and just be
-            /// disabled below (as mode `1`, best-effort, always is).
+            /// The throw is gated on parallel replicas actually being usable for
+            /// this context, so it fires under the same condition as the forced
+            /// mode rejections in the planner (e.g. FINAL / JOIN / IN-subquery in
+            /// `Planner::buildPlanForQueryNode`): only when parallel replicas
+            /// would actually be engaged. A bare `... = 2` with the default
+            /// `max_parallel_replicas = 1` is a no-op everywhere else, so it must
+            /// stay a no-op here too and just be disabled below (as mode `1`,
+            /// best-effort, always is).
+            ///
+            /// Every parallel-replica algorithm is covered, not just the
+            /// task-based one: custom-key (`canUseParallelReplicasCustomKey`) and
+            /// sampling/offset (`canUseOffsetParallelReplicas`) modes are not
+            /// gated by `canUseTaskBasedParallelReplicas`, so checking only the
+            /// latter would let a forced custom-key/sampling run be silently
+            /// downgraded here, breaking the force-or-throw contract. The disable
+            /// below (setting the mode to `0`) does turn off all of them, since
+            /// every `canUse*` predicate requires the setting to be `> 0`.
             if (ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] >= 2
-                && ctx->canUseTaskBasedParallelReplicas())
+                && (ctx->canUseTaskBasedParallelReplicas()
+                    || ctx->canUseParallelReplicasCustomKey()
+                    || ctx->canUseOffsetParallelReplicas()))
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Parallel replicas (allow_experimental_parallel_reading_from_replicas = 2) are not supported for the "
@@ -687,8 +719,9 @@ private:
             /// match what the planner will later see for that branch.
             const auto containing_query_context = key.containing_query_node->getContext();
 
-            const UInt64 max_in_filter_cardinality
-                = containing_query_context->getSettingsRef()[Setting::recursive_cte_max_in_filter_cardinality];
+            const auto & containing_settings = containing_query_context->getSettingsRef();
+            const UInt64 max_in_filter_cardinality = containing_settings[Setting::recursive_cte_max_in_filter_cardinality];
+            const UInt64 max_bytes_in_set = containing_settings[Setting::max_bytes_in_set];
 
             /// The optimization is disabled for this branch — skip its filter.
             /// Other branches keep theirs: each generated predicate is
@@ -696,16 +729,35 @@ private:
             if (max_in_filter_cardinality == 0)
                 continue;
 
-            auto values = readColumnValuesFromMemoryStorage(
-                working_temporary_table_storage, key.cte_column_name, recursive_query_context, max_in_filter_cardinality);
+            /// Reading the frontier values and materializing the RHS tuple must
+            /// themselves fail closed. A tight `max_memory_usage` can make either
+            /// step raise `MEMORY_LIMIT_EXCEEDED` (the memory tracker fires on the
+            /// allocations); the unoptimized recursive scan never builds these, so
+            /// such a failure must skip injection and fall back to a plain scan,
+            /// not fail the whole recursive query — exactly like the probe-set
+            /// build inside `generatedInSetIsSafeToInject`. The cheaper limit
+            /// breaches (cardinality / byte budget) are reported as nullopt rather
+            /// than thrown.
+            std::optional<std::vector<Field>> values;
+            std::shared_ptr<ConstantNode> rhs_node;
+            try
+            {
+                values = readColumnValuesFromMemoryStorage(
+                    working_temporary_table_storage, key.cte_column_name, recursive_query_context,
+                    max_in_filter_cardinality, max_bytes_in_set);
 
-            if (!values.has_value())
+                if (!values.has_value())
+                    return false;
+
+                if (values->empty())
+                    continue;
+
+                rhs_node = buildInRhsConstantNode(key.cte_column_type, *values);
+            }
+            catch (...) // Ok: building the generated IN values hit a limit (e.g. memory); skip injection and fall back to a plain scan instead of failing the recursive query.
+            {
                 return false;
-
-            if (values->empty())
-                continue;
-
-            auto rhs_node = buildInRhsConstantNode(key.cte_column_type, *values);
+            }
 
             /// Fail closed if the planner could not build the generated `IN`
             /// set without changing the query's behaviour: the set could exceed
