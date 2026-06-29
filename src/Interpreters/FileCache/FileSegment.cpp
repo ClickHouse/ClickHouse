@@ -592,49 +592,41 @@ bool FileSegment::reserve(
         chassert(reserved_size >= current_downloaded_size);
     }
 
-    /**
-     * It is possible to have downloaded_size < reserved_size when reserve is called
-     * in case previous downloader did not fully download current file_segment
-     * and the caller is going to continue;
-     */
+    chassert(range().size() >= reserved_size);
 
-    size_t already_reserved_size = reserved_size - current_downloaded_size;
+    if (reserved_size > current_downloaded_size)
+    {
+        const size_t available_reserved = reserved_size - current_downloaded_size;
+        if (available_reserved >= size_to_reserve)
+            return true;
+        size_to_reserve -= available_reserved;
+    }
 
-    if (already_reserved_size >= size_to_reserve)
-        return true;
+    const size_t minimum_reserve_size = size_to_reserve;
 
-    size_to_reserve = size_to_reserve - already_reserved_size;
-
-    /// Reserve ahead in coarser granules to cut the rate of cache state lock acquisitions on the
-    /// hot path: later `reserve` calls for this segment hit the `already_reserved_size >=
-    /// size_to_reserve` short-circuit above without taking the lock. The surplus is bounded by the
-    /// segment range and reclaimed on completion (see shrinkFileSegmentToDownloadedSize).
-    /// Skipped for unbound (Ephemeral/temporary) segments: they need exact accounting, and reserving
-    /// a whole granule for a tiny temporary file would waste quota and could fail the write.
     if (!is_unbound)
     {
-        const size_t granule = cache->getReserveGranularity();
-        if (granule > size_to_reserve)
+        const auto reserve_granularity = cache->getReserveGranularity();
+        if (reserve_granularity && reserve_granularity > size_to_reserve)
         {
-            chassert(range().size() >= reserved_size);
+            size_to_reserve = reserved_size + reserve_granularity > range().size()
+                ? range().size() - reserved_size
+                : reserve_granularity;
 
-            /// What the current write needs; the caps below must never reserve less.
-            const size_t required_size = size_to_reserve;
-
-            /// Bump up to a full granule, bounded by the remaining segment space.
-            size_to_reserve = std::min(granule, range().size() - reserved_size);
-
-            /// Don't reserve ahead past what the read will still consume. `reserve_hint` can be
-            /// below `already_reserved_size` once a previous call reserved a granule ahead, so
-            /// clamp the subtraction to avoid underflow.
-            if (reserve_hint && already_reserved_size + size_to_reserve > reserve_hint)
-                size_to_reserve = reserve_hint > already_reserved_size ? reserve_hint - already_reserved_size : 0;
-
-            /// Reserve-ahead only ever reserves more, never less than required; otherwise a zero
-            /// would reach incrementSize and trip chassert(size).
-            size_to_reserve = std::max(size_to_reserve, required_size);
+            /// `reserve_hint` is measured from the current download offset, so the read ends at
+            /// `read_horizon` in segment-relative terms. Don't reserve ahead past it.
+            const size_t read_horizon = current_downloaded_size + reserve_hint;
+            if (reserve_hint
+                && read_horizon > reserved_size
+                && read_horizon < reserved_size + size_to_reserve)
+                size_to_reserve = read_horizon - reserved_size;
         }
     }
+
+    /// The reserve-ahead caps above (segment range, read horizon) are only an upper bound; they
+    /// must never reserve less than the current write needs, otherwise the write would exceed the
+    /// reservation. A bare assert would not protect release builds, so clamp explicitly.
+    size_to_reserve = std::max(size_to_reserve, minimum_reserve_size);
 
     /// This (resizable file segments) is allowed only for single threaded use of file segment.
     /// Currently it is used only for temporary files through cache.
