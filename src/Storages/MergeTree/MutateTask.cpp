@@ -1515,7 +1515,7 @@ static std::map<String, String> collectColumnCompressionCodecsForMutatedPart(
     const auto source_column_compression_codecs = readColumnCompressionCodecsFromPartMetadata(source_part);
     std::map<String, String> column_compression_codecs;
 
-    auto get_source_column_name = [&](const String & column_name) -> const String &
+    auto get_source_column_name = [&](const String & column_name) -> String
     {
         for (const auto & command : commands_for_renames)
         {

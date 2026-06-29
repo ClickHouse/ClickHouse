@@ -62,7 +62,7 @@ Each row describes one data part.
 - `estimates.max` ([Nullable(String)](/sql-reference/data-types/nullable)) — Estimated maximum value of the column.
 - `estimates.cardinality` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Estimated cardinality of the column.
 - `estimates.null_count` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Estimated number of NULL values in the column.
-- `compression_codec` ([String](/sql-reference/data-types/string)) — Compression codec detected from the column data stream in the data part.
+- `compression_codec` ([String](/sql-reference/data-types/string)) — Compression codec used by the column data stream in the data part, from exact per-part codec metadata when available. Empty for legacy parts without exact codec metadata.
 - `serialization_kind` ([String](/sql-reference/data-types/string)) — Kind of serialization of a column
 - `substreams` ([Array(String)](/sql-reference/data-types/array)) — Names of substreams to which column is serialized
 - `filenames` ([Array(String)](/sql-reference/data-types/array)) — Names of files for each substream of a column respectively

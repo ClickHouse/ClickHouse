@@ -1,3 +1,5 @@
+-- Tags: no-random-merge-tree-settings
+
 DROP TABLE IF EXISTS test_system_parts_columns_compression_codec_wide;
 DROP TABLE IF EXISTS test_system_parts_columns_compression_codec_compact;
 
