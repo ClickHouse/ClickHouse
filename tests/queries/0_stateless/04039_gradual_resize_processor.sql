@@ -79,8 +79,6 @@ FROM
 )
 WHERE explain LIKE '%GradualResize × %';
 
-DROP TABLE test_gradual_resize;
-
 -- Verify GradualResize works correctly together with `min_outstreams_per_resize_after_split`.
 -- The split-resize optimization reduces lock contention on `ExecutingGraph::Node::status_mutex`
 -- at high parallelism; we must make sure the pipeline still produces correct results when both
@@ -111,21 +109,41 @@ SELECT count() FROM
     GROUP BY k
 );
 
--- Per-group threshold scaling under split-resize: with split-resize active, each split
--- group's `GradualResizeProcessor` has its own counter. The global threshold must be
--- divided among groups so cumulative behavior across groups matches the documented
--- semantics. Use a high threshold relative to the input so that, without scaling,
--- groups would never fully activate and merge counts would still be correct but skewed;
--- result correctness is the regression we check here.
+-- Per-group threshold scaling under split-resize: with split-resize active, `Pipe::resizeGradual`
+-- builds one `GradualResizeProcessor` per split group and divides the global row/byte threshold
+-- among the groups (`per_group_min_rows = 1 + (min_rows_per_output - 1) / groups`), so cumulative
+-- activation across all groups still matches the documented global semantics. The threshold here
+-- (100000) is larger than the per-stream input, which exercises the per-group division branch and
+-- the regime where, without split-resize, a single resize would never fully activate.
+--
+-- This case must read from the `MergeTree` source `test_gradual_resize`, NOT from `numbers(...)`:
+-- `numbers` reports `hasEvenlyDistributedRead = true`, so `AggregatingStep` skips the
+-- pre-aggregation `resizeGradual` entirely and the split per-group path would never run. We assert
+-- that split-resize is still applied to the gradual path at this high threshold (`GradualResize × `,
+-- which collapses the identical per-group processors), so this fails if split `resizeGradual` is
+-- silently dropped from the gradual path, and we also check that results stay correct.
 SET min_rows_per_stream_for_gradual_resize = 100000;
 SET min_bytes_per_stream_for_gradual_resize = 0;
 SET min_outstreams_per_resize_after_split = 4;
 SET max_threads = 16;
+SET optimize_aggregation_in_order = 0;
+
+SELECT count() > 0
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT k, count()
+    FROM test_gradual_resize
+    GROUP BY k
+)
+WHERE explain LIKE '%GradualResize × %';
 
 SELECT k, count() AS c
-FROM (SELECT number % 7 AS k FROM numbers(50000))
+FROM test_gradual_resize
 GROUP BY k
 ORDER BY k;
+
+DROP TABLE test_gradual_resize;
 
 -- Uneven split-resize groups: when `num_streams` is not divisible by the number of split
 -- groups, `addSplitResizeTransform` pads the last group's outputs with `NullSink` and
