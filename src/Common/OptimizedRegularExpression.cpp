@@ -579,6 +579,15 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     number_of_subpatterns = 0;
     if (!is_trivial)
     {
+        /// re2 patterns can be machine-generated and huge; bound them in error messages.
+        auto for_message = [](const std::string & re)
+        {
+            static constexpr size_t max_len = 256;
+            if (re.size() <= max_len)
+                return re;
+            return re.substr(0, max_len) + "... (truncated, " + std::to_string(re.size()) + " bytes total)";
+        };
+
         /// Compile the re2 regular expression.
         re2::RE2::Options regexp_options;
 
@@ -609,14 +618,14 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
                 "string literal, the slashes have to be additionally escaped. "
                 "For example, to match an opening brace, write '\\(' -- "
                 "the first slash is for SQL and the second one is for regex",
-                regexp_, re2->error());
+                for_message(regexp_), re2->error());
         }
 
         if (!is_no_capture)
         {
             number_of_subpatterns = re2->NumberOfCapturingGroups();
             if (number_of_subpatterns > MAX_SUBPATTERNS)
-                throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: too many subpatterns in regexp: {}", regexp_);
+                throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: too many subpatterns in regexp: {}", for_message(regexp_));
         }
     }
 
