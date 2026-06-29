@@ -1513,14 +1513,17 @@ void wrapNestedConstructionSettings(
         }
         return;
     }
-    if (ast->as<ASTAlterQuery>())
+    if (const auto * alter_command = ast->as<ASTAlterCommand>();
+        alter_command && alter_command->type == ASTAlterCommand::MODIFY_QUERY)
     {
-        /// `ALTER TABLE … MODIFY QUERY` stores a (materialized) view's query as a *definition*; it is
-        /// not executed here and cannot carry construction settings — they are rejected in
-        /// `AlterCommand::parse` (mirroring the `CREATE VIEW` guard in `InterpreterCreateQuery`). Do NOT
-        /// descend and wrap its `SELECT`: otherwise the settings (including those nested in a subquery's
-        /// own `SETTINGS`) would be silently materialized and stripped here, and that rejection — which
-        /// inspects the stored `SELECT` — would never fire.
+        /// `ALTER … MODIFY QUERY` stores a (materialized) view's query as a *definition*: its
+        /// construction settings (trailing, nested-subquery, or per-`UNION`-arm) are rejected in
+        /// `AlterCommand::parse` (mirroring the `CREATE VIEW` guard), not materialized. Skip ONLY this
+        /// command's `SELECT`. The generic recursion below still reaches every other ALTER command, so
+        /// executable mutation predicates / update expressions — e.g.
+        /// `DELETE WHERE id IN (SELECT … SETTINGS limit = …)` — keep getting their nested construction
+        /// settings materialized as before (otherwise `limit`/`offset` would be stripped downstream and
+        /// the mutation would run uncapped).
         return;
     }
 
@@ -1593,11 +1596,13 @@ static void wrapPerArmConstructionSettings(
         }
         return;
     }
-    if (ast->as<ASTAlterQuery>())
+    if (const auto * alter_command = ast->as<ASTAlterCommand>();
+        alter_command && alter_command->type == ASTAlterCommand::MODIFY_QUERY)
     {
-        /// As in `wrapNestedConstructionSettings`: an `ALTER … MODIFY QUERY` stores a view query as a
-        /// *definition*, so its construction settings — including one on a non-last `UNION` arm — must
-        /// be rejected in `AlterCommand::parse`, not materialized here. Do not descend.
+        /// As in `wrapNestedConstructionSettings`: skip ONLY a `MODIFY QUERY` command's stored view
+        /// `SELECT` (its construction settings — including one on a non-last `UNION` arm — are rejected
+        /// in `AlterCommand::parse`). Keep descending into the rest of the ALTER so mutation predicates
+        /// / update expressions still have their nested construction settings materialized.
         return;
     }
 
