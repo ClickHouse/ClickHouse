@@ -131,16 +131,13 @@ void writePartitionRecord(
 {
     for (size_t i = 0; i < partition_columns.size(); ++i)
     {
-        if (i >= partition_values.size())
-            break;
-
         /// Build the Avro datum that holds the actual partition value (without the surrounding union).
         /// The Avro width is chosen from the partition column type, mirroring `getAvroType`, NOT from the
         /// `Field` tag: ClickHouse stores `UInt8/16/32` (and `Date`) as `Field::UInt64`, so keying on the
         /// tag would emit an Avro `long` for a field declared `int` and corrupt the survivor manifest.
         auto read_int = [&]() -> Int64
         {
-            const Field & value = partition_values[i];
+            const Field & value = partition_values.at(i);
             /// `DateTime64`/`Time64` partition values are stored as a `Decimal64` `Field`, but Iceberg
             /// encodes them as an Avro `long` (the underlying integer ticks), so unwrap the decimal here.
             if (value.getType() == Field::Types::Decimal64)
