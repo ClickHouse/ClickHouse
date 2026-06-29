@@ -47,12 +47,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
+            {"compile_regular_expressions", false, true, "New setting to enable JIT compilation of simple regular expressions in functions like `match` and `extract`."},
+            {"min_count_to_compile_regular_expression", 3, 3, "New setting controlling how many times a regular expression must be used before it is JIT-compiled."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
         {
-            {"compile_regular_expressions", false, true, "New setting to enable JIT compilation of simple regular expressions in functions like `match` and `extract`."},
-            {"min_count_to_compile_regular_expression", 3, 3, "New setting controlling how many times a regular expression must be used before it is JIT-compiled."},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
