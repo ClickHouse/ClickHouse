@@ -954,9 +954,14 @@ public:
     /// That allows to schedule them for deletion a bit later
     size_t clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type);
 
-    /// Delete all directories which names begin with "tmp"
+    /// Root-level temporary directory prefixes that are safe to clean up.
+    /// We assume that these directories don't contain anything important and we can do whatever with them
+    static const NameSet & getRootTemporaryDirectoryPrefixes();
+
+    /// Delete all directories which names begin with one of the valid prefixes.
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", "tmp-fetch_"});
+    size_t clearOldTemporaryDirectories(
+        size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = getRootTemporaryDirectoryPrefixes());
     size_t clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes);
 
     size_t clearEmptyParts();

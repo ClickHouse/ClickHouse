@@ -63,6 +63,7 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
                 f"mkdir -p {shlex.quote(disk2_data_path)}/detached "
                 f"{shlex.quote(disk2_data_path)}/detached/not_a_part "
                 f"{shlex.quote(disk2_data_path)}/tmp_1_1_0 "
+                f"{shlex.quote(disk2_data_path)}/delete_tmp_all_0_0_0 "
                 f"{shlex.quote(disk2_data_path)}/tmp-fetch_1_1_0 && "
                 f"cp {shlex.quote(data_path)}/format_version.txt {shlex.quote(disk2_data_path)}/format_version.txt",
             ]
@@ -133,16 +134,17 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
         node.query(f"DROP TABLE IF EXISTS {table_name}")
         node.exec_in_container(["bash", "-c", f"rm -rf {shlex.quote(disk2_data_path)}"])
 
-    for table_name, part_path in [
-        ("test_unknown_root_entry", "not_a_part"),
-        ("test_valid_root_part", "all_0_0_0"),
-        ("test_valid_detached_part", "detached/all_0_0_0"),
+    for table_name, part_path, create_path_command in [
+        ("test_unknown_root_entry", "not_a_part", "mkdir -p"),
+        ("test_temporary_file", "tmp_not_a_directory", "touch"),
+        ("test_valid_root_part", "all_0_0_0", "mkdir -p"),
+        ("test_valid_detached_part", "detached/all_0_0_0", "mkdir -p"),
     ]:
         data_path, disk2_data_path = create_table(table_name)
         try:
             create_ignored_contents(data_path, disk2_data_path)
             node.exec_in_container(
-                ["bash", "-c", f"mkdir -p {shlex.quote(disk2_data_path)}/{part_path}"]
+                ["bash", "-c", f"{create_path_command} {shlex.quote(disk2_data_path)}/{part_path}"]
             )
             assert "already contain data" in node.query_and_get_error(
                 f"ALTER TABLE {table_name} MODIFY SETTING storage_policy = 'test_policy'"
