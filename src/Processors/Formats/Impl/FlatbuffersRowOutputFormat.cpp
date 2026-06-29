@@ -1,13 +1,21 @@
 #include <Processors/Formats/Impl/FlatbuffersRowOutputFormat.h>
+
+#if USE_FLATBUFFERS
+
 #include <Formats/FormatFactory.h>
 
-#ifdef USE_FLATBUFFERS
+#include <Common/Exception.h>
+#include <Common/assert_cast.h>
+
+#include <Core/UUID.h>
+
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnArray.h>
@@ -16,10 +24,9 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnMap.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnLowCardinality.h>
 
-#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -29,58 +36,50 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-FlatbuffersRowOutputFormat::FlatbuffersRowOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & format_settings_) :
-IRowOutputFormat(header_, out_) {}
-
-void FlatbuffersRowOutputFormat:writePrefix()
+FlatbuffersRowOutputFormat::FlatbuffersRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings &)
+    : IRowOutputFormat(header_, out_)
 {
-    builder.StartVector();
+}
+
+void FlatbuffersRowOutputFormat::writePrefix()
+{
+    /// The whole result is a single vector of rows.
+    root_start = builder.StartVector();
 }
 
 void FlatbuffersRowOutputFormat::writeSuffix()
 {
-    builder.EndVector(0, false, false);
+    builder.EndVector(root_start, /*typed=*/false, /*fixed=*/false);
     builder.Finish();
-    writeString(builder.GetBuffer().data(), builder.GetSize(), out);
+    const std::vector<uint8_t> & buffer = builder.GetBuffer();
+    out.write(reinterpret_cast<const char *>(buffer.data()), buffer.size());
 }
 
 void FlatbuffersRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
-    size_t columns_size = columns.size();
-    size_t start = builder.StartVector();
-    for (size_t i = 0; i < columns_size; ++i)
-    {
+    /// Each row is a vector of its column values in the order of the header.
+    size_t row_start = builder.StartVector();
+    for (size_t i = 0; i < num_columns; ++i)
         serializeField(*columns[i], types[i], row_num);
-    }
-    builder.EndVector(start, false, false);
+    builder.EndVector(row_start, /*typed=*/false, /*fixed=*/false);
 }
 
-void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num, const char* key, size_t key_size)
+void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num)
 {
-    if (key)
-    {
-        builder.Key(key, key_size);
-    }
-
     switch (data_type->getTypeId())
     {
         case TypeIndex::Nullable:
         {
             const ColumnNullable & column_nullable = assert_cast<const ColumnNullable &>(column);
-            if (!column_nullable.isNullAt(row_num))
-            {
-                serializeField(column_nullable.getNestedColumn(), removeNullable(data_type), row_num);
-            }
+            if (column_nullable.isNullAt(row_num))
+                builder.Null();
             else
-            {
-                builder.Null()
-            }
-                
+                serializeField(column_nullable.getNestedColumn(), removeNullable(data_type), row_num);
             return;
         }
         case TypeIndex::Nothing:
         {
-             builder.Null();
+            builder.Null();
             return;
         }
         case TypeIndex::UInt8:
@@ -88,30 +87,33 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, DataType
             builder.UInt(static_cast<uint64_t>(assert_cast<const ColumnUInt8 &>(column).getElement(row_num)));
             return;
         }
+        case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
         {
-            bulder.UInt(static_cast<uint64_t>(assert_cast<const ColumnUInt16 &>(column).getElement(row_num)));
+            builder.UInt(static_cast<uint64_t>(assert_cast<const ColumnUInt16 &>(column).getElement(row_num)));
             return;
         }
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
         {
-            bulder.UInt(static_cast<uint64_t>(assert_cast<const ColumnUInt32 &>(column).getElement(row_num)));
+            builder.UInt(static_cast<uint64_t>(assert_cast<const ColumnUInt32 &>(column).getElement(row_num)));
             return;
         }
         case TypeIndex::UInt64:
         {
-            bulder.UInt(static_cast<uint64_t>(assert_cast<const ColumnUInt64 &>(column).getElement(row_num)));
+            builder.UInt(static_cast<uint64_t>(assert_cast<const ColumnUInt64 &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::UInt128:
+        case TypeIndex::IPv4:
         {
-            builder.Blob(reinterpret_cast<const uint8_t*>(column.getDataAt(row_num).data), sizeof(UInt128))
+            builder.UInt(static_cast<uint64_t>(assert_cast<const ColumnIPv4 &>(column).getElement(row_num)));
             return;
         }
+        case TypeIndex::UInt128: [[fallthrough]];
         case TypeIndex::UInt256:
-        {   
-            builder.Blob(reinterpret_cast<const uint8_t*>(column.getDataAt(row_num).data), sizeof(UInt256));
+        {
+            std::string_view data = column.getDataAt(row_num);
+            builder.Blob(data.data(), data.size());
             return;
         }
         case TypeIndex::Enum8: [[fallthrough]];
@@ -126,7 +128,7 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, DataType
             builder.Int(static_cast<int64_t>(assert_cast<const ColumnInt16 &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::DateTime64: [[fallthrough]];
+        case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Int32:
         {
             builder.Int(static_cast<int64_t>(assert_cast<const ColumnInt32 &>(column).getElement(row_num)));
@@ -137,36 +139,26 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, DataType
             builder.Int(static_cast<int64_t>(assert_cast<const ColumnInt64 &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::Int128:
-        {
-            builder.Blob(reinterpret_cast<const uint8_t*>(column.getDataAt(row_num).data), sizeof(Int128))
-            return;
-        }
+        case TypeIndex::Int128: [[fallthrough]];
         case TypeIndex::Int256:
         {
-            builder.Blob(reinterpret_cast<const uint8_t*>(column.getDataAt(row_num).data), sizeof(Int256))
+            std::string_view data = column.getDataAt(row_num);
+            builder.Blob(data.data(), data.size());
             return;
         }
         case TypeIndex::Float32:
         {
-            builder.Float(static_cast<float>(assert_cast<const ColumnFloat32 &>(column).getElement(row_num)));
+            builder.Float(assert_cast<const ColumnFloat32 &>(column).getElement(row_num));
             return;
         }
         case TypeIndex::Float64:
         {
-            builder.Double(static_cast<double>(assert_cast<const ColumnFloat64 &>(column).getElement(row_num)));
+            builder.Double(assert_cast<const ColumnFloat64 &>(column).getElement(row_num));
             return;
         }
-        case TypeIndex::String:
+        case TypeIndex::DateTime64:
         {
-            const std::string & str = assert_cast<const ColumnString &>(column).getElement(row_num);
-            builder.String(str);
-            return;
-        }
-        case TypeIndex::FixedString:
-        {
-            const std::string & str = assert_cast<const ColumnFixedString &>(column).getElement(row_num);
-            builder.String(str);
+            builder.Int(static_cast<int64_t>(assert_cast<const DataTypeDateTime64::ColumnType &>(column).getElement(row_num)));
             return;
         }
         case TypeIndex::Decimal32:
@@ -179,24 +171,37 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, DataType
             builder.Int(static_cast<int64_t>(assert_cast<const ColumnDecimal<Decimal64> &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::Decimal128:
-        {
-            builder.Blob(reinterpret_cast<const uint8_t*>(column.getDataAt(row_num).data), sizeof(Decimal128));
-            return;
-        }
+        case TypeIndex::Decimal128: [[fallthrough]];
         case TypeIndex::Decimal256:
         {
-            builder.Blob(reinterpret_cast<const uint8_t*>(column.getDataAt(row_num).data), sizeof(Decimal256));
-            return;
-        }
-        case TypeIndex::IPv4:
-        {
-            builder.Int(static_cast<int64_t>(assert_cast<const ColumnIPv4 &>(column).getElement(row_num)));
+            std::string_view data = column.getDataAt(row_num);
+            builder.Blob(data.data(), data.size());
             return;
         }
         case TypeIndex::IPv6:
         {
-            builder.Blob(reinterpret_cast<const uint8_t*>(column.getDataAt(row_num).data), sizeof(IPv6));
+            std::string_view data = column.getDataAt(row_num);
+            builder.Blob(data.data(), data.size());
+            return;
+        }
+        case TypeIndex::String:
+        {
+            std::string_view str = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+            builder.String(str.data(), str.size());
+            return;
+        }
+        case TypeIndex::FixedString:
+        {
+            std::string_view str = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num);
+            builder.String(str.data(), str.size());
+            return;
+        }
+        case TypeIndex::UUID:
+        {
+            WriteBufferFromOwnString buf;
+            writeText(assert_cast<const ColumnUUID &>(column).getElement(row_num), buf);
+            std::string_view uuid_text = buf.stringView();
+            builder.String(uuid_text.data(), uuid_text.size());
             return;
         }
         case TypeIndex::Array:
@@ -209,10 +214,8 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, DataType
             size_t size = offsets[row_num] - offset;
             size_t start = builder.StartVector();
             for (size_t i = 0; i < size; ++i)
-            {
                 serializeField(nested_column, nested_type, offset + i);
-            }
-            builder.EndVector(start, true, true);
+            builder.EndVector(start, /*typed=*/false, /*fixed=*/false);
             return;
         }
         case TypeIndex::Tuple:
@@ -224,21 +227,22 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, DataType
             size_t start = builder.StartVector();
             for (size_t i = 0; i < nested_types.size(); ++i)
                 serializeField(*nested_columns[i], nested_types[i], row_num);
-            builder.EndVector(start, false, false);
+            builder.EndVector(start, /*typed=*/false, /*fixed=*/false);
             return;
         }
-        case TypeIndex::UUID:
+        case TypeIndex::LowCardinality:
         {
-            const auto & uuid_column = assert_cast<const ColumnUUID &>(column);
-            WriteBufferFromOwnString buf;
-            writeText(uuid_column.getElement(row_num), buf);
-            std::string uuid_text = buf.str()
-            builder.String(str);
+            const ColumnLowCardinality & column_lc = assert_cast<const ColumnLowCardinality &>(column);
+            auto dict_type = assert_cast<const DataTypeLowCardinality &>(*data_type).getDictionaryType();
+            auto dict_column = column_lc.getDictionary().getNestedColumn();
+            size_t index = column_lc.getIndexAt(row_num);
+            serializeField(*dict_column, dict_type, index);
             return;
         }
         default:
             break;
     }
+
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for Flatbuffers output format", data_type->getName());
 }
 
@@ -247,13 +251,16 @@ void registerOutputFormatFlatbuffers(FormatFactory & factory)
     factory.registerOutputFormat("Flatbuffers", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & settings)
+            const FormatSettings & settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<CBORRowOutputFormat>(sample, buf, settings);
+        return std::make_shared<FlatbuffersRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
 
-    factory.markOutputFormatSupportsParallelFormatting("Flatbuffers");
+    factory.markOutputFormatNotTTYFriendly("Flatbuffers");
+    factory.setContentType("Flatbuffers", "application/octet-stream");
 }
+
 }
 
 #else
