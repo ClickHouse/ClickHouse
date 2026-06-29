@@ -4,6 +4,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Core/Defines.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/RowDataStore.h>
 #include <Interpreters/TableJoin.h>
 
 namespace DB
@@ -46,13 +47,16 @@ struct LazyOutput
     PaddedPODArray<UInt64> row_refs;
     size_t row_count = 0;   /// Total number of rows in all RowRef-s and RowRefList-s
 
-    std::vector<size_t> right_indexes;
     NamesAndTypes type_name;
 
     bool join_data_sorted = false;
     bool output_by_row_list = false;
     size_t output_by_row_list_threshold = 0;
     size_t join_data_avg_perkey_rows = 0;
+
+    ColumnAccessIndexes output_access_indexes;
+    bool has_row_store = false;
+    bool has_columns = false;
 
     const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
     size_t getRowCount() const { return row_count; }
@@ -93,17 +97,20 @@ struct LazyOutput
     /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache miss which may cause performance slow down.
      *  And This problem would happen it we directly build output from `RowRef` or `RowRefList`.
      */
-    template<bool from_row_list>
+    template<bool from_row_list, bool from_row_store, bool from_columns>
     void buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
     void buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
+    template<bool from_row_store, bool from_columns>
     [[nodiscard]] size_t buildOutputFromBlocksLimitAndOffset(
         MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
         const PaddedPODArray<UInt64> & left_sizes, const IColumn::Offsets & left_offsets,
         size_t rows_offset, size_t rows_limit, size_t bytes_limit) const;
 
 private:
+    template<typename F>
+    void dispatchOutputs(F && f) const;
 };
 
 template <bool lazy>
@@ -141,7 +148,9 @@ public:
 
         columns.reserve(num_columns_to_add);
         lazy_output.type_name.reserve(num_columns_to_add);
-        lazy_output.right_indexes.reserve(num_columns_to_add);
+
+        std::vector<size_t> right_indexes;
+        right_indexes.reserve(num_columns_to_add);
 
         lazy_output.output_by_row_list_threshold = join.getTableJoin().outputByRowListPerkeyRowsThreshold();
         lazy_output.join_data_sorted = join.getJoinedData()->sorted;
@@ -166,17 +175,38 @@ public:
         }
 
         for (auto & tn : lazy_output.type_name)
-            lazy_output.right_indexes.push_back(saved_block_sample.getPositionByName(tn.name));
+            right_indexes.push_back(saved_block_sample.getPositionByName(tn.name));
 
-        nullable_column_ptrs.resize(lazy_output.right_indexes.size(), nullptr);
-        for (size_t j = 0; j < lazy_output.right_indexes.size(); ++j)
+        nullable_column_ptrs.resize(right_indexes.size(), nullptr);
+        for (size_t j = 0; j < right_indexes.size(); ++j)
         {
             /** If it's joinGetOrNull, we will have nullable columns in result block
               * even if right column is not nullable in storage (saved_block_sample).
               */
-            const auto & saved_column = saved_block_sample.getByPosition(lazy_output.right_indexes[j]).column;
+            const auto & saved_column = saved_block_sample.getByPosition(right_indexes[j]).column;
             if (columns[j]->isNullable() && !saved_column->isNullable())
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
+        }
+
+        const auto & access_indexes = join.getJoinedData()->column_access_indexes;
+
+        lazy_output.output_access_indexes.reserve(right_indexes.size());
+        if (join.getJoinedData()->row_store_state == HashJoin::RowStoreState::Ready)
+        {
+            for (size_t right_index : right_indexes)
+            {
+                const ColumnAccessIndex & access_index = access_indexes[right_index];
+                if (access_index.type == ColumnAccessIndex::Type::RowStore)
+                    lazy_output.has_row_store = true;
+                else
+                    lazy_output.has_columns = true;
+                lazy_output.output_access_indexes.push_back(access_index);
+            }
+        }
+        else
+        {
+            for (size_t right_index : right_indexes)
+                lazy_output.output_access_indexes.push_back({ColumnAccessIndex::Type::Columns, right_index});
         }
     }
 
@@ -192,7 +222,7 @@ public:
         if constexpr (lazy)
         {
 #ifndef NDEBUG
-            checkColumns(row_ref_list->columns_info->columns);
+            checkColumns(*row_ref_list->columns_info);
 #endif
             if (has_columns_to_add)
             {
@@ -270,13 +300,12 @@ public:
 
 private:
 
-    void checkColumns(const Columns & to_check)
+    void checkColumns(const ColumnsInfo & to_check)
     {
-        for (size_t j = 0; j < lazy_output.right_indexes.size(); ++j)
+        auto check = [&](size_t dst_idx, const IColumn * column_from_block)
         {
-            const auto * column_from_block = to_check.at(lazy_output.right_indexes[j]).get();
-            const auto * dest_column = columns[j].get();
-            if (auto * nullable_col = nullable_column_ptrs[j])
+            const auto * dest_column = columns[dst_idx].get();
+            if (auto * nullable_col = nullable_column_ptrs[dst_idx])
             {
                 if (!is_join_get)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -300,6 +329,21 @@ private:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns {} and {} have different types {} and {}",
                                 dest_column->getName(), column_from_block->getName(),
                                 demangle(typeid(*dest_column).name()), demangle(typeid(*column_from_block).name()));
+        };
+
+        for (size_t dst_idx = 0; dst_idx < lazy_output.output_access_indexes.size(); ++dst_idx)
+        {
+            const auto & output_access_index = lazy_output.output_access_indexes[dst_idx];
+            if (output_access_index.type == ColumnAccessIndex::Type::RowStore)
+            {
+                if (to_check.hasRowStore())
+                {
+                    auto sample_col = to_check.row_store->getFieldLayout(output_access_index.index).sample_column;
+                    check(dst_idx, sample_col.get());
+                }
+            }
+            else
+                check(dst_idx, to_check.columns.at(output_access_index.index).get());
         }
     }
 

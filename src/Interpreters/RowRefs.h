@@ -7,6 +7,7 @@
 #include <Core/TypeId.h>
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
+#include <Interpreters/RowDataStore.h>
 
 
 namespace DB
@@ -15,11 +16,36 @@ namespace DB
 class Block;
 class ColumnReplicated;
 
+struct ColumnAccessIndex
+{
+    enum Type : uint8_t { Columns, RowStore };
+
+    ColumnAccessIndex(Type type_, size_t index_, size_t field_offset_ = 0, size_t field_size_ = 0, bool is_nullable_ = false)
+        : type(type_), index(index_), field_offset(field_offset_), field_size(field_size_), is_nullable(is_nullable_)
+    {
+    }
+
+    Type type;
+    size_t index;
+
+    /// Valid only when type is RowStore.
+    size_t field_offset;
+    size_t field_size;
+    bool is_nullable;
+
+    bool operator==(const ColumnAccessIndex &) const = default;
+};
+
+using ColumnAccessIndexes = std::vector<ColumnAccessIndex>;
+
 struct ColumnsInfo
 {
     explicit ColumnsInfo(Columns && columns_);
+    ColumnsInfo(Columns && columns_, RowDataStorePtr && row_store_);
 
     Columns columns;
+    /// Row-major store for fixed size contiguous columns.
+    RowDataStorePtr row_store;
     /// Sometimes we need to insert rows into a regular column from a Replicated column.
     /// And to avoid virtual calls and casts per each row insertion we store pointer
     /// to the replicated column for each column in the list above.
@@ -30,6 +56,14 @@ struct ColumnsInfo
     /// Raw pointers in `replicated_columns` point into the old column objects and become
     /// dangling as soon as those objects are released.
     void rebuildReplicatedColumns();
+
+    bool hasRowStore() const { return row_store != nullptr; }
+
+    size_t allocatedBytes() const;
+    size_t rows() const;
+
+    /// Tranfers columns that are eligible for row-major storage from `columns` to `row_store`.
+    void transferToRowStore(const ColumnAccessIndexes & access_indexes);
 };
 
 /// Reference to the row in block.

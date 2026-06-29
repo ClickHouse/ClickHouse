@@ -3,6 +3,7 @@
 #include <string_view>
 #include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
+#include <base/types.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/PODArray_fwd.h>
@@ -743,12 +744,31 @@ public:
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
     virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges);
 
+    /// Fills column values from row-store referenced by a RowRefList
+    virtual void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end);
+
+    /// Nullable variant of `fillFromRowRefsWithRowStore`: the null byte is written into `null_map` and the value bytes are inserted into the nested column
+    virtual void fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, PaddedPODArray<UInt8> & null_map);
+
     /// Fills column values from list of blocks and row numbers
     /// A nullptr in the list is interpreted as a default value
     virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
 
     /// Same as above but assumes every entry in the list is non-null
     virtual void fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
+
+    /// Fills column values from pre-resolved row-store pointers
+    /// A nullptr in the list is interpreted as a default value
+    virtual void fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count);
+
+    /// Same as above but assumes every entry in the list is non-null
+    virtual void fillFromRowStorePtrs(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count);
+
+    /// Nullable variant of `fillFromRowStorePtrs`: the null byte is written into `null_map` and the value bytes are inserted into the nested column
+    virtual void fillFromRowStorePtrsWithNullMap(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> & null_map, size_t begin, size_t count);
+
+    /// Same as above but assumes every entry in the list is non-null
+    virtual void fillFromRowStorePtrsWithNullMap(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> & null_map, size_t begin, size_t count);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -1025,12 +1045,31 @@ private:
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
     void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges) override;
 
+    /// Fills column values from row-store referenced by a RowRefList
+    void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) override;
+
+    /// Nullable variant of `fillFromRowRefsWithRowStore`: the null byte is written into `null_map` and the value bytes are inserted into the nested column
+    void fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, PaddedPODArray<UInt8> & null_map) override;
+
     /// Fills column values from list of columns and row numbers
     /// A nullptr in the list is interpreted as a default value
     void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
 
     /// Same as above but assumes every entry in the list is non-null
     void fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
+
+    /// Fills column values from pre-resolved row-store pointers
+    /// A nullptr in the list is interpreted as a default value
+    void fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count) override;
+
+    /// Same as above but assumes every entry in the list is non-null
+    void fillFromRowStorePtrs(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count) override;
+
+    /// Nullable variant of `fillFromRowStorePtrs`: the null byte is written into `null_map` and the value bytes are inserted into the nested column
+    void fillFromRowStorePtrsWithNullMap(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> & null_map, size_t begin, size_t count) override;
+
+    /// Same as above but assumes every entry in the list is non-null
+    void fillFromRowStorePtrsWithNullMap(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> & null_map, size_t begin, size_t count) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;

@@ -12,6 +12,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/Operators.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -189,6 +190,12 @@ void ColumnNullable::insertData(const char * pos, size_t length)
         getNestedColumn().insertData(pos, length);
         getNullMapData().push_back(false);
     }
+}
+
+void ColumnNullable::insertDataNullable(const char * pos, size_t length)
+{
+    getNestedColumn().insertData(pos + 1, length - 1);
+    getNullMapData().push_back(*reinterpret_cast<const UInt8 *>(pos));
 }
 
 std::string_view ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
@@ -1062,6 +1069,21 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
+}
+
+void ColumnNullable::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
+{
+    getNestedColumn().fillFromRowRefsWithRowStoreAndNullMap(removeNullable(type), source_field_offset, source_field_size, row_refs_begin, row_refs_end, getNullMapData());
+}
+
+void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
+{
+    getNestedColumn().fillFromRowStorePtrsWithNullMap(removeNullable(type), row_store_ptrs, field_offset, field_size, getNullMapData(), begin, count);
+}
+
+void ColumnNullable::fillFromRowStorePtrs(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
+{
+    getNestedColumn().fillFromRowStorePtrsWithNullMap(row_store_ptrs, field_offset, field_size, getNullMapData(), begin, count);
 }
 
 ColumnPtr makeNullable(const ColumnPtr & column)

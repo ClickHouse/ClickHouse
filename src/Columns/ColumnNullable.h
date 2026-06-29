@@ -67,6 +67,8 @@ public:
     std::string_view getDataAt(size_t) const override;
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
+    /// First byte holds the null flag
+    void insertDataNullable(const char * pos, size_t length);
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
@@ -251,6 +253,10 @@ public:
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     bool hasStatistics() const override { return nested_column->hasStatistics(); }
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+
+    void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) override;
+    void fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count) override;
+    void fillFromRowStorePtrs(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count) override;
 
 private:
     WrappedPtr nested_column;

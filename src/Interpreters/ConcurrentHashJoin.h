@@ -100,6 +100,10 @@ public:
 
     void onBuildPhaseFinish() override;
 
+    bool hasPostBuildPhase() const override;
+    bool runPostBuildPhase() override;
+    void onPostBuildPhaseFinish() override;
+
     void setEnableLazyColumnsIndexing(bool value) override
     {
         std::ranges::for_each(hash_joins, [value](auto & hash_join) { hash_join->data->setEnableLazyColumnsIndexing(value); });
@@ -128,7 +132,22 @@ private:
     std::mutex totals_mutex;
     Block totals;
 
-    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
+    /// Internal state for the post-build (row-store transfer) phase.
+    struct BlockToColumnsInfo
+    {
+        std::vector<ColumnsInfo *> columns_info_list;
+        /// Whether the columns infos of this block share one row store (zero-copy).
+        bool shared_row_store = false;
+    };
+
+    std::vector<BlockToColumnsInfo> blocks_to_columns_info;
+    size_t current_block = 0;
+    std::mutex row_store_transfer_mutex;
+
+    bool useZeroCopyApproach(const Block & from_block) const;
+    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block, bool use_zero_copy);
+
+    void finalizeRowStoreStatus();
 };
 
 }

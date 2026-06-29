@@ -1241,7 +1241,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
         return std::make_shared<HashJoin>(
             table_join, right_table_expression_header, params.join_any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
-            /*use_two_level_maps_=*/false, stats_collecting_params);
+            /*is_concurrent_hash_join_=*/false, /*enable_row_store_=*/true, stats_collecting_params);
     }
 
     if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
@@ -1306,7 +1306,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header, stats_collecting_params);
         return std::make_shared<HashJoin>(
             table_join, right_table_expression_header, /*any_take_last_row_=*/false, /*reserve_num_=*/0, /*instance_id_=*/"",
-            /*use_two_level_maps_=*/false, stats_collecting_params);
+            /*is_concurrent_hash_join_=*/false, /*enable_row_store_=*/true, stats_collecting_params);
     }
 
     return nullptr;

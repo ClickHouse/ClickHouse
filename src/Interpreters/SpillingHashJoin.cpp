@@ -34,7 +34,7 @@ SpillingHashJoin::SpillingHashJoin(
 {
     hash_join = std::make_shared<HashJoin>(
         table_join, right_sample_block_, /*any_take_last_row_=*/false, /*reserve_num_=*/0, /*instance_id_=*/"",
-        /*use_two_level_maps_=*/false, stats_collecting_params_);
+        /*is_concurrent_hash_join_=*/false,  /*enable_row_store_=*/true, stats_collecting_params_);
 }
 
 SpillingHashJoin::SpillingHashJoin(
@@ -269,6 +269,22 @@ void SpillingHashJoin::onBuildPhaseFinish()
     }
 
     chosen_join->onBuildPhaseFinish();
+}
+
+bool SpillingHashJoin::hasPostBuildPhase() const
+{
+    return chosen_join && chosen_join->hasPostBuildPhase();
+}
+
+bool SpillingHashJoin::runPostBuildPhase()
+{
+    return chosen_join && chosen_join->runPostBuildPhase();
+}
+
+void SpillingHashJoin::onPostBuildPhaseFinish()
+{
+    if (chosen_join)
+        chosen_join->onPostBuildPhaseFinish();
 }
 
 void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)

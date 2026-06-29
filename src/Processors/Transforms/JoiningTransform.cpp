@@ -280,6 +280,20 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
     if (post_build_phase)
     {
+        bool post_build_phase_finished = true;
+        for (auto it = post_build_processors_begin; it != inputs.end(); ++it)
+        {
+            if (!it->isFinished())
+            {
+                it->setNeeded();
+                post_build_phase_finished = false;
+            }
+        }
+
+        if (!post_build_phase_finished)
+            return Status::NeedData;
+
+        join->onPostBuildPhaseFinish();
         output.finish();
         return Status::Finished;
     }
@@ -344,7 +358,7 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
         if (join->hasPostBuildPhase())
         {
             post_build_phase = true;
-            return Status::Ready;
+            return Status::UpdatePipeline;
         }
     }
 
@@ -354,13 +368,6 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
 void FillingRightJoinSideTransform::work()
 {
-    if (post_build_phase)
-    {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinBuildPostProcessingMicroseconds);
-        join->runPostBuildPhase();
-        return;
-    }
-
     auto & input = inputs.front();
     auto num_rows = chunk.getNumRows();
     auto block = input.getHeader().cloneWithColumns(chunk.detachColumns());
@@ -374,6 +381,57 @@ void FillingRightJoinSideTransform::work()
     }
 
     set_totals = for_totals;
+}
+
+IProcessor::PipelineUpdate FillingRightJoinSideTransform::updatePipeline()
+{
+    const size_t num_processors = finish_counter->getTotal();
+    if (num_processors > 1 && !join->supportParallelJoin())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot spawn {} parallel FinalizingRightJoinSideTransform workers for join '{}' that does not support parallel build",
+            num_processors, join->getName());
+
+    Processors processors;
+    for (size_t i = 0; i < num_processors; ++i)
+    {
+        auto processor = std::make_shared<FinalizingRightJoinSideTransform>(join);
+        auto & output = processor->getOutputs().front();
+        inputs.emplace_back(Block(), this);
+        if (i == 0)
+            post_build_processors_begin = std::prev(inputs.end());
+
+        connect(output, inputs.back());
+        inputs.back().setNeeded();
+        processors.push_back(std::move(processor));
+    }
+
+    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+}
+
+FinalizingRightJoinSideTransform::FinalizingRightJoinSideTransform(JoinPtr join_)
+    : IProcessor({}, {Block()}), join(std::move(join_))
+{
+}
+
+IProcessor::Status FinalizingRightJoinSideTransform::prepare()
+{
+    auto & output = outputs.front();
+    if (output.isFinished())
+        return Status::Finished;
+    if (finished)
+    {
+        output.finish();
+        return Status::Finished;
+    }
+    if (!output.canPush())
+        return Status::PortFull;
+    return Status::Ready;
+}
+
+void FinalizingRightJoinSideTransform::work()
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinBuildPostProcessingMicroseconds);
+    finished = !join->runPostBuildPhase();
 }
 
 ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()

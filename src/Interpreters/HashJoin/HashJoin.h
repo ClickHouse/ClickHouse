@@ -115,7 +115,8 @@ public:
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
-        bool use_two_level_maps_ = false,
+        bool is_concurrent_hash_join_ = false,
+        bool enable_row_store_ = true,
         const StatsCollectingParams & stats_collecting_params_ = {});
 
     ~HashJoin() override;
@@ -143,7 +144,7 @@ public:
     bool addBlockToJoin(const Block & source_block_, size_t num_rows, bool check_limits) override;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
-    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits);
+    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits, RowDataStorePtr row_store = nullptr);
 
     void checkTypesOfKeys(const Block & block) const override;
 
@@ -190,7 +191,7 @@ public:
     void onBuildPhaseFinish() override;
 
     bool hasPostBuildPhase() const override;
-    void runPostBuildPhase() override;
+    bool runPostBuildPhase() override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -442,6 +443,14 @@ public:
     using NullmapList = std::deque<NullMapHolder>;
     using ScatteredColumnsList = std::list<ScatteredColumns>;
 
+    enum class RowStoreState : uint8_t
+    {
+        Disabled,
+        Enabled,
+        Finalized,
+        Ready,
+    };
+
     struct RightTableData
     {
         Type type = Type::EMPTY;
@@ -454,6 +463,8 @@ public:
         Block sample_block; /// Block as it would appear in the BlockList
         ScatteredColumnsList columns; /// Columns of "right" table.
         NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
+        /// Track index of "right" table columns in columns list or row store.
+        ColumnAccessIndexes column_access_indexes;
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
@@ -466,6 +477,9 @@ public:
         size_t keys_to_join = 0;
         /// Whether the right table reranged by key
         bool sorted = false;
+        RowStoreState row_store_state = RowStoreState::Enabled;
+        /// Track which columns are present as `ColumnReplicated` in any block.
+        std::vector<bool> column_replicated_flags;
 
         /// For range types: the minimum key value and the range size from min_key to max_key.
         struct KeyRange
@@ -544,6 +558,7 @@ private:
     friend class NotJoinedHash;
     friend class JoinSource;
     friend class CrossJoinResult;
+    friend class ConcurrentHashJoin;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
@@ -602,6 +617,9 @@ private:
     bool enable_lazy_columns_indexing = false;
     bool enable_prefetch = true;
 
+    /// Determines if this HashJoin instance is a slot inside a ConcurrentHashJoin.
+    bool is_concurrent_hash_join = false;
+
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
     Int64 memory_usage_before_adding_blocks = 0;
@@ -656,6 +674,19 @@ private:
 
     template <bool is_signed, typename Key, typename MapsTemplate>
     void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
+
+    bool isRowStoreSupported() const;
+    /// Determine which columns can be added to the row store and which columns remain
+    /// columnar, and their indexes in the input block.
+    static std::optional<ColumnAccessIndexes> computeColumnAccessIndexes(
+        const Block & block,
+        const std::vector<bool> & column_replicated_flags,
+        size_t payload_rows,
+        size_t max_row_store_bytes,
+        size_t min_row_store_columns);
+    void finalizeRowStoreStatus();
+    bool canConvertToRowStore() const;
+    void tryConvertToRowStore();
 
     void reinitUsedFlags();
 
