@@ -27,10 +27,10 @@ String ASTMoveAccessEntityQuery::getID(char) const
 
 ASTPtr ASTMoveAccessEntityQuery::clone() const
 {
-    auto res = std::make_shared<ASTMoveAccessEntityQuery>(*this);
+    auto res = make_intrusive<ASTMoveAccessEntityQuery>(*this);
 
     if (row_policy_names)
-        res->row_policy_names = std::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
+        res->row_policy_names = boost::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
 
     return res;
 }

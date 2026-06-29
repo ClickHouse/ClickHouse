@@ -1,0 +1,16 @@
+========== with statistics ===========
+    Expression ((Before GROUP BY + ))
+      Join: partsupp[190] ⋈ part[100]
+      ResultRows: 190
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.partsupp)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.part)
+========== with 10x hint =============
+    Expression ((Before GROUP BY + ))
+      Join: partsupp[1900] ⋈ part[1000]
+      ResultRows: 1900
+        Expression ((WHERE + Change column names to column identifiers))
+          ReadFromMergeTree (default.partsupp)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.part)

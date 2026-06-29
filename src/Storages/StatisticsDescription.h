@@ -2,9 +2,10 @@
 
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTColumnDeclaration.h>
 
 #include <base/types.h>
+
+#include <map>
 
 namespace DB
 {
@@ -15,6 +16,7 @@ enum class StatisticsType : UInt8
     Uniq = 1,
     CountMinSketch = 2,
     MinMax = 3,
+    Basic = 4, /// Min, max, string-length min/max, and null count, depending on the column type.
 
     Max = 63,
 };
@@ -30,9 +32,9 @@ struct SingleStatisticsDescription
     SingleStatisticsDescription() = delete;
     SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_);
 
-    SingleStatisticsDescription(const SingleStatisticsDescription & other) { *this = other; }
+    SingleStatisticsDescription(const SingleStatisticsDescription & other) : type{} { *this = other; }
     SingleStatisticsDescription & operator=(const SingleStatisticsDescription & other);
-    SingleStatisticsDescription(SingleStatisticsDescription && other) noexcept { *this = std::move(other); }
+    SingleStatisticsDescription(SingleStatisticsDescription && other) noexcept : type{} { *this = std::move(other); }
     SingleStatisticsDescription & operator=(SingleStatisticsDescription && other) noexcept;
 
     bool operator==(const SingleStatisticsDescription & other) const;
@@ -70,5 +72,6 @@ struct ColumnStatisticsDescription
 };
 
 StatisticsType stringToStatisticsType(String type);
+String statisticsTypeToString(StatisticsType type);
 
 }

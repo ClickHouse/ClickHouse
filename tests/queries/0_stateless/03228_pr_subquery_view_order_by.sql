@@ -4,6 +4,7 @@ CREATE TABLE table1 (number UInt64) ENGINE=MergeTree ORDER BY number SETTINGS in
 INSERT INTO table1 SELECT number FROM numbers(1, 300);
 CREATE VIEW view1 AS SELECT number FROM table1;
 
+SET automatic_parallel_replicas_mode = 0;
 SELECT *
 FROM
 (

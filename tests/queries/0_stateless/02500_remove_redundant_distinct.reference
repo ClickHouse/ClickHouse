@@ -214,7 +214,7 @@ Expression (( + Projection))
             Distinct
               Distinct (Preliminary DISTINCT)
                 Expression (Before ORDER BY)
-                  ReadFromStorage (SystemOne)
+                  ReadFromSystemOne
 -- execute
 ['Istanbul','Berlin','Bensheim']
 -- GROUP BY before DISTINCT with on the same columns => remove DISTINCT

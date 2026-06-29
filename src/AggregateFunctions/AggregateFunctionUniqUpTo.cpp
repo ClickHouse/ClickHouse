@@ -140,8 +140,8 @@ struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UIn
     void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
         /// Keep in mind that calculations are approximate.
-        StringRef value = column.getDataAt(row_num);
-        insert(CityHash_v1_0_2::CityHash64(value.data, value.size), threshold);
+        auto value = column.getDataAt(row_num);
+        insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()), threshold);
     }
 };
 
@@ -207,7 +207,7 @@ public:
         this->data(place).add(*columns[0], row_num, threshold);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs), threshold);
     }
@@ -266,7 +266,7 @@ public:
         this->data(place).insert(UInt64(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)), threshold);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs), threshold);
     }
@@ -306,7 +306,7 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large parameter for aggregate function {}. Maximum: {}",
                 name, toString(uniq_upto_max_threshold));
 
-        threshold = threshold_param;
+        threshold = static_cast<UInt8>(threshold_param);
     }
 
     if (argument_types.empty())
@@ -350,9 +350,10 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
 
 }
 
+void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory);
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("uniqUpTo", {createAggregateFunctionUniqUpTo, {true}});
+    factory.registerFunction("uniqUpTo", {createAggregateFunctionUniqUpTo, {}, {true}});
 }
 
 }

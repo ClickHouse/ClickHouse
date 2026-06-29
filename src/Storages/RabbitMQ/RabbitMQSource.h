@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class RabbitMQSource : public ISource
+class RabbitMQSource final : public ISource
 {
 
 public:

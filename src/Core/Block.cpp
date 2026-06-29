@@ -81,7 +81,16 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
     const IColumn * actual_column = actual.column.get();
     const IColumn * expected_column = expected.column.get();
 
-    /// If we allow to materialize columns, omit Const, Replicated and Sparse columns.
+    /// A Sparse column is structurally equal to the full column of the same type it wraps, and every
+    /// consumer can process sparse, so it must compare equal to a non-sparse column even in the
+    /// strict path. Unwrap Sparse on both sides here; Const and Replicated stay strict unless
+    /// allow_materialize.
+    if (const auto * actual_sparse = typeid_cast<const ColumnSparse *>(actual_column))
+        actual_column = &actual_sparse->getValuesColumn();
+    if (const auto * expected_sparse = typeid_cast<const ColumnSparse *>(expected_column))
+        expected_column = &expected_sparse->getValuesColumn();
+
+    /// If we allow to materialize columns, omit Const and Replicated columns too.
     if (allow_materialize)
     {
         actual_column = getActualColumn(actual_column);
@@ -325,20 +334,19 @@ const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool c
 
 std::optional<ColumnWithTypeAndName> Block::findSubcolumnByName(const std::string & name) const
 {
-    auto [name_in_storage, subcolumn_name] = Nested::splitName(name);
-    if (subcolumn_name.empty())
-        return std::nullopt;
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        const auto * column = findByName(column_name, false);
+        if (!column)
+            continue;
 
-    const auto * column = findByName(name_in_storage, false);
-    if (!column)
-        return std::nullopt;
+        auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name);
+        auto subcolumn = column->type->tryGetSubcolumn(subcolumn_name, column->column);
+        if (subcolumn_type && subcolumn)
+            return ColumnWithTypeAndName(subcolumn, subcolumn_type, name);
+    }
 
-    auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name);
-    auto subcolumn = column->type->tryGetSubcolumn(subcolumn_name, column->column);
-    if (!subcolumn_type || !subcolumn)
-        return std::nullopt;
-
-    return ColumnWithTypeAndName(subcolumn, subcolumn_type, name);
+    return std::nullopt;
 }
 
 std::optional<ColumnWithTypeAndName> Block::findColumnOrSubcolumnByName(const std::string & name) const
@@ -559,6 +567,14 @@ MutableColumns Block::mutateColumns()
     return columns;
 }
 
+Columns Block::detachColumns()
+{
+    size_t num_columns = data.size();
+    Columns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].column ? std::move(data[i].column) : data[i].type->createColumn();
+    return columns;
+}
 
 void Block::setColumns(MutableColumns && columns)
 {
@@ -672,7 +688,7 @@ Block Block::sortColumns() const
     Block sorted_block;
 
     /// std::unordered_map (index_by_name) cannot be used to guarantee the sort order
-    std::vector<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
+    VectorWithMemoryTracking<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
     {
         size_t i = 0;
         for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
@@ -754,6 +770,16 @@ Names Block::getNames() const
     return res;
 }
 
+NameSet Block::getNameSet() const
+{
+    NameSet res;
+    res.reserve(columns());
+
+    for (const auto & elem : data)
+        res.insert(elem.name);
+    return res;
+}
+
 
 DataTypes Block::getDataTypes() const
 {
@@ -830,7 +856,7 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
     /// The traditional task: the largest common subsequence (LCS).
     /// Assume that order is important. If this becomes wrong once, let's simplify it: for example, make 2 sets.
 
-    std::vector<std::vector<int>> lcs(lhs.columns() + 1);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<int>> lcs(lhs.columns() + 1);
     for (auto & v : lcs)
         v.resize(rhs.columns() + 1);
 
@@ -979,7 +1005,7 @@ void materializeBlockInplace(Block & block, bool remove_special_column_represent
     }
 }
 
-Block concatenateBlocks(const std::vector<Block> & blocks)
+Block concatenateBlocks(const Blocks & blocks)
 {
     if (blocks.empty())
         return {};
@@ -1015,7 +1041,7 @@ String addDummyColumnWithRowCount(Block & block, size_t num_rows)
     {
         if (column.column)
         {
-            assert(column.column->size() == num_rows);
+            chassert(column.column->size() == num_rows);
             has_columns = true;
             break;
         }

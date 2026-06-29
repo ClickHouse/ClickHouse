@@ -25,6 +25,7 @@ public:
         bool joined_block_split_single_row = false;
 
         bool enable_lazy_columns_replication = false;
+        bool enable_lazy_columns_indexing = false;
     };
 
     HashJoinResult(
@@ -38,12 +39,16 @@ public:
 
     JoinResultBlock next() override;
 
+    void setNextBlock(ScatteredBlock && block);
+
     ~HashJoinResult() override;
 private:
     const LazyOutput lazy_output;
     const Properties properties;
 
     std::optional<ScatteredBlock> scattered_block;
+    /// Next unprocessed block
+    std::optional<ScatteredBlock> next_scattered_block;
 
     MutableColumns columns;
     IColumn::Offsets offsets;

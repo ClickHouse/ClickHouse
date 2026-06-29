@@ -32,9 +32,9 @@ struct FactorialImpl
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The maximum value for the input argument of function factorial is 20");
 
             if constexpr (is_unsigned_v<A>)
-                return factorials[a];
+                return factorials[static_cast<size_t>(a)];
             else if constexpr (is_signed_v<A>)
-                return a >= 0 ? factorials[a] : 1;
+                return a >= 0 ? factorials[static_cast<size_t>(a)] : 1;
         }
     }
 
@@ -112,7 +112,7 @@ The maximum positive value for the input argument is `20`, a value of `21` or gr
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionFactorial>(documentation, FunctionFactory::Case::Insensitive);
 }

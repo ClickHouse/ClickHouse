@@ -9,7 +9,6 @@ struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 struct FormatFilterInfo;
 using FormatFilterInfoPtr = std::shared_ptr<FormatFilterInfo>;
-class KeyCondition;
 }
 
 namespace DB::Parquet
@@ -54,11 +53,6 @@ struct SharedResourcesExt
     static Limits getLimitsPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
 };
 
-struct FilterInfoExt
-{
-    std::vector<std::pair</*column_idx*/ size_t, std::shared_ptr<KeyCondition>>> column_conditions;
-};
-
 
 /// Each column chunk goes through some subsequence of these stages, in order.
 ///
@@ -93,11 +87,8 @@ enum class ReadStage
     BloomFilterBlocksOrDictionary,
     ColumnIndexAndOffsetIndex,
 
-    PrewhereOffsetIndex,
-    PrewhereData,
-
-    MainOffsetIndex, // "main" means columns that are not in prewhere
-    MainData,
+    OffsetIndex,
+    ColumnData,
 
     Deliver,
 

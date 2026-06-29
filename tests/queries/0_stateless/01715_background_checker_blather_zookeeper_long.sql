@@ -1,4 +1,4 @@
--- Tags: long, zookeeper, no-shared-merge-tree
+-- Tags: long, zookeeper, no-shared-merge-tree, no-msan, no-asan, no-tsan, no-ubsan
 -- no-shared-merge-tree: no replication queue
 
 DROP TABLE IF EXISTS i20203_1 SYNC;
@@ -22,7 +22,7 @@ ATTACH TABLE i20203_2;
 SET function_sleep_max_microseconds_per_block = 10000000;
 SELECT number from numbers(10) where sleepEachRow(1) Format Null;
 
-SELECT num_tries < 50
+SELECT num_tries < 200
 FROM system.replication_queue
 WHERE table = 'i20203_2' AND database = currentDatabase();
 

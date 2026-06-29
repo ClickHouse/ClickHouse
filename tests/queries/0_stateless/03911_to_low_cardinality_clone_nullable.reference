@@ -1,0 +1,3 @@
+0	LowCardinality(UInt64)	0	0
+1	LowCardinality(UInt64)	1	0
+2	LowCardinality(UInt64)	2	0

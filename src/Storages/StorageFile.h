@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Interpreters/ActionsDAG.h>
@@ -10,6 +9,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/FileRenamer.h>
+#include <Common/Logger.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -25,6 +25,9 @@ class IInputFormat;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
 class PullingPipelineExecutor;
+
+struct FormatParserSharedResources;
+using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
 class StorageFile final : public IStorage
 {
@@ -121,7 +124,7 @@ public:
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     bool prefersLargeBlocks() const override;
 
@@ -214,7 +217,7 @@ private:
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
-class StorageFileSource : public ISource, WithContext
+class StorageFileSource final : public ISource, WithContext
 {
 public:
     class FilesIterator : WithContext
@@ -287,7 +290,7 @@ private:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override;
 
     void addNumRowsToCache(const String & path, size_t num_rows) const;
 
@@ -298,7 +301,13 @@ private:
     String current_path;
     std::optional<size_t> current_file_size;
     std::optional<Poco::Timestamp> current_file_last_modified;
-    struct stat current_archive_stat;
+    /// Sub-second precision token for the cache key, derived from the same `stat`
+    /// as `current_file_last_modified`. Kept separate so the user-visible
+    /// `_last_modified` virtual column keeps its existing second resolution while
+    /// the format metadata cache (e.g. Parquet footer cache) is invalidated even
+    /// for in-place rewrites within the same wall-clock second.
+    std::optional<String> current_file_cache_version;
+    struct stat current_archive_stat{};
     std::optional<String> filename_override;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;

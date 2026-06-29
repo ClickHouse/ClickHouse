@@ -15,17 +15,18 @@ DNSCacheUpdater::DNSCacheUpdater(ContextPtr context_, Int32 update_period_second
     , max_consecutive_failures(max_consecutive_failures_)
     , pool(getContext()->getSchedulePool())
 {
-    task_handle = pool.createTask("DNSCacheUpdater", [this]{ run(); });
+    task_handle = pool.createTask(StorageID::createEmpty(), "DNSCacheUpdater", [this]{ run(); });
 }
 
 void DNSCacheUpdater::run()
 {
     auto & resolver = DNSResolver::instance();
 
-    /// Reload cluster config if IP of any host has been changed since last update.
-    if (resolver.updateCache(max_consecutive_failures))
+    resolver.updateCache(max_consecutive_failures);
+    /// Reload cluster config if IPs of host name has been changed since last update.
+    if (resolver.updateHostNameAndAddresses())
     {
-        LOG_INFO(getLogger("DNSCacheUpdater"), "IPs of some hosts have been changed. Will reload cluster config.");
+        LOG_INFO(getLogger("DNSCacheUpdater"), "IPs of host name {} have been changed. Will reload cluster config.", resolver.getHostName());
         try
         {
             getContext()->reloadClusterConfig();

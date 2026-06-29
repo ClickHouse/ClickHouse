@@ -19,10 +19,10 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
   * TODO support key like search
   */
 std::pair<FieldVectorPtr, bool> getFilterKeys(
-    const std::string & primary_key, const DataTypePtr & primary_key_type, const SelectQueryInfo & query_info, const ContextPtr & context);
+    const String & primary_key, const DataTypePtr & primary_key_type, const ActionsDAG * filter_actions_dag, const ContextPtr & context);
 
 std::pair<FieldVectorPtr, bool> getFilterKeys(
-    const String & primary_key, const DataTypePtr & primary_key_type, const ActionsDAG * filter_actions_dag, const ContextPtr & context);
+    const Names & primary_keys, const DataTypes & primary_key_types, const ActionsDAG * filter_actions_dag, const ContextPtr & context);
 
 template <typename K, typename V>
 void fillColumns(const K & key, const V & value, size_t key_pos, const Block & header, MutableColumns & columns)
@@ -38,15 +38,26 @@ void fillColumns(const K & key, const V & value, size_t key_pos, const Block & h
     }
 }
 
+template <typename S>
+void fillColumns(const S & slice, const std::vector<size_t> & pos, const Block & header, MutableColumns & columns)
+{
+    ReadBufferFromString buffer(slice);
+    for (const auto col : pos)
+    {
+        const auto & serialization = header.getByPosition(col).type->getDefaultSerialization();
+        serialization->deserializeBinary(*columns[col], buffer, {});
+    }
+}
+
 std::vector<std::string> serializeKeysToRawString(
-    FieldVector::const_iterator & it,
-    FieldVector::const_iterator end,
-    DataTypePtr key_column_type,
-    size_t max_block_size);
+    FieldVector::const_iterator & it, FieldVector::const_iterator end, DataTypePtr key_column_type, size_t max_block_size);
+
+std::vector<std::string> serializeKeysToRawString(
+    FieldVector::const_iterator & it, FieldVector::const_iterator end, const DataTypes & key_column_types, size_t max_block_size);
 
 std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & keys);
 
-/// In current implementation key with only column is supported.
+/// In current implementation redis / keeper can have key with only one column.
 size_t getPrimaryKeyPos(const Block & header, const Names & primary_key);
 
 }

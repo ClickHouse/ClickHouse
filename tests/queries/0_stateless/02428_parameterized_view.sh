@@ -46,7 +46,7 @@ $CLICKHOUSE_CLIENT -q "ATTACH TABLE test_02428_pv1"
 
 $CLICKHOUSE_CLIENT -q "EXPLAIN SYNTAX SELECT * from test_02428_pv1(price=10)"
 
-$CLICKHOUSE_CLIENT -q "INSERT INTO test_02428_pv1 VALUES ('Bag', 50, 2)" 2>&1 |  grep -Fq "NOT_IMPLEMENTED" && echo 'ERROR' || echo 'OK'
+$CLICKHOUSE_CLIENT -q "INSERT INTO test_02428_pv1 VALUES ('Bag', 50, 2)" 2>&1 |  grep -Fq "EMPTY_LIST_OF_COLUMNS_PASSED" && echo 'ERROR' || echo 'OK'
 
 $CLICKHOUSE_CLIENT -q "SELECT Price FROM pv123(price=20)" 2>&1 |  grep -Fq "UNKNOWN_FUNCTION" && echo 'ERROR' || echo 'OK'
 

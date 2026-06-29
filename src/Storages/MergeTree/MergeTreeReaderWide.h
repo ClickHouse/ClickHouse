@@ -19,6 +19,7 @@ public:
         NamesAndTypesList columns_,
         const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
+        const MergeTreeSettingsPtr & storage_settings_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         DeserializationPrefixesCache * deserialization_prefixes_cache_,
@@ -43,6 +44,9 @@ public:
     void prefetchBeginOfRange(Priority priority) override;
 
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
+
+    /// Return map (column to read) -> (list of all streams required to read this column).
+    std::unordered_map<String, std::vector<String>> getAllColumnsSubstreams();
 
 private:
     FileStreams streams;

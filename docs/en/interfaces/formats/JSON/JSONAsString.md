@@ -17,7 +17,7 @@ doc_type: 'reference'
 
 In this format, a single JSON object is interpreted as a single value. 
 If the input has several JSON objects (which are comma separated), they are interpreted as separate rows. 
-If the input data is enclosed in square brackets, it is interpreted as an array of JSON objects.
+If the input data is enclosed in `[]`, it is interpreted as an array of JSON objects.
 
 :::note
 This format can only be parsed for a table with a single field of type [String](/sql-reference/data-types/string.md). 

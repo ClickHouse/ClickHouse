@@ -7,7 +7,7 @@ namespace DB
 
 ASTPtr ASTAsterisk::clone() const
 {
-    auto clone = std::make_shared<ASTAsterisk>(*this);
+    auto clone = make_intrusive<ASTAsterisk>(*this);
     clone->children.clear();
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }

@@ -94,24 +94,34 @@ static NamesAndTypesList getColumnsFromTableExpression(
     {
         const auto table_function = table_expression.table_function;
         auto query_context = context->getQueryContext();
+
+        /// For parameterized views in refreshable materialized views, use the current context's database
+        /// instead of the query context's database. This ensures unqualified parameterized view
+        /// references resolve in the correct database (MV's database, not session's database).
+        if (is_create_parameterized_view)
+        {
+            query_context = Context::createCopy(query_context);
+            query_context->setCurrentDatabase(context->getCurrentDatabase());
+        }
+
         const auto & function_storage = query_context->executeTableFunction(table_function);
-        auto function_metadata_snapshot = function_storage->getInMemoryMetadataPtr();
+        auto function_metadata_snapshot = function_storage->getInMemoryMetadataPtr(query_context, false);
         const auto & columns = function_metadata_snapshot->getColumns();
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();
-        virtuals = function_storage->getVirtualsList();
+        virtuals = function_metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList();
     }
     else if (table_expression.database_and_table_name)
     {
         auto table_id = context->resolveStorageID(table_expression.database_and_table_name);
         const auto & table = DatabaseCatalog::instance().getTable(table_id, context);
-        auto table_metadata_snapshot = table->getInMemoryMetadataPtr();
+        auto table_metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
         const auto & columns = table_metadata_snapshot->getColumns();
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();
-        virtuals = table->getVirtualsList();
+        virtuals = table_metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList();
     }
 
     return names_and_type_list;

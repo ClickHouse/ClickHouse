@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Logger.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
 

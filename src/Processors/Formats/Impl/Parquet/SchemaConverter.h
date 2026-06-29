@@ -32,6 +32,9 @@ struct SchemaConverter
     size_t schema_idx = 1;
     size_t primitive_column_idx = 0;
     std::vector<LevelInfo> levels;
+    /// Actual recursion depth of processSubtree. Tracked unconditionally because the def-level
+    /// counter only advances for OPTIONAL/REPEATED nodes, so REQUIRED-group nesting would bypass it.
+    size_t recursion_depth = 0;
 
     /// The key is the parquet column name, without ColumnMapper.
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
@@ -137,8 +140,10 @@ private:
         DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const;
 
     /// Returns element.name or a corresponding name from ColumnMapper.
-    /// For tuple elements, that's just the element name like `x`, not the whole path like `t.x`.
-    std::string_view useColumnMapperIfNeeded(const parq::SchemaElement & element) const;
+    /// For nested tuple elements, returns just the element name like `x`, not the whole path like `t.x`.
+    /// For top-level columns (when current_path is empty), returns the full mapped name to support
+    /// column names with dots (e.g. `integer.col` in Iceberg).
+    std::string_view useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const;
 };
 
 }

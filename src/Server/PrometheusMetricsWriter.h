@@ -22,6 +22,7 @@ public:
     virtual void writeErrors(WriteBuffer & wb) const;
     virtual void writeHistogramMetrics(WriteBuffer & wb) const;
     virtual void writeDimensionalMetrics(WriteBuffer & wb) const;
+    virtual void writeInfo(WriteBuffer & wb) const;
 
     static void writeHistogramMetric(WriteBuffer & wb, const HistogramMetrics::MetricFamily & family);
     static void writeDimensionalMetric(WriteBuffer & wb, const DimensionalMetrics::MetricFamily & family);

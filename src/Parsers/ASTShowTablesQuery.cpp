@@ -10,7 +10,7 @@ namespace DB
 
 ASTPtr ASTShowTablesQuery::clone() const
 {
-    auto res = std::make_shared<ASTShowTablesQuery>(*this);
+    auto res = make_intrusive<ASTShowTablesQuery>(*this);
     res->children.clear();
     if (from)
         res->set(res->from, from->clone());

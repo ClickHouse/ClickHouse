@@ -1,4 +1,4 @@
-SET output_format_pretty_color = 1, output_format_pretty_max_column_name_width_cut_to = 16;
+SET output_format_pretty_color = 1, output_format_pretty_max_column_name_width_cut_to = 16, output_format_pretty_named_tuples_as_json = 0;
 
 SELECT CAST((1, 'Hello') AS Tuple(a UInt64, b String)) AS `абвгдежзийклмнопрстуф`, 'Hello' AS x, 'World' AS "абвгдежзийклмнопрстуфхцчшщъыьэюя" FORMAT Pretty;
 SELECT CAST((1, 'Hello') AS Tuple(a UInt64, b String)) AS `абвгдежзийклмнопрстуф`, 'Hello' AS x, 'World' AS "абвгдежзийклмнопрстуфхцчшщъыьэюя" FORMAT PrettyCompact;

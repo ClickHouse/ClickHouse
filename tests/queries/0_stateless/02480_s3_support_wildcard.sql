@@ -25,5 +25,8 @@ select a, b from s3(s3_conn, filename='prefix/test_02480_support_wildcard_??', f
 select a, b from s3(s3_conn, filename='prefi?/test_02480_support_wildcard_*', format=Parquet) order by a;
 select a, b from s3(s3_conn, filename='p?*/test_02480_support_wildcard_{56..666}', format=Parquet) order by a;
 
+-- Truncate should fail for partitioned tables with {_partition_id}, not silently succeed
+truncate table test_02480_support_wildcard_write; -- { serverError NOT_IMPLEMENTED }
+
 drop table test_02480_support_wildcard_write;
 drop table test_02480_support_wildcard_write2;

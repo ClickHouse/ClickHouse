@@ -3,12 +3,12 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/StorageXDBC.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/ITableFunction.h>
@@ -17,10 +17,7 @@
 #include <Common/Exception.h>
 #include <TableFunctions/registerTableFunctions.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
-
-#include "config.h"
 
 
 namespace DB
@@ -191,7 +188,7 @@ void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
     {
         helper = createBridgeHelper(
             context,
-            context->getSettingsRef()[Setting::http_receive_timeout].value,
+            Poco::Timespan(context->getSettingsRef()[Setting::http_receive_timeout]),
             connection_string,
             context->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
         helper->startBridgeSync();
@@ -212,10 +209,21 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
     bool use_nulls = context->getSettingsRef()[Setting::external_table_functions_use_nulls];
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls", toString(use_nulls));
 
+    /// `startBridgeIfNot` above has already verified the bridge responds, so this metadata
+    /// request talks to a known-alive local subprocess. Do not retry it: if the bridge (or the
+    /// ODBC/JDBC driver behind it) stops responding mid-request, retrying `http_max_tries` times,
+    /// each blocking for up to `http_receive_timeout`, keeps the query running for minutes during
+    /// query analysis, where it cannot observe cancellation (`KILL QUERY`, `max_execution_time`).
+    /// That is what surfaces as a "possible deadlock" in the stress-test hung check. Make a single
+    /// attempt and let the error propagate instead.
+    ReadSettings read_settings;
+    read_settings.http_settings.max_tries = 1;
+
     Poco::Net::HTTPBasicCredentials credentials{};
     auto buf = BuilderRWBufferFromHTTP(columns_info_uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withSettings(read_settings)
                    .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(
                         context->getSettingsRef(),
                         context->getServerSettings()))
@@ -242,11 +250,11 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionJDBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionJDBC>();
+    factory.registerFunction<TableFunctionJDBC>({});
 }
 
 void registerTableFunctionODBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionODBC>();
+    factory.registerFunction<TableFunctionODBC>({});
 }
 }

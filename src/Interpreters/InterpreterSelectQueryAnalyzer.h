@@ -9,23 +9,30 @@
 namespace DB
 {
 
+class ActionsDAG;
+class QueryPlan;
+
 class InterpreterSelectQueryAnalyzer : public IInterpreter
 {
 public:
-    /// Initialize interpreter with query AST
+    /** Initialize interpreter with query AST.
+      * Optional post_filter is an outer filter pushed down from the caller (e.g. StorageView, to support skip unused shards)
+      */
     InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options_,
-        const Names & column_names = {});
+        const Names & column_names = {},
+        const ActionsDAG * post_filter_ = nullptr);
 
     /** Initialize interpreter with query AST and storage.
       * After query tree is built left most table expression is replaced with table node that
       * is initialized with provided storage.
       */
-    InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
+    InterpreterSelectQueryAnalyzer(
+        const ASTPtr & query_,
         const ContextPtr & context_,
-        const StoragePtr & storage_,
         const SelectQueryOptions & select_query_options_,
+        const StoragePtr & storage_,
         const Names & column_names = {});
 
     /** Initialize interpreter with query tree.
@@ -65,8 +72,6 @@ public:
 
     void addStorageLimits(const StorageLimitsList & storage_limits);
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const override;
-
     bool supportsTransactions() const override { return true; }
 
     bool ignoreLimits() const override { return select_query_options.ignore_limits; }
@@ -85,6 +90,8 @@ private:
     SelectQueryOptions select_query_options;
     QueryTreeNodePtr query_tree;
     Planner planner;
+
+    std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 };
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);

@@ -38,12 +38,12 @@ Block InterpreterExistsQuery::getSampleBlock()
 
 QueryPipeline InterpreterExistsQuery::executeImpl()
 {
-    ASTQueryWithTableAndOutput * exists_query;
+    ASTQueryWithTableAndOutput * exists_query = nullptr;
     bool result = false;
 
     if ((exists_query = query_ptr->as<ASTExistsTableQuery>()))
     {
-        if (exists_query->temporary)
+        if (exists_query->isTemporary())
         {
             result = static_cast<bool>(getContext()->tryResolveStorageID(
                 {"", exists_query->getTable()}, Context::ResolveExternal));
@@ -57,7 +57,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     }
     else if ((exists_query = query_ptr->as<ASTExistsViewQuery>()))
     {
-        if (exists_query->temporary)
+        if (exists_query->isTemporary())
         {
             auto storage_id = getContext()->tryResolveStorageID(
                 {"", exists_query->getTable()}, Context::ResolveExternal);
@@ -87,7 +87,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     }
     else if ((exists_query = query_ptr->as<ASTExistsDictionaryQuery>()))
     {
-        if (exists_query->temporary)
+        if (exists_query->isTemporary())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary dictionaries are not possible.");
         String database = getContext()->resolveDatabase(exists_query->getDatabase());
         getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, database, exists_query->getTable());
@@ -100,6 +100,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         "result" }})));
 }
 
+void registerInterpreterExistsQuery(InterpreterFactory & factory);
 void registerInterpreterExistsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
