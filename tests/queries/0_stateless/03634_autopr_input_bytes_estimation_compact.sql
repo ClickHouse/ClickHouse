@@ -44,7 +44,13 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Just checking that the estimation is not too far off
+-- Just checking that the estimation is not too far off.
+-- The estimate serializes a few sampled blocks with the default codec (`ZSTD(3)`), while the actually
+-- read bytes are the full column compressed with the same codec. For highly-compressible columns
+-- `ZSTD(3)` compresses the full column noticeably better than the small sample predicts, so the
+-- estimate can be up to ~2x the actual read size (and the sampled-block set varies with thread
+-- scheduling). Use a 4x tolerance so the check still catches gross misestimation without flaking on
+-- this inherent sample-vs-full-column compression gap.
 SELECT format('{} {} {}', log_comment, compressed_bytes, statistics_input_bytes)
 FROM (
     SELECT
@@ -55,6 +61,6 @@ FROM (
     WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'query_%') AND (type = 'QueryFinish')
     ORDER BY event_time_microseconds
 )
-WHERE greatest(compressed_bytes, statistics_input_bytes) / least(compressed_bytes, statistics_input_bytes) > 2;
+WHERE greatest(compressed_bytes, statistics_input_bytes) / least(compressed_bytes, statistics_input_bytes) > 4;
 
 DROP TABLE t;
