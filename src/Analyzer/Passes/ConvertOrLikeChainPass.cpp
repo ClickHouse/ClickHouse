@@ -10,6 +10,7 @@
 
 #include <Common/likePatternToRegexp.h>
 #include <Common/isValidUTF8.h>
+#include <Common/OptimizedRegularExpression.h>
 
 #include <Core/Field.h>
 
@@ -68,6 +69,34 @@ bool isExpressionNonDeterministic(const QueryTreeNodePtr & node)
             return true;
 
     return false;
+}
+
+/// Returns true if `combined_regexp` compiles within RE2's limits, using the same engine and flags
+/// as the `match` function (`RE_DOT_NL | RE_NO_CAPTURE`, see `Functions/Regexps.h`). The
+/// combined-`match` fallback merges an `OR` chain into a single `(p1)|(p2)|...` alternation; for a
+/// long or repetition-heavy chain the merged RE2 program can exceed RE2's default 8 MiB budget
+/// (`RE2::Options::kDefaultMaxMem`) and throw `CANNOT_COMPILE_REGEXP`, even though every original
+/// per-branch `match`/`LIKE` compiled on its own (each is a far smaller program). The
+/// `max_hyperscan_regexp_length` / `max_hyperscan_regexp_total_length` settings default to 0
+/// ("unlimited") and so do not bound this. We therefore pre-compile the merged regexp and keep the
+/// original branches when it does not compile, so a default-on rewrite cannot turn a
+/// previously-working query into a regexp-compilation exception. The probe constructs the same
+/// `OptimizedRegularExpression` as `match`, so it accepts exactly the regexps `match` would accept at
+/// runtime — there are no false negatives, and a failure to compile is always fail-close (we keep the
+/// originals and skip the optimization, never emit an uncompilable `match`).
+bool combinedRegexpCompilesWithRE2(const String & combined_regexp)
+{
+    try
+    {
+        OptimizedRegularExpression re(
+            combined_regexp,
+            OptimizedRegularExpression::RE_DOT_NL | OptimizedRegularExpression::RE_NO_CAPTURE);
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 
 /// Stores information about a single LIKE/ILIKE/match pattern
@@ -506,22 +535,33 @@ public:
                     && info.combinedRegexpFitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
                 {
                     /// Fall back to `match` with combined alternation when Hyperscan is disabled, the
-                    /// patterns would be rejected as expensive, or some pattern is not valid UTF-8
-                    /// (which `multiMatchAny` cannot compile but RE2 accepts). `combinedRegexpFitsHyperscanLimits`
-                    /// accounts for the `(`, `)` and `|` overhead added by `getCombinedRegexp` so
-                    /// `max_hyperscan_regexp_total_length` is a strict upper bound on the emitted
-                    /// regexp, and we cannot blow up RE2 compile limits here.
+                    /// patterns would be rejected as expensive, the chain contains a raw `match()` regexp,
+                    /// or some pattern is not valid UTF-8 (which `multiMatchAny` cannot compile but RE2
+                    /// accepts). `combinedRegexpFitsHyperscanLimits` accounts for the `(`, `)` and `|`
+                    /// overhead added by `getCombinedRegexp` so `max_hyperscan_regexp_total_length` is a
+                    /// strict upper bound on the emitted regexp when the user sets it; but those limits
+                    /// default to 0 ("unlimited"), so they alone do not stop a large or repetition-heavy
+                    /// chain from being merged into a single RE2 program that exceeds RE2's 8 MiB budget
+                    /// and throws `CANNOT_COMPILE_REGEXP`. We therefore additionally pre-compile the merged
+                    /// regexp and emit the combined `match` only when it compiles; otherwise we keep the
+                    /// original branches (see `combinedRegexpCompilesWithRE2`).
                     /// `allRegexpsHaveNoEmbeddedNul` excludes patterns with an embedded NUL: RE2's
                     /// required-substring optimization truncates a lone pattern at the first NUL, but the
                     /// `(p1)|(p2)|...` alternation does not, so the combined `match` would match a
                     /// *different* (narrower) set than the original per-branch `match`/`LIKE` chain. When
                     /// any pattern has an embedded NUL we leave `match_function` null and keep the
                     /// originals, so the result is preserved regardless of `allow_hyperscan` or the build.
-                    match_function = std::make_shared<FunctionNode>("match");
-                    match_function->getArguments().getNodes().push_back(key_data.key);
-                    match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getCombinedRegexp()}));
-                    auto resolver = FunctionFactory::instance().get("match", context);
-                    match_function->resolveAsFunction(resolver);
+                    String combined_regexp = info.getCombinedRegexp();
+                    if (combinedRegexpCompilesWithRE2(combined_regexp))
+                    {
+                        match_function = std::make_shared<FunctionNode>("match");
+                        match_function->getArguments().getNodes().push_back(key_data.key);
+                        match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{std::move(combined_regexp)}));
+                        auto resolver = FunctionFactory::instance().get("match", context);
+                        match_function->resolveAsFunction(resolver);
+                    }
+                    /// else: the merged regexp does not compile within RE2's limits — leave
+                    /// `match_function` null and fall through to the "keep originals" branch below.
                 }
             }
 
@@ -533,12 +573,13 @@ public:
 
             if (!match_function)
             {
-                /// We reach here when patterns exceed the configured hyperscan size limits, or contain
-                /// an embedded NUL that the combined alternation cannot reproduce faithfully. We cannot
-                /// emit `multiMatchAny` (would throw at runtime / change results), and emitting a single
-                /// combined `match` would build an unbounded regexp that can blow up RE2 compile limits
-                /// or change results for embedded NUL. Keep the original `OR LIKE` branches so the query
-                /// remains executable and the result is preserved.
+                /// We reach here when patterns exceed the configured hyperscan size limits, contain an
+                /// embedded NUL that the combined alternation cannot reproduce faithfully, or merge into
+                /// a combined regexp that RE2 cannot compile within its 8 MiB budget. We cannot emit
+                /// `multiMatchAny` (would throw at runtime / change results), and emitting the combined
+                /// `match` would either throw `CANNOT_COMPILE_REGEXP` or change results for embedded NUL.
+                /// Keep the original `OR LIKE` branches so the query remains executable and the result is
+                /// preserved.
                 slot = std::move(key_data.originals);
                 continue;
             }

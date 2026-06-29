@@ -8,6 +8,7 @@
 #include <Parsers/IAST.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/isValidUTF8.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
 
 #include "config.h"
@@ -42,6 +43,34 @@ bool isExpressionNonDeterministic(const ASTPtr & ast, const ContextPtr & context
             return true;
 
     return false;
+}
+
+/// Returns true if `combined_regexp` compiles within RE2's limits, using the same engine and flags
+/// as the `match` function (`RE_DOT_NL | RE_NO_CAPTURE`, see `Functions/Regexps.h`). The
+/// combined-`match` fallback merges an `OR` chain into a single `(p1)|(p2)|...` alternation; for a
+/// long or repetition-heavy chain the merged RE2 program can exceed RE2's default 8 MiB budget
+/// (`RE2::Options::kDefaultMaxMem`) and throw `CANNOT_COMPILE_REGEXP`, even though every original
+/// per-branch `match`/`LIKE` compiled on its own (each is a far smaller program). The
+/// `max_hyperscan_regexp_length` / `max_hyperscan_regexp_total_length` settings default to 0
+/// ("unlimited") and so do not bound this. We therefore pre-compile the merged regexp and keep the
+/// original branches when it does not compile, so a default-on rewrite cannot turn a
+/// previously-working query into a regexp-compilation exception. The probe constructs the same
+/// `OptimizedRegularExpression` as `match`, so it accepts exactly the regexps `match` would accept at
+/// runtime — there are no false negatives, and a failure to compile is always fail-close (we keep the
+/// originals and skip the optimization, never emit an uncompilable `match`).
+bool combinedRegexpCompilesWithRE2(const String & combined_regexp)
+{
+    try
+    {
+        OptimizedRegularExpression re(
+            combined_regexp,
+            OptimizedRegularExpression::RE_DOT_NL | OptimizedRegularExpression::RE_NO_CAPTURE);
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 
 /// Stores information about a single LIKE/ILIKE/match pattern
@@ -446,16 +475,22 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                         match_fn = makeASTFunction("multiMatchAny", key_data.identifier, make_intrusive<ASTLiteral>(Field{info.getRegexps()}));
                     }
                     else if (info.allRegexpsHaveNoEmbeddedNul()
-                        && info.combinedRegexpFitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
+                        && info.combinedRegexpFitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length)
+                        && combinedRegexpCompilesWithRE2(info.getCombinedRegexp()))
                     {
                         /// Fall back to `match` with combined alternation when Vectorscan is not
                         /// compiled in, `allow_hyperscan` is off, the patterns would be rejected
-                        /// as expensive, or some pattern is not valid UTF-8 (which `multiMatchAny`
-                        /// cannot compile but RE2 accepts).
-                        /// `combinedRegexpFitsHyperscanLimits` accounts for the `(`,
-                        /// `)` and `|` overhead added by `getCombinedRegexp`, so
-                        /// `max_hyperscan_regexp_total_length` is a strict upper bound on the
-                        /// emitted regexp and we cannot blow up RE2 compile limits here.
+                        /// as expensive, the chain contains a raw `match()` regexp, or some pattern is
+                        /// not valid UTF-8 (which `multiMatchAny` cannot compile but RE2 accepts).
+                        /// `combinedRegexpFitsHyperscanLimits` accounts for the `(`, `)` and `|`
+                        /// overhead added by `getCombinedRegexp`, so `max_hyperscan_regexp_total_length`
+                        /// is a strict upper bound on the emitted regexp when the user sets it; but those
+                        /// limits default to 0 ("unlimited"), so they alone do not stop a large or
+                        /// repetition-heavy chain from being merged into a single RE2 program that exceeds
+                        /// RE2's 8 MiB budget and throws `CANNOT_COMPILE_REGEXP`. We therefore additionally
+                        /// pre-compile the merged regexp (`combinedRegexpCompilesWithRE2`) and only emit
+                        /// the combined `match` when it compiles; otherwise we fall through to the `else`
+                        /// below and keep the originals.
                         /// `allRegexpsHaveNoEmbeddedNul` excludes patterns with an embedded NUL: RE2
                         /// truncates a lone pattern at the first NUL but not the `(p1)|(p2)|...`
                         /// alternation, so the combined `match` would match a different (narrower) set
