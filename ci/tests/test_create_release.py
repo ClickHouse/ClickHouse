@@ -222,7 +222,7 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     status. The publish steps (download-packages / create-gh-release /
     artifactory / docker) require real S3, the GitHub API and a registry, so
     they are out of scope for an offline test. The only network call on this
-    path, ``GH.is_latest_release_branch``, is served by a `gh` stub on PATH.
+    path, ``is_latest_release_branch``, is served by a `gh` stub on PATH.
     """
     pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
@@ -277,7 +277,7 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
         text=True,
     ).stdout.strip()
 
-    # `gh` stub: is_latest_release_branch is the only network call on this path;
+    # `gh` stub: is_latest_release_branch (now in create_release) is the only network call on this path;
     # empty output makes it report "not the latest branch", which is enough.
     bindir = tmp_path / "bin"
     bindir.mkdir()

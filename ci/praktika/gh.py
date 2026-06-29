@@ -1036,22 +1036,6 @@ class GH:
             print(f"ERROR: PR not found for branch [{branch}]")
         return url
 
-    @staticmethod
-    def is_latest_release_branch(branch, repo=None):
-        if not repo:
-            repo = _Environment.get().REPOSITORY
-        latest = Shell.get_output(
-            f'gh pr list --label release --repo {repo} --search "sort:created" -L1 --json headRefName'
-        )
-        if latest:
-            latest_branch = json.loads(latest)[0]["headRefName"]
-        else:
-            latest_branch = ""
-        print(
-            f"Latest release branch [{latest_branch}], checking [{branch}]: is_latest={latest_branch == branch}"
-        )
-        return latest_branch == branch
-
     _STATUS_TO_GH = {
         Result.Status.OK: Result.GHStatus.SUCCESS,
         Result.Status.FAIL: Result.GHStatus.FAILURE,

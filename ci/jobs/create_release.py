@@ -311,6 +311,23 @@ def _version_from_tag(tag: str) -> ClickHouseVersion:
     return v
 
 
+def is_latest_release_branch(branch: str, repo: str = GITHUB_REPOSITORY) -> bool:
+    """Whether `branch` is the latest release branch — i.e. the head branch of
+    the most recently created `release`-labeled PR. Release-domain logic (knows
+    the `release` label / branch convention), so it lives here rather than in
+    the generic praktika GH helper."""
+    latest = Shell.get_output(
+        f'gh pr list --label release --repo {repo} --search "sort:created"'
+        f" -L1 --json headRefName"
+    )
+    latest_branch = json.loads(latest)[0]["headRefName"] if latest else ""
+    print(
+        f"Latest release branch [{latest_branch}], checking [{branch}]:"
+        f" is_latest={latest_branch == branch}"
+    )
+    return latest_branch == branch
+
+
 def update_cmake_version(
     version: ClickHouseVersion, preserve_sha: bool = False
 ) -> None:
@@ -573,7 +590,7 @@ class ReleaseInfo:
             )
             assert previous_release_sha
 
-            if GH.is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
+            if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
                 print("This is going to be the latest release!")
                 latest_release = True
 
