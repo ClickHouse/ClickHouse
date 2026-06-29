@@ -315,8 +315,6 @@ private:
     struct BufEntry
     {
         ICacheProvider * provider = nullptr;
-        StoredObject object;
-        size_t object_file_offset = 0;
         CacheViewPtr view;
         VectorWithMemoryTracking<MissEntry> writers;
     };

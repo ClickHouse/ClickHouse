@@ -250,7 +250,7 @@ ReaderExecutor::ReaderExecutor(
     , block_size(options.block_size)
     , max_tail_for_drain(options.max_tail_for_drain)
     , decrypt_ahead(options.decrypt_ahead)
-    , plan_look_ahead_max_window(std::max(options.plan_look_ahead_max_window, options.window_size))
+    , plan_look_ahead_max_window(options.plan_look_ahead_max_window)
     , long_connection_open_range(options.long_connection_open_range)
     , long_connection_max_bound(options.long_connection_max_bound)
     , fill_ahead_lead(options.fill_ahead_lead)
@@ -2863,7 +2863,6 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     auto geom = std::make_shared<CoverageMap>();
     geom->plan_start = physical_start;
     geom->plan_end = physical_start;
-    geom->pinned_end = geom->plan_end;
     /// Sample memory pressure ONCE here, per plan. Every read within this plan (cache
     /// and remote, foreground and the prefetch worker via `job->pressure_level`) sizes
     /// off this cached level instead of re-querying the global monitor per call.
@@ -2917,7 +2916,6 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     const bool plan_expanded = probe_range.end() > plan_range.end();
 
     geom->plan_end = probe_range.end();
-    geom->pinned_end = geom->plan_end;
     ReadPlan plan;
 
     /// One read-only residency probe (`planResidencyView`) per cache tier per object-piece,
@@ -2957,8 +2955,6 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
             geom_entry.whole_cell = cache->fillsWholeCell();
             BufEntry buf_entry;
             buf_entry.provider = cache.get();
-            buf_entry.object = pr.object;
-            buf_entry.object_file_offset = object_file_offset;
 
             extractResidentRuns(*view, probe_range, resident_clip_end, geom_entry);
             extractMissesAndOpenWriters(*cache, *view, pr.object, object_file_offset, upper_hits, geom_entry, buf_entry);
@@ -2987,8 +2983,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
 
     /// The cross-cache expansion already pulled the touched MISS segments inside
     /// `[plan_start, plan_end)`, so extend `plan_end` only over a HIT segment straddling the
-    /// expanded end (fewer replans). The pin horizon equals the serve horizon
-    /// (`pinned_end == plan_end`): no dead zone, and the schedule may cover the whole span
+    /// expanded end (fewer replans): no dead zone, and the schedule may cover the whole span
     /// because a miss tail a faster tier holds is filled DOWN (`UpperCacheRead`), not fetched.
     {
         size_t hit_end = geom->plan_end;
@@ -2996,7 +2991,6 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
             for (const auto & r : e.resident)
                 hit_end = std::max(hit_end, r.end());
         geom->plan_end = hit_end;
-        geom->pinned_end = hit_end;
     }
 
     /// Publish atomically: `geometry()` and `bufs` are one object (`read_plan`), so a

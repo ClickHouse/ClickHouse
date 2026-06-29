@@ -81,12 +81,6 @@ struct CoverageMap
 
     size_t plan_start = 0;  /// physical (header-inclusive) coords
     size_t plan_end = 0;    /// [plan_start, plan_end) -- the serve/schedule horizon
-    /// The pin horizon: the rightmost byte of any pinned cache state. The cross-cache
-    /// expansion pulls the touched miss segments INSIDE `[plan_start, plan_end)` (a miss
-    /// tail a faster tier holds is filled down, not fetched), so the pin horizon equals the
-    /// serve horizon: `pinned_end == plan_end`. Retained as a distinct field for the
-    /// legacy path and test observability; every query keys off `plan_end`.
-    size_t pinned_end = 0;
     VectorWithMemoryTracking<GeometryEntry> entries;
 
     /// `MemoryPressureMonitor` level sampled ONCE at plan build; reads within
