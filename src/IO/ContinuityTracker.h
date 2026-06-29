@@ -32,9 +32,6 @@ public:
         /// Forward gap up to which a serve still continues the run (a bridgeable
         /// hole, not a real seek). The caller sets it from `min_bytes_for_seek`.
         size_t near_gap = 2 * 1024 * 1024;
-        /// EWMA weight for the just-finished run (0..1): higher trusts the most
-        /// recent run more, lower is smoother / decays slower.
-        double ewma_alpha = 0.5;
     };
 
     /// All-defaults overload kept separate from the `Options` one: a default

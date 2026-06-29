@@ -43,8 +43,8 @@ void ContinuityTracker::closeRun()
     /// Fold the finished run span into the EWMA. A zero-span close (consecutive
     /// seeks with no read between) decays the estimate - the self-correction for
     /// random access.
-    expected_run = options.ewma_alpha * static_cast<double>(currentRun())
-        + (1.0 - options.ewma_alpha) * expected_run;
+    /// 0.5 weights the just-finished run and the carried estimate equally.
+    expected_run = 0.5 * static_cast<double>(currentRun()) + 0.5 * expected_run;
     run_start = 0;
     last_pos.reset();
 }

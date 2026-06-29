@@ -48,7 +48,7 @@ struct MachineBase
     std::atomic<MachineState> state{MachineState::Constructed};
 
     /// The ONE cooperative stop request, polled at safe points. Stop policy:
-    /// a LIVE connection stops at the next block (saved with the machine,
+    /// a LONG connection stops at the next block (saved with the machine,
     /// continues from its frontier later); a one-shot GET is NEVER cut
     /// mid-response - the stop lands between connections. Its production
     /// setter is the cancel path, which does not wait: the machine goes to

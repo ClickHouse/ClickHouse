@@ -384,7 +384,7 @@ ReaderExecutor::~ReaderExecutor()
 /// FIRST, before the EOF gate: an unknown-size worker can latch `reached_eof`
 /// while still returning the file's final bytes, so gating first would drop
 /// them. With no prefetch, read synchronously (or return empty at EOF).
-/// Releases the live connection + slot once EOF is latched, then reads one
+/// Releases the long connection + slot once EOF is latched, then reads one
 /// window ahead.
 ChainedBuffers ReaderExecutor::readNextWindow()
 {
@@ -858,7 +858,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
         static_cast<HistogramMetrics::Value>(wait_scope.elapsedMicroseconds()));
 
     /// The requested window in PHYSICAL coords is exactly the cache-aligned `physical_window`
-    /// the fetch step read (the logical `requested_range` was just `physical_window` shifted by
+    /// the fetch step read (the logical request is `physical_window` shifted by
     /// `data_start_offset`); the assembly below slices it back to the served range.
     const ByteRange requested_phys = m->physical_window;
 
@@ -906,7 +906,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
     /// structurally an EOF-short window: the backfill clamps to delivered bytes and
     /// the contiguity contract holds for a prefix - the remainder is just the next
     /// gap, found by the normal dispatch (usually relaunched as the next machine on
-    /// the same live connection). The slice is additionally clamped to the fetched
+    /// the same long connection). The slice is additionally clamped to the fetched
     /// prefix when interrupted: a late hit BEYOND the prefix would otherwise leave a
     /// disjoint island in `result` and trip the contiguity guard; those bytes stay
     /// cached and the next window serves them from the plan.
@@ -1124,12 +1124,11 @@ ChainedBuffers ReaderExecutor::readHitFromView(CacheView & view, ByteRange clamp
 void ReaderExecutor::serveLateHits(ByteRange window, ChainedBuffers & result, IntervalSet & covered, Stats & out_stats)
 {
     /// Late hits: a sibling reader / promotion populated a gap between plan-build and
-    /// consume. Mirror the deleted `serveCacheTiersCollectingMisses` - all tiers, in
-    /// priority order, under ONE shared `covered` - but READ-ONLY (`planResidencyView`,
-    /// never a mutating `lookup`), and keep each view's deferred LRU-bump alive past the
-    /// held write buffers' writes by moving it into `read_plan.deferred_lru_bumps`
-    /// (`[CF-lru]`). Its writers are ignored: we already have, or are about to fetch, the
-    /// source bytes.
+    /// consume. Serve all tiers, in priority order, under ONE shared `covered`, but
+    /// READ-ONLY (`planResidencyView`, never a mutating `lookup`), and keep each view's
+    /// deferred LRU-bump alive past the held write buffers' writes by moving it into
+    /// `read_plan.deferred_lru_bumps` (`[CF-lru]`). Its writers are ignored: we already
+    /// have, or are about to fetch, the source bytes.
     VectorWithMemoryTracking<ByteRange> remaining = covered.subtract(window);
     for (auto & cache : caches)
     {
@@ -1489,7 +1488,7 @@ ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bo
         return result;
 
     /// Block size for the source-read tiles, from the per-plan cached pressure level
-    /// (a worker passes `job->pressure_level`, the foreground `read_plan.geometry()`'s).
+    /// (a worker passes the machine's `pressure_snapshot`, the foreground `read_plan.geometry()`'s).
     const size_t window_block_size = effectiveBlockSize(pressure_level);
 
     auto physical_ranges = offset_map.map(physical_window);
@@ -2374,7 +2373,7 @@ void ReaderExecutor::advanceCursor()
     auto & cursor = read_plan.cursor;
     const auto & steps = read_plan.schedule.steps;
     /// A single step (a whole resident run or a whole gap) can span several windows
-    /// (`serveCacheBlock`/`coverWindow` sub-size by block/window), so advance to the
+    /// (`serveCacheBlock` sub-sizes by block/window), so advance to the
     /// step that now contains the position rather than incrementing once per window.
     while (cursor + 1 < steps.size() && steps[cursor].output.end() <= pos_phys)
         ++cursor;
@@ -2836,8 +2835,8 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     geom->plan_start = physical_start;
     geom->plan_end = physical_start;
     /// Sample memory pressure ONCE here, per plan. Every read within this plan (cache
-    /// and remote, foreground and the prefetch worker via `job->pressure_level`) sizes
-    /// off this cached level instead of re-querying the global monitor per call.
+    /// and remote, foreground and the prefetch worker via the machine's `pressure_snapshot`)
+    /// sizes off this cached level instead of re-querying the global monitor per call.
     geom->pressure_level = memoryPressureMonitor().currentLevel();
 
     /// TRIM: the plan span, bounded to the file end and the read extent. An empty
@@ -3085,8 +3084,8 @@ void ReaderExecutor::extractResidentRuns(const CacheView & view, ByteRange plan_
     {
         /// Hits are segment-aligned and may extend past the plan span. Clamp the left
         /// at `plan_start` so streaming never reads behind the cursor; the right bound
-        /// is `plan_end` on the legacy path and the (pressure-scaled) generalized
-        /// ceiling on the generalized path, which folds a whole hit segment straddling
+        /// is `resident_clip_end` (the larger of the probe-range end and the
+        /// pressure-scaled plan ceiling), which folds a whole hit segment straddling
         /// the probe edge into the plan instead of clipping it.
         const size_t lo = std::max(hit.range.offset, plan_range.offset);
         const size_t hi = std::min(hit.range.end(), resident_clip_end);

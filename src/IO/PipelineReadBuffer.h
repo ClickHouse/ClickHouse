@@ -24,7 +24,7 @@ public:
 
     /// Advertise the read boundary to the executor. `MergeTreeReaderStream`
     /// drives this per mark range (`adjustRightMark`); the executor bounds its
-    /// live connection to it so it stays drained and reusable, and keeps
+    /// long connection to it so it stays drained and reusable, and keeps
     /// prefetches within it.
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;

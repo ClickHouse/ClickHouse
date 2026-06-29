@@ -76,8 +76,7 @@ public:
     /// A warranted long connection opens with at least this much range and never streams
     /// past the cap. The continuous-read prediction may under-predict at the start of a run
     /// and over-predict at its end; these bound the resulting GET so an over-prediction
-    /// cannot run away into an unbounded over-read. (Re-tuning the prediction itself is
-    /// deferred until the generalized planning + reuse are the default.)
+    /// cannot run away into an unbounded over-read.
     static constexpr size_t DEFAULT_LONG_CONNECTION_OPEN_RANGE = 16 * 1024 * 1024; /// 16 MiB
     static constexpr size_t DEFAULT_LONG_CONNECTION_MAX_BOUND = 128 * 1024 * 1024; /// 128 MiB
     /// How far the in-order fill front runs AHEAD of the serve cursor (the cache-as-buffer
@@ -258,9 +257,10 @@ private:
             LongConnectionHits,
             LongConnectionFallbacks,
             LongConnectionBytes,
-            /// Number of `observeAndSchedule` calls = residency-plan (re)builds. A
-            /// continuous read whose plan is capped at `read_extent_end` rebuilds per
-            /// mark range; this sizes how short-lived the held cache readers are.
+            /// Number of `observeAndSchedule` calls = residency-plan (re)builds. The
+            /// plan is reused across mark-range advances; it rebuilds only on a
+            /// want_replan (the cursor leaves `plan_start..plan_end`). This sizes how
+            /// short-lived the held cache readers are.
             Observations,
             NumCounters
         };
@@ -456,11 +456,10 @@ private:
         ByteRange range;
     };
 
-    /// The background read-ahead machine (`PrefetchJob` grown into a steppable
-    /// context). One step today - a pure source fetch of the pre-bounded
-    /// aligned gap window - then the `AwaitCollect` barrier; the foreground
-    /// collects or cancels. Bundles EVERYTHING the worker touches, so it never
-    /// reads a shared `this->` member.
+    /// The background read-ahead machine: a steppable context. One step today - a
+    /// pure source fetch of the pre-bounded aligned gap window - then the
+    /// `AwaitCollect` barrier; the foreground collects or cancels. Bundles
+    /// EVERYTHING the worker touches, so it never reads a shared `this->` member.
     struct FetchMachine : MachineBase
     {
         /// Out-of-line: initializes `inflight_gauge` (metric symbol is in the .cpp).
@@ -926,7 +925,8 @@ private:
 
     /// How far the in-order fill front runs ahead of the serve cursor: the bottom populatable
     /// tier's lead. A disk-backed (`FilesystemCache`) bottom is flat (`fill_ahead_lead`); a
-    /// RAM-backed (`PageCache`-only) bottom or a bypass gap is pressure-scaled (`fill_ahead_lead_ram`).
+    /// RAM-backed (`PageCache`-only) bottom or a bypass gap cannot serve a prefix ahead, so the
+    /// lead stays one (pressure-scaled) effective window.
     size_t fillAheadLead(MemoryPressureLevel level) const;
 
     /// Shrink `win_size` so the read does not pass `read_extent_end`.

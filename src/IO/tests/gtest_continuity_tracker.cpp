@@ -14,7 +14,6 @@ ContinuityTracker::Options testOptions()
 {
     ContinuityTracker::Options o;
     o.near_gap = MiB(2);
-    o.ewma_alpha = 0.5;
     return o;
 }
 

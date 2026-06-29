@@ -73,7 +73,7 @@ struct CoverageMap
     /// reaches resident bytes.
     ByteRange fetchWindowAt(ByteRange req) const;
 
-    /// How far a live connection opened at `from` would stream before it must
+    /// How far a long connection opened at `from` would stream before it must
     /// reopen: gaps plus resident runs no larger than `min_gap` (bridged),
     /// stopping at the first larger one or `plan_end`. A reach no larger than a
     /// window means a one-shot serves it and no lease is warranted.

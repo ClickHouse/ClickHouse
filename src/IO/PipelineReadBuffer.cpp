@@ -97,7 +97,7 @@ void PipelineReadBuffer::setReadUntilPosition(size_t position)
 {
     /// `position` is in this buffer's coordinates - the executor's logical file
     /// offset (the post-decryption .bin offset that marks address). Advertise it
-    /// as the read extent so the executor bounds its live connection there.
+    /// as the read extent so the executor bounds its long connection there.
     executor->setReadExtent(position);
 }
 
