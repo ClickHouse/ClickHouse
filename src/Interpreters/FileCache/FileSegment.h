@@ -295,7 +295,7 @@ private:
     std::weak_ptr<KeyMetadata> key_metadata;
     mutable Priority::IteratorPtr queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
     FileCache * cache;
-    std::condition_variable_any cv;
+    std::condition_variable cv;
     std::mutex increase_priority_mutex;
 
     LoggerPtr log;

@@ -21,8 +21,6 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
-    extern const Event FilesystemCacheLockKeyMicroseconds;
-    extern const Event FilesystemCacheLockMetadataMicroseconds;
     extern const Event FilesystemCacheCreatedKeyDirectories;
 }
 

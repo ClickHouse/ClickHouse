@@ -23,7 +23,6 @@ namespace ProfileEvents
 {
     extern const Event FileSegmentWaitMicroseconds;
     extern const Event FileSegmentCompleteMicroseconds;
-    extern const Event FileSegmentLockMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentIncreasePriorityMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
@@ -521,10 +520,12 @@ FileSegment::State FileSegment::wait(size_t offset)
         chassert(!getDownloaderUnlocked(lk).empty());
         chassert(!isDownloaderUnlocked(lk));
 
-        [[maybe_unused]] const auto ok = cv.wait_for(lk, std::chrono::seconds(60), [&, this]()
+        std::unique_lock<std::mutex> cv_lk(*lk.mutex(), std::adopt_lock);
+        [[maybe_unused]] const auto ok = cv.wait_for(cv_lk, std::chrono::seconds(60), [&, this]()
         {
             return download_state != State::DOWNLOADING || offset < getCurrentWriteOffset();
         });
+        cv_lk.release();
         /// chassert(ok);
     }
 

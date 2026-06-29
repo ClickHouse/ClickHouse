@@ -35,6 +35,18 @@ public:
         : underlying_lock(mutex, std::forward<T>(lock_arg)), wait_event(wait_event_)
     {}
 
+    template <typename Rep, typename Period>
+    ProfiledLockBase(MutexType & mutex, ProfileEvents::Event wait_event_, std::chrono::duration<Rep, Period> timeout)
+        : underlying_lock(mutex, std::try_to_lock), wait_event(wait_event_)
+    {
+        if (!underlying_lock.owns_lock())
+        {
+            Stopwatch watch;
+            underlying_lock.try_lock_for(timeout);
+            ProfileEvents::increment(wait_event, watch.elapsedMicroseconds());
+        }
+    }
+
     ProfiledLockBase(const ProfiledLockBase &) = delete;
     ProfiledLockBase & operator=(const ProfiledLockBase &) = delete;
     ProfiledLockBase(ProfiledLockBase &&) = default;
@@ -63,6 +75,7 @@ public:
 
     bool owns_lock() const noexcept { return underlying_lock.owns_lock(); }
     explicit operator bool() const noexcept { return underlying_lock.owns_lock(); }
+    MutexType * mutex() const noexcept { return underlying_lock.mutex(); }
 
 private:
     LockType underlying_lock;

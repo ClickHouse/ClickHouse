@@ -111,7 +111,10 @@ private:
 /// State lock protects cache total size/elements counters.
 struct CacheStateGuard : private boost::noncopyable
 {
-    using Lock = ProfiledTimedMutexLock;
+    struct Lock : public ProfiledTimedMutexLock
+    {
+        using ProfiledTimedMutexLock::ProfiledTimedMutexLock;
+    };
 
     Lock tryLock() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
