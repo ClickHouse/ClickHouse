@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- (the two-stage codes rewrite is deliberately disabled under parallel replicas, so the plan-shape assertion below
+--  cannot hold there; the query still returns exact results in that case.)
 -- The `pq` (trained Product Quantization) method of the `Quantize(...)` column codec learns a per-part codebook with
 -- k-means and stores one m-byte code per vector, exposed as the readable subcolumn `<column>.quantized`, plus the
 -- per-part codebook as the subcolumn `<column>.pq_codebook`. The full-precision data is stored verbatim, so reading the

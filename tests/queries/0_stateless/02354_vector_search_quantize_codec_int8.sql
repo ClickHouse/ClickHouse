@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- (the two-stage codes rewrite is deliberately disabled under parallel replicas, so the plan-shape assertion below
+--  cannot hold there; the query still returns exact results in that case.)
 -- The `int8` method of the `Quantize(...)` column codec stores one Lloyd-Max Int8 code per coordinate (of the rotated,
 -- unit-variance vector) plus the per-vector L2 norm, exposed as the readable subcolumn `<column>.quantized`. The
 -- full-precision data is stored verbatim, so reading the vector itself is unaffected. The codec is gated behind
