@@ -55,18 +55,26 @@ export FIRST_BASE_COMMIT
 export PR_NUMBER
 export REPO_NAME
 
-# Use FIRST_BASE_COMMIT (the actual commit the baseline .info was downloaded from)
-# as the base for the diff, not BASE_COMMIT. This ensures the diff and the baseline
-# counters are in the same coordinate system: if the baseline came from an older
-# commit than BASE_COMMIT, computing git diff BASE_COMMIT...HEAD would remap lines
-# relative to BASE_COMMIT while the baseline uses FIRST_BASE_COMMIT line numbers,
-# producing wrong positions in the diff HTML for any file edited between the two.
+# Two separate ranges serve two different purposes:
+#
+# 1. changes.diff (for genhtml --diff-file): anchored at FIRST_BASE_COMMIT so
+#    the diff maps the baseline's line numbers to current. The baseline .info was
+#    produced at FIRST_BASE_COMMIT, so the "before" side of the diff must match.
+#
+# 2. changed_files (for pattern extraction and downstream analysis): anchored at
+#    BASE_COMMIT (the actual PR merge base) so we only see files the PR itself
+#    changed. Using FIRST_BASE_COMMIT here would pull in unrelated master commits
+#    from the gap between FIRST_BASE_COMMIT and BASE_COMMIT — a src/Foo.cpp edit
+#    from that gap would appear in patterns, set _diff_ran=True, and then cause
+#    llvm_coverage_job.py to parse it into _changed_paths, flipping
+#    _binary_unchanged=False and suppressing the newly-covered analysis even
+#    though the PR binary is genuinely unchanged.
 gh api \
   -H "Accept: application/vnd.github.v3.diff" \
   repos/ClickHouse/ClickHouse/compare/${FIRST_BASE_COMMIT}...${CURRENT_COMMIT} \
   > changes.diff
 changed_files=$(gh api \
-  repos/ClickHouse/ClickHouse/compare/${FIRST_BASE_COMMIT}...${CURRENT_COMMIT} \
+  repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT} \
   --jq '.files[].filename'
 )
 echo "Changed files:"
