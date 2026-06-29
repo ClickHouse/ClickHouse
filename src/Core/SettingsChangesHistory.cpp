@@ -1264,14 +1264,14 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
+            {"merge_selector_small_parts_threshold", 10 * 1024 * 1024, 10 * 1024 * 1024, "Size threshold for the small-parts batching heuristic in merge selector"},
+            {"merge_selector_small_parts_min_count", 0, 0, "Minimum part count to allow merging small fresh parts (0 = disabled)"},
+            {"merge_selector_small_parts_max_age", 600, 600, "Age limit for the small-parts merge restriction"},
             {"allow_experimental_text_index_positions", false, false, "New setting"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
         {
-            {"merge_selector_small_parts_threshold", 10 * 1024 * 1024, 10 * 1024 * 1024, "Size threshold for the small-parts batching heuristic in merge selector"},
-            {"merge_selector_small_parts_min_count", 0, 0, "Minimum part count to allow merging small fresh parts (0 = disabled)"},
-            {"merge_selector_small_parts_max_age", 600, 600, "Age limit for the small-parts merge restriction"},
             {"packed_skip_index_max_bytes", 0, 0, "New setting. Pack any skip-index substream whose serialized on-disk size is at most this many bytes into a single skp_idx.packed archive per part; larger substreams stay in the standalone skp_idx_<name>.idx2 / .mrk2 layout. Decision is made per substream at write time."},
             {"allow_tuple_element_aggregation", false, false, "New setting"},
             {"shared_merge_tree_enable_keeper_parts_extra_data", false, true, "Enable coordinated merges by default"},
