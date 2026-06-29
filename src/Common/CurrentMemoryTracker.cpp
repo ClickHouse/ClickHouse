@@ -78,9 +78,9 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
-        Int64 previous_untracked_memory = current_thread->untracked_memory.load();
         DB::PerCPUMemoryThreadState previous_per_cpu = current_thread->per_cpu_untracked_memory;
         Int64 new_untracked_memory = current_thread->untracked_memory.add(size);
+        Int64 previous_untracked_memory = new_untracked_memory - size;
 
         /// Flush when the per-thread cap is hit, or when the per-CPU budget cannot cover the deferral.
         if (new_untracked_memory > current_thread->untracked_memory_limit
@@ -88,7 +88,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
         {
             DB::per_cpu_memory.release(current_thread->per_cpu_untracked_memory);
 
-            current_thread->untracked_memory.store(0);
+            current_thread->untracked_memory.store(previous_untracked_memory);
 
             try
             {
@@ -97,10 +97,11 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
                     std::ignore = memory_tracker->allocImpl(new_untracked_memory, enforce_memory_limit, /*query_tracker=*/ nullptr, /*_sample_probability=*/ 0.0);
                 else
                     std::ignore = memory_tracker->free(-new_untracked_memory, /*_sample_probability=*/ 0.0);
+
+                current_thread->untracked_memory.store(0);
             }
             catch (...)
             {
-                current_thread->untracked_memory.store(previous_untracked_memory);
                 DB::per_cpu_memory.rollback(current_thread->per_cpu_untracked_memory, previous_per_cpu);
                 throw;
             }
