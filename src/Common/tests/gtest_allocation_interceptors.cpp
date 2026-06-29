@@ -1,5 +1,7 @@
 #if !defined(SANITIZER)
 
+#include "config.h"
+
 #include <gtest/gtest.h>
 
 #include <Common/CurrentMemoryTracker.h>
@@ -324,6 +326,10 @@ TEST(AllocationInterceptors, MinAllocSizeToThrowRespectsLockMemoryExceptionInThr
     delete[] ptr;
 }
 
+/// The strict aligned_alloc override lives in src/Common/malloc.cpp only under this condition;
+/// without it glibc's lenient aligned_alloc(4096, 47808) succeeds and these assertions do not hold.
+#if USE_JEMALLOC && (defined(OS_LINUX) || defined(OS_FREEBSD))
+
 /// Our aligned_alloc override (src/Common/malloc.cpp) strictly enforces the C11 rule that size
 /// be a multiple of alignment, unlike glibc's lenient implementation. ThreadStack::getSize() can
 /// produce a non-page-aligned size (MINSIGSTKSZ on glibc >= 2.34 is a runtime sysconf value, e.g.
@@ -354,6 +360,8 @@ TEST(AllocationInterceptors, AlignedAllocAcceptsPageRoundedSize)
     useMisterPointer(ptr);
     free(ptr);
 }
+
+#endif // USE_JEMALLOC && (OS_LINUX || OS_FREEBSD)
 
 /// NOLINTEND
 
