@@ -50,7 +50,7 @@ private:
     Poco::JSON::Object::Ptr metadata_object;
 
     pcg64_fast gen;
-    std::uniform_int_distribution<Int32> dis;
+    std::uniform_int_distribution<Int64> dis;
 
     Int64 getMaxSequenceNumber();
     Poco::JSON::Object::Ptr getParentSnapshot(Int64 parent_snapshot_id);

@@ -8,8 +8,6 @@
 
 #include <base/bit_cast.h>
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -485,13 +483,7 @@ public:
     {
         if constexpr (is_parallelize_merge_prepare_needed)
         {
-            VectorWithMemoryTracking<DataSet *> data_vec;
-            data_vec.resize(places.size());
-
-            for (size_t i = 0; i < data_vec.size(); ++i)
-                data_vec[i] = &this->data(places[i]).set;
-
-            DataSet::parallelizeMergePrepare(data_vec, thread_pool, is_cancelled);
+            DataSet::parallelizeMergePrepare(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
         }
         else
         {
@@ -499,7 +491,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
     }
@@ -507,12 +499,24 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
     {
         if constexpr (is_able_to_parallelize_merge)
             this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);
         else
             this->data(place).set.merge(this->data(rhs).set);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        if constexpr (is_able_to_parallelize_merge)
+        {
+            DataSet::parallelizeMergeMulti(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
+        }
+        else
+        {
+            IAggregateFunction::parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
+        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -593,7 +597,7 @@ public:
         detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
     }
@@ -601,12 +605,25 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
     {
         if constexpr (is_able_to_parallelize_merge)
             this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);
         else
             this->data(place).set.merge(this->data(rhs).set);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        if constexpr (is_able_to_parallelize_merge)
+        {
+            using DataSet = typename Data::Set;
+            DataSet::parallelizeMergeMulti(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
+        }
+        else
+        {
+            IAggregateFunction::parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
+        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override

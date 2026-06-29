@@ -16,7 +16,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonConvexHull : public IFunction
+class FunctionPolygonConvexHull final : public IFunction
 {
 public:
     static const char * name;

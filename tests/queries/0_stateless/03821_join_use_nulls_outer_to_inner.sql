@@ -1,5 +1,7 @@
 #!/usr/bin/env -S ${HOME}/clickhouse-client --queries-file
 
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
@@ -21,6 +23,9 @@ SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
+SET query_plan_merge_filter_into_join_condition = 0; -- absorbing WHERE into join condition prevents prewhere filter push that this test validates
+SET enable_multiple_prewhere_read_steps = 1; -- needed so both prewhere conditions (id=5000 and id>0) can be pushed separately to the scan
+SET query_plan_merge_filters = 1; -- CI may inject False; combined WHERE conditions referencing both tables can't be split for prewhere push without filter merging
 
 SELECT l.name || '_' || toString(r.val + 1) || toTypeName(r.val) || '_' || toString(r2.val2 + 1) || toTypeName(r2.val2)
 FROM t1 AS l

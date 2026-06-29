@@ -17,7 +17,7 @@ struct ColumnsDescriptionCache
     std::shared_ptr<const ColumnsDescription> with_collected_nested;
     /// Column name to position mapping, derived from columns list
     using NameToPositionAllocator = BytesAwareAllocatorWithMemoryTracking<std::pair<const std::string, size_t>>;
-    using NameToPositionMap = std::unordered_map<std::string, size_t, std::hash<std::string>, std::equal_to<std::string>, NameToPositionAllocator>;
+    using NameToPositionMap = std::unordered_map<std::string, size_t, std::hash<std::string>, std::equal_to<>, NameToPositionAllocator>;
     std::shared_ptr<const NameToPositionMap> column_name_to_position;
 };
 

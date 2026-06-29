@@ -1,5 +1,6 @@
-#include <type_traits>
+#include <Common/NaNUtils.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -14,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 static SharedHeader checkHeaders(const SharedHeaders & input_headers)
@@ -28,8 +30,9 @@ static SharedHeader checkHeaders(const SharedHeaders & input_headers)
     return res;
 }
 
-UnionStep::UnionStep(SharedHeaders input_headers_, size_t max_threads_)
+UnionStep::UnionStep(SharedHeaders input_headers_, size_t max_threads_, bool allow_narrowing_)
     : max_threads(max_threads_)
+    , allow_narrowing(allow_narrowing_)
 {
     updateInputHeaders(std::move(input_headers_));
 }
@@ -85,6 +88,50 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
     }
 
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), new_max_threads, &processors);
+
+    /// The `max_streams_for_union_step*` cap only applies to steps built for SQL
+    /// `UNION ALL` / `UNION DISTINCT`, and only while no downstream step relies on
+    /// per-stream sortedness of the union output. For all other cases the narrowing
+    /// must be skipped: shuffling streams through `ConcatProcessor` would break the
+    /// ordering invariants of `GroupingAggregatedTransform` (memory-efficient
+    /// distributed aggregation), `MergingSortedTransform`, and similar order-sensitive
+    /// consumers. We still validate the ratio so misconfiguration is reported on every
+    /// query rather than only when a narrowable `UNION` happens to be present.
+    const double max_streams_ratio = settings.max_streams_for_union_step_to_max_threads_ratio;
+    if (!isFinite(max_streams_ratio) || max_streams_ratio < 0)
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Invalid value for `max_streams_for_union_step_to_max_threads_ratio`: {}. Must be a finite non-negative number.",
+            max_streams_ratio);
+
+    if (!allow_narrowing)
+        return pipeline;
+
+    size_t effective_max_streams = settings.max_streams_for_union_step;
+    if (max_streams_ratio > 0 && new_max_threads > 0)
+    {
+        double streams_with_ratio = static_cast<double>(new_max_threads) * max_streams_ratio;
+        if (!canConvertTo<size_t>(streams_with_ratio))
+            throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                "`max_streams_for_union_step_to_max_threads_ratio` produces an out-of-range stream limit "
+                "(max_threads={}, ratio={}, product={}). Make sure the product fits in size_t.",
+                new_max_threads, max_streams_ratio, streams_with_ratio);
+        size_t max_streams_from_ratio = static_cast<size_t>(streams_with_ratio);
+        if (max_streams_from_ratio == 0)
+            max_streams_from_ratio = 1;
+        if (effective_max_streams)
+            effective_max_streams = std::min(effective_max_streams, max_streams_from_ratio);
+        else
+            effective_max_streams = max_streams_from_ratio;
+    }
+
+    if (effective_max_streams && pipeline->getNumStreams() > effective_max_streams)
+    {
+        QueryPipelineProcessorsCollector collector(*pipeline, this);
+        pipeline->narrow(effective_max_streams);
+        auto added_processors = collector.detachProcessors();
+        processors.insert(processors.end(), added_processors.begin(), added_processors.end());
+    }
+
     return pipeline;
 }
 
@@ -103,6 +150,7 @@ QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
     return std::make_unique<UnionStep>(ctx.input_headers);
 }
 
+void registerUnionStep(QueryPlanStepRegistry & registry);
 void registerUnionStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Union", &UnionStep::deserialize);

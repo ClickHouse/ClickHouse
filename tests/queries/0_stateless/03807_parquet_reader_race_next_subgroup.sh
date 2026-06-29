@@ -30,7 +30,6 @@ for _ in {1..20}; do
         SELECT count()
         FROM file('${FILE_PATH}')
         SETTINGS
-            input_format_parquet_use_native_reader_v3 = 1,
             input_format_parquet_preserve_order = 0,
             max_threads = 8
     "

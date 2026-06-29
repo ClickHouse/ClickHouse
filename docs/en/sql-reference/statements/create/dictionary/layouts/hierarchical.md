@@ -19,11 +19,11 @@ Look at the following hierarchical structure:
 ```text
 0 (Common parent)
 │
-├── 1 (Russia)
+├── 1 (United States of America)
 │   │
-│   └── 2 (Moscow)
+│   └── 2 (California)
 │       │
-│       └── 3 (Center)
+│       └── 3 (San Francisco)
 │
 └── 4 (Great Britain)
     │
@@ -34,15 +34,15 @@ This hierarchy can be expressed as the following dictionary table.
 
 | region_id | parent_region | region_name  |
 |------------|----------------|---------------|
-| 1          | 0              | Russia        |
-| 2          | 1              | Moscow        |
-| 3          | 2              | Center        |
-| 4          | 0              | Great Britain |
-| 5          | 4              | London        |
+| 1          | 0              | United States of America |
+| 2          | 1              | California               |
+| 3          | 2              | San Francisco            |
+| 4          | 0              | Great Britain            |
+| 5          | 4              | London                   |
 
 This table contains a column `parent_region` that contains the key of the nearest parent for the element.
 
-ClickHouse supports the hierarchical property for external dictionary attributes. This property allows you to configure the hierarchical dictionary similar to described above.
+ClickHouse supports the hierarchical property for external dictionary attributes. This property allows you to configure the hierarchical dictionary similar to what is described above.
 
 The [dictGetHierarchy](/sql-reference/functions/ext-dict-functions.md#dictGetHierarchy) function allows you to get the parent chain of an element.
 

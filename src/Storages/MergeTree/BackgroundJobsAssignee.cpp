@@ -29,6 +29,9 @@ BackgroundTaskSchedulingSettings BackgroundJobsAssignee::getSettings() const
             return getContext()->getBackgroundProcessingTaskSchedulingSettings();
         case Type::Moving:
             return getContext()->getBackgroundMoveTaskSchedulingSettings();
+        case Type::Streaming:
+            /// TODO(michicosun): Change to streaming-specific settings.
+            return getContext()->getBackgroundProcessingTaskSchedulingSettings();
     }
 }
 
@@ -57,7 +60,7 @@ void BackgroundJobsAssignee::postpone()
     double random_addition = std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
 
     size_t next_time_to_execute = static_cast<size_t>(
-        1000 * (std::min(
+        1000 * (data.getBiasBackoffSeconds() + std::min(
             sleep_settings.task_sleep_seconds_when_no_work_max,
             sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_count))
         + random_addition));
@@ -106,6 +109,8 @@ String BackgroundJobsAssignee::toString(Type type)
             return "DataProcessing";
         case Type::Moving:
             return "Moving";
+        case Type::Streaming:
+            return "Streaming";
     }
 }
 
@@ -158,6 +163,9 @@ try
             break;
         case Type::Moving:
             succeed = data.scheduleDataMovingJob(*this);
+            break;
+        case Type::Streaming:
+            succeed = data.scheduleStreamingJob(*this);
             break;
     }
 

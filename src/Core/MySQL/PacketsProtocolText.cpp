@@ -116,7 +116,7 @@ void ColumnDefinition::readPayloadImpl(ReadBuffer & payload)
 {
     String def;
     readLengthEncodedString(def, payload);
-    assert(def == "def");
+    chassert(def == "def");
     readLengthEncodedString(schema, payload);
     readLengthEncodedString(table, payload);
     readLengthEncodedString(org_table, payload);
@@ -157,7 +157,7 @@ void ColumnDefinition::writePayloadImpl(WriteBuffer & buffer) const
 
 ColumnDefinition getColumnDefinition(const String & column_name, const DataTypePtr & data_type)
 {
-    ColumnType column_type;
+    ColumnType column_type = {};
     CharacterSet charset = CharacterSet::binary;
     int flags = 0;
     uint8_t decimals = 0;

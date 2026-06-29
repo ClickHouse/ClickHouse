@@ -6,7 +6,6 @@
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
 #include <Core/Field.h>
 
 
@@ -177,9 +176,14 @@ void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
     nested->updateHashWithValue(n, hash);
 }
 
-WeakHash32 ColumnMap::getWeakHash32() const
+void ColumnMap::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
-    return nested->getWeakHash32();
+    nested->updateHashWithValueRange(begin, end, hash);
+}
+
+void ColumnMap::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    nested->computeHashInto(row_begin, row_end, hash_out, initial);
 }
 
 void ColumnMap::updateHashFast(SipHash & hash) const
@@ -482,11 +486,25 @@ void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Col
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        const auto & source_map = assert_cast<const ColumnMap &>(*source_column);
-        new_statistics->merge(*source_map.getOrCalculateStatistics());
-        nested_source_columns.push_back(source_map.getNestedColumnPtr());
+        if (!source_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
+
+        const auto * source_map = typeid_cast<const ColumnMap *>(source_column.get());
+        if (!source_map)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Map, but {}", source_column->getName());
+
+        auto source_statistics = source_map->getOrCalculateStatistics();
+        if (!source_statistics)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source statistics is invalid");
+
+        new_statistics->merge(*source_statistics);
+        nested_source_columns.push_back(source_map->getNestedColumnPtr());
     }
+
     statistics = std::move(new_statistics);
+    if (!nested)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested column is not initialized");
+
     nested->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 

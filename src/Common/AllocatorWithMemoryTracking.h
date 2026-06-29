@@ -1,12 +1,36 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdlib>
+#include <limits>
+#include <new>
 #include <type_traits>
 #include <memory>
+#include <utility>
 
+#include <base/defines.h>
+
+/// Not used directly anymore (the allocation machinery moved to the .cpp), but kept so
+/// the set of symbols this widely-included header transitively provides (e.g. config.h
+/// macros) does not change for downstream translation units.
 #include <Common/AllocationInterceptors.h>
 #include <Common/CurrentMemoryTracker.h>
+
+
+/// The throw is kept in a cold, never-inlined helper so that allocate() (which is
+/// inlined into hot allocation sites) does not carry exception-handling machinery.
+[[noreturn]] [[gnu::cold]] NO_INLINE inline void throwBadAllocFromAllocatorWithMemoryTracking()
+{
+    throw std::bad_alloc();
+}
+
+/// Out-of-line allocation primitives. Keeping the tracker + malloc + onAlloc/onFree
+/// machinery in the .cpp lets allocate()/deallocate() inline to a single call, the same
+/// shape std::allocator has (operator new/delete are also out-of-line calls). With the
+/// machinery inlined, the container's fill-constructor became too large to inline into
+/// callers and turned into an out-of-line call, which perturbed register allocation in
+/// hot functions. `alignment == 0` selects the default (max_align_t) path.
+[[nodiscard]] void * allocateWithMemoryTracking(size_t bytes, size_t alignment);
+void deallocateWithMemoryTracking(void * p, size_t bytes) noexcept;
 
 
 /// Implementation of std::allocator interface that tracks memory with MemoryTracker.
@@ -38,42 +62,16 @@ struct AllocatorWithMemoryTracking
 
     [[nodiscard]] T * allocate(size_t n)
     {
-        if (n > std::numeric_limits<size_t>::max() / sizeof(T))
-            throw std::bad_alloc();
+        if (n > std::numeric_limits<size_t>::max() / sizeof(T)) [[unlikely]]
+            throwBadAllocFromAllocatorWithMemoryTracking();
 
-        size_t bytes = n * sizeof(T);
-        auto trace = CurrentMemoryTracker::alloc(bytes);
-
-        T * p = nullptr;
-        if constexpr (alignof(T) > alignof(std::max_align_t))
-        {
-            const int res = __real_posix_memalign(reinterpret_cast<void **>(&p), alignof(T), bytes);
-            if (res != 0)
-                // We don't have to, but to be sure
-                p = nullptr;
-        }
-        else
-        {
-            p = static_cast<T *>(__real_malloc(bytes));
-        }
-        if (!p)
-        {
-            [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(bytes);
-            throw std::bad_alloc();
-        }
-
-        trace.onAlloc(p, bytes);
-
-        return p;
+        constexpr size_t alignment = alignof(T) > alignof(std::max_align_t) ? alignof(T) : 0;
+        return static_cast<T *>(allocateWithMemoryTracking(n * sizeof(T), alignment));
     }
 
     void deallocate(T * p, size_t n) noexcept
     {
-        size_t bytes = n * sizeof(T);
-
-        __real_free(p);
-        auto trace = CurrentMemoryTracker::free(bytes);
-        trace.onFree(p, bytes);
+        deallocateWithMemoryTracking(p, n * sizeof(T));
     }
 };
 
@@ -111,27 +109,33 @@ struct BytesAwareAllocatorWithMemoryTracking
     BytesAwareAllocatorWithMemoryTracking(const BytesAwareAllocatorWithMemoryTracking&) = default;
     BytesAwareAllocatorWithMemoryTracking& operator=(const BytesAwareAllocatorWithMemoryTracking&) = default;
 
+    /// A moved-from allocator must stay usable (the container may keep using it), so leave it
+    /// with a fresh, empty counter instead of a null pointer.
     BytesAwareAllocatorWithMemoryTracking(BytesAwareAllocatorWithMemoryTracking && other) noexcept
-        : bytes_allocated(std::move(other.bytes_allocated))
+        : bytes_allocated(std::exchange(other.bytes_allocated, std::make_shared<size_t>(0)))
     {
-        other.bytes_allocated = std::make_shared<size_t>(0);
     }
 
     BytesAwareAllocatorWithMemoryTracking& operator=(BytesAwareAllocatorWithMemoryTracking && other) noexcept
     {
-        bytes_allocated = other.bytes_allocated;
-        other.bytes_allocated = std::make_shared<size_t>(0);
+        bytes_allocated = std::exchange(other.bytes_allocated, std::make_shared<size_t>(0));
         return *this;
     }
 
+    /// Rebinding converting constructor required by the allocator interface; it must stay
+    /// non-explicit and share the counter so rebound node allocators track the same container.
+    /// NOLINTNEXTLINE(google-explicit-constructor)
     template <typename U>
-    BytesAwareAllocatorWithMemoryTracking(const BytesAwareAllocatorWithMemoryTracking<U>& other)
+    BytesAwareAllocatorWithMemoryTracking(const BytesAwareAllocatorWithMemoryTracking<U>& other) /// NOLINT
         : bytes_allocated(other.bytes_allocated) {}
 
     T* allocate(size_t n)
     {
+        /// Increment only after a successful allocation so the counter does not drift upward
+        /// when the underlying allocation throws.
+        T * result = AllocatorWithMemoryTracking<T>().allocate(n);
         *bytes_allocated += n * sizeof(T);
-        return AllocatorWithMemoryTracking<T>().allocate(n);
+        return result;
     }
 
     void deallocate(T * p, size_t n)
@@ -143,11 +147,11 @@ struct BytesAwareAllocatorWithMemoryTracking
     /// NOLINTNEXTLINE
     BytesAwareAllocatorWithMemoryTracking<T> select_on_container_copy_construction() const
     {
-        /// During the container copy, the copied allocator should receive
-        /// the previously defined amount of bytes allocated and then live its own life.
-        BytesAwareAllocatorWithMemoryTracking<T> allocator;
-        allocator.bytes_allocated = bytes_allocated;
-        return allocator;
+        /// A copied container allocates its own nodes through the returned allocator, so the
+        /// copy must start with a fresh (zero) counter and accumulate exactly its own bytes.
+        /// Sharing `bytes_allocated` would make the source and the copy double-count into the
+        /// same counter; copying the current value would over-count once the copy re-allocates.
+        return BytesAwareAllocatorWithMemoryTracking<T>();
     }
 
     size_t getBytesAllocated() const
@@ -161,5 +165,8 @@ struct BytesAwareAllocatorWithMemoryTracking
         return bytes_allocated == other.bytes_allocated;
     }
 
+    /// The counter is held by `shared_ptr` so that all allocator instances the container creates
+    /// internally (copies, and rebound node allocators produced via `rebind`) share one counter
+    /// and report the container's total byte usage through any of them.
     std::shared_ptr<size_t> bytes_allocated = std::make_shared<size_t>(0);
 };

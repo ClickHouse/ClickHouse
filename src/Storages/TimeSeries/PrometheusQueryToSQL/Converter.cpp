@@ -2,6 +2,7 @@
 
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
@@ -12,12 +13,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultColumns.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
-
-
-namespace DB::ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 
 namespace DB::PrometheusQueryToSQL
@@ -93,11 +88,19 @@ namespace
                 return applyBinaryOperator(binary_operator, std::move(left_argument), std::move(right_argument), context);
             }
 
-            default:
+            case NodeType::AggregationOperator:
             {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Prometheus query node type {} is not implemented", node->node_type);
+                const auto * aggregation_operator = static_cast<const PQT::AggregationOperator *>(node);
+                std::vector<SQLQueryPiece> arguments;
+                for (const auto * arg_node : aggregation_operator->getArguments())
+                {
+                    arguments.push_back(visitNode(arg_node, context));
+                }
+                return applyAggregationOperator(aggregation_operator, std::move(arguments), context);
             }
         }
+
+        UNREACHABLE();
     }
 }
 

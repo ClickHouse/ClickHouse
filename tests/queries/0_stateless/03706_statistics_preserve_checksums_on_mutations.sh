@@ -14,14 +14,16 @@ create table mt (key Int, value String) engine=MergeTree() order by key settings
   min_bytes_for_wide_part=0,
   -- otherwise sparse info will be different, since for INSERTs the sparse ratio is calculated for the whole block, while for mutations for each granula (FIXME?)
   ratio_of_defaults_for_sparse_serialization=1,
-  -- Pin serialization_info_version to 'basic': with 'with_types' the INSERT and mutation
-  -- paths produce different serialization.json content (the mutation always uses the table's
-  -- stored settings while the INSERT path may produce different serialization info metadata),
+  map_serialization_version='basic',
+  map_serialization_version_for_zero_level_parts='basic',
+  -- Pin serialization_info_version to 'basic': with 'with_types', the INSERT and mutation
+  -- paths may produce different serialization.json content (different type version metadata),
   -- causing checksum mismatches that are not actual data corruption.
   serialization_info_version='basic',
   -- This uncovers the bug
   auto_statistics_types='uniq,minmax,countmin,tdigest'
 ;
+SET materialize_statistics_on_insert = 1;
 insert into mt select number, repeat('a', number) from numbers(10e3) settings max_block_size=1e6;
 -- { echo }
 select count() from mt;

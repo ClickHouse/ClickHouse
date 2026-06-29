@@ -20,7 +20,7 @@ DiskObjectStoragePtr DiskObjectStorage::wrapWithCache(FileCachePtr cache, const 
 
     auto cache_disk = std::make_shared<DiskObjectStorage>(
         layer_name,
-        std::make_shared<ClusterConfiguration>(cluster->getConfiguration()),
+        std::make_shared<ClusterConfiguration>(layer_name, cluster->getConfiguration()),
         std::make_shared<MetadataStorageFromCacheObjectStorage>(metadata_storage),
         std::make_shared<ObjectStorageRouter>(std::move(registry)),
         std::dynamic_pointer_cast<const DiskObjectStorage>(shared_from_this()),

@@ -1,5 +1,7 @@
 -- Tags: global
 
+SET use_statistics = 0; -- auto_statistics_types causes extra rows to be read
+
 drop table if exists xp;
 drop table if exists xp_d;
 

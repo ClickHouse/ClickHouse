@@ -4,7 +4,6 @@
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_Default.h>
-#include <Common/Logger.h>
 #include <Disks/DiskType.h>
 #include <Disks/IDisk.h>
 #include <IO/S3Common.h>
@@ -49,6 +48,7 @@ public:
         const String & secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
+        const String & external_id,
         bool allow_s3_native_copy,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
@@ -82,6 +82,7 @@ public:
         const String & secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
+        const String & external_id,
         bool allow_s3_native_copy,
         const String & storage_class_name,
         const ReadSettings & read_settings_,

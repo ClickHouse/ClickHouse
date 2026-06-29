@@ -5,22 +5,21 @@
 #include <mutex>
 #include <condition_variable>
 #include <functional>
-#include <queue>
 #include <list>
 #include <optional>
 #include <atomic>
 #include <stack>
 #include <random>
 
+#include <boost/core/noncopyable.hpp>
 #include <boost/heap/priority_queue.hpp>
 #include <pcg_random.hpp>
 
 #include <Poco/Event.h>
-#include <Common/ThreadStatus.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadWithStackSize.h>
 #include <Common/Priority.h>
-#include <Common/StackTrace.h>
 #include <base/scope_guard.h>
 
 class JobWithPriority;
@@ -44,6 +43,10 @@ public:
     // see https://docs.kernel.org/admin-guide/sysctl/kernel.html#threads-max
     static constexpr int MAX_THEORETICAL_THREAD_COUNT = 0x3fffffff; // ~1 billion
 
+    // Upper bound on the number of jobs we pre-reserve memory for. The queue can still grow
+    // up to queue_size on demand; this only bounds the initial reservation.
+    static constexpr size_t MAX_JOBS_TO_RESERVE = 1'000'000;
+
     using Job = std::function<void()>;
     using Metric = CurrentMetrics::Metric;
 
@@ -65,6 +68,9 @@ public:
         ~ThreadFromThreadPool();
 
     private:
+        /// Allow enclosing ThreadPoolImpl to access per-thread idle notification members.
+        friend ThreadPoolImpl;
+
         ThreadPoolImpl& parent_pool;
         Thread thread;
 
@@ -80,6 +86,27 @@ public:
 
         // Stores the position of the thread in the parent thread pool list
         typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_it;
+
+        /// Per-thread condition variable for LIFO idle scheduling.
+        /// Each idle thread waits on its own CV, so the scheduler can wake the
+        /// LIFO-selected thread directly without disturbing other idle threads.
+        /// This avoids the thundering herd that a shared CV with `notify_all` creates.
+        std::condition_variable cv;
+
+        /// LIFO idle thread scheduling flag.
+        /// When a new job is scheduled, the most recently idle thread is popped
+        /// from the LIFO stack, this flag is set to true, and only that thread's
+        /// CV is notified. The worker wait predicate also re-checks the real
+        /// pool state (queued jobs, shutdown, excess threads) as a safety net
+        /// against missed wake-ups, so a worker that wakes either directly or
+        /// through a spurious CV signal will still pick up pending work.
+        bool idle_wakeup_flag = false;
+
+        /// Intrusive links in the parent pool idle stack. They avoid allocations
+        /// in the worker idle path, which runs under `DENY_ALLOCATIONS_IN_SCOPE`.
+        ThreadFromThreadPool * idle_prev = nullptr;
+        ThreadFromThreadPool * idle_next = nullptr;
+        bool in_idle_stack = false;
 
         // Remove itself from the parent pool
         void removeSelfFromPoolNoPoolLock();
@@ -165,7 +192,6 @@ private:
 
     mutable std::mutex mutex;
     std::condition_variable job_finished;
-    std::condition_variable new_job_or_shutdown;
 
     Metric metric_threads;
     Metric metric_active_threads;
@@ -200,18 +226,55 @@ private:
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 
+    /// Intrusive LIFO stack of idle threads for wake-up scheduling.
+    /// When a new job is scheduled, the most recently idle thread is woken first.
+    /// This concentrates work on fewer OS threads, improving CPU cache locality
+    /// and reducing memory fragmentation from allocator per-thread caches (e.g. jemalloc tcache).
+    /// See https://github.com/ClickHouse/ClickHouse/issues/10818
+    ThreadFromThreadPool * idle_thread_head = nullptr; /// Oldest idle thread.
+    ThreadFromThreadPool * idle_thread_tail = nullptr; /// Most recently idle thread.
+    size_t idle_thread_count = 0;
+
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();
 
+    /// Idle stack operations. Must be called with mutex held.
+    void pushIdleThreadNoLock(ThreadFromThreadPool * thread);
+    void removeIdleThreadNoLock(ThreadFromThreadPool * thread);
+    ThreadFromThreadPool * popNewestIdleThreadNoLock();
+    ThreadFromThreadPool * popOldestIdleThreadNoLock();
+    void wakeIdleThreadNoLock(ThreadFromThreadPool * thread);
+
+    /// Wake all threads in the idle stack and set their wakeup flags (for shutdown).
+    /// Must be called with mutex held.
+    void wakeUpAllIdleThreadsNoLock();
+
+    /// Wake just enough idle threads to bring `threads.size()` down to the current
+    /// limit. Preserves LIFO order for the rest of the stack. Must be called with
+    /// mutex held. Used when `max_threads`/`max_free_threads` shrink: we wake the
+    /// excess threads from the bottom of the stack (oldest-idle first) so the
+    /// recently-active workers stay in the LIFO position they earned.
+    void wakeUpExcessIdleThreadsNoLock();
+
     void finalize();
     void onDestroy();
 };
 
-/// ThreadPool with std::thread for threads.
-using FreeThreadPool = ThreadPoolImpl<std::thread>;
+/// The OS-thread type backing the global pool. On macOS we use a wrapper that requests a larger
+/// stack than the small 512 KiB default (see ThreadStackSize.h); elsewhere plain std::thread, whose
+/// default stack already follows RLIMIT_STACK. `std::is_same_v<Thread, GlobalThreadType>` is used
+/// across ThreadPoolImpl to tell the global pool apart from local (ThreadFromGlobalPool) pools.
+#if defined(OS_DARWIN)
+using GlobalThreadType = DB::ThreadWithStackSize;
+#else
+using GlobalThreadType = std::thread;
+#endif
+
+/// ThreadPool with OS threads.
+using FreeThreadPool = ThreadPoolImpl<GlobalThreadType>;
 
 
 /** Global ThreadPool that can be used as a singleton.
@@ -255,6 +318,27 @@ public:
 };
 
 
+/// State of a ThreadFromGlobalPoolImpl, shared with the running thread.
+/// Non-templated so the worker entry point can live in the .cpp.
+struct ThreadFromGlobalPoolState
+{
+    /// Should be atomic() because of possible concurrent access between
+    /// assignment and joinable() check.
+    std::atomic<std::thread::id> thread_id;
+    Poco::Event event;
+};
+
+/// Worker entry point implementing ThreadFromGlobalPoolImpl's constructor body.
+/// Lives in the .cpp so that ThreadStatus, scope_guard and friends do not leak via this header.
+void startThreadFromGlobalPool(
+    std::shared_ptr<ThreadFromGlobalPoolState> state,
+    std::function<void()> func,
+    UInt64 global_profiler_real_time_period_ns,
+    UInt64 global_profiler_cpu_time_period_ns,
+    bool global_trace_collector_allowed,
+    bool propagate_opentelemetry_context);
+
+
 /** Looks like std::thread but allocates threads in GlobalThreadPool.
   * Also holds ThreadStatus for ClickHouse.
   *
@@ -269,52 +353,19 @@ public:
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
-        : state(std::make_shared<State>())
+        : state(std::make_shared<ThreadFromGlobalPoolState>())
     {
-        UInt64 global_profiler_real_time_period = GlobalThreadPool::instance().global_profiler_real_time_period_ns;
-        UInt64 global_profiler_cpu_time_period = GlobalThreadPool::instance().global_profiler_cpu_time_period_ns;
-        /// NOTE:
-        /// - If this will throw an exception, the destructor won't be called
-        /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
-        GlobalThreadPool::instance().scheduleOrThrow([
-            my_state = state,
-            global_profiler_real_time_period,
-            global_profiler_cpu_time_period,
-            my_func = std::forward<Function>(func),
-            my_args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
-        {
-            SCOPE_EXIT(
-                my_state->thread_id = std::thread::id();
-                my_state->event.set();
-            );
-
-            my_state->thread_id = std::this_thread::get_id();
-
-            /// This moves are needed to destroy function and arguments before exit.
-            /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
-            auto function = std::move(my_func);
-            auto arguments = std::move(my_args);
-
-            /// Thread status holds raw pointer on query context, thus it always must be destroyed
-            /// before sending signal that permits to join this thread.
-            DB::ThreadStatus thread_status;
-            if constexpr (global_trace_collector_allowed)
+        startThreadFromGlobalPool(
+            state,
+            [my_func = std::forward<Function>(func),
+             my_args = std::make_tuple(std::forward<Args>(args)...)]() mutable
             {
-                if (unlikely(global_profiler_real_time_period != 0 || global_profiler_cpu_time_period != 0))
-                    thread_status.initGlobalProfiler(global_profiler_real_time_period, global_profiler_cpu_time_period);
-            }
-            else
-            {
-                UNUSED(global_profiler_real_time_period);
-                UNUSED(global_profiler_cpu_time_period);
-            }
-
-            std::apply(function, arguments);
-        },
-        {}, // default priority
-        0, // default wait_microseconds
-        propagate_opentelemetry_context
-        );
+                std::apply(my_func, my_args);
+            },
+            GlobalThreadPool::instance().global_profiler_real_time_period_ns,
+            GlobalThreadPool::instance().global_profiler_cpu_time_period_ns,
+            global_trace_collector_allowed,
+            propagate_opentelemetry_context);
     }
 
     ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolImpl && rhs) noexcept
@@ -367,16 +418,7 @@ public:
     }
 
 protected:
-    struct State
-    {
-        /// Should be atomic() because of possible concurrent access between
-        /// assignment and joinable() check.
-        std::atomic<std::thread::id> thread_id;
-
-        /// The state used in this object and inside the thread job.
-        Poco::Event event;
-    };
-    std::shared_ptr<State> state;
+    std::shared_ptr<ThreadFromGlobalPoolState> state;
 
     /// Internally initialized() should be used over joinable(),
     /// since it is enough to know that the thread is initialized,

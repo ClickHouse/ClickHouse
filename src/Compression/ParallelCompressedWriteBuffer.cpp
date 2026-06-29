@@ -8,6 +8,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadGroupSwitcher.h>
 
 #include <Compression/ParallelCompressedWriteBuffer.h>
 

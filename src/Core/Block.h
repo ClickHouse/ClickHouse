@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/BlockInfo.h>
+#include <Core/Block_fwd.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
@@ -8,6 +9,7 @@
 #include <initializer_list>
 #include <vector>
 #include <Common/StringHashForHeterogeneousLookup.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 class SipHash;
@@ -18,7 +20,7 @@ namespace DB
 class ISerialization;
 class SerializationInfoByName;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
-using Serializations = std::vector<SerializationPtr>;
+using Serializations = VectorWithMemoryTracking<SerializationPtr>;
 
 /** Container for set of columns for bunch of rows in memory.
   * This is unit of data processing.
@@ -31,7 +33,7 @@ class Block
 {
 private:
     using Container = ColumnsWithTypeAndName;
-    using IndexByName = std::unordered_map<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
+    using IndexByName = UnorderedMapWithMemoryTracking<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 
     Container data;
     IndexByName index_by_name;
@@ -218,7 +220,7 @@ void removeSpecialColumnRepresentations(Block & block);
 Block materializeBlock(const Block & block, bool remove_special_column_representations = true);
 void materializeBlockInplace(Block & block, bool remove_special_column_representations = true);
 
-Block concatenateBlocks(const std::vector<Block> & blocks);
+Block concatenateBlocks(const Blocks & blocks);
 
 /// If the block has no columns, adds a dummy column with given number of rows.
 /// Without it, things like ExpressionActions can't tell many rows to output.

@@ -3,6 +3,9 @@
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 #include <base/types.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <initializer_list>
 #include <list>
@@ -14,7 +17,7 @@ namespace DB
 {
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
+using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
 
 class ReadBuffer;
 class WriteBuffer;
@@ -73,7 +76,11 @@ std::tuple_element_t<I, NameAndTypePair> & get(NameAndTypePair & name_and_type)
         return name_and_type.type;
 }
 
-using NamesAndTypes = std::vector<NameAndTypePair>;
+using NamesAndTypes = VectorWithMemoryTracking<NameAndTypePair>;
+/// Use the bytes-aware allocator so that `get_allocator().getBytesAllocated()` can report
+/// the memory used by this list (needed for the per-table caches in `MergeTreeData`).
+/// It still delegates the actual allocation to `AllocatorWithMemoryTracking`, so the
+/// memory-tracking guarantees of `ListWithMemoryTracking` are preserved.
 using NamesAndTypesListBase = std::list<NameAndTypePair, BytesAwareAllocatorWithMemoryTracking<NameAndTypePair>>;
 
 class NamesAndTypesList : public NamesAndTypesListBase
@@ -107,7 +114,7 @@ public:
     DataTypes getTypes() const;
 
     /// Creates a mapping from name to the type
-    std::unordered_map<std::string, DataTypePtr> getNameToTypeMap() const;
+    UnorderedMapWithMemoryTracking<std::string, DataTypePtr> getNameToTypeMap() const;
 
     /// Remove columns which names are not in the `names`.
     void filterColumns(const NameSet & names);
@@ -141,7 +148,7 @@ public:
     void writeTextWithNamesInStorage(WriteBuffer & buf) const;
 };
 
-using NamesAndTypesLists = std::vector<NamesAndTypesList>;
+using NamesAndTypesLists = VectorWithMemoryTracking<NamesAndTypesList>;
 
 }
 

@@ -99,6 +99,191 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
 
 bool DPJoinEntry::isLeaf() const { return !left && !right; }
 
+/// Resolve a JoinActionRef to an INPUT node suitable for equivalence tracking.
+/// Returns nullopt if the ref is not a simple single-relation INPUT column.
+static std::optional<JoinActionRef> resolveInput(const JoinActionRef & ref)
+{
+    auto resolved = ref.resolveAliases();
+    if (resolved.getNode()->type != ActionsDAG::ActionType::INPUT)
+        return std::nullopt;
+    if (!resolved.getSourceRelations().getSingleBit())
+        return std::nullopt;
+    return resolved;
+}
+
+void QueryGraph::buildColumnEquivalences()
+{
+    for (const auto & edge : edges)
+    {
+        if (!edge)
+            continue;
+
+        auto [op, lhs, rhs] = edge.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals)
+            continue;
+
+        auto lhs_resolved = resolveInput(lhs);
+        auto rhs_resolved = resolveInput(rhs);
+        if (!lhs_resolved || !rhs_resolved)
+            continue;
+
+        auto lhs_rel = lhs_resolved->getSourceRelations().getSingleBit();
+        auto rhs_rel = rhs_resolved->getSourceRelations().getSingleBit();
+
+        /// Skip predicates involving outer-joined relations: when a LEFT/RIGHT/FULL JOIN
+        /// doesn't match, the outer side produces NULLs, so the equality doesn't hold
+        /// for all rows and the transitive equivalence would be invalid.
+        auto lhs_it = join_kinds.find(*lhs_rel);
+        auto rhs_it = join_kinds.find(*rhs_rel);
+        if ((lhs_it != join_kinds.end() && !isInner(lhs_it->second.kind))
+            || (rhs_it != join_kinds.end() && !isInner(rhs_it->second.kind)))
+            continue;
+
+        /// Skip pinned predicates: they're conditionally applicable (only when the
+        /// pin relations are joined first), so the equality doesn't hold unconditionally
+        /// and the transitive equivalence cannot bypass the pin's constraint. Without
+        /// this skip, `areTransitivelyConnected` would consider `(A,C)` connected via
+        /// `a.w=c.w` even when that edge is pinned to require B, letting greedy commit
+        /// to a dead-end first pair.
+        if (auto pin_it = pinned.find(edge); pin_it != pinned.end() && pin_it->second.any())
+            continue;
+
+        column_equivalences.add(*lhs_resolved, *rhs_resolved);
+
+        LOG_TRACE(&Poco::Logger::get("JoinOrderOptimizer"),
+            "Column equivalence: relation {} `{}` = relation {} `{}`",
+            *lhs_rel, lhs_resolved->getColumnName(), *rhs_rel, rhs_resolved->getColumnName());
+    }
+}
+
+bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & right) const
+{
+    for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
+    {
+        auto member_rel = member.getSourceRelations().getSingleBit();
+        if (!member_rel || !left.test(*member_rel))
+            continue;
+
+        auto equiv_class = column_equivalences.getClass(member);
+        if (!equiv_class)
+            continue;
+
+        for (const auto & other : *equiv_class)
+        {
+            auto other_rel = other.getSourceRelations().getSingleBit();
+            if (other_rel && right.test(*other_rel))
+                return true;
+        }
+    }
+    return false;
+}
+
+/// Post-process the join tree to remove redundant predicates and synthesize missing ones.
+///
+/// Walks bottom-up building equivalence classes from each join step's predicates.
+/// At each step:
+///   1. Remove predicates whose endpoints are already equivalent from child joins.
+///      Non-redundant predicates are added to the equivalence classes immediately,
+///      so later predicates at the same step can also be detected as redundant.
+///   2. If no predicates remain (transitive-only join), synthesize one per equivalence
+///      class spanning the left and right subtrees.
+static void cleanupJoinPredicates(
+    const DPJoinEntryPtr & root,
+    const EquivalenceClasses<JoinActionRef> & column_equivalences)
+{
+    using EquivClasses = EquivalenceClasses<JoinActionRef>;
+
+    std::function<EquivClasses(const DPJoinEntryPtr &)> process =
+        [&](const DPJoinEntryPtr & entry) -> EquivClasses
+    {
+        if (entry->isLeaf())
+            return {};
+
+        /// Merge equivalence classes from both children.
+        auto equiv = process(entry->left);
+        equiv.merge(process(entry->right));
+
+        /// Phase 1: Remove redundant predicates.
+        auto & expressions = entry->join_operator.expression;
+        bool is_inner = isInner(entry->join_operator.kind);
+
+        std::erase_if(expressions, [&](const JoinActionRef & predicate)
+        {
+            auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+            if (op != JoinConditionOperator::Equals)
+                return false;
+
+            auto lhs_resolved = resolveInput(lhs);
+            auto rhs_resolved = resolveInput(rhs);
+            if (!lhs_resolved || !rhs_resolved)
+                return false;
+
+            auto lhs_class = equiv.getClass(*lhs_resolved);
+            auto rhs_class = equiv.getClass(*rhs_resolved);
+            if (lhs_class && rhs_class && lhs_class == rhs_class)
+            {
+                auto lhs_rel = lhs_resolved->getSourceRelations().getSingleBit();
+                auto rhs_rel = rhs_resolved->getSourceRelations().getSingleBit();
+                LOG_TRACE(&Poco::Logger::get("JoinOrderOptimizer"),
+                    "Removed redundant join predicate: relation {} `{}` = relation {} `{}`",
+                    lhs_rel ? *lhs_rel : 0, lhs_resolved->getColumnName(),
+                    rhs_rel ? *rhs_rel : 0, rhs_resolved->getColumnName());
+                return true;
+            }
+
+            /// Only propagate equivalences from inner joins to the parent;
+            /// outer join equality holds only for matching rows
+            /// and would be invalid for NULL-padded non-matching rows.
+            if (is_inner)
+                equiv.add(*lhs_resolved, *rhs_resolved);
+            return false;
+        });
+
+        /// Phase 2: Synthesize predicates for transitive-only joins.
+        if (expressions.empty() && isInner(entry->join_operator.kind))
+        {
+            const auto & left_rels = entry->left->relations;
+            const auto & right_rels = entry->right->relations;
+
+            using ConstClassPtr = EquivClasses::ConstClassPtr;
+            std::unordered_set<ConstClassPtr> visited;
+
+            for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
+            {
+                auto member_rel = member.getSourceRelations().getSingleBit();
+                if (!member_rel || !left_rels.test(*member_rel))
+                    continue;
+
+                auto equiv_class = column_equivalences.getClass(member);
+                if (!equiv_class || !visited.insert(equiv_class).second)
+                    continue;
+
+                for (const auto & other : *equiv_class)
+                {
+                    auto other_rel = other.getSourceRelations().getSingleBit();
+                    if (!other_rel || !right_rels.test(*other_rel))
+                        continue;
+
+                    expressions.push_back(JoinActionRef::transform(
+                        {member, other},
+                        JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+                    equiv.add(member, other);
+
+                    LOG_TRACE(&Poco::Logger::get("JoinOrderOptimizer"),
+                        "Synthesized transitive predicate: relation {} `{}` = relation {} `{}`",
+                        *member_rel, member.getColumnName(), *other_rel, other.getColumnName());
+                    /// One predicate per equivalence class is enough for connectivity.
+                    break;
+                }
+            }
+        }
+
+        return equiv;
+    };
+
+    process(root);
+}
+
 String DPJoinEntry::dump() const
 {
     if (isLeaf())
@@ -109,8 +294,9 @@ String DPJoinEntry::dump() const
 class JoinOrderOptimizer
 {
 public:
-    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_)
+    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_)
         : query_graph(std::move(query_graph_))
+        , max_searched_plans(max_searched_plans_)
         , enabled_algorithms(enabled_algorithms_)
     {
         auto context = CurrentThread::tryGetQueryContext();
@@ -127,16 +313,47 @@ private:
 
     std::shared_ptr<DPJoinEntry> solveDPsize();
     std::shared_ptr<DPJoinEntry> solveGreedy();
+    std::shared_ptr<DPJoinEntry> solveDPhyp();
 
     std::optional<JoinKind> isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const;
     std::vector<JoinActionRef *> getApplicableExpressions(const BitSet & left, const BitSet & right);
 
     double computeSelectivity(const JoinActionRef & edge);
     double computeSelectivity(const std::vector<JoinActionRef *> & edges);
+    double computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
     size_t getColumnStats(BitSet rels, const String & column_name);
 
-    /// Peridically called from potentially long running optimization to check time limits and send progress
+    /// Periodically called from potentially long running optimization to check time limits and send progress
     void checkLimits();
+
+    /// Polled inside the DPhyp enumeration loops. Returns false to stop enumeration when a partial plan
+    /// cannot be handled or the search budget is exhausted, so `solveDPhyp` returns nullptr and the next
+    /// algorithm in the chain runs. Throws via `checkLimits` on query timeout or cancellation.
+    bool continueEnumeration();
+
+    /// Try to build the best join plan between left_rels and right_rels.
+    /// Updates dp_table if a better plan is found.
+    void tryJoin(const BitSet & left_rels, const BitSet & right_rels);
+
+    /// Core plan-building logic shared by DPsize and DPhyp.
+    /// Computes selectivity and cost for the given predicates, and updates dp_table if this plan is better.
+    /// Returns the new entry if dp_table was updated, nullptr otherwise.
+    DPJoinEntryPtr evaluateJoin(
+        const DPJoinEntryPtr & left,
+        const DPJoinEntryPtr & right,
+        JoinKind join_kind,
+        std::vector<JoinActionRef *> & predicates);
+
+    /// DPhyp helpers
+    void buildHyperedges();
+    BitSet getNeighborhood(const BitSet & node_set) const;
+
+    /// DPhyp enumeration functions from "Dynamic Programming Strikes Back"
+    /// (Moerkotte & Neumann, SIGMOD 2008), Section 3.
+    void emitCsg(const BitSet & csg);                       /// Generate complement seeds for a connected subgraph
+    void enumerateCsgRec(const BitSet & csg, const BitSet & exclusion); /// Grow the primary connected subgraph
+    void emitCsgCmp(const BitSet & left_csg, const BitSet & right_csg); /// Evaluate a csg-cmp pair
+    void enumerateCmpRec(const BitSet & csg, const BitSet & complement, const BitSet & exclusion); /// Grow the complement
 
     constexpr static auto APPLY_DP_THRESHOLD = 10;
 
@@ -144,6 +361,31 @@ private:
     std::unordered_map<JoinActionRef, bool> applied;
     std::unordered_map<JoinActionRef, double> expression_selectivity;
     std::unordered_map<BitSet, DPJoinEntryPtr> dp_table;
+
+    /// A hyperedge in the join graph connecting a set of left relations to a set of right relations.
+    /// For simple binary predicates (A.x = B.y), |left| = |right| = 1.
+    /// For complex predicates (A.x = B.y + C.z), left and/or right may span multiple relations.
+    struct Hyperedge
+    {
+        BitSet left;
+        BitSet right;
+    };
+
+    /// DPhyp hyperedge representation (built lazily by buildHyperedges)
+    std::vector<Hyperedge> hyperedges;
+    std::vector<std::vector<size_t>> node_to_edge_ids; /// node index -> hyperedge indices
+
+    /// Set by `tryJoin` when it encounters a single-table or constant predicate inside the join edges
+    /// that `dphyp` does not yet know how to attach. `solveDPhyp` returns `nullptr` so the fallback
+    /// algorithm chain (e.g. `dphyp,greedy`) can produce a valid plan.
+    bool dphyp_unsupported_predicate = false;
+
+    /// Number of partial plans enumerated so far and the deterministic budget that bounds it.
+    /// When the budget is exceeded the current solver gives up and returns `nullptr` so the next
+    /// algorithm in the chain runs. Both are reset at the start of each solver.
+    size_t searched_plans = 0;
+    bool search_budget_exceeded = false;
+    const UInt64 max_searched_plans;
 
     const std::vector<JoinOrderAlgorithm> enabled_algorithms;
     LoggerPtr log = getLogger("JoinOrderOptimizer");
@@ -158,6 +400,25 @@ void JoinOrderOptimizer::checkLimits()
         query_status->checkTimeLimit();
     if (interactive_cancel_callback)
         interactive_cancel_callback();
+}
+
+bool JoinOrderOptimizer::continueEnumeration()
+{
+    if (dphyp_unsupported_predicate || search_budget_exceeded)
+        return false;
+    ++searched_plans;
+    if (max_searched_plans && searched_plans > max_searched_plans)
+    {
+        search_budget_exceeded = true;
+        LOG_TRACE(log, "Exceeded the limit of {} searched plans, falling back", max_searched_plans);
+        return false;
+    }
+    /// `checkLimits` invokes the interactive cancel callback, which can send progress over the
+    /// network and snapshot profile events. Poll it once every few thousand enumerated subsets
+    /// instead of on every one, which would otherwise dominate the optimization time.
+    if ((searched_plans & 0xFFF) == 0)
+        checkLimits();
+    return true;
 }
 
 size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_name)
@@ -209,6 +470,58 @@ double JoinOrderOptimizer::computeSelectivity(const std::vector<JoinActionRef *>
     double selectivity = 1.0;
     for (const auto & edge : edges)
         selectivity = std::min(selectivity, computeSelectivity(*edge));
+    return selectivity;
+}
+
+/// Compute selectivity combining direct edges and transitive equivalence classes.
+/// Direct edges and transitive equivalences may cover different columns between
+/// the two relation sets, so both contribute to the overall selectivity.
+double JoinOrderOptimizer::computeSelectivity(
+    const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right)
+{
+    double selectivity = computeSelectivity(edges);
+
+    /// Also account for transitively-equivalent columns spanning both sides.
+    using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
+    std::unordered_set<ConstClassPtr> visited;
+
+    for (const auto & [member, _] : query_graph.column_equivalences.getMemberToClassMap())
+    {
+        auto member_rel = member.getSourceRelations().getSingleBit();
+        if (!member_rel || !left.test(*member_rel))
+            continue;
+
+        auto equiv_class = query_graph.column_equivalences.getClass(member);
+        if (!equiv_class || !visited.insert(equiv_class).second)
+            continue;
+
+        /// Find the maximum NDV across all members of this class that belong
+        /// to either side of the join. This is equivalent to evaluating all
+        /// (left_member, right_member) pairs and taking the minimum selectivity,
+        /// since min(1/max(l,r)) = 1/max(all l's and r's).
+        size_t max_ndv = 0;
+        bool has_left = false;
+        bool has_right = false;
+        for (const auto & equiv_member : *equiv_class)
+        {
+            auto relation = equiv_member.getSourceRelations().getSingleBit();
+            if (!relation)
+                continue;
+            if (left.test(*relation))
+            {
+                has_left = true;
+                max_ndv = std::max(max_ndv, getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName()));
+            }
+            else if (right.test(*relation))
+            {
+                has_right = true;
+                max_ndv = std::max(max_ndv, getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName()));
+            }
+        }
+        if (has_left && has_right && max_ndv > 0)
+            selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
+    }
+
     return selectivity;
 }
 
@@ -266,6 +579,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
             case JoinOrderAlgorithm::DPSIZE:
                 best_plan = solveDPsize();
                 break;
+            case JoinOrderAlgorithm::DPHYP:
+                best_plan = solveDPhyp();
+                break;
             case JoinOrderAlgorithm::GREEDY:
                 best_plan = solveGreedy();
                 if (!best_plan)
@@ -304,15 +620,15 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
         if (pin_it != query_graph.pinned.end())
         {
             /** We pin the expression in two cases:
-              * 1. The expression is part of an OUTER JOIN ON clause.
-              * 2. The expression depends on a relation that was previously part of an OUTER JOIN.
-              * In the first case, the OUTER JOINed relation can only appear as a singleton in the `left` or `right` set.
-              * In the second case, the relation can be part of a bushy tree,
-              * so the expression is not strictly applied the first time its pinned relation is joined.
-              * Here, we just check if the expression is pinned to another join,
-              * which can be different from the expression's source relations.
+              * 1. The expression is part of an OUTER JOIN ON clause — pinned to the
+              *    NULL-supplying side.
+              * 2. The expression of an INNER join sits above a child outer-join
+              *    boundary it cannot legally be pushed past — pinned to the
+              *    null-supplying relations of every such boundary it crosses.
+              * The pin set is the relations that MUST all be in `joined_rels`
+              * before the edge is applicable, so check subset.
               */
-            if (!joined_rels.test(pin_it->second))
+            if (!isSubsetOf(pin_it->second, joined_rels))
                 continue;
         }
 
@@ -323,6 +639,13 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 {
+    /// Discard any partial state left by an earlier algorithm in the fallback chain
+    /// (e.g. `dphyp,greedy`) so cost-model lookups via `getColumnStats` only see
+    /// entries built by this run. `expression_selectivity` is cleared along with
+    /// `dp_table` because multi-relation predicates resolve NDV through it.
+    dp_table.clear();
+    expression_selectivity.clear();
+
     std::deque<std::shared_ptr<DPJoinEntry>> components;
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
@@ -351,15 +674,21 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     continue;
 
                 auto edge = getApplicableExpressions(left->relations, right->relations);
-                if (edge.empty() && best_plan)
+                bool connected = !edge.empty()
+                    || query_graph.areTransitivelyConnected(left->relations, right->relations);
+                if (!connected && best_plan)
                     continue;
 
-                auto selectivity = computeSelectivity(edge);
+                auto selectivity = computeSelectivity(edge, left->relations, right->relations);
                 auto current_cost = computeJoinCost(left, right, selectivity);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
-                    if (!edge.empty() && join_kind == JoinKind::Cross)
-                        join_kind = JoinKind::Inner;
+                    /// Derive the cartesian distinction from actual connectivity:
+                    /// an Inner pair with no connecting predicate is a Cross join.
+                    /// This keeps Cross/Comma semantics without storing a marker in
+                    /// join_kinds, so outer-join restrictions on relation 0 survive.
+                    if (join_kind == JoinKind::Inner && !connected)
+                        join_kind = JoinKind::Cross;
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                     JoinOperator join_operator(
                         join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
@@ -444,7 +773,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 static bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet & right)
 {
     const auto & participating = predicate->getSourceRelations();
-    return (participating & left) && (participating & right);
+    return areIntersecting(participating, left) && areIntersecting(participating, right);
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
@@ -454,7 +783,12 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     /// Components by size (index 0 is not used that why the size is N+1)
     std::vector<std::unordered_map<BitSet, DPJoinEntryPtr>> components(total_relations_count + 1);
 
-    /// Populate DP table for components of size=1
+    /// Populate DP table for components of size=1.
+    /// Also reset the per-edge selectivity cache so an earlier algorithm in the
+    /// fallback chain cannot leak cached `1.0` defaults from a partial `dp_table`.
+    dp_table.clear();
+    expression_selectivity.clear();
+    searched_plans = 0;
     for (size_t i = 0; i < total_relations_count; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
@@ -472,8 +806,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
 
             for (const auto & [_, right] : components[smaller_component_size])
             {
-                checkLimits();
-
                 for (const auto & [_, left] : components[bigger_component_size])
                 {
                     /// Do components overlap?
@@ -484,7 +816,16 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                     if (smaller_component_size == bigger_component_size && *left->relations.begin() > *right->relations.begin())
                         continue;
 
-                    const auto combined_relations = left->relations | right->relations;
+                    ++searched_plans;
+                    if (max_searched_plans && searched_plans > max_searched_plans)
+                    {
+                        LOG_TRACE(log, "Exceeded the limit of {} searched plans, falling back", max_searched_plans);
+                        return nullptr;
+                    }
+                    /// `checkLimits` invokes the interactive cancel callback, which can send progress over
+                    /// the network. Poll it once every few thousand pairs instead of on every one.
+                    if ((searched_plans & 0xFFF) == 0)
+                        checkLimits();
 
                     auto join_kind = isValidJoinOrder(left->relations, right->relations);
                     if (!join_kind)
@@ -495,7 +836,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                         continue;
 
                     auto applicable_edge = getApplicableExpressions(left->relations, right->relations);
-                    /// Only leave the edges that connect left and right
+                    /// Only leave the edges that connect left and right.
+                    /// DPsize also includes non-connecting predicates (single-table filters) at the earliest
+                    /// stage (component_size == 2), unlike DPhyp which handles them separately via the hyperedge graph.
                     std::vector<JoinActionRef *> edge;
                     for (auto & edge_it : applicable_edge)
                     {
@@ -506,7 +849,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                         }
                         else if ((edge_it->fromLeft() || edge_it->fromRight() || edge_it->fromNone()) && component_size == 2)
                         {
-                            /// If a predicate does not connect tables we add it at the earliest stage - when joining just 2 tables
                             LOG_TEST(log, "Adding early non-connecting predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
                             edge.push_back(edge_it);
                         }
@@ -516,33 +858,18 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                         }
                     }
 
-                    LOG_TEST(log, "Considering join between {} and {}, predicates count: {}", left->dump(), right->dump(), edge.size());
+                    bool connected = !edge.empty()
+                        || query_graph.areTransitivelyConnected(left->relations, right->relations);
 
-                    if (edge.empty())
+                    LOG_TEST(log, "Considering join between {} and {}, predicates count: {}, connected: {}",
+                        left->dump(), right->dump(), edge.size(), connected);
+
+                    if (!connected)
                         continue;
 
-                    auto selectivity = computeSelectivity(edge);
-                    auto new_cost = computeJoinCost(left, right, selectivity);
-
-                    auto current_best = dp_table.find(combined_relations);
-                    if (current_best == dp_table.end() || new_cost < current_best->second->cost)
-                    {
-                        if (!edge.empty() && join_kind == JoinKind::Cross)
-                            join_kind = JoinKind::Inner;
-                        auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
-                        JoinOperator join_operator(
-                            join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
-                            std::ranges::to<std::vector>(edge | std::views::transform([](const auto * e) { return *e; })));
-                        auto new_best_plan = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
-
-                        LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
-                            new_best_plan->dump(), new_best_plan->left->dump(), new_best_plan->right->dump(),
-                            new_best_plan->cost, new_best_plan->estimated_rows ? toString(*new_best_plan->estimated_rows) : "unknown",
-                            new_best_plan->join_operator.dump());
-
-                        dp_table[combined_relations] = new_best_plan;
-                        components[component_size][combined_relations] = new_best_plan;
-                    }
+                    auto new_entry = evaluateJoin(left, right, *join_kind, edge);
+                    if (new_entry)
+                        components[component_size][new_entry->relations] = new_entry;
                 }
             }
         }
@@ -556,6 +883,497 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     return nullptr;
 }
 
+void JoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & right_rels)
+{
+    auto left_entry = dp_table.find(left_rels);
+    if (left_entry == dp_table.end())
+        return;
+
+    auto right_entry = dp_table.find(right_rels);
+    if (right_entry == dp_table.end())
+        return;
+
+    auto join_kind = isValidJoinOrder(left_rels, right_rels);
+    if (!join_kind)
+        return;
+
+    /// Restrict to inner joins for now (same as DPsize FIXME)
+    if (*join_kind != JoinKind::Inner)
+        return;
+
+    auto applicable_predicates = getApplicableExpressions(left_rels, right_rels);
+    std::vector<JoinActionRef *> connecting_predicates;
+    for (auto * predicate : applicable_predicates)
+    {
+        if (connects(predicate, left_rels, right_rels))
+        {
+            connecting_predicates.push_back(predicate);
+            continue;
+        }
+
+        /// Predicates spanning 2+ relations were already applied in a sub-join.
+        /// Single-table or constant predicates (e.g. moved into `ON` by
+        /// `query_plan_merge_filter_into_join_condition`) are not handled by `dphyp` here;
+        /// `dpsize` attaches them at the smallest containing join, but `dphyp` would need
+        /// extra bookkeeping to avoid double-application. For now, mark the query as
+        /// unsupported and let `solveDPhyp` return `nullptr` so the fallback chain runs.
+        if (predicate->getSourceRelations().count() < 2)
+        {
+            LOG_TRACE(log, "DPhyp cannot attach non-connecting predicate {} (sources: {{ {} }}), falling back",
+                predicate->dump(), fmt::join(predicate->getSourceRelations(), ","));
+            dphyp_unsupported_predicate = true;
+            return;
+        }
+    }
+
+    /// When no explicit predicate connects the two sides, check transitive connectivity
+    /// via column equivalence classes (e.g. A.key=B.key AND B.key=C.key implies A.key=C.key).
+    /// `cleanupJoinPredicates` will synthesize the missing predicate after optimization.
+    if (connecting_predicates.empty()
+        && !query_graph.areTransitivelyConnected(left_rels, right_rels))
+        return;
+
+    evaluateJoin(left_entry->second, right_entry->second, *join_kind, connecting_predicates);
+}
+
+DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
+    const DPJoinEntryPtr & left,
+    const DPJoinEntryPtr & right,
+    JoinKind join_kind,
+    std::vector<JoinActionRef *> & predicates)
+{
+    auto selectivity = computeSelectivity(predicates, left->relations, right->relations);
+    auto new_cost = computeJoinCost(left, right, selectivity);
+
+    const BitSet combined_rels = left->relations | right->relations;
+    auto current_best = dp_table.find(combined_rels);
+    if (current_best != dp_table.end() && new_cost >= current_best->second->cost)
+        return nullptr;
+
+    /// Transitively connected pairs are inner joins; their predicate is synthesized later.
+    bool connected = !predicates.empty()
+        || query_graph.areTransitivelyConnected(left->relations, right->relations);
+    auto effective_kind = (connected && join_kind == JoinKind::Cross) ? JoinKind::Inner : join_kind;
+    auto cardinality = estimateJoinCardinality(left, right, selectivity, effective_kind);
+    JoinOperator join_operator(
+        effective_kind, JoinStrictness::All, JoinLocality::Unspecified,
+        std::ranges::to<std::vector>(predicates | std::views::transform([](const auto * p) { return *p; })));
+    auto new_entry = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
+
+    LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
+        new_entry->dump(), left->dump(), right->dump(),
+        new_entry->cost, new_entry->estimated_rows ? toString(*new_entry->estimated_rows) : "unknown",
+        new_entry->join_operator.dump());
+
+    dp_table[combined_rels] = new_entry;
+    return new_entry;
+}
+
+/// Build the hyperedge representation of the join graph used by DPhyp.
+/// Each join predicate becomes a hyperedge (left_rels, right_rels).
+/// Column equivalence classes add synthetic edges for transitively-connected pairs.
+/// The adjacency index `node_to_edge_ids` maps each relation to the hyperedges that touch it.
+void JoinOrderOptimizer::buildHyperedges()
+{
+    const size_t num_relations = query_graph.relation_stats.size();
+    node_to_edge_ids.assign(num_relations, {});
+    hyperedges.clear();
+
+    auto add_hyperedge = [&](const BitSet & left_rels, const BitSet & right_rels)
+    {
+        size_t hyperedge_id = hyperedges.size();
+        hyperedges.push_back({left_rels, right_rels});
+
+        for (auto rel : left_rels)
+            if (rel < num_relations)
+                node_to_edge_ids[rel].push_back(hyperedge_id);
+        for (auto rel : right_rels)
+            if (rel < num_relations && !left_rels.test(rel))
+                node_to_edge_ids[rel].push_back(hyperedge_id);
+    };
+
+    /// Phase 1: create hyperedges from explicit join predicates.
+    /// Duplicate edges for the same relation pair (e.g. A.x=B.x AND A.y=B.y) are harmless:
+    /// `getNeighborhood` ORs results into a BitSet, and `tryJoin` collects predicates
+    /// from `query_graph.edges`, not from hyperedges.
+    for (const auto & predicate : query_graph.edges)
+    {
+        if (!predicate)
+            continue;
+
+        BitSet left_rels;
+        BitSet right_rels;
+
+        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Unknown && lhs && rhs)
+        {
+            left_rels  = lhs.getSourceRelations();
+            right_rels = rhs.getSourceRelations();
+        }
+        else
+        {
+            /// Non-binary predicate: treat the full source set as both endpoints.
+            left_rels  = predicate.getSourceRelations();
+            right_rels = predicate.getSourceRelations();
+        }
+
+        if (!left_rels.any() || !right_rels.any())
+            continue;
+
+        add_hyperedge(left_rels, right_rels);
+    }
+
+    /// Phase 2: add synthetic hyperedges for transitively-connected relation pairs.
+    /// Column equivalence classes (e.g. A.key=B.key AND B.key=C.key implies A.key=C.key)
+    /// connect relations that have no direct predicate. Without these edges DPhyp's
+    /// neighborhood traversal would never discover the pair.
+
+    /// Build a connectivity matrix from explicit edges to avoid duplicating them.
+    std::vector<BitSet> connected_rels(num_relations);
+    for (const auto & hyperedge : hyperedges)
+    {
+        auto left_rel = hyperedge.left.getSingleBit();
+        auto right_rel = hyperedge.right.getSingleBit();
+        if (left_rel && right_rel)
+        {
+            connected_rels[*left_rel].set(*right_rel);
+            connected_rels[*right_rel].set(*left_rel);
+        }
+    }
+
+    using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
+    std::unordered_set<ConstClassPtr> processed_classes;
+
+    for (const auto & [member, equiv_class] : query_graph.column_equivalences.getMemberToClassMap())
+    {
+        if (!equiv_class || !processed_classes.insert(equiv_class).second)
+            continue;
+
+        /// Collect all distinct relations in this equivalence class.
+        BitSet seen_rels;
+        std::vector<size_t> class_rels;
+        for (const auto & column : *equiv_class)
+        {
+            auto relation = column.getSourceRelations().getSingleBit();
+            if (relation && *relation < num_relations && !seen_rels.test(*relation))
+            {
+                seen_rels.set(*relation);
+                class_rels.push_back(*relation);
+            }
+        }
+
+        for (size_t i = 0; i < class_rels.size(); ++i)
+        {
+            for (size_t j = i + 1; j < class_rels.size(); ++j)
+            {
+                if (connected_rels[class_rels[i]].test(class_rels[j]))
+                    continue;
+
+                connected_rels[class_rels[i]].set(class_rels[j]);
+                connected_rels[class_rels[j]].set(class_rels[i]);
+
+                BitSet left_singleton;
+                BitSet right_singleton;
+                left_singleton.set(class_rels[i]);
+                right_singleton.set(class_rels[j]);
+                add_hyperedge(left_singleton, right_singleton);
+            }
+        }
+    }
+}
+
+/// Returns the set of all relations adjacent to `node_set` via any hyperedge,
+/// excluding `node_set` itself.
+///
+/// A hyperedge (L, R) represents a join predicate with left sources L and right sources R.
+/// For example, `A.x = B.y` gives L={A}, R={B}; `A.x + B.y = C.z` gives L={A,B}, R={C}.
+/// R is reachable from node_set when L is fully contained in node_set (and vice versa).
+///
+/// Non-binary predicates like `f(A,B,C) = const` are represented as L={A,B,C}, R={A,B,C}
+BitSet JoinOrderOptimizer::getNeighborhood(const BitSet & node_set) const
+{
+    BitSet neighbors;
+    BitSet visited_edges;
+    for (auto node : node_set)
+    {
+        if (node >= node_to_edge_ids.size())
+            continue;
+        for (auto hyperedge_id : node_to_edge_ids[node])
+        {
+            if (visited_edges.test(hyperedge_id))
+                continue;
+            visited_edges.set(hyperedge_id);
+            const auto & edge = hyperedges[hyperedge_id];
+            if (edge.left == edge.right)
+            {
+                /// In case of non-binary predicate (`f(A,B,C) = const`) the hyperedge is
+                /// represented as L={A,B,C}, R={A,B,C}
+                neighbors |= edge.left;
+            }
+            else
+            {
+                if (isSubsetOf(edge.left, node_set))
+                    neighbors |= edge.right;
+                if (isSubsetOf(edge.right, node_set))
+                    neighbors |= edge.left;
+            }
+        }
+    }
+    auto result = neighbors.andNot(node_set);
+    LOG_TEST(log, "DPhyp: getNeighborhood({}) = {}",
+        fmt::join(node_set, ","), fmt::join(result, ","));
+    return result;
+}
+
+/// Enumerate all non-empty subsets of `mask`, calling `func` for each.
+/// Uses an integer bitmask over the positions of set bits in `mask`.
+template <typename F>
+static void forEachNonEmptySubset(const BitSet & mask, F && func)
+{
+    std::vector<size_t> bit_positions;
+    for (auto bit : mask)
+        bit_positions.push_back(bit);
+
+    const size_t num_bits = bit_positions.size();
+    if (num_bits == 0)
+        return;
+    chassert(num_bits < 64);
+
+    const UInt64 num_subsets = 1ULL << num_bits;
+    for (UInt64 subset_mask = 1; subset_mask < num_subsets; ++subset_mask)
+    {
+        BitSet subset;
+        for (size_t i = 0; i < num_bits; ++i)
+            if (subset_mask & (1ULL << i))
+                subset.set(bit_positions[i]);
+        /// The callback returns false to stop enumeration early.
+        if (!func(subset))
+            return;
+    }
+}
+
+/// The four functions below implement the core DPhyp enumeration from
+/// "Dynamic Programming Strikes Back" (Moerkotte & Neumann, SIGMOD 2008), Section 3.
+///
+/// `emitCsg` (paper: EmitCsg, Sec 3.3) -- given a connected subgraph S1, generates all
+///     complement seeds S2 = {v} from the neighborhood and extends them via `enumerateCmpRec`.
+/// `enumerateCmpRec` (paper: EnumerateCmpRec, Sec 3.4) -- recursively extends complement S2
+///     by adding neighboring nodes, emitting each valid csg-cmp pair.
+/// `enumerateCsgRec` (paper: EnumerateCsgRec, Sec 3.2) -- recursively extends the primary
+///     connected subgraph S1 by adding neighboring nodes.
+/// `emitCsgCmp` (paper: EmitCsgCmp, Sec 3.5) -- evaluates a (S1, S2) pair for plan construction.
+///
+/// Deviation from the paper: EmitCsg checks connectivity (existence of a hyperedge
+/// connecting S1 and S2) before calling EmitCsgCmp. We skip this check here and let
+/// `tryJoin` handle it, which avoids duplicating the connectivity logic.
+
+/// Evaluate a csg-cmp pair for plan construction.
+void JoinOrderOptimizer::emitCsgCmp(const BitSet & left_csg, const BitSet & right_csg)
+{
+    if (dphyp_unsupported_predicate)
+        return;
+    LOG_TEST(log, "DPhyp: emitCsgCmp({{ {} }}, {{ {} }})",
+        fmt::join(left_csg, ","), fmt::join(right_csg, ","));
+    tryJoin(left_csg, right_csg);
+}
+
+/// Recursively extend complement S2 by adding subsets of its neighborhood.
+/// `exclusion` (paper: X) prevents revisiting already-processed nodes.
+void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & complement, const BitSet & exclusion)
+{
+    if (dphyp_unsupported_predicate)
+        return;
+
+    LOG_TEST(log, "DPhyp: enumerateCmpRec(csg={{ {} }}, cmp={{ {} }}, excl={{ {} }})",
+        fmt::join(csg, ","), fmt::join(complement, ","), fmt::join(exclusion, ","));
+
+    BitSet complement_neighborhood = getNeighborhood(complement).andNot(exclusion);
+    if (!complement_neighborhood)
+        return;
+
+    LOG_TEST(log, "DPhyp: enumerateCmpRec neighborhood={{ {} }}",
+        fmt::join(complement_neighborhood, ","));
+
+    /// First pass: emit pairs for every connected extension of the complement.
+    forEachNonEmptySubset(complement_neighborhood, [&](const BitSet & extension)
+    {
+        if (!continueEnumeration())
+            return false;
+        BitSet extended_complement = complement | extension;
+        if (dp_table.contains(extended_complement))
+            emitCsgCmp(csg, extended_complement);
+        return true;
+    });
+
+    /// Second pass: recurse with extended exclusion (paper: X = X | N(S2, X)).
+    BitSet incremental_exclusion = exclusion | complement_neighborhood;
+    forEachNonEmptySubset(complement_neighborhood, [&](const BitSet & extension)
+    {
+        if (!continueEnumeration())
+            return false;
+        enumerateCmpRec(csg, complement | extension, incremental_exclusion);
+        return true;
+    });
+}
+
+/// Generate all complement seeds for a given connected subgraph S1.
+/// Seeds are single neighbor nodes, processed in descending index order. Each processed seed is
+/// added to the exclusion passed to later seeds, so a complement spanning several neighbors is grown
+/// from only one of them and each (S1, S2) pair is enumerated exactly once.
+///
+/// `exclusion` (paper: X) = S1 | B_min(S1), where B_min(S1) = {v : v < min(S1)}.
+/// B_min excludes all relations ordered before the smallest relation in S1.
+/// This is the key mechanism that prevents generating symmetric pairs:
+/// the complement can only contain relations ordered after the CSG's minimum.
+void JoinOrderOptimizer::emitCsg(const BitSet & csg)
+{
+    if (dphyp_unsupported_predicate)
+        return;
+    LOG_TEST(log, "DPhyp: emitCsg({{ {} }})", fmt::join(csg, ","));
+
+    BitSet exclusion = csg | BitSet::allSet(*csg.begin());
+
+    BitSet csg_neighborhood = getNeighborhood(csg).andNot(exclusion);
+    if (!csg_neighborhood)
+        return;
+
+    LOG_TEST(log, "DPhyp: emitCsg neighborhood={{ {} }}, exclusion={{ {} }}",
+        fmt::join(csg_neighborhood, ","), fmt::join(exclusion, ","));
+
+    std::vector<size_t> neighbor_nodes;
+    for (size_t n : csg_neighborhood)
+        neighbor_nodes.push_back(n);
+
+    /// Process seeds in descending index order, excluding each already-processed seed from the
+    /// complements grown by later seeds. Without this, the same complement (e.g. {1,2}) would be
+    /// reached from both the {2} seed and the {1} seed, enumerating the (S1, S2) pair twice.
+    BitSet seed_exclusion = exclusion;
+    for (auto it = neighbor_nodes.rbegin(); it != neighbor_nodes.rend(); ++it)
+    {
+        if (!continueEnumeration())
+            return;
+        BitSet single_node;
+        single_node.set(*it);
+        emitCsgCmp(csg, single_node);
+        enumerateCmpRec(csg, single_node, seed_exclusion);
+        seed_exclusion.set(*it);
+    }
+}
+
+/// Recursively extend connected subgraph S1 by adding subsets of its neighborhood.
+/// `exclusion` (paper: X) prevents revisiting already-processed nodes.
+/// For each connected extension found in dp_table, calls `emitCsg` to generate complements.
+void JoinOrderOptimizer::enumerateCsgRec(const BitSet & csg, const BitSet & exclusion)
+{
+    if (dphyp_unsupported_predicate)
+        return;
+
+    LOG_TEST(log, "DPhyp: enumerateCsgRec(csg={{ {} }}, excl={{ {} }})",
+        fmt::join(csg, ","), fmt::join(exclusion, ","));
+
+    BitSet neighborhood = getNeighborhood(csg).andNot(exclusion);
+    if (!neighborhood)
+        return;
+
+    LOG_TEST(log, "DPhyp: enumerateCsgRec neighborhood={{ {} }}",
+        fmt::join(neighborhood, ","));
+
+    /// First pass: emit complements for every connected extension of S1.
+    forEachNonEmptySubset(neighborhood, [&](const BitSet & extension)
+    {
+        if (!continueEnumeration())
+            return false;
+        BitSet extended_csg = csg | extension;
+        if (dp_table.contains(extended_csg))
+            emitCsg(extended_csg);
+        return true;
+    });
+
+    /// Second pass: recurse with extended exclusion (paper: X = X | N(S1, X)).
+    BitSet extended_exclusion = exclusion | neighborhood;
+    forEachNonEmptySubset(neighborhood, [&](const BitSet & extension)
+    {
+        if (!continueEnumeration())
+            return false;
+        enumerateCsgRec(csg | extension, extended_exclusion);
+        return true;
+    });
+}
+
+std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
+{
+    const size_t num_relations = query_graph.relation_stats.size();
+
+    /// DPhyp's subset enumeration uses a 64-bit bitmask, so it cannot handle neighborhoods
+    /// larger than 63 relations. Bail out gracefully so the fallback algorithm chain can continue.
+    if (num_relations >= 64)
+    {
+        LOG_TRACE(log, "Too many relations ({}) for DPhyp, falling back", num_relations);
+        return nullptr;
+    }
+
+    dphyp_unsupported_predicate = false;
+    search_budget_exceeded = false;
+    searched_plans = 0;
+
+    /// Initialize dp_table with a leaf entry for each base relation.
+    /// Also reset the per-edge selectivity cache so this run is independent of any
+    /// earlier algorithm in the fallback chain.
+    dp_table.clear();
+    expression_selectivity.clear();
+    for (size_t i = 0; i < num_relations; ++i)
+    {
+        const auto & rel = query_graph.relation_stats[i];
+        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats);
+        dp_table[entry->relations] = entry;
+    }
+
+    buildHyperedges();
+
+    LOG_TEST(log, "DPhyp: {} relations, {} hyperedges", num_relations, hyperedges.size());
+    for (size_t e = 0; e < hyperedges.size(); ++e)
+        LOG_TEST(log, "DPhyp: hyperedge {}: ({{ {} }}, {{ {} }})", e,
+            fmt::join(hyperedges[e].left, ","), fmt::join(hyperedges[e].right, ","));
+
+    /// Main DPhyp loop (paper: Solve, Sec 3.1).
+    /// Seed with each single-relation CSG in descending index order.
+    /// For each seed {v}, `emitCsg` finds complements (the other side of the join),
+    /// and `enumerateCsgRec` grows {v} into larger connected subgraphs.
+    /// The exclusion set B_v = {w : w < v} | {v} ensures each unordered (S1, S2) pair
+    /// is considered exactly once (the side with the smaller min-index is always S1).
+    BitSet exclusion = BitSet::allSet(num_relations);
+    for (int i = static_cast<int>(num_relations) - 1; i >= 0; --i)
+    {
+        /// Once enumeration is aborted, the result is discarded below, so stop seeding.
+        if (dphyp_unsupported_predicate || search_budget_exceeded)
+            break;
+
+        BitSet seed;
+        seed.set(static_cast<size_t>(i));
+
+        LOG_TEST(log, "DPhyp: === seed {} ===", i);
+        emitCsg(seed);
+        exclusion.set(i, false);
+        enumerateCsgRec(seed, exclusion);
+    }
+
+    if (dphyp_unsupported_predicate || search_budget_exceeded)
+    {
+        LOG_TRACE(log, "DPhyp could not produce a plan ({}), falling back",
+            dphyp_unsupported_predicate ? "unsupported predicate" : "search budget exceeded");
+        return nullptr;
+    }
+
+    auto best = dp_table.find(BitSet::allSet(num_relations));
+    if (best != dp_table.end())
+        return best->second;
+
+    /// DPhyp cannot produce a plan for disconnected graphs (no cross products).
+    /// The caller's fallback chain (e.g. dphyp,greedy) handles this.
+    LOG_TRACE(log, "Failed to find best plan using DPhyp algorithm");
+    return nullptr;
+}
+
 std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const
 {
     auto check = [&](const auto & lhs, const auto & rhs) -> std::optional<JoinKind>
@@ -566,9 +1384,12 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
             auto it = query_graph.join_kinds.find(rel_id.value());
             if (it != query_graph.join_kinds.end())
             {
-                if (isSubsetOf(it->second.first, rhs))
-                    return it->second.second;
-                return {};
+                const auto & restriction = it->second;
+                if (!isSubsetOf(restriction.required_partners, rhs))
+                    return {};
+                if ((rhs & restriction.forbidden_partners).any())
+                    return {};
+                return restriction.kind;
             }
         }
         return JoinKind::Inner;
@@ -611,11 +1432,23 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
     if (query_graph.relation_stats.size() <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinOrderOptimizer: number of relations must be greater than 1");
 
-    JoinOrderOptimizer reorderer(std::move(query_graph), optimization_settings.query_plan_optimize_join_order_algorithm);
+    EquivalenceClasses<JoinActionRef> column_equivalences;
+    if (optimization_settings.enable_join_transitive_predicates)
+    {
+        query_graph.buildColumnEquivalences();
+        column_equivalences = query_graph.column_equivalences;
+    }
+
+    JoinOrderOptimizer reorderer(
+        std::move(query_graph),
+        optimization_settings.query_plan_optimize_join_order_algorithm,
+        optimization_settings.query_plan_optimize_join_order_max_searched_plans);
     auto best_plan = reorderer.solve();
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
 
+    if (optimization_settings.enable_join_transitive_predicates)
+        cleanupJoinPredicates(best_plan, column_equivalences);
     return best_plan;
 }
 
