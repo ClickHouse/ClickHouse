@@ -107,7 +107,13 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
-    static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return false; }
+    virtual bool supportsTruncate() const { return false; }
+    virtual void truncate(ContextPtr /*context*/, std::shared_ptr<DataLake::ICatalog> /*catalog*/, const StorageID & /*storage_id*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncation is not supported by {} metadata", getName());
+    }
+
+    static constexpr bool supportsTotalRows() { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
