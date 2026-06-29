@@ -14,7 +14,8 @@ CREATE TABLE t_secondary_indices_materialized
 ENGINE = MergeTree ORDER BY a
 SETTINGS min_bytes_for_wide_part = 0;
 
-INSERT INTO t_secondary_indices_materialized SELECT number, number * 2, toString(number) FROM numbers(100);
+INSERT INTO t_secondary_indices_materialized SELECT number, number * 2, toString(number) FROM numbers(100)
+SETTINGS materialize_skip_indexes_on_insert = 1;
 
 -- Both declared indices are materialized in the freshly written part.
 SELECT 'after insert';
