@@ -654,7 +654,7 @@ if __name__ == "__main__":
             #      (C/C++ source changed, stable union used for the delta)
             # Docs-only, helper-only, or CI-only PRs where neither consumer fires
             # should not pay the ~2.5 GB download cost.
-            if _global_stats_available and (_diff_ran or (_tests_changed and _binary_unchanged)):
+            if _global_stats_available and _tests_changed and _binary_unchanged:
                 # Use the actual SHA stored by generate_diff_coverage_report.sh
                 # alongside base_llvm_coverage.info as the skip anchor. This is
                 # the commit whose .info was really downloaded — it may differ
