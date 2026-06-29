@@ -1,10 +1,48 @@
 #include <Access/AccessChangesNotifier.h>
+#include <Common/CurrentThread.h>
+#include <Common/CurrentThreadHelpers.h>
 #include <Common/Exception.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <boost/range/algorithm/copy.hpp>
 
 
 namespace DB
 {
+
+namespace
+{
+    /// While in scope, detach the calling thread's client log queue so that logs emitted here go to
+    /// the server log only and are not forwarded to a connected client. The batch-finished handlers
+    /// recompute server-wide access caches; they merely run on whichever client thread triggered the
+    /// access change, so their diagnostics must not leak into that client's log stream.
+    class ScopedSuppressClientLogs
+    {
+    public:
+        ScopedSuppressClientLogs()
+        {
+            saved_queue = CurrentThread::getInternalTextLogsQueue();
+            if (saved_queue)
+            {
+                /// A non-null queue implies a current thread, so reading the level is safe.
+                saved_level = currentThreadLogsLevel();
+                CurrentThread::attachInternalTextLogsQueue(nullptr, LogsLevel::none);
+            }
+        }
+
+        ~ScopedSuppressClientLogs()
+        {
+            if (saved_queue)
+                CurrentThread::attachInternalTextLogsQueue(saved_queue, saved_level);
+        }
+
+        ScopedSuppressClientLogs(const ScopedSuppressClientLogs &) = delete;
+        ScopedSuppressClientLogs & operator=(const ScopedSuppressClientLogs &) = delete;
+
+    private:
+        std::shared_ptr<InternalTextLogsQueue> saved_queue;
+        LogsLevel saved_level = LogsLevel::none;
+    };
+}
 
 AccessChangesNotifier::AccessChangesNotifier() : handlers(std::make_shared<Handlers>())
 {
@@ -146,6 +184,8 @@ void AccessChangesNotifier::sendNotifications()
         boost::range::copy(handlers->on_batch_finished, std::back_inserter(batch_finished_handlers));
     }
 
+    /// The recompute logs belong in the server log, not in the triggering client's stream.
+    ScopedSuppressClientLogs suppress_client_logs;
     for (const auto & handler : batch_finished_handlers)
     {
         try
