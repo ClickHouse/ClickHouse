@@ -1,4 +1,8 @@
+<<<<<<< vdimir/no-statistics-warning
 -- Tags: long
+=======
+SET explain_query_plan_default = 'legacy';
+>>>>>>> master
 SET enable_analyzer = 1;
 
 SET query_plan_optimize_join_order_limit = 10;
