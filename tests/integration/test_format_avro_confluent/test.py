@@ -11,7 +11,7 @@ from confluent_kafka.avro.cached_schema_registry_client import (
 )
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 
 
 @pytest.fixture(scope="module")
@@ -315,11 +315,6 @@ def test_output_multiple_columns(started_cluster):
 
 def test_output_subject_encoding(started_cluster):
     # type: (ClickHouseCluster) -> None
-
-    # Subject names with reserved URI characters (/, ?, #) must be properly
-    # encoded when registering with the Schema Registry. First register a
-    # schema under such a subject using the official Python client (ground
-    # truth), then do the same from ClickHouse and compare the stored names.
 
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     schema_registry_url = "http://{}:{}".format(

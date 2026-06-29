@@ -38,9 +38,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 In this example the `first_value` function is used to find the highest paid footballer from a fictional dataset of salaries of Premier League football players.
 
-Query:
-
-```sql
+```sql title="Query"
 DROP TABLE IF EXISTS salaries;
 CREATE TABLE salaries
 (
@@ -61,15 +59,13 @@ INSERT INTO salaries FORMAT VALUES
     ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
 ```
 
-```sql
+```sql title="Query"
 SELECT player, salary, 
        first_value(player) OVER (ORDER BY salary DESC) AS highest_paid_player
 FROM salaries;
 ```
 
-Result:
-
-```response
+```response title="Response"
    ┌─player──────────┬─salary─┬─highest_paid_player─┐
 1. │ Gary Chen       │ 196000 │ Gary Chen           │
 2. │ Robert George   │ 195000 │ Gary Chen           │

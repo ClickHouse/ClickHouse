@@ -52,6 +52,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantileExactLow(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileExactLow(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.

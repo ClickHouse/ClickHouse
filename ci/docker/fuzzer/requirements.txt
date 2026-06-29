@@ -1,6 +1,6 @@
 legacy-cgi==2.6.4
 blinker==1.4
-cryptography==44.0.1
+cryptography==48.0.1
 dbus-python==1.2.18
 distro==1.7.0
 httplib2==0.20.2
@@ -17,7 +17,7 @@ oauthlib==3.2.2
 packaging==24.1
 pip==25.0.1
 pipdeptree==2.23.0
-PyJWT==2.10.1
+PyJWT==2.13.0
 pyparsing==2.4.7
 SecretStorage==3.3.1
 setuptools==78.1.1

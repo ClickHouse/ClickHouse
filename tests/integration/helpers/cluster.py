@@ -59,11 +59,29 @@ from minio import Minio
 
 from . import pytest_xdist_logging_to_separate_files
 from .client import Client, QueryRuntimeException
-from .config_cluster import *
+from .config_cluster import (
+    dremio_pass,
+    dremio_user,
+    minio_access_key,
+    minio_secret_key,
+    mongo_pass,
+    mongo_user,
+    mysql_pass,
+    mysql_user,
+    nats_pass,
+    nats_user,
+    odbc_mysql_db,
+    odbc_mysql_uid,
+    odbc_psql_db,
+    odbc_psql_user,
+    pg_db,
+    pg_pass,
+    pg_user,
+)
 from .kazoo_client import KazooClientWithImplicitRetries
 from .random_settings import write_random_settings_config
 from .retry_decorator import retry
-from .test_tools import assert_eq_with_retry, exec_query_with_retry
+from .test_tools import exec_query_with_retry
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
@@ -120,7 +138,7 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 # Minimum version we use in integration tests to check compatibility with old releases
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
 # This means that this minimum need to be, at least, 1 year older than the current release
-CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
+CLICKHOUSE_CI_MIN_TESTED_VERSION = "25.3"
 
 # `Nullable(Tuple)` experimental feature is introduced in 26.1. This has lead to changes in the output return type
 # of many aggregate functions from `Tuple(...)` to `Nullable(Tuple(...))`. This version can be used as baseline to do
@@ -342,6 +360,14 @@ def check_kerberos_kdc_is_available(kerberos_kdc_id):
 def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
         docker_exec(postgresql_java_client_id, "java", "-version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
+def check_postgresql_dotnet_client_is_available(docker_id):
+    p = subprocess.Popen(
+        docker_exec(docker_id, "dotnet", "--version"),
         stdout=subprocess.PIPE,
     )
     p.communicate()
@@ -592,7 +618,7 @@ class ClickHouseCluster:
         #    [1]: https://github.com/ClickHouse/ClickHouse/issues/43426#issuecomment-1368512678
         self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
         # In integration tests we spawn multiple servers, so let's aim to not more then 5GiB
-        self.env_variables["TSAN_OPTIONS"] = f"use_sigaltstack=0 memory_limit_mb=5120"
+        self.env_variables["TSAN_OPTIONS"] = "use_sigaltstack=0 memory_limit_mb=5120"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
 
@@ -653,6 +679,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
+        self.with_postgresql_dotnet_client = False
         self.with_mysql_dotnet_client = False
         self.with_kafka = False
         self.with_kafka_sasl = False
@@ -822,6 +849,12 @@ class ClickHouseCluster:
             self.postgresql_java_client_host
         )
 
+        # available when with_postgresql_dotnet_client = True
+        self.postgresql_dotnet_client_host = "postgresql-dotnet-client"
+        self.postgresql_dotnet_client_docker_id = self.get_instance_docker_id(
+            self.postgresql_dotnet_client_host
+        )
+
         # available when with_mysql_dotnet_client = True
         self.mysql_dotnet_client_host = "dotnet"
         self.mysql_dotnet_client_docker_id = self.get_instance_docker_id(
@@ -913,7 +946,7 @@ class ClickHouseCluster:
             logging.debug(f"Removed :{self.instances_dir}")
 
         if with_spark:
-            import pyspark
+            pass
 
             # (
             #     pyspark.sql.SparkSession.builder.appName("spark_test")
@@ -1169,7 +1202,7 @@ class ClickHouseCluster:
                 if unstopped_containers:
                     logging.debug(f"Left unstopped containers: {unstopped_containers}")
                 else:
-                    logging.debug(f"Unstopped containers killed.")
+                    logging.debug("Unstopped containers killed.")
             else:
                 logging.debug(f"No running containers for project: {self.project_name}")
         except Exception as ex:
@@ -1527,6 +1560,29 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
         )
 
+    def setup_postgresql_dotnet_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_postgresql_dotnet_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir,
+                    "docker_compose_postgresql_dotnet_client.yml",
+                ),
+            ]
+        )
+        self.base_postgresql_dotnet_client_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(
+                docker_compose_yml_dir,
+                "docker_compose_postgresql_dotnet_client.yml",
+            ),
+        )
+
     def setup_mysql_dotnet_client_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1790,6 +1846,9 @@ class ClickHouseCluster:
     def setup_hms_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hms_catalog = True
         env_variables["HMS_CATALOG_PORT"] = str(self.hms_catalog_port)
+        env_variables["ICEBERG_HMS_CORE_SITE"] = p.join(
+            docker_compose_yml_dir, "hms_core_site_minio1.xml"
+        )
         self.base_cmd.extend(
             [
                 "--file",
@@ -1815,7 +1874,6 @@ class ClickHouseCluster:
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
             file_name = extra_parameters["docker_compose_file_name"]
         env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
-        env_variables["ICEBERG_MINIO_PORT"] = str(self.iceberg_minio_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -2019,6 +2077,7 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        with_postgresql_dotnet_client=False,
         with_mysql_dotnet_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
@@ -2187,6 +2246,7 @@ class ClickHouseCluster:
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
+            with_postgresql_dotnet_client=with_postgresql_dotnet_client,
             with_mysql_dotnet_client=with_mysql_dotnet_client,
             clickhouse_start_command=clickhouse_start_command,
             clickhouse_start_extra_args=extra_args,
@@ -2298,6 +2358,13 @@ class ClickHouseCluster:
                 )
             )
 
+        if with_postgresql_dotnet_client and not self.with_postgresql_dotnet_client:
+            cmds.append(
+                self.setup_postgresql_dotnet_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
         if with_mysql_dotnet_client and not self.with_mysql_dotnet_client:
             cmds.append(
                 self.setup_mysql_dotnet_client_cmd(
@@ -2379,6 +2446,10 @@ class ClickHouseCluster:
             cmds.append(
                 self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir)
             )
+
+        # Iceberg/Glue/HMS catalogs use the standard MinIO (minio1) for S3 storage.
+        if with_iceberg_catalog or with_glue_catalog or with_hms_catalog:
+            with_minio = True
 
         if with_minio and not self.with_minio:
             cmds.append(
@@ -2997,6 +3068,21 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
+    def wait_postgresql_dotnet_client(self, timeout=180):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_postgresql_dotnet_client_is_available(
+                    self.postgresql_dotnet_client_docker_id
+                ):
+                    logging.debug("PostgreSQL C# Client is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find PostgreSQL C# Client" + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait PostgreSQL C# Client container")
+
     def wait_mysql_dotnet_client(self, timeout=30):
         start = time.time()
         while time.time() - start < timeout:
@@ -3139,7 +3225,7 @@ class ClickHouseCluster:
                 subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                     self.base_kafka_cmd + ["logs"], stdout=f
                 )
-        except Exception as e:
+        except Exception:
             logging.debug("Unable to get logs from docker.")
         raise Exception("Kafka is not available")
 
@@ -3256,10 +3342,52 @@ class ClickHouseCluster:
                 subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                     self.base_minio_cmd + ["logs"], stdout=f
                 )
-        except Exception as e:
+        except Exception:
             logging.debug("Unable to get logs from docker.")
 
         raise Exception("Can't wait Minio to start")
+
+    def create_minio_buckets(self, buckets, set_public_policy=False):
+        """Create additional buckets on the standard MinIO (minio1).
+
+        Must be called after wait_minio_to_start() which sets self.minio_client.
+        """
+        assert self.minio_client is not None, (
+            "create_minio_buckets called before wait_minio_to_start"
+        )
+        for bucket in buckets:
+            if self.minio_client.bucket_exists(bucket):
+                delete_object_list = map(
+                    lambda x: x.object_name,
+                    self.minio_client.list_objects_v2(bucket, recursive=True),
+                )
+                errors = self.minio_client.remove_objects(bucket, delete_object_list)
+                for error in errors:
+                    logging.error(f"Error occurred when deleting object {error}")
+                self.minio_client.remove_bucket(bucket)
+            self.minio_client.make_bucket(bucket)
+            logging.info("S3 bucket '%s' created on standard MinIO", bucket)
+
+        if set_public_policy:
+            for bucket in buckets:
+                policy = json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Principal": {"AWS": "*"},
+                                "Action": ["s3:*"],
+                                "Resource": [
+                                    f"arn:aws:s3:::{bucket}",
+                                    f"arn:aws:s3:::{bucket}/*",
+                                ],
+                            }
+                        ],
+                    }
+                )
+                self.minio_client.set_bucket_policy(bucket, policy)
+                logging.info("Public policy set on S3 bucket '%s'", bucket)
 
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
@@ -3320,7 +3448,6 @@ class ClickHouseCluster:
 
             start = time.time()
             sr_started = False
-            sr_auth_started = False
             while time.time() - start < timeout:
                 try:
                     sr_client._send_request(sr_client.url)
@@ -3466,7 +3593,7 @@ class ClickHouseCluster:
 
         try:
             self.cleanup()
-        except Exception as e:
+        except Exception:
             logging.warning("Cleanup failed:{e}")
 
         try:
@@ -3732,6 +3859,17 @@ class ClickHouseCluster:
                 self.wait_postgresql_java_client()
 
             if (
+                self.with_postgresql_dotnet_client
+                and self.base_postgresql_dotnet_client_cmd
+            ):
+                logging.debug("Setup Postgres C# Client")
+                subprocess_check_call(
+                    self.base_postgresql_dotnet_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_postgresql_dotnet_client()
+
+            if (
                 self.with_mysql_dotnet_client
                 and self.base_mysql_dotnet_client_cmd
             ):
@@ -3796,7 +3934,7 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
                 time.sleep(2)
-                logging.debug(f"RabbitMQ checking container try")
+                logging.debug("RabbitMQ checking container try")
                 self.wait_rabbitmq_to_start()
 
             if self.with_nats and self.base_nats_cmd:
@@ -3880,23 +4018,44 @@ class ClickHouseCluster:
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
 
+            # Catalogs use the standard MinIO (minio1). Create their
+            # buckets on it before starting the catalog services.
+            if self.with_glue_catalog or self.with_hms_catalog or self.with_iceberg_catalog:
+                catalog_buckets = []
+                if self.with_glue_catalog:
+                    catalog_buckets.append("warehouse-glue")
+                if self.with_hms_catalog:
+                    catalog_buckets.append("warehouse-hms")
+                if self.with_iceberg_catalog:
+                    catalog_buckets.extend(["warehouse-rest", "iceberg-data"])
+                self.create_minio_buckets(catalog_buckets, set_public_policy=True)
+
+                # Some catalogs (Nessie) vend an S3 endpoint to clients via the
+                # REST `loadTable` response. The hostname `minio1` is only
+                # resolvable inside the Docker network, so the host-side
+                # `pyiceberg` client cannot reach it. Re-export the env file
+                # with `MINIO_IP` set to the standard MinIO container's IP
+                # (resolvable from both the host and from other containers in
+                # the same Docker bridge network) so catalog compose files can
+                # vend a host-reachable URL.
+                if self.minio_ip:
+                    self.env_variables["MINIO_IP"] = self.minio_ip
+                    _create_env_file(self.env_file, self.env_variables)
+
             if self.with_glue_catalog and self.base_glue_catalog_cmd:
-                logging.info("Trying to connect to Minio for glue catalog...")
+                logging.info("Starting Glue catalog...")
                 subprocess_check_call(self.base_glue_catalog_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-glue"], "minio", 9000)
 
             if self.with_hms_catalog and self.base_iceberg_hms_cmd:
-                logging.info("Trying to connect to Minio for hms catalog...")
+                logging.info("Starting HMS catalog...")
                 subprocess_check_call(self.base_iceberg_hms_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-hms"], "minio", 9000)
 
             if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
-                logging.info("Trying to connect to Minio for Iceberg catalog...")
+                logging.info("Starting Iceberg catalog...")
                 subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-rest"], "minio", 9000)
 
             if self.with_azurite and self.base_azurite_cmd:
                 azurite_start_cmd = self.base_azurite_cmd + common_opts
@@ -3979,7 +4138,7 @@ class ClickHouseCluster:
                 )
                 run_and_check(arrowflight_start_cmd)
 
-                logging.error(f'Trying to connect to Arrowflight...')
+                logging.error('Trying to connect to Arrowflight...')
                 self.wait_arrowflight_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
@@ -4202,10 +4361,32 @@ class ClickHouseCluster:
     def _unpause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
 
+    def _signal_clickhouse_in_container(self, instance_name, signal_name):
+        # Returns True if a `clickhouse` process was signaled inside the
+        # container; False if no such process exists so callers can fall
+        # back to signaling the container's main process.
+        container_id = self.get_container_id(instance_name)
+        result = self.exec_in_container(
+            container_id,
+            ["bash", "-c", "pkill -{} clickhouse; echo $?".format(signal_name)],
+            nothrow=True,
+            user="root",
+        )
+        last_line = (result or "").strip().splitlines()[-1] if result else ""
+        return last_line == "0"
+
     def _pause_container_using_signal(self, instance_name):
+        # ClickHouse runs as a child of the bash entrypoint at PID 1, and
+        # bash does not propagate uncatchable signals to children, so we
+        # must target the `clickhouse` process directly. For non-ClickHouse
+        # containers (Kafka, MongoDB, etc.) PID 1 is the service itself.
+        if self._signal_clickhouse_in_container(instance_name, "STOP"):
+            return
         subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGSTOP", instance_name])
 
     def _unpause_container_using_signal(self, instance_name):
+        if self._signal_clickhouse_in_container(instance_name, "CONT"):
+            return
         subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGCONT", instance_name])
 
     def _wait_for_pause_effective(self, instance_name, timeout):
@@ -4223,62 +4404,154 @@ class ClickHouseCluster:
         therefore see the very first probe succeed, producing chronic
         flakes (see issues `#103819`, `#103820`).
 
-        For ClickHouse instances, poll a sibling ClickHouse node with a
-        tight `remote(<paused>:9000, system.one)` probe until it raises a
-        `QueryRuntimeException`. That event deterministically establishes
-        that fresh connections to the paused container can no longer
-        complete the ClickHouse handshake, which is the property every
-        existing caller actually depends on.
+        Probe strategy: open a fresh TCP connection from the test process
+        directly to `<instance>:9000` on every iteration, send one byte
+        that the ClickHouse native protocol treats as an unexpected
+        first packet (varint `0x05`, `Protocol::Client::TablesStatusRequest`
+        — anything other than `Hello`/`G`/`P`), and wait for the
+        server's response with a tight read timeout. A live ClickHouse
+        server immediately raises `UNEXPECTED_PACKET_FROM_CLIENT` from
+        `TCPHandler::receiveHello` and sends a `Server::Exception`
+        packet back, which we observe within milliseconds. A paused
+        server can complete the kernel-level handshake but cannot run
+        the `TCPHandler` accept/read/write loop in user space, so the
+        read times out and the probe declares the pause effective.
+
+        Why not reuse a sibling ClickHouse node and `remote()`? Each
+        ClickHouse server keeps a per-target connection pool keyed by
+        host/port/user/etc. (see `src/Client/ConnectionPool.h`). A cached
+        native-protocol connection to a paused node has a live kernel
+        socket, so `Connection::forceConnected` short-circuits to a
+        `ping(timeouts)` that can either succeed against stale buffered
+        data or block for `sync_request_timeout` (default 5s) rather than
+        the per-query `handshake_timeout_ms`. The probe ended up reporting
+        the paused node as reachable for its entire budget, even after
+        the freeze was fully in effect. By probing from the test process
+        directly we guarantee a fresh TCP+greeting handshake every
+        attempt and bypass that pool entirely. This was the chronic root
+        cause behind the `pause_container('node1') did not become
+        observably effective within 30.0s` reports on slow sanitizer
+        shards even after `wait_timeout` was raised to 90s.
 
         For non-ClickHouse containers (Kafka, MongoDB, etc.) we cannot
-        speak the application protocol from a sibling node, so we skip
-        the wait. The current Kafka callers do not assert on the timing
-        of the freeze — they wait for log lines that the paused side
-        emits well after the freeze is effective — so the absence of a
-        global probe is benign for them.
+        speak the native protocol on port 9000, so we skip the wait. The
+        current Kafka callers do not assert on the timing of the freeze
+        — they wait for log lines that the paused side emits well after
+        the freeze is effective — so the absence of a global probe is
+        benign for them.
         """
         if instance_name not in self.instances:
             return
-        probers = [
-            inst
-            for name, inst in self.instances.items()
-            if name != instance_name and inst.is_up
-        ]
-        if not probers:
+        instance = self.instances[instance_name]
+        addr = getattr(instance, "ip_address", None)
+        if not addr:
+            # The instance has not been started yet (or had its IP
+            # resolved). Without a routable address we cannot probe;
+            # fall back to the caller's expectation that the freeze is
+            # effective when `docker compose pause` returns.
             return
-        prober = probers[0]
+        port = 9000  # native TCP — the protocol every existing caller relies on
         deadline = time.time() + timeout
+        last_log = time.time()
+        iter_count = 0
+        last_outcome = "no probe attempted yet"
         while time.time() < deadline:
+            iter_count += 1
+            sock = None
             try:
-                prober.query(
-                    f"SELECT 1 FROM remote('{instance_name}:9000', system.one) "
-                    "SETTINGS connect_timeout_with_failover_ms=200, "
-                    "handshake_timeout_ms=200, "
-                    "connections_with_failover_max_tries=1",
-                    timeout=2,
-                )
-            except QueryRuntimeException:
+                # Fresh TCP connect every iteration — required to avoid
+                # any pooling/caching the test process or kernel might do.
+                sock = socket.create_connection((addr, port), timeout=0.5)
+                sock.settimeout(0.5)
+                # ClickHouse native server reads the client `Hello`
+                # packet first; the first byte on the wire is a varint
+                # packet type. `Hello` is `0x00`, so sending `\x00`
+                # would put the server into reading the rest of the
+                # `Hello` body (`client_name`, versions, user, etc.)
+                # and it would not reply until the full handshake is
+                # received — making a live server look identical to a
+                # frozen one. See `TCPHandler::receiveHello` in
+                # `src/Server/TCPHandler.cpp`.
+                #
+                # Instead, send a single-byte varint that is a valid
+                # client packet type but is NOT `Hello` (e.g. `0x05`,
+                # `Protocol::Client::TablesStatusRequest`). The server
+                # immediately raises `UNEXPECTED_PACKET_FROM_CLIENT`
+                # and sends a `Server::Exception` packet back to us
+                # before any further handshake reads, which we observe
+                # within milliseconds. A paused server cannot run the
+                # `TCPHandler` code path at all, so `recv` times out.
+                # We must also avoid `0x47` (`G`) and `0x50` (`P`),
+                # which the server treats as wrong-port HTTP requests.
+                try:
+                    sock.sendall(b"\x05")
+                except (BrokenPipeError, ConnectionResetError) as e:
+                    last_outcome = f"sendall raised {type(e).__name__}"
+                    return
+                try:
+                    data = sock.recv(4)
+                except socket.timeout:
+                    last_outcome = "recv timed out (server unresponsive)"
+                    return
+                if not data:
+                    last_outcome = "EOF on recv"
+                    return
+                last_outcome = f"server replied ({len(data)} bytes)"
+            except (socket.timeout, ConnectionError, OSError) as e:
+                # Kernel-level connect refused/timed out: pause is
+                # observably effective even at the TCP layer.
+                last_outcome = f"connect failed: {type(e).__name__}"
                 return
+            finally:
+                if sock is not None:
+                    try:
+                        sock.close()
+                    except OSError:
+                        pass
+            now = time.time()
+            if now - last_log >= 5.0:
+                logging.warning(
+                    "_wait_for_pause_effective(%s): not yet effective "
+                    "after %.1fs (%d iters); last probe outcome: %s",
+                    instance_name,
+                    now - (deadline - timeout),
+                    iter_count,
+                    last_outcome,
+                )
+                last_log = now
             time.sleep(0.1)
         raise Exception(
             f"pause_container({instance_name!r}) did not become observably "
-            f"effective within {timeout}s — connections to {instance_name} "
-            f"from {prober.name!r} still succeed"
+            f"effective within {timeout}s — connections to "
+            f"{instance_name}:{port} ({addr}) still succeed after "
+            f"{iter_count} probe iterations; last outcome: {last_outcome}"
         )
 
     @contextmanager
-    def pause_container(self, instance_name, wait_for_paused=True, wait_timeout=30.0):
+    def pause_container(self, instance_name, wait_for_paused=True, wait_timeout=90.0):
         """Use it as following:
         with cluster.pause_container(name):
             useful_stuff()
 
-        When `instance_name` refers to a ClickHouse instance and another
-        ClickHouse instance is available to probe with, this helper blocks
-        until the pause is observably effective for fresh TCP-plus-
-        ClickHouse-handshake connections, removing a chronic race where
-        Docker's cgroup freezer takes effect asynchronously with respect
-        to in-flight traffic. Set `wait_for_paused=False` to opt out and
+        When `instance_name` refers to a ClickHouse instance, this helper
+        blocks until the pause is observably effective for fresh
+        TCP-plus-ClickHouse-handshake connections, removing a chronic
+        race where Docker's cgroup freezer takes effect asynchronously
+        with respect to in-flight traffic. The probe runs from the test
+        process and uses raw sockets — it does not require a sibling
+        ClickHouse instance and bypasses any internal connection pooling
+        a sibling might have. Set `wait_for_paused=False` to opt out and
         keep the older non-blocking behavior.
+
+        The default `wait_timeout` is 90 seconds. In practice the freeze
+        becomes observable within milliseconds once `docker compose
+        pause` returns — each probe iteration is a fresh TCP connect +
+        one-byte send + read with a 0.5s read timeout, so the probe
+        normally exits on the very first iteration. The 90-second budget
+        is intentional safety margin for unusual conditions (cold
+        cgroups, heavily-overcommitted sanitizer shards, transient
+        kernel-level slowness during heavy CI load); the cost when the
+        freeze is already in effect is negligible.
 
         Cleanup: once the container has been paused (whether via
         `docker compose pause` or the `SIGSTOP` fallback), unpausing must
@@ -4310,7 +4583,11 @@ class ClickHouseCluster:
                 self._unpause_container(instance_name)
 
     @contextmanager
-    def pause_container_using_signal(self, instance_name, wait_for_paused=True, wait_timeout=30.0):
+    def pause_container_using_signal(self, instance_name, wait_for_paused=True, wait_timeout=90.0):
+        """Same semantics as `pause_container`, but always uses the
+        `SIGSTOP`/`SIGCONT` mechanism instead of `docker compose pause`.
+        See `pause_container` for the rationale behind the 90s default.
+        """
         self._pause_container_using_signal(instance_name)
         try:
             if wait_for_paused:
@@ -4527,6 +4804,7 @@ class ClickHouseInstance:
         with_postgres,
         with_postgres_cluster,
         with_postgresql_java_client,
+        with_postgresql_dotnet_client,
         with_mysql_dotnet_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         clickhouse_start_extra_args="",
@@ -4577,7 +4855,7 @@ class ClickHouseInstance:
         if pids_limit is not None:
             self.pids_limit = f"pids_limit: {pids_limit}"
         else:
-            self.pids_limit = f"pids_limit: 5000"
+            self.pids_limit = "pids_limit: 5000"
 
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
@@ -4619,6 +4897,7 @@ class ClickHouseInstance:
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
+        self.with_postgresql_dotnet_client = with_postgresql_dotnet_client
         self.with_mysql_dotnet_client = with_mysql_dotnet_client
         self.with_kafka = with_kafka
         self.with_kafka_sasl = with_kafka_sasl
@@ -5066,6 +5345,7 @@ class ClickHouseInstance:
             raise Exception(
                 "clickhouse can be stopped only with stay_alive=True instance"
             )
+
         try:
             ps_clickhouse = self.exec_in_container(
                 ["bash", "-c", "ps --no-header -C clickhouse"], nothrow=True, user="root"
@@ -5073,6 +5353,26 @@ class ClickHouseInstance:
             if not ps_clickhouse:
                 logging.warning("ClickHouse process already stopped")
                 return False
+
+            # Under LLVM coverage the server runs several times slower and writes its
+            # .profraw only on a graceful shutdown (the libprofile atexit handler, or
+            # dumpCoverageReportIfPossible() on the forced-shutdown path). Escalating to
+            # SIGKILL loses everything this process executed. So for a graceful stop give
+            # the server a much larger window to finish shutting down (and flush coverage)
+            # before the force-kill below. We detect a coverage build from
+            # system.build_options (cached; the server is confirmed up at this point),
+            # which is reliable - unlike LLVM_PROFILE_FILE, which is set for every
+            # container regardless of build. restart_clickhouse() delegates here, so it
+            # is covered too.
+            if not kill and stop_wait_sec < 180:
+                if getattr(self, "_built_with_llvm_coverage", None) is None:
+                    try:
+                        self._built_with_llvm_coverage = self.is_built_with_llvm_coverage()
+                    except Exception as e:
+                        logging.warning(f"Could not detect LLVM coverage build: {e}")
+                        self._built_with_llvm_coverage = False
+                if self._built_with_llvm_coverage:
+                    stop_wait_sec = 180
 
             self.exec_in_container(
                 ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "-15")],
@@ -5151,7 +5451,7 @@ class ClickHouseInstance:
                 try:
                     self.wait_start(start_wait_sec + start_time - time.time())
                     return exec_id
-                except Exception as e:
+                except Exception:
                     logging.warning(
                         f"Current start attempt failed. Will kill {pid} just in case."
                     )
@@ -5191,7 +5491,7 @@ class ClickHouseInstance:
             if time.time() > start_time + start_wait_sec:
                 break
         logging.error(
-            f"No time left to start. But process is still running. Will dump threads."
+            "No time left to start. But process is still running. Will dump threads."
         )
         ps_clickhouse = self.exec_in_container(
             ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
@@ -5214,7 +5514,7 @@ class ClickHouseInstance:
                 return
             time.sleep(1)
         logging.error(
-            f"No time left to shutdown. Process is still running. Will dump threads."
+            "No time left to shutdown. Process is still running. Will dump threads."
         )
         ps_clickhouse = self.exec_in_container(
             ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
@@ -5286,7 +5586,7 @@ class ClickHouseInstance:
     def grep_in_log(
         self, substring, from_host=False, filename="clickhouse-server.log", after=None, only_latest=False
     ):
-        logging.debug(f"grep in log called %s", substring)
+        logging.debug("grep in log called %s", substring)
         if after is not None:
             after_opt = "-A{}".format(after)
         else:
@@ -5499,7 +5799,7 @@ class ClickHouseInstance:
         # wait start
         time_left = begin_time + stop_start_wait_sec - time.time()
         if time_left <= 0:
-            raise Exception(f"No time left during restart")
+            raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
 
@@ -5580,7 +5880,7 @@ class ClickHouseInstance:
         # wait start
         time_left = begin_time + stop_start_wait_sec - time.time()
         if time_left <= 0:
-            raise Exception(f"No time left during restart")
+            raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
 
@@ -5798,7 +6098,7 @@ class ClickHouseInstance:
                 delimiter = d
                 break
         else:
-            raise Exception(f"Couldn't find a suitable delimiter")
+            raise Exception("Couldn't find a suitable delimiter")
         replace = shlex.quote(replace)
         replacement = shlex.quote(replacement)
         self.exec_in_container(
@@ -5912,10 +6212,9 @@ class ClickHouseInstance:
             # If custom main config is used, do not apply random settings to it
             write_random_settings_config(Path(users_d_dir) / "0_random_settings.xml")
 
-        version = None
         version_parts = self.tag.split(".")
         if version_parts[0].isdigit() and version_parts[1].isdigit():
-            version = {"major": int(version_parts[0]), "minor": int(version_parts[1])}
+            {"major": int(version_parts[0]), "minor": int(version_parts[1])}
 
         logging.debug("Generate and write macros file")
         macros = self.macros.copy()
