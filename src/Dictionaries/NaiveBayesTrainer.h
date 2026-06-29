@@ -1,9 +1,9 @@
 #pragma once
 
-#include <map>
 #include <Dictionaries/NaiveBayesModel.h>
 #include <fmt/ranges.h>
 #include <Common/Exception.h>
+#include <Common/MapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -57,7 +57,7 @@ public:
     PreparedNgram prepareNgram(std::string_view ngram) { return model_data->prepareNgram(ngram, scratch); }
 
     /// Convert the training data (`observations`, `class_totals`) into an optimized form which is efficient for classification.
-    NaiveBayesModel<Tokenizer> finalize(PriorsMode mode, const std::map<UInt32, double> & explicit_priors = {})
+    NaiveBayesModel<Tokenizer> finalize(PriorsMode mode, const MapWithMemoryTracking<UInt32, double> & explicit_priors = {})
     {
         chassert(model_data);
 
@@ -112,7 +112,7 @@ private:
             log_class_priors[class_id] = std::log(static_cast<double>(count) / static_cast<double>(total));
     }
 
-    void setExplicitPriors(const std::map<UInt32, double> & priors, ClassLogPriorMap & log_class_priors) const
+    void setExplicitPriors(const MapWithMemoryTracking<UInt32, double> & priors, ClassLogPriorMap & log_class_priors) const
     {
         /// Make sure the LAYOUT declared classes of the dictionary are consistent with the classes in the training data.
         if (priors.size() != class_totals.size())

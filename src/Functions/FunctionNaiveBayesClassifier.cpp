@@ -93,15 +93,14 @@ DataTypePtr makeClassProbTuple()
 
 
 /// Common state and traits shared by the three naiveBayesClassifier* functions.
-class FunctionNaiveBayesBase : public IFunction
+class FunctionNaiveBayesBase : public IFunction, protected WithContext
 {
 protected:
-    ContextPtr context;
     mutable std::atomic<bool> access_checked{false};
 
 public:
     explicit FunctionNaiveBayesBase(ContextPtr context_)
-        : context(context_)
+        : WithContext(context_)
     {
     }
 
@@ -136,7 +135,7 @@ public:
         auto & data = result_column->getData();
 
         executeNaiveBayes(
-            context,
+            getContext(),
             access_checked,
             arguments,
             input_rows_count,
@@ -175,7 +174,7 @@ public:
         auto & prob_data = prob_col->getData();
 
         executeNaiveBayes(
-            context,
+            getContext(),
             access_checked,
             arguments,
             input_rows_count,
@@ -223,7 +222,7 @@ public:
         auto & offsets = offsets_col->getData();
 
         executeNaiveBayes(
-            context,
+            getContext(),
             access_checked,
             arguments,
             input_rows_count,
@@ -280,7 +279,8 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
         .arguments
         = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
            {"input_text", "Text to classify.", {"String"}}},
-        .returned_value = {"Array of (class_id, probability) tuples ordered from most to least probable.", {"Array(Tuple(UInt32, Float64))"}},
+        .returned_value
+        = {"Array of (class_id, probability) tuples ordered from most to least probable.", {"Array(Tuple(UInt32, Float64))"}},
         .examples = {{"All class probabilities", "SELECT naiveBayesClassifierWithAllProbs('model', 'some text');", "[(0,0.85),(1,0.15)]"}},
         .introduced_in = {26, 7},
         .category = FunctionDocumentation::Category::MachineLearning});

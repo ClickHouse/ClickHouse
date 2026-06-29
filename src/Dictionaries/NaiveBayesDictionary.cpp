@@ -11,15 +11,16 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <limits>
-#include <unordered_set>
 
 
 namespace DB
@@ -67,8 +68,7 @@ TokenizerMode parseTokenizerMode(const String & mode)
         return TokenizerMode::CodePoint;
     if (mode == "token")
         return TokenizerMode::Token;
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: mode must be 'byte', 'codepoint', or 'token', got '{}'", mode);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: mode must be 'byte', 'codepoint', or 'token', got '{}'", mode);
 }
 
 /// Resolves a layout padding token for the given mode into the bytes used to pad the query input. Raw bytes
@@ -139,12 +139,12 @@ String parsePaddingToken(const String & raw_value, TokenizerMode mode, std::stri
 }
 
 /// Parses an explicit priors specification of the form "0=0.6,1=0.4" into a map from class to probability.
-std::map<UInt32, double> parseExplicitPriors(const String & priors_str)
+MapWithMemoryTracking<UInt32, double> parseExplicitPriors(const String & priors_str)
 {
     if (priors_str.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: the explicit priors specification is empty");
 
-    std::map<UInt32, double> priors;
+    MapWithMemoryTracking<UInt32, double> priors;
     double total = 0.0;
 
     /// Iterate over every comma-separated entry from input like `0=0.5,1=0.5`.
@@ -246,11 +246,26 @@ void NaiveBayesDictionary::loadData()
         switch (configuration.mode)
         {
             case TokenizerMode::Byte:
-                return Trainer{std::in_place_type<NaiveBayesTrainer<BytePolicy>>, configuration.n, configuration.alpha, configuration.start_token, configuration.end_token};
+                return Trainer{
+                    std::in_place_type<NaiveBayesTrainer<BytePolicy>>,
+                    configuration.n,
+                    configuration.alpha,
+                    configuration.start_token,
+                    configuration.end_token};
             case TokenizerMode::CodePoint:
-                return Trainer{std::in_place_type<NaiveBayesTrainer<CodePointPolicy>>, configuration.n, configuration.alpha, configuration.start_token, configuration.end_token};
+                return Trainer{
+                    std::in_place_type<NaiveBayesTrainer<CodePointPolicy>>,
+                    configuration.n,
+                    configuration.alpha,
+                    configuration.start_token,
+                    configuration.end_token};
             case TokenizerMode::Token:
-                return Trainer{std::in_place_type<NaiveBayesTrainer<TokenPolicy>>, configuration.n, configuration.alpha, configuration.start_token, configuration.end_token};
+                return Trainer{
+                    std::in_place_type<NaiveBayesTrainer<TokenPolicy>>,
+                    configuration.n,
+                    configuration.alpha,
+                    configuration.start_token,
+                    configuration.end_token};
         }
         UNREACHABLE();
     }();
@@ -517,7 +532,7 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
 
         /// Reject unknown layout parameters so typos (for example `priors_mod`) are caught at creation instead
         /// of being silently ignored.
-        static const std::unordered_set<std::string_view> known_layout_keys{
+        static const UnorderedSetWithMemoryTracking<std::string_view> known_layout_keys{
             "n", "mode", "alpha", "priors_mode", "priors", "store_source", "class_attribute", "start_token", "end_token"};
         Poco::Util::AbstractConfiguration::Keys layout_keys;
         config.keys(layout_prefix, layout_keys);
@@ -572,7 +587,7 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
 
         const String priors_mode_str = config.getString(layout_prefix + ".priors_mode", "proportional");
         PriorsMode priors_mode = PriorsMode::Uniform;
-        std::map<UInt32, double> explicit_priors;
+        MapWithMemoryTracking<UInt32, double> explicit_priors;
         if (priors_mode_str == "uniform")
         {
             priors_mode = PriorsMode::Uniform;

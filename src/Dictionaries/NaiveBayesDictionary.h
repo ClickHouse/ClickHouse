@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <map>
 #include <optional>
 #include <variant>
 
@@ -10,6 +9,7 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/NaiveBayesModel.h>
+#include <Common/MapWithMemoryTracking.h>
 
 
 namespace DB
@@ -37,7 +37,7 @@ public:
         String end_token;
         PriorsMode priors_mode;
         /// These probabilities are consulted only when the priors mode is explicit.
-        std::map<UInt32, double> explicit_priors;
+        MapWithMemoryTracking<UInt32, double> explicit_priors;
         /// When true, the source n-gram rows are retained so that the dictionary contents can be read back.
         bool store_source;
         /// Declared-attribute index of the class label and of the count, resolved from the `class_attribute` param.

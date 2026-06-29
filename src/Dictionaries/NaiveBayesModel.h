@@ -512,7 +512,7 @@ private:
     ClassIndexMap buildClassTables(
         const ClassCountMap & class_totals, const ClassLogPriorMap & log_priors, size_t vocabulary_size, double alpha, double log_alpha)
     {
-        std::vector<UInt32> classes;
+        VectorWithMemoryTracking<UInt32> classes;
         classes.reserve(class_totals.size());
         for (const auto & entry : class_totals)
             classes.push_back(entry.getKey());
