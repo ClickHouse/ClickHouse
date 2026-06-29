@@ -2336,11 +2336,12 @@ def test_structure_only_restores_access_entities_and_udfs():
         f" TO {backup_name}"
     )
 
+    # Drop the row policy before the database so the referenced table still exists.
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
     instance.query("DROP DATABASE test")
     instance.query("DROP USER u1")
     instance.query("DROP ROLE r1")
     instance.query("DROP SETTINGS PROFILE prof1")
-    instance.query("DROP ROW POLICY rowpol1 ON test.table")
     instance.query("DROP QUOTA q1")
     instance.query("DROP FUNCTION linear_equation")
 
@@ -2354,6 +2355,7 @@ def test_structure_only_restores_access_entities_and_udfs():
     assert instance.query("SELECT count() FROM system.settings_profiles WHERE name = 'prof1'") == "0\n"
     assert instance.query("SELECT count() FROM system.row_policies WHERE short_name = 'rowpol1'") == "0\n"
     assert instance.query("SELECT count() FROM system.quotas WHERE name = 'q1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.functions WHERE name = 'linear_equation'") == "0\n"
 
     instance.query("DROP DATABASE test")
 
