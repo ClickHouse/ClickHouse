@@ -3,6 +3,7 @@
 
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
@@ -113,6 +114,30 @@ namespace
         return postgres_schema.empty() || postgres_schema == "public";
     }
 
+    /// A bounded, collision-resistant identity derived from the full (database, schema, table) triple.
+    /// It is used in place of a plain `database_schema_table` concatenation in the schema-aware
+    /// single-table names below. A plain concatenation with `_` is not injective: `schema = a_b`,
+    /// `table = c` and `schema = a`, `table = b_c` both produce `..._a_b_c_...`. The replication slot name
+    /// is additionally folded by normalizeReplicationSlot() (lower-cased, `-` mapped to `_`), so even
+    /// names PostgreSQL keeps distinct — the schemas `"Foo"` and `"foo"`, or `"a-b"` and `"a_b"` — would
+    /// otherwise map to one slot. In either case two distinct source tables would share one publication or
+    /// one replication slot and their consumers would cross-talk, the very failure this schema-aware
+    /// identity is meant to remove. Hashing a length-prefixed (hence unambiguous) serialization of the
+    /// triple keeps the generated name injective in practice, fixed-length — independent of the schema and
+    /// table length, which keeps the slot within PostgreSQL's 63-character identifier limit — and inside
+    /// the `[a-z0-9_]` slot character set.
+    String getSchemaAwareIdentityHash(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
+    {
+        SipHash hash;
+        hash.update(static_cast<UInt64>(postgres_database.size()));
+        hash.update(postgres_database.data(), postgres_database.size());
+        hash.update(static_cast<UInt64>(postgres_schema.size()));
+        hash.update(postgres_schema.data(), postgres_schema.size());
+        hash.update(static_cast<UInt64>(postgres_table.size()));
+        hash.update(postgres_table.data(), postgres_table.size());
+        return fmt::format("{:016x}", hash.get64());
+    }
+
     String getPublicationName(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
     {
         /// The publication name preserves the case of the database/table name. It is created via
@@ -133,7 +158,9 @@ namespace
             /// so that two standalone tables replicating the same table name from different schemas of
             /// the same PostgreSQL database do not collide on a single publication (which would make
             /// their consumers cross-talk, because the publication carries only the bare relation name).
-            name = fmt::format("{}_{}_{}", postgres_database, postgres_schema, postgres_table);
+            /// A plain `database_schema_table` concatenation is not injective, so a collision-resistant
+            /// hash of the full identity is used instead (see getSchemaAwareIdentityHash()).
+            name = fmt::format("{}_{}", postgres_database, getSchemaAwareIdentityHash(postgres_database, postgres_schema, postgres_table));
         return fmt::format("{}_ch_publication", name);
     }
 
@@ -182,10 +209,12 @@ namespace
             else if (isDefaultPostgreSQLSchema(postgres_schema))
                 slot_name = fmt::format("{}_{}_ch_replication_slot", postgres_database, postgres_table);
             else
-                /// Include the schema for the same reason as in getPublicationName(): otherwise two
-                /// standalone tables replicating the same table name from different schemas of the same
-                /// PostgreSQL database would share the default replication slot.
-                slot_name = fmt::format("{}_{}_{}_ch_replication_slot", postgres_database, postgres_schema, postgres_table);
+                /// Include the schema for the same reason as in getPublicationName(), via the same
+                /// collision-resistant hash: otherwise two standalone tables replicating the same table
+                /// name from different schemas of the same PostgreSQL database would share the default
+                /// replication slot (and normalizeReplicationSlot() would additionally fold case- or
+                /// hyphen-distinct schema names together).
+                slot_name = fmt::format("{}_{}_ch_replication_slot", postgres_database, getSchemaAwareIdentityHash(postgres_database, postgres_schema, postgres_table));
 
             slot_name = normalizeReplicationSlot(slot_name);
         }

@@ -847,9 +847,10 @@ def test_single_table_engine_with_non_default_schema(started_cluster):
     # `materialized_postgresql_schema` setting and created the publication for the bare,
     # unqualified table name, failing with `relation "..." does not exist`.
     cursor = pg_manager.get_db_cursor()
-    # Keep the schema and table names short: the default replication slot name is
-    # `<postgres_database>_<schema>_<table>_ch_replication_slot`, which must stay within
-    # PostgreSQL's 63-character identifier limit (`postgres_database` alone is 17 chars).
+    # The schema-aware default replication slot name is
+    # `<postgres_database>_<identity_hash>_ch_replication_slot`, where the schema and table are folded
+    # into a fixed-length hash, so it stays within PostgreSQL's 63-character identifier limit regardless
+    # of the schema/table length.
     schema_name = "eng_schema"
     table = "eng_table"
     clickhouse_postgres_db = "postgres_database_with_schema_for_table_engine"
@@ -910,9 +911,9 @@ def test_two_schemas_same_table_name_single_storage(started_cluster):
     # dropped and recreated the shared publication and the consumers cross-talked (one replica
     # would stop receiving its schema's changes or ingest the other schema's rows).
     cursor = pg_manager.get_db_cursor()
-    # Keep the names short: the default replication slot name is
-    # `<postgres_database>_<schema>_<table>_ch_replication_slot`, which must stay within
-    # PostgreSQL's 63-character identifier limit (`postgres_database` alone is 17 chars).
+    # The schema-aware default replication slot name folds the schema and table into a fixed-length
+    # `<postgres_database>_<identity_hash>_ch_replication_slot`, so it stays within PostgreSQL's
+    # 63-character identifier limit regardless of the schema/table length.
     schema1 = "cs1"
     schema2 = "cs2"
     table = "ct"
@@ -1547,6 +1548,153 @@ def test_publication_name_case_collision_single_storage(started_cluster):
     for name in (upper, lower):
         instance.query(f"DROP TABLE IF EXISTS `{name}` SYNC")
         pg_manager.execute(f'DROP TABLE "{name}"')
+
+
+def test_schema_aware_identity_publication_separator_collision(started_cluster):
+    # Regression for the publication/slot name collision flagged in review of
+    # https://github.com/ClickHouse/ClickHouse/pull/107425. The schema-aware identity must be injective:
+    # a plain `<postgres_database>_<schema>_<table>` concatenation is not, because `schema = a_b`,
+    # `table = c` and `schema = a`, `table = b_c` both fold to `postgres_database_a_b_c_*`. Two standalone
+    # MaterializedPostgreSQL engines built from those two identities would then share one publication and
+    # one replication slot and their consumers would cross-talk. The identity is derived from a
+    # collision-resistant hash of the full (database, schema, table) triple, so the two engines must own
+    # distinct publications and distinct slots and stay isolated.
+    cursor = pg_manager.get_db_cursor()
+    create_postgres_schema(cursor, "a_b")
+    create_postgres_schema(cursor, "a")
+    create_postgres_table_with_schema(cursor, "a_b", "c")
+    create_postgres_table_with_schema(cursor, "a", "b_c")
+
+    pg_db1 = "sep_src1"
+    pg_db2 = "sep_src2"
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db1, schema_name="a_b", postgres_database="postgres_database"
+    )
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db2, schema_name="a", postgres_database="postgres_database"
+    )
+
+    # Distinct data per engine so a collision is detectable: engine 2's values are offset by 1000.
+    instance.query(f"INSERT INTO {pg_db1}.c SELECT number, number from numbers(0, 50)")
+    instance.query(
+        f"INSERT INTO {pg_db2}.b_c SELECT number, number + 1000 from numbers(0, 30)"
+    )
+
+    instance.query("DROP TABLE IF EXISTS sep_c1 SYNC")
+    instance.query("DROP TABLE IF EXISTS sep_c2 SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE sep_c1 (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 'c', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = 'a_b'
+        """
+    )
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE sep_c2 (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 'b_c', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = 'a'
+        """
+    )
+
+    # Initial snapshot: each engine sees only its own table's rows.
+    assert_eq_with_retry(instance, "SELECT count() FROM sep_c1", "50\n")
+    assert_eq_with_retry(instance, "SELECT count() FROM sep_c2", "30\n")
+    # No cross-talk: engine 2's rows (>= 1000) must never appear in engine 1, and vice versa.
+    assert_eq_with_retry(instance, "SELECT countIf(value >= 1000) FROM sep_c1", "0\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value < 1000) FROM sep_c2", "0\n")
+
+    # The two engines must own distinct PostgreSQL objects (not one shared publication/slot).
+    cursor.execute(
+        "SELECT count(DISTINCT pubname) FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert 2 == cursor.fetchall()[0][0]
+    cursor.execute(
+        "SELECT count(DISTINCT slot_name) FROM pg_replication_slots WHERE slot_name LIKE '%\\_ch\\_replication\\_slot'"
+    )
+    assert 2 == cursor.fetchall()[0][0]
+
+    # Ongoing replication (the consumer path) stays isolated too.
+    instance.query(
+        f"INSERT INTO {pg_db1}.c SELECT number, number from numbers(50, 50)"
+    )
+    instance.query(
+        f"INSERT INTO {pg_db2}.b_c SELECT number, number + 1000 from numbers(30, 30)"
+    )
+    assert_eq_with_retry(instance, "SELECT count() FROM sep_c1", "100\n")
+    assert_eq_with_retry(instance, "SELECT count() FROM sep_c2", "60\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value >= 1000) FROM sep_c1", "0\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value < 1000) FROM sep_c2", "0\n")
+
+    instance.query("DROP TABLE sep_c1 SYNC")
+    instance.query("DROP TABLE sep_c2 SYNC")
+
+
+def test_schema_aware_identity_slot_hyphen_distinct(started_cluster):
+    # Companion to test_schema_aware_identity_publication_separator_collision for the replication slot,
+    # whose name is additionally folded by normalizeReplicationSlot() (lower-cased, `-` mapped to `_`).
+    # PostgreSQL keeps the schemas `"a-b"` and `"a_b"` distinct, but the legacy
+    # `<postgres_database>_<schema>_<table>_ch_replication_slot` would map both (with the same table) to
+    # `postgres_database_a_b_t_ch_replication_slot`, so the two standalone engines would share one slot
+    # even though their publications differ. The collision-resistant identity hash is computed from the
+    # raw (case- and hyphen-preserving) schema, so the two engines must get distinct slots and stay
+    # isolated.
+    cursor = pg_manager.get_db_cursor()
+    # `a-b` is not a bare identifier, so it must be created (and referenced) quoted.
+    cursor.execute('DROP SCHEMA IF EXISTS "a-b" CASCADE')
+    cursor.execute('CREATE SCHEMA "a-b"')
+    create_postgres_schema(cursor, "a_b")
+    create_postgres_table_with_schema(cursor, "a-b", "t")
+    create_postgres_table_with_schema(cursor, "a_b", "t")
+
+    # Seed each source table directly: `a-b`'s values are offset by 1000 so cross-talk is detectable.
+    cursor.execute(
+        'INSERT INTO "a-b"."t" (key, value) SELECT g, g + 1000 FROM generate_series(0, 29) AS g'
+    )
+    cursor.execute(
+        'INSERT INTO "a_b"."t" (key, value) SELECT g, g FROM generate_series(0, 49) AS g'
+    )
+
+    instance.query("DROP TABLE IF EXISTS hyp_dash SYNC")
+    instance.query("DROP TABLE IF EXISTS hyp_underscore SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE hyp_dash (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 't', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = 'a-b'
+        """
+    )
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE hyp_underscore (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 't', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = 'a_b'
+        """
+    )
+
+    assert_eq_with_retry(instance, "SELECT count() FROM hyp_dash", "30\n")
+    assert_eq_with_retry(instance, "SELECT count() FROM hyp_underscore", "50\n")
+    # No cross-talk: `a-b`'s rows (>= 1000) must never appear in the `a_b` replica, and vice versa.
+    assert_eq_with_retry(instance, "SELECT countIf(value < 1000) FROM hyp_dash", "0\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value >= 1000) FROM hyp_underscore", "0\n")
+
+    # The case-/hyphen-distinct schemas must own distinct replication slots (not one shared slot).
+    cursor.execute(
+        "SELECT count(DISTINCT slot_name) FROM pg_replication_slots WHERE slot_name LIKE '%\\_ch\\_replication\\_slot'"
+    )
+    assert 2 == cursor.fetchall()[0][0]
+
+    instance.query("DROP TABLE hyp_dash SYNC")
+    instance.query("DROP TABLE hyp_underscore SYNC")
+    cursor.execute('DROP SCHEMA IF EXISTS "a-b" CASCADE')
 
 
 if __name__ == "__main__":
