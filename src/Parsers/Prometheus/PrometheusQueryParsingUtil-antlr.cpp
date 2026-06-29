@@ -6,6 +6,7 @@
 
 #if USE_ANTLR4_GRAMMARS
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Common/re2.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdocumentation"
@@ -150,6 +151,8 @@ namespace
         static String getText(const antlr4::tree::TerminalNode * ctx) { return ctx->getSymbol()->getText(); }
 
         static size_t getStartPos(const antlr4::tree::TerminalNode * ctx) { return ctx->getSymbol()->getStartIndex(); }
+
+        static size_t getStartPos(const antlr4::ParserRuleContext * ctx) { return ctx->getStart()->getStartIndex(); }
 
         bool parseStringLiteral(const antlr4::tree::TerminalNode * ctx, String & result)
         {
@@ -324,12 +327,91 @@ namespace
             return matcher;
         }
 
+        bool matcherMatchesEmptyString(const Matcher & matcher, size_t error_pos, bool & result)
+        {
+            switch (matcher.matcher_type)
+            {
+                case MatcherType::EQ:
+                    result = matcher.label_value.empty();
+                    return true;
+                case MatcherType::NE:
+                    result = !matcher.label_value.empty();
+                    return true;
+                case MatcherType::RE:
+                case MatcherType::NRE:
+                {
+                    re2::RE2::Options options;
+                    options.set_log_errors(false);
+                    re2::RE2 regexp(matcher.label_value, options);
+                    if (!regexp.ok())
+                    {
+                        error_listener.setError(
+                            "invalid regular expression in label matcher: " + regexp.error(), error_pos);
+                        return false;
+                    }
+
+                    bool regexp_matches_empty_string = re2::RE2::FullMatch("", regexp);
+                    result = (matcher.matcher_type == MatcherType::RE)
+                        ? regexp_matches_empty_string
+                        : !regexp_matches_empty_string;
+                    return true;
+                }
+            }
+
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected PromQL matcher type");
+        }
+
+        bool validateSelectorHasNonEmptyMatcher(const MatcherList & matchers, size_t error_pos)
+        {
+            /// Follow Prometheus parser semantics: a selector like `{job=~".*"}` does not just mean
+            /// "all series with a `job` label", it also matches series where the `job` label is absent.
+            /// That makes typos and broad dashboard variables silently select every metric. Require
+            /// one matcher that cannot match an empty label value instead. To intentionally query all
+            /// metrics, use `{__name__=~".+"}`; if an empty-matching label matcher is needed, keep it
+            /// and add `{__name__=~".+"}` as another matcher.
+            bool has_non_empty_matcher = false;
+            for (const auto & matcher : matchers)
+            {
+                bool matches_empty_string = false;
+                if (!matcherMatchesEmptyString(matcher, error_pos, matches_empty_string))
+                    return false;
+                if (!matches_empty_string)
+                    has_non_empty_matcher = true;
+            }
+
+            if (has_non_empty_matcher)
+                return true;
+
+            error_listener.setError("vector selector must contain at least one non-empty matcher", error_pos);
+            return false;
+        }
+
+        bool validateSelectorDoesNotSetMetricNameTwice(const MatcherList & matchers, bool has_outside_metric_name, size_t error_pos)
+        {
+            if (!has_outside_metric_name)
+                return true;
+
+            /// Prometheus allows multiple `__name__` matchers inside braces, but not an outside
+            /// metric name together with another metric-name matcher inside the selector.
+            for (size_t i = 1; i < matchers.size(); ++i)
+            {
+                if (matchers[i].label_name == "__name__")
+                {
+                    error_listener.setError("metric name must not be set twice", error_pos);
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         /// Makes a node for an instant selector.
         Node * makeInstantSelector(antlr4_grammars::PromQLParser::InstantSelectorContext * ctx)
         {
             auto new_node = std::make_unique<InstantSelector>();
 
             MatcherList matchers;
+            const bool has_outside_metric_name = ctx->metricName() != nullptr;
             if (auto * metric_name_ctx = ctx->metricName())
                 matchers.push_back(getMatcherForMetricName(metric_name_ctx));
 
@@ -347,6 +429,12 @@ namespace
                     matchers.push_back(std::move(matcher));
                 }
             }
+
+            if (!validateSelectorHasNonEmptyMatcher(matchers, getStartPos(ctx)))
+                return nullptr;
+
+            if (!validateSelectorDoesNotSetMetricNameTwice(matchers, has_outside_metric_name, getStartPos(ctx)))
+                return nullptr;
 
             new_node->matchers = std::move(matchers);
             return addNode(std::move(new_node));
