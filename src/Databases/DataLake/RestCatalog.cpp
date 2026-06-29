@@ -1004,17 +1004,18 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
 bool RestCatalog::existsTable(const std::string & namespace_name, const std::string & table_name) const
 {
     TableMetadata table_metadata;
-    return tryGetTableMetadata(namespace_name, table_name, table_metadata);
+    return tryGetTableMetadata(namespace_name, table_name, getContext(), table_metadata);
 }
 
 bool RestCatalog::tryGetTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,
+    DB::ContextPtr context_,
     TableMetadata & result) const
 {
     try
     {
-        return getTableMetadataImpl(namespace_name, table_name, result);
+        return getTableMetadataImpl(namespace_name, table_name, context_, result);
     }
     catch (const DB::Exception & ex)
     {
@@ -1026,15 +1027,17 @@ bool RestCatalog::tryGetTableMetadata(
 void RestCatalog::getTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,
+    DB::ContextPtr context_,
     TableMetadata & result) const
 {
-    if (!getTableMetadataImpl(namespace_name, table_name, result))
+    if (!getTableMetadataImpl(namespace_name, table_name, context_, result))
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from iceberg catalog");
 }
 
 bool RestCatalog::getTableMetadataImpl(
     const std::string & namespace_name,
     const std::string & table_name,
+    DB::ContextPtr context_,
     TableMetadata & result) const
 {
     LOG_DEBUG(log, "Checking table {} in namespace {}", table_name, namespace_name);
@@ -1096,8 +1099,8 @@ bool RestCatalog::getTableMetadataImpl(
     {
         const bool allow_geo_parser
             = getContext()->getSettingsRef()[DB::Setting::allow_experimental_geo_types_in_iceberg].value;
-        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
-        auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
+        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(context_, allow_geo_parser);
+        auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, context_, log);
         auto schema = schema_processor.getClickhouseTableSchemaById(id);
         result.setSchema(*schema);
     }

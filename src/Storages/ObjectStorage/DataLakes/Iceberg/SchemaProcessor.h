@@ -75,18 +75,18 @@ ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
  *     }
  * }
  */
-class IcebergSchemaProcessor
+class IcebergSchemaProcessor : private WithContext
 {
     static std::string default_link;
 
     using Node = ActionsDAG::Node;
 
 public:
-    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
+    explicit IcebergSchemaProcessor(ContextPtr context_, bool allow_geo_parser_ = false) : WithContext(context_), allow_geo_parser(allow_geo_parser_) {}
 
-    void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
+    void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr, ContextPtr context_);
     std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
-    std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
+    std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(ContextPtr context_, Int32 old_id, Int32 new_id);
     NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
     std::optional<NameAndTypePair> tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
     NamesAndTypesList tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const;
@@ -94,7 +94,7 @@ public:
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
     bool hasClickhouseTableSchemaById(Int32 id) const;
 
-    static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
+    static DataTypePtr getSimpleType(const String & type_name, ContextPtr context_, bool allow_geo_parser = true);
 
     static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
 
@@ -114,10 +114,15 @@ private:
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
-    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root);
+    DataTypePtr getComplexTypeFromObject(
+        const Poco::JSON::Object::Ptr & type,
+        String & current_full_name,
+        ContextPtr context_,
+        bool is_subfield_of_root);
     DataTypePtr getFieldType(
         const Poco::JSON::Object::Ptr & field,
         const String & type_key,
+        ContextPtr context_,
         bool required,
         String & current_full_name = default_link,
         bool is_subfield_of_root = false);
@@ -126,7 +131,11 @@ private:
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
 
     std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
-        const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema, Int32 old_id, Int32 new_id);
+        const Poco::JSON::Object::Ptr & old_schema,
+        const Poco::JSON::Object::Ptr & new_schema,
+        ContextPtr context_,
+        Int32 old_id,
+        Int32 new_id);
 
     mutable SharedMutex mutex;
     bool allow_geo_parser = true;

@@ -90,9 +90,9 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 | `date` | `Date32` | |
 | `time` | `Int64` | Microseconds since midnight |
 | `timestamp` | `DateTime64(6)` | Microseconds, no timezone |
-| `timestamptz` | `DateTime64(6, 'UTC')` | Microseconds, UTC timezone |
+| `timestamptz` | `DateTime64(6, timezone)` | Microseconds, timezone from `iceberg_timezone_for_timestamptz` setting, UTC by default |
 | `timestamp_ns` | `DateTime64(9)` | Nanoseconds, no timezone (since Iceberg v3 only) |
-| `timestamptz_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, UTC timezone (since Iceberg v3 only) |
+| `timestamptz_ns` | `DateTime64(9, timezone)` | Nanoseconds, timezone from `iceberg_timezone_for_timestamptz` setting, UTC by default (since Iceberg v3 only) |
 | `string`, `binary` | `String` | |
 | `uuid` | `UUID` | |
 | `fixed(N)` | `FixedString(N)` | |
@@ -327,6 +327,16 @@ CREATE TABLE example_table ENGINE = Iceberg(
 ## Metadata cache {#metadata-cache}
 
 `Iceberg` table engine and table function support metadata cache storing the information of manifest files, manifest list and metadata json. The cache is stored in memory. This feature is controlled by setting `use_iceberg_metadata_files_cache`, which is enabled by default.
+
+## Timezone for `timestamptz` data type {#timestamptz-timezone}
+
+Setting `iceberg_timezone_for_timestamptz` can be used to set custom timezone for column with Iceberg type `timestamptz`.
+
+Possible values:
+* Any valid timezone, e.g. `Europe/Berlin`, `UTC` or `Zulu`
+* empty value - use session timezone
+
+Default value is `UTC`.
 
 ## Asynchronous metadata prefetching {#async-metadata-prefetch}
 

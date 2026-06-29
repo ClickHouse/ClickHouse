@@ -38,9 +38,17 @@ public:
 
     bool existsTable(const std::string & namespace_name, const std::string & table_name) const override;
 
-    void getTableMetadata(const std::string & namespace_name, const std::string & table_name, TableMetadata & result) const override;
+    void getTableMetadata(
+        const std::string & namespace_name,
+        const std::string & table_name,
+        DB::ContextPtr context_,
+        TableMetadata & result) const override;
 
-    bool tryGetTableMetadata(const std::string & namespace_name, const std::string & table_name, TableMetadata & result) const override;
+    bool tryGetTableMetadata(
+        const std::string & namespace_name,
+        const std::string & table_name,
+        DB::ContextPtr context_,
+        TableMetadata & result) const override;
 
     std::optional<StorageType> getStorageType() const override;
 
