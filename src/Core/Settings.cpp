@@ -8124,12 +8124,12 @@ If set to true, allow using the lazy posting list apply mode for text index quer
     DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::MATERIALIZE, R"(
 Controls how posting lists are applied during text index queries.
 'materialize' (default) eagerly decodes posting lists into Roaring Bitmaps.
-'lazy' uses cursor-based on-demand decoding (requires V2 index format and allow_experimental_text_index_lazy_apply).
+'lazy' uses cursor-based on-demand decoding (requires index format with serialized codec and allow_experimental_text_index_lazy_apply).
 )", 0) \
-    DECLARE(Float, text_index_density_threshold, 0.2f, R"(
-Density threshold for algorithm selection in lazy posting list mode.
-Below threshold: leapfrog intersection. At or above: brute-force bitmap.
-)", 0) \
+    DECLARE_WITH_ALIAS(Float, text_index_lazy_intersection_density_threshold, 0.2f, R"(
+Posting list density threshold that selects the intersection algorithm in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
+Below the threshold: leapfrog intersection (favors sparse posting lists). At or above: brute-force bitmap intersection (favors dense posting lists).
+)", 0, text_index_density_threshold) \
     DECLARE(Bool, allow_experimental_window_view, false, R"(
 Enable WINDOW VIEW. Not mature enough.
 )", EXPERIMENTAL) \

@@ -104,14 +104,14 @@ SELECT count() FROM tab_lazy_pe WHERE hasAnyTokens(s, ['bnarrow', 'dwide'])
 --     c0='adense'->linearOr fills via Level-1 dense; c1='csubset'->linearAnd hits
 --     its two dense segments. Triggers: SegmentsSkippedDense (AND side), BruteForceIntersections.
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['adense', 'csubset'])
-    SETTINGS text_index_density_threshold = 0.0,
+    SETTINGS text_index_lazy_intersection_density_threshold = 0.0,
              log_comment = '04257_pe_and_seg_dense';
 
 -- Q6: brute-force AND ['csubset', 'eright'] - disjoint ranges.
 --     c0='csubset' fills 0..299; c1='eright''s segments [1700..1955] and [1956..1999]
 --     are all-zero in the output. Triggers: SegmentsSkippedResolved (AND side).
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['csubset', 'eright'])
-    SETTINGS text_index_density_threshold = 0.0,
+    SETTINGS text_index_lazy_intersection_density_threshold = 0.0,
              log_comment = '04257_pe_and_seg_zero';
 
 -- Q7: brute-force AND ['bnarrow', 'dwide'] - narrow c0 leaves block-level zeros in c1.
@@ -121,14 +121,14 @@ SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['csubset', 'eright'])
 --       - block 0 [0..127] not zero -> decode normally,
 --       - block 1 [128..383] all-zero in output -> BlocksSkippedResolved (AND side) fires.
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['bnarrow', 'dwide'])
-    SETTINGS text_index_density_threshold = 0.0,
+    SETTINGS text_index_lazy_intersection_density_threshold = 0.0,
              log_comment = '04257_pe_and_block_zero';
 
 -- Q8: leapfrog AND ['adense', 'dwide'] forced by threshold 1.0 against min_density=0.57.
 --     intersectLeapfrog dispatches to intersectTwo, which calls advance() repeatedly.
 --     Triggers: LeapfrogIntersections, AdvanceCount.
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['adense', 'dwide'])
-    SETTINGS text_index_density_threshold = 1.0,
+    SETTINGS text_index_lazy_intersection_density_threshold = 1.0,
              log_comment = '04257_pe_alg_leapfrog';
 
 -- ===========================================================================

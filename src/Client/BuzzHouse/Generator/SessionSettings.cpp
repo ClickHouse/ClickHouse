@@ -1552,7 +1552,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"table_function_remote_max_addresses",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 1, 100)); }, {}, false)},
-    {"text_index_density_threshold", probRangeSetting},
+    {"text_index_lazy_intersection_density_threshold", probRangeSetting},
     {"text_index_hint_max_selectivity", probRangeSetting},
     {"text_index_like_max_postings_to_read",
      CHSetting(
