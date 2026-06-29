@@ -144,6 +144,10 @@ Time in seconds spend in write operations requested from the block device, summe
 
 The maximum number of CPU cores according to CGroups.
 
+### CGroupMemoryInactiveFile {#cgroupmemoryinactivefile}
+
+The amount of memory used for inactive file pages in cgroup, in bytes. This value can be used together with the total cgroup memory usage to calculate the working set size (WSS) as reported by Kubernetes.
+
 ### CGroupMemoryTotal {#cgroupmemorytotal}
 
 The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal.
