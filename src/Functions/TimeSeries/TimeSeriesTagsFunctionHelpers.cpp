@@ -220,6 +220,12 @@ namespace
             std::sort(tags.begin(), tags.end(), less_by_tag_name);
             tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
 
+            /// A tag with an empty value means the tag is absent, so drop such tags before checking for
+            /// conflicts. This lets a caller pass an empty value for a tag that is also present (with a
+            /// non-empty value) in the tags array - e.g. an empty `metric_name` column when `__name__` is
+            /// already in the tags - without it being treated as a conflict.
+            std::erase_if(tags, is_tag_value_empty);
+
             auto adjacent = std::adjacent_find(tags.begin(), tags.end(), equal_by_tag_name);
             if (adjacent != tags.end())
             {
@@ -227,8 +233,6 @@ namespace
                     "Found two tags with the same name {} but different values {} and {} while executing function {}",
                     quoteString(adjacent->first), quoteString(adjacent->second), quoteString(std::next(adjacent)->second), function_name);
             }
-
-            std::erase_if(tags, is_tag_value_empty);
         }
     }
 

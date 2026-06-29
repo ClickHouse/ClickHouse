@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/makeTimeSeriesReadQuery.h>
 
+#include <Core/Field.h>
 #include <Core/Joins.h>
 #include <Core/Names.h>
 #include <Parsers/ASTExpressionList.h>
@@ -12,12 +13,19 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesTagNames.h>
 
 #include <optional>
 
 
 namespace DB
 {
+
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsMap tags_to_columns;
+}
 
 namespace
 {
@@ -34,17 +42,71 @@ namespace
         return union_query;
     }
 
+    /// Reads the `tags_to_columns` setting into a list of (tag_name, column_name) pairs — the tags that
+    /// the "tags" table stores in their own columns instead of in the `tags` Map.
+    std::vector<std::pair<String, String>> getPromotedTagColumns(const StorageTimeSeries & storage)
+    {
+        auto storage_settings = storage.getStorageSettings();
+        const Map & tags_to_columns = (*storage_settings)[TimeSeriesSetting::tags_to_columns];
+
+        std::vector<std::pair<String, String>> tag_columns;
+        tag_columns.reserve(tags_to_columns.size());
+        for (const auto & tag_name_and_column_name : tags_to_columns)
+        {
+            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
+            tag_columns.emplace_back(tuple.at(0).safeGet<String>(), tuple.at(1).safeGet<String>());
+        }
+        return tag_columns;
+    }
+
+    /// Builds the outer `tags` column: combines the inner `tags` Map, the metric name (as the `__name__`
+    /// tag), and the tags promoted to their own columns by the `tags_to_columns` setting into one
+    /// Map(String, String), sorted by tag name with duplicates and empty values removed.
+    ASTPtr makeNormalizedTagsColumn(const std::vector<std::pair<String, String>> & tag_columns)
+    {
+        ASTs args;
+        args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
+        args.push_back(make_intrusive<ASTLiteral>(String{TimeSeriesTagNames::MetricName}));
+        args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+        for (const auto & [tag_name, column_name] : tag_columns)
+        {
+            args.push_back(make_intrusive<ASTLiteral>(tag_name));
+            args.push_back(make_intrusive<ASTIdentifier>(column_name));
+        }
+
+        auto tags = makeASTFunction("timeSeriesNormalizeTags", std::move(args));
+        tags->setAlias(TimeSeriesColumnNames::Tags);
+        return tags;
+    }
+
+    /// Builds the outer `metric_name` column. The metric name is normally stored in the inner `metric_name`
+    /// column, but it can instead live in the `tags` Map under `__name__` (e.g. a row inserted directly into
+    /// the inner tags table with an empty `metric_name` column), so fall back to that.
+    ASTPtr makeMetricNameColumn()
+    {
+        auto from_tags = makeASTFunction("arrayElement",
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags),
+            make_intrusive<ASTLiteral>(String{TimeSeriesTagNames::MetricName}));
+        auto metric_name = makeASTFunction("if",
+            makeASTFunction("empty", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName)),
+            std::move(from_tags),
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+        metric_name->setAlias(TimeSeriesColumnNames::MetricName);
+        return metric_name;
+    }
+
     /// Builds `SELECT <requested columns> FROM <tags_table_id>` — only the columns the caller
     /// asked for via `column_names` are returned.
-    ASTPtr makeTagsOnlySelect(const StorageID & tags_table_id, const NameSet & column_names)
+    ASTPtr makeTagsOnlySelect(const StorageID & tags_table_id, const NameSet & column_names,
+                              const std::vector<std::pair<String, String>> & tag_columns)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
         auto select_list = make_intrusive<ASTExpressionList>();
 
         if (column_names.contains(TimeSeriesColumnNames::MetricName))
-            select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+            select_list->children.push_back(makeMetricNameColumn());
         if (column_names.contains(TimeSeriesColumnNames::Tags))
-            select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
+            select_list->children.push_back(makeNormalizedTagsColumn(tag_columns));
 
         /// If none of the "tags" table's columns are requested, we fall back to `1`.
         /// So for example `SELECT count() FROM time_series` is evaluated as
@@ -143,13 +205,13 @@ namespace
     /// Builds the SELECT list of a multi-table read: one entry per requested outer column. `time_series`
     /// and the metadata columns are resolved from the joined "samples"/"metrics" sub-selects, so the caller
     /// must join those tables whenever the corresponding columns are requested.
-    ASTPtr makeJoinedSelectList(const NameSet & column_names)
+    ASTPtr makeJoinedSelectList(const NameSet & column_names, const std::vector<std::pair<String, String>> & tag_columns)
     {
         auto select_list = make_intrusive<ASTExpressionList>();
         if (column_names.contains(TimeSeriesColumnNames::MetricName))
-            select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+            select_list->children.push_back(makeMetricNameColumn());
         if (column_names.contains(TimeSeriesColumnNames::Tags))
-            select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
+            select_list->children.push_back(makeNormalizedTagsColumn(tag_columns));
         if (column_names.contains(TimeSeriesColumnNames::TimeSeries))
             select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries));
         if (column_names.contains(TimeSeriesColumnNames::MetricFamily))
@@ -332,10 +394,11 @@ namespace
         const StorageID & tags_table_id,
         const std::optional<StorageID> & samples_table_id,
         const std::optional<StorageID> & metrics_table_id,
-        const NameSet & column_names)
+        const NameSet & column_names,
+        const std::vector<std::pair<String, String>> & tag_columns)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
-        select_query->setExpression(ASTSelectQuery::Expression::SELECT, makeJoinedSelectList(column_names));
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, makeJoinedSelectList(column_names, tag_columns));
 
         auto tables = make_intrusive<ASTTablesInSelectQuery>();
         tables->children.push_back(makeTagsTableElement(tags_table_id));
@@ -375,7 +438,7 @@ ASTPtr makeTimeSeriesReadQuery(
 
     /// Single-table reads (no join).
     if (!need_samples && !need_metrics)
-        return makeTagsOnlySelect(storage.getTargetTableID(ViewTarget::Tags, context), requested);
+        return makeTagsOnlySelect(storage.getTargetTableID(ViewTarget::Tags, context), requested, getPromotedTagColumns(storage));
     if (need_samples && !need_tags && !need_metrics)
         return makeSamplesOnlySelect(storage.getTargetTableID(ViewTarget::Samples, context));
     if (need_metrics && !need_tags && !need_samples)
@@ -392,7 +455,7 @@ ASTPtr makeTimeSeriesReadQuery(
     if (need_metrics)
         metrics_table_id = storage.getTargetTableID(ViewTarget::Metrics, context);
 
-    return makeTagsBasedSelect(tags_table_id, samples_table_id, metrics_table_id, requested);
+    return makeTagsBasedSelect(tags_table_id, samples_table_id, metrics_table_id, requested, getPromotedTagColumns(storage));
 }
 
 }

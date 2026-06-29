@@ -90,9 +90,9 @@ def test_select_metric_name_and_tags():
     assert node.query(
         "SELECT metric_name, tags FROM prometheus ORDER BY metric_name, tags"
     ) == TSV([
-        ["cpu_usage",           "{'host':'h1'}"],
-        ["http_requests_total", "{'instance':'a','job':'api'}"],
-        ["http_requests_total", "{'instance':'b','job':'api'}"],
+        ["cpu_usage",           "{'__name__':'cpu_usage','host':'h1'}"],
+        ["http_requests_total", "{'__name__':'http_requests_total','instance':'a','job':'api'}"],
+        ["http_requests_total", "{'__name__':'http_requests_total','instance':'b','job':'api'}"],
     ])
 
 
@@ -114,10 +114,23 @@ def test_select_only_tags():
     assert node.query(
         "SELECT tags FROM prometheus ORDER BY tags"
     ) == TSV([
-        ["{'host':'h1'}"],
-        ["{'instance':'a','job':'api'}"],
-        ["{'instance':'b','job':'api'}"],
+        ["{'__name__':'cpu_usage','host':'h1'}"],
+        ["{'__name__':'http_requests_total','instance':'a','job':'api'}"],
+        ["{'__name__':'http_requests_total','instance':'b','job':'api'}"],
     ])
+
+
+def test_select_tags_with_name_in_tags_map():
+    """The metric name may live in the inner tags Map under `__name__` (e.g. a row inserted directly into
+    the inner tags table with an empty `metric_name` column). The reconstructed `tags` must use that
+    `__name__` (without treating the empty `metric_name` column as a conflicting tag), and the outer
+    `metric_name` column falls back to that `__name__`."""
+    node.query(
+        "INSERT INTO FUNCTION timeSeriesTags(prometheus) (metric_name, tags) VALUES"
+        " ('', {'__name__': 'bar', 'x': '1'})"
+    )
+
+    assert node.query("SELECT metric_name, tags FROM prometheus") == TSV([["bar", "{'__name__':'bar','x':'1'}"]])
 
 
 def test_select_count():
@@ -175,8 +188,8 @@ def test_select_metric_name_and_time_series():
     assert node.query(
         "SELECT metric_name, tags, length(time_series) AS n FROM prometheus ORDER BY tags"
     ) == TSV([
-        ["m", "{'k':'1'}", "2"],
-        ["m", "{'k':'2'}", "1"],
+        ["m", "{'__name__':'m','k':'1'}", "2"],
+        ["m", "{'__name__':'m','k':'2'}", "1"],
     ])
 
 
@@ -237,8 +250,8 @@ def test_select_tags_and_metrics_metadata():
     assert node.query(
         "SELECT metric_name, tags, metric_family, type, unit, help FROM prometheus ORDER BY tags"
     ) == TSV([
-        ["http_requests_total", "{'job':'api'}", "http_requests", "counter", "requests", "Total HTTP requests"],
-        ["http_requests_total", "{'job':'web'}", "http_requests", "counter", "requests", "Total HTTP requests"],
+        ["http_requests_total", "{'__name__':'http_requests_total','job':'api'}", "http_requests", "counter", "requests", "Total HTTP requests"],
+        ["http_requests_total", "{'__name__':'http_requests_total','job':'web'}", "http_requests", "counter", "requests", "Total HTTP requests"],
     ])
 
 
@@ -273,7 +286,7 @@ def test_select_tags_and_metrics_family_without_series():
     assert node.query(
         "SELECT metric_name, tags, metric_family, type, unit, help FROM prometheus ORDER BY metric_family"
     ) == TSV([
-        ["http_requests_total", "{'job':'api'}", "http_requests", "counter", "requests", "Total HTTP requests"],
+        ["http_requests_total", "{'__name__':'http_requests_total','job':'api'}", "http_requests", "counter", "requests", "Total HTTP requests"],
         ["",                    "{}",            "memory_bytes",  "gauge",   "bytes",    "Memory usage"],
     ])
 
@@ -316,7 +329,7 @@ def test_select_tags_and_metrics_deduplicated():
     # One row for the single series, not two.
     assert node.query(
         "SELECT metric_name, tags, metric_family, type, unit FROM prometheus"
-    ) == TSV([["http_requests_total", "{'job':'api'}", "http_requests", "counter", "requests"]])
+    ) == TSV([["http_requests_total", "{'__name__':'http_requests_total','job':'api'}", "http_requests", "counter", "requests"]])
 
 
 def test_select_time_series_and_metrics():
@@ -356,7 +369,7 @@ def test_select_tags_samples_and_metrics():
         "SELECT metric_name, tags, length(time_series) AS n, metric_family, type"
         " FROM prometheus ORDER BY metric_name, metric_family"
     ) == TSV([
-        ["",                    "{}",            "0", "memory_bytes",  "gauge"],
-        ["cpu_usage",           "{'host':'h1'}", "1", "",              ""],
-        ["http_requests_total", "{'job':'api'}", "1", "http_requests", "counter"],
+        ["",                    "{}",                                   "0", "memory_bytes",  "gauge"],
+        ["cpu_usage",           "{'__name__':'cpu_usage','host':'h1'}", "1", "",              ""],
+        ["http_requests_total", "{'__name__':'http_requests_total','job':'api'}", "1", "http_requests", "counter"],
     ])
