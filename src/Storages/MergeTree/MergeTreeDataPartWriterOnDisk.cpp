@@ -14,6 +14,7 @@
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
@@ -702,6 +703,31 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
         serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
         serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
         serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column)
+{
+    if (codec->needsVectorDimensionUpfront())
+    {
+        Field sample_field;
+        column->get(0, sample_field);
+        if (sample_field.getType() == Field::Types::Array)
+        {
+            for (size_t j = 0; j < column->size(); ++j)
+            {
+                column->get(j, sample_field);
+                codec->setAndCheckVectorDimension(sample_field.safeGet<Array>().size());
+            }
+        }
+        if (sample_field.getType() == Field::Types::Tuple)
+        {
+            for (size_t j = 0; j < column->size(); ++j)
+            {
+                column->get(j, sample_field);
+                codec->setAndCheckVectorDimension(sample_field.safeGet<Tuple>().size());
+            }
+        }
     }
 }
 

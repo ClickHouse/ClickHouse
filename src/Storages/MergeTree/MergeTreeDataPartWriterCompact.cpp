@@ -77,6 +77,8 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc)
 {
+    CompressedStreamPtr prev_stream;
+
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -107,7 +109,13 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
             it = streams_by_codec.emplace(codec_id, std::make_shared<CompressedStream>(plain_hashing, compression_codec)).first;
         }
 
+        /// If previous stream is not null it means it was Array offsets stream.
+        /// Can't apply lossy compression for offsets.
+        if (prev_stream && prev_stream != it->second && prev_stream->compressed_buf.getCodec()->isLossyCompression())
+            prev_stream->compressed_buf.setCodec(CompressionCodecFactory::instance().getDefaultCodec());
+
         compressed_streams.emplace(stream_name, it->second);
+        prev_stream = it->second;
     };
 
     ISerialization::EnumerateStreamsSettings enumerate_settings;
@@ -320,6 +328,13 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} for column {} not found", stream_name, name_and_type->name);
 
                 auto & result_stream = stream_it->second;
+
+                /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float>
+                /// require specifying the array dimensions before compression starts.
+                /// For 1D arrays, it's simply the length.
+                auto compression_codec = result_stream->compressed_buf.getCodec();
+                setVectorDimensionsIfNeeded(compression_codec, block.getColumnOrSubcolumnByName(name_and_type->name).column.get());
+
                 /// Write one compressed block per column in granule for more optimal reading.
                 if (prev_stream && prev_stream != result_stream)
                 {
