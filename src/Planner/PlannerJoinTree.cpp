@@ -259,7 +259,19 @@ ColumnPtr tryEvaluateConstantProjectionColumn(const QueryTreeNodePtr & node)
     {
         auto argument_column = tryEvaluateConstantProjectionColumn(argument);
         if (!argument_column)
+        {
             all_arguments_constant = false;
+            /// getResultType() below is only valid for argument node types that carry a scalar result
+            /// type. The set side of an IN operator is a subquery/table node, for which getResultType()
+            /// throws (QueryNode supports it only for a correlated subquery). Such a function (in/globalIn)
+            /// is never a constant column, so bail to the plain-column header path instead of throwing.
+            const auto argument_node_type = argument->getNodeType();
+            if (argument_node_type != QueryTreeNodeType::CONSTANT
+                && argument_node_type != QueryTreeNodeType::FUNCTION
+                && argument_node_type != QueryTreeNodeType::COLUMN
+                && argument_node_type != QueryTreeNodeType::LAMBDA)
+                return nullptr;
+        }
         argument_columns.emplace_back(std::move(argument_column), argument->getResultType(), "");
     }
 

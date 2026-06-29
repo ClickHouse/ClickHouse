@@ -98,4 +98,19 @@ SELECT DISTINCT count(*) OVER () FROM (SELECT identity(s IN ('1', '2')) FROM t_w
 -- does not fold to a constant, so the wrapper is not falsely kept constant.
 SELECT DISTINCT count(*) OVER () FROM (SELECT __scalarSubqueryResult(toUInt8(s IN ('1', '2'))) FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
 
+-- A non-constant projection whose IN operator takes a SUBQUERY (not a literal tuple) on its set side must
+-- stay on the plain-column header path. The set side is a subquery node with no scalar result type here,
+-- so folding it must not ask that node for its result type. These shapes used to raise a getResultType
+-- UNSUPPORTED_METHOD exception instead of reaching the missing-cluster check; they must report
+-- CLUSTER_DOESNT_EXIST after the header is built. This covers a bare IN subquery, a transparent wrapper
+-- over an IN subquery, and a partial-constant function whose chosen branch is a non-constant IN subquery.
+SELECT DISTINCT count(*) OVER () FROM (SELECT s IN (SELECT toString(number) FROM numbers(2)) FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
+SELECT DISTINCT count(*) OVER () FROM (SELECT identity(s IN (SELECT toString(number) FROM numbers(2))) FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
+SELECT DISTINCT count(*) OVER () FROM (SELECT if(ignore(s IN (SELECT toString(number) FROM numbers(2))), 7, toUInt8(s IN (SELECT toString(number) FROM numbers(2)))) FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
+
+-- The constant counterpart of the same shapes: when an always-constant function (ignore) or a
+-- partial-constant function resolves to a ColumnConst despite a SUBQUERY IN sibling argument, the
+-- analyze-only header keeps the constant just like the real replica projection, so the query runs.
+SELECT DISTINCT count(*) OVER () FROM (SELECT ignore(s IN (SELECT toString(number) FROM numbers(2))) AND (s IN (SELECT toString(number) FROM numbers(2))) FROM t_window_const);
+
 DROP TABLE t_window_const;
