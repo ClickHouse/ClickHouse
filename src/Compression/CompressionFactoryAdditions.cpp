@@ -75,6 +75,24 @@ bool innerDataTypeIsFloat(const DataTypePtr & type)
     return false;
 }
 
+bool typeContainsMap(const DataTypePtr & type)
+{
+    if (typeid_cast<const DataTypeMap *>(type.get()))
+        return true;
+    if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return typeContainsMap(type_nullable->getNestedType());
+    if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        return typeContainsMap(type_array->getNestedType());
+    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & subtype : type_tuple->getElements())
+            if (typeContainsMap(subtype))
+                return true;
+        return false;
+    }
+    return false;
+}
+
 }
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
@@ -159,6 +177,16 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                         "Codec {} is experimental and not meant to be used in production."
                         " You can enable it with the 'allow_experimental_codecs' setting",
                         codec_family_name);
+
+                /// Lossy codecs must not be applied to Map columns: a Map exposes its keys as a substream
+                /// (a float key would be accepted by a float-only codec like SZ3), and lossily compressing
+                /// the keys would round them on disk and break lookups, grouping and ordering. SZ3 (the only
+                /// lossy codec) is documented for Float*/Array(Float*) columns only, so reject Map entirely.
+                if (result_codec->isLossyCompression() && column_type && typeContainsMap(column_type))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} is lossy and cannot be applied to a column of type {} because it contains a Map, "
+                        "whose keys would be corrupted by lossy compression",
+                        codec_family_name, column_type->getName());
 
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
             }

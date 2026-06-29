@@ -133,8 +133,17 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
 {
     SZ3::Config config;
 
-    size_t num_floats = (source_size / float_width) / dimension.value_or(1);
-    std::array<size_t, 2> result_dimensions{num_floats, dimension.value_or(1)};
+    const size_t total_floats = source_size / float_width;
+    size_t inner_dimension = dimension.value_or(1);
+    /// Fall back to flat 1D compression when this block does not contain a whole number of fixed-width
+    /// vectors. This happens when arrays of different lengths reach the same codec instance (e.g. a merge
+    /// that combines parts whose arrays have different cardinalities) or when a compression-block boundary
+    /// splits an array. Otherwise the truncating division below would drop the trailing elements, and
+    /// decompression would then reject the block because the element count does not match.
+    if (inner_dimension == 0 || total_floats % inner_dimension != 0)
+        inner_dimension = 1;
+    const size_t num_vectors = total_floats / inner_dimension;
+    std::array<size_t, 2> result_dimensions{num_vectors, inner_dimension};
 
     config.setDims(result_dimensions.begin(), result_dimensions.end());
 
@@ -205,9 +214,17 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
 
 void CompressionCodecSZ3::setAndCheckVectorDimension(size_t dimension_)
 {
+    /// SZ3 uses the array length as the inner dimension to exploit the correlation between neighbouring
+    /// elements of fixed-width vectors. When arrays of different lengths reach the same codec instance -
+    /// for example a merge that combines parts whose arrays have different cardinalities, or a single
+    /// block containing variable-length arrays - a single fixed inner dimension can no longer describe the
+    /// data. Failing here would get background merges permanently stuck on data that individual inserts
+    /// already accepted, so instead we fall back to flat 1D compression. Each compressed block stores its
+    /// own dimensions, so blocks compressed with different dimensions still decompress correctly.
     if (dimension.has_value() && *dimension != dimension_)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Vector dimensions are not equals: {} and {}", dimension_, *dimension);
-    dimension = dimension_;
+        dimension = 1;
+    else
+        dimension = dimension_;
 }
 
 template <typename T>
