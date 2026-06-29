@@ -39,7 +39,7 @@ naiveBayesClassifierWithAllProbs(dictionary_name, input_text)
 **Arguments**
 
 - `dictionary_name` — Name of a dictionary with the `NAIVE_BAYES` layout. Must be a constant. [String](../data-types/string.md).
-- `input_text` — The text to classify. [String](../data-types/string.md). It is split according to the dictionary's `mode` (raw bytes, Unicode code points, or whitespace-delimited words); case and punctuation are preserved. An empty string is accepted and classified from the priors alone.
+- `input_text` — The text to classify. [String](../data-types/string.md). It is split according to the dictionary's `mode` (raw bytes, Unicode code points, or words delimited by ASCII whitespace); case and punctuation are preserved. An empty string is accepted and classified from the priors alone.
 
 **Returned values**
 

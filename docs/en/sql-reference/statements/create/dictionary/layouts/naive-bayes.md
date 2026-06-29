@@ -172,8 +172,8 @@ The dictionary can be defined with `CREATE DICTIONARY ... LAYOUT(NAIVE_BAYES(...
 `mode` decides what a "token" is, and therefore what the n-grams look like. The source n-grams must have been produced with the **same** `mode` and `n`.
 
 - `byte` — each token is a single byte; no UTF-8 assumption. With `n = 2`, `'abc'` yields the byte bigrams `'ab'`, `'bc'`. *Good for* language or encoding detection on arbitrary byte sequences, and any data where sub-character signal matters. Usually paired with `n >= 2`.
-- `codepoint` — each token is one Unicode code point (the input must be valid UTF-8). With `n = 1`, `'café'` yields the code points `'c'`, `'a'`, `'f'`, `'é'`. *Good for* script and language detection, and short or CJK text where whitespace word boundaries are unreliable.
-- `token` — each token is a whitespace-delimited word (runs of whitespace collapse to one separator). With `n = 2`, `'a b c'` yields the word bigrams `'a b'`, `'b c'`. *Good for* word-level classification on space-separated languages — sentiment, topic, spam, language of a sentence. This is the most common choice.
+- `codepoint` — each token is one Unicode code point; the input is interpreted as UTF-8. With `n = 1`, `'café'` yields the code points `'c'`, `'a'`, `'f'`, `'é'`. *Good for* script and language detection, and short or CJK text where whitespace word boundaries are unreliable. (Source n-grams must be valid UTF-8; query input is decoded leniently — see [Notes](#notes).)
+- `token` — each token is a word delimited by **ASCII whitespace** (space, tab, newline, carriage return, form feed, vertical tab; runs collapse to one separator). Non-ASCII Unicode whitespace such as `U+00A0` (no-break space) or `U+2003` (em space) is **not** a separator and stays inside a token. With `n = 2`, `'a b c'` yields the word bigrams `'a b'`, `'b c'`. *Good for* word-level classification on space-separated languages — sentiment, topic, spam, language of a sentence. This is the most common choice.
 
 ## Prior modes {#prior-modes}
 
@@ -337,3 +337,4 @@ SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sen
 
 - **Computational dictionary semantics.** This is a *computational* dictionary: `dictGet(dict, '<class_attribute>', text)` classifies `text` (the key is an input to classify, not a stored key), the count attribute is not queryable, and `dictHas` always returns `1`.
 - **Source validation at load.** Every source n-gram must match the configured `n` and `mode` (in `codepoint` mode it must also be valid UTF-8); a mismatch fails the load. A source whose every count is zero, or that is empty, also fails to load.
+- **Query-time tokenization is lenient.** Unlike source validation, query input is never rejected. In `codepoint` mode, bytes that are not valid UTF-8 are decoded on a best-effort basis instead of failing the query; in `token` mode, only ASCII whitespace separates words (Unicode whitespace such as `U+00A0` stays inside a token). Malformed input still classifies — typically from the priors, since its n-grams will not match the trained ones.
