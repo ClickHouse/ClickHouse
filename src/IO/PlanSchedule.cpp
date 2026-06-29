@@ -222,7 +222,6 @@ PlanSchedule buildSchedule(
         r.range = f;
         r.source = PlanSchedule::Source::Remote;
         r.into = writeTargetsFor(geometry, f, request);
-        r.retain_for_serve = request.size && overlaps(f, request);
         sched.retrieves.push_back(std::move(r));
     }
 
@@ -236,7 +235,6 @@ PlanSchedule buildSchedule(
         PlanSchedule::Retrieve promote;
         promote.range = tr.range;
         promote.source = PlanSchedule::Source::HandedChain;
-        promote.upper_source_tier = tr.tier;
         for (size_t ei = 0; ei < tr.tier_entry && ei < geometry.entries.size(); ++ei)  /// faster tiers only
             for (const auto & m : geometry.entries[ei].aligned_miss)
                 if (overlaps(m, tr.range))
@@ -303,7 +301,6 @@ PlanSchedule buildSchedule(
             PlanSchedule::Retrieve up;
             up.range = sub;
             up.source = PlanSchedule::Source::UpperCacheRead;
-            up.upper_source_tier = rr.tier;
             up.into.push_back(cell);
             sched.retrieves.push_back(std::move(up));
         }

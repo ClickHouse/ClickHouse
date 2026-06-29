@@ -189,7 +189,6 @@ TEST(PlanScheduleRetrieves, DesignWorkedExample)
     EXPECT_EQ(r.source, PlanSchedule::Source::Remote);
     EXPECT_EQ(r.range.offset, 0u);
     EXPECT_EQ(r.range.size, 8u);
-    EXPECT_TRUE(r.retain_for_serve);
     EXPECT_TRUE(intoHas(r, 1, {0, 6})) << "fs segment [0,6)";
     EXPECT_TRUE(intoHas(r, 1, {6, 2})) << "fs segment [6,8)";
     /// The fetch fills ONLY the bottom (fs) tier; the page block [5,8) for the user
@@ -295,9 +294,7 @@ TEST(PlanScheduleRetrieves, UpperCacheReadForSplitEmbeddedHit)
     ASSERT_LT(upper, s.retrieves.size()) << "an UpperCacheRead must be emitted for the embedded hit";
     EXPECT_EQ(s.retrieves[upper].range.offset, 4u);
     EXPECT_EQ(s.retrieves[upper].range.size, 4u);
-    EXPECT_EQ(s.retrieves[upper].upper_source_tier, CacheTier::PageCache);
     EXPECT_TRUE(intoHas(s.retrieves[upper], 1, {0, 12})) << "filled down into the fs segment";
-    EXPECT_FALSE(s.retrieves[upper].retain_for_serve);
 }
 
 /// A SMALL embedded hit (bridged, within min_bytes_for_seek) stays a remote
@@ -330,9 +327,7 @@ TEST(PlanScheduleRetrieves, PromoteFromSlowerTier)
         if (r.source == PlanSchedule::Source::HandedChain)
         {
             ++promotes;
-            EXPECT_EQ(r.upper_source_tier, CacheTier::FilesystemCache);
             EXPECT_TRUE(intoHas(r, 0, {0, 8})) << "promote into the page miss cell";
-            EXPECT_FALSE(r.retain_for_serve);
         }
     EXPECT_EQ(promotes, 1u);
     // The step is a cache hit (served from fs), so it waits on no retrieve.
