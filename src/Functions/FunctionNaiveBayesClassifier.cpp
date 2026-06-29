@@ -93,14 +93,15 @@ DataTypePtr makeClassProbTuple()
 
 
 /// Common state and traits shared by the three naiveBayesClassifier* functions.
-class FunctionNaiveBayesBase : public IFunction, protected WithContext
+class FunctionNaiveBayesBase : public IFunction
 {
 protected:
+    ContextPtr context;
     mutable std::atomic<bool> access_checked{false};
 
 public:
     explicit FunctionNaiveBayesBase(ContextPtr context_)
-        : WithContext(context_)
+        : context(std::move(context_))
     {
     }
 
@@ -136,7 +137,7 @@ public:
         auto & data = result_column->getData();
 
         executeNaiveBayes(
-            getContext(),
+            context,
             access_checked,
             arguments,
             input_rows_count,
@@ -175,7 +176,7 @@ public:
         auto & prob_data = prob_col->getData();
 
         executeNaiveBayes(
-            getContext(),
+            context,
             access_checked,
             arguments,
             input_rows_count,
@@ -223,7 +224,7 @@ public:
         auto & offsets = offsets_col->getData();
 
         executeNaiveBayes(
-            getContext(),
+            context,
             access_checked,
             arguments,
             input_rows_count,
