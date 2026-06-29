@@ -24,6 +24,7 @@ namespace Setting
     extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
     extern const SettingsBool optimize_extract_common_expressions;
     extern const SettingsBool optimize_and_compare_chain;
+    extern const SettingsUInt64 optimize_and_compare_chain_max_hash_work;
 }
 
 namespace ErrorCodes
@@ -843,6 +844,7 @@ public:
 
     explicit LogicalExpressionOptimizerVisitor(ContextPtr context)
         : Base(std::move(context))
+        , and_compare_chain_max_hash_work(getSettings()[Setting::optimize_and_compare_chain_max_hash_work])
         , and_compare_chain_hash_work_start(getTreeHashWorkCounter())
     {}
 
@@ -853,15 +855,17 @@ public:
     /// otherwise dominates analysis while folding nothing (e.g. a 16x16 SQL ray-trace: ~72s -> ~3s),
     /// while normal queries hash only thousands of nodes and never approach the budget. Stopping
     /// early is always safe -- it only forgoes an optimization, never changes results.
-    /// (A few million node-hashes is already ~seconds of analysis; could be exposed as a setting.)
-    static constexpr size_t and_compare_chain_max_hash_work = 5'000'000;
-    size_t and_compare_chain_hash_work_start = 0;
+    /// The budget is the `optimize_and_compare_chain_max_hash_work` setting (0 disables it).
+    const size_t and_compare_chain_max_hash_work = 0;
+    const size_t and_compare_chain_hash_work_start = 0;
 
     /// True once this query has hashed more than `and_compare_chain_max_hash_work` nodes (across all
     /// getTreeHash calls) since this visitor started. Used by tryOptimizeAndCompareChain to back off.
+    /// A budget of 0 means unlimited, so the optimization is never stopped early.
     bool andCompareChainHashBudgetExceeded() const
     {
-        return getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work;
+        return and_compare_chain_max_hash_work != 0
+            && getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work;
     }
 
     void enterImpl(QueryTreeNodePtr & node)
