@@ -10,6 +10,8 @@ When adding headers to documentation files under `docs/`, every header must incl
 
 When writing text such as documentation, comments, or commit messages, write names of functions and methods as `f` instead of `f()` - we prefer it for mathematical purity when it refers a function itself rather than its application.
 
+Whenever changes are added, modified, or deleted that relate to the `Native` format - its wire/serialization format, type encodings (e.g. `LowCardinality`, `Array`, `Map`, `Variant`, `Dynamic`, `JSON`), the block/column structure, the compression frame, the `NativeReader`/`NativeWriter`, or the user-facing doc `docs/en/interfaces/formats/Native.md` - also update the official specification `docs/en/interfaces/specs/NativeFormat.md` (slug `/interfaces/specs/NativeFormat`) accordingly in the same change. The spec is the single source of truth for the format; if unsure whether the spec needs updating, flag it.
+
 When mentioning logical errors, say "exception" instead of "crash", because they don't crash the server in the release build.
 
 Links to ClickHouse CI should be analyzed using the tool at `.claude/tools/fetch_ci_report.js`, which directly fetches the underlying JSON data without requiring a browser. It accepts GitHub PR URLs (fetches all CI reports) or direct S3/CI HTML URLs.

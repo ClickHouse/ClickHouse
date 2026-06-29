@@ -1,4 +1,5 @@
 -- Tags: use-rocksdb
+SET explain_query_plan_default = 'legacy';
 
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 

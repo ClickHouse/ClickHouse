@@ -95,19 +95,14 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
         buffer << ", alias: " << getAlias();
 
     buffer << ", constant_value: ";
-    if (mask_id)
-    {
-        if (mask_id == std::numeric_limits<decltype(mask_id)>::max())
-            buffer << "[HIDDEN]";
-        else
-            buffer << "[HIDDEN id: " << mask_id << "]";
-    }
+    if (isMasked())
+        buffer << getMaskString();
     else
         buffer << getValue().dump();
 
     buffer << ", constant_value_type: " << constant_value.getType()->getName();
 
-    if (!mask_id && getSourceExpression())
+    if (!isMasked() && getSourceExpression())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION" << '\n';
         getSourceExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
@@ -138,7 +133,9 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
-    return std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
+    auto result = std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
+    result->mask_id = mask_id;
+    return result;
 }
 
 template <typename F>
