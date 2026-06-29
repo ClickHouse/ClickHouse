@@ -76,6 +76,20 @@ SELECT DISTINCT count(*) OVER () FROM (SELECT __scalarSubqueryResult(ignore(s IN
 SELECT DISTINCT count(*) OVER () FROM (SELECT __scalarSubqueryResult(identity(ignore(s IN ('1', '2')))) FROM t_window_const);
 SELECT DISTINCT count(*) OVER () FROM (SELECT identity(__scalarSubqueryResult(ignore(s IN ('1', '2')))) FROM t_window_const);
 
+-- A partial-constant function produces a ColumnConst from only a subset of constant arguments:
+-- if(const false, non-const, const) yields the const else branch, and(.., const false) yields false,
+-- or(.., const true) yields true. The real projection plan derives this via
+-- getConstantResultForNonConstArguments, so the analyze-only header must keep it constant even though
+-- a sibling argument holds an unevaluable IN.
+SELECT DISTINCT count(*) OVER () FROM (SELECT if(ignore(s IN ('1', '2')), toUInt8(s IN ('1', '2')), 1) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT ignore(s IN ('1', '2')) AND (s IN ('1', '2')) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT (s IN ('1', '2')) OR (NOT ignore(s IN ('1', '2'))) FROM t_window_const);
+
+-- A partial-constant function that does not resolve to a constant (the chosen branch is non-constant)
+-- stays a plain column: if(const false, .., non-const else) is non-constant, so it takes the
+-- plain-column path and reports CLUSTER_DOESNT_EXIST against a missing cluster after the header is built.
+SELECT DISTINCT count(*) OVER () FROM (SELECT if(ignore(s IN ('1', '2')), 7, toUInt8(s IN ('1', '2'))) FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
+
 -- identity over a non-constant IN argument stays a plain column (not falsely kept constant): it goes
 -- the same plain-column header path as a bare IN, so it cannot be evaluated here and deterministically
 -- reports CLUSTER_DOESNT_EXIST against a missing cluster after the header is built.

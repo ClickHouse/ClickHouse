@@ -242,32 +242,52 @@ ColumnPtr tryEvaluateConstantProjectionColumn(const QueryTreeNodePtr & node)
         return nullptr;
     }
 
-    /// Any other function can be constant only if every argument folds to a constant and the function
-    /// preserves that constness. Two function classes do: those suitable for constant folding, and
-    /// transparent wrappers like identity that are not foldable but return their argument unchanged.
-    /// This recursion only visits the arguments (which must themselves fold to constants), so it covers
-    /// nested cases like toString(ignore(s IN (...))) and identity(ignore(s IN (...))) without ever
-    /// descending into the unevaluable IN/subquery. The final isColumnConst check below is the safety
-    /// net: a wrapper over a non-constant argument never reaches here, because that argument fails to
-    /// fold and we return nullptr first.
+    /// A function preserves constness only if it is suitable for constant folding, or it is a
+    /// transparent wrapper like identity that is not foldable but returns its argument unchanged.
     if (!function_base->isSuitableForConstantFolding()
         && !functionIsTransparentConstantWrapper(*function_base))
         return nullptr;
 
+    /// Fold each argument. Some may not fold to a constant (for example a genuinely non-constant
+    /// s IN (...) subtree). The recursion only visits arguments and never descends into an
+    /// unevaluable IN/subquery: such a subtree does not fold and yields a null column here.
     ColumnsWithTypeAndName argument_columns;
     const auto & arguments = function_node->getArguments().getNodes();
     argument_columns.reserve(arguments.size());
+    bool all_arguments_constant = true;
     for (const auto & argument : arguments)
     {
         auto argument_column = tryEvaluateConstantProjectionColumn(argument);
         if (!argument_column)
-            return nullptr;
+            all_arguments_constant = false;
         argument_columns.emplace_back(std::move(argument_column), argument->getResultType(), "");
     }
 
-    auto column = function_base->prepare(argument_columns)->execute(argument_columns, result_type, 1, /* dry_run = */ true);
-    if (column && isColumnConst(*column))
-        return column->cloneResized(1);
+    /// All arguments are constant: execute the function on them. Covers ordinary foldable functions
+    /// like toString(ignore(s IN (...))) and transparent wrappers like identity(ignore(s IN (...)))
+    /// that return their constant argument unchanged. Mirrors the all-const branch of
+    /// ActionsDAG::addFunctionImpl.
+    if (all_arguments_constant)
+    {
+        auto column = function_base->prepare(argument_columns)->execute(argument_columns, result_type, 1, /* dry_run = */ true);
+        if (column && isColumnConst(*column))
+            return column->cloneResized(1);
+        return nullptr;
+    }
+
+    /// Only some arguments are constant. A foldable function may still produce a constant from a
+    /// subset of constant arguments: if(const false, non-const, const) yields the const else branch,
+    /// and(..., const false) yields false, or(..., const true) yields true. The real projection plan
+    /// derives this same constant via getConstantResultForNonConstArguments (passing a null column for
+    /// each non-constant argument) in ActionsDAG::addFunctionImpl / evaluatePartialResult, so mirror it
+    /// here to keep the analyze-only header constant. Transparent wrappers do not implement this hook,
+    /// so a wrapper over a non-constant argument correctly stays non-constant.
+    if (function_base->isSuitableForConstantFolding())
+    {
+        auto column = function_base->getConstantResultForNonConstArguments(argument_columns, result_type);
+        if (column && isColumnConst(*column))
+            return column->cloneResized(1);
+    }
     return nullptr;
 }
 
