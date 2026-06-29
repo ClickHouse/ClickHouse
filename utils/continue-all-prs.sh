@@ -4,7 +4,9 @@ set -euo pipefail
 # Continuously advance every open pull request that involves you - the ones you
 # authored, the ones assigned to you, and the ones you've contributed to
 # (commented on or reviewed) - by fanning out a pool of workers, each running
-# the `/continue-pr` skill in its own git worktree.
+# the `/continue-pr` skill in its own git worktree. By default all three
+# categories are selected; restrict with --mine / --assigned / --related (which
+# may be combined).
 #
 # Instead of statically splitting the PRs across shards, the main process keeps
 # a shared work queue of all of those PRs and hands the next PR to whichever
@@ -34,6 +36,11 @@ set -euo pipefail
 #
 # Options:
 #   --workers N           Number of parallel workers / worktrees (default: 1).
+#   --mine                Select PRs you authored.
+#   --assigned            Select PRs assigned to you.
+#   --related             Select PRs you've contributed to (commented/reviewed).
+#                         --mine/--assigned/--related are combinable; if none is
+#                         given, all three are selected.
 #   --worktree-base PATH  Base path for worker worktrees; worker i lives at
 #                         "<PATH>-<i>". Default: "<main-repo>-prworker".
 #   --timeout SECONDS     Per-PR timeout for `/continue-pr` (default: 3600).
@@ -79,6 +86,12 @@ SKIP_SUBMODULES=0
 COLOR_WHEN="auto"
 DRY_RUN=0
 
+# PR selection modes (combinable). If none are given, all are enabled.
+MODE_MINE=0       # PRs I authored
+MODE_ASSIGNED=0   # PRs assigned to me
+MODE_RELATED=0    # PRs I've contributed to (commented on or reviewed)
+MODE_ANY=0        # whether any mode was explicitly requested
+
 usage()
 {
     # Print the leading comment header (the first contiguous block of comment
@@ -95,6 +108,9 @@ while [[ $# -gt 0 ]]; do
         --skip-submodules) SKIP_SUBMODULES=1; shift ;;
         --color)          COLOR_WHEN="$2"; shift 2 ;;
         --dry-run)        DRY_RUN=1; shift ;;
+        --mine)           MODE_MINE=1;     MODE_ANY=1; shift ;;
+        --assigned)       MODE_ASSIGNED=1; MODE_ANY=1; shift ;;
+        --related)        MODE_RELATED=1;  MODE_ANY=1; shift ;;
         --help|-h)        usage; exit 0 ;;
         *) echo "${S}Unknown option: $1${R}" >&2; echo "Run with --help for usage." >&2; exit 1 ;;
     esac
@@ -107,6 +123,11 @@ fi
 
 MAIN_REPO="$(git rev-parse --show-toplevel)"
 [[ -n "$WORKTREE_BASE" ]] || WORKTREE_BASE="${MAIN_REPO}-prworker"
+
+# No mode flag given -> select all categories (the default behavior).
+if (( ! MODE_ANY )); then
+    MODE_MINE=1; MODE_ASSIGNED=1; MODE_RELATED=1
+fi
 
 # ----------------------------------------------------------------------------
 # Color handling
@@ -453,18 +474,24 @@ fetch_prs()
         return 0
     fi
 
-    # Process every open PR that involves me, in three categories:
-    #   * authored by me                 (--author)
-    #   * assigned to me                 (--assignee)
-    #   * contributed to by me           (--commenter, --reviewed-by)
-    # The four searches are unioned, deduplicated by PR number, and sorted by
-    # last update (oldest first), so a PR that matches several categories is
-    # processed only once.
+    # Search the selected categories of open PRs that involve me:
+    #   --mine      -> authored by me            (--author)
+    #   --assigned  -> assigned to me            (--assignee)
+    #   --related   -> contributed to by me      (--commenter, --reviewed-by)
+    # The searches are unioned, deduplicated by PR number, and sorted by last
+    # update (oldest first), so a PR matching several categories is processed
+    # only once.
     {
-        gh search prs --repo "$REPO" --state open --author      @me --limit 1000 --json number,title,updatedAt
-        gh search prs --repo "$REPO" --state open --assignee    @me --limit 1000 --json number,title,updatedAt
-        gh search prs --repo "$REPO" --state open --commenter   @me --limit 1000 --json number,title,updatedAt
-        gh search prs --repo "$REPO" --state open --reviewed-by @me --limit 1000 --json number,title,updatedAt
+        if (( MODE_MINE )); then
+            gh search prs --repo "$REPO" --state open --author      @me --limit 1000 --json number,title,updatedAt
+        fi
+        if (( MODE_ASSIGNED )); then
+            gh search prs --repo "$REPO" --state open --assignee    @me --limit 1000 --json number,title,updatedAt
+        fi
+        if (( MODE_RELATED )); then
+            gh search prs --repo "$REPO" --state open --commenter   @me --limit 1000 --json number,title,updatedAt
+            gh search prs --repo "$REPO" --state open --reviewed-by @me --limit 1000 --json number,title,updatedAt
+        fi
     } | jq -s -r '
         add
         | unique_by(.number)
@@ -484,10 +511,18 @@ fi
 
 maybe_color_hint
 
+modes=()
+(( MODE_MINE ))     && modes+=("mine")
+(( MODE_ASSIGNED )) && modes+=("assigned")
+(( MODE_RELATED ))  && modes+=("related")
+MODES_DESC=$(IFS=,; echo "${modes[*]}")
+MODES_DESC=${MODES_DESC//,/, }
+
 banner "Main repo:       $MAIN_REPO"
 banner "Workers:         $WORKERS"
 banner "Worktree base:   ${WORKTREE_BASE}-{0..$((WORKERS - 1))}"
-[[ -n "$GH_USER" ]] && banner "GitHub user:     $GH_USER (PRs authored / assigned / contributed)"
+[[ -n "$GH_USER" ]] && banner "GitHub user:     $GH_USER"
+banner "Selecting:       $MODES_DESC"
 banner "Per-PR timeout:  ${TIMEOUT}s"
 (( DRY_RUN )) && banner "DRY RUN: not creating worktrees or running /continue-pr"
 echo ""
