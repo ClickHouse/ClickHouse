@@ -338,7 +338,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
 def test_max_set_age(started_cluster, mode):
     # We use an instance without keeper fault injection,
-    # because otherwise we fail to update keeper state in 1.5 * max_age,
+    # because otherwise we fail to update keeper state within the wait window,
     # so we cannot check max_set_age correctness properly.
     node = started_cluster.instances["instance_without_keeper_fault_injection"]
     table_name = f"max_set_age_{mode}_{generate_random_string()}"
@@ -378,7 +378,14 @@ def test_max_set_age(started_cluster, mode):
     def get_count():
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-    def wait_for_condition(check_function, max_wait_time=1.5 * max_age):
+    # Slow instrumented builds (sanitizers, coverage) ingest far slower, so give
+    # them a larger ceiling; fast release/debug builds keep the tighter
+    # 1.5 * max_age so a genuine regression is not masked. Either way the ceiling
+    # stays above max_age so the tracked_file_ttl expiry the test relies on fires.
+    slow_build = node.is_built_with_sanitizer() or node.is_built_with_llvm_coverage()
+    condition_wait_time = (3 if slow_build else 1.5) * max_age
+
+    def wait_for_condition(check_function, max_wait_time=condition_wait_time):
         before = time.time()
         while time.time() - before < max_wait_time:
             if check_function():

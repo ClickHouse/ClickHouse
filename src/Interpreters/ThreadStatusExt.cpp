@@ -303,6 +303,10 @@ void CurrentThread::attachQueryForLog(const String & query_)
 
 void ThreadStatus::applyGlobalSettings()
 {
+    /// Runs on every attach (after memory_tracker is parented to the group), so non-query threads
+    /// still pick up total_memory_tracker_sample_probability; query threads refine it in applyQuerySettings.
+    resolveMemorySampleConfig();
+
     auto global_context_ptr = global_context.lock();
     if (!global_context_ptr)
         return;
@@ -336,10 +340,7 @@ void ThreadStatus::applyQuerySettings()
     /// (we cannot do this for all threads, even though it is no-op, since it is a data-race)
     if (thread_group->master_thread_id == thread_id)
         configureMemoryTrackerFromSettings(query_context_ptr->hasTraceCollector(), thread_group->memory_tracker, settings);
-    auto sample_config = memory_tracker.getResolvedSampleConfig();
-    sample_probability = sample_config.probability;
-    sample_min_allocation_size = sample_config.min_allocation_size;
-    sample_max_allocation_size = sample_config.max_allocation_size;
+    resolveMemorySampleConfig();
 
 #if USE_JEMALLOC
     if (settings[Setting::jemalloc_enable_profiler])
@@ -411,6 +412,9 @@ void ThreadStatus::detachFromGroup()
     memory_tracker.reset();
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
+    /// Refresh the cache for the new parent so the detached thread honors
+    /// total_memory_tracker_sample_probability rather than the query's stale config.
+    resolveMemorySampleConfig();
 
     thread_group->unlinkThread();
 
