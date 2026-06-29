@@ -13,3 +13,10 @@ Tuple(a UInt8, s String)	tuple(x, defaultValueOfTypeName(\'String\'))
 Tuple(a UInt8, s String)	tuple(1 + 2, upper(\'hi\'))
 (3,'HI')
 -- errors
+-- alter add column
+Tuple(a UInt8, s String)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hi\')
+1	(0,'Hi')
+-- alter modify column
+Tuple(a UInt8, b UInt8)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), 42)
+1	(0,42)
+-- alter errors
