@@ -22,9 +22,11 @@ CREATE TABLE tab_map (
     compressed_f32   Map(UInt8, Float32) CODEC(SZ3('ALGO_INTERP', 'REL', 0.01))
 ) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
 
--- SZ3 for array columns requires that all inserted arrays have the same cardinality
-CREATE TABLE tab (key UInt64, val Array(Float64) CODEC(SZ3)) ENGINE = MergeTree ORDER BY key;
-INSERT INTO tab VALUES (1, [1.0, 2.0]) (2, [3.0, 4.0, 5.0]); -- { serverError BAD_ARGUMENTS }
+-- SZ3 is lossy and would round Map keys on disk, so Map columns are rejected even when the keys are floats
+CREATE TABLE tab_map (
+    compressed_f64   Map(Float64, Float64) CODEC(SZ3('ALGO_INTERP', 'REL', 0.01)),
+    compressed_f32   Map(Float32, Float32) CODEC(SZ3('ALGO_INTERP', 'REL', 0.01))
+) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS tab;
 
@@ -48,6 +50,49 @@ CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_INTERP', 'NOT_A_MODE', 0.01
 
 -- SZ3 must be applied to raw float data, so it can not follow another codec
 CREATE TABLE tab (compressed Float64 CODEC(Delta, SZ3)) Engine = Memory; -- { serverError BAD_ARGUMENTS }
+
+SELECT 'Array columns with different lengths across parts';
+-- Two separate inserts create two parts whose arrays have different cardinalities. Each part is internally
+-- consistent, but a forced merge combines both through a single SZ3 codec instance. SZ3 must not get stuck
+-- on the differing dimensions (which would leave background merges permanently failing on data that
+-- individual inserts accepted): it falls back to flat 1D compression for the merged part. The array
+-- structure is preserved exactly; only the float values are lossy (here within the ABS error bound).
+
+DROP TABLE IF EXISTS tab_merge_wide;
+DROP TABLE IF EXISTS tab_merge_compact;
+
+CREATE TABLE tab_merge_wide (key UInt64, orig Array(Float64), val Array(Float64) CODEC(SZ3('ALGO_INTERP', 'ABS', 0.01)))
+    ENGINE = MergeTree ORDER BY key SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+CREATE TABLE tab_merge_compact (key UInt64, orig Array(Float64), val Array(Float64) CODEC(SZ3('ALGO_INTERP', 'ABS', 0.01)))
+    ENGINE = MergeTree ORDER BY key SETTINGS min_bytes_for_wide_part = 1e9, min_rows_for_wide_part = 1e9;
+
+SYSTEM STOP MERGES tab_merge_wide;
+SYSTEM STOP MERGES tab_merge_compact;
+
+INSERT INTO tab_merge_wide VALUES (1, [10.0, 20.0], [10.0, 20.0]);
+INSERT INTO tab_merge_wide VALUES (2, [30.0, 40.0, 50.0], [30.0, 40.0, 50.0]);
+INSERT INTO tab_merge_compact VALUES (1, [10.0, 20.0], [10.0, 20.0]);
+INSERT INTO tab_merge_compact VALUES (2, [30.0, 40.0, 50.0], [30.0, 40.0, 50.0]);
+
+SELECT '-- before merge: two parts each';
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_merge_wide' AND active;
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_merge_compact' AND active;
+
+SYSTEM START MERGES tab_merge_wide;
+SYSTEM START MERGES tab_merge_compact;
+OPTIMIZE TABLE tab_merge_wide FINAL;
+OPTIMIZE TABLE tab_merge_compact FINAL;
+
+SELECT '-- after merge: one part each, lengths preserved, values within the error bound';
+SELECT key, length(val), arrayMax(arrayMap((o, r) -> abs(o - r), orig, val)) <= 0.05 AS within_error
+FROM tab_merge_wide ORDER BY key;
+SELECT key, length(val), arrayMax(arrayMap((o, r) -> abs(o - r), orig, val)) <= 0.05 AS within_error
+FROM tab_merge_compact ORDER BY key;
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_merge_wide' AND active;
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_merge_compact' AND active;
+
+DROP TABLE tab_merge_wide;
+DROP TABLE tab_merge_compact;
 
 SELECT 'Test wide/compact format';
 -- Very basic test to make sure nothing breaks

@@ -449,7 +449,7 @@ This codec is experimental and requires `SET allow_experimental_codecs = 1` to u
 
 #### SZ3 {#sz3}
 
-`SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec ([SZ3 Lossy Compressor](https://szcompressor.org/)) for columns of type Float32, Float64, Array(Float32), or Array(Float64). If the column type is of array type, then all inserted arrays must have the same length. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'error_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
+`SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec ([SZ3 Lossy Compressor](https://szcompressor.org/)) for columns of type Float32, Float64, Array(Float32), or Array(Float64). For array columns, compression is most effective when all arrays have the same length (they are then compressed as fixed-width vectors); arrays of different lengths are still supported and are compressed as a flat sequence of values. The codec is not applicable to Map columns, because its keys would be corrupted by lossy compression. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'error_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
 
 #### T64 {#t64}
 

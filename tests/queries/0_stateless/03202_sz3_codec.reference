@@ -1,4 +1,15 @@
 Negative tests
+Array columns with different lengths across parts
+-- before merge: two parts each
+2
+2
+-- after merge: one part each, lengths preserved, values within the error bound
+1	2	1
+2	3	1
+1	2	1
+2	3	1
+1
+1
 Test wide/compact format
 0	[1,0]
 1	[1.1,0]
