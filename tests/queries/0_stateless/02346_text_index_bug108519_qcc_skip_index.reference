@@ -8,5 +8,7 @@ rowlevel_populate	1
 rowlevel_qcc_prunes	1
 two_idx_populate_a	0
 two_idx_ignore_a	1
+alter_populate	0
+alter_no_stale_read	1
 disj_off_consults_entry	0
 disj_same_reuses_entry	1

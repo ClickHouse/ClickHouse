@@ -105,6 +105,38 @@ SETTINGS use_query_condition_cache = 1, ignore_data_skipping_indices = 'idx_a';
 
 DROP TABLE tab_two;
 
+-- A pending ALTER MODIFY COLUMN that changes the type of an indexed column makes index analysis skip
+-- that index for the affected part: canUseIndex rejects it because getAllUpdatedColumns() lists the
+-- column (AlterConversions only adds a READ_COLUMN column when its type is changing). A skip-index
+-- exclusion cached earlier, when the index did run, must not be served to this query, which did not run
+-- the index for the part (the "indexes that actually ran" invariant). It is not, and without a separate
+-- mutation gate: the type change that triggers the canUseIndex rejection also changes the bare WHERE
+-- condition hash (ActionsDAG::Node::updateHash folds in each node's result_type), hence the profiled key
+-- too, so the query looks under a different key and gets a clean miss. Correct row-level answer is 1; a
+-- replayed skip-index exclusion (the false negative below) would wrongly return 0.
+DROP TABLE IF EXISTS tab_alter;
+CREATE TABLE tab_alter
+(
+    s String,
+    INDEX idx s TYPE text(tokenizer = splitByNonAlpha, preprocessor = replaceAll(s, ' ', ''))
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO tab_alter VALUES ('zzz'), ('a b');
+
+-- Populate via the index path: the text index drops the 'a b' granule (false negative), cached.
+SELECT 'alter_populate', count() FROM tab_alter WHERE hasToken(s, 'a')
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0;
+
+-- Pending type change on the indexed column. Merges are stopped so the mutation stays on the fly.
+SYSTEM STOP MERGES tab_alter;
+ALTER TABLE tab_alter MODIFY COLUMN s LowCardinality(String) SETTINGS mutations_sync = 0, alter_sync = 0;
+
+-- canUseIndex now rejects idx for the part, so the stale exclusion must not be consulted. Correct is 1.
+SELECT 'alter_no_stale_read', count() FROM tab_alter WHERE hasToken(s, 'a')
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0;
+
+DROP TABLE tab_alter;
+
 -- use_skip_indexes_for_disjunctions changes the exclusions the same indexes produce for OR
 -- predicates (the combined-index pruning only runs when it is on), so it is part of the effective
 -- profile. The divergence here is not visible as a different row count: the per-column text index
@@ -112,7 +144,10 @@ DROP TABLE tab_two;
 -- is the same either way. What must differ is the QCC consultation: an entry written under the
 -- disjunction-enabled profile must NOT be consulted by a query that disabled the optimization, while
 -- a query with the same profile must still reuse it (so the combined-index exclusions are not
--- re-evaluated). Assert that via the QueryConditionCacheHits/Misses profile events.
+-- re-evaluated). Assert that via the QueryConditionCacheHits/Misses profile events. The cache is keyed
+-- by (table uuid, part, condition hash); tab_disj is freshly created, so its entries are unique to this
+-- run and no instance-wide SYSTEM DROP QUERY CONDITION CACHE is needed (that would race sibling QCC
+-- tests in the parallel pool).
 DROP TABLE IF EXISTS tab_disj;
 CREATE TABLE tab_disj
 (
@@ -123,7 +158,6 @@ CREATE TABLE tab_disj
 )
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 INSERT INTO tab_disj VALUES ('zzz', 1), ('a b', 2);
-SYSTEM DROP QUERY CONDITION CACHE;
 
 -- Populate under the disjunction-enabled profile.
 SELECT count() FROM tab_disj WHERE hasToken(s, 'a') OR n = 999
