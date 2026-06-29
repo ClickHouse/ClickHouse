@@ -49,6 +49,36 @@ const ImplInfo * getImplInfo(std::string_view operator_name)
     return &it->second;
 }
 
+/// Replace Prometheus stale markers with NULL in a `values` array.
+///
+/// Instant-selector grids intentionally keep stale markers (`fromSelector` passes
+/// `filter_stale_markers = false`); they are only filtered away at finalization. For set matching
+/// a stale marker means the series is absent at that step, so it must not be seen as present by
+/// `countForEach` below, nor by the non-empty row predicates. Normalize it to NULL up front.
+///
+/// `0x7ff0000000000002` is Prometheus's staleness NaN bit pattern (see `fromSelector` and
+/// `finalizeSQL`). For grids without stale markers this is a no-op.
+ASTPtr dropStaleMarkers(ASTPtr values)
+{
+    return makeASTFunction(
+        "arrayMap",
+        makeASTFunction(
+            "lambda",
+            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("value")),
+            makeASTFunction(
+                "if",
+                makeASTFunction(
+                    "and",
+                    makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("value")),
+                    makeASTFunction(
+                        "equals",
+                        makeASTFunction("reinterpretAsUInt64", makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("value"))),
+                        make_intrusive<ASTLiteral>(0x7ff0000000000002ULL))),
+                make_intrusive<ASTLiteral>(Field{}),
+                make_intrusive<ASTIdentifier>("value"))),
+        std::move(values));
+}
+
 ASTPtr makeNonEmptyValuesPredicate(ASTPtr values)
 {
     return makeASTFunction(
@@ -103,20 +133,17 @@ void checkArgumentTypes(
 
     if (operator_node->group_left)
     {
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Binary operator '{}' doesn't allow group_left", operator_name);
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Binary operator '{}' doesn't allow group_left", operator_name);
     }
 
     if (operator_node->group_right)
     {
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Binary operator '{}' doesn't allow group_right", operator_name);
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Binary operator '{}' doesn't allow group_right", operator_name);
     }
 
     if (operator_node->bool_modifier)
     {
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Binary operator '{}' doesn't allow bool modifier", operator_name);
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Binary operator '{}' doesn't allow bool modifier", operator_name);
     }
 
     (void)context;
@@ -146,7 +173,8 @@ prepareSide(const PQT::BinaryOperator * operator_node, SQLQueryPiece && argument
     builder.select_list.push_back(std::move(join_group));
     builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
 
-    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+    builder.select_list.push_back(dropStaleMarkers(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+    builder.select_list.back()->setAlias(ColumnNames::Values);
 
     return materializeTable(builder.getSelectQuery(), context);
 }
