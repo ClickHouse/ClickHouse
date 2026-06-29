@@ -473,3 +473,60 @@ def test_vended_credentials_cache(started_cluster):
     vended, hits = get_credentials_profile_events(node, qid)
     assert vended >= 1 and hits == 0
 
+
+def test_vended_credentials_cache_invalidated_on_table_replace(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_replace_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    if namespace not in catalog.list_namespaces():
+        catalog.create_namespace(namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+
+    def create_and_fill(rows):
+        table = catalog.create_table(
+            namespace + (table_name,),
+            schema=schema,
+            properties={"write.metadata.compression-codec": "none"},
+        )
+        table.append(
+            pa.Table.from_pandas(
+                pd.DataFrame({"id": list(range(rows)), "data": ["x"] * rows}).astype({"id": "int32"})
+            )
+        )
+
+    create_and_fill(1)
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    # Populate the cache, then confirm the next query reuses it.
+    node.query(query, query_id=f"{test_ref}-1-{uuid.uuid4()}")
+    qid = f"{test_ref}-2-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+    # Replace the table (new UUID and location) while the cache entry is still valid.
+    catalog.drop_table(namespace + (table_name,))
+    create_and_fill(2)
+
+    # The stale entry must be detected, so credentials are re-vended and the new table is read.
+    qid = f"{test_ref}-3-{uuid.uuid4()}"
+    assert node.query(query, query_id=qid).strip() == "2"
+    vended, _ = get_credentials_profile_events(node, qid)
+    assert vended >= 1
+
+    # The re-vended credentials are cached under the new identity, so the next query reuses them.
+    qid = f"{test_ref}-4-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+

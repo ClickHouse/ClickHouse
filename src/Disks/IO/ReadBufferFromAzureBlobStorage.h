@@ -71,6 +71,8 @@ private:
     void initialize(size_t attempt);
     void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
 
+    std::pair<ContainerClientPtr, BlobClientPtr> tryGetRefreshedClient(const Azure::Core::RequestFailedException & e) const;
+
     /// On an auth failure, swap in refreshed credentials and retry (sequential path only, once per buffer).
     bool tryRefreshCredentials(const Azure::Core::RequestFailedException & e);
 

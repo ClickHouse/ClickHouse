@@ -90,6 +90,13 @@ static constexpr auto NAMESPACES_ENDPOINT = "namespaces";
 namespace
 {
 
+String parseTableUuid(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    if (metadata_object && metadata_object->has("table-uuid"))
+        return metadata_object->get("table-uuid").extract<String>();
+    return {};
+}
+
 std::pair<std::string, std::string> parseCatalogCredential(const std::string & catalog_credential)
 {
     /// Parse a string of format "<client_id>:<client_secret>"
@@ -1047,7 +1054,8 @@ void RestCatalog::getTableMetadata(
 bool RestCatalog::getTableMetadataImpl(
     const std::string & namespace_name,
     const std::string & table_name,
-    TableMetadata & result) const
+    TableMetadata & result,
+    bool allow_credentials_cache) const
 {
     LOG_DEBUG(log, "Checking table {} in namespace {}", table_name, namespace_name);
 
@@ -1059,7 +1067,8 @@ bool RestCatalog::getTableMetadataImpl(
     std::optional<VendedStorageCredentials> cached_credentials;
     if (want_credentials)
     {
-        cached_credentials = tryGetCachedCredentials(namespace_name, table_name);
+        if (allow_credentials_cache)
+            cached_credentials = tryGetCachedCredentials(namespace_name, table_name);
 
         /// Header `X-Iceberg-Access-Delegation` tells catalog to include storage credentials in LoadTableResponse.
         /// Value can be one of the two:
@@ -1067,9 +1076,7 @@ bool RestCatalog::getTableMetadataImpl(
         /// 2. `remote-signing`
         /// Currently we support only the first.
         /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L1832
-        if (cached_credentials)
-            ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogCredentialsCacheHits);
-        else
+        if (!cached_credentials)
         {
             ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogCredentialsVended);
             headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
@@ -1102,6 +1109,8 @@ bool RestCatalog::getTableMetadataImpl(
     if (!metadata_object)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
 
+    const std::string table_uuid = parseTableUuid(metadata_object);
+
     std::string location;
     if (result.requiresLocation())
     {
@@ -1131,6 +1140,16 @@ bool RestCatalog::getTableMetadataImpl(
     {
         if (cached_credentials)
         {
+            /// Reuse the cached credentials only for the very same table with the very same UUID.
+            if (table_uuid.empty() || cached_credentials->table_uuid != table_uuid)
+            {
+                {
+                    std::lock_guard lock(credentials_cache_mutex);
+                    credentials_cache.erase({namespace_name, table_name});
+                }
+                return getTableMetadataImpl(namespace_name, table_name, result, /* allow_credentials_cache */ false);
+            }
+            ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogCredentialsCacheHits);
             result.setStorageCredentials(cached_credentials->credentials);
             if (!cached_credentials->endpoint.empty())
                 result.setEndpoint(cached_credentials->endpoint);
@@ -1141,6 +1160,7 @@ bool RestCatalog::getTableMetadataImpl(
             if (!config_object)
                 throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse config result");
             auto parsed = getCredentialsAndEndpoint(config_object, location);
+            parsed.table_uuid = table_uuid;
             if (parsed.credentials)
             {
                 result.setStorageCredentials(parsed.credentials);
@@ -1160,8 +1180,8 @@ bool RestCatalog::getTableMetadataImpl(
         }
     }
 
-    if (metadata_object->has("table-uuid"))
-        result.setTableUUID(metadata_object->get("table-uuid").extract<String>());
+    if (!table_uuid.empty())
+        result.setTableUUID(table_uuid);
 
     return true;
 }
@@ -1598,7 +1618,7 @@ void RestCatalog::cacheCredentials(
     if (credentials_cache.size() >= credentials_cache_cleanup_threshold)
         std::erase_if(credentials_cache, [&now](const auto & entry) { return now >= entry.second.expires_at.value(); });
     credentials_cache[{namespace_name, table_name}]
-        = VendedStorageCredentials{parsed.credentials, parsed.endpoint, refresh_after};
+        = VendedStorageCredentials{parsed.credentials, parsed.endpoint, refresh_after, parsed.table_uuid};
 }
 
 ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCallback(const DB::StorageID & storage_id)
@@ -1653,6 +1673,8 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         }
 
         auto parsed = getCredentialsAndEndpoint(config_object, location);
+        if (object->has("metadata"))
+            parsed.table_uuid = parseTableUuid(object->get("metadata").extract<Poco::JSON::Object::Ptr>());
         /// Refresh the per-table cache so subsequent queries reuse these freshly vended credentials.
         cacheCredentials(namespace_name, table_name, parsed);
         return parsed.credentials;

@@ -43,6 +43,7 @@ struct VendedStorageCredentials
     std::shared_ptr<IStorageCredentials> credentials;
     std::string endpoint;
     std::optional<std::chrono::system_clock::time_point> expires_at;
+    std::string table_uuid = {};
 };
 
 class RestCatalog : public ICatalog, public DB::WithContext
@@ -187,7 +188,8 @@ protected:
     bool getTableMetadataImpl(
         const std::string & namespace_name,
         const std::string & table_name,
-        TableMetadata & result) const;
+        TableMetadata & result,
+        bool allow_credentials_cache = true) const;
 
     Config loadConfig();
     virtual DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const;
