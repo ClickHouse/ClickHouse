@@ -2511,54 +2511,40 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// deployment that names its rollup section e.g. `<retention_5m>` (valid before this check
     /// existed) keeps starting, while a typo is still rejected.
     ///
-    /// The shape mirrors exactly what `setGraphitePatternsFromConfig` accepts: every child must be
-    /// either a `<pattern>` / `<default>` rollup rule or one of the four column-name overrides
-    /// (`path_column_name`, `time_column_name`, `value_column_name`, `version_column_name`) — that
-    /// parser throws `UNKNOWN_ELEMENT_IN_CONFIG` on any other child. A section that *only* overrides
-    /// column names (no patterns) is still a valid `GraphiteMergeTree` config (`selectPatternForPath`
-    /// just yields no rollup rule), so it must be accepted too. To keep a typo'd top-level section
-    /// from sneaking through, we additionally require a positive signal: at least one pattern/default
-    /// that actually carries a rollup child (`<regexp>`/`<function>`/`<retention>`), or at least one
-    /// column-name override with no foreign child present.
+    /// The shape mirrors exactly what `setGraphitePatternsFromConfig` accepts: it iterates the
+    /// section's children and throws `UNKNOWN_ELEMENT_IN_CONFIG` unless *every* child is a
+    /// `<pattern>` rule, the single `<default>` rule, or one of the four column-name overrides
+    /// (`path_column_name`, `time_column_name`, `value_column_name`, `version_column_name`). A
+    /// section that *only* overrides column names (no patterns) is still a valid `GraphiteMergeTree`
+    /// config (`selectPatternForPath` just yields no rollup rule), so it must be accepted too.
+    ///
+    /// We therefore accept the section iff it is non-empty and every child is one of those
+    /// recognized keys. This must mirror the parser exactly: accepting a section just because *some*
+    /// child looks like a rollup rule would let a typo'd top-level section that merely happens to
+    /// contain a `<pattern>` (alongside an unrelated child the parser rejects) pass validation — a
+    /// false negative for exactly the unknown top-level sections this check is meant to catch.
     auto looks_like_graphite_rollup = [&config](const String & section) -> bool
     {
         Poco::Util::AbstractConfiguration::Keys children;
         config.keys(section, children);
 
-        bool has_rollup_rule = false;
-        bool has_column_override = false;
-        bool all_children_recognized = !children.empty();
+        if (children.empty())
+            return false;
+
         for (const auto & child : children)
         {
+            /// Poco yields repeated `<pattern>` elements as `pattern`, `pattern[1]`, ...; the parser
+            /// matches them all with `startsWith(key, "pattern")`. A second `<default>` would be
+            /// `default[1]`, which the parser does NOT accept, so only the exact `default` is matched.
             const bool is_pattern = child.starts_with("pattern");
-            const bool is_default = child == "default" || child.starts_with("default[");
+            const bool is_default = child == "default";
             const bool is_column = child == "path_column_name" || child == "time_column_name"
                 || child == "value_column_name" || child == "version_column_name";
 
-            if (is_column)
-            {
-                has_column_override = true;
-            }
-            else if (is_pattern || is_default)
-            {
-                const String child_path = section + "." + child;
-                if (config.has(child_path + ".regexp")
-                    || config.has(child_path + ".function")
-                    || config.has(child_path + ".retention"))
-                    has_rollup_rule = true;
-            }
-            else
-            {
-                all_children_recognized = false;
-            }
+            if (!is_pattern && !is_default && !is_column)
+                return false;
         }
-
-        /// A genuine rollup section (at least one rule) is accepted regardless of other children,
-        /// as before. A column-name-only section is accepted only when *every* child is a recognized
-        /// `GraphiteMergeTree` key, so a typo'd top-level section with an unrelated child is rejected.
-        if (has_rollup_rule)
-            return true;
-        return has_column_override && all_children_recognized;
+        return true;
     };
 
     Poco::Util::AbstractConfiguration::Keys top_level_keys;

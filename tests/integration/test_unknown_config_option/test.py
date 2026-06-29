@@ -158,6 +158,18 @@ node_graphite_columns = cluster_graphite_columns.add_instance(
     main_configs=["configs/config.d/graphite_columns_only.xml"],
 )
 
+# Negative case: a section shaped like a `GraphiteMergeTree` rollup (it carries a real `<pattern>`
+# rule) but that also contains a foreign child must be rejected. `setGraphitePatternsFromConfig`
+# throws `UNKNOWN_ELEMENT_IN_CONFIG` on any unrecognized child, so the validator must require EVERY
+# child to be a recognized graphite key — accepting the section just because one child looks like a
+# rollup rule would let a typo'd top-level section sneak through (a false negative).
+cluster_graphite_foreign = ClickHouseCluster(__file__, name="graphite_foreign")
+node_graphite_foreign = cluster_graphite_foreign.add_instance(
+    "node_graphite_foreign",
+    main_configs=["configs/config.d/graphite_foreign_child.xml"],
+)
+caught_graphite_foreign_exception = ""
+
 # Negative case: a `config://` payload section that happens to contain handler-shaped children must
 # NOT be re-scanned as a handler group. The unrelated top-level key referenced from those nested
 # children (`secret_unknown_section`) must still be rejected.
@@ -329,6 +341,23 @@ def start_graphite_columns_cluster():
     cluster_graphite_columns.start()
     yield
     cluster_graphite_columns.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_graphite_foreign_cluster():
+    global caught_graphite_foreign_exception
+    try:
+        cluster_graphite_foreign.start()
+    except Exception as e:
+        caught_graphite_foreign_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_foreign.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_foreign_exception += "\n" + f.read()
+    yield
+    cluster_graphite_foreign.shutdown()
 
 
 @pytest.fixture(scope="module")
@@ -622,6 +651,18 @@ def test_graphite_columns_only_section_accepted(start_graphite_columns_cluster):
     # is a valid config accepted by `setGraphitePatternsFromConfig`. If the validator rejected
     # `<retention_columns_only>` for lacking a rollup rule, the node would have failed to start.
     assert node_graphite_columns.query("SELECT 1").strip() == "1"
+
+
+def test_graphite_shaped_section_with_foreign_child_rejected(
+    start_graphite_foreign_cluster,
+):
+    # `<graphite_with_foreign_child>` carries a real `<pattern>` rollup rule (so it *looks* like a
+    # `GraphiteMergeTree` section) but also has a `<not_a_graphite_key>` child that
+    # `setGraphitePatternsFromConfig` would reject. The validator must mirror that parser and reject
+    # the whole section as an unknown top-level key, instead of accepting it because one child looks
+    # like a rollup rule. The reported unknown element is the top-level section name.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_foreign_exception
+    assert "graphite_with_foreign_child" in caught_graphite_foreign_exception
 
 
 def test_payload_with_handler_shape_does_not_exempt_unknown_key(
