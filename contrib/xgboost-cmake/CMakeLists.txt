@@ -11,13 +11,11 @@ set(DMLC_CORE_SOURCE_DIR "${DMLC_CORE_LIB}/src")
 set(DMLC_CORE_INCLUDE_DIR "${DMLC_CORE_LIB}/include")
 
 # dmlc-core
-
-include(CheckIncludeFile)
-include(CheckIncludeFileCXX)
-include(CheckSymbolExists)
-include(CheckLibraryExists)
-include(CheckCXXCompilerFlag)
-include(TestBigEndian)
+#
+# Build-time CMake checks (check_symbol_exists, check_include_file_cxx,
+# test_big_endian, check_cxx_compiler_flag, check_library_exists, ...) are
+# forbidden in ClickHouse because the compiler and toolchain are fixed. The
+# probes below are therefore resolved statically from the known target.
 
 set(DMLC_CORE_SOURCES
     ${DMLC_CORE_SOURCE_DIR}/config.cc
@@ -82,28 +80,20 @@ set(DMLC_CORE_COMPILE_DEFENITIONS
     -DDMLC_EXECINFO_H_PRESENT=0
 )
 
-check_symbol_exists(fopen64 stdio.h DMLC_FOPEN_64_PRESENT)
-if (DMLC_FOPEN_64_PRESENT)
+# `fopen64` exists in glibc (Linux), not on macOS/FreeBSD.
+if (OS_LINUX)
     list(APPEND DMLC_CORE_COMPILE_DEFENITIONS -DDMLC_FOPEN_64_PRESENT)
 endif()
 
-check_symbol_exists(nanosleep time.h DMLC_NANOSLEEP_PRESENT)
-if (DMLC_NANOSLEEP_PRESENT)
-    list(APPEND DMLC_CORE_COMPILE_DEFENITIONS -DDMLC_NANOSLEEP_PRESENT)
-endif()
+# `nanosleep` is POSIX and present on all supported targets.
+list(APPEND DMLC_CORE_COMPILE_DEFENITIONS -DDMLC_NANOSLEEP_PRESENT)
 
-check_include_file_cxx(cxxabi.h DMLC_CXXABI_H_PRESENT)
-if (DMLC_CXXABI_H_PRESENT)
-    list(APPEND DMLC_CORE_COMPILE_DEFENITIONS -DDMLC_CXXABI_H_PRESENT)
-endif()
+# <cxxabi.h> is provided by the vendored libc++.
+list(APPEND DMLC_CORE_COMPILE_DEFENITIONS -DDMLC_CXXABI_H_PRESENT)
 
-# Not a compile defenition but a build_config.h.in constant
-test_big_endian(DMLC_CORE_BIG_ENDIAN)
-if(DMLC_CORE_BIG_ENDIAN)
-    set(DMLC_CMAKE_LITTLE_ENDIAN 0)
-else()
-    set(DMLC_CMAKE_LITTLE_ENDIAN 1)
-endif()
+# Not a compile defenition but a build_config.h.in constant.
+# All ClickHouse target architectures (x86-64, AArch64) are little-endian.
+set(DMLC_CMAKE_LITTLE_ENDIAN 1)
 
 target_compile_definitions(_dmlc_core PRIVATE ${DMLC_CORE_COMPILE_DEFENITIONS})
 
@@ -119,15 +109,15 @@ set(DMLC_CORE_COMPILE_OPTIONS
     -fPIC
 )
 
-check_cxx_compiler_flag("-msse2" DMLC_CORE_SUPPORT_MSSE2)
-if(DMLC_CORE_SUPPORT_MSSE2)
+# `-msse2` is only meaningful on x86.
+if (ARCH_AMD64)
     list(APPEND DMLC_CORE_COMPILE_OPTIONS -msse2)
 endif()
 
 target_compile_options(_dmlc_core PRIVATE ${DMLC_CORE_COMPILE_OPTIONS})
 
-check_library_exists(rt clock_gettime "time.h" HAVE_CLOCK_GETTIME_IN_LIBRT)
-if(HAVE_CLOCK_GETTIME_IN_LIBRT)
+# On Linux `clock_gettime` lives in librt (older glibc) or libc; linking rt is safe.
+if (OS_LINUX)
     target_link_libraries(_dmlc_core PRIVATE rt)
 endif()
 

@@ -1,5 +1,3 @@
-include(CheckCXXSourceCompiles)
-
 set(LIGHTGBM_DIR "${ClickHouse_SOURCE_DIR}/contrib/LightGBM")
 set(LIGHTGBM_SOURCE_DIR "${LIGHTGBM_DIR}/src")
 set(LIGHTGBM_INCLUDE_DIR "${LIGHTGBM_DIR}/include")
@@ -54,31 +52,17 @@ set(LIGHTGBM_COMPILE_DEFENITIONS
     -DUSE_SOCKET
 )
 
-check_cxx_source_compiles("
-#include <xmmintrin.h>
-int main() {
-  int a = 0;
-  _mm_prefetch(&a, _MM_HINT_NTA);
-  return 0;
-}
-" LIGHTGBM_MM_PREFETCH)
-
-if(${LIGHTGBM_MM_PREFETCH})
+# Build-time CMake checks are forbidden in ClickHouse (the toolchain is fixed),
+# so the original `check_cxx_source_compiles` probes are replaced with static
+# decisions based on the known target architecture.
+#
+# `_mm_prefetch` is provided through <xmmintrin.h>, which is x86-only.
+if (ARCH_AMD64)
     list(APPEND LIGHTGBM_COMPILE_DEFENITIONS -DMM_PREFETCH)
 endif()
 
-check_cxx_source_compiles("
-#include <mm_malloc.h>
-int main() {
-  char *a = (char*)_mm_malloc(8, 16);
-  _mm_free(a);
-  return 0;
-}
-" LIGHTGBM_MM_MALLOC)
-
-if(${LIGHTGBM_MM_MALLOC})
-    list(APPEND LIGHTGBM_COMPILE_DEFENITIONS -DMM_MALLOC)
-endif()
+# `_mm_malloc` / `_mm_free` are provided by Clang's <mm_malloc.h> on every target.
+list(APPEND LIGHTGBM_COMPILE_DEFENITIONS -DMM_MALLOC)
 
 # LightGBM doesn't support fmtlib newest versions with 'consteval' formatting
 set(CMAKE_CXX_STANDARD 14)

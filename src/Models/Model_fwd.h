@@ -1,3 +1,10 @@
+#pragma once
+
+#include <cstddef>
+#include <memory>
+#include <unordered_map>
+#include <vector>
+
 #include <base/types.h>
 #include <base/strong_typedef.h>
 #include <Core/Types_fwd.h>
