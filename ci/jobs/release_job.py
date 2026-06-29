@@ -718,14 +718,20 @@ def main():
     # step(), which skips when ok is already False and folds its own result back
     # into ok — so if --merge-prs fails, the release is NOT marked completed and
     # the Slack post below reports the actual failing step.
-    step(
-        name="Update Release Info and Merge Created PRs",
-        command=[
-            f"python3 ./ci/jobs/create_release.py --merge-prs"
-            f" {dry_run_flag}".strip()
-        ],
-        workdir=REPO_PATH,
-    )
+    #
+    # Only a normal release creates the changelog/version-bump PRs; recovery
+    # runs (only-repo/only-docker) skip tagging/bump/changelog, so there is
+    # nothing to merge — running --merge-prs there would fail looking up a
+    # non-existent changelog PR.
+    if not args.only_repo and not args.only_docker:
+        step(
+            name="Update Release Info and Merge Created PRs",
+            command=[
+                f"python3 ./ci/jobs/create_release.py --merge-prs"
+                f" {dry_run_flag}".strip()
+            ],
+            workdir=REPO_PATH,
+        )
 
     step(
         name="Set Release Progress to Completed",
