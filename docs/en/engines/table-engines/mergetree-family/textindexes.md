@@ -85,6 +85,7 @@ CREATE TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, positions = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -118,6 +119,7 @@ ALTER TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, positions = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -287,7 +289,15 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 ```
 
-**Other arguments (optional)**.
+**Experimental: Positions argument (optional)**.
+
+:::warning
+This argument is experimental and should only be used for testing.
+Set MergeTree setting [`allow_experimental_text_index_positions`](/operations/settings/merge-tree-settings#allow_experimental_text_index_positions) to enable storing positions.
+:::
+
+Parameter `positions` (default: `0`) controls whether the index stores the positions of the tokens within the rows.
+This enables fast [phrase search](#text-index-phrase-search) with `hasPhrase` at the cost of larger index sizes and higher index creation times.
 
 <details markdown="1">
 
@@ -919,20 +929,40 @@ SELECT * FROM events WHERE data.level IN ('error', 'critical');
 
 ### Phrase search {#text-index-phrase-search}
 
-Text index supports phrase search via the `hasPhrase` function.
-All tokens in the phrase must appear consecutively and in the same order in the document.
+A regular text index search, for example
+
+```sql
+SELECT *
+FROM tab
+WHERE hasAllTokens(col, 'weather in Tokyo')
+```
+
+matches all rows that contain the given tokens in arbitrary order.
+In the example, row `While she stayed in Tokyo, the weather was great.` matches the filter.
+
+In contrast, phrase search means matching the tokens in the given order.
+For example,
+
+```sql
+SELECT *
+FROM tab
+WHERE hasPhrase(col, 'weather in Tokyo')
+```
+
+matches any row that contains the token sequence `weather in Tokyo` like `How is the weather in Tokyo?`?
 
 The text index accelerates phrase search by intersecting the posting lists for all tokens in the phrase to identify candidate granules.
 Within those granules, ClickHouse then verifies exact token adjacency.
+This process is relatively costly and slower than regular text search queries.
+To speed phrase search queries up, please enable position storage in the text index (see `Optional parameters` above).
 
-`hasPhrase` is supported with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, and `asciiCJK`.
-
-The phrase string is tokenized using the index's configured tokenizer.
-Tokenizer separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')` for the `splitByNonAlpha` tokenizer.
+`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, and `asciiCJK`.
+The given phrase string is tokenized using the index's tokenizer.
+Separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')`, assuming `splitByNonAlpha` is used as tokenizer.
 
 #### Example {#text-index-phrase-search-example}
 
-```sql title="Query"
+```sql
 CREATE TABLE tab (
     id UInt32,
     text String,
@@ -1210,6 +1240,11 @@ This sparse index structure is similar to ClickHouse's [sparse primary key index
 The posting lists for all tokens are laid out sequentially in the postings list file.
 To save space while still allowing fast intersection and union operations, the posting lists are stored as [roaring bitmaps](https://roaringbitmap.org/).
 If the posting list is larger than `posting_list_block_size`, it is split into multiple blocks that are stored sequentially to the postings lists file.
+
+**Positions file (.pos)**
+
+Optional, only if index argument `positions = 1`.
+Stores the positions of the tokens within matching rows.
 
 **Merging of text indexes**
 
