@@ -1847,6 +1847,11 @@
             <regexp>((?:aes_)?(?:encrypt|decrypt)(?:_mysql)?)\s*\(\s*(?:'(?:\\'|.)+'|.*?)\s*\)</regexp>
             <replace>\1(???)</replace>
         </rule>
+        <rule>
+            <name>hide sensitive HTTP query-string parameters</name>
+            <regexp>([?&][^&=]*(?:secret|password|passwd|token|credential|signature|key)[^&=]*=)[^&\s]*</regexp>
+            <replace>\1[HIDDEN]</replace>
+        </rule>
     </query_masking_rules> -->
 
     <!-- Uncomment to use custom http handlers.
