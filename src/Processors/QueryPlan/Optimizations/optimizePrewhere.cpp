@@ -180,11 +180,11 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         return;
 
     /// These two optimizations conflict:
-    /// - vector search lookups
+    /// - vector search lookups with disabled rescoring
     /// - PREWHERE
     /// The former is more impactful, therefore disable PREWHERE if both may be used.
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
-    if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value())
+    if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value() && !settings[Setting::vector_search_with_rescoring])
         return;
 
     /// Extract column compressed sizes
