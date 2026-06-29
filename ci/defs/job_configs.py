@@ -825,6 +825,35 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_SMALL_MEM,
         ),
     )
+    # Builds the "before" unit_tests_dbms (merge-base + only the PR's unit-test file
+    # changes) in-job, so it needs the binary-builder image and submodules. The "after"
+    # binary is the prebuilt UNITTEST_AMD_ASAN_UBSAN artifact.
+    bugfix_validation_ut_job = Job.Config(
+        name=JobNames.BUGFIX_VALIDATE_UT,
+        runs_on=RunnerLabels.AMD_LARGE,
+        command="python3 ./ci/jobs/unit_tests_bugfix_validation_job.py",
+        run_in_docker=BINARY_DOCKER_COMMAND,
+        requires=[ArtifactNames.UNITTEST_AMD_ASAN_UBSAN],
+        needs_submodules=True,
+        timeout=3600 * 4,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/unit_tests_bugfix_validation_job.py",
+                "./ci/jobs/build_clickhouse.py",
+                "./src",
+                "./contrib/",
+                "./.gitmodules",
+                "./CMakeLists.txt",
+                "./PreLoad.cmake",
+                "./cmake",
+                "./base",
+                "./programs",
+                "./rust",
+            ],
+            with_git_submodules=True,
+        ),
+        result_name_for_cidb="Tests",
+    )
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
     )

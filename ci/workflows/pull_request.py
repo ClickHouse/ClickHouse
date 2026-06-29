@@ -87,6 +87,10 @@ workflow = Workflow.Config(
         # in the `new_tests_check.py` workflow post-hook below.
         *JobConfigs.bugfix_validation_ft_pr_jobs,
         *JobConfigs.bugfix_validation_it_jobs,
+        # Unit-test (gtest) bugfix validation: a single AMD-only blocking job
+        # that reports OK/XFAIL/FAIL directly (not part of the per-arch
+        # aggregation above).
+        JobConfigs.bugfix_validation_ut_job,
         *[
             j.set_run_after(
                 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
