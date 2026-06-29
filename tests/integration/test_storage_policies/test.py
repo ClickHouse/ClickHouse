@@ -73,7 +73,7 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
     try:
         create_ignored_contents(data_path, disk2_data_path)
         node.query(f"ALTER TABLE {table_name} MODIFY SETTING storage_policy = 'test_policy'")
-        assert node.query("SELECT has(disks, 'disk2') FROM system.storage_policies WHERE policy_name = 'test_policy'") == "1\n"
+        assert node.query("SELECT max(has(disks, 'disk2')) FROM system.storage_policies WHERE policy_name = 'test_policy'") == "1\n"
         assert node.query(f"SELECT * FROM {table_name}") == "1\n"
     finally:
         node.query(f"DROP TABLE IF EXISTS {table_name}")
@@ -91,6 +91,42 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
             ]
         )
         assert "Version file" in node.query_and_get_error(
+            f"ALTER TABLE {table_name} MODIFY SETTING storage_policy = 'test_policy'"
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
+        node.exec_in_container(["bash", "-c", f"rm -rf {shlex.quote(disk2_data_path)}"])
+
+    table_name = "test_format_version_directory"
+    _, disk2_data_path = create_table(table_name)
+    try:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"mkdir -p {shlex.quote(disk2_data_path)}/format_version.txt",
+            ]
+        )
+        assert "Bad version file" in node.query_and_get_error(
+            f"ALTER TABLE {table_name} MODIFY SETTING storage_policy = 'test_policy'"
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
+        node.exec_in_container(["bash", "-c", f"rm -rf {shlex.quote(disk2_data_path)}"])
+
+    table_name = "test_detached_file"
+    data_path, disk2_data_path = create_table(table_name)
+    try:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"mkdir -p {shlex.quote(disk2_data_path)} && "
+                f"cp {shlex.quote(data_path)}/format_version.txt {shlex.quote(disk2_data_path)}/format_version.txt && "
+                f"touch {shlex.quote(disk2_data_path)}/detached",
+            ]
+        )
+        assert "already contain data" in node.query_and_get_error(
             f"ALTER TABLE {table_name} MODIFY SETTING storage_policy = 'test_policy'"
         )
     finally:

@@ -5208,6 +5208,12 @@ void MergeTreeData::changeSettings(
 
                     auto validate_format_version = [&](const DiskPtr & disk)
                     {
+                        if (!disk->existsFileOrDirectory(format_version_path))
+                            return;
+
+                        if (!disk->existsFile(format_version_path))
+                            throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
                         if (auto buf = disk->readFileIfExists(format_version_path, getReadSettings()))
                         {
                             UInt32 current_format_version{0};
@@ -5219,7 +5225,11 @@ void MergeTreeData::changeSettings(
                                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                                                 "Version file on {} contains version {} expected version is {}.",
                                                 fullPath(disk, format_version_path), current_format_version, format_version.toUnderType());
+
+                            return;
                         }
+
+                        throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
                     };
 
                     auto has_parseable_detached_parts = [&](const DiskPtr & disk)
@@ -5251,12 +5261,15 @@ void MergeTreeData::changeSettings(
                         {
                             const auto name = it->name();
 
-                            if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME
-                                || startsWith(name, "tmp"))
+                            if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME || startsWith(name, "tmp_")
+                                || startsWith(name, "tmp-fetch_"))
                                 continue;
 
                             if (name == DETACHED_DIR_NAME)
                             {
+                                if (!disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME))
+                                    return true;
+
                                 if (has_parseable_detached_parts(disk))
                                     return true;
 
@@ -5274,7 +5287,9 @@ void MergeTreeData::changeSettings(
                         auto disk = new_storage_policy->getDiskByName(disk_name);
 
                         if (contains_table_data_on_new_disk(disk))
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "New storage policy contain disks which already contain data of a table with the same name");
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "New storage policy contain disks which already contain data of a table with the same name");
                     }
 
                     for (const String & disk_name : all_diff_disk_names)
