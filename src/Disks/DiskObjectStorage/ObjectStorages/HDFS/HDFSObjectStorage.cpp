@@ -27,6 +27,38 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// HDFS has no native ETag, so we synthesise a version identifier from the
+/// attributes available in `hdfsFileInfo`: the last modification time and the size.
+///
+/// This token is NOT a strong content identifier and therefore must never be used
+/// as a content-cache key (see `ObjectMetadata::etag_is_strong`, which we set to
+/// `false`). Its precision is only one second: although the HDFS NameNode keeps the
+/// modification time in milliseconds, libhdfs3 truncates it to seconds when
+/// populating `hdfsFileInfo::mLastMod` (it computes `getModificationTime() / 1000`),
+/// and the public C API exposes no other field (no file id, no checksum) that
+/// changes on a content rewrite. Consequently a rewrite within the same wall-clock
+/// second that keeps the exact same byte size yields the same token for different
+/// content. That is acceptable for the informational `_etag` virtual column, but if
+/// it keyed the Parquet metadata / filesystem / page caches it could serve stale
+/// data. To use these caches with HDFS, libhdfs3 must be extended to expose the
+/// millisecond modification time (or a real version token).
+std::string HDFSObjectStorage::makeETag(Int64 last_modified, Int64 size)
+{
+    return fmt::format("{}_{}", last_modified, size);
+}
+
+ObjectMetadata HDFSObjectStorage::makeObjectMetadata(Int64 last_modified, Int64 size)
+{
+    ObjectMetadata metadata;
+    metadata.size_bytes = static_cast<uint64_t>(size);
+    metadata.last_modified = Poco::Timestamp::fromEpochTime(last_modified);
+    metadata.etag = makeETag(last_modified, size);
+    /// The HDFS etag is only a second-precision (mtime, size) token, so it must not key
+    /// a content cache. See `makeETag` for the precision caveat.
+    metadata.etag_is_strong = false;
+    return metadata;
+}
+
 void HDFSObjectStorage::initializeHDFSFS() const
 {
     if (initialized)
@@ -207,8 +239,9 @@ ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path, bo
 std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
     initializeHDFSFS();
-    auto * file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
-    if (!file_info)
+    HDFSFileInfo file_info;
+    file_info.file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
+    if (!file_info.file_info)
     {
         if (errno == ENOENT)
             return {};
@@ -216,13 +249,11 @@ std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std:
         throw Exception(ErrorCodes::HDFS_ERROR,
                         "Cannot get file info for: {}. Error: {}", path, hdfsGetLastError());
     }
+    /// Tells `~HDFSFileInfo` how many records to free; the default 0 would free the array
+    /// but leak the inner `mName` / `mOwner` / `mGroup` strings of this single record.
+    file_info.length = 1;
 
-    ObjectMetadata metadata;
-    metadata.size_bytes = static_cast<size_t>(file_info->mSize);
-    metadata.last_modified = Poco::Timestamp::fromEpochTime(file_info->mLastMod);
-
-    hdfsFreeFileInfo(file_info, 1);
-    return metadata;
+    return makeObjectMetadata(file_info.file_info->mLastMod, file_info.file_info->mSize);
 }
 
 void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -263,13 +294,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
         {
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 String(file_path),
-                ObjectMetadata{
-                    .size_bytes = static_cast<uint64_t>(ls.file_info[i].mSize),
-                    .last_modified = Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
-                    .etag = {},
-                    .tags = {},
-                    .attributes = {},
-                }));
+                makeObjectMetadata(ls.file_info[i].mLastMod, ls.file_info[i].mSize)));
         }
 
         if (max_keys && children.size() >= max_keys)

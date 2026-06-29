@@ -108,8 +108,22 @@ struct ObjectMetadata
     bool is_size_known = true;
     Poco::Timestamp last_modified;
     std::string etag;
+    /// Whether `etag` is a strong content/version identifier, i.e. different content is
+    /// guaranteed to produce a different `etag`. Real S3/Azure ETags and the sub-second
+    /// mtime token used for local files are strong. It is only safe to use `etag` as a
+    /// content-cache key (filesystem cache, page cache, Parquet metadata cache) when this
+    /// is true. HDFS can only derive a second-precision `(mtime, size)` token, which is
+    /// fine to expose via the `_etag` virtual column but is not strong: a same-second,
+    /// same-size rewrite would collide and could serve stale cached data.
+    bool etag_is_strong = true;
     ObjectAttributes tags;
     ObjectAttributes attributes;
+
+    /// `etag` may be used as a content-cache key (filesystem cache, page cache, Parquet
+    /// metadata cache) only when it is present and a strong content identifier. A weak
+    /// etag (e.g. the second-precision HDFS token) must never key a cache, otherwise a
+    /// same-second, same-size rewrite could serve stale data.
+    bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
 };
 
 struct DataLakeObjectMetadata;
