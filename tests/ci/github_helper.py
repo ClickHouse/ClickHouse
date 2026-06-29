@@ -3,7 +3,7 @@
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from os import path as p
 from pathlib import Path
@@ -61,6 +61,9 @@ class PullRequestInfo:
     node_id: str
     html_url: str
     repo: str
+    # Numbers of the issues this PR resolves, taken from GitHub's "Development"
+    # links (`closingIssuesReferences`), restricted to the PR's own repository.
+    closing_issue_numbers: List[int] = field(default_factory=list)
 
 
 class GitHub(github.Github):
@@ -200,11 +203,23 @@ class GitHub(github.Github):
         mergeCommit { oid }
         labels(first: 100) { nodes { name } }
         baseRepository { nameWithOwner }
+        closingIssuesReferences(first: 50) {
+            nodes { number repository { nameWithOwner } }
+        }
     """
 
     @staticmethod
     def _pr_info_from_node(node: dict) -> PullRequestInfo:
         merge_commit = node["mergeCommit"] or {}
+        repo = node["baseRepository"]["nameWithOwner"]
+        # Keep only same-repo closing references: a `Closes #N` for an issue in
+        # another repository would collide with this repo's issue numbering.
+        closing = (node.get("closingIssuesReferences") or {}).get("nodes") or []
+        closing_issue_numbers = [
+            issue["number"]
+            for issue in closing
+            if (issue.get("repository") or {}).get("nameWithOwner") == repo
+        ]
         return PullRequestInfo(
             number=node["number"],
             head_ref=node["headRefName"],
@@ -215,7 +230,8 @@ class GitHub(github.Github):
             body=node["body"] or "",
             node_id=node["id"],
             html_url=node["url"],
-            repo=node["baseRepository"]["nameWithOwner"],
+            repo=repo,
+            closing_issue_numbers=closing_issue_numbers,
         )
 
     def _graphql(self, query: str, variables: dict) -> dict:
