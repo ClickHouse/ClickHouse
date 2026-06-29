@@ -487,18 +487,27 @@ public:
         ffi::SharedScanMetadata * scan_metadata)
     {
         auto * iter = static_cast<Iterator *>(engine_context);
-        /// `visit_scan_metadata` returns an `ExternResult`, so `unwrapResult` may throw.
         /// Release the handle on all exit paths to avoid leaking it.
         SCOPE_EXIT({
             ffi::free_scan_metadata(scan_metadata);
         });
-        KernelUtils::unwrapResult(
-            ffi::visit_scan_metadata(
-                scan_metadata,
-                iter->kernel_snapshot_state->engine.get(),
-                engine_context,
-                Iterator::scanCallback),
-            "visit_scan_metadata");
+        /// Runs inside Rust's `scan_metadata_next`: a C++ exception must not cross the `extern "C"`
+        /// frame, so store it (like `scanCallback`) and let `scanDataFunc` rethrow after it returns.
+        try
+        {
+            KernelUtils::unwrapResult(
+                ffi::visit_scan_metadata(
+                    scan_metadata,
+                    iter->kernel_snapshot_state->engine.get(),
+                    engine_context,
+                    Iterator::scanCallback),
+                "visit_scan_metadata");
+        }
+        catch (...) // Ok: exception saved via setScanException, rethrown by scanDataFunc
+        {
+            iter->setScanException();
+            iter->data_files_cv.notify_all();
+        }
     }
 
     static bool scanCallback(
@@ -742,6 +751,9 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
         size_t total_bytes = 0;
         /// Not all writers add rows count to metadata
         std::optional<size_t> total_rows = 0;
+        /// Set when `visitData` catches an exception; rethrown by the caller after
+        /// `scan_metadata_next` returns (the callback runs inside a Rust `extern "C"` frame).
+        std::exception_ptr exception;
 
         static bool visit(
             ffi::NullableCvoid engine_context,
@@ -775,18 +787,26 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
         static void visitData(void * engine_context, ffi::SharedScanMetadata * scan_metadata)
         {
             auto * visitor = static_cast<StatsVisitor *>(engine_context);
-            /// `visit_scan_metadata` returns an `ExternResult`, so `unwrapResult` may throw.
             /// Release the handle on all exit paths to avoid leaking it.
             SCOPE_EXIT({
                 ffi::free_scan_metadata(scan_metadata);
             });
-            KernelUtils::unwrapResult(
-                ffi::visit_scan_metadata(
-                    scan_metadata,
-                    visitor->engine,
-                    engine_context,
-                    StatsVisitor::visit),
-                "visit_scan_metadata");
+            /// Runs inside Rust's `scan_metadata_next`: a C++ exception must not cross the
+            /// `extern "C"` frame, so store it and let the caller rethrow after the call returns.
+            try
+            {
+                KernelUtils::unwrapResult(
+                    ffi::visit_scan_metadata(
+                        scan_metadata,
+                        visitor->engine,
+                        engine_context,
+                        StatsVisitor::visit),
+                    "visit_scan_metadata");
+            }
+            catch (...)
+            {
+                visitor->exception = std::current_exception();
+            }
         }
     };
 
@@ -800,6 +820,10 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
                 &visitor,
                 StatsVisitor::visitData),
             "scan_metadata_next");
+
+        /// Rethrow only now that `scan_metadata_next` has returned to C++ (see `visitData`).
+        if (visitor.exception)
+            std::rethrow_exception(visitor.exception);
 
         if (!have_scan_data)
             break;

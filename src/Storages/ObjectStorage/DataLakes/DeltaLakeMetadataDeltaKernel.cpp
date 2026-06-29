@@ -640,11 +640,8 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     auto snapshot = getTableSnapshot(snapshot_version);
     Names partition_columns = snapshot->getPartitionColumns();
 
-    /// delta-kernel v23 distinguishes the logical and physical write schemas; with column mapping
-    /// enabled the data files must use physical field names/ids, which this writer does not yet
-    /// apply (it writes the logical `sample_block`). Reject such writes rather than committing an
-    /// AddFile whose Parquet payload Delta readers cannot read correctly. Column mapping is enabled
-    /// iff the snapshot exposes physical column names.
+    /// Reject column-mapped tables (snapshot exposes physical names): the writer emits logical
+    /// names, not the required physical field names/ids. TODO: support it (delta-kernel-rs#1124).
     if (!snapshot->getPhysicalNamesMap().empty())
     {
         throw Exception(

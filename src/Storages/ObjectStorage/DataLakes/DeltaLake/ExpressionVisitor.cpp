@@ -840,11 +840,8 @@ private:
         });
     }
 
-    /// Maps a delta-kernel-rs v23 null `type_tag` (the `NullTypeTag` encoding in
-    /// `ffi/src/expressions/kernel_visitor.rs`) to the matching ClickHouse type. The tags mirror
-    /// the non-null literal visitors above so a typed null produces the same `Nullable(T)` as
-    /// `expression_schema`. Decimal (tag 12) carries `precision`/`scale`; tag 255 (non-primitive:
-    /// struct/array/map/variant) and any unrecognized tag cannot be reconstructed here.
+    /// Maps a null `type_tag` (see `NullTypeTag` in `ffi/src/expressions/kernel_visitor.rs`) to the
+    /// matching ClickHouse type for `Nullable(T)`; tag 12 carries precision/scale, 255/unknown can't.
     static DB::DataTypePtr nullInnerTypeForTag(uint8_t type_tag, uint8_t precision, uint8_t scale)
     {
         switch (type_tag)
