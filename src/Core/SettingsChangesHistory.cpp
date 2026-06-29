@@ -46,6 +46,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
+            {"min_rows_per_stream_for_gradual_resize", 0, 1000, "New setting enabled by default that starts `GROUP BY` aggregation with a single stream and switches to all `max_threads` streams once cumulative input crosses the threshold, improving performance on small data volumes."},
+            {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting (in bytes) that, paired with `min_rows_per_stream_for_gradual_resize`, controls when the `GROUP BY` pre-aggregation switches from one active stream to all streams."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
@@ -73,8 +75,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_rewrite_has_to_in", false, true, "New setting"},
             {"unique_key_max_encoded_size", 256, 256, "New setting: maximum size (bytes) of the order-preserving binary encoding of a single UNIQUE KEY row"},
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
-            {"min_rows_per_stream_for_gradual_resize", 0, 1000, "New setting enabled by default that starts `GROUP BY` aggregation with a single stream and switches to all `max_threads` streams once cumulative input crosses the threshold, improving performance on small data volumes."},
-            {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting (in bytes) that, paired with `min_rows_per_stream_for_gradual_resize`, controls when the `GROUP BY` pre-aggregation switches from one active stream to all streams."},
             {"input_format_geojson_unsupported_geometry_handling", "throw", "throw", "New setting that controls handling of GeoJSON geometry types that cannot be represented in the Geometry type (GeometryCollection, MultiPoint)"},
             {"enable_identifier_resolve_cache", false, true, "New setting to control the identifier resolution cache in the query analyzer"},
             {"optimize_limit_by_in_order", false, true, "New setting to optimize `LIMIT BY` queries when `BY` columns are a prefix of the table's sorting key."},
