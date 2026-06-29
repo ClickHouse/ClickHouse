@@ -110,6 +110,16 @@ public:
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
     getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false, bool ignore_explicit_metadata_file_path = false) const;
 
+    /// Same as above, but resolves the metadata file using `settings` instead of the table's own
+    /// `data_lake_settings`. Used to plan a write from the metadata location a catalog points at:
+    /// the caller injects that location as `iceberg_metadata_file_path` and clears
+    /// `ignore_explicit_metadata_file_path` so the catalog commit authority is honoured.
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
+        const ContextPtr & context,
+        const DataLakeStorageSettings & settings,
+        bool force_fetch_latest_metadata,
+        bool ignore_explicit_metadata_file_path) const;
+
     /// Returns file records contributed by a single manifest list entry of `data_snapshot`.
     IcebergFiles getFilesForManifest(
         const Iceberg::IcebergDataSnapshotPtr & data_snapshot,

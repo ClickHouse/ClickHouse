@@ -204,10 +204,19 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata, bool ignore_explicit_metadata_file_path) const
 {
+    return getRelevantState(context, data_lake_settings, force_fetch_latest_metadata, ignore_explicit_metadata_file_path);
+}
+
+std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
+    const ContextPtr & context,
+    const DataLakeStorageSettings & settings,
+    bool force_fetch_latest_metadata,
+    bool ignore_explicit_metadata_file_path) const
+{
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
-        data_lake_settings,
+        settings,
         persistent_components.metadata_cache,
         context,
         log.get(),
