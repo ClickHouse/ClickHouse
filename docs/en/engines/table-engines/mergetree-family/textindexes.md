@@ -86,12 +86,12 @@ CREATE TABLE table
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
+                                [, positions = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
-                                [, positions = 0 | 1 ]
                             )
 )
 ENGINE = MergeTree
@@ -121,12 +121,12 @@ ALTER TABLE table
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
+                                [, positions = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
-                                [, positions = 0 | 1 ]
                             )
 
 ```
@@ -465,7 +465,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 There is no fallback to using the index as a hint: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
 The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
 
-**Other arguments (optional)**.
+**Experimental: Positions argument (optional)**.
 
 Experimental parameter `positions` (default: `0`) controls whether the index stores token positions.
 When set to `1`, the index additionally stores positional data (in a `.pos` file) which enables exact phrase matching via direct reads for the [`hasPhrase`](#functions-example-hasphrase) function.
@@ -473,6 +473,11 @@ Storing positions increases the on-disk size of the index and the write cost, so
 The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
 Creating an index with `positions = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_positions`](/operations/settings/merge-tree-settings#allow_experimental_text_index_positions) to be enabled.
 Set `positions = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
+
+:::warning
+This argument is experimental and should only be used for testing.
+Set MergeTree setting [`allow_experimental_text_index_positions`](/operations/settings/merge-tree-settings#allow_experimental_text_index_positions) to enable storing positions.
+:::
 
 <details markdown="1">
 
@@ -1108,20 +1113,40 @@ SELECT * FROM events WHERE data.level IN ('error', 'critical');
 
 ### Phrase search {#text-index-phrase-search}
 
-Text index supports phrase search via the `hasPhrase` function.
-All tokens in the phrase must appear consecutively and in the same order in the document.
+A regular text index search, for example
+
+```sql
+SELECT *
+FROM tab
+WHERE hasAllTokens(col, 'weather in Tokyo')
+```
+
+matches all rows that contain the given tokens in arbitrary order.
+In the example, row `While she stayed in Tokyo, the weather was great.` matches the filter.
+
+In contrast, phrase search means matching the tokens in the given order.
+For example,
+
+```sql
+SELECT *
+FROM tab
+WHERE hasPhrase(col, 'weather in Tokyo')
+```
+
+matches any row that contains the token sequence `weather in Tokyo` like `How is the weather in Tokyo?`?
 
 The text index accelerates phrase search by intersecting the posting lists for all tokens in the phrase to identify candidate granules.
 Within those granules, ClickHouse then verifies exact token adjacency.
+This process is relatively costly and slower than regular text search queries.
+To speed phrase search queries up, please enable position storage in the text index (see `Optional parameters` above).
 
-`hasPhrase` is supported with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, and `asciiCJK`.
-
-The phrase string is tokenized using the index's configured tokenizer.
-Tokenizer separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')` for the `splitByNonAlpha` tokenizer.
+`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, and `asciiCJK`.
+The given phrase string is tokenized using the index's tokenizer.
+Separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')`, assuming `splitByNonAlpha` is used as tokenizer.
 
 #### Example {#text-index-phrase-search-example}
 
-```sql title="Query"
+```sql
 CREATE TABLE tab (
     id UInt32,
     text String,
@@ -1399,6 +1424,11 @@ This sparse index structure is similar to ClickHouse's [sparse primary key index
 The posting lists for all tokens are laid out sequentially in the postings list file.
 To save space while still allowing fast intersection and union operations, the posting lists are stored as [roaring bitmaps](https://roaringbitmap.org/).
 If the posting list is larger than `posting_list_block_size`, it is split into multiple blocks that are stored sequentially to the postings lists file.
+
+**Positions file (.pos)**
+
+Optional, only if index argument `positions = 1`.
+Stores the positions of the tokens within matching rows.
 
 **Merging of text indexes**
 
