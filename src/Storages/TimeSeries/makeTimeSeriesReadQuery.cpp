@@ -126,14 +126,19 @@ namespace
             make_intrusive<ASTLiteral>(key));
     }
 
-    /// Builds `if(empty(<column>), tags['<tag_key>'], <column>)` — a tag value that normally lives in its own
-    /// `<column>` but may instead be stored in the inner `tags` Map (an empty column means "look in the Map").
+    /// Builds `if(empty(ifNull(<column>, '')), tags['<tag_key>'], ifNull(<column>, ''))` — a tag value that
+    /// normally lives in its own `<column>` but may instead be stored in the inner `tags` Map (an empty column
+    /// means "look in the Map"). The `ifNull` is required because the inner "tags" table is allowed to declare
+    /// `<column>` as `Nullable(String)`: a NULL must be treated as "absent" so the value is read from the Map.
+    /// Without it `empty(NULL)` is NULL and the `if` would take the column branch and return NULL.
     ASTPtr makeColumnWithMapFallback(const String & column_name, const String & tag_key)
     {
+        auto column = makeASTFunction("ifNull",
+            make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(String{}));
         return makeASTFunction("if",
-            makeASTFunction("empty", make_intrusive<ASTIdentifier>(column_name)),
+            makeASTFunction("empty", column->clone()),
             makeInnerTagAccess(tag_key),
-            make_intrusive<ASTIdentifier>(column_name));
+            std::move(column));
     }
 
     /// Builds a reduced outer `tags` column containing only `keys`, each resolved from its cheapest source
@@ -392,6 +397,16 @@ namespace
                 values_by_column[*column].push_back(value);
         };
 
+        /// `ifNull(<column>, '')` — a promoted tag / `metric_name` inner column may be declared `Nullable`, where
+        /// a NULL means "the value is stored in the Map". Pushed predicates must treat such a NULL as the empty
+        /// string, otherwise `NULL IN (...)` / `<fn>(NULL, ...)` is NULL (falsy) and the row is wrongly pruned at
+        /// the tags scan. KeyCondition still derives the same point/prefix range through `ifNull(col, '')`.
+        auto null_safe_column = [](const String & column_name)
+        {
+            return makeASTFunction("ifNull",
+                make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(Field{String{}}));
+        };
+
         /// Records `<function_name>(<tag's column>, '<argument>') OR <column> = ''`, if the tag has a column.
         /// The empty-string branch keeps rows whose value is stored in the Map; the outer filter stays exact.
         /// Use `= ''`, not the equivalent `empty(col)`: KeyCondition derives a point range from `equals` but
@@ -403,9 +418,9 @@ namespace
                 return;
             ASTs branches;
             branches.push_back(makeASTFunction(function_name,
-                make_intrusive<ASTIdentifier>(*column), make_intrusive<ASTLiteral>(Field{argument})));
+                null_safe_column(*column), make_intrusive<ASTLiteral>(Field{argument})));
             branches.push_back(makeASTFunction("equals",
-                make_intrusive<ASTIdentifier>(*column), make_intrusive<ASTLiteral>(Field{String{}})));
+                null_safe_column(*column), make_intrusive<ASTLiteral>(Field{String{}})));
             extra_conditions.push_back(makeASTForLogicalOr(std::move(branches)));
         };
 
@@ -491,7 +506,7 @@ namespace
 
         ASTs conditions;
 
-        /// `<column> IN ('', <values>)` for each column with equality conditions.
+        /// `ifNull(<column>, '') IN ('', <values>)` for each column with equality conditions.
         for (const auto & [column_name, values] : values_by_column)
         {
             ASTs tuple_args;
@@ -499,7 +514,7 @@ namespace
             for (const auto & value : values)
                 tuple_args.push_back(make_intrusive<ASTLiteral>(Field{value}));
             conditions.push_back(makeASTFunction("in",
-                make_intrusive<ASTIdentifier>(column_name),
+                null_safe_column(column_name),
                 makeASTFunction("tuple", std::move(tuple_args))));
         }
 
@@ -584,14 +599,22 @@ namespace
             return;
         }
 
+        /// `min_time`/`max_time` are Nullable and unset (NULL) for a series whose samples were written without
+        /// maintaining them (e.g. inserted directly into the inner "samples" table). A bare `max_time >= c`
+        /// would evaluate to NULL (falsy) and wrongly drop such a series, so keep it when the bound is unknown:
+        /// the predicate stays a sound over-approximation, and `isNull` is still usable by the primary key.
         if (op == "greater" || op == "greaterOrEquals" || op == "equals")
-            tags_conditions.push_back(makeASTFunction("greaterOrEquals",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime),
-                make_intrusive<ASTLiteral>(value)));
+            tags_conditions.push_back(makeASTFunction("or",
+                makeASTFunction("isNull", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime)),
+                makeASTFunction("greaterOrEquals",
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime),
+                    make_intrusive<ASTLiteral>(value))));
         if (op == "less" || op == "lessOrEquals" || op == "equals")
-            tags_conditions.push_back(makeASTFunction("lessOrEquals",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime),
-                make_intrusive<ASTLiteral>(value)));
+            tags_conditions.push_back(makeASTFunction("or",
+                makeASTFunction("isNull", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime)),
+                makeASTFunction("lessOrEquals",
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime),
+                    make_intrusive<ASTLiteral>(value))));
     }
 
     /// Splits a condition on the `timestamp` virtual column out of the query filter into a predicate for the
@@ -699,7 +722,12 @@ namespace
     /// samples), so any one of them works.
     ASTPtr makeRepresentativeTimestamp()
     {
-        auto any_timestamp = makeASTFunction("any", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
+        /// `toNullable` so an unmatched row from the metrics FULL JOIN (a metric family with no in-window series)
+        /// gets a NULL representative instead of the epoch-0 default. The planner re-applies the outer `timestamp`
+        /// predicate on the storage output, and `NULL <cmp> const` is NULL, so such a row is filtered out instead
+        /// of leaking through predicates that epoch 0 happens to satisfy (e.g. `timestamp <= C`, `timestamp != C`).
+        auto any_timestamp = makeASTFunction("toNullable",
+            makeASTFunction("any", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
         any_timestamp->setAlias(representative_timestamp_alias);
         return any_timestamp;
     }
@@ -821,21 +849,26 @@ namespace
         return select_list;
     }
 
-    /// Builds the `FROM <tags_table_id>` element that the multi-table reads are anchored on. When
-    /// `index_filter` is set, the table is wrapped in `(SELECT * FROM tags WHERE <index_filter>) AS __tags`
-    /// so the predicate is applied at the tags scan and its primary key can skip granules.
+    /// Builds the `FROM` element that the multi-table reads are anchored on, always wrapped as
+    /// `(SELECT * FROM tags [WHERE <index_filter>] LIMIT 1 BY id) AS __tags`. The `LIMIT 1 BY id` deduplicates
+    /// series: the "tags" table is AggregatingMergeTree, so until a background merge runs, several unmerged parts
+    /// can each hold a row for the same series `id` (whose identity columns are identical across them); without
+    /// this the read would return a series once per part. When set, `index_filter` is applied at the scan
+    /// (before `LIMIT BY`) so the primary key can still skip granules.
     ASTPtr makeTagsTableElement(const StorageID & tags_table_id, const ASTPtr & index_filter)
     {
-        if (!index_filter)
-            return makeTableElement(makeTableExpression(tags_table_id));
-
-        /// `(SELECT * FROM tags WHERE <index_filter>) AS __tags`.
         auto inner = make_intrusive<ASTSelectQuery>();
         auto select_list = make_intrusive<ASTExpressionList>();
         select_list->children.push_back(make_intrusive<ASTAsterisk>());
         inner->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
         inner->setExpression(ASTSelectQuery::Expression::TABLES, makeSingleTableList(makeTableExpression(tags_table_id)));
-        inner->setExpression(ASTSelectQuery::Expression::WHERE, index_filter->clone());
+        if (index_filter)
+            inner->setExpression(ASTSelectQuery::Expression::WHERE, index_filter->clone());
+
+        inner->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, make_intrusive<ASTLiteral>(static_cast<UInt8>(1)));
+        auto limit_by = make_intrusive<ASTExpressionList>();
+        limit_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        inner->setExpression(ASTSelectQuery::Expression::LIMIT_BY, limit_by);
 
         auto tags_exp = make_intrusive<ASTTableExpression>();
         tags_exp->subquery = make_intrusive<ASTSubquery>(wrapInUnionQuery(std::move(inner)));
@@ -935,9 +968,10 @@ namespace
         return makeMetricsSelect(metrics_table_id, makeMetricsSelectList(column_names, /* as_join_key= */ true));
     }
 
-    /// Builds `FULL JOIN (deduplicated metrics) AS __metrics ON metric_family_name = timeSeriesMetricNameToFamily(metric_name)`
+    /// Builds `FULL JOIN (deduplicated metrics) AS __metrics ON metric_family_name = timeSeriesMetricNameToFamily(<metric name>)`
     /// — attaches the metadata columns. The metric family computed from a time series' metric name links it
-    /// to its metadata row. The FULL JOIN keeps every "tags" row (its metadata columns are empty when the
+    /// to its metadata row. `<metric name>` is reconstructed with the same `tags['__name__']` fallback as the
+    /// output `metric_name` column, so a series whose name lives in the inner `tags` Map still links to its metadata. The FULL JOIN keeps every "tags" row (its metadata columns are empty when the
     /// family has no metadata row) and also every "metrics" row that no time series belongs to (its "tags"
     /// and "samples" columns are then empty). The alias is required by `joined_subquery_requires_alias`.
     ASTPtr makeMetricsFullJoinElement(const StorageID & metrics_table_id, const NameSet & column_names)
@@ -953,7 +987,7 @@ namespace
         join->on_expression = makeASTFunction("equals",
             make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName),
             makeASTFunction("timeSeriesMetricNameToFamily",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName)));
+                makeColumnWithMapFallback(TimeSeriesColumnNames::MetricName, TimeSeriesTagNames::MetricName)));
         join->children.push_back(join->on_expression);
 
         auto metrics_elem = make_intrusive<ASTTablesInSelectQueryElement>();

@@ -628,12 +628,25 @@ void StorageTimeSeries::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    /// The generated read query joins the inner tables, relying on join/aggregate results being non-Nullable
+    /// (unmatched join rows and empty aggregate groups must yield empty strings, not NULL) to match the outer
+    /// schema, whose columns are non-Nullable. Run it on a child context that forces the relevant settings off so
+    /// the result does not depend on the caller's session/profile (e.g. `join_use_nulls=1` would otherwise inject
+    /// NULLs into the non-Nullable outer columns — silently wrong values, or an exception at the schema boundary).
+    auto read_context = Context::createCopy(local_context);
+    read_context->setSetting("join_use_nulls", Field{false});
+    read_context->setSetting("aggregate_functions_null_for_empty", Field{false});
+    /// The generated query uses SEMI / FULL joins, which the merge-join algorithm does not implement. Pin
+    /// `join_algorithm` so a caller's setting (e.g. `full_sorting_merge` with no hash fallback) can't make the
+    /// read throw NOT_IMPLEMENTED.
+    read_context->setSetting("join_algorithm", Field{"default"});
+
     auto projected_tag_keys = collectProjectedTagKeys(query_info);
     auto select_query = makeTimeSeriesReadQuery(
-        *this, column_names, local_context, query_info.filter_actions_dag.get(), projected_tag_keys);
+        *this, column_names, read_context, query_info.filter_actions_dag.get(), projected_tag_keys);
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, /*is_subquery=*/false,
                                       query_info.settings_limit_offset_done);
-    InterpreterSelectQueryAnalyzer interpreter(select_query, local_context, options, column_names);
+    InterpreterSelectQueryAnalyzer interpreter(select_query, read_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
 }

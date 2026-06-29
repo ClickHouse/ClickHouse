@@ -89,6 +89,9 @@ def test_select_metric_name_and_tags():
     on its own (single-column tags-table reads)."""
     insert_three_series()
 
+    # `count()` over the engine returns the number of time series (one tags row per series).
+    assert node.query("SELECT count() FROM prometheus") == "3\n"
+
     assert node.query(
         "SELECT metric_name, tags FROM prometheus ORDER BY metric_name, tags"
     ) == TSV([
@@ -119,94 +122,94 @@ def test_select_tags_with_name_in_tags_map():
     assert node.query("SELECT metric_name, tags FROM prometheus") == TSV([["bar", "{'__name__':'bar','x':'1'}"]])
 
 
-def test_select_where_metric_name_pushdown_keeps_name_in_tags():
-    """A `metric_name` condition is pushed onto the tags scan as `metric_name IN ('', <consts>)`. The empty
-    string keeps series whose name lives in the tags Map (empty `metric_name` column), so such a series is
-    still returned when filtered by its name."""
+def test_select_where_metric_name_pushdown():
+    """A `metric_name` condition is pushed onto the tags scan (`metric_name` is the leading primary-key column):
+    equality as `metric_name IN ('', <consts>)`, and `startsWith`/`LIKE 'p%'`/`match('^p')` as
+    `<fn>(metric_name, ...) OR metric_name = ''`. The empty-string arm keeps a series whose name lives in the tags
+    Map (empty `metric_name` column), so it is still returned — both by exact name and by prefix."""
     node.query(
         "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
-        " ('cpu', {'a': '1'}, [(toDateTime64(1000, 3), 1.0)])"
+        " ('cpu_usage', {}, [(toDateTime64(1, 3), 1)]),"
+        " ('cpu_load',  {}, [(toDateTime64(1, 3), 1)]),"
+        " ('mem_free',  {}, [(toDateTime64(1, 3), 1)])"
     )
+    # A series whose name is in the tags Map (empty `metric_name` column).
     node.query(
-        "INSERT INTO FUNCTION timeSeriesTags(prometheus) (metric_name, tags) VALUES"
-        " ('', {'__name__': 'cpu', 'z': '9'})"
+        "INSERT INTO FUNCTION timeSeriesTags(prometheus) (metric_name, tags) VALUES ('', {'__name__': 'cpu_temp'})"
     )
-
-    # Both series have metric name 'cpu' (one in the column, one in the tags Map) and must be returned.
-    assert node.query("SELECT count() FROM prometheus WHERE metric_name = 'cpu'") == "2\n"
-    assert node.query("SELECT count() FROM prometheus WHERE metric_name = 'mem'") == "0\n"
+    # Equality: a Map-stored name is matched via the '' arm, a column-stored name directly, a non-match yields 0.
+    assert node.query("SELECT count() FROM prometheus WHERE metric_name = 'cpu_temp'") == "1\n"
+    assert node.query("SELECT count() FROM prometheus WHERE metric_name = 'cpu_usage'") == "1\n"
+    assert node.query("SELECT count() FROM prometheus WHERE metric_name = 'nope'") == "0\n"
+    # Prefix forms keep every cpu_* series, including the Map-name one.
+    expected = TSV([["cpu_load"], ["cpu_temp"], ["cpu_usage"]])
+    assert node.query("SELECT metric_name FROM prometheus WHERE startsWith(metric_name, 'cpu') ORDER BY metric_name") == expected
+    assert node.query("SELECT metric_name FROM prometheus WHERE metric_name LIKE 'cpu%' ORDER BY metric_name") == expected
+    assert node.query("SELECT metric_name FROM prometheus WHERE match(metric_name, '^cpu') ORDER BY metric_name") == expected
 
 
 def test_select_where_promoted_tag_pushdown():
-    """A condition on a tag promoted to its own column (`tags_to_columns`) is pushed onto that column on the
-    tags scan as `<col> IN ('', <consts>)`. The empty string keeps a series whose tag is instead stored in
-    the `tags` Map (empty column), so it is still returned."""
+    """A condition on a tag promoted to its own column (`tags_to_columns`) is pushed onto that column on the tags
+    scan: equality as `<col> IN ('', <consts>)`, and prefix forms as `<fn>(<col>, ...) OR <col> = ''`. The
+    empty-string arm keeps a series whose tag is instead stored in the `tags` Map (empty column)."""
     node.query("DROP TABLE IF EXISTS prom_promoted SYNC")
     node.query("CREATE TABLE prom_promoted ENGINE=TimeSeries SETTINGS tags_to_columns={'job': 'job'}")
     try:
         node.query(
             "INSERT INTO prom_promoted (metric_name, tags, time_series) VALUES"
-            " ('cpu', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)]),"
-            " ('mem', {'job': 'web'}, [(toDateTime64(2000, 3), 2.0)])"
+            " ('m1', {'job': 'api'},  [(toDateTime64(1, 3), 1)]),"
+            " ('m2', {'job': 'apex'}, [(toDateTime64(1, 3), 1)]),"
+            " ('m3', {'job': 'web'},  [(toDateTime64(1, 3), 1)])"
         )
-        # A series whose `job` is stored in the tags Map (empty `job` column), inserted into the inner table.
+        # Series whose `job` is stored in the tags Map (empty `job` column), inserted into the inner table.
         node.query(
             "INSERT INTO FUNCTION timeSeriesTags(prom_promoted) (metric_name, tags) VALUES"
-            " ('direct', {'job': 'api', 'x': '1'})"
+            " ('m4', {'job': 'apidoc'}), ('m5', {'job': 'api'})"
         )
-
-        # 'cpu' (job in column) and 'direct' (job in the Map) both match; 'mem' does not.
+        # Equality: 'api' matches the column ('m1') and the Map ('m5'); 'web' matches one.
         assert node.query("SELECT count() FROM prom_promoted WHERE tags['job'] = 'api'") == "2\n"
         assert node.query("SELECT count() FROM prom_promoted WHERE tags['job'] = 'web'") == "1\n"
+        # Prefix forms match every ap* job (column- and Map-stored); 'web' excluded.
+        expected = TSV([["apex"], ["api"], ["apidoc"]])  # lexicographic ('apex' < 'api')
+        assert node.query("SELECT DISTINCT tags['job'] FROM prom_promoted WHERE startsWith(tags['job'], 'ap') ORDER BY 1") == expected
+        assert node.query("SELECT DISTINCT tags['job'] FROM prom_promoted WHERE tags['job'] LIKE 'ap%' ORDER BY 1") == expected
+        assert node.query("SELECT DISTINCT tags['job'] FROM prom_promoted WHERE match(tags['job'], '^ap') ORDER BY 1") == expected
     finally:
         node.query("DROP TABLE IF EXISTS prom_promoted SYNC")
 
 
-def test_select_where_selector_match_tags_pushdown():
-    """A `WHERE timeSeriesSelectorMatchTags('<selector>', tags)` filter has the equality matchers of its
-    constant PromQL selector pushed onto the tags scan (`__name__` -> the metric_name column, a promoted tag
-    -> its column), each as `<col> IN ('', <consts>)`. The empty string keeps series whose value lives in the
-    `tags` Map, so they are still returned. Regex and negative matchers can't use the index, but the outer
-    function call still enforces the whole selector exactly."""
+def test_select_where_selector_pushdown():
+    """A `WHERE timeSeriesSelectorMatchTags('<selector>', tags)` filter has its constant PromQL selector's matchers
+    pushed onto the tags scan (`__name__` -> the metric_name column, a promoted tag -> its column). An equality
+    matcher becomes `<col> IN ('', <consts>)`; a regex matcher that is an alternation of literals (e.g.
+    `job=~'api|server'`) also becomes an `IN` set, while a general regex becomes a `match`. The '' arm keeps
+    values stored in the `tags` Map; the outer call still enforces the whole selector exactly (so `api|server`,
+    being fully anchored, is exactly "api" or "server", not "apidoc")."""
     node.query("DROP TABLE IF EXISTS prom_selector SYNC")
     node.query("CREATE TABLE prom_selector ENGINE=TimeSeries SETTINGS tags_to_columns={'job': 'job'}")
     try:
         node.query(
             "INSERT INTO prom_selector (metric_name, tags, time_series) VALUES"
-            " ('cpu', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)]),"
-            " ('mem', {'job': 'web'}, [(toDateTime64(2000, 3), 2.0)])"
+            " ('cpu',      {'job': 'api'},    [(toDateTime64(1, 3), 1)]),"
+            " ('cpu_load', {'job': 'server'}, [(toDateTime64(1, 3), 1)]),"
+            " ('mem_free', {'job': 'web'},    [(toDateTime64(1, 3), 1)])"
         )
-        # A series whose name and `job` both live in the tags Map (empty `metric_name`/`job` columns).
+        # Series whose name and/or `job` live in the tags Map (empty columns).
         node.query(
             "INSERT INTO FUNCTION timeSeriesTags(prom_selector) (metric_name, tags) VALUES"
-            " ('', {'__name__': 'cpu', 'job': 'api'})"
+            " ('', {'__name__': 'cpu', 'job': 'api'}), ('cpu_temp', {'job': 'apidoc'})"
         )
-
-        # `__name__` matcher: 'cpu' in the column and 'cpu' in the Map both match; 'mem' does not.
-        assert node.query(
-            "SELECT count() FROM prom_selector WHERE timeSeriesSelectorMatchTags('{__name__=\"cpu\"}', tags)"
-        ) == "2\n"
-        # Metric name plus a promoted-tag matcher.
-        assert node.query(
-            "SELECT count() FROM prom_selector WHERE timeSeriesSelectorMatchTags('cpu{job=\"api\"}', tags)"
-        ) == "2\n"
-        # A promoted-tag matcher alone keeps the column-stored 'mem' series only.
-        assert node.query(
-            "SELECT count() FROM prom_selector WHERE timeSeriesSelectorMatchTags('{job=\"web\"}', tags)"
-        ) == "1\n"
-        # A regex matcher isn't pushed down but is still enforced exactly by the outer call.
-        assert node.query(
-            "SELECT count() FROM prom_selector WHERE timeSeriesSelectorMatchTags('{__name__=~\"c.*\"}', tags)"
-        ) == "2\n"
+        # Equality matchers: name 'cpu' matches the column series and the Map series; matchers combine; a
+        # promoted-tag matcher alone selects the 'web' series.
+        assert node.query("SELECT count() FROM prom_selector WHERE timeSeriesSelectorMatchTags('{__name__=\"cpu\"}', tags)") == "2\n"
+        assert node.query("SELECT count() FROM prom_selector WHERE timeSeriesSelectorMatchTags('cpu{job=\"api\"}', tags)") == "2\n"
+        assert node.query("SELECT count() FROM prom_selector WHERE timeSeriesSelectorMatchTags('{job=\"web\"}', tags)") == "1\n"
+        # Regex matchers: an alternation of literals (exactly api/server, anchored -> 'apidoc' excluded) and a
+        # general prefix regex on the name (matches every cpu* series, column- and Map-stored).
+        assert node.query("SELECT count() FROM prom_selector WHERE timeSeriesSelectorMatchTags('{job=~\"api|server\"}', tags)") == "3\n"
+        assert node.query("SELECT count() FROM prom_selector WHERE timeSeriesSelectorMatchTags('{__name__=~\"cpu.*\"}', tags)") == "4\n"
     finally:
         node.query("DROP TABLE IF EXISTS prom_selector SYNC")
-
-
-def test_select_count():
-    insert_three_series()
-
-    # `count()` over the engine returns the number of time series (one per tags row).
-    assert node.query("SELECT count() FROM prometheus") == "3\n"
 
 
 def test_select_with_where_on_tags_map_element():
@@ -511,73 +514,169 @@ def test_select_whole_tags_still_reconstructs_full_map():
         node.query("DROP TABLE IF EXISTS prom_whole SYNC")
 
 
-def test_select_where_metric_name_prefix_pushdown():
-    """`startsWith` / `LIKE 'p%'` / `match('^p')` on `metric_name` are pushed onto the tags scan (`metric_name`
-    is the leading primary-key column) as `<fn>(metric_name, ...) OR metric_name = ''`, and still keep a series
-    whose name lives in the tags Map (empty `metric_name` column)."""
+
+
+def test_select_metrics_metadata_for_name_in_tags_map():
+    """A series whose name lives in the inner tags Map under `__name__` (empty `metric_name` column) must still
+    link to its family's metadata. The metadata FULL JOIN computes the family from the reconstructed name (with
+    the `tags['__name__']` fallback), not the raw `metric_name` column — otherwise the family would be computed
+    from an empty string, leaving the series with empty metadata and emitting a spurious metrics-only row."""
+    # A series whose name ('cpu_usage') lives in the tags Map, with an empty metric_name column.
+    node.query(
+        "INSERT INTO FUNCTION timeSeriesTags(prometheus) (metric_name, tags) VALUES"
+        " ('', {'__name__': 'cpu_usage', 'host': 'h1'})"
+    )
+    # Metadata for that family.
+    node.query(
+        "INSERT INTO prometheus (metric_family, type, unit, help) VALUES"
+        " ('cpu_usage', 'gauge', 'percent', 'CPU usage')"
+    )
+
+    assert node.query(
+        "SELECT metric_name, tags, metric_family, type, unit, help FROM prometheus"
+    ) == TSV([["cpu_usage", "{'__name__':'cpu_usage','host':'h1'}", "cpu_usage", "gauge", "percent", "CPU usage"]])
+
+
+def test_select_result_independent_of_null_settings():
+    """The internal read joins the inner tables and relies on unmatched join rows / empty aggregate groups
+    yielding empty strings (not NULL) to match the non-Nullable outer columns. The result must not depend on the
+    caller's `join_use_nulls` / `aggregate_functions_null_for_empty` settings (which would otherwise inject NULLs
+    into non-Nullable columns: silently wrong values, or an exception at the schema boundary)."""
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type, unit, help) VALUES"
+        " ('http_requests_total', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)], 'http_requests', 'counter', 'requests', 'Total HTTP requests')"
+    )
+    # A series whose family has no metadata: its metadata columns come from an unmatched FULL JOIN row.
     node.query(
         "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
-        " ('cpu_usage', {}, [(toDateTime64(1,3),1)]),"
-        " ('cpu_load', {}, [(toDateTime64(1,3),1)]),"
-        " ('mem_free', {}, [(toDateTime64(1,3),1)])"
+        " ('cpu_usage', {'host': 'h1'}, [(toDateTime64(2000, 3), 0.5)])"
     )
-    # A series whose name is in the tags Map (empty `metric_name` column).
+
+    metadata = TSV([
+        ["cpu_usage", "", "", "", ""],
+        ["http_requests_total", "http_requests", "counter", "requests", "Total HTTP requests"],
+    ])
+    virtual = TSV([
+        ["prometheus", "cpu_usage", ""],
+        ["prometheus", "http_requests_total", "counter"],
+    ])
+    for suffix in ["", " SETTINGS join_use_nulls = 1", " SETTINGS aggregate_functions_null_for_empty = 1"]:
+        assert node.query(
+            "SELECT metric_name, metric_family, type, unit, help FROM prometheus ORDER BY metric_name" + suffix
+        ) == metadata
+        # A constant virtual column forces a convert-to-header step that throws if a NULL reaches a non-Nullable column.
+        assert node.query(
+            "SELECT _table, metric_name, type FROM prometheus ORDER BY metric_name" + suffix
+        ) == virtual
+
+
+def test_select_nullable_tag_column():
+    """A promoted tag column may be Nullable. A NULL value means 'absent', so the tag is read from the inner
+    `tags` Map (reconstruction: the rebuilt `tags` / `tags['key']` stay non-Nullable), and a pushed-down WHERE on
+    that column must be NULL-safe (`ifNull(col, '')`) so the row isn't wrongly pruned at the tags scan."""
+    node.query("DROP TABLE IF EXISTS prom_nullable SYNC")
     node.query(
-        "INSERT INTO FUNCTION timeSeriesTags(prometheus) (metric_name, tags) VALUES ('', {'__name__': 'cpu_temp'})"
+        "CREATE TABLE prom_nullable ENGINE=TimeSeries SETTINGS tags_to_columns={'job': 'job'}"
+        " TAGS INNER COLUMNS (job Nullable(String))"
     )
-    expected = TSV([["cpu_load"], ["cpu_temp"], ["cpu_usage"]])
-    assert node.query("SELECT metric_name FROM prometheus WHERE startsWith(metric_name, 'cpu') ORDER BY metric_name") == expected
-    assert node.query("SELECT metric_name FROM prometheus WHERE metric_name LIKE 'cpu%' ORDER BY metric_name") == expected
-    assert node.query("SELECT metric_name FROM prometheus WHERE match(metric_name, '^cpu') ORDER BY metric_name") == expected
-
-
-def test_select_where_promoted_tag_prefix_pushdown():
-    """`startsWith` / `LIKE 'p%'` / `match('^p')` on a promoted tag are pushed onto its column as
-    `<fn>(<col>, ...) OR <col> = ''`, keeping series whose tag is in the Map; results match the full evaluation."""
-    node.query("DROP TABLE IF EXISTS prom_pfx SYNC")
-    node.query("CREATE TABLE prom_pfx ENGINE=TimeSeries SETTINGS tags_to_columns={'job': 'job'}")
     try:
+        # A series whose `job` lives in the tags Map while the promoted `job` column is NULL.
         node.query(
-            "INSERT INTO prom_pfx (metric_name, tags, time_series) VALUES"
-            " ('m1', {'job':'api'}, [(toDateTime64(1,3),1)]),"
-            " ('m2', {'job':'apex'}, [(toDateTime64(1,3),1)]),"
-            " ('m3', {'job':'web'}, [(toDateTime64(1,3),1)])"
+            "INSERT INTO FUNCTION timeSeriesTags(prom_nullable) (metric_name, tags, job) VALUES"
+            " ('cpu', {'__name__': 'cpu', 'job': 'api'}, NULL)"
         )
-        # A series whose `job` is in the Map (empty `job` column).
-        node.query("INSERT INTO FUNCTION timeSeriesTags(prom_pfx) (metric_name, tags) VALUES ('m4', {'job':'apidoc'})")
-
-        expected = TSV([["apex"], ["api"], ["apidoc"]])  # lexicographic ('apex' < 'api'); 'web' excluded
-        assert node.query("SELECT DISTINCT tags['job'] FROM prom_pfx WHERE startsWith(tags['job'], 'ap') ORDER BY 1") == expected
-        assert node.query("SELECT DISTINCT tags['job'] FROM prom_pfx WHERE tags['job'] LIKE 'ap%' ORDER BY 1") == expected
-        assert node.query("SELECT DISTINCT tags['job'] FROM prom_pfx WHERE match(tags['job'], '^ap') ORDER BY 1") == expected
+        # Reconstruction: tags['job'] / tags come from the Map ('api'), not the NULL column, and stay non-Nullable.
+        assert node.query("SELECT tags['job'] FROM prom_nullable") == TSV([["api"]])
+        assert node.query("SELECT tags FROM prom_nullable") == TSV([["{'__name__':'cpu','job':'api'}"]])
+        assert node.query("SELECT toTypeName(tags) FROM prom_nullable") == TSV([["Map(String, String)"]])
+        # Push-down: each filter form must keep the NULL-column row (the value is in the Map).
+        for condition in [
+            "tags['job'] = 'api'",
+            "startsWith(tags['job'], 'a')",
+            "tags['job'] LIKE 'a%'",
+            "match(tags['job'], '^api$')",
+            "timeSeriesSelectorMatchTags('{job=\"api\"}', tags)",
+        ]:
+            assert node.query(f"SELECT metric_name FROM prom_nullable WHERE {condition}") == TSV([["cpu"]]), condition
     finally:
-        node.query("DROP TABLE IF EXISTS prom_pfx SYNC")
+        node.query("DROP TABLE IF EXISTS prom_nullable SYNC")
 
 
-def test_select_where_selector_regex_pushdown():
-    """Regex matchers in timeSeriesSelectorMatchTags are pushed onto the tags scan: an alternation of literals
-    (e.g. `job=~'api|server'`) becomes an `IN` set, and a general regex becomes a `match`. Results stay correct,
-    including the Map-stored fallback. (A regex matcher is fully anchored, so `api|server` is exactly "api" or
-    "server", not "apidoc".)"""
-    node.query("DROP TABLE IF EXISTS prom_sre SYNC")
-    node.query("CREATE TABLE prom_sre ENGINE=TimeSeries SETTINGS tags_to_columns={'job': 'job'}")
-    try:
-        node.query(
-            "INSERT INTO prom_sre (metric_name, tags, time_series) VALUES"
-            " ('cpu_usage', {'job':'api'}, [(toDateTime64(1,3),1)]),"
-            " ('cpu_load', {'job':'server'}, [(toDateTime64(1,3),1)]),"
-            " ('mem_free', {'job':'web'}, [(toDateTime64(1,3),1)])"
-        )
-        # A series whose name and `job` are in the Map (empty columns).
-        node.query("INSERT INTO FUNCTION timeSeriesTags(prom_sre) (metric_name, tags) VALUES ('cpu_temp', {'job':'apidoc'})")
+def test_select_timestamp_filter_excludes_metadata_only_family():
+    """A metric family with metadata but no in-window series must not leak through a `timestamp` filter: the
+    representative timestamp of its unmatched metrics FULL-JOIN row is NULL, so a predicate that epoch 0 would
+    satisfy (e.g. `timestamp <= C`, `timestamp != C`) correctly drops it."""
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type) VALUES"
+        " ('http_requests_total', {'job': 'api'}, [(toDateTime64(5000, 3), 1.0)], 'http_requests', 'counter')"
+    )
+    # A metadata-only family with no series at all.
+    node.query("INSERT INTO prometheus (metric_family, type) VALUES ('memory_bytes', 'gauge')")
 
-        # Alternation on a promoted tag -> exactly 'api' or 'server' ('apidoc'/'web' excluded).
+    # No series has a sample at or before 100s, so nothing should be returned -- in particular not the
+    # metadata-only family (whose representative timestamp would otherwise default to epoch 0).
+    assert node.query(
+        "SELECT metric_name, metric_family FROM prometheus WHERE timestamp <= toDateTime64(100, 3)"
+    ) == ""
+    assert node.query(
+        "SELECT metric_name, metric_family FROM prometheus WHERE timestamp != toDateTime64(5000, 3)"
+    ) == ""
+    # A matching window returns only the real series with its metadata.
+    assert node.query(
+        "SELECT metric_name, metric_family, type FROM prometheus WHERE timestamp >= toDateTime64(1000, 3)"
+    ) == TSV([["http_requests_total", "http_requests", "counter"]])
+
+
+def test_select_timestamp_filter_keeps_series_with_null_min_max_time():
+    """min_time/max_time are NULL for a series whose samples were written directly into the samples table (which
+    does not maintain them). The coarse tags-table range pruning must not drop such a series; the exact
+    samples-table filter still applies."""
+    node.query(
+        "INSERT INTO FUNCTION timeSeriesTags(prometheus) (metric_name, tags) VALUES ('cpu', {'__name__': 'cpu'})"
+    )
+    node.query(
+        "INSERT INTO FUNCTION timeSeriesData(prometheus) (id, timestamp, value)"
+        " SELECT id, toDateTime64(2000, 3), 1.0 FROM timeSeriesTags(prometheus)"
+    )
+    # The sample at t=2000 satisfies these, so the series must be returned despite NULL min/max time.
+    assert node.query("SELECT metric_name FROM prometheus WHERE timestamp >= toDateTime64(1500, 3)") == TSV([["cpu"]])
+    assert node.query("SELECT metric_name FROM prometheus WHERE timestamp <= toDateTime64(2500, 3)") == TSV([["cpu"]])
+    # ...and correctly excluded when the window genuinely does not contain the sample (exact samples filter).
+    assert node.query("SELECT metric_name FROM prometheus WHERE timestamp >= toDateTime64(3000, 3)") == ""
+
+
+def test_select_deduplicates_unmerged_tags_parts():
+    """The tags inner table is AggregatingMergeTree; until a background merge runs, repeated inserts of the same
+    series leave several unmerged parts with the same id. The read must return the series once (count() and the
+    projection agree), not once per part."""
+    # Two separate inserts of the SAME series -> two unmerged tags parts sharing one id.
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
+        " ('http_requests', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)])"
+    )
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
+        " ('http_requests', {'job': 'api'}, [(toDateTime64(2000, 3), 2.0)])"
+    )
+    assert node.query("SELECT count() FROM prometheus") == "1\n"
+    assert node.query("SELECT metric_name, tags FROM prometheus") == TSV([["http_requests", "{'__name__':'http_requests','job':'api'}"]])
+    # The single series' samples from both parts are still gathered.
+    assert node.query("SELECT metric_name, length(time_series) FROM prometheus") == TSV([["http_requests", "2"]])
+
+
+def test_select_works_under_full_sorting_merge_join_algorithm():
+    """The internal read uses SEMI / FULL joins, which the merge-join algorithm does not implement. A caller's
+    `join_algorithm` must not break the read (`readImpl` pins `join_algorithm` on the internal query's context)."""
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type) VALUES"
+        " ('http_requests_total', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)], 'http_requests', 'counter'),"
+        " ('cpu_usage',           {'host': 'h1'}, [(toDateTime64(2000, 3), 0.5)], 'cpu_usage',     'gauge')"
+    )
+    for algo in ["full_sorting_merge", "direct,full_sorting_merge"]:
+        # `time_series` exercises the samples SEMI JOIN; a metadata column exercises the metrics FULL JOIN.
         assert node.query(
-            "SELECT count() FROM prom_sre WHERE timeSeriesSelectorMatchTags('{job=~\"api|server\"}', tags)"
+            f"SELECT count() FROM (SELECT metric_name, time_series FROM prometheus) SETTINGS join_algorithm = '{algo}'"
         ) == "2\n"
-        # A general (prefix) regex on metric_name -> every cpu_* series, including the Map-name one.
         assert node.query(
-            "SELECT metric_name FROM prom_sre WHERE timeSeriesSelectorMatchTags('{__name__=~\"cpu.*\"}', tags) ORDER BY metric_name"
-        ) == TSV([["cpu_load"], ["cpu_temp"], ["cpu_usage"]])
-    finally:
-        node.query("DROP TABLE IF EXISTS prom_sre SYNC")
+            f"SELECT count() FROM (SELECT metric_name, type FROM prometheus) SETTINGS join_algorithm = '{algo}'"
+        ) == "2\n"
