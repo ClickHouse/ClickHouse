@@ -707,6 +707,10 @@
         'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
         'strong', 'em', 'b', 'i', 'u', 's', 'del', 'ins', 'sub', 'sup', 'kbd', 'samp',
         'abbr', 'mark', 'small', 'wbr',
+        /// Disclosure widgets: some embedded docs wrap notes in `<details><summary>...`, e.g. the
+        /// "Implementation details" sections of the `uniq` and `uniqCombined` aggregate functions.
+        /// Dropping them (with their subtree) made those sections disappear from the rendered page.
+        'details', 'summary',
         /// MathML, as emitted by KaTeX alongside its visible HTML rendering.
         'math', 'semantics', 'annotation', 'mrow', 'mi', 'mo', 'mn', 'ms', 'mtext', 'mspace',
         'msup', 'msub', 'msubsup', 'mfrac', 'msqrt', 'mroot', 'mover', 'munder', 'munderover',
@@ -719,7 +723,7 @@
         /// harmless presentational or accessibility attributes. `href`/`src` are additionally
         /// scheme-checked below.
         'class', 'style', 'id', 'title', 'colspan', 'rowspan', 'align', 'start', 'aria-hidden',
-        'href', 'src', 'alt', 'target', 'rel',
+        'href', 'src', 'alt', 'target', 'rel', 'open',
         /// MathML presentation attributes used by KaTeX.
         'mathvariant', 'displaystyle', 'scriptlevel', 'stretchy', 'accent', 'accentunder',
         'width', 'height', 'depth', 'lspace', 'rspace', 'voffset', 'fence', 'separator',
