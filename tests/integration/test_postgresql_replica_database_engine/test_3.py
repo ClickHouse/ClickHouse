@@ -1067,10 +1067,31 @@ def test_table_schema_changed_while_server_down(started_cluster):
     for i in range(1, NUM_TABLES):
         check_tables_are_synchronized(instance, f"postgresql_replica_{i}")
 
+    # Write to the affected table while it is skipped. The consumer observes its `Relation` message,
+    # finds no storage for it, and puts the table into the internal skip list (an empty start-LSN
+    # entry keyed by the PostgreSQL relation id). The DETACH/ATTACH recovery below must clear that
+    # entry, otherwise replication of the table would stay blocked forever after recovery.
+    instance.query(
+        "INSERT INTO postgres_database.postgresql_replica_0 (key, value, col_added) SELECT number, number, number from numbers(100, 5)"
+    )
+    # Wait until the table is actually marked as skipped in the replication stream, so the recovery
+    # really exercises the stale-skip-list path rather than winning a benign race.
+    instance.wait_for_log_line(
+        "postgresql_replica_0 is skipped from replication stream", timeout=60
+    )
+
     # The affected table is recoverable with DETACH/ATTACH (it picks up the new structure).
     instance.query("DETACH TABLE test_database.postgresql_replica_0 PERMANENTLY")
     instance.query("ATTACH TABLE test_database.postgresql_replica_0")
     assert_number_of_columns(instance, 3, "postgresql_replica_0")
+    check_tables_are_synchronized(instance, "postgresql_replica_0")
+
+    # Prove that replication really resumes for the recovered table: a write that happens *after*
+    # ATTACH must be replicated. Without clearing the stale skip-list entry, this insert would be
+    # skipped indefinitely and the tables would never converge.
+    instance.query(
+        "INSERT INTO postgres_database.postgresql_replica_0 (key, value, col_added) SELECT number, number, number from numbers(200, 5)"
+    )
     check_tables_are_synchronized(instance, "postgresql_replica_0")
 
     pg_manager.drop_materialized_db()

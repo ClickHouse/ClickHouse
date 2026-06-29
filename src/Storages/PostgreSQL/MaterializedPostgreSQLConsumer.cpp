@@ -872,6 +872,21 @@ void MaterializedPostgreSQLConsumer::addNested(
     if (it != deleted_tables.end())
         deleted_tables.erase(it);
 
+    /// The table might already be in the skip list - for example, it was skipped at startup because
+    /// its structure did not match the nested table and then received WAL (the `Relation` message
+    /// stored an empty `skip_list` entry for it), or its structure changed in the replication stream.
+    /// Now that the table is brought back (DETACH/ATTACH reloads its structure), drop the stale
+    /// skip-list entry. Otherwise `isSyncAllowed` would keep skipping the table indefinitely once the
+    /// `waiting_list` entry set below is consumed, so the promised DETACH/ATTACH recovery would not work.
+    for (auto skip_it = skip_list.begin(); skip_it != skip_list.end();)
+    {
+        const auto name_it = relation_id_to_name.find(skip_it->first);
+        if (name_it != relation_id_to_name.end() && name_it->second == postgres_table_name)
+            skip_it = skip_list.erase(skip_it);
+        else
+            ++skip_it;
+    }
+
     /// Replication consumer will read wall and check for currently processed table whether it is allowed to start applying
     /// changes to this table.
     waiting_list[postgres_table_name] = table_start_lsn;
