@@ -26,6 +26,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 if output=$(${CLICKHOUSE_CLIENT} --user "${user}" --query "
     SELECT count() >= 1
     FROM system.user_query_log
+    WHERE current_database = currentDatabase()
     SETTINGS allow_experimental_analyzer = 1,
         additional_table_filters = {'system.query_log': 'throwIf(if(initial_user != \\'\\', initial_user, user) != currentUser()) = 0'}" 2>&1)
 then
@@ -43,6 +44,7 @@ fi
 if output=$(${CLICKHOUSE_CLIENT} --user "${user}" --query "
     SELECT count() >= 1
     FROM system.user_query_log
+    WHERE current_database = currentDatabase()
     SETTINGS allow_experimental_analyzer = 1,
         additional_result_filter = 'throwIf(if(initial_user != \\'\\', initial_user, user) != currentUser()) = 0'" 2>&1)
 then
@@ -60,6 +62,7 @@ fi
 if output=$(${CLICKHOUSE_CLIENT} --user "${user}" --query "
     SELECT count() >= 1
     FROM system.user_query_log
+    WHERE current_database = currentDatabase()
     SETTINGS allow_experimental_analyzer = 0,
         additional_result_filter = 'throwIf(if(initial_user != \\'\\', initial_user, user) != currentUser()) = 0'" 2>&1)
 then
