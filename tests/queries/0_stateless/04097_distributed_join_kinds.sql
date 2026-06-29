@@ -1,3 +1,4 @@
+-- Tags: long, no-fasttest
 -- Test that the old heuristic-based distributed join (tryMakeDistributedJoin)
 -- supports all join kinds and picks the correct distribution strategy.
 --
@@ -11,11 +12,13 @@
 --   2. Distributed execution result
 --   3. Single-node baseline for correctness comparison
 
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_use_new_logical_join_step = 1;
-SET distributed_plan_default_shuffle_join_bucket_count = 4;
+SET distributed_plan_default_shuffle_join_bucket_count = 2;
+SET distributed_plan_default_reader_bucket_count = 2;
 SET distributed_plan_force_exchange_kind = 'Persisted';
 -- Pin settings that affect plan shape to make EXPLAIN output stable.
 -- Reset the global max_rows_to_group_by; distributed aggregation rejects a nonzero limit.

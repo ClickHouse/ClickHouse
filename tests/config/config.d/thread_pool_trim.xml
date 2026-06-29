@@ -1,6 +1,0 @@
-<clickhouse>
-    <!-- Trim idle global pool threads after concurrency bursts. The default of 1000 is above the
-         idle thread count typically reached in tests, so the pool would never shrink and each
-         thread would keep its stack resident, which is expensive under sanitizers. -->
-    <max_thread_pool_free_size>128</max_thread_pool_free_size>
-</clickhouse>
