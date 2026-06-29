@@ -1120,10 +1120,10 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
             object_names += view;
         }
 
-        /// Database-level statements such as `CREATE DATABASE` / `DROP DATABASE` populate only
-        /// `query_databases` (no table/view names). Include them so the affected object name is
-        /// not lost. Skip when table/view names were already collected to avoid redundantly
-        /// repeating the database of fully-qualified objects.
+        /// Database-level statements such as `CREATE DATABASE` / `DROP DATABASE` carry no
+        /// table/view names. Include any database names so the affected object name is not lost.
+        /// Skip when table/view names were already collected to avoid redundantly repeating the
+        /// database of fully-qualified objects.
         if (object_names.empty())
         {
             for (const auto & database : elem.query_databases)
@@ -1132,6 +1132,17 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
                     object_names += ",";
                 object_names += database;
             }
+        }
+
+        /// `CREATE DATABASE` / `DROP DATABASE` do not populate `query_databases` (the database
+        /// name lives only in the AST), so fall back to the AST for these. Identified by a set
+        /// database name and an empty table name.
+        if (object_names.empty() && ast)
+        {
+            if (const auto * create = ast->as<ASTCreateQuery>(); create && !create->getDatabase().empty() && create->getTable().empty())
+                object_names = create->getDatabase();
+            else if (const auto * drop = ast->as<ASTDropQuery>(); drop && !drop->getDatabase().empty() && drop->getTable().empty())
+                object_names = drop->getDatabase();
         }
     }
 
