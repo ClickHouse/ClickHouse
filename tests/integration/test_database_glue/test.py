@@ -205,6 +205,13 @@ def create_clickhouse_glue_database(
         "region": "us-east-1",
     }
 
+    # The Glue catalog API client is subject to the server-managed credential restriction. Unless the session
+    # opts in via `s3_allow_server_credentials_in_user_queries`, the creator must pass explicit catalog
+    # credentials instead of falling back to the server's AWS identity (moto accepts any non-empty values).
+    if not query_settings.get("s3_allow_server_credentials_in_user_queries"):
+        settings["aws_access_key_id"] = minio_access_key
+        settings["aws_secret_access_key"] = minio_secret_key
+
     settings.update(additional_settings)
 
     credential_args = f",'{minio_access_key}', '{minio_secret_key}'" if with_credentials else ""

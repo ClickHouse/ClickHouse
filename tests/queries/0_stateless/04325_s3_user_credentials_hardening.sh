@@ -131,10 +131,12 @@ $CLICKHOUSE_CLIENT -m -q "
 #  * ${NC_ENV}            - use_environment_credentials, no explicit keys
 #  * ${NC_ROLE}           - role_arn, no explicit S3 credentials
 #  * ${NC_ROLE_PARTIAL}   - role_arn with only access_key_id (half a key pair)
-#  * extra_credentials    - s3() with extra_credentials(role_arn) and no keys
 #  * ${NC_GCP_OAUTH}      - http_client = gcp_oauth (server GCP metadata token)
 #  * ${NC_GCP_OAUTH_NOSIGN} - gcp_oauth still mints a token even with NOSIGN
 #  * ${NC_GCP_OAUTH_CASE} - http client name matched case-insensitively
+#  * extra_credentials    - s3() with extra_credentials(role_arn) and no keys: the query-supplied role_arn is
+#                           dropped (it must not assume the role with the server's keys), so the request goes
+#                           anonymous and reaches S3 (S3_ERROR), it is not a server-credential rejection
 #  * ${NC_NOCREDS}        - url only -> anonymous, reaches S3 (S3_ERROR)
 #  * ${NC_NOSIGN_ROLE}    - NOSIGN with a stray role_arn stays anonymous (S3_ERROR)
 $CLICKHOUSE_CLIENT -m -q "
@@ -142,7 +144,7 @@ $CLICKHOUSE_CLIENT -m -q "
     SELECT * FROM s3(${NC_ROLE}, format = 'TSV', structure = 'x UInt8'); -- { serverError ACCESS_DENIED }
     SELECT * FROM s3(${NC_ROLE_PARTIAL}, format = 'TSV', structure = 'x UInt8'); -- { serverError ACCESS_DENIED }
     SELECT * FROM s3('http://localhost:11111/test/${DB}.tsv', format = 'TSV', structure = 'x UInt8',
-                     extra_credentials(role_arn = '${ROLE_ARN}')); -- { serverError ACCESS_DENIED }
+                     extra_credentials(role_arn = '${ROLE_ARN}')); -- { serverError S3_ERROR }
     SELECT * FROM s3(${NC_GCP_OAUTH}, format = 'TSV', structure = 'x UInt8'); -- { serverError ACCESS_DENIED }
     SELECT * FROM s3(${NC_GCP_OAUTH_NOSIGN}, format = 'TSV', structure = 'x UInt8'); -- { serverError ACCESS_DENIED }
     SELECT * FROM s3(${NC_GCP_OAUTH_CASE}, format = 'TSV', structure = 'x UInt8'); -- { serverError ACCESS_DENIED }
@@ -202,13 +204,14 @@ $CLICKHOUSE_CLIENT --dynamic_disk_allow_include=1 -q "
 
 # Create a dummy table so the `BACKUP` statements reach credential resolution and
 # not an earlier "unknown table" error, then batch the negative backups:
-#  * extra_credentials(role_arn) without explicit keys
-#  * named collection with role_arn but no explicit S3 credentials
-#  * named collection with use_environment_credentials = 1
+#  * extra_credentials(role_arn) without explicit keys: the query-supplied role_arn is dropped (it must not
+#    assume the role with the server's keys), so the backup goes anonymous and reaches S3 (S3_ERROR)
+#  * named collection with role_arn but no explicit S3 credentials -> server-credential rejection
+#  * named collection with use_environment_credentials = 1 -> server-credential rejection
 $CLICKHOUSE_CLIENT -m -q "
     CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple();
     BACKUP TABLE ${TABLE} TO S3('http://localhost:11111/test/${DB}_backup1/',
-        extra_credentials(role_arn = '${ROLE_ARN}')); -- { serverError ACCESS_DENIED }
+        extra_credentials(role_arn = '${ROLE_ARN}')); -- { serverError S3_ERROR }
     BACKUP TABLE ${TABLE} TO S3(${NC_BACKUP_ROLE}); -- { serverError ACCESS_DENIED }
     BACKUP TABLE ${TABLE} TO S3(${NC_BACKUP_ENV}); -- { serverError ACCESS_DENIED }
 "
