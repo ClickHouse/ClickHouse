@@ -50,3 +50,13 @@ SELECT '-- conversion to a Variant prefers a lossless alternative, falling back 
 SELECT x FROM values('x Array(Variant(Array(Int64), Array(Float64)))', [[9223372036854775807, -9223372036854775808], [0.9999, 7]]) SETTINGS allow_experimental_analyzer = 1;
 -- When no alternative can represent the value exactly, the nearest representable value is used.
 SELECT x FROM values('x Array(Variant(Array(Float32), Array(String)))', [[0.1, 0.2]]) SETTINGS allow_experimental_analyzer = 1;
+
+SELECT '-- INSERT ... VALUES with an inexact-float expression rounds to the nearest value, like the streaming literal path';
+DROP TABLE IF EXISTS t_values_insert_float;
+CREATE TABLE t_values_insert_float (x Float32) ENGINE = Memory;
+-- `1 / 3` is an expression (not a literal), so with the expression-template parser disabled the row
+-- goes through the single-expression evaluation fallback in `ValuesBlockInputFormat`. That path must
+-- convert the inexact Float64 result to the nearest Float32 (like CAST), not reject it.
+INSERT INTO t_values_insert_float SETTINGS input_format_values_deduce_templates_of_expressions = 0 VALUES (1 / 3);
+SELECT x = CAST(1 / 3, 'Float32') FROM t_values_insert_float;
+DROP TABLE t_values_insert_float;

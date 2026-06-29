@@ -57,22 +57,26 @@ namespace
 {
 
 template <typename From, typename To>
-Field convertNumericTypeImpl(const Field & from, bool strict)
+Field convertNumericTypeImpl(const Field & from, bool strict, bool convert_inexact_floats)
 {
     To result{};
 
     /// Conversion to a floating-point type is inherently lossy: most decimal literals
     /// (e.g. `0.1`) are not exactly representable, so requiring exact equality after the
-    /// conversion would reject otherwise valid values. In non-strict mode (the `VALUES`
-    /// section, the `values` table function, `INSERT`) we accept the nearest representable
-    /// value, matching `CAST`. The range check inside `accurate::convertNumeric` still rejects
-    /// out-of-range values (e.g. `1e300` -> `Float32`), and conversions to integer or `Decimal`
-    /// types stay exact.
+    /// conversion would reject otherwise valid values. The `values` table function, the `VALUES`
+    /// section and `INSERT` opt into this with `convert_inexact_floats`, accepting the nearest
+    /// representable value to match `CAST`. The range check inside `accurate::convertNumeric`
+    /// still rejects out-of-range values (e.g. `1e300` -> `Float32`), and conversions to integer
+    /// or `Decimal` types stay exact.
     ///
-    /// In strict mode (the `IN` operator) the exact-equality check is always kept, so set
-    /// membership stays consistent with the `=` operator:
-    /// `toFloat32(0.1) IN (0.1)` is `0`, exactly like `toFloat32(0.1) = 0.1`.
-    const bool exact = strict || !is_floating_point<To>;
+    /// By default `convert_inexact_floats` is false, so a value that is not exactly representable
+    /// in the target floating-point type returns Null. This is what optimizer/pruning callers
+    /// (`KeyCondition`, sharding-key rewrite, ...) and the strict `IN` operator rely on: rounding
+    /// the constant and then treating it as an exact comparison bound could prune a mark or a shard
+    /// that actually contains a matching row. Keeping the conversion exact there makes the caller
+    /// fall back to not using the bound instead of building a wrong one, and keeps set membership
+    /// consistent with the `=` operator: `toFloat32(0.1) IN (0.1)` is `0`, like `toFloat32(0.1) = 0.1`.
+    const bool exact = strict || !convert_inexact_floats || !is_floating_point<To>;
 
     const bool converted = exact
         ? accurate::convertNumeric<From, To, true>(from.safeGet<From>(), result)
@@ -84,22 +88,22 @@ Field convertNumericTypeImpl(const Field & from, bool strict)
 }
 
 template <typename To>
-Field convertNumericType(const Field & from, const IDataType & type, bool strict)
+Field convertNumericType(const Field & from, const IDataType & type, bool strict, bool convert_inexact_floats)
 {
     if (from.getType() == Field::Types::UInt64 || from.getType() == Field::Types::Bool)
-        return convertNumericTypeImpl<UInt64, To>(from, strict);
+        return convertNumericTypeImpl<UInt64, To>(from, strict, convert_inexact_floats);
     if (from.getType() == Field::Types::Int64)
-        return convertNumericTypeImpl<Int64, To>(from, strict);
+        return convertNumericTypeImpl<Int64, To>(from, strict, convert_inexact_floats);
     if (from.getType() == Field::Types::Float64)
-        return convertNumericTypeImpl<Float64, To>(from, strict);
+        return convertNumericTypeImpl<Float64, To>(from, strict, convert_inexact_floats);
     if (from.getType() == Field::Types::UInt128)
-        return convertNumericTypeImpl<UInt128, To>(from, strict);
+        return convertNumericTypeImpl<UInt128, To>(from, strict, convert_inexact_floats);
     if (from.getType() == Field::Types::Int128)
-        return convertNumericTypeImpl<Int128, To>(from, strict);
+        return convertNumericTypeImpl<Int128, To>(from, strict, convert_inexact_floats);
     if (from.getType() == Field::Types::UInt256)
-        return convertNumericTypeImpl<UInt256, To>(from, strict);
+        return convertNumericTypeImpl<UInt256, To>(from, strict, convert_inexact_floats);
     if (from.getType() == Field::Types::Int256)
-        return convertNumericTypeImpl<Int256, To>(from, strict);
+        return convertNumericTypeImpl<Int256, To>(from, strict, convert_inexact_floats);
 
     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
         type.getName(), from.getType());
@@ -215,7 +219,7 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
 }
 
 
-Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict)
+Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     if (from_type_hint && from_type_hint->equals(type))
     {
@@ -321,35 +325,35 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         if (which_type.isUInt8())
-            return convertNumericType<UInt8>(src, type, strict);
+            return convertNumericType<UInt8>(src, type, strict, convert_inexact_floats);
         if (which_type.isUInt16())
-            return convertNumericType<UInt16>(src, type, strict);
+            return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
         if (which_type.isUInt32())
-            return convertNumericType<UInt32>(src, type, strict);
+            return convertNumericType<UInt32>(src, type, strict, convert_inexact_floats);
         if (which_type.isUInt64())
-            return convertNumericType<UInt64>(src, type, strict);
+            return convertNumericType<UInt64>(src, type, strict, convert_inexact_floats);
         if (which_type.isUInt128())
-            return convertNumericType<UInt128>(src, type, strict);
+            return convertNumericType<UInt128>(src, type, strict, convert_inexact_floats);
         if (which_type.isUInt256())
-            return convertNumericType<UInt256>(src, type, strict);
+            return convertNumericType<UInt256>(src, type, strict, convert_inexact_floats);
         if (which_type.isInt8())
-            return convertNumericType<Int8>(src, type, strict);
+            return convertNumericType<Int8>(src, type, strict, convert_inexact_floats);
         if (which_type.isInt16())
-            return convertNumericType<Int16>(src, type, strict);
+            return convertNumericType<Int16>(src, type, strict, convert_inexact_floats);
         if (which_type.isInt32())
-            return convertNumericType<Int32>(src, type, strict);
+            return convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
         if (which_type.isInt64())
-            return convertNumericType<Int64>(src, type, strict);
+            return convertNumericType<Int64>(src, type, strict, convert_inexact_floats);
         if (which_type.isInt128())
-            return convertNumericType<Int128>(src, type, strict);
+            return convertNumericType<Int128>(src, type, strict, convert_inexact_floats);
         if (which_type.isInt256())
-            return convertNumericType<Int256>(src, type, strict);
+            return convertNumericType<Int256>(src, type, strict, convert_inexact_floats);
         if (which_type.isBFloat16())
-            return convertNumericType<BFloat16>(src, type, strict);
+            return convertNumericType<BFloat16>(src, type, strict, convert_inexact_floats);
         if (which_type.isFloat32())
-            return convertNumericType<Float32>(src, type, strict);
+            return convertNumericType<Float32>(src, type, strict, convert_inexact_floats);
         if (which_type.isFloat64())
-            return convertNumericType<Float64>(src, type, strict);
+            return convertNumericType<Float64>(src, type, strict, convert_inexact_floats);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal32> *>(&type))
             return convertDecimalType(src, *ptype, strict);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal64> *>(&type))
@@ -369,7 +373,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             /// Date is UInt16 under the hood; range-check so out-of-range integers
             /// don't get silently truncated by the Date serializer downstream.
-            return convertNumericType<UInt16>(src, type, strict);
+            return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
         }
 
         if (which_type.isDateTime() && src.getType() == Field::Types::UInt64)
@@ -383,7 +387,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// `Time` stores `Int32` under the hood; convert through `Int32` to produce the canonical
             /// `Int64` `Field` matching what `Time` part loading produces, and to range-check the input
             /// so out-of-range integers are not silently truncated by the `Time` serializer downstream.
-            return convertNumericType<Int32>(src, type, strict);
+            return convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
         }
 
         if (which_type.isDate32() && src.getType() == Field::Types::Int64)
@@ -448,14 +452,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// by the Date serializer downstream.
         if (which_type.isDate() && src.getType() == Field::Types::Int64)
         {
-            return convertNumericType<UInt16>(src, type, strict);
+            return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
         }
 
         /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may
         /// produce wrong result in some special cases.
         if (which_type.isDate32() && src.getType() == Field::Types::UInt64)
         {
-            return convertNumericType<Int64>(src, type, strict);
+            return convertNumericType<Int64>(src, type, strict, convert_inexact_floats);
         }
 
         if (which_type.isDateTime64()
@@ -484,7 +488,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isIPv4() && src.getType() == Field::Types::UInt64)
         {
             /// convert through UInt32 which is the underlying type for native IPv4
-            return static_cast<IPv4>(convertNumericType<UInt32>(src, type, strict).safeGet<UInt32>());
+            return static_cast<IPv4>(convertNumericType<UInt32>(src, type, strict, convert_inexact_floats).safeGet<UInt32>());
         }
     }
     else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
@@ -538,7 +542,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict);
+                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -570,7 +574,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict);
+                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
@@ -718,12 +722,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict);
+                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict);
+                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
@@ -769,7 +773,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         ///
         /// A strict outer conversion (the `IN` operator) must never round: it only accepts an
         /// exact alternative, so set membership stays consistent with the `=` operator. The
-        /// lossy fallback therefore runs only when `strict` is false.
+        /// lossy fallback therefore runs only when `strict` is false, and it only rounds floats
+        /// when `convert_inexact_floats` was requested by the caller (the `values`/insert path).
         for (const auto & variant : type_variant->getVariants())
         {
             auto res = tryConvertFieldToType(src, *variant, from_type_hint, format_settings, /*strict=*/true);
@@ -781,7 +786,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             for (const auto & variant : type_variant->getVariants())
             {
-                auto res = tryConvertFieldToType(src, *variant, from_type_hint, format_settings, /*strict=*/false);
+                auto res = tryConvertFieldToType(src, *variant, from_type_hint, format_settings, /*strict=*/false, convert_inexact_floats);
                 if (!res.isNull())
                     return res;
             }
@@ -844,12 +849,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
 }
 
-Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict)
+Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     /// TODO: implement proper tryConvertFieldToType without try/catch by adding template flag to convertFieldToTypeImpl to not throw an exception.
     try
     {
-        return convertFieldToType(from_value, to_type, from_type_hint, format_settings, strict);
+        return convertFieldToType(from_value, to_type, from_type_hint, format_settings, strict, convert_inexact_floats);
     }
     catch (...) // Ok: tryConvertFieldToType is a try-pattern
     {
@@ -857,7 +862,7 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
     }
 }
 
-Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict)
+Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     if (from_value.isNull())
         return from_value;
@@ -866,7 +871,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         return from_value;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
-        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint, format_settings, strict);
+        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint, format_settings, strict, convert_inexact_floats);
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
     {
         const IDataType & nested_type = *nullable_type->getNestedType();
@@ -877,9 +882,9 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
 
         if (from_type_hint && from_type_hint->equals(nested_type))
             return from_value;
-        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings, strict);
+        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings, strict, convert_inexact_floats);
     }
-    return convertFieldToTypeImpl(from_value, to_type, from_type_hint, format_settings, strict);
+    return convertFieldToTypeImpl(from_value, to_type, from_type_hint, format_settings, strict, convert_inexact_floats);
 }
 
 
@@ -889,7 +894,12 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
     if (is_null && !canContainNull(to_type))
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert NULL to {}", to_type.getName());
 
-    Field converted = convertFieldToType(from_value, to_type, from_type_hint, format_settings);
+    /// `convertFieldToTypeOrThrow` materializes a value (the `values`/`VALUES` table function, the
+    /// `INSERT` VALUES section, `WITH FILL`, window frame offsets, ...), so it converts to the nearest
+    /// representable floating-point value like `CAST`, rather than rejecting decimal literals that are
+    /// not exactly representable (e.g. `0.1` for a `Float32` column). It is not a pruning/comparison
+    /// path, so the lossy float conversion is safe here. See `convert_inexact_floats` in the header.
+    Field converted = convertFieldToType(from_value, to_type, from_type_hint, format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
 
     if (!is_null && converted.isNull())
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,

@@ -26,3 +26,5 @@
 -- conversion to a Variant prefers a lossless alternative, falling back to lossy only when needed
 [[9223372036854775807,-9223372036854775808],[0.9999,7]]
 [[0.1,0.2]]
+-- INSERT ... VALUES with an inexact-float expression rounds to the nearest value, like the streaming literal path
+1
