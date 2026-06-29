@@ -23,11 +23,11 @@ bool ParserShowTypesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     if (!types_identifier_p.parse(pos, types_identifier_ast, expected))
         return false;
-    
+
     const auto * types_ident = types_identifier_ast->as<ASTIdentifier>();
     if (!types_ident || Poco::toUpper(types_ident->name()) != "TYPES")
     {
-        return false; 
+        return false;
     }
 
     auto query = std::make_shared<ASTShowTypesQuery>();

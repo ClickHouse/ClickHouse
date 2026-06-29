@@ -53,11 +53,11 @@ void validateBaseTypeRecursive(
     {
         const String & name = identifier_node->name();
         if (formal_param_names.contains(name))
-            return; 
+            return;
 
         ASTPtr ast_ptr_ident = std::const_pointer_cast<IAST>(identifier_node->shared_from_this());
         if (factory_instance.tryGet(ast_ptr_ident))
-            return; 
+            return;
 
         throw Exception(ErrorCodes::UNKNOWN_TYPE,
                         "Unknown type or type parameter '{}' in definition of user-defined type '{}'",
@@ -70,20 +70,20 @@ void validateBaseTypeRecursive(
         if (!data_type_node->arguments || data_type_node->arguments->children.empty())
         {
             if (formal_param_names.contains(type_name_str))
-                return; 
-            
+                return;
+
             if (UserDefinedTypeFactory::instance().isTypeRegistered(type_name_str, validation_context))
                 return;
 
             ASTPtr ast_ptr_dt = std::const_pointer_cast<IAST>(data_type_node->shared_from_this());
             if (factory_instance.tryGet(ast_ptr_dt))
-                return; 
+                return;
 
             throw Exception(ErrorCodes::UNKNOWN_TYPE,
                             "Unknown type or type parameter '{}' in definition of user-defined type '{}'",
                             type_name_str, udt_name);
         }
-        else 
+        else
         {
             bool is_family_known = known_families.contains(type_name_str) ||
                                    UserDefinedTypeFactory::instance().isTypeRegistered(type_name_str, validation_context);
@@ -100,7 +100,7 @@ void validateBaseTypeRecursive(
                     if (e.code() == ErrorCodes::UNKNOWN_TYPE)
                         is_family_known = false;
                     else
-                        is_family_known = true; 
+                        is_family_known = true;
                 }
             }
 
@@ -147,11 +147,11 @@ BlockIO InterpreterCreateTypeQuery::execute()
 
     auto current_context = getContext();
     current_context->checkAccess(AccessType::CREATE_TYPE);
-    
+
     auto & udt_factory = UserDefinedTypeFactory::instance();
-    
+
     String type_name = create.name;
-    
+
     bool is_replace = create.or_replace;
     bool type_existed_before_replace = false;
 
@@ -205,14 +205,14 @@ BlockIO InterpreterCreateTypeQuery::execute()
     catch (const Exception & e)
     {
         LOG_WARNING(log, "Validation of base type for UDT '{}' failed: {}", type_name, e.what());
-        throw; 
+        throw;
     }
 
     if (is_replace && type_existed_before_replace)
     {
         try
         {
-            udt_factory.removeType(current_context, type_name); 
+            udt_factory.removeType(current_context, type_name);
         }
         catch (const DB::Exception & e)
         {
@@ -225,7 +225,7 @@ BlockIO InterpreterCreateTypeQuery::execute()
     String input_expression_str;
     String output_expression_str;
     String default_expression_str;
-    
+
     if (create.input_expression)
     {
         const auto * lit = create.input_expression->as<ASTLiteral>();
@@ -250,11 +250,11 @@ BlockIO InterpreterCreateTypeQuery::execute()
     format_settings_for_storage.show_secrets = false;
     query_ptr->format(query_text_buf, format_settings_for_storage);
     String create_query_string = query_text_buf.str();
-    
+
     try
     {
         udt_factory.registerType(
-            current_context, 
+            current_context,
             type_name,
             create.base_type,
             type_parameters_ast,
@@ -270,16 +270,16 @@ BlockIO InterpreterCreateTypeQuery::execute()
         {
             try
             {
-                udt_factory.removeType(current_context, type_name); 
+                udt_factory.removeType(current_context, type_name);
             }
             catch (const DB::Exception & remove_e)
             {
                 LOG_ERROR(log, "Failed to rollback in-memory registration for type '{}' after persistence error. Double error: {}", type_name, remove_e.what());
             }
         }
-        throw; 
+        throw;
     }
-    
+
     return {};
 }
 

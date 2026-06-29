@@ -27,7 +27,7 @@ bool ParserShowTypeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
     if (!type_name_parser.parse(pos, type_name_ast, expected))
         return false;
-    
+
     const auto * type_ident = type_name_ast->as<ASTIdentifier>();
     if (!type_ident)
         return false;

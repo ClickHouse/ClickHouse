@@ -250,7 +250,7 @@ public:
             auto it = substitutions.find(identifier_node->name());
             if (it != substitutions.end())
             {
-                return it->second->clone(); 
+                return it->second->clone();
             }
         }
         else if (const auto * data_type_node = ast_node->as<ASTDataType>())
@@ -260,15 +260,15 @@ public:
                 auto it = substitutions.find(data_type_node->name);
                 if (it != substitutions.end())
                 {
-                    return it->second->clone(); 
+                    return it->second->clone();
                 }
             }
         }
-        
+
         ASTPtr new_node = ast_node->clone();
         for (auto & child : new_node->children)
         {
-            child = substitute(child, substitutions); 
+            child = substitute(child, substitutions);
         }
 
         if (auto * new_data_type_node = new_node->as<ASTDataType>())
@@ -339,7 +339,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
             }
 
             ASTPtr substituted_ast = ASTIdentifierSubstituter::substitute(udt_base_type_definition_ast, substitutions);
-            
+
             return getImpl<nullptr_on_error>(substituted_ast);
         }
     }

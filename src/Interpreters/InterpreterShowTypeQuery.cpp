@@ -87,15 +87,15 @@ BlockIO InterpreterShowTypeQuery::execute()
     for (size_t i = 0; i < headers.size(); ++i)
     {
         result_block.insert(ColumnWithTypeAndName(
-            std::move(result_columns[i]), 
-            headers[i].type, 
+            std::move(result_columns[i]),
+            headers[i].type,
             headers[i].name
         ));
     }
 
     BlockIO res;
     res.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(result_block))));
-    
+
     return res;
 }
 

@@ -85,17 +85,17 @@ private:
     void ensureSystemTableExists(ContextPtr context);
     void createSystemTable(ContextPtr context);
     StoragePtr getSystemTable(ContextPtr context) const;
-    
+
     void loadTypesFromStorage(ContextPtr context, StoragePtr storage);
     void processUDTBlock(
-        const Block & block, 
-        ParserDataType & data_type_parser, 
+        const Block & block,
+        ParserDataType & data_type_parser,
         ParserExpressionList & expression_list_parser,
         Poco::Logger * log);
-    
+
     void storeTypeInSystemTable(ContextPtr context, const String & name, const TypeInfo & info);
     void removeTypeFromSystemTable(ContextPtr context, const String & name);
-    
+
     String getNullableString(const ColumnPtr & column, size_t index) const;
 
     mutable bool types_loaded_from_db = false;

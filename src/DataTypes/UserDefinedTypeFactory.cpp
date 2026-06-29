@@ -79,7 +79,7 @@ void UserDefinedTypeFactory::registerType(
 
     {
         std::unique_lock lock(mutex);
-        
+
         if (types.contains(name))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Type with name {} already registered", name);
 
@@ -95,10 +95,10 @@ void UserDefinedTypeFactory::registerType(
         }
         catch (const DB::Exception & e)
         {
-            LOG_ERROR(&Poco::Logger::get("UserDefinedTypeFactory"), 
-                     "Failed to store type '{}' in system table. Rolling back in-memory registration. Error: {}", 
+            LOG_ERROR(&Poco::Logger::get("UserDefinedTypeFactory"),
+                     "Failed to store type '{}' in system table. Rolling back in-memory registration. Error: {}",
                      name, e.what());
-            
+
             {
                 std::unique_lock rollback_lock(mutex);
                 types.erase(name);
@@ -116,7 +116,7 @@ void UserDefinedTypeFactory::removeType(ContextPtr context, const String & name,
 
     {
         std::unique_lock lock(mutex);
-        
+
         auto it = types.find(name);
         if (it == types.end())
         {
@@ -125,10 +125,10 @@ void UserDefinedTypeFactory::removeType(ContextPtr context, const String & name,
             else
                 throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type {}", name);
         }
-        
+
         saved_info = it->second;
         type_existed = true;
-        
+
         types.erase(it);
         should_remove_from_system_table = (context && types_loaded_from_db);
     }
@@ -141,10 +141,10 @@ void UserDefinedTypeFactory::removeType(ContextPtr context, const String & name,
         }
         catch (const DB::Exception & e)
         {
-            LOG_ERROR(&Poco::Logger::get("UserDefinedTypeFactory"), 
-                     "Failed to remove type '{}' from system table. Rolling back in-memory removal. Error: {}", 
+            LOG_ERROR(&Poco::Logger::get("UserDefinedTypeFactory"),
+                     "Failed to remove type '{}' from system table. Rolling back in-memory removal. Error: {}",
                      name, e.what());
-            
+
             {
                 std::unique_lock rollback_lock(mutex);
                 types[name] = saved_info;
@@ -158,7 +158,7 @@ UserDefinedTypeFactory::TypeInfo UserDefinedTypeFactory::getTypeInfo(const Strin
 {
     ensureTypesLoaded(context);
     std::shared_lock lock(mutex);
-    
+
     auto it = types.find(name);
     if (it == types.end())
         throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type {}", name);
@@ -177,13 +177,13 @@ std::vector<String> UserDefinedTypeFactory::getAllTypeNames(ContextPtr context) 
 {
     ensureTypesLoaded(context);
     std::shared_lock lock(mutex);
-    
+
     std::vector<String> result;
     result.reserve(types.size());
-    
+
     for (const auto & [typeName, _] : types)
         result.push_back(typeName);
-        
+
     return result;
 }
 
@@ -224,30 +224,30 @@ void UserDefinedTypeFactory::loadTypesFromSystemTableUnsafe(ContextPtr context_p
     }
     catch (const DB::Exception & e)
     {
-        LOG_ERROR(log, "Failed to load user-defined types from system table. Error: {}. Code: {}.", 
+        LOG_ERROR(log, "Failed to load user-defined types from system table. Error: {}. Code: {}.",
                     e.what(), e.code());
     }
     catch (...)
     {
         LOG_ERROR(log, "Failed to load user-defined types from system table due to an unknown exception.");
     }
-    
+
     types_loaded_from_db = true;
 }
 
 void UserDefinedTypeFactory::ensureSystemTableExists(ContextPtr context_ptr)
 {
     auto * log = &Poco::Logger::get("UserDefinedTypeFactory");
-    
+
     try
     {
         auto & database_catalog = DatabaseCatalog::instance();
-        
+
         if (!database_catalog.isDatabaseExist("udt"))
         {
             ContextMutablePtr mutable_context = Context::createCopy(context_ptr);
             String create_database_query = "CREATE DATABASE IF NOT EXISTS udt";
-            
+
             auto res = executeQuery(create_database_query, mutable_context, QueryFlags{.internal = true});
             if (res.second.pipeline.initialized())
             {
@@ -273,7 +273,7 @@ void UserDefinedTypeFactory::ensureSystemTableExists(ContextPtr context_ptr)
 void UserDefinedTypeFactory::createSystemTable(ContextPtr context_ptr)
 {
     ContextMutablePtr mutable_context = Context::createCopy(context_ptr);
-    
+
     String create_table_query = R"(
         CREATE TABLE IF NOT EXISTS udt.user_defined_types
         (
@@ -316,12 +316,12 @@ StoragePtr UserDefinedTypeFactory::getSystemTable(ContextPtr context_ptr) const
 void UserDefinedTypeFactory::loadTypesFromStorage(ContextPtr context_ptr, StoragePtr /*storage*/)
 {
     auto * log = &Poco::Logger::get("UserDefinedTypeFactory");
-    
+
     try
     {
         ContextMutablePtr mutable_context = Context::createCopy(context_ptr);
         String query = "SELECT name, base_type_ast_string, type_parameters_ast_string, input_expression, output_expression, default_expression, create_query_string FROM udt.user_defined_types";
-        
+
         auto res = executeQuery(query, mutable_context, QueryFlags{.internal = true});
         if (!res.second.pipeline.initialized())
         {
@@ -337,7 +337,7 @@ void UserDefinedTypeFactory::loadTypesFromStorage(ContextPtr context_ptr, Storag
 
         while (executor.pull(block))
         {
-            if (!block || block.rows() == 0) 
+            if (!block || block.rows() == 0)
                 continue;
 
             processUDTBlock(block, data_type_parser, expression_list_parser, log);
@@ -351,8 +351,8 @@ void UserDefinedTypeFactory::loadTypesFromStorage(ContextPtr context_ptr, Storag
 }
 
 void UserDefinedTypeFactory::processUDTBlock(
-    const Block & block, 
-    ParserDataType & data_type_parser, 
+    const Block & block,
+    ParserDataType & data_type_parser,
     ParserExpressionList & expression_list_parser,
     Poco::Logger * log)
 {
@@ -377,7 +377,7 @@ void UserDefinedTypeFactory::processUDTBlock(
         {
             String type_name = name_col->getDataAt(i).toString();
             String base_ast_str = base_ast_col->getDataAt(i).toString();
-                    
+
             String params_ast_str = getNullableString(params_ast_col, i);
             String input_expr_str = getNullableString(input_expr_col, i);
             String output_expr_str = getNullableString(output_expr_col, i);
@@ -400,7 +400,7 @@ void UserDefinedTypeFactory::processUDTBlock(
                     LOG_WARNING(log, "Failed to parse type_parameters_ast for type '{}'. Skipping parameters.", type_name);
                 }
             }
-            
+
             TypeInfo info;
             info.base_type_ast = base_type_ast;
             info.type_parameters = params_ast;
@@ -430,11 +430,11 @@ String UserDefinedTypeFactory::getNullableString(const ColumnPtr & column, size_
 void UserDefinedTypeFactory::storeTypeInSystemTable(ContextPtr context, const String & name, const TypeInfo & info)
 {
     auto * log = &Poco::Logger::get("UserDefinedTypeFactory");
-    
+
     try
     {
         ensureSystemTableExists(context);
-        
+
         ContextMutablePtr mutable_context = Context::createCopy(context);
 
         String query = fmt::format(
@@ -447,7 +447,7 @@ void UserDefinedTypeFactory::storeTypeInSystemTable(ContextPtr context, const St
             (!info.default_expression.empty() ? quoteString(info.default_expression) : "NULL"),
             quoteString(info.create_query_string)
         );
-        
+
         auto res = executeQuery(query, mutable_context, QueryFlags{.internal = true});
         if (res.second.pipeline.initialized())
         {
@@ -465,14 +465,14 @@ void UserDefinedTypeFactory::storeTypeInSystemTable(ContextPtr context, const St
 void UserDefinedTypeFactory::removeTypeFromSystemTable(ContextPtr context, const String & name)
 {
     auto * log = &Poco::Logger::get("UserDefinedTypeFactory");
-    
+
     try
     {
         ensureSystemTableExists(context);
-        
+
         ContextMutablePtr mutable_context = Context::createCopy(context);
         String query = fmt::format("DELETE FROM udt.user_defined_types WHERE name = {}", quoteString(name));
-        
+
         auto res = executeQuery(query, mutable_context, QueryFlags{.internal = true});
         if (res.second.pipeline.initialized())
         {
@@ -507,13 +507,13 @@ ASTPtr UserDefinedTypeFactory::stringToAst(const String & str, IParser & parser)
 
     try
     {
-        return parseQuery(parser, str, "UserDefinedTypeFactory AST deserialization", 
-                        0, DBMS_DEFAULT_MAX_PARSER_DEPTH, 
+        return parseQuery(parser, str, "UserDefinedTypeFactory AST deserialization",
+                        0, DBMS_DEFAULT_MAX_PARSER_DEPTH,
                         DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
     catch (const DB::Exception & e)
     {
-        LOG_WARNING(&Poco::Logger::get("UserDefinedTypeFactory"), 
+        LOG_WARNING(&Poco::Logger::get("UserDefinedTypeFactory"),
                     "Failed to deserialize AST. Error: {}. Input string: '{}'", e.what(), str);
         return nullptr;
     }

@@ -34,7 +34,7 @@ BlockIO InterpreterShowTypesQuery::execute()
 
     BlockIO res;
     res.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(result_block))));
-    
+
     return res;
 }
 

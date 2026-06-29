@@ -34,27 +34,27 @@ void StorageSystemUserDefinedTypes::fillData(MutableColumns & res_columns, Conte
 
         res_columns[0]->insert(type_name);
         res_columns[1]->insert(UserDefinedTypeFactory::astToString(type_info.base_type_ast));
-        
+
         if (type_info.type_parameters)
             res_columns[2]->insert(UserDefinedTypeFactory::astToString(type_info.type_parameters));
         else
             res_columns[2]->insertDefault();
-            
+
         if (!type_info.input_expression.empty())
             res_columns[3]->insert(type_info.input_expression);
         else
             res_columns[3]->insertDefault();
-            
+
         if (!type_info.output_expression.empty())
             res_columns[4]->insert(type_info.output_expression);
         else
             res_columns[4]->insertDefault();
-            
+
         if (!type_info.default_expression.empty())
             res_columns[5]->insert(type_info.default_expression);
         else
             res_columns[5]->insertDefault();
-            
+
         res_columns[6]->insert(type_info.create_query_string);
     }
 }

@@ -5,7 +5,7 @@
 namespace DB
 {
 
-ASTPtr ASTShowTypeQuery::clone() const 
+ASTPtr ASTShowTypeQuery::clone() const
 {
     auto res = std::make_shared<ASTShowTypeQuery>(*this);
     res->children.clear();
