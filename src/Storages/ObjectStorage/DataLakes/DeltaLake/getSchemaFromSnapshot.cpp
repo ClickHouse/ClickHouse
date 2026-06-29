@@ -729,7 +729,12 @@ uintptr_t visitElementFromClickHouseType(ffi::KernelSchemaVisitorState * state, 
     return visitFieldFromClickHouseType(state, /* name */ "", full_type);
 }
 
-extern "C" uintptr_t kernelEngineSchemaVisitorTrampoline(void * schema_void, ffi::KernelSchemaVisitorState * state)
+/// Stored in `EngineSchema::visitor` and called once by the kernel. No `extern "C"` is needed:
+/// the FFI function-pointer field has C++ language linkage (the generated header is not wrapped
+/// in `extern "C"`), and on the supported ABIs the calling convention matches the kernel's
+/// `extern "C" fn`. Keeping it inside the anonymous namespace gives it internal linkage, which
+/// also satisfies `-Wmissing-prototypes`.
+uintptr_t kernelEngineSchemaVisitorTrampoline(void * schema_void, ffi::KernelSchemaVisitorState * state)
 {
     const auto * schema_list = static_cast<const DB::NamesAndTypesList *>(schema_void);
     std::vector<uintptr_t> field_ids;
