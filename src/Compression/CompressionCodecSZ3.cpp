@@ -3,6 +3,7 @@
 #if USE_SZ3
 #    include <array>
 #    include <cstring>
+#    include <memory>
 #    include <Compression/CompressionFactory.h>
 #    include <Compression/CompressionInfo.h>
 #    include <Compression/ICompressionCodec.h>
@@ -16,7 +17,6 @@
 #    include <Parsers/ASTLiteral.h>
 #    include <Parsers/IAST.h>
 #    include "Common/Exception.h"
-#    include <Common/PODArray.h>
 #    include <Common/SipHash.h>
 #    include "base/types.h"
 
@@ -210,14 +210,38 @@ void CompressionCodecSZ3::setAndCheckVectorDimension(size_t dimension_)
     dimension = dimension_;
 }
 
+template <typename T>
+static void decompressSZ3(const char * source, UInt32 source_size, char * dest, size_t expected_num, UInt32 uncompressed_size)
+{
+    SZ3::Config config;
+    T * decompressed = nullptr;
+    try
+    {
+        /// `decompressed == nullptr` makes SZ3 allocate the output buffer itself, sized to the number
+        /// of elements stored in the compressed data, so a corrupted element count can not overflow `dest`.
+        SZ_decompress<T>(config, source, source_size, decompressed);
+    }
+    catch (const std::exception & e)
+    {
+        delete[] decompressed;
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot decompress SZ3 data: {}", e.what());
+    }
+
+    std::unique_ptr<T[]> holder(decompressed);
+
+    /// The number of elements comes from untrusted data; it must match the trusted uncompressed size exactly.
+    if (config.num != expected_num)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "SZ3 decompressed element count {} does not match the expected {}", config.num, expected_num);
+
+    memcpy(dest, decompressed, uncompressed_size);
+}
+
 UInt32 CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    /// The compressed data starts with one byte for the float width, followed by the SZ3 stream
-    /// (a serialized `SZ3::Config` and the compressed payload).
-    /// Hardcoded, because it is not declared (we just calculated the minimal size of decompressed config) and it is less than sizeof(SZ3::Config).
-    static constexpr size_t config_size = 39;
-    if (source_size < 1 + config_size)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can not decompress data {} that is less than minimal size of compressed", source_size);
+    if (source_size == 0)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can not decompress empty SZ3 data");
 
     const UInt8 width = static_cast<UInt8>(*source);
     ++source;
@@ -233,79 +257,14 @@ UInt32 CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_
             uncompressed_size, static_cast<UInt16>(width));
     const size_t expected_num = uncompressed_size / width;
 
-    /// SZ3 deserializes its configuration (number of elements, dimensions, ...) and the payload from the
-    /// compressed data without bounds checking, and writes as many elements as the (untrusted) configuration
-    /// claims. To prevent out-of-bounds reads and a heap buffer overflow of `dest` on corrupted input we:
-    ///  1. copy the data into a zero-padded buffer, so that small over-reads during parsing stay in valid memory;
-    ///  2. validate the parsed configuration against the trusted `uncompressed_size` before decompressing.
-    static constexpr size_t padding = 64;
-    PODArray<char> buffer(static_cast<size_t>(source_size) + padding);
-    memcpy(buffer.data(), source, source_size);
-    memset(buffer.data() + source_size, 0, padding);
-    const char * const data = buffer.data();
-
-    /// SZ3 supports 1 to 4 dimensions and encodes them with a per-value bit width of at most 64 (size_t).
-    /// Validate these up front to bound how much `Config::load` reads for the dimension vector.
-    /// Layout: sz3MagicNumber(4) + sz3DataVer(4) + N(1) + bitWidth(1) + dims(...) + ...
-    const signed char num_dims = static_cast<signed char>(data[8]);
-    const UInt8 dims_bit_width = static_cast<UInt8>(data[9]);
-    if (num_dims < 1 || num_dims > 4 || dims_bit_width > 64)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid SZ3 configuration in compressed data");
-
-    SZ3::Config config;
-    try
-    {
-        const auto * config_pos = reinterpret_cast<const unsigned char *>(data);
-        config.load(config_pos); /// Throws on magic number or version mismatch.
-    }
-    catch (...)
-    {
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot parse SZ3 configuration");
-    }
-
-    /// The number of elements comes from untrusted data; it must match the trusted uncompressed size exactly,
-    /// otherwise SZ3 would write `config.num` elements past the end of `dest`.
-    if (config.num != expected_num)
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "SZ3 element count {} does not match the expected {}", config.num, expected_num);
-
-    /// SZ3 also drives some algorithms (e.g. blockwise decomposition) from `config.dims` rather than
-    /// `config.num`, so the product of the dimensions must match the expected element count too (with
-    /// an overflow check), otherwise a crafted block could still write past `dest`.
-    size_t dims_product = 1;
-    for (size_t dim : config.dims)
-    {
-        if (dim == 0 || dims_product > expected_num / dim)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "SZ3 dimensions do not match the expected element count");
-        dims_product *= dim;
-    }
-    if (dims_product != expected_num)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "SZ3 dimensions do not match the expected element count");
-
-    /// Prevent the (size_t) underflow of the payload size computed inside SZ_decompress.
-    if (config.size_est() > source_size)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "SZ3 configuration size exceeds the compressed data size");
-
-    /// `config` is re-parsed inside SZ_decompress; pass a fresh one.
-    SZ3::Config decompress_config;
-    try
-    {
-        if (width == 4)
-        {
-            float * dest_typed = reinterpret_cast<float *>(dest);
-            SZ_decompress<float>(decompress_config, data, source_size, dest_typed);
-        }
-        else
-        {
-            double * dest_typed = reinterpret_cast<double *>(dest);
-            SZ_decompress<double>(decompress_config, data, source_size, dest_typed);
-        }
-    }
-    catch (...)
-    {
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot decompress SZ3 data");
-    }
+    /// SZ3 validates the magic number and data version and (with ClickHouse's bounds-checking patches in
+    /// the contrib fork) parses the rest of the compressed data without reading out of bounds. We let SZ3
+    /// allocate the output buffer itself so a corrupted element count can not overflow `dest`, then validate
+    /// the element count against the trusted `uncompressed_size` before copying.
+    if (width == 4)
+        decompressSZ3<float>(source, source_size, dest, expected_num, uncompressed_size);
+    else
+        decompressSZ3<double>(source, source_size, dest, expected_num, uncompressed_size);
 
     return uncompressed_size;
 }
