@@ -117,6 +117,11 @@ private:
     TargetFilePaths discoverTargetFilePaths(const SnapshotState & state, const Row & target_partition) const;
     TargetManifests findTargetManifests(const SnapshotState & state, const TargetFilePaths & targets) const;
 
+    /// Throws `CONCURRENT_ACCESS_NOT_SUPPORTED` if any path locked in at discovery is no longer
+    /// present in `target_manifests` - a concurrent rewrite/compaction replaced it after discovery.
+    /// See `run` for why this must fail rather than silently drop a subset (or nothing).
+    void checkIfTargetsStillPresent(const TargetManifests & target_manifests, const TargetFilePaths & targets) const;
+
     static void matchEntries(
         const std::vector<ProcessedManifestFileEntryPtr> & entries,
         const std::unordered_set<String> & target_paths,

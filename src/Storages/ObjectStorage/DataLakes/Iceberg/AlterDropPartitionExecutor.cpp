@@ -58,6 +58,7 @@ extern const int LIMIT_EXCEEDED;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
+extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
 }
 
 namespace DataLakeStorageSetting
@@ -470,6 +471,34 @@ AlterDropPartitionExecutor::findTargetManifests(const SnapshotState & state, con
     }
 
     return result;
+}
+
+void AlterDropPartitionExecutor::checkIfTargetsStillPresent(
+    const TargetManifests & target_manifests, const TargetFilePaths & targets) const
+{
+    std::unordered_set<String> accounted;
+    auto collect_accounted = [&](const std::vector<TargetManifest> & manifests)
+    {
+        for (const auto & target_manifest : manifests)
+            for (const auto & entry : target_manifest.entries_to_remove)
+                accounted.emplace(components.path_resolver.resolve(entry->parsed_entry->file_path_key));
+    };
+    collect_accounted(target_manifests.fully_matched);
+    collect_accounted(target_manifests.partially_matched);
+
+    auto all_present = [&](const std::unordered_set<String> & locked_paths)
+    {
+        for (const auto & path : locked_paths)
+            if (!accounted.contains(path))
+                return false;
+        return true;
+    };
+
+    if (!all_present(targets.data) || !all_present(targets.position_delete))
+        throw Exception(
+            ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
+            "DROP PARTITION lost a race with a concurrent operation that replaced files in the "
+            "target partition; please retry");
 }
 
 AlterDropPartitionExecutor::DropPlan::DropPlan(TargetManifests && target_manifests_)
@@ -889,11 +918,11 @@ void AlterDropPartitionExecutor::run()
         }
 
         auto target_manifests = findTargetManifests(state, targets);
-        if (target_manifests.empty())
-        {
-            LOG_INFO(log, "No manifest match the requested partition; DROP PARTITION is a no-op");
-            return;
-        }
+
+        /// Attempt 0 discovered against this same snapshot; only retries can have lost files to a
+        /// concurrent rewrite/compaction.
+        if (attempt > 0)
+            checkIfTargetsStillPresent(target_manifests, targets);
 
         DropPlan plan{std::move(target_manifests)};
 
