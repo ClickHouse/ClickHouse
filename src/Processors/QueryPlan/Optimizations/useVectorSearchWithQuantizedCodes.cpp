@@ -128,6 +128,12 @@ bool optimizeVectorSearchWithQuantizedCodes(
     if (n == 0 || n > settings.max_limit_for_vector_search_queries)
         return false;
 
+    /// The inner shortlist LimitStep is plain. WITH TIES (rows tied with the boundary distance) and read-till-end
+    /// (totals / exact_rows_before_limit) semantics would be violated if the approximate stage dropped those rows
+    /// before the original limit sees them, so do not rewrite in those cases.
+    if (limit_step->withTies() || limit_step->alwaysReadTillEnd())
+        return false;
+
     /// Read the ORDER BY clause: it must be a single distance_function(vec, reference_vector).
     const auto & sort_description = sorting_step->getSortDescription();
     if (sort_description.size() != 1)
@@ -135,6 +141,10 @@ bool optimizeVectorSearchWithQuantizedCodes(
     const String & sort_column = sort_description.front().column_name;
 
     ActionsDAG & expression = expression_step->getExpression();
+    /// A row-changing action (e.g. arrayJoin) in this expression expands rows before the sort/limit. Splicing the inner
+    /// shortlist limit below it would cut rows before the expansion and change the result cardinality, so bail out.
+    if (expression.hasArrayJoin())
+        return false;
     const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column);
     if (sort_column_node == nullptr || sort_column_node->type != ActionsDAG::ActionType::FUNCTION)
         return false;
