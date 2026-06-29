@@ -25,11 +25,12 @@ SELECT 'after', arraySort(groupUniqArray(part_type)) FROM system.parts
     WHERE database = currentDatabase() AND table = 't_compact_to_wide' AND active;
 
 SELECT 'rows', count() FROM t_compact_to_wide;
-SELECT 'filtered', countIf(
-    splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
-    < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
-FROM (EXPLAIN indexes = 1 SELECT * FROM t_compact_to_wide WHERE v = 700) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+SELECT 'filtered', countIf(toUInt64(g[1]) < toUInt64(g[2]))
+FROM (
+    SELECT extractGroups(explain, 'Granules: (\\d+)/(\\d+)') AS g
+    FROM (EXPLAIN indexes = 1 SELECT * FROM t_compact_to_wide WHERE v = 700)
+    WHERE match(explain, 'Granules: \\d+/\\d+') AND explain NOT LIKE '%PrimaryKey%'
+) SETTINGS allow_experimental_analyzer = 1;
 CHECK TABLE t_compact_to_wide SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_compact_to_wide;
