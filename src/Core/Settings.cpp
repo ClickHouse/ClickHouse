@@ -1271,12 +1271,12 @@ The table below shows the behavior of this setting for various date-time functio
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
-Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*().
+Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*().
 This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.
 Enabling this setting gives the wrong impression that different values within a column can have different timezones.
 Therefore, please do not enable this setting.
 )", 0) \
-    DECLARE(Bool, use_legacy_to_time, true, R"(
+    DECLARE(Bool, use_legacy_to_time, false, R"(
 When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
 Otherwise, uses a new toTime function, that converts different type of data into the Time type.
 The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
@@ -2513,6 +2513,18 @@ Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both ta
 Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
 )", 0) \
     \
+    DECLARE(ExplainQueryPlanDefault, explain_query_plan_default, ExplainQueryPlanDefault::PRETTY, R"(
+Default format used by `EXPLAIN PLAN`.
+
+Possible values:
+- `pretty` (default since 26.7) — `actions`, `compact`, and `pretty` default to `true`, producing a compact, pretty, action-annotated plan.
+- `legacy` — pre-26.7 output.
+
+Specifying the `actions`, `compact`, or `pretty` options explicitly in the `EXPLAIN` statement (for example, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) always overrides this setting.
+
+`EXPLAIN PLAN` with `json = 1` or `distributed = 1` keeps the legacy (pre-26.7) defaults regardless of this setting, unless `actions`, `compact`, or `pretty` are set explicitly. The pretty output cannot represent JSON results or per-shard distributed plans, so those modes are only rendered correctly in legacy form.
+)", 0) \
+    \
     DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(
 Maximum length of step description in EXPLAIN PLAN.
 )", 0) \
@@ -3730,6 +3742,12 @@ If the timeout is reached and memory is not freed, an exception is thrown.
 Read more about [memory overcommit](memory-overcommit.md).
 )", 0) \
     \
+    DECLARE(UInt64, reserve_memory, 0, R"(
+Used in workload scheduling. The minimum amount of RAM reserved to be used for running a query on a single server. Reservation is made through the WORKLOAD hierarchy using the value of a `workload` query setting.
+If not enough memory is available to the workload, a query is prevented from starting and waits in pending state until the reservation can be fulfilled.
+A value of `0` means no reservation.
+This setting takes effect only if MEMORY RESERVATION resource is created.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 
@@ -4324,6 +4342,13 @@ Possible values:
 )", 0) \
     DECLARE(Bool, allow_drop_detached, false, R"(
 Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
+)", 0) \
+    DECLARE(Bool, allow_replace_partition_from_empty_source, false, R"(
+Allow `ALTER TABLE ... REPLACE PARTITION ... FROM ...` to silently drop the destination partition when the source has no parts in that partition.
+
+By default this is disallowed: `REPLACE PARTITION` from a source that has no data in the requested partition raises an exception, because in this case the operation effectively becomes a silent `DROP PARTITION` on the destination (the destination's data is removed and nothing replaces it), a common cause of accidental data loss (see [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)).
+
+Enable this setting to restore the previous behavior, for example when you intentionally use an empty source partition to clear data in the destination. For an unconditional drop, prefer `ALTER TABLE ... DROP PARTITION ...` instead.
 )", 0) \
     DECLARE(Bool, dynamic_disk_allow_from_env, false, R"(
 Allow using `from_env` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
@@ -6956,6 +6981,9 @@ Only has an effect in ClickHouse Cloud. Use clients cache for read requests.
     DECLARE(String, distributed_cache_file_cache_name, "", R"(
 Only has an effect in ClickHouse Cloud. A setting used only for CI tests - filesystem cache name to use on distributed cache.
 )", 0) \
+    DECLARE(Bool, distributed_cache_registry_show_certificate_and_signature, false, R"(
+Only has an effect in ClickHouse Cloud. Show the `certificate` and `signature` columns in the `system.distributed_cache_registry` table. By default these columns are empty to keep the output compact; enable this setting to inspect them.
+)", 0) \
     DECLARE(Bool, filesystem_cache_allow_background_download, true, R"(
 Allow filesystem cache to enqueue background downloads for data read from remote storage. Disable to keep downloads in the foreground for the current query/session.
 )", 0) \
@@ -6985,7 +7013,7 @@ For the replicated tables by default the only 100 of the most recent inserts for
 For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non_replicated_deduplication_window).
 
 :::note
-`insert_deduplication_token` works on a partition level (the same as `insert_deduplication` checksum). Multiple partitions can have the same `insert_deduplication_token`.
+`insert_deduplication_token` is tracked per partition, so multiple partitions written by one insert can carry the same token. Without a token, the default content checksum (`insert_deduplication_version = new_unified_hash`) is computed over the whole inserted block, so an insert is deduplicated only when its entire data matches a previous insert (a retry), not when a single partition's rows happen to coincide with a different insert.
 :::
 
 Example:
@@ -7408,9 +7436,9 @@ Defines a rows limit for a single inserted data file in delta lake.
     DECLARE(NonZeroUInt64, delta_lake_insert_max_bytes_in_data_file, 1_GiB, R"(
 Defines a bytes limit for a single inserted data file in delta lake.
 )", 0) \
-    DECLARE(Bool, allow_experimental_delta_lake_writes, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_delta_lake_writes, false, R"(
 Enables delta-kernel writes feature.
-)", EXPERIMENTAL) \
+)", BETA, allow_delta_lake_writes) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
@@ -7419,12 +7447,6 @@ Default partition strategy for file like engines.
 )", 0) \
     DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
-)", 0) \
-    DECLARE(Bool, allow_deprecated_snowflake_conversion_functions, false, R"(
-Functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are deprecated and disabled by default.
-Please use functions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, and `dateTime64ToSnowflakeID` instead.
-
-To re-enable the deprecated functions (e.g., during a transition period), please set this setting to `true`.
 )", 0) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
@@ -8200,6 +8222,9 @@ Default number of tasks for parallel reading in distributed query. Tasks are spr
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
 )", 0) \
+    DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
+How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
+)", EXPERIMENTAL) \
     DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
 
@@ -8316,9 +8341,6 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     DECLARE(Bool, allow_experimental_ai_functions, false, R"(
 Enable experimental AI functions (e.g. `aiGenerateContent`). These functions make external HTTP calls to AI providers.
 )", EXPERIMENTAL) \
-    DECLARE(String, ai_function_credentials, "", R"(
-Name of the named collection that AI functions use for provider credentials and configuration (`provider`, `endpoint`, `model`, optional `api_key`, etc.). When empty, an exception is raised.
-)", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", EXPERIMENTAL) \
@@ -8381,6 +8403,7 @@ Maximum number of texts to include in a single HTTP request made by `aiEmbed`. T
     MAKE_OBSOLETE(M, Bool, allow_experimental_qbit_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_qbit_type, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_alias_table_engine, false) \
+    MAKE_OBSOLETE(M, Bool, allow_deprecated_snowflake_conversion_functions, false) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
@@ -8508,14 +8531,14 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 
-    std::vector<String> getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     void set(std::string_view name, const Field & value) override;
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
 
-    std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
+    UnorderedSetWithMemoryTracking<std::string_view> settings_changed_by_compatibility_setting;
 };
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -8623,9 +8646,9 @@ void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfi
     }
 }
 
-std::vector<String> SettingsImpl::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> SettingsImpl::getAllRegisteredNames() const
 {
-    std::vector<String> all_settings;
+    VectorWithMemoryTracking<String> all_settings;
     for (const auto & setting_field : all())
         all_settings.push_back(setting_field.getName());
     return all_settings;
@@ -8742,6 +8765,16 @@ std::string_view Settings::getDescription(std::string_view name) const
     return impl->getDescription(name);
 }
 
+std::string_view Settings::getTypeName(std::string_view name) const
+{
+    return impl->getTypeName(name);
+}
+
+String Settings::getDefaultValueString(std::string_view name) const
+{
+    return impl->getDefaultValueString(name);
+}
+
 bool Settings::tryGet(std::string_view name, Field & value) const
 {
     return impl->tryGet(name, value);
@@ -8762,7 +8795,7 @@ void Settings::setDefaultValue(std::string_view name)
     impl->resetToDefault(name);
 }
 
-std::vector<String> Settings::getHints(const String & name) const
+VectorWithMemoryTracking<String> Settings::getHints(const String & name) const
 {
     return impl->getHints(name);
 }
@@ -8782,9 +8815,9 @@ void Settings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-std::vector<std::string_view> Settings::getAllRegisteredNames() const
+VectorWithMemoryTracking<std::string_view> Settings::getAllRegisteredNames() const
 {
-    std::vector<std::string_view> setting_names;
+    VectorWithMemoryTracking<std::string_view> setting_names;
     for (const auto & setting : impl->all())
     {
         setting_names.emplace_back(setting.getName());
@@ -8792,9 +8825,9 @@ std::vector<std::string_view> Settings::getAllRegisteredNames() const
     return setting_names;
 }
 
-std::vector<std::string_view> Settings::getAllAliasNames() const
+VectorWithMemoryTracking<std::string_view> Settings::getAllAliasNames() const
 {
-    std::vector<std::string_view> alias_names;
+    VectorWithMemoryTracking<std::string_view> alias_names;
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
     for (const auto & [_, aliases] : settings_to_aliases)
     {
@@ -8803,9 +8836,9 @@ std::vector<std::string_view> Settings::getAllAliasNames() const
     return alias_names;
 }
 
-std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const
+VectorWithMemoryTracking<std::string_view> Settings::getChangedAndObsoleteNames() const
 {
-    std::vector<std::string_view> setting_names;
+    VectorWithMemoryTracking<std::string_view> setting_names;
     for (const auto & setting : impl->allChanged())
     {
         if (setting.getTier() == SettingsTierType::OBSOLETE)
@@ -8814,9 +8847,9 @@ std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const
     return setting_names;
 }
 
-std::vector<std::string_view> Settings::getUnchangedNames() const
+VectorWithMemoryTracking<std::string_view> Settings::getUnchangedNames() const
 {
-    std::vector<std::string_view> setting_names;
+    VectorWithMemoryTracking<std::string_view> setting_names;
     for (const auto & setting : impl->allUnchanged())
     {
         setting_names.emplace_back(setting.getName());
