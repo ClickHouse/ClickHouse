@@ -82,8 +82,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"async_insert", trueOrFalseSetting},
     {"auto_statistics_types",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"tdigest", "countmin", "minmax", "uniq"}); },
-         {"'tdigest'", "'countmin'", "'minmax'", "'uniq'"},
+         [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"tdigest", "countmin", "minmax", "uniq", "basic"}); },
+         {"'tdigest'", "'countmin'", "'minmax'", "'uniq'", "'basic'"},
          false)},
     {"background_task_preferred_step_execution_time_ms", highRangeSetting},
     {"cache_populated_by_fetch", trueOrFalseSetting},
@@ -647,7 +647,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     /// ClickHouse cloud setting
     {"shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold", rowsRangeSetting},
     /// ClickHouse cloud setting
-    {"shared_merge_tree_range_for_merge_window_size", highRangeSetting},
+    {"shared_merge_tree_range_for_merge_window_size", highRangeNonZeroSetting},
     /// ClickHouse cloud setting
     {"shared_merge_tree_read_virtual_parts_from_leader", trueOrFalseSetting},
     /// ClickHouse cloud setting
@@ -943,7 +943,8 @@ static std::unordered_map<String, CHSetting> mySQLTableSettings = {
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(UINT32_C(1) << rg.randomInt<uint32_t>(0, 6)); }, {}, false)},
     {"connection_max_tries",
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
-    {"connection_auto_close", trueOrFalseSettingNoOracle}};
+    {"connection_auto_close", trueOrFalseSettingNoOracle},
+    {"enable_compression", trueOrFalseSetting}};
 
 static std::unordered_map<String, CHSetting> kafkaTableSettings
     = {{"kafka_schema_registry_skip_bytes",
@@ -1201,6 +1202,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 },
                 {"'keep'", "'delete'", "'move'", "'tag'"},
                 false)},
+           {"after_processing_move_preserve_path", trueOrFalseSetting},
            {"after_processing_retries", highRangeSetting},
            {"bucketing_mode",
             CHSetting(

@@ -24,8 +24,10 @@ namespace
 /** Due to a lack of proper code review, this code was contributed with a multiplication of template instantiations
   * over all pairs of data types, and we deeply regret that.
   *
-  * We cannot remove all combinations, because the binary representation of serialized data has to remain the same,
-  * but we can partially heal the wound by treating unsigned and signed data types in the same way.
+  * We cannot remove these combinations, because the binary representation of the serialized data has to remain the same.
+  * Note that signed integers must not be unified with unsigned ones: although their binary representation is identical,
+  * the arithmetic (the `<` comparison and the subtraction in `add` and `merge`) differs once the values cross zero,
+  * which produces wrong results. Only `Date` and `DateTime` are mapped to their unsigned integer equivalents.
   */
 
 template <typename ValueType, typename TimestampType>
@@ -101,7 +103,7 @@ public:
         return false;
     }
 
-    void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void NO_SANITIZE_UNDEFINED mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & place_data = this->data(place);
         auto & rhs_data = this->data(rhs);
@@ -190,8 +192,8 @@ IAggregateFunction * createWithTwoTypesSecond(const IDataType & second_type, TAr
 
     if (which.idx == TypeIndex::UInt32) return new AggregateFunctionTemplate<FirstType, UInt32>(args...);
     if (which.idx == TypeIndex::UInt64) return new AggregateFunctionTemplate<FirstType, UInt64>(args...);
-    if (which.idx == TypeIndex::Int32) return new AggregateFunctionTemplate<FirstType, UInt32>(args...);
-    if (which.idx == TypeIndex::Int64) return new AggregateFunctionTemplate<FirstType, UInt64>(args...);
+    if (which.idx == TypeIndex::Int32) return new AggregateFunctionTemplate<FirstType, Int32>(args...);
+    if (which.idx == TypeIndex::Int64) return new AggregateFunctionTemplate<FirstType, Int64>(args...);
     if (which.idx == TypeIndex::Float32) return new AggregateFunctionTemplate<FirstType, Float32>(args...);
     if (which.idx == TypeIndex::Float64) return new AggregateFunctionTemplate<FirstType, Float64>(args...);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<FirstType, UInt16>(args...);
@@ -209,10 +211,10 @@ IAggregateFunction * createWithTwoTypes(const IDataType & first_type, const IDat
     if (which.idx == TypeIndex::UInt16) return createWithTwoTypesSecond<UInt16, AggregateFunctionTemplate>(second_type, args...);
     if (which.idx == TypeIndex::UInt32) return createWithTwoTypesSecond<UInt32, AggregateFunctionTemplate>(second_type, args...);
     if (which.idx == TypeIndex::UInt64) return createWithTwoTypesSecond<UInt64, AggregateFunctionTemplate>(second_type, args...);
-    if (which.idx == TypeIndex::Int8) return createWithTwoTypesSecond<UInt8, AggregateFunctionTemplate>(second_type, args...);
-    if (which.idx == TypeIndex::Int16) return createWithTwoTypesSecond<UInt16, AggregateFunctionTemplate>(second_type, args...);
-    if (which.idx == TypeIndex::Int32) return createWithTwoTypesSecond<UInt32, AggregateFunctionTemplate>(second_type, args...);
-    if (which.idx == TypeIndex::Int64) return createWithTwoTypesSecond<UInt64, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Int8) return createWithTwoTypesSecond<Int8, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Int16) return createWithTwoTypesSecond<Int16, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Int32) return createWithTwoTypesSecond<Int32, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Int64) return createWithTwoTypesSecond<Int64, AggregateFunctionTemplate>(second_type, args...);
     if (which.idx == TypeIndex::Float32) return createWithTwoTypesSecond<Float32, AggregateFunctionTemplate>(second_type, args...);
     if (which.idx == TypeIndex::Float64) return createWithTwoTypesSecond<Float64, AggregateFunctionTemplate>(second_type, args...);
 
