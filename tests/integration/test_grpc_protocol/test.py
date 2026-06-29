@@ -321,14 +321,14 @@ def test_format_settings():
     # pre-`SETTINGS` snapshot would win and the in-query setting would be ignored on gRPC).
     assert (
         query(
-            "SELECT a FROM t ORDER BY a FORMAT TabSeparated SETTINGS output_format = 'JSONEachRow'"
+            "SELECT a FROM t ORDER BY a SETTINGS output_format = 'JSONEachRow' FORMAT TabSeparated"
         )
         == '{"a":1}\n{"a":2}\n{"a":3}\n'
     )
     query("DROP TABLE IF EXISTS t_in2")
     query("CREATE TABLE t_in2 (a UInt8, b UInt8) ENGINE = Memory")
     query(
-        "INSERT INTO t_in2 FORMAT TabSeparated SETTINGS input_format = 'CSV'",
+        "INSERT INTO t_in2 SETTINGS input_format = 'CSV' FORMAT TabSeparated",
         input_data="5,6\n7,8\n",
     )
     assert query("SELECT a, b FROM t_in2 ORDER BY a") == "5\t6\n7\t8\n"
