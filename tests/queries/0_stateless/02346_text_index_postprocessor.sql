@@ -201,8 +201,8 @@ SELECT count() FROM tab WHERE hasToken(val, 'world');
 -- hasAllTokens(val, 'hello the world') is equivalent to hasAllTokens(val, 'hello world').
 SELECT count() FROM tab WHERE hasAllTokens(val, 'hello world');
 SELECT count() FROM tab WHERE hasAllTokens(val, 'hello the world');
--- hasPhrase is hint-only and not postprocessed at row level: a phrase whose tokens are all dropped by
--- the postprocessor ('the the') must still match via the row scan instead of pruning every granule.
+-- A phrase whose tokens are all dropped by the postprocessor ('the the') normalizes to an empty phrase
+-- and matches nothing, consistent with hasAllTokens.
 SELECT count() FROM tab WHERE hasPhrase(val, 'the the');
 SELECT count() FROM tab WHERE hasPhrase(val, 'foo bar');
 -- Tokens present but not in this adjacent order: granule kept, row-level rejects.

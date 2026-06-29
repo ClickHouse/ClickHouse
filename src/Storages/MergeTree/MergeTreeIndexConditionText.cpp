@@ -1073,20 +1073,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             VectorWithMemoryTracking<String> unique_tokens;
             if (has_postprocessor)
             {
-                /// Apply the postprocessor per token (dropping empties) so the phrase tokens match what the
-                /// index stored. The index assigns dense positions (dropped tokens leave no gap), so a phrase
-                /// like 'see cat' still matches a document 'see the cat' when the postprocessor drops 'the'.
+                /// Dense positions: a token the postprocessor drops leaves no gap, so 'see cat' matches 'see the cat'.
                 phrase_tokens = postprocessor->processTokens(std::move(phrase_tokens));
-                if (phrase_tokens.empty())
-                    return false;
-
                 std::set<String> dedup(phrase_tokens.begin(), phrase_tokens.end());
                 unique_tokens = VectorWithMemoryTracking<String>(dedup.begin(), dedup.end());
             }
             else
             {
-                if (phrase_tokens.empty())
-                    return false;
                 unique_tokens = tokenizer->compactTokens(phrase_tokens);
                 std::sort(unique_tokens.begin(), unique_tokens.end());
             }
@@ -1101,14 +1094,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// Without positions, fall back to "all tokens must exist". stringToTokens applies both the
         /// preprocessor and the postprocessor so the lookup tokens match what was stored in the index;
         /// in Hint mode any false positives are resolved by the row-level filter.
+        /// An all-dropped phrase yields empty tokens, i.e. a query that matches nothing (consistent with hasAllTokens).
         auto tokens = stringToTokens(value_field);
-
-        /// If a pre/postprocessor maps the whole phrase to no tokens, an empty FUNCTION_HAS_ALL_TOKENS
-        /// would prune every granule (hasAllQueryTokens returns false for empty tokens). hasPhrase is
-        /// hint-only and is not postprocessed at row level, so it can still match. Bail out of index use
-        /// instead of producing an unsatisfiable hint, letting the row-level filter decide.
-        if (tokens.empty())
-            return false;
 
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));

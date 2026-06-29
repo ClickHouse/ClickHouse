@@ -114,7 +114,7 @@ INSERT INTO tab VALUES
     (3, 'cat dog cat dog'),
     (4, 'the cat the dog the');
 
-SELECT '-- Phrase of only stop words: the index bails out, the literal row scan matches literal occurrences';
+SELECT '-- Phrase of only stop words normalizes to an empty phrase and matches nothing';
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'the the') SETTINGS query_plan_direct_read_from_text_index = 1;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'the the') SETTINGS query_plan_direct_read_from_text_index = 0;
 

@@ -57,7 +57,7 @@ started	1
 1
 1
 1
-1
+0
 1
 0
 8. Stop-word postprocessor: empty-mapped tokens must never match vacuously.

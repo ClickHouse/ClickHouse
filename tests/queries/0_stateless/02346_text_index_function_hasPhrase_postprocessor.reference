@@ -18,9 +18,9 @@
 [1,3]
 [1,3]
 4. Corner cases.
--- Phrase of only stop words: the index bails out, the literal row scan matches literal occurrences
-[1,2]
-[1,2]
+-- Phrase of only stop words normalizes to an empty phrase and matches nothing
+[]
+[]
 -- Stop words between real tokens are removed, so cat dog matches across a dropped the
 [2,3,4]
 [2,3,4]
