@@ -12,9 +12,9 @@ ASTPtr ASTShowTypesQuery::clone() const
     return res;
 }
 
-void ASTShowTypesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTShowTypesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "SHOW TYPES" << (settings.hilite ? hilite_none : "");
+    ostr << "SHOW TYPES";
 }
 
 }

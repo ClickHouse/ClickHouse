@@ -248,7 +248,7 @@ BlockIO InterpreterCreateTypeQuery::execute()
     }
 
     WriteBufferFromOwnString query_text_buf;
-    IAST::FormatSettings format_settings_for_storage(true /*one_line*/, false /*hilite=off for storage*/); 
+    IAST::FormatSettings format_settings_for_storage(true /*one_line*/);
     format_settings_for_storage.show_secrets = false;
     query_ptr->format(query_text_buf, format_settings_for_storage);
     String create_query_string = query_text_buf.str();

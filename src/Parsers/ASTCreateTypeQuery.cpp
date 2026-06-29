@@ -50,14 +50,14 @@ ASTPtr ASTCreateTypeQuery::clone() const
 
 void ASTCreateTypeQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "CREATE TYPE " << (settings.hilite ? hilite_none : "");
+    ostr << "CREATE TYPE ";
 
     if (if_not_exists)
-        ostr << (settings.hilite ? hilite_keyword : "") << "IF NOT EXISTS " << (settings.hilite ? hilite_none : "");
+        ostr << "IF NOT EXISTS ";
     else if (or_replace)
-        ostr << (settings.hilite ? hilite_keyword : "") << "OR REPLACE " << (settings.hilite ? hilite_none : "");
+        ostr << "OR REPLACE ";
 
-    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(name) << (settings.hilite ? hilite_none : "");
+    ostr << backQuoteIfNeed(name);
 
     if (type_parameters)
     {
@@ -66,26 +66,26 @@ void ASTCreateTypeQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s
         ostr << ")";
     }
 
-    ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
+    ostr << " AS ";
 
     if (base_type)
         base_type->format(ostr, settings, state, frame);
 
     if (input_expression)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " INPUT " << (settings.hilite ? hilite_none : "");
+        ostr << " INPUT ";
         input_expression->format(ostr, settings, state, frame);
     }
 
     if (output_expression)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " OUTPUT " << (settings.hilite ? hilite_none : "");
+        ostr << " OUTPUT ";
         output_expression->format(ostr, settings, state, frame);
     }
 
     if (default_expression)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " DEFAULT " << (settings.hilite ? hilite_none : "");
+        ostr << " DEFAULT ";
         default_expression->format(ostr, settings, state, frame);
     }
 }

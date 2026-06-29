@@ -16,14 +16,14 @@ ASTPtr ASTDropTypeQuery::clone() const
     return res;
 }
 
-void ASTDropTypeQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTDropTypeQuery::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "DROP TYPE " << (settings.hilite ? hilite_none : "");
+    ostr << "DROP TYPE ";
 
     if (if_exists)
-        ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
+        ostr << "IF EXISTS ";
 
-    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(type_name) << (settings.hilite ? hilite_none : "");
+    ostr << backQuoteIfNeed(type_name);
 }
 
 }

@@ -33,7 +33,7 @@ BlockIO InterpreterShowTypesQuery::execute()
     Block result_block({ ColumnWithTypeAndName(std::move(column_ptr), std::make_shared<DataTypeString>(), "name") });
 
     BlockIO res;
-    res.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(result_block));
+    res.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(result_block))));
     
     return res;
 }
