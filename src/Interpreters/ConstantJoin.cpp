@@ -330,23 +330,67 @@ ConstantJoinOutputFlags makeConstantJoinOutputFlags(
 
     const bool output_matching_rows = has_match
         && (isCrossOrComma(kind) || strictness == JoinStrictness::All || strictness == JoinStrictness::Any);
+    const bool output_first_matching_right_row =
+        has_match && strictness == JoinStrictness::Semi && !is_right_semi;
     const bool output_left_rows_with_default_right =
-        (strictness == JoinStrictness::Semi && has_match && !is_right_semi)
-        || (strictness == JoinStrictness::Anti && !has_match && !is_right_anti)
+        (strictness == JoinStrictness::Anti && !has_match && !is_right_anti)
         || (strictness != JoinStrictness::Semi && strictness != JoinStrictness::Anti && !has_match && isLeftOrFull(kind));
     const bool output_right_rows_with_default_left = isRightOrFull(kind)
         && ((is_right_semi && has_matched_right_rows) || (!is_right_semi && !has_matched_right_rows));
 
     ConstantJoinOutputFlags flags;
-    flags.output_left_rows = output_matching_rows || output_left_rows_with_default_right;
-    flags.output_right_rows = output_matching_rows || output_right_rows_with_default_left;
+    flags.output_left_rows = output_matching_rows || output_first_matching_right_row || output_left_rows_with_default_right;
+    flags.output_right_rows = output_matching_rows || output_first_matching_right_row || output_right_rows_with_default_left;
     flags.use_defaults_for_left = output_right_rows_with_default_left;
     flags.use_defaults_for_right = output_left_rows_with_default_right;
-    flags.output_only_first_right_row = strictness == JoinStrictness::Any && has_match;
+    flags.output_only_first_right_row = (strictness == JoinStrictness::Any && has_match) || output_first_matching_right_row;
 
     return flags;
 }
 
+}
+
+bool ConstantJoin::alwaysReturnsEmptySet() const
+{
+    const auto kind = table_join->kind();
+    const auto strictness = table_join->strictness();
+
+    auto can_output = [&](bool has_match, bool has_matched_right_rows)
+    {
+        const auto output_flags = makeConstantJoinOutputFlags(kind, strictness, has_match, has_matched_right_rows);
+        return output_flags.output_left_rows || (total_rows_to_join != 0 && output_flags.outputRowsAfterLeftBlocks());
+    };
+
+    auto predicate_always_returns_empty_set = [&](bool predicate_matches)
+    {
+        if (!predicate_matches || total_rows_to_join == 0)
+            return !can_output(/* has_match */ false, /* has_matched_right_rows */ false);
+
+        /// Consider all left-side cardinalities. For example, `RIGHT SEMI JOIN ON 1` can emit
+        /// right rows only after at least one left row was seen, while `RIGHT ANTI JOIN ON 1`
+        /// can emit right rows only when no left rows were seen.
+        return !can_output(/* has_match */ true, /* has_matched_right_rows */ true)
+            && !can_output(/* has_match */ false, /* has_matched_right_rows */ false)
+            && !can_output(/* has_match */ false, /* has_matched_right_rows */ true);
+    };
+
+    switch (predicate_kind)
+    {
+        case PredicateKind::True:
+            return predicate_always_returns_empty_set(true);
+        case PredicateKind::False:
+            return predicate_always_returns_empty_set(false);
+        case PredicateKind::CompareConstantKeys:
+        {
+            const auto cached_match = constant_predicate_match.load(std::memory_order_acquire);
+            if (cached_match == -1)
+                return false;
+
+            return predicate_always_returns_empty_set(cached_match == 1);
+        }
+    }
+
+    UNREACHABLE();
 }
 
 class ConstantJoinResult final : public IJoinResult
