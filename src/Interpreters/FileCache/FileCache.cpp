@@ -2400,9 +2400,9 @@ IFileCachePriority::OnEvictCallback FileCache::getOnBackgroundEvictCallback() co
 
 void FileCache::onSegmentEvictedInTheBackground(const FileSegment & segment, const String & user_id) const
 {
-    onSegmentEvicted(segment, user_id);
     ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedFileSegments);
     ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedBytes, segment.getReservedSize());
+    onSegmentEvicted(segment, user_id);
 }
 
 void FileCache::deactivateBackgroundOperations()
