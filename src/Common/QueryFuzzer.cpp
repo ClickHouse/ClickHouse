@@ -2984,7 +2984,13 @@ void QueryFuzzer::fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children)
 
 void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQuery::Expression expr)
 {
-    if (fuzz_rand() % 50 == 0)
+    /// In oracle mode, never remove the topmost query's WHERE/HAVING — both are
+    /// needed for TLP partitioning and TLP HAVING tests. Sub-query WHERE/HAVING
+    /// are fine to drop: the oracle only checks the outermost query shape.
+    const bool topmost = current_ast_depth <= 1;
+    const bool block_remove_for_oracle = oracle_mode && topmost
+        && (expr == ASTSelectQuery::Expression::WHERE || expr == ASTSelectQuery::Expression::HAVING);
+    if (fuzz_rand() % 50 == 0 && !block_remove_for_oracle)
     {
         /// Remove the predicate
         sel->setExpression(expr, {});
@@ -3815,8 +3821,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
 
         /// Fuzzing SELECT query to EXPLAIN query randomly.
-        /// And we only fuzzing the root query into an EXPLAIN query, not fuzzing subquery
-        if (fuzz_rand() % 20 == 0 && current_ast_depth <= 1)
+        /// And we only fuzz the root query into an EXPLAIN query, not fuzzing subquery.
+        /// In oracle mode, never convert to EXPLAIN — it makes the query untestable.
+        if (!oracle_mode && fuzz_rand() % 20 == 0 && current_ast_depth <= 1)
         {
             auto explain = make_intrusive<ASTExplainQuery>(fuzzExplainKind());
 
@@ -4180,7 +4187,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         if (select->groupBy().get())
         {
-            if (fuzz_rand() % 50 == 0)
+            /// In oracle mode, never remove GROUP BY — it destroys testability
+            /// for TLP GROUP BY, TLP HAVING, and TLP Aggregate oracles.
+            if (!oracle_mode && fuzz_rand() % 50 == 0)
             {
                 select->groupBy()->children.clear();
                 select->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
@@ -4291,8 +4300,15 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 addOrReplacePredicate(select, ASTSelectQuery::Expression::HAVING);
             }
         }
-        else if (fuzz_rand() % 50 == 0)
+        else if ((!oracle_mode || current_ast_depth > 1) && fuzz_rand() % 50 == 0)
         {
+            /// Adding a random GROUP BY to the topmost query changes the
+            /// SELECT-list shape under the oracle's feet, so the oracle's
+            /// rewrites (e.g. TLP's per-partition UNION) become structurally
+            /// invalid. In a subquery this is fine — the outer SELECT-list
+            /// shape is what the oracle checks, and subquery GROUP BY just
+            /// changes the row count of the inner result (which the outer
+            /// query has to deal with anyway).
             select->setExpression(ASTSelectQuery::Expression::GROUP_BY, getRandomExpressionList(select->select()->children.size()));
         }
 
@@ -4302,21 +4318,31 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 addOrReplacePredicate(select, ASTSelectQuery::Expression::WHERE);
             }
-            else if (!select->prewhere().get())
+            else if (!select->prewhere().get() && (!oracle_mode || current_ast_depth > 1))
             {
+                /// In oracle mode, don't create PREWHERE on the topmost query at
+                /// all: `isSafeForOracle` rejects PREWHERE (its interaction with
+                /// WHERE produces legitimate result differences), so a topmost
+                /// PREWHERE locks the whole TLP family out for the rest of the
+                /// mutation chain. Subqueries keep full PREWHERE coverage.
                 if (fuzz_rand() % 50 == 0)
                 {
                     select->setExpression(ASTSelectQuery::Expression::PREWHERE, select->where()->clone());
 
-                    if (fuzz_rand() % 2 == 0)
+                    /// In oracle mode, never remove WHERE when converting to PREWHERE —
+                    /// keep both so the oracle can still partition on WHERE.
+                    if (!oracle_mode && fuzz_rand() % 2 == 0)
                     {
                         select->setExpression(ASTSelectQuery::Expression::WHERE, {});
                     }
                 }
             }
         }
-        else if (fuzz_rand() % 50 == 0)
+        else if (fuzz_rand() % ((oracle_mode && current_ast_depth <= 1) ? 10 : 50) == 0)
         {
+            /// In oracle mode, add a WHERE to the topmost query much more
+            /// eagerly: every TLP oracle and Identity WHERE require one, and
+            /// only about half of fuzzed candidates have it otherwise.
             addOrReplacePredicate(select, ASTSelectQuery::Expression::WHERE);
         }
 
@@ -4339,8 +4365,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
             }
         }
-        else if (fuzz_rand() % 50 == 0)
+        else if ((!oracle_mode || current_ast_depth > 1) && fuzz_rand() % 50 == 0)
         {
+            /// Same rationale as above: no topmost PREWHERE in oracle mode.
             addOrReplacePredicate(select, ASTSelectQuery::Expression::PREWHERE);
         }
 
@@ -4377,8 +4404,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             if (fuzz_rand() % 50 == 0)
                 select->limit_with_ties = !select->limit_with_ties;
-            /// Occasionally drop LIMIT (and OFFSET too)
-            if (fuzz_rand() % 50 == 0)
+            /// Occasionally drop LIMIT (and OFFSET too). In oracle mode drop it
+            /// much more eagerly at the topmost level: seed corpora (stateless
+            /// tests) carry LIMIT on most SELECTs and a topmost LIMIT excludes
+            /// every oracle except Subquery wrap, so shedding it re-opens the
+            /// query for the whole suite.
+            if (fuzz_rand() % ((oracle_mode && current_ast_depth <= 1) ? 10 : 50) == 0)
             {
                 select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, {});
                 select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, {});
@@ -4400,9 +4431,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
             }
         }
-        else if (fuzz_rand() % 50 == 0)
+        else if (fuzz_rand() % (oracle_mode ? 200 : 50) == 0)
         {
-            /// Add a LIMIT clause (negative values half the time).
+            /// Add a LIMIT clause (negative values half the time, like LIMIT OFFSET above).
+            /// The outer `oracle_mode ? 200 : 50` keeps this rare in oracle mode (LIMIT blocks most oracles).
             auto val
                 = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001))) : Field(static_cast<UInt64>(fuzz_rand() % 1001));
             select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(val));
