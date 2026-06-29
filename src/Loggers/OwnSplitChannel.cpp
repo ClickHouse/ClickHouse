@@ -358,7 +358,8 @@ void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
     /// Request the thread to flush as fast as possible (without acquiring the mutex every time)
     if (current_size > max_size / 2)
         request_flush = true;
-    condition.notify_one();
+    if (unlikely(current_size == 0))
+        condition.notify_all();
 }
 
 AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
