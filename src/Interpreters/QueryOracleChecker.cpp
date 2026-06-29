@@ -29,6 +29,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
+#include <Poco/String.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -171,79 +172,70 @@ constexpr size_t MAX_ORACLE_OUTPUT_SIZE = 10 * 1024 * 1024;
 /// post-execution size check in `executeAndCollect*` triggers.
 constexpr size_t MAX_ORACLE_RESULT_ROWS = 10'000'000;
 
-/// Strip known aggregate-function combinator suffixes from the right of `name`
+/// Case-insensitive view of `non_deterministic_functions`. ClickHouse resolves
+/// aggregate (and scalar) function names case-insensitively and the parser
+/// preserves whatever spelling the fuzzer produced, so a query using `SUM`,
+/// `argmax`, or `ANY` must still match the unsafe set. Compare lowercased.
+const std::unordered_set<String> non_deterministic_functions_lower = []
+{
+    std::unordered_set<String> result;
+    result.reserve(non_deterministic_functions.size());
+    for (const auto & name : non_deterministic_functions)
+        result.insert(Poco::toLower(name));
+    return result;
+}();
+
+/// Aggregate-function combinator suffixes ClickHouse recognises (see
+/// `AggregateFunctionCombinatorFactory`). Combinator spelling is case-sensitive
+/// in ClickHouse (`sumIf` is valid, `sumif` is not), so these stay PascalCase.
+const std::vector<String> combinator_suffixes = {
+    "If", "Array", "Map", "ForEach", "Distinct", "OrDefault", "OrFill",
+    "OrNull", "Resample", "ArgMin", "ArgMax", "MergeState", "State", "Merge",
+    "SimpleState", "Tuple", "RespectNulls", "IgnoreNulls", "Null",
+};
+
+/// Strip the LONGEST matching combinator suffix from `name`, returning false
+/// when nothing matched. Longest-match (rather than first-in-list) is what
+/// keeps overlapping combinators correct regardless of list order: e.g.
+/// `*SimpleState` must lose `SimpleState`, not `State` (which would strand a
+/// `Simple`), and `*RespectNulls` must lose `RespectNulls`, not `Null`.
+bool stripLongestCombinatorSuffix(String & name)
+{
+    const String * best = nullptr;
+    for (const auto & suffix : combinator_suffixes)
+        if (name.size() > suffix.size() && name.ends_with(suffix)
+            && (!best || suffix.size() > best->size()))
+            best = &suffix;
+    if (!best)
+        return false;
+    name.resize(name.size() - best->size());
+    return true;
+}
+
+/// Strip aggregate-function combinator suffixes from the right of `name`
 /// repeatedly, so e.g. `first_valueOrNullDistinct` becomes `first_value`.
-/// Combinators are checked against the same set ClickHouse recognises in
-/// `AggregateFunctionCombinatorFactory`. Cheap and safe: we never strip into
-/// an empty string and stop as soon as no suffix matches.
+/// Cheap and safe: we never strip into an empty string and stop as soon as no
+/// suffix matches.
 String stripAggregateCombinators(String name)
 {
-    static const std::vector<String> suffixes = {
-        "If",
-        "Array",
-        "Map",
-        "ForEach",
-        "Distinct",
-        "OrDefault",
-        "OrFill",
-        "OrNull",
-        "Resample",
-        "ArgMin",
-        "ArgMax",
-        "MergeState",
-        "State",
-        "Merge",
-        "SimpleState",
-        "Tuple",
-        "RespectNulls",
-        "IgnoreNulls",
-        "Null",
-    };
-    bool stripped = true;
-    while (stripped)
-    {
-        stripped = false;
-        for (const auto & suffix : suffixes)
-        {
-            if (name.size() > suffix.size() && name.ends_with(suffix))
-            {
-                name.resize(name.size() - suffix.size());
-                stripped = true;
-                break;
-            }
-        }
-    }
+    while (stripLongestCombinatorSuffix(name)) {}
     return name;
 }
 
 /// True if `name`, after removing zero or more combinator suffixes, names an
-/// entry of `non_deterministic_functions`. Membership must be tested at EVERY
-/// stripping stage, not only at the fixpoint: real aggregate names can
-/// themselves end in a combinator-looking word, e.g. `groupUniqArrayOrNull`
-/// strips to `groupUniqArray` (a set member), but one more iteration eats the
-/// literal `Array` and produces `groupUniq`, which the set does not contain.
+/// entry of `non_deterministic_functions` (matched case-insensitively).
+/// Membership must be tested at EVERY stripping stage, not only at the
+/// fixpoint: real aggregate names can themselves end in a combinator-looking
+/// word, e.g. `groupUniqArrayOrNull` strips to `groupUniqArray` (a set
+/// member), but one more iteration eats the literal `Array` and produces
+/// `groupUniq`, which the set does not contain.
 bool isOracleUnsafeFunctionName(String name)
 {
-    static const std::vector<String> suffixes = {
-        "If", "Array", "Map", "ForEach", "Distinct", "OrDefault", "OrFill",
-        "OrNull", "Resample", "ArgMin", "ArgMax", "MergeState", "State",
-        "Merge", "SimpleState", "Tuple", "RespectNulls", "IgnoreNulls", "Null",
-    };
     while (true)
     {
-        if (non_deterministic_functions.contains(name))
+        if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
             return true;
-        bool stripped = false;
-        for (const auto & suffix : suffixes)
-        {
-            if (name.size() > suffix.size() && name.ends_with(suffix))
-            {
-                name.resize(name.size() - suffix.size());
-                stripped = true;
-                break;
-            }
-        }
-        if (!stripped)
+        if (!stripLongestCombinatorSuffix(name))
             return false;
     }
 }
@@ -269,12 +261,26 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
     if (!ast)
         return false;
 
-    /// SAMPLE picks a row subset; which rows end up in the subset is not
-    /// stable across the plan rewrites the oracles perform, so any sampled
-    /// table makes result comparison meaningless.
     if (const auto * table_expr = ast->as<ASTTableExpression>())
+    {
+        /// SAMPLE picks a row subset; which rows end up in the subset is not
+        /// stable across the plan rewrites the oracles perform, so any sampled
+        /// table makes result comparison meaningless.
         if (table_expr->sample_size)
             return true;
+
+        /// A table function as a source (`numbers`, `generateRandom`, `s3`,
+        /// `url`, `remote`, `cluster`, `mysql`, `postgresql`, `mongodb`,
+        /// `iceberg*`, `fuzzJSON`, ...) is outside what the oracle can
+        /// validate: it may read external or mutable data, produce random
+        /// rows, or return a different snapshot on each of the oracle's
+        /// repeated reads. The static backstop set above only names a handful
+        /// of the table functions the fuzzer can emit (and they are not scalar
+        /// functions, so `FunctionFactory::tryGet` below never rejects them),
+        /// so reject ANY table-function source generically.
+        if (table_expr->table_function)
+            return true;
+    }
 
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -773,27 +779,23 @@ bool referencesNonDeterministicDatabase(const ASTSelectQuery & select)
     return false;
 }
 
-/// True if any table the query reads from has the `Distributed` engine.
-/// Resolved through the catalog (the engine is not visible at the AST level).
-/// Catalog lookups are best-effort: a missing/unresolvable table is treated as
-/// "not distributed" so this never blocks a checkable query by mistake.
-bool referencesDistributedTable(const ASTSelectQuery & select, const ContextPtr & context)
+/// True if any table referenced anywhere in the query has the `Distributed`
+/// engine — not only in the top-level FROM, but also inside subqueries and
+/// CTEs. A `Distributed` table hidden under a subquery (e.g.
+/// `SELECT * FROM (SELECT * FROM dist_tbl) WHERE p`) still routes to remote
+/// shards, so the reference and rewritten queries can route or combine shard
+/// results differently and report a false mismatch. We therefore walk every
+/// `ASTTableIdentifier` in the tree. The engine is not visible at the AST
+/// level, so each is resolved through the catalog. A catalog lookup that
+/// throws is treated conservatively as "distributed" (fail closed): we cannot
+/// prove the table is safe, so we skip the query rather than risk a false
+/// `AST_FUZZER_ORACLE_MISMATCH`.
+bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & context)
 {
-    ASTPtr tables = select.tables();
-    if (!tables)
+    if (!ast)
         return false;
-    for (const auto & table_child : tables->children)
+    if (const auto * table_id = ast->as<ASTTableIdentifier>())
     {
-        const auto * tables_element = table_child->as<ASTTablesInSelectQueryElement>();
-        if (!tables_element || !tables_element->table_expression)
-            continue;
-        const auto * table_expr = tables_element->table_expression->as<ASTTableExpression>();
-        if (!table_expr || !table_expr->database_and_table_name)
-            continue;
-        const auto * table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
-        if (!table_id)
-            continue;
-
         String database = table_id->getDatabaseName();
         if (database.empty())
             database = context->getCurrentDatabase();
@@ -803,10 +805,15 @@ bool referencesDistributedTable(const ASTSelectQuery & select, const ContextPtr 
             if (storage && storage->getName() == "Distributed")
                 return true;
         }
-        catch (...) /// Catalog hiccup — fail open (treat as not distributed).
+        catch (...)
         {
+            /// Could not resolve the table; do not assume it is safe.
+            return true;
         }
     }
+    for (const auto & child : ast->children)
+        if (referencesDistributedTableAnywhere(child, context))
+            return true;
     return false;
 }
 
@@ -905,6 +912,16 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
         return false;
     if (select.group_by_with_rollup || select.group_by_with_cube
         || select.group_by_with_totals || select.group_by_with_grouping_sets)
+        return false;
+    /// `GROUP BY ALL` sets `select.group_by_all` but leaves `select.groupBy()`
+    /// empty, so the per-oracle grouping guards (which test `select.groupBy()`)
+    /// do not recognise it and a grouping query slips into the non-grouping
+    /// TLP / NoREC / DISTINCT paths. There the reference side drops `WHERE` and
+    /// keeps one row per group, while the partitioned side runs three
+    /// `GROUP BY ALL` branches and `UNION ALL`s them, duplicating groups that
+    /// span more than one partition — a false `AST_FUZZER_ORACLE_MISMATCH`.
+    /// Skip the whole query rather than special-case every oracle.
+    if (select.group_by_all)
         return false;
 
     /// Window functions are never safe for oracle testing.
@@ -2327,8 +2344,9 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     /// `Distributed` tables route to remote shards (here, test clusters whose
     /// replicas all point at localhost), so a row is read once per shard and
     /// the reference vs rewrite can route/dedup differently — the oracle can't
-    /// validate the result. Resolve each referenced table's engine and skip.
-    if (referencesDistributedTable(*select, context))
+    /// validate the result. Resolve each referenced table's engine (including
+    /// tables hidden inside subqueries / CTEs) and skip.
+    if (referencesDistributedTableAnywhere(query_ast, context))
     {
         LOG_TRACE(logger, "Oracle skip: query reads from a Distributed table");
         return false;
@@ -2343,6 +2361,18 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         || (select->having() && containsAsterisk(select->having())))
     {
         LOG_TRACE(logger, "Oracle skip: asterisk in GROUP BY / HAVING (context-sensitive expansion)");
+        return false;
+    }
+
+    /// `GROUP BY ALL` is a grouping query whose grouping keys are only known
+    /// after analysis (`select->groupBy()` is empty at the AST level). The
+    /// per-oracle grouping guards test `select->groupBy()`, so without this
+    /// top-level reject a `GROUP BY ALL` query would reach the non-grouping
+    /// oracles (some of which mirror `isSafeForOracle` inline rather than
+    /// calling it) and produce a false mismatch. See `isSafeForOracle`.
+    if (select->group_by_all)
+    {
+        LOG_TRACE(logger, "Oracle skip: GROUP BY ALL (grouping keys not known at AST level)");
         return false;
     }
 
