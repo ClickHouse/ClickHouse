@@ -43,7 +43,10 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE IF NOT EXISTS ${POLICY_TABLE} (x UInt8) EN
 # logs at the connection level so any leaked recompute line would deterministically appear on
 # stderr. The recompute lines must stay in the server log only; capture stderr and assert none
 # of them leaked.
-stderr=$(
+#
+# Fail on a non-zero client status before counting: if the DDL errored the recompute never ran,
+# so empty stderr would print the expected "0" and false-pass without exercising the guarded path.
+if ! stderr=$(
     ${CLIENT} --multiquery -q "
         CREATE ROLE ${ROLE};
         CREATE SETTINGS PROFILE ${PROFILE} SETTINGS max_threads = 1 TO ${ROLE};
@@ -53,7 +56,10 @@ stderr=$(
         CREATE ROW POLICY ${POLICY} ON ${POLICY_TABLE} USING 1 TO ${USER};
         ALTER QUOTA ${QUOTA} FOR INTERVAL 100 YEAR MAX FAILED SEQUENTIAL AUTHENTICATIONS = 4 TO ${USER};
     " 2>&1 1>/dev/null
-)
+); then
+    echo "$stderr"
+    exit 1
+fi
 
 echo "$stderr" | grep -cE "QuotaCache: Re-chose quotas|RoleCache: Recalculated enabled roles|RowPolicyCache: Re-mixed row policy|SettingsProfilesCache: Re-merged settings and constraints"
 
