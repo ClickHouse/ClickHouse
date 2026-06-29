@@ -2123,6 +2123,21 @@ class FunctionBinaryArithmetic : public IFunction
         }
 
         const auto & left_array_elements_type = unwrapped_array.array_type->getNestedType();
+
+        /// Empty null rows before element execution to avoid evaluating hidden nested
+        /// payloads (e.g. division by zero in a NULL array row).
+        const ColumnUInt8 * row_null_map = nullptr;
+        if (unwrapped_array.null_map)
+        {
+            const auto & materialized = detail::materializeNullMapToRowCount(unwrapped_array.null_map, input_rows_count);
+            row_null_map = &assert_cast<const ColumnUInt8 &>(*materialized);
+        }
+        if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*left_array_col, row_null_map, input_rows_count))
+        {
+            array_column_ptr = std::move(null_rows_empty_array);
+            left_array_col = assert_cast<const ColumnArray *>(array_column_ptr.get());
+        }
+
         const auto & right_col = arguments[1].column.get()->cloneResized(left_array_col->size());
 
         size_t rows_count = 0;

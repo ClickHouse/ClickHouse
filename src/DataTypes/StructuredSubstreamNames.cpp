@@ -67,8 +67,42 @@ String getPathPrefixInRange(const SubstreamPath & path, size_t begin_index, size
             stream_name += ".buckets_info";
         else if (element.type == Substream::ObjectTypedPath)
             stream_name += ".typed_path." + escapeForFileName(element.object_path_name);
+        else if (element.type == Substream::ObjectDynamicPath)
+            stream_name += ".dynamic_path." + escapeForFileName(element.object_path_name);
         else if (element.type == Substream::DynamicData)
             stream_name += ".dynamic";
+        else if (element.type == Substream::DynamicStructure)
+            stream_name += ".dynamic_structure";
+        else if (element.type == Substream::ObjectStructure)
+            stream_name += ".object_structure";
+        else if (element.type == Substream::ObjectSharedData)
+            stream_name += ".object_shared_data";
+        else if (element.type == Substream::ObjectSharedDataStructure)
+            stream_name += ".structure";
+        else if (element.type == Substream::ObjectSharedDataStructurePrefix)
+            stream_name += ".structure_prefix";
+        else if (element.type == Substream::ObjectSharedDataStructureSuffix)
+            stream_name += ".structure_suffix";
+        else if (element.type == Substream::ObjectSharedDataSubstreams)
+            stream_name += ".substreams";
+        else if (element.type == Substream::ObjectSharedDataPathsMarks)
+            stream_name += ".paths_marks";
+        else if (element.type == Substream::ObjectSharedDataSubstreamsMarks)
+            stream_name += ".substreams_marks";
+        else if (element.type == Substream::ObjectSharedDataPathsSubstreamsMetadata)
+            stream_name += ".paths_substreams_metadata";
+        else if (element.type == Substream::ObjectSharedDataPathsInfos)
+            stream_name += ".paths_infos";
+        else if (element.type == Substream::ObjectSharedDataData)
+            stream_name += ".data";
+        else if (element.type == Substream::ObjectSharedDataCopy)
+            stream_name += ".copy";
+        else if (element.type == Substream::ObjectSharedDataCopySizes)
+            stream_name += ".sizes";
+        else if (element.type == Substream::ObjectSharedDataCopyPathsIndexes)
+            stream_name += ".paths_indexes";
+        else if (element.type == Substream::ObjectSharedDataCopyValues)
+            stream_name += ".values";
     }
     return stream_name;
 }
@@ -235,8 +269,42 @@ String getLegacySubstreamNameSuffix(
             stream_name += ".buckets_info";
         else if (it->type == Substream::ObjectTypedPath)
             stream_name += ".typed_path." + escapeForFileName(it->object_path_name);
+        else if (it->type == Substream::ObjectDynamicPath)
+            stream_name += ".dynamic_path." + escapeForFileName(it->object_path_name);
         else if (it->type == Substream::DynamicData)
             stream_name += ".dynamic";
+        else if (it->type == Substream::DynamicStructure)
+            stream_name += ".dynamic_structure";
+        else if (it->type == Substream::ObjectStructure)
+            stream_name += ".object_structure";
+        else if (it->type == Substream::ObjectSharedData)
+            stream_name += ".object_shared_data";
+        else if (it->type == Substream::ObjectSharedDataStructure)
+            stream_name += ".structure";
+        else if (it->type == Substream::ObjectSharedDataStructurePrefix)
+            stream_name += ".structure_prefix";
+        else if (it->type == Substream::ObjectSharedDataStructureSuffix)
+            stream_name += ".structure_suffix";
+        else if (it->type == Substream::ObjectSharedDataSubstreams)
+            stream_name += ".substreams";
+        else if (it->type == Substream::ObjectSharedDataPathsMarks)
+            stream_name += ".paths_marks";
+        else if (it->type == Substream::ObjectSharedDataSubstreamsMarks)
+            stream_name += ".substreams_marks";
+        else if (it->type == Substream::ObjectSharedDataPathsSubstreamsMetadata)
+            stream_name += ".paths_substreams_metadata";
+        else if (it->type == Substream::ObjectSharedDataPathsInfos)
+            stream_name += ".paths_infos";
+        else if (it->type == Substream::ObjectSharedDataData)
+            stream_name += ".data";
+        else if (it->type == Substream::ObjectSharedDataCopy)
+            stream_name += ".copy";
+        else if (it->type == Substream::ObjectSharedDataCopySizes)
+            stream_name += ".sizes";
+        else if (it->type == Substream::ObjectSharedDataCopyPathsIndexes)
+            stream_name += ".paths_indexes";
+        else if (it->type == Substream::ObjectSharedDataCopyValues)
+            stream_name += ".values";
     }
 
     return stream_name;
@@ -294,22 +362,33 @@ bool needsStructuredSubstreamNames(const IDataType & type)
 
 
 /// Check if a substream path contains a Nullable(Array(...)) pattern that requires
-/// structured naming, even when the static column type doesn't reveal it (e.g. Dynamic
-/// whose runtime variant contains Nullable(Array(...))).
+/// structured naming, even when the static column type doesn't reveal it. This only
+/// applies to Dynamic and Object columns whose runtime/typed-path types are not visible
+/// in the static column type. For ordinary Array(Nullable(T)) columns the static type
+/// already returns false from needsStructuredSubstreamNames, and we must keep legacy
+/// naming to preserve compatibility with existing MergeTree parts.
 bool needsStructuredSubstreamNamesForPath(const SubstreamPath & path)
 {
-    /// Look for a NullMap that follows one or more ArrayElements (Nullable(Array) pattern),
-    /// or an ArraySizes after ArrayElements followed by NullMap. These patterns produce
-    /// ambiguous legacy names when multiple variants/paths share the same suffix.
+    bool has_dynamic_or_object_prefix = false;
     bool has_array_elements = false;
+
     for (size_t i = 0; i < path.size(); ++i)
     {
-        if (path[i].type == Substream::ArrayElements)
+        if (path[i].type == Substream::DynamicData
+            || path[i].type == Substream::ObjectTypedPath
+            || path[i].type == Substream::ObjectDynamicPath)
+        {
+            has_dynamic_or_object_prefix = true;
+            has_array_elements = false;
+        }
+        else if (path[i].type == Substream::ArrayElements)
+        {
             has_array_elements = true;
-        else if (path[i].type == Substream::NullMap && has_array_elements)
+        }
+        else if (path[i].type == Substream::NullMap && has_array_elements && has_dynamic_or_object_prefix)
+        {
             return true;
-        else if (path[i].type == Substream::DynamicData)
-            has_array_elements = false;  /// Reset: we need ArrayElements after DynamicData
+        }
     }
     return false;
 }
