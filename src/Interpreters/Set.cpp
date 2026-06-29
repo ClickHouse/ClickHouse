@@ -6,6 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Common/Logger.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
 
@@ -44,6 +45,11 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
+
+Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
+    :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
+    , log(getLogger("Set")), cast_cache(std::make_unique<InternalCastFunctionCache>())
+{}
 
 
 template <typename Method>
@@ -110,8 +116,10 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
 {
     for (auto & type : types)
     {
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-            type = low_cardinality_type->getDictionaryType();
+        /// Strip LowCardinality recursively to match what setHeader/insertFromColumns do:
+        /// insertFromColumns calls convertToFullIfNeeded which recursively strips LC from
+        /// compound types like Tuple(LowCardinality(T), ...).
+        type = recursiveRemoveLowCardinality(type);
 
         if (!transform_null_in)
             type = removeNullable(type);
@@ -149,10 +157,15 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
         {
             data_types.back() = low_cardinality_type->getDictionaryType();
-            set_elements_types.back() = low_cardinality_type->getDictionaryType();
             materialized_columns.emplace_back(key_columns.back()->convertToFullColumnIfLowCardinality());
             key_columns.back() = materialized_columns.back().get();
         }
+
+        /// Strip LowCardinality recursively from set_elements_types so they match what
+        /// convertToFullIfNeeded (which is recursive) does to columns in insertFromColumns.
+        /// Without this, compound types like Tuple(LowCardinality(T), ...) keep LowCardinality
+        /// in the type while the column has it stripped, causing type/column mismatches later.
+        set_elements_types.back() = recursiveRemoveLowCardinality(set_elements_types.back());
     }
 
     /// We will insert to the Set only keys, where all components are not NULL.
@@ -253,7 +266,10 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
 #undef M
     }
 
-    return limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    bool within_limits = limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    if (!within_limits)
+        is_truncated = true;
+    return within_limits;
 }
 
 void Set::appendSetElements(SetKeyColumns & holder)
@@ -267,7 +283,7 @@ void Set::appendSetElements(SetKeyColumns & holder)
     {
         auto filtered_column = holder.key_columns[i]->filter(holder.filter->getData(), rows);
         if (set_elements[i]->empty())
-            set_elements[i] = filtered_column;
+            set_elements[i] = IColumn::mutate(std::move(filtered_column));
         else
             set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
         if (transform_null_in && holder.null_map_holder)
@@ -281,7 +297,17 @@ void Set::checkIsCreated() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
 }
 
-ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
+Columns Set::getSetElements() const
+{
+    checkIsCreated();
+    Columns result;
+    result.reserve(set_elements.size());
+    for (const auto & col : set_elements)
+        result.push_back(col->getPtr());
+    return result;
+}
+
+static ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
 {
     // Handle nullable columns
     const ColumnNullable * original_nullable_column = typeid_cast<const ColumnNullable *>(column_to_cast.column.get());
@@ -299,7 +325,7 @@ ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_
     size_t vec_res_size = original_data.size();
 
     // Prepare the precision null map
-    auto precision_null_map_column = ColumnUInt8::create(vec_res_size, 0);
+    auto precision_null_map_column = ColumnUInt8::create(vec_res_size, static_cast<UInt8>(0));
     NullMap & precision_null_map = precision_null_map_column->getData();
 
     // Determine which rows should be null based on precision loss
@@ -321,7 +347,7 @@ ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_
     return precision_null_map_column;
 }
 
-ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnUInt8::Ptr & null_map_column2)
+static ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnUInt8::Ptr & null_map_column2)
 {
     if (!null_map_column1)
         return null_map_column2;
@@ -431,7 +457,16 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
-        if (!transform_null_in && data_types[i]->canBeInsideNullable())
+        /// Since we have optional support for Nullable(Tuple), if `data_types[i]` is `Tuple(...)` type, then
+        /// we will enter the `castColumnAccurateOrNull` path; however, it can lead to casted column type
+        /// becomes `Tuple(Nullable(...), Nullable(...))` which will create problems during matching keys in Set.
+        /// To avoid that, we do not do `castColumnAccurateOrNull` for Tuple types.
+        auto target_type_without_nullable = removeNullable(data_types[i]);
+        bool is_tuple_type = typeid_cast<const DataTypeTuple *>(target_type_without_nullable.get()) != nullptr;
+
+        bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable() && !is_tuple_type;
+
+        if (use_cast_accurate_or_null)
         {
             result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
         }
@@ -665,12 +700,180 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
         ordered_set[i] = block_to_sort.getByPosition(i).column;
 }
 
-
 /** Return the BoolMask where:
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_sparse_pos, const Ranges & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point) const
+{
+    auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
+    {
+        bool is_key_col_present = (key_column < key_col_to_sparse_pos.size() && key_col_to_sparse_pos[key_column] != -1);
+        const size_t sparse_pos = is_key_col_present ? static_cast<size_t>(key_col_to_sparse_pos[key_column]) : 0;
+        return {is_key_col_present, sparse_pos};
+    };
+
+    size_t tuple_size = indexes_mapping.size();
+
+    struct FieldValueRange
+    {
+        FieldValue left;
+        FieldValue right;
+        bool left_included = false;
+        bool right_included = false;
+
+        explicit FieldValueRange(const IColumn & prototype) : left(prototype.cloneEmpty()), right(prototype.cloneEmpty()) {}
+    };
+
+    std::vector<FieldValueRange> ranges;
+    ranges.reserve(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        size_t key_column = indexes_mapping[i].key_index;
+        auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
+
+        ranges.emplace_back(*ordered_set[i]);
+
+        if (!is_key_col_present)
+        {
+            /// We have no range information for this key column.
+            /// Most likely earlier columns were high cardinality, so this column and later column marks were not loaded into memory
+            /// Treat it as completely unconstrained; since we do not have the type information,
+            /// we do not know whether to createWholeUniverse() or createWholeUniverseWithoutNull().
+            /// So, we choose the more relaxed option:
+            /// [-inf, +inf] instead of ( -inf, +inf ).
+            ranges.back().left.update(NEGATIVE_INFINITY);
+            ranges.back().right.update(POSITIVE_INFINITY);
+            ranges.back().left_included = true;
+            ranges.back().right_included = true;
+            continue;
+        }
+
+        std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
+            sparse_key_ranges[sparse_pos],
+            indexes_mapping[i].functions,
+            sparse_data_types[sparse_pos],
+            single_point);
+
+        if (!new_range)
+            return {true, true};
+
+        ranges.back().left.update(new_range->left);
+        ranges.back().right.update(new_range->right);
+        ranges.back().left_included = new_range->left_included;
+        ranges.back().right_included = new_range->right_included;
+    }
+
+    /// lhs < rhs return -1
+    /// lhs == rhs return 0
+    /// lhs > rhs return 1
+    auto compare = [](const IColumn & lhs, const FieldValue & rhs, size_t row)
+    {
+        if (rhs.isNegativeInfinity())
+            return +1;
+        if (rhs.isPositiveInfinity())
+            return lhs.isNullAt(row) ? 0 : -1; // +Inf == +Inf
+        return lhs.compareAt(row, 0, *rhs.column, 1);
+    };
+
+    /// Because ordered_set is sorted lexicographically, the elements we're looking for are
+    /// consecutive. Use binary search to find the range of indices.
+
+    /// The part about left_included/right_included is a little tricky. It was initially implemented
+    /// incorrectly:
+    ///   begin = lower_bound(..., left_point, tuple_less_unaware_of_includedness);
+    ///   if (!all(ranges[..].left_included) && equals(left_point, begin))
+    ///       begin += 1;
+    /// This breaks on the following example:
+    ///   key_ranges = [(0, +inf), (-inf, +inf)]  (the 0 is not included),
+    ///   ordered_set = [[0], [0]].
+    /// The incorrect implementation would output begin == 0 and conclude that the set element is
+    /// inside the range (it isn't). The `begin += 1` won't happen because (0, 0) != (0, -inf).
+
+    auto indices = collections::range(0, size());
+    size_t begin = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
+        {
+            /// Return true if set[row] is below the key range.
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                int cmp = compare(*ordered_set[i], ranges[i].left, row);
+
+                if (cmp > 0)
+                    return false;
+                /// Note: if some range has left_included == false then the left ends of all
+                /// subsequent ranges' don't matter. (Symmetrically for right.)
+                /// It's the only way to make sense of the notion of a range of tuples where the
+                /// included/excluded flags are given per element.
+                if (cmp < 0 || (cmp == 0 && !ranges[i].left_included))
+                    return true;
+            }
+            return false;
+        }) - indices.begin();
+    size_t end = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
+        {
+            /// Return false if set[row] is above the key range.
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                int cmp = compare(*ordered_set[i], ranges[i].right, row);
+
+                if (cmp > 0 || (cmp == 0 && !ranges[i].right_included))
+                    return false;
+                if (cmp < 0)
+                    return true;
+            }
+            return true;
+        }) - indices.begin();
+
+    if (begin > end)
+    {
+        /// TODO: Remove the #ifndef and always throw after
+        ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+        ///       (What happens here is: the applyMonotonicFunctionsChainToRange call above applies
+        ///        nonmonotonic functions, and we end up with left > right.)
+#ifndef NDEBUG
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid binary search result in MergeTreeSetIndex");
+#else
+        return {true, true};
+#endif
+    }
+
+    bool can_be_true = begin < end;
+
+    /// A special case of 1-element KeyRange. It's useful for partition pruning.
+    bool at_most_one_element_range = true;
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        auto & r = ranges[i];
+        if (r.left.isNormal() && r.right.isNormal())
+        {
+            if (0 != r.left.column->compareAt(0, 0, *r.right.column, 1))
+            {
+                at_most_one_element_range = false;
+                break;
+            }
+        }
+        else if ((r.left.isPositiveInfinity() && r.right.isPositiveInfinity()) || (r.left.isNegativeInfinity() && r.right.isNegativeInfinity()))
+        {
+            /// Special value equality.
+        }
+        else
+        {
+            at_most_one_element_range = false;
+            break;
+        }
+    }
+    if (at_most_one_element_range && has_all_keys)
+    {
+        /// Here we know that there is at most one element in range.
+        /// The main difference with the normal case is that we can definitely say that
+        /// condition in this range is always TRUE (can_be_false = 0) or always FALSE (can_be_true = 0).
+        return {can_be_true, !can_be_true};
+    }
+
+    return {can_be_true, true};
+}
+
+BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTypes & data_types, bool single_point) const
 {
     size_t tuple_size = indexes_mapping.size();
 
@@ -688,6 +891,9 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     ranges.reserve(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
     {
+        if (indexes_mapping[i].key_index >= key_ranges.size())
+            return {true, true};
+
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,
@@ -717,7 +923,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     };
 
     /// Because ordered_set is sorted lexicographically, the elements we're looking for are
-    /// consecituve. Use binary search to find the range of indices.
+    /// consecutive. Use binary search to find the range of indices.
 
     /// The part about left_included/right_included is a little tricky. It was initially implemented
     /// incorrectly:

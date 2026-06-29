@@ -153,7 +153,10 @@ public:
         if (!column_node || replaced_nodes_set.contains(node))
             return;
 
-        auto column_source = column_node->getColumnSource();
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (!column_source)
+            return;
+
         auto * array_join = column_source->as<ArrayJoinNode>();
         if (!array_join)
             return;

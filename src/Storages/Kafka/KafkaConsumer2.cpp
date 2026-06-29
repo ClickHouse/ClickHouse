@@ -13,6 +13,7 @@
 #include <Common/DateLUT.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 
 
@@ -148,14 +149,24 @@ void KafkaConsumer2::cleanQueuesAndMessages()
 void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic_partitions)
 {
     cleanQueuesAndMessages();
-    // cppkafka itself calls assign(), but in order to detach the queues here we have to do the assignment manually.
-    // Later on we have to reassign the topic partitions with correct offsets.
-    consumer->assign(topic_partitions);
-    for (const auto & topic_partition : topic_partitions)
-        // This will also detach the partition queues from the consumer, thus the messages won't be forwarded without
-        // attaching them manually
-        queues.emplace(
-            TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()}, consumer->get_partition_queue(topic_partition));
+
+    queues.reserve(topic_partitions.size());
+    // `get_partition_queue` creates the partition queue if needed and disables forwarding to the main consumer queue.
+    // Do this before `assign` starts fetching, otherwise messages may leak into the main queue before we detach it.
+    try
+    {
+        for (const auto & topic_partition : topic_partitions)
+            queues.emplace(
+                TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()},
+                consumer->get_partition_queue(topic_partition));
+
+        consumer->assign(topic_partitions);
+    }
+    catch (...)
+    {
+        cleanQueuesAndMessages();
+        throw;
+    }
 }
 
 // it does the poll when needed
@@ -377,7 +388,7 @@ ReadBufferPtr KafkaConsumer2::getNextMessage()
 
 void KafkaConsumer2::filterMessageErrors()
 {
-    assert(current == messages.begin());
+    chassert(current == messages.begin());
 
     StorageKafkaUtils::eraseMessageErrors(
         messages,

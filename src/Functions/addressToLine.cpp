@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 #include <Common/Dwarf.h>
 #include <Columns/ColumnString.h>
@@ -18,7 +18,7 @@ namespace DB
 namespace
 {
 
-class FunctionAddressToLine : public FunctionAddressToLineBase<std::string_view, Dwarf::LocationInfoMode::FAST>
+class FunctionAddressToLine final : public FunctionAddressToLineBase<std::string_view, Dwarf::LocationInfoMode::FAST>
 {
 public:
     static constexpr auto name = "addressToLine";
@@ -44,7 +44,7 @@ protected:
         return result_column;
     }
 
-    void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &) const override
+    void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> &) const override
     {
         const char * arena_begin = nullptr;
         WriteBufferFromArena out(cache.arena, arena_begin);
@@ -139,7 +139,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionAddressToLine>(documentation);
 }

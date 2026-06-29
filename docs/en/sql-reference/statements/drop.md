@@ -7,8 +7,6 @@ title: 'DROP Statements'
 doc_type: 'reference'
 ---
 
-# DROP Statements
-
 Deletes existing entity. If the `IF EXISTS` clause is specified, these queries do not return an error if the entity does not exist. If the `SYNC` modifier is specified, the entity is dropped without delay.
 
 ## DROP DATABASE {#drop-database}
@@ -36,7 +34,7 @@ DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY]  [db1.]name_1[, [db2.]name_2, ...]
 ```
 
 Limitations:
-- If the clause `IF EMPTY` is specified, the server checks the emptiness of the table only on the replica which received the query.  
+- If the clause `IF EMPTY` is specified, the server checks the emptiness of the table only on the replica which received the query.
 - Deleting multiple tables at once is not an atomic operation, i.e. if the deletion of a table fails, subsequent tables will not be deleted.
 
 ## DROP DICTIONARY {#drop-dictionary}
@@ -77,6 +75,16 @@ Syntax:
 
 ```sql
 DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+## DROP MASKING POLICY {#drop-masking-policy}
+
+Deletes a masking policy.
+
+Syntax:
+
+```sql
+DROP MASKING POLICY [IF EXISTS] name ON [database.]table [ON CLUSTER cluster_name] [FROM access_storage_type]
 ```
 
 ## DROP QUOTA {#drop-quota}

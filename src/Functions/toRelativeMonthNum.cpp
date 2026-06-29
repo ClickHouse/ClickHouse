@@ -37,7 +37,7 @@ SELECT toRelativeMonthNum(toDate('2023-04-01')) - toRelativeMonthNum(toDate('202
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToRelativeMonthNum>(documentation);
 }

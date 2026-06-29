@@ -134,14 +134,14 @@ TEST_P(FileEncryptionCipherTest, Decryption)
     encryptor.setOffset(base_offset);
     for (size_t i = 0; i < expected.size(); ++i)
     {
-        char c;
+        char c = {};
         encryptor.decrypt(&input[i], 1, &c);
         ASSERT_EQ(expected[i], c);
     }
 
     for (size_t i = 0; i < expected.size(); ++i)
     {
-        char c;
+        char c = {};
         encryptor.setOffset(base_offset + i);
         encryptor.decrypt(&input[i], 1, &c);
         ASSERT_EQ(expected[i], c);
@@ -230,7 +230,7 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     header.init_vector = InitVector::random();
 
     auto lwb = std::make_unique<WriteBufferFromFile>(tmp_path);
-    WriteBufferFromEncryptedFile wb(10, std::move(lwb), key, header);
+    WriteBufferFromEncryptedFile wb(10, std::move(lwb), key, header, /*old_file_size=*/0, /*use_adaptive_buffer_size_=*/ false, /*adaptive_buffer_initial_size=*/ 0);
     auto data = getRandomASCIIString(20);
     wb.write(data.data(), data.size());
     wb.finalize();

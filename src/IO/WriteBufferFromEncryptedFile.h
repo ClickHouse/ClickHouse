@@ -1,9 +1,10 @@
 #pragma once
 
 #include "config.h"
-#include <Common/assert_cast.h>
 
 #if USE_SSL
+#include <Common/Logger.h>
+#include <Common/assert_cast.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/WriteBufferDecorator.h>
@@ -22,7 +23,9 @@ public:
         std::unique_ptr<WriteBufferFromFileBase> out_,
         const String & key_,
         const FileEncryption::Header & header_,
-        size_t old_file_size = 0);
+        size_t old_file_size,
+        bool use_adaptive_buffer_size_,
+        size_t adaptive_buffer_initial_size);
 
     ~WriteBufferFromEncryptedFile() override;
 
@@ -41,6 +44,9 @@ private:
     FileEncryption::Encryptor encryptor;
 
     LoggerPtr log = getLogger("WriteBufferFromEncryptedFile");
+
+    bool use_adaptive_buffer_size;
+    size_t adaptive_buffer_max_size;
 };
 
 }

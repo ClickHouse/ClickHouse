@@ -86,7 +86,7 @@ std::vector<std::vector<CNFQueryAtomicFormula>> ConstraintsDescription::buildCon
     std::vector<std::vector<CNFQueryAtomicFormula>> constraint_data;
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
-        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
+        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
             .pullNotOutFunctions(); /// TODO: move prepare stage to ConstraintsDescription
         for (const auto & group : cnf.getStatements())
             constraint_data.emplace_back(std::begin(group), std::end(group));
@@ -100,7 +100,7 @@ std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomicConstraintDa
     std::vector<CNFQueryAtomicFormula> constraint_data;
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
-        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
+        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
              .pullNotOutFunctions();
         for (const auto & group : cnf.getStatements())
         {
@@ -125,7 +125,7 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
         auto * func = atom.ast->as<ASTFunction>();
         if (func && relations.contains(func->name))
         {
-            assert(!atom.negative);
+            chassert(!atom.negative);
             constraints_for_graph.push_back(atom.ast);
         }
     }
@@ -197,12 +197,12 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
         // Wrap the scalar expression with a function call "equals(SELECT..., 1)".
         if (dynamic_cast<ASTSubquery *>(expr.get()))
         {
-            auto func = std::make_shared<ASTFunction>();
+            auto func = make_intrusive<ASTFunction>();
             func ->name = "equals";
-            func->children.push_back(std::make_shared<ASTExpressionList>());
-            auto args = std::make_shared<ASTExpressionList>();
+            func->children.push_back(make_intrusive<ASTExpressionList>());
+            auto args = make_intrusive<ASTExpressionList>();
             args->children.push_back(expr);
-            args->children.push_back(std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)}));
+            args->children.push_back(make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)}));
             func->arguments = args;
             expr = func;
         }
@@ -244,7 +244,7 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
             auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
             if (function_node && relations.contains(function_node->getFunctionName()))
             {
-                assert(!atom.negative);
+                chassert(!atom.negative);
                 constraints_for_graph.push_back(atom.node_with_hash.node);
             }
         }
@@ -310,13 +310,13 @@ ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDesc
     return *this;
 }
 
-ConstraintsDescription::ConstraintsDescription(ConstraintsDescription && other) noexcept
+ConstraintsDescription::ConstraintsDescription(ConstraintsDescription && other) /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     : constraints(std::move(other.constraints))
 {
     update();
 }
 
-ConstraintsDescription & ConstraintsDescription::operator=(ConstraintsDescription && other) noexcept
+ConstraintsDescription & ConstraintsDescription::operator=(ConstraintsDescription && other) /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 {
     constraints = std::move(other.constraints);
     update();

@@ -220,7 +220,7 @@ void processImpl(ConstColumnInfo<ColumnT> source, ConstColumnInfo<ColumnT> exclu
         result.null_map->resize(current_result_offset);
 }
 
-class FunctionArrayExcept : public IFunction
+class FunctionArrayExcept final : public IFunction
 {
 public:
     static constexpr auto name = "arrayExcept";
@@ -403,7 +403,7 @@ The operation maintains these properties:
 
     FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayExcept>(documentation);
 }

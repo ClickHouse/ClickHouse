@@ -17,7 +17,7 @@ import DataTypeMapping from './_snippets/data-types-matching.md'
 
 ## Description {#description}
 
-[Apache Avro](https://avro.apache.org/) is a row-oriented serialization format that uses binary encoding for efficient data processing. The `Avro` format supports reading and writing [Avro data files](https://avro.apache.org/docs/++version++/specification/#object-container-files). This format expects self-describing messages with an embedded schema. If you're using Avro with a schema registry, refer to the [`AvroConfluent`](./AvroConfluent.md) format.
+[Apache Avro](https://avro.apache.org/) is a row-oriented serialization format that uses binary encoding for efficient data processing. The `Avro` format supports reading and writing [Avro data files](https://avro.apache.org/docs/current/specification/#object-container-files). This format expects self-describing messages with an embedded schema. If you're using Avro with a schema registry, refer to the [`AvroConfluent`](./AvroConfluent.md) format.
 
 ## Data type mapping {#data-type-mapping}
 
@@ -49,7 +49,7 @@ The root schema of the ingested Avro file must be of type `record`.
 To find the correspondence between table columns and fields of Avro schema, ClickHouse compares their names. 
 This comparison is case-sensitive and unused fields are skipped.
 
-Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#cast) the data to the corresponding column type.
+Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to the corresponding column type.
 
 While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/operations/settings/settings-formats.md/#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
 
@@ -74,7 +74,7 @@ Using the ClickHouse [`DESCRIBE`](/sql-reference/statements/describe-table) func
 This example includes the URL of a publicly accessible Avro file in the ClickHouse S3 public bucket:
 
 ```sql
-DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits.avro','Avro);
+DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits.avro', 'Avro');
 
 ┌─name───────────────────────┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ WatchID                    │ Int64           │              │                    │         │                  │                │

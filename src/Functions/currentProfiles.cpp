@@ -33,7 +33,7 @@ namespace
         }
     }
 
-    class FunctionProfiles : public IFunction
+    class FunctionProfiles final : public IFunction
     {
     public:
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
@@ -48,8 +48,28 @@ namespace
 
         explicit FunctionProfiles(const ContextPtr & context_, Kind kind_)
             : kind(kind_)
-            , context(context_)
-        {}
+        {
+            const auto & manager = context_->getAccessControl();
+
+            UUIDs profile_ids;
+
+            switch (kind)
+            {
+                case Kind::currentProfiles:
+                    profile_ids = context_->getCurrentProfiles();
+                    break;
+                case Kind::enabledProfiles:
+                    profile_ids = context_->getEnabledProfiles();
+                    break;
+                case Kind::defaultProfiles:
+                    const auto user = context_->getAccess()->tryGetUser();
+                    if (user)
+                        profile_ids = user->settings.toProfileIDs();
+                    break;
+            }
+
+            profile_names = manager.tryReadNames(profile_ids);
+        }
 
         size_t getNumberOfArguments() const override { return 0; }
         bool isDeterministic() const override { return false; }
@@ -61,8 +81,6 @@ namespace
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
         {
-            std::call_once(initialized_flag, [&]{ initialize(); });
-
             auto col_res = ColumnArray::create(ColumnString::create());
             ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
             ColumnArray::Offsets & res_offsets = col_res->getOffsets();
@@ -73,35 +91,8 @@ namespace
         }
 
     private:
-        void initialize() const
-        {
-            const auto & manager = context->getAccessControl();
-
-            std::vector<UUID> profile_ids;
-
-            switch (kind)
-            {
-                case Kind::currentProfiles:
-                    profile_ids = context->getCurrentProfiles();
-                    break;
-                case Kind::enabledProfiles:
-                    profile_ids = context->getEnabledProfiles();
-                    break;
-                case Kind::defaultProfiles:
-                    const auto user = context->getAccess()->tryGetUser();
-                    if (user)
-                        profile_ids = user->settings.toProfileIDs();
-                    break;
-            }
-
-            profile_names = manager.tryReadNames(profile_ids);
-        }
-
-        mutable std::once_flag initialized_flag;
-
         Kind kind;
-        ContextPtr context;
-        mutable Strings profile_names;
+        Strings profile_names;
     };
 }
 
@@ -128,7 +119,7 @@ SELECT currentProfiles();
     };
     FunctionDocumentation::IntroducedIn introduced_in_currentProfiles = {21, 9};
     FunctionDocumentation::Category category_currentProfiles = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_currentProfiles = {description_currentProfiles, syntax_currentProfiles, arguments_currentProfiles, returned_value_currentProfiles, examples_currentProfiles, introduced_in_currentProfiles, category_currentProfiles};
+    FunctionDocumentation documentation_currentProfiles = {description_currentProfiles, syntax_currentProfiles, arguments_currentProfiles, {}, returned_value_currentProfiles, examples_currentProfiles, introduced_in_currentProfiles, category_currentProfiles};
 
     FunctionDocumentation::Description description_enabledProfiles = R"(
 Returns an array of setting profile names which are enabled for the current user.
@@ -151,7 +142,7 @@ SELECT enabledProfiles();
     };
     FunctionDocumentation::IntroducedIn introduced_in_enabledProfiles = {21, 9};
     FunctionDocumentation::Category category_enabledProfiles = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_enabledProfiles = {description_enabledProfiles, syntax_enabledProfiles, arguments_enabledProfiles, returned_value_enabledProfiles, examples_enabledProfiles, introduced_in_enabledProfiles, category_enabledProfiles};
+    FunctionDocumentation documentation_enabledProfiles = {description_enabledProfiles, syntax_enabledProfiles, arguments_enabledProfiles, {}, returned_value_enabledProfiles, examples_enabledProfiles, introduced_in_enabledProfiles, category_enabledProfiles};
 
     FunctionDocumentation::Description description_defaultProfiles = R"(
 Returns an array of default setting profile names for the current user.
@@ -174,7 +165,7 @@ SELECT defaultProfiles();
     };
     FunctionDocumentation::IntroducedIn introduced_in_defaultProfiles = {21, 9};
     FunctionDocumentation::Category category_defaultProfiles = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_defaultProfiles = {description_defaultProfiles, syntax_defaultProfiles, arguments_defaultProfiles, returned_value_defaultProfiles, examples_defaultProfiles, introduced_in_defaultProfiles, category_defaultProfiles};
+    FunctionDocumentation documentation_defaultProfiles = {description_defaultProfiles, syntax_defaultProfiles, arguments_defaultProfiles, {}, returned_value_defaultProfiles, examples_defaultProfiles, introduced_in_defaultProfiles, category_defaultProfiles};
 
     factory.registerFunction("currentProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::currentProfiles); }, documentation_currentProfiles);
     factory.registerFunction("enabledProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::enabledProfiles); }, documentation_enabledProfiles);

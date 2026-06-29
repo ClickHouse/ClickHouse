@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -60,33 +61,36 @@ public:
     /// In merge, if one of the lhs and rhs is twolevelset and the other is singlelevelset, then the singlelevelset will need to convertToTwoLevel().
     /// It's not in parallel and will cost extra large time if the thread_num is large.
     /// This method will convert all the SingleLevelSet to TwoLevelSet in parallel if the hashsets are not all singlelevel or not all twolevel.
-    static void parallelizeMergePrepare(const std::vector<UniqExactSet *> & data_vec, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled)
+    /// Accepts a container of places and an accessor that returns `UniqExactSet *` for each element.
+    /// This avoids building an intermediate vector of pointers.
+    template <typename Places, typename Accessor>
+    static void parallelizeMergePrepare(const Places & places, Accessor && accessor, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled)
     {
         UInt64 single_level_set_num = 0;
         UInt64 all_single_hash_size = 0;
 
-        for (auto ele : data_vec)
+        for (size_t i = 0; i < places.size(); ++i)
         {
-            if (ele->isSingleLevel())
+            if (accessor(places[i])->isSingleLevel())
                 single_level_set_num ++;
         }
 
-        if (single_level_set_num == data_vec.size())
+        if (single_level_set_num == places.size())
         {
-            for (auto ele : data_vec)
-                all_single_hash_size += ele->size();
+            for (size_t i = 0; i < places.size(); ++i)
+                all_single_hash_size += accessor(places[i])->size();
         }
 
         /// If all the hashtables are mixed by singleLevel and twoLevel, or all singleLevel (larger than 6000 for average value), they could be converted into
         /// twoLevel hashtables in parallel and then merge together. please refer to the following PR for more details.
         /// https://github.com/ClickHouse/ClickHouse/pull/50748
         /// https://github.com/ClickHouse/ClickHouse/pull/52973
-        if ((single_level_set_num > 0 && single_level_set_num < data_vec.size()) || ((all_single_hash_size/data_vec.size()) > 6000))
+        if ((single_level_set_num > 0 && single_level_set_num < places.size()) || ((all_single_hash_size/places.size()) > 6000))
         {
             try
             {
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
-                auto thread_func = [data_vec, data_vec_atomic_index, &is_cancelled, thread_group = CurrentThread::getGroup()]()
+                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled, thread_group = getCurrentThreadGroup()]()
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::UNIQ_EXACT_CONVERT);
 
@@ -96,10 +100,10 @@ public:
                             return;
 
                         const auto i = data_vec_atomic_index->fetch_add(1);
-                        if (i >= data_vec.size())
+                        if (i >= places.size())
                             return;
-                        if (data_vec[i]->isSingleLevel())
-                            data_vec[i]->convertToTwoLevel();
+                        if (accessor(places[i])->isSingleLevel())
+                            accessor(places[i])->convertToTwoLevel();
                     }
                 };
                 for (size_t i = 0; i < std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num); ++i)
@@ -113,6 +117,89 @@ public:
                 throw;
             }
         }
+    }
+
+    /// Batch merge multiple UniqExactSet into the first one in parallel.
+    /// Each thread processes one bucket at a time across all hash tables,
+    /// reducing thread pool overhead from O(N) to O(1) compared to pairwise merge.
+    /// Accepts a container of places and an accessor that returns `UniqExactSet *` for each element.
+    template <typename Places, typename Accessor>
+    static void parallelizeMergeMulti(const Places & places, Accessor && accessor, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled)
+    {
+        if (places.size() <= 1)
+            return;
+
+        auto * first = accessor(places[0]);
+
+        /// If not all are two-level, fall back to pairwise merge with thread pool.
+        bool all_two_level = true;
+        for (size_t i = 0; i < places.size(); ++i)
+        {
+            if (!accessor(places[i])->isTwoLevel())
+            {
+                all_two_level = false;
+                break;
+            }
+        }
+
+        if (!all_two_level)
+        {
+            for (size_t j = 1; j < places.size(); ++j)
+            {
+                if (is_cancelled.load(std::memory_order_seq_cst))
+                    return;
+                first->merge(*accessor(places[j]), &thread_pool, &is_cancelled);
+            }
+            return;
+        }
+
+        /// All sets are two-level, perform parallel bucket-wise merge.
+        auto & first_two_level = first->asTwoLevelChecked();
+        constexpr size_t NUM_BUCKETS = TwoLevelSet::NUM_BUCKETS;
+
+        /// Pre-fetch all two-level set pointers to avoid concurrent access to getTwoLevelSet().
+        VectorWithMemoryTracking<TwoLevelSet *> two_level_ptrs;
+        two_level_ptrs.reserve(places.size());
+        for (size_t i = 0; i < places.size(); ++i)
+            two_level_ptrs.emplace_back(&accessor(places[i])->asTwoLevelChecked());
+
+        ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_MERGER);
+        try
+        {
+            auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
+
+            auto thread_func = [&two_level_ptrs, &first_two_level, next_bucket_to_merge, &is_cancelled]()
+            {
+                while (true)
+                {
+                    if (is_cancelled.load(std::memory_order_seq_cst))
+                        return;
+
+                    const auto bucket = next_bucket_to_merge->fetch_add(1);
+                    if (bucket >= NUM_BUCKETS)
+                        return;
+
+                    for (size_t j = 1; j < two_level_ptrs.size(); ++j)
+                    {
+                        if (is_cancelled.load(std::memory_order_seq_cst))
+                            return;
+
+                        first_two_level.impls[bucket].merge(two_level_ptrs[j]->impls[bucket]);
+                    }
+                }
+            };
+
+            const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool.getMaxThreads(), NUM_BUCKETS);
+            for (size_t i = 0; i < max_threads_to_enqueue
+                 && next_bucket_to_merge->load(std::memory_order_relaxed) < NUM_BUCKETS; ++i)
+                runner.enqueueAndKeepTrack(thread_func, Priority{});
+        }
+        catch (...)
+        {
+            is_cancelled.store(true);
+            throw;
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
@@ -148,6 +235,8 @@ public:
             }
             else
             {
+
+                /// Usage of lhs and rhs is fine. The references belong to *this and will outlive `runner`, so the order of destruction is ok
                 ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::UNIQ_EXACT_MERGER);
                 try
                 {
@@ -167,8 +256,10 @@ public:
                         }
                     };
 
-                    for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
-                        runner(thread_func, Priority{});
+                    const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
+                    for (size_t i = 0; i < max_threads_to_enqueue
+                         && next_bucket_to_merge->load(std::memory_order_relaxed) < rhs.NUM_BUCKETS; ++i)
+                        runner.enqueueAndKeepTrack(thread_func, Priority{});
                 }
                 catch (...)
                 {

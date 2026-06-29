@@ -103,6 +103,14 @@ struct ArrayFillImpl
 
             for (auto in_offset : in_offsets)
             {
+                /// Skip empty sub-arrays: there is nothing to fill, and computing
+                /// `array_end = in_offset - 1` would underflow to SIZE_MAX,
+                /// which can cause out-of-bounds reads in `insertManyFrom` for
+                /// column types that eagerly access the source offsets/chars
+                /// (e.g. `ColumnString`). See issue #12263 for the original report.
+                if (in_offset == array_begin)
+                    continue;
+
                 array_end = in_offset - 1;
 
                 if constexpr (reverse)
@@ -148,7 +156,7 @@ regardless of any condition.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayFill>(documentation);
 
@@ -173,7 +181,7 @@ regardless of any condition.
     };
     FunctionDocumentation::IntroducedIn introduced_in_reverse = {20, 1};
     FunctionDocumentation::Category category_reverse = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_reverse = {description_reverse, syntax_reverse, arguments_reverse, returned_value_reverse, examples_reverse, introduced_in_reverse, category_reverse};
+    FunctionDocumentation documentation_reverse = {description_reverse, syntax_reverse, arguments_reverse, {}, returned_value_reverse, examples_reverse, introduced_in_reverse, category_reverse};
 
     factory.registerFunction<FunctionArrayReverseFill>(documentation_reverse);
 }

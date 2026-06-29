@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -16,7 +17,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionCurrentSchemas : public IFunction
+class FunctionCurrentSchemas final : public IFunction
 {
     const String db_name;
 
@@ -97,7 +98,7 @@ SELECT currentSchemas(true)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCurrentSchemas>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_schemas", FunctionCurrentSchemas::name, FunctionFactory::Case::Insensitive);

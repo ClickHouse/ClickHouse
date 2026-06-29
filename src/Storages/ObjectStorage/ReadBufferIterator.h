@@ -1,11 +1,15 @@
 #pragma once
-#include <Interpreters/Context_fwd.h>
-#include <Formats/ReadSchemaUtils.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
+#include <Interpreters/Context_fwd.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Formats/ReadSchemaUtils.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 
 namespace DB
 {
+
+class StorageObjectStorageConfiguration;
+using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
 
 class ReadBufferIterator : public IReadBufferIterator, WithContext
 {
@@ -24,8 +28,6 @@ public:
     void setNumRowsToLastFile(size_t num_rows) override;
 
     void setSchemaToLastFile(const ColumnsDescription & columns) override;
-
-    void setResultingSchema(const ColumnsDescription & columns) override;
 
     String getLastFilePath() const override;
 

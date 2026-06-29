@@ -23,7 +23,7 @@ namespace
   * For example, it may be used as a sophisticated replacement for the function 'hostName' if servers have complicated hostnames
   *  but you still need to distinguish them by some convenient names.
   */
-class FunctionGetMacro : public IFunction
+class FunctionGetMacro final : public IFunction
 {
 private:
     MultiVersion<Macros>::Version macros;
@@ -108,7 +108,7 @@ SELECT getMacro('test');
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionGetMacro>(documentation);
 }

@@ -71,7 +71,22 @@ public:
         const Identifier & table_identifier,
         const ContextPtr & context);
 
+    /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
+    /// per-field Array columns of the table expression (e.g. `loc.x`, `loc.y`).
+    /// Returns nullptr if the identifier does not match any nested prefix in the table.
+    static QueryTreeNodePtr tryResolveIdentifierAsNestedPrefix(
+        const Identifier & identifier,
+        const AnalysisTableExpressionData & table_expression_data,
+        const ContextPtr & context);
+
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
+        const Identifier & table_identifier,
+        const ContextPtr & context);
+
+    /// Suggest a same/similar-named table when a table identifier cannot be resolved,
+    /// possibly in another database (e.g. `system.functions` for a bare `functions`).
+    /// Returns a (database, table) pair, or an empty pair when there is no good hint.
+    static std::pair<String, String> tryGetTableNameHint(
         const Identifier & table_identifier,
         const ContextPtr & context);
 

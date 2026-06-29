@@ -4,47 +4,47 @@ CREATE TABLE t_implicit (a UInt64, s String) ENGINE = MergeTree ORDER BY tuple()
 SHOW CREATE TABLE t_implicit;
 CREATE TABLE default.t_implicit\n(\n    `a` UInt64,\n    `s` String\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
 SELECT * FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_implicit';
-default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	Implicit	1	0	0	0
 ALTER TABLE t_implicit DROP COLUMN s;
 SHOW CREATE TABLE t_implicit;
 CREATE TABLE default.t_implicit\n(\n    `a` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
 SELECT * FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_implicit';
-default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	Implicit	1	0	0	0
 ALTER TABLE t_implicit ADD COLUMN s2 String;
 SHOW CREATE TABLE t_implicit;
 CREATE TABLE default.t_implicit\n(\n    `a` UInt64,\n    `s2` String\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
 SELECT * FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_implicit';
-default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	Implicit	1	0	0	0
 ALTER TABLE t_implicit ADD COLUMN a2 UInt64;
 SHOW CREATE TABLE t_implicit;
 CREATE TABLE default.t_implicit\n(\n    `a` UInt64,\n    `s2` String,\n    `a2` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
 SELECT * FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_implicit';
-default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
-default	t_implicit	auto_minmax_index_a2	minmax	minmax()	a2	1	0	0	0
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	Implicit	1	0	0	0
+default	t_implicit	auto_minmax_index_a2	minmax	minmax()	a2	Implicit	1	0	0	0
 ALTER TABLE t_implicit RENAME COLUMN a2 TO a_renamed;
 SHOW CREATE TABLE t_implicit;
 CREATE TABLE default.t_implicit\n(\n    `a` UInt64,\n    `s2` String,\n    `a_renamed` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
 SELECT * FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_implicit';
-default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
-default	t_implicit	auto_minmax_index_a_renamed	minmax	minmax()	a_renamed	1	0	0	0
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	Implicit	1	0	0	0
+default	t_implicit	auto_minmax_index_a_renamed	minmax	minmax()	a_renamed	Implicit	1	0	0	0
 DETACH TABLE t_implicit;
 ATTACH TABLE t_implicit;
 SHOW CREATE TABLE t_implicit;
 CREATE TABLE default.t_implicit\n(\n    `a` UInt64,\n    `s2` String,\n    `a_renamed` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
 SELECT * FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_implicit';
-default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
-default	t_implicit	auto_minmax_index_a_renamed	minmax	minmax()	a_renamed	1	0	0	0
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	Implicit	1	0	0	0
+default	t_implicit	auto_minmax_index_a_renamed	minmax	minmax()	a_renamed	Implicit	1	0	0	0
 ALTER TABLE t_implicit MODIFY COLUMN s2 UInt32;
 SHOW CREATE TABLE t_implicit;
 CREATE TABLE default.t_implicit\n(\n    `a` UInt64,\n    `s2` UInt32,\n    `a_renamed` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
 SELECT * FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_implicit';
-default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
-default	t_implicit	auto_minmax_index_a_renamed	minmax	minmax()	a_renamed	1	0	0	0
-default	t_implicit	auto_minmax_index_s2	minmax	minmax()	s2	1	0	0	0
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	Implicit	1	0	0	0
+default	t_implicit	auto_minmax_index_a_renamed	minmax	minmax()	a_renamed	Implicit	1	0	0	0
+default	t_implicit	auto_minmax_index_s2	minmax	minmax()	s2	Implicit	1	0	0	0
 ALTER TABLE t_implicit MODIFY COLUMN a_renamed String;
 SHOW CREATE TABLE t_implicit;
 CREATE TABLE default.t_implicit\n(\n    `a` UInt64,\n    `s2` UInt32,\n    `a_renamed` String\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS add_minmax_index_for_numeric_columns = 1, index_granularity = 8192
 SELECT * FROM system.data_skipping_indices WHERE database = current_database() AND table = 't_implicit';
-default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	1	0	0	0
-default	t_implicit	auto_minmax_index_s2	minmax	minmax()	s2	1	0	0	0
+default	t_implicit	auto_minmax_index_a	minmax	minmax()	a	Implicit	1	0	0	0
+default	t_implicit	auto_minmax_index_s2	minmax	minmax()	s2	Implicit	1	0	0	0
 DROP TABLE t_implicit;

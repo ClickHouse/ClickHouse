@@ -80,12 +80,18 @@ jobs:
         shell: bash
         run: |
           if [ ${{ inputs.only-repo }} == "true" ] || [ ${{ inputs.only-docker }} == "true" ]; then
-              git tag -l ${{ inputs.ref }} || { echo "With only-repo/docker option ref must be a valid release tag"; exit 1; }
+              # `git tag -l <ref>` lists matching tags and exits 0 even when none
+              # match, so it does not actually validate the ref. Resolve the ref
+              # as a tag instead and fail closed when it is not one — otherwise an
+              # arbitrary commit could be released to repos/docker, especially now
+              # that recovery runs skip the out-of-order check.
+              git rev-parse --verify --quiet "refs/tags/${{ inputs.ref }}^{commit}" > /dev/null \
+                  || { echo "With only-repo/only-docker option ref must be a valid release tag"; exit 1; }
           fi
           python3 ./tests/ci/create_release.py --prepare-release-info \
             --ref ${{ inputs.ref }} --release-type ${{ inputs.type }} \
             ${{ inputs.dry-run == true && '--dry-run' || '' }} \
-            ${{ (inputs.only-repo == true || inputs.only-docker == true) && '--skip-tag-check' || '' }}
+            ${{ (inputs.only-repo == true || inputs.only-docker == true) && '--skip-tag-check --skip-out-of-order-check' || '' }}
           echo "::group::Release Info"
           python3 -m json.tool /tmp/release_info.json
           echo "::endgroup::"
@@ -127,6 +133,17 @@ jobs:
         shell: bash
         run: |
           python3 ./tests/ci/create_release.py --set-progress-started --progress "update changelog, docker version, security"
+
+          # On a rerun the PR may already be open or merged (the branch is deleted
+          # on merge, so a branch-existence check is not sufficient).
+          # Closed-without-merge does not count — regenerate in that case.
+          if gh pr list --repo "${{ github.repository }}" \
+              --head "auto/${{ env.RELEASE_TAG }}" --state all \
+              --json number,state --jq '.[] | select(.state == "OPEN" or .state == "MERGED") | .number' \
+              2>/dev/null | grep -q .; then
+            echo "ChangeLog PR for auto/${{ env.RELEASE_TAG }} already exists or was merged — skipping generation on rerun"
+            exit 0
+          fi
 
           # git checkout master  # in case WF started from feature branch
           echo "List versions"
@@ -233,6 +250,7 @@ jobs:
           configs=(
             "ubuntu:../../docker/server/Dockerfile.ubuntu"
             "alpine:../../docker/server/Dockerfile.alpine"
+            "distroless:../../docker/server/Dockerfile.distroless"
           )
 
           for config in "${configs[@]}"; do
@@ -240,24 +258,45 @@ jobs:
             variant=${config%%:*}
             dockerfile=${config##*:}
 
+            if [ ! -f "$dockerfile" ]; then
+              echo "Skipping $variant: $dockerfile not found at this tag"
+              continue
+            fi
+
             VERSION_SUFFIX=$([ "$variant" = "ubuntu" ] && echo "" || echo "-$variant")
             LABEL_VERSION="${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
+            # The exact version tag is always (re)built. The floating
+            # minor/major/latest tags track the current release, so they are
+            # skipped on a recovery run (only-repo/only-docker) to avoid moving
+            # them back to an older image.
             TAGS=(
               "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
-              "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MINOR}${VERSION_SUFFIX}"
-              "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MAJOR}${VERSION_SUFFIX}"
             )
 
-            if [ "$IS_LATEST" = "1" ]; then
-              TAGS+=("--tag=${DOCKER_IMAGE}:latest${VERSION_SUFFIX}")
+            if [ "${{ inputs.only-repo }}" != "true" ] && [ "${{ inputs.only-docker }}" != "true" ]; then
+              TAGS+=(
+                "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MINOR}${VERSION_SUFFIX}"
+                "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MAJOR}${VERSION_SUFFIX}"
+              )
+              if [ "$IS_LATEST" = "1" ]; then
+                TAGS+=("--tag=${DOCKER_IMAGE}:latest${VERSION_SUFFIX}")
+              fi
             fi
 
             echo "Following tags will be created: ${TAGS[*]}"
 
+            TARGET_ARGS=()
+            if [ "$variant" = "distroless" ]; then
+              TARGET_ARGS=("--target=production")
+            fi
+
             # shellcheck disable=SC2086,SC2048
             docker buildx build \
               --platform=linux/amd64,linux/arm64 \
+              --provenance=true  \
+              --sbom=true \
               --output=type=registry \
+              ${TARGET_ARGS[*]} \
               --label=com.clickhouse.build.version="$LABEL_VERSION" \
               ${TAGS[*]} \
               --build-arg=VERSION="$CLICKHOUSE_VERSION_STRING" \
@@ -295,6 +334,7 @@ jobs:
           configs=(
             "ubuntu:../../docker/keeper/Dockerfile.ubuntu"
             "alpine:../../docker/keeper/Dockerfile.alpine"
+            "distroless:../../docker/keeper/Dockerfile.distroless"
           )
 
           for config in "${configs[@]}"; do
@@ -302,25 +342,46 @@ jobs:
             variant=${config%%:*}
             dockerfile=${config##*:}
 
+            if [ ! -f "$dockerfile" ]; then
+              echo "Skipping $variant: $dockerfile not found at this tag"
+              continue
+            fi
+
             VERSION_SUFFIX=$([ "$variant" = "ubuntu" ] && echo "" || echo "-$variant")
             LABEL_VERSION="${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
+            # The exact version tag is always (re)built. The floating
+            # minor/major/latest tags track the current release, so they are
+            # skipped on a recovery run (only-repo/only-docker) to avoid moving
+            # them back to an older image.
             TAGS=(
               "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
-              "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MINOR}${VERSION_SUFFIX}"
-              "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MAJOR}${VERSION_SUFFIX}"
             )
 
-            if [ "$IS_LATEST" = "1" ]; then
-              TAGS+=("--tag=${DOCKER_IMAGE}:latest${VERSION_SUFFIX}")
+            if [ "${{ inputs.only-repo }}" != "true" ] && [ "${{ inputs.only-docker }}" != "true" ]; then
+              TAGS+=(
+                "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MINOR}${VERSION_SUFFIX}"
+                "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MAJOR}${VERSION_SUFFIX}"
+              )
+              if [ "$IS_LATEST" = "1" ]; then
+                TAGS+=("--tag=${DOCKER_IMAGE}:latest${VERSION_SUFFIX}")
+              fi
             fi
 
             echo "Following tags will be created: ${TAGS[*]}"
 
+            TARGET_ARGS=()
+            if [ "$variant" = "distroless" ]; then
+              TARGET_ARGS=("--target=production")
+            fi
+
             # shellcheck disable=SC2086,SC2048
             docker buildx build \
               --platform=linux/amd64,linux/arm64 \
+              --provenance=true  \
+              --sbom=true \
               --output=type=registry \
-              --label=com.clickhoghuse.build.version="$LABEL_VERSION" \
+              ${TARGET_ARGS[*]} \
+              --label=com.clickhouse.build.version="$LABEL_VERSION" \
               ${TAGS[*]} \
               --build-arg=VERSION="$CLICKHOUSE_VERSION_STRING" \
               --progress=plain \

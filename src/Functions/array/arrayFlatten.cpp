@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 /// arrayFlatten([[1, 2, 3], [4, 5]]) = [1, 2, 3, 4, 5] - flatten array.
-class ArrayFlatten : public IFunction
+class ArrayFlatten final : public IFunction
 {
 public:
     static constexpr auto name = "arrayFlatten";
@@ -140,7 +140,7 @@ The flattened array contains all the elements from all source arrays.
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayFlatten([[[1]], [[2], [3]]]);", "[1, 2, 3]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<ArrayFlatten>(documentation);
     factory.registerAlias("flatten", "arrayFlatten", FunctionFactory::Case::Insensitive);

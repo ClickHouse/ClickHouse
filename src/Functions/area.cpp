@@ -68,9 +68,9 @@ REGISTER_FUNCTION(Area)
         };
         FunctionDocumentation::Examples examples;
 
-        FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 12};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionArea<CartesianPoint>>(documentation);
     }
@@ -87,9 +87,9 @@ REGISTER_FUNCTION(Area)
             {"Float64"}
         };
         FunctionDocumentation::Examples examples;
-        FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 12};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionArea<SphericalPoint>>(documentation);
     }

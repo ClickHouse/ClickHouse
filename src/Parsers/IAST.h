@@ -1,18 +1,19 @@
 #pragma once
 
-#include <base/types.h>
+#include <Common/Exception.h>
+#include <Common/TypePromotion.h>
+
+#include <Parsers/IASTFormatState.h>
 #include <Parsers/IASTHash.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/LiteralEscapingStyle.h>
-#include <Common/Exception.h>
-#include <Common/TypePromotion.h>
+#include <base/types.h>
 
+#include <atomic>
 #include <set>
 
-
 class SipHash;
-
 
 namespace DB
 {
@@ -25,19 +26,90 @@ namespace ErrorCodes
 using IdentifierNameSet = std::set<String>;
 
 class WriteBuffer;
-using Strings = std::vector<String>;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAST>
+class IAST : public TypePromotion<IAST>
 {
 public:
     ASTs children;
+private:
+    /// We implement intrusive reference counting (based on boost::intrusive_ref_counter) to avoid the padding added by the ref_counter
+    /// And we use the extra bytes to store flags_storage which can be used in derived classes.
+    mutable std::atomic<UInt32> ref_counter{0};
+    UInt32 flags_storage = 0;
+
+    /// Helper to detect if a type has _parent_reserved member
+    template <typename T>
+    static consteval bool hasParentReserved()
+    {
+        if constexpr (requires { T::_parent_reserved; })
+            return true;
+        else
+            return false;
+    }
+
+public:
+
+    /// Bit 31 of `flags_storage` is reserved for the `parenthesized` flag — see accessors below.
+    /// Derived `BitfieldStruct` definitions must keep `RESERVED_BITS <= 31`.
+    static constexpr UInt32 PARENTHESIZED_BIT_MASK = UInt32{1} << 31;
+
+    /// If the element has extra parentheses around it, e.g., in "a + (b)", b has extra parentheses.
+    bool isParenthesized() const { return (flags_storage & PARENTHESIZED_BIT_MASK) != 0; }
+    void setParenthesized(bool value)
+    {
+        flags_storage = (flags_storage & ~PARENTHESIZED_BIT_MASK) | (value ? PARENTHESIZED_BIT_MASK : 0);
+    }
 
     virtual ~IAST();
     IAST() = default;
-    IAST(const IAST &) = default;
-    IAST & operator=(const IAST &) = default;
+    IAST(const IAST & other);
+    IAST & operator=(const IAST & other);
+
+    /// Accessors for flags_storage.
+    /// BitfieldStruct must declare:
+    ///   - using ParentFlags = <parent's flags struct or void for root>;
+    ///   - static constexpr UInt32 RESERVED_BITS = <total bits used including parent>;
+    ///   - UInt32 _parent_reserved : ParentFlags::RESERVED_BITS; (if ParentFlags is not void)
+    /// The high bit (31) is reserved for IAST's `parenthesized` flag, so RESERVED_BITS must be <= 31.
+    template <typename BitfieldStruct>
+    BitfieldStruct & flags()
+    {
+        static_assert(std::is_standard_layout_v<BitfieldStruct>);
+        static_assert(sizeof(BitfieldStruct) == sizeof(flags_storage), "Bitfield struct must be the same size as flags_storage");
+        static_assert(BitfieldStruct::RESERVED_BITS <= 31, "RESERVED_BITS exceeds 31 (bit 31 is reserved for parenthesized)");
+
+        if constexpr (!std::is_void_v<typename BitfieldStruct::ParentFlags>)
+        {
+            static_assert(hasParentReserved<BitfieldStruct>(), "Derived flags struct must have _parent_reserved field");
+            static_assert(
+                BitfieldStruct::ParentFlags::RESERVED_BITS < BitfieldStruct::RESERVED_BITS,
+                "Derived RESERVED_BITS must be greater than parent's");
+        }
+
+        return *reinterpret_cast<BitfieldStruct *>(&flags_storage);
+    }
+
+    template <typename BitfieldStruct>
+    const BitfieldStruct & flags() const
+    {
+        static_assert(std::is_standard_layout_v<BitfieldStruct>);
+        static_assert(sizeof(BitfieldStruct) == sizeof(flags_storage), "Bitfield struct must be the same size as flags_storage");
+        static_assert(BitfieldStruct::RESERVED_BITS <= 31, "RESERVED_BITS exceeds 31 (bit 31 is reserved for parenthesized)");
+
+        if constexpr (!std::is_void_v<typename BitfieldStruct::ParentFlags>)
+        {
+            static_assert(hasParentReserved<BitfieldStruct>(), "Derived flags struct must have _parent_reserved field");
+            static_assert(
+                BitfieldStruct::ParentFlags::RESERVED_BITS < BitfieldStruct::RESERVED_BITS,
+                "Derived RESERVED_BITS must be greater than parent's");
+        }
+
+        return *reinterpret_cast<const BitfieldStruct *>(&flags_storage);
+    }
+
+    UInt32 use_count() const noexcept { return ref_counter.load(std::memory_order_relaxed); }
 
     /** Get the canonical name of the column if the element is a column */
     String getColumnName() const;
@@ -70,7 +142,7 @@ public:
     /** Get the text that identifies this element. */
     virtual String getID(char delimiter = '_') const = 0; /// NOLINT
 
-    ASTPtr ptr() { return shared_from_this(); }
+    ASTPtr ptr() { return ASTPtr(this); }
 
     /** Get a deep copy of the tree. Cloned object must have the same range. */
     virtual ASTPtr clone() const = 0;
@@ -163,7 +235,7 @@ public:
         if (field == nullptr)
             return;
 
-        auto * child = children.begin();
+        auto child = children.begin();
         while (child != children.end())
         {
             if (child->get() == field)
@@ -179,14 +251,73 @@ public:
         field = nullptr;
     }
 
-    /// After changing one of `children` elements, update the corresponding member pointer if needed.
-    void updatePointerToChild(void * old_ptr, void * new_ptr)
+    void reset(ASTPtr & field)
     {
-        forEachPointerToChild([old_ptr, new_ptr](void ** ptr) mutable
+        if (!field)
+            return;
+
+        auto child = children.begin();
+        while (child != children.end())
         {
-            if (*ptr == old_ptr)
-                *ptr = new_ptr;
-        });
+            if (child->get() == field.get())
+                break;
+
+            child++;
+        }
+
+        if (child == children.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
+
+        children.erase(child);
+        field.reset();
+    }
+
+    void set(ASTPtr & field, ASTPtr child)
+    {
+        if (!child)
+            return;
+
+        children.push_back(child);
+        field = std::move(child);
+    }
+
+    void replace(ASTPtr & field, ASTPtr child)
+    {
+        if (!child)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to replace AST subtree with nullptr");
+
+        for (ASTPtr & current_child : children)
+        {
+            if (current_child.get() == field.get())
+            {
+                current_child = child;
+                field = std::move(child);
+                return;
+            }
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
+    }
+
+    void setOrReplace(ASTPtr & field, ASTPtr child)
+    {
+        if (field)
+            replace(field, std::move(child));
+        else
+            set(field, std::move(child));
+    }
+
+    /// After changing one of `children` elements, update the corresponding member pointer if needed.
+    void updatePointerToChild(const IAST * old_ptr, const ASTPtr & new_ptr)
+    {
+        std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f = [old_ptr, new_ptr](IAST ** raw, boost::intrusive_ptr<IAST> * smart)
+        {
+            if (raw && *raw == old_ptr)
+                *raw = new_ptr.get();
+            else if (smart && smart->get() == old_ptr)
+                *smart = new_ptr;
+        };
+        forEachPointerToChild(f);
     }
 
     /// Convert to a string.
@@ -202,6 +333,8 @@ public:
         LiteralEscapingStyle literal_escaping_style;
         bool print_pretty_type_names;
         bool enforce_strict_identifier_format;
+        /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
+        bool collapse_identical_nodes_to_aliases;
 
         explicit FormatSettings(
             bool one_line_,
@@ -210,7 +343,8 @@ public:
             bool show_secrets_ = true,
             LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
             bool print_pretty_type_names_ = false,
-            bool enforce_strict_identifier_format_ = false)
+            bool enforce_strict_identifier_format_ = false,
+            bool collapse_identical_nodes_to_aliases_ = false)
             : one_line(one_line_)
             , identifier_quoting_rule(identifier_quoting_rule_)
             , identifier_quoting_style(identifier_quoting_style_)
@@ -219,6 +353,7 @@ public:
             , literal_escaping_style(literal_escaping_style_)
             , print_pretty_type_names(print_pretty_type_names_)
             , enforce_strict_identifier_format(enforce_strict_identifier_format_)
+            , collapse_identical_nodes_to_aliases(collapse_identical_nodes_to_aliases_)
         {
         }
 
@@ -226,17 +361,7 @@ public:
         void checkIdentifier(const String & name) const;
     };
 
-    /// State. For example, a set of nodes can be remembered, which we already walk through.
-    struct FormatState
-    {
-        /** The SELECT query in which the alias was found; identifier of a node with such an alias.
-          * It is necessary that when the node has met again, output only the alias.
-          */
-        std::set<std::tuple<
-            const IAST * /* SELECT query node */,
-            std::string /* alias */,
-            IASTHash /* printed content */>> printed_asts_with_alias;
-    };
+    using FormatState = IASTFormatState;
 
     /// The state that is copied when each node is formatted. For example, nesting level.
     struct FormatStateStacked
@@ -246,23 +371,28 @@ public:
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
         bool surround_each_list_element_with_parens = false;
-        bool ignore_printed_asts_with_alias = false; /// Ignore FormatState::printed_asts_with_alias
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
+        bool allow_moving_operators_before_parens = true; /// Allow moving operators like "-" before parents: (-...) -> -(...)
         size_t list_element_index = 0;
         std::string create_engine_name;
         const IAST * current_select = nullptr;
+        const IAST * current_function = nullptr;  /// Pointer to the function whose arguments are being formatted
+        bool parent_has_trailing_settings = false; /// A parent ASTQueryWithOutput will append SETTINGS after this node's output.
+        bool has_trailing_output_options = false; /// A parent ASTQueryWithOutput has trailing output options (SETTINGS, FORMAT, INTO OUTFILE).
+        bool disable_from_first_syntax = false; /// Disable FROM-first syntax for SELECTs inside INSERT (to avoid parsing ambiguity).
+        /// Set by a parent formatter that has explicitly emitted `(` around this child to indicate
+        /// that the child should not emit its own `parenthesized` parens (which would duplicate the parent's).
+        /// Consumed (cleared) by `IAST::format` so it only applies one level deep.
+        bool wrapped_in_parens = false;
+        /// Set by `IAST::format` when the node has both `isParenthesized()` and a non-empty alias,
+        /// to tell `ASTWithAlias::formatImpl` to emit `(expr) AS alias` instead of `(expr AS alias)`.
+        /// This keeps the format-parse-format round-trip stable: `(expr) AS alias` re-parses with
+        /// `parenthesized=true` on the aliased node, which formats back to `(expr) AS alias`.
+        bool parenthesize_alias_inner_only = false;
     };
 
-    void format(WriteBuffer & ostr, const FormatSettings & settings) const
-    {
-        FormatState state;
-        formatImpl(ostr, settings, state, FormatStateStacked());
-    }
-
-    void format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-    {
-        formatImpl(ostr, settings, state, std::move(frame));
-    }
+    void format(WriteBuffer & ostr, const FormatSettings & settings) const;
+    void format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 
     /// TODO: Move more logic into this class (see https://github.com/ClickHouse/ClickHouse/pull/45649).
     struct FormattingBuffer
@@ -273,10 +403,7 @@ public:
         FormatStateStacked frame;
     };
 
-    void format(FormattingBuffer out) const
-    {
-        formatImpl(out.ostr, out.settings, out.state, out.frame);
-    }
+    void format(FormattingBuffer out) const;
 
     /// Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
     /// You can use Interpreters/formatWithPossiblyHidingSecrets.h for convenience.
@@ -337,36 +464,27 @@ public:
         AsyncInsertFlush,
         ParallelWithQuery,
         Copy,
+        Snapshot,
     };
 
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
 
 protected:
-    virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-    {
-        formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
-    }
-
-    virtual void formatImpl(FormattingBuffer /*out*/) const
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
-    }
+    virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    virtual void formatImpl(FormattingBuffer /*out*/) const;
 
     bool childrenHaveSecretParts() const;
 
     /// Some AST classes have naked pointers to children elements as members.
     /// This method allows to iterate over them.
-    virtual void forEachPointerToChild(std::function<void(void**)>) {}
+    virtual void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)>) {}
 
 private:
     size_t checkDepthImpl(size_t max_depth) const;
 
-    /** Forward linked list of ASTPtr to delete.
-      * Used in IAST destructor to avoid possible stack overflow.
-      */
-    ASTPtr next_to_delete = nullptr;
-    ASTPtr * next_to_delete_list_head = nullptr;
+    friend void intrusive_ptr_add_ref(const IAST * p) noexcept;
+    friend void intrusive_ptr_release(const IAST * p) noexcept;
 };
 
 }

@@ -4,6 +4,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Block.h>
 #include <Core/Names.h>
@@ -194,7 +195,7 @@ private:
         Names column_names = structure.getKeysNames();
         column_names.push_back(attr_name);
 
-        auto pipe = dict->read(column_names, helper.getContext()->getSettingsRef()[Setting::max_block_size], 1);
+        auto pipe = dict->read(column_names, helper.context->getSettingsRef()[Setting::max_block_size], 1);
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
@@ -204,7 +205,7 @@ private:
         {
             ColumnPtr attr_col = removeSpecialRepresentations(block.getByPosition(num_keys).column);
 
-            std::vector<ColumnPtr> key_columns(num_keys);
+            VectorWithMemoryTracking<ColumnPtr> key_columns(num_keys);
             for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
                 key_columns[key_pos] = removeSpecialRepresentations(block.getByPosition(key_pos).column);
 
@@ -272,10 +273,10 @@ private:
         sip.update(attr_name.data(), attr_name.size());
         const UInt128 domain_id = sip.get128();
 
-        std::vector<size_t> row_id_to_bucket_id(input_rows_count);
+        VectorWithMemoryTracking<size_t> row_id_to_bucket_id(input_rows_count);
 
         size_t num_buckets = 0;
-        std::vector<UInt128> bucket_value_hashes;
+        VectorWithMemoryTracking<UInt128> bucket_value_hashes;
         bucket_value_hashes.reserve(input_rows_count);
 
         for (size_t cur_row_id = 0; cur_row_id < input_rows_count; ++cur_row_id)
@@ -297,9 +298,9 @@ private:
         }
 
         /// Step 2
-        auto & cache = helper.getContext()->getQueryContext()->getReverseLookupCache();
-        std::vector<SerializedKeysPtr> bucket_cached_bytes(num_buckets);
-        std::vector<size_t> missing_bucket_ids;
+        auto & cache = helper.context->getQueryContext()->getReverseLookupCache();
+        VectorWithMemoryTracking<SerializedKeysPtr> bucket_cached_bytes(num_buckets);
+        VectorWithMemoryTracking<size_t> missing_bucket_ids;
         missing_bucket_ids.reserve(num_buckets);
 
         chassert(bucket_value_hashes.size() == num_buckets);
@@ -353,8 +354,8 @@ private:
         /// For each bucket, it's very expensive to repeatedly deserialize from cached_bytes and construct IColumn elements.
         /// So, for each bucket, we only deserialize once and store the position of the deserialized slice in `result_cols`.
         /// Then, for the next time this bucket is seen, we can directly copy from `result_cols` which is very efficient.
-        std::vector<size_t> bucket_start_offset(num_buckets, std::numeric_limits<size_t>::max());
-        std::vector<size_t> bucket_row_count(num_buckets, 0);
+        VectorWithMemoryTracking<size_t> bucket_start_offset(num_buckets, std::numeric_limits<size_t>::max());
+        VectorWithMemoryTracking<size_t> bucket_row_count(num_buckets, 0);
 
         size_t out_offset = 0;
         for (size_t row_id = 0; row_id < input_rows_count; ++row_id)
@@ -431,11 +432,11 @@ private:
         const DictionaryPtr & dict,
         const String & attr_name,
         const DataTypes & key_types,
-        std::vector<SerializedKeysPtr> & out,
-        const std::vector<size_t> & missing_bucket_ids,
+        VectorWithMemoryTracking<SerializedKeysPtr> & out,
+        const VectorWithMemoryTracking<size_t> & missing_bucket_ids,
         const HashToBucket & value_hash_to_bucket_id) const
     {
-        std::vector<UInt8> is_missing(out.size(), 0);
+        VectorWithMemoryTracking<UInt8> is_missing(out.size(), 0);
         for (size_t id : missing_bucket_ids)
         {
             chassert(id < out.size());
@@ -448,7 +449,7 @@ private:
         chassert(column_names.size() == num_keys);
         column_names.push_back(attr_name);
 
-        auto pipe = dict->read(column_names, helper.getContext()->getSettingsRef()[Setting::max_block_size], 1);
+        auto pipe = dict->read(column_names, helper.context->getSettingsRef()[Setting::max_block_size], 1);
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
@@ -463,7 +464,7 @@ private:
             ColumnPtr attr_col = removeSpecialRepresentations(block.getByPosition(num_keys).column);
             const size_t rows_in_block = attr_col->size();
 
-            std::vector<ColumnPtr> key_columns(num_keys);
+            VectorWithMemoryTracking<ColumnPtr> key_columns(num_keys);
             for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
             {
                 key_columns[key_pos] = removeSpecialRepresentations(block.getByPosition(key_pos).column);
@@ -553,13 +554,13 @@ This is most effective with large dictionaries when the input has low cardinalit
 SELECT dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high') AS ids;
     )",
             R"(
-┌─-ids──┐
+┌─ids───┐
 │ [4,2] │
 └───────┘
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Dictionary;
-    FunctionDocumentation docs{description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation docs{description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDictGetKeys>(docs);
 }

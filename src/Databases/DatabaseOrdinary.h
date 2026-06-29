@@ -2,7 +2,6 @@
 
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
-#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -69,7 +68,7 @@ public:
     DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
         ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
-    Strings getAllTableNames(ContextPtr context) const override;
+    VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
 
     void alterTable(
         ContextPtr context,
@@ -108,6 +107,13 @@ protected:
     DiskPtr metadata_disk_ptr;
 
 private:
+    bool shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const;
+    void loadTableLazy(
+        ContextMutablePtr local_context,
+        const QualifiedTableName & name,
+        const ASTPtr & ast,
+        LoadingStrictnessLevel mode);
+
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
     void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);
     String getConvertToReplicatedFlagPath(const String & name, bool tableStarted);

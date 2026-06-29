@@ -86,7 +86,7 @@ SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encryption;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDecrypt<DecryptImpl>>(documentation);
 }

@@ -18,7 +18,7 @@ namespace DB
  */
 bool ParserJSONPathQuery::parseImpl(Pos & pos, ASTPtr & query, Expected & expected)
 {
-    query = std::make_shared<ASTJSONPathQuery>();
+    query = make_intrusive<ASTJSONPathQuery>();
     ParserJSONPathMemberAccess parser_jsonpath_member_access;
     ParserJSONPathMemberSquareBracketAccess parser_jsonpath_member_square_bracket_access;
     ParserJSONPathRange parser_jsonpath_range;

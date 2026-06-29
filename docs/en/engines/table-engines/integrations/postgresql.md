@@ -8,16 +8,14 @@ title: 'PostgreSQL table Engine'
 doc_type: 'guide'
 ---
 
-# PostgreSQL table engine
-
 The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
 
 :::note
-Currently, only PostgreSQL versions 12 and up are supported.
+Currently, only PostgreSQL versions 12 and up are supported for the table engine.
 :::
 
 :::tip
-ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Postgres data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
+Check out our [Managed Postgres](/docs/cloud/managed-postgres) service. Backed by NVMe storage that is physically co-located with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS and allows you to replicate your Postgres data to ClickHouse using the Postgres CDC connector in ClickPipes.
 :::
 
 ## Creating a table {#creating-a-table}
@@ -25,8 +23,8 @@ ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpi
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
 ) ENGINE = PostgreSQL({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
 ```
@@ -188,8 +186,8 @@ Then inserting values from PostgreSQL table greater than the max
 
 ```sql
 INSERT INTO default.postgresql_copy
-SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
-WHERE int_id > maxIntID;
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password')
+WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
 ```
 
 ### Selecting data from the resulting ClickHouse table {#selecting-data-from-the-resulting-clickhouse-table}
@@ -222,7 +220,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 - [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
-- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#mysql)
+- [Using PostgreSQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/postgresql)
 
 ## Related content {#related-content}
 

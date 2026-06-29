@@ -35,7 +35,7 @@ FROM
     };
     FunctionDocumentation::IntroducedIn introduced_in_uniqThetaUnion = {22, 9};
     FunctionDocumentation::Category category_uniqThetaUnion = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_uniqThetaUnion = {description_uniqThetaUnion, syntax_uniqThetaUnion, arguments_uniqThetaUnion, returned_value_uniqThetaUnion, examples_uniqThetaUnion, introduced_in_uniqThetaUnion, category_uniqThetaUnion};
+    FunctionDocumentation documentation_uniqThetaUnion = {description_uniqThetaUnion, syntax_uniqThetaUnion, arguments_uniqThetaUnion, {}, returned_value_uniqThetaUnion, examples_uniqThetaUnion, introduced_in_uniqThetaUnion, category_uniqThetaUnion};
 
     /// uniqThetaIntersect documentation
     FunctionDocumentation::Description description_uniqThetaIntersect = R"(
@@ -63,7 +63,7 @@ FROM
     };
     FunctionDocumentation::IntroducedIn introduced_in_uniqThetaIntersect = {22, 9};
     FunctionDocumentation::Category category_uniqThetaIntersect = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_uniqThetaIntersect = {description_uniqThetaIntersect, syntax_uniqThetaIntersect, arguments_uniqThetaIntersect, returned_value_uniqThetaIntersect, examples_uniqThetaIntersect, introduced_in_uniqThetaIntersect, category_uniqThetaIntersect};
+    FunctionDocumentation documentation_uniqThetaIntersect = {description_uniqThetaIntersect, syntax_uniqThetaIntersect, arguments_uniqThetaIntersect, {}, returned_value_uniqThetaIntersect, examples_uniqThetaIntersect, introduced_in_uniqThetaIntersect, category_uniqThetaIntersect};
 
     /// uniqThetaNot documentation
     FunctionDocumentation::Description description_uniqThetaNot = R"(
@@ -91,7 +91,7 @@ FROM
     };
     FunctionDocumentation::IntroducedIn introduced_in_uniqThetaNot = {22, 9};
     FunctionDocumentation::Category category_uniqThetaNot = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_uniqThetaNot = {description_uniqThetaNot, syntax_uniqThetaNot, arguments_uniqThetaNot, returned_value_uniqThetaNot, examples_uniqThetaNot, introduced_in_uniqThetaNot, category_uniqThetaNot};
+    FunctionDocumentation documentation_uniqThetaNot = {description_uniqThetaNot, syntax_uniqThetaNot, arguments_uniqThetaNot, {}, returned_value_uniqThetaNot, examples_uniqThetaNot, introduced_in_uniqThetaNot, category_uniqThetaNot};
 
     factory.registerFunction<FunctionUniqThetaUnion>(documentation_uniqThetaUnion);
     factory.registerFunction<FunctionUniqThetaIntersect>(documentation_uniqThetaIntersect);

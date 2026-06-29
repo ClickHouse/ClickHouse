@@ -8,8 +8,6 @@ title: 'AzureQueue table engine'
 doc_type: 'reference'
 ---
 
-# AzureQueue table engine
-
 This engine provides an integration with the [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) ecosystem, allowing streaming data import.
 
 ## Create table {#creating-a-table}
@@ -95,17 +93,19 @@ The AzureQueue engine has a special setting for SELECT queries: `commit_on_selec
 
 `SELECT` is not particularly useful for streaming import (except for debugging), because each file can be imported only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
-1.  Use the engine to create a table for consuming from specified path in S3 and consider it a data stream.
+1.  Use the engine to create a table for consuming from the specified path in Azure Blob Storage and consider it a data stream.
 2.  Create a table with the desired structure.
 3.  Create a materialized view that converts data from the engine and puts it into a previously created table.
 
 When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background.
 
+The engine arguments have the form `AzureQueue(connection_string, container_name, blobpath, format[, compression])`.
+
 Example:
 
 ```sql
 CREATE TABLE azure_queue_engine_table (key UInt64, data String)
-  ENGINE=AzureQueue('<endpoint>', 'CSV', 'gzip')
+  ENGINE=AzureQueue('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'testcontainer', '*', 'CSV')
   SETTINGS
       mode = 'unordered';
 
@@ -131,7 +131,7 @@ Enable logging for the table via the table setting `enable_logging_to_queue_log=
 
 Introspection capabilities are the same as the [S3Queue table engine](/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 
-1. Use the `system.azure_queue` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue` (it would contain information for `azure` tables as well).
+1. Use the `system.azure_queue_metadata_cache` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue_metadata_cache` (it would contain information for `azure` tables as well).
 2. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
 
   ```xml
@@ -141,7 +141,7 @@ Introspection capabilities are the same as the [S3Queue table engine](/engines/t
   </azure_queue_log>
   ```
 
-This persistent table has the same information as `system.s3queue`, but for processed and failed files.
+This persistent table has the same information as `system.s3queue_metadata_cache`, but for processed and failed files.
 
 The table has the following structure:
 
@@ -165,7 +165,6 @@ CREATE TABLE system.azure_queue_log
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_date)
 ORDER BY (event_date, event_time)
-SETTINGS index_granularity = 8192
 COMMENT 'Contains logging entries with the information files processes by S3Queue engine.'
 
 ```

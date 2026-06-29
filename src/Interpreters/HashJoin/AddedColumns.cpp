@@ -5,10 +5,14 @@ namespace DB
 {
 
 JoinOnKeyColumns::JoinOnKeyColumns(
-    const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
+    const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
+    bool keep_lowcardinality)
     : key_names(key_names_)
     /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
-    , materialized_keys_holder(JoinCommon::materializeColumns(block.getSourceBlock(), key_names))
+    /// Exception: single-LowCardinality-column joins keep the dictionary so the key getter can use it.
+    , materialized_keys_holder(keep_lowcardinality
+          ? JoinCommon::materializeColumnsKeepLowCardinality(block.getSourceBlock(), key_names)
+          : JoinCommon::materializeColumns(block.getSourceBlock(), key_names))
     , key_columns(JoinCommon::getRawPointers(materialized_keys_holder))
     , null_map(nullptr)
     , null_map_holder(extractNestedColumnsAndNullMap(key_columns, null_map))
@@ -255,7 +259,7 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
         for (size_t j = 0; j < right_indexes_size; ++j)
         {
             const auto [column_from_block, row_num] = getBlockColumnAndRow(row_ref, lazy_output.right_indexes[j]);
-            columns[j]->insertFrom(*column_from_block, row_ref->row_num);
+            columns[j]->insertFrom(*column_from_block, row_num);
         }
     }
 }

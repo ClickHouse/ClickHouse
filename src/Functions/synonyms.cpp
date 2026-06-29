@@ -31,7 +31,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-class FunctionSynonyms : public IFunction
+class FunctionSynonyms final : public IFunction
 {
 public:
     static constexpr auto name = "synonyms";
@@ -138,6 +138,11 @@ Words in this line must be separated with space or tab characters.
 
 With the `wordnet` extension type you need to provide a path to a directory with the WordNet thesaurus in it.
 The thesaurus must contain a WordNet sense index.
+
+:::warning
+This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
+Set `allow_experimental_nlp_functions = 1` to enable it.
+:::
 )";
     FunctionDocumentation::Syntax syntax = "synonyms(ext_name, word)";
     FunctionDocumentation::Arguments arguments = {
@@ -150,7 +155,7 @@ The thesaurus must contain a WordNet sense index.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSynonyms>(documentation, FunctionFactory::Case::Insensitive);
 }

@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 /// Counts the number of different elements in the array, or the number of different tuples from the elements at the corresponding positions in several arrays.
 /// NOTE The implementation partially matches arrayEnumerateUniq.
-class FunctionArrayUniq : public IFunction
+class FunctionArrayUniq final : public IFunction
 {
 public:
     static constexpr auto name = "arrayUniq";
@@ -131,7 +131,7 @@ ColumnPtr FunctionArrayUniq::executeImpl(const ColumnsWithTypeAndName & argument
 {
     const ColumnArray::Offsets * offsets = nullptr;
     const size_t num_arguments = arguments.size();
-    assert(num_arguments > 0);
+    chassert(num_arguments > 0);
     ColumnRawPtrs data_columns(num_arguments);
 
     Columns array_holders;
@@ -358,7 +358,7 @@ elements at corresponding positions across the arrays.
 )", {"UInt32"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayUniq>(documentation);
 }

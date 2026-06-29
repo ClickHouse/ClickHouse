@@ -6,7 +6,6 @@ import random
 import string
 import uuid
 
-import minio
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -40,6 +39,7 @@ def cluster():
             ],
             with_minio=True,
             stay_alive=True,
+            pids_limit=10000,
         )
         cluster.add_instance(
             "node_with_query_log_on_s3",
@@ -327,7 +327,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
         action="broken_pipe",
     )
 
-    insert_query_id = randomize_query_id(f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD")
+    insert_query_id = randomize_query_id("TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD")
     node.query(
         f"""
         INSERT INTO
@@ -361,7 +361,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
         after=2,
         action="broken_pipe",
     )
-    insert_query_id = randomize_query_id(f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD_1")
+    insert_query_id = randomize_query_id("TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD_1")
     error = node.query_and_get_error(
         f"""
                INSERT INTO
@@ -558,8 +558,13 @@ def test_when_s3_timeout_at_listing(
 ):
     node = cluster.instances["node_with_inf_s3_retries"]
 
+    if node.is_built_with_memory_sanitizer():
+        pytest.skip(
+            "Memory Sanitizer is too slow for precise resource measurement in this test"
+        )
+
     insert_query_id = randomize_query_id(
-        f"TEST_WHEN_S3_TIMEOUT_AT_LISTING_INSERT"
+        "TEST_WHEN_S3_TIMEOUT_AT_LISTING_INSERT"
     )
     node.query(
         f"""
@@ -588,7 +593,7 @@ def test_when_s3_timeout_at_listing(
     )
 
     select_query_id = randomize_query_id(
-        f"TEST_WHEN_S3_TIMEOUT_AT_LISTING_SELECT"
+        "TEST_WHEN_S3_TIMEOUT_AT_LISTING_SELECT"
     )
     result = node.query(
         f"""
@@ -632,8 +637,8 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
         action="connection_refused",
     )
 
-    insert_query_id = randomize_query_id(f"TEST_QUERY_IS_CANCELED_WITH_INF_RETRIES")
-    request = node.get_query_request(
+    insert_query_id = randomize_query_id("TEST_QUERY_IS_CANCELED_WITH_INF_RETRIES")
+    node.get_query_request(
         f"""
         INSERT INTO
             TABLE FUNCTION s3(
@@ -719,7 +724,7 @@ def test_adaptive_timeouts(cluster, broken_s3, node_name):
     assert put_objects == 1
 
     s3_use_adaptive_timeouts = node.query(
-        f"""
+        """
         SELECT
             value
         FROM system.settings

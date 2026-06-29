@@ -1,0 +1,12 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <read_through_distributed_cache>1</read_through_distributed_cache>
+            <write_through_distributed_cache>1</write_through_distributed_cache>
+            <distributed_cache_throw_on_error>false</distributed_cache_throw_on_error>
+            <distributed_cache_pool_behaviour_on_limit>wait</distributed_cache_pool_behaviour_on_limit>
+            <distributed_cache_wait_connection_from_pool_milliseconds>200</distributed_cache_wait_connection_from_pool_milliseconds>
+            <distributed_cache_connect_max_tries>10</distributed_cache_connect_max_tries>
+        </default>
+    </profiles>
+</clickhouse>

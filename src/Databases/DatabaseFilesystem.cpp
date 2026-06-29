@@ -1,6 +1,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseFilesystem.h>
 
+#include <Common/Logger.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
@@ -151,7 +152,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     if (!checkTableFilePath(table_path, context_, throw_on_error))
         return {};
 
-    auto ast_function_ptr = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path));
+    auto ast_function_ptr = makeASTFunction("file", make_intrusive<ASTLiteral>(table_path));
 
     auto table_function = TableFunctionFactory::instance().get(ast_function_ptr, context_);
     if (!table_function)
@@ -198,7 +199,7 @@ ASTPtr DatabaseFilesystem::getCreateDatabaseQueryImpl() const
     if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
+        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
     }
 
     return ast;
@@ -240,6 +241,7 @@ DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, cons
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
+void registerDatabaseFilesystem(DatabaseFactory & factory);
 void registerDatabaseFilesystem(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -262,6 +264,13 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context);
     };
-    factory.registerDatabase("Filesystem", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("Filesystem", create_fn, {
+        .supports_arguments = true,
+        .is_external = true,
+        .source_access_type = AccessTypeObjects::Source::FILE,
+    }, Documentation{
+        .description = "A read-only database that exposes files in a directory on the local filesystem as tables, queryable by their path.",
+        .syntax = "ENGINE = Filesystem([path])",
+        .related = {"S3", "HDFS"}});
 }
 }

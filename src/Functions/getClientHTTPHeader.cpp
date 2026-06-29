@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetClientHTTPHeader : public IFunction, WithContext
+class FunctionGetClientHTTPHeader final : public IFunction, WithContext
 {
 public:
     explicit FunctionGetClientHTTPHeader(ContextPtr context_)
@@ -35,6 +35,8 @@ public:
     }
 
     String getName() const override { return "getClientHTTPHeader"; }
+
+    bool isDeterministic() const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
@@ -110,7 +112,7 @@ SELECT getClientHTTPHeader('Content-Type');
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction("getClientHTTPHeader",
         [](ContextPtr context) { return std::make_shared<FunctionGetClientHTTPHeader>(context); },

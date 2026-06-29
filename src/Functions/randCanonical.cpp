@@ -37,7 +37,7 @@ struct NameCanonicalRand
     static constexpr auto name = "randCanonical";
 };
 
-class FunctionCanonicalRand : public FunctionRandomImpl<CanonicalRandImpl, Float64, NameCanonicalRand>
+class FunctionCanonicalRand final : public FunctionRandomImpl<CanonicalRandImpl, Float64, NameCanonicalRand>
 {
 public:
     static FunctionPtr create(ContextPtr /*context*/) { return std::make_shared<FunctionCanonicalRand>(); }
@@ -60,7 +60,7 @@ Returns a random distributed `Float64` number with uniform distribution between 
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCanonicalRand>(documentation);
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Access/Common/QuotaDefs.h>
@@ -38,6 +39,8 @@ public:
     Strings names;
     String new_name;
     std::optional<QuotaKeyType> key_type;
+    std::optional<MaskBits> ipv4_prefix_bits;
+    std::optional<MaskBits> ipv6_prefix_bits;
     String storage_name;
 
     struct Limits
@@ -49,7 +52,7 @@ public:
     };
     std::vector<Limits> all_limits;
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;

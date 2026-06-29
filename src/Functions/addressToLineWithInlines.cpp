@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 #include <Common/Dwarf.h>
 #include <Columns/ColumnString.h>
@@ -21,7 +21,7 @@ namespace DB
 namespace
 {
 
-class FunctionAddressToLineWithInlines: public FunctionAddressToLineBase<StringViews, Dwarf::LocationInfoMode::FULL_WITH_INLINE>
+class FunctionAddressToLineWithInlines final : public FunctionAddressToLineBase<StringViews, Dwarf::LocationInfoMode::FULL_WITH_INLINE>
 {
 public:
     static constexpr auto name = "addressToLineWithInlines";
@@ -58,7 +58,7 @@ protected:
         return result_column;
     }
 
-    void setResult(StringViews & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> & inline_frames) const override
+    void setResult(StringViews & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> & inline_frames) const override
     {
         appendLocationToResult(result, location, nullptr);
         for (const auto & inline_frame : inline_frames)
@@ -180,7 +180,7 @@ WHERE
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionAddressToLineWithInlines>(documentation);
 }

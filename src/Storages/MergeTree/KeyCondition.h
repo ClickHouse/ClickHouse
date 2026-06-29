@@ -5,10 +5,10 @@
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
 
-#include <DataTypes/Serializations/ISerialization.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Set.h>
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/BoolMask.h>
@@ -20,7 +20,6 @@ namespace DB
 
 class ASTFunction;
 class Context;
-class IFunction;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -37,7 +36,21 @@ struct ActionsDAGWithInversionPushDown
     std::optional<ActionsDAG> dag;
     const ActionsDAG::Node * predicate = nullptr;
 
-    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context);
+    /// `boolean_context`: Pass true only when the caller uses `predicate_` as a filter: it tests each row for truthiness
+    /// and discards the value (index analysis of a WHERE/PREWHERE). Then `cloneDAGWithInversionPushDown` may apply
+    /// truthiness-preserving but value-changing rewrites (`tryRewriteCoalesceCondition`, `tryRewriteCoalesceComparison`),
+    /// which can differ from the original (e.g. `NULL` vs `false`) on NULL rows but agree on truthiness.
+    /// There is no correctness cost to passing false, but it may miss some optimization opportunities.
+    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context);
+};
+
+
+struct DeterministicKeyTransformDag
+{
+    ExpressionActionsPtr actions;
+    String output_name;
+    DataTypePtr input_type;
+    String input_name;
 };
 
 /** Condition on the index.
@@ -60,7 +73,8 @@ public:
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
-        bool single_point_ = false);
+        bool single_point_ = false,
+        bool skip_analysis_ = false); /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
 
     struct BloomFilterData
     {
@@ -105,17 +119,44 @@ public:
         const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
         const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
 
+    /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
+    /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
+    /// If some key column >= `key_col_to_sparse_pos`.size(), it is considered as not tracked.
+    /// See the optimized overload of checkInRange for explanation of relevant parameters.
+    BoolMask checkInHyperrectangle(
+        const std::vector<int> & key_col_to_sparse_pos,
+        const Hyperrectangle & sparse_hyperrectangle,
+        const DataTypes & sparse_data_types) const;
+
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
     /// data_types - the types of the key columns.
     /// Argument initial_mask is used for early exiting the implementation when we do not care about
     /// one of the resulting mask components (see BoolMask::consider_only_can_be_XXX).
     BoolMask checkInRange(
-        size_t used_key_size,
+        size_t key_size,
         const FieldRef * left_keys,
         const FieldRef * right_keys,
         const DataTypes & data_types,
         BoolMask initial_mask = BoolMask(false, false)) const;
+
+    /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
+    /// However, `equal_boundaries_mask` must have the information about all/prefix keys. `equal_boundaries_mask` specifies whether ith key's
+    /// left and right boundaries are equal or not.
+    /// For example, suppose, a table has 6 columns in primary key : (0, 1, 2, 3, 4, 5)
+    /// The caller wants to use only columns (1, 3, 4) for range check.
+    /// Then, `sparse_key_indices` = {1, 3, 4}
+    /// `equal_boundaries_mask` = {false, true, false, true, true, false} (size must be max(sparse_key_indices) + 1)
+    ///      Information about entire prefix until `max(sparse_key_indices) column` must be specified.
+    /// `sparse_left_keys` and `sparse_right_keys` contain only 3 fields each, corresponding to columns (1, 3, 4).
+    /// `sparse_data_types` contain only 3 data types each, corresponding to columns (1, 3, 4).
+    BoolMask checkInRange(
+        const std::vector<size_t> & sparse_key_indices,
+        const FieldRef * sparse_left_keys,
+        const FieldRef * sparse_right_keys,
+        const DataTypes & sparse_data_types,
+        const std::vector<UInt8> & equal_boundaries_mask,
+        BoolMask initial_mask) const;
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
     /// This is more efficient than checkInRange(...).can_be_true.
@@ -144,6 +185,11 @@ public:
     String toString() const;
 
     size_t getNumKeyColumns() const { return num_key_columns; }
+
+    /// Returns the size of the minimal prefix of key columns that contains all columns used in the RPN.
+    /// Suppose there are 5 keys columns: 0, 1, 2, 3, 4. If any RPNElement uses key columns 0, 3.
+    /// Then, it returns 4 (last used key column index + 1).
+    size_t getUsedKeyPrefixSize() const;
 
     /// Condition description for EXPLAIN query.
     struct Description
@@ -196,6 +242,35 @@ public:
     ///     3. no where
     /// TODO handle the cases when generate RPN.
     bool extractPlainRanges(Ranges & ranges) const;
+
+    /// Extract a conservative union of ranges implied by this condition for the only key column.
+    ///
+    /// This method tries to extract plain ranges from each top-level conjunct (AND component) independently
+    /// and intersects all successfully extracted conjunct ranges, ignoring the rest.
+    ///
+    /// Return value semantics:
+    ///  - empty vector means the condition is always false;
+    ///  - a single universe range `(-Inf, +Inf)` means no bounds could be inferred;
+    ///  - otherwise, the result may contain 1+ (possibly disjoint) ranges.
+    ///
+    /// If the key condition is not 1-dimensional (key_columns.size() != 1), the result is always `(-Inf, +Inf)`.
+    ///
+    /// Examples (single key column `x`):
+    ///  - `x % 2 = 0 AND x < 100`                    -> { "(-Inf, 99]" }  (the `%` conjunct is ignored)
+    ///  - `x > 10 AND x < 20 AND x % 2 = 0`          -> { "[11, 19]" }
+    ///  - `(x BETWEEN 0 AND 3) OR (x BETWEEN 10 AND 13)` -> { "[0, 3]", "[10, 13]" }
+    ///  - `x IN (8, 0, 6)`                           -> { "[0, 0]", "[6, 6]", "[8, 8]" }
+    ///  - `x NOT IN (2, 4)`                          -> { "(-Inf, 1]", "[3, 3]", "[5, +Inf)" }
+    ///  - `NOT (x BETWEEN 2 AND 6) AND x < 10`       -> { "(-Inf, 1]", "[7, 9]" }
+    ///  - `isNull(x)`                                -> {}               (for non-nullable keys)
+    ///  - `x < 5 AND x > 10`                         -> {}               (always false / contradictory)
+    ///  - `x % 2 = 0`                                -> { "(-Inf, +Inf)" } (no bounds inferred)
+    ///
+    /// Non-examples (currently NOT extracted; result is `{ "(-Inf, +Inf)" }` unless another conjunct provides bounds):
+    ///  - `x + 1 < 100`                               -> { "(-Inf, +Inf)" } (simple arithmetic on the key is not inverted to avoid potential overflow)
+    ///  - `intDiv(x, 3) < 10`                         -> { "(-Inf, +Inf)" } (functions on the key are not analyzed here)
+    ///  - `(x < 10 AND x % 2 = 0) OR (x < 20 AND x % 3 = 0)` -> { "(-Inf, +Inf)" } (no partial extraction across OR branches)
+    Ranges extractBounds() const;
 
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
@@ -320,6 +395,8 @@ public:
     /// List key columns that are actually used in the condition. E.g. condition `x AND y` doesn't use column `z`.
     std::unordered_set<size_t> getUsedColumns() const;
 
+    std::vector<size_t> getUsedColumnsInOrder() const;
+
     /// Private constructor.
     KeyCondition(
         ThisIsPrivate,
@@ -338,14 +415,6 @@ private:
         /// All intermediate columns are used to calculate key_expr.
         const NameSet key_subexpr_names;
     };
-
-    BoolMask checkInRange(
-        size_t used_key_size,
-        const FieldRef * left_key,
-        const FieldRef * right_key,
-        const DataTypes & data_types,
-        bool right_bounded,
-        BoolMask initial_mask) const;
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
 
@@ -382,7 +451,16 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         MonotonicFunctionsChain & out_functions_chain,
+        bool & out_chain_is_positive,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
+
+
+    bool extractDeterministicFunctionsDagFromKey(
+        const String & expr_name,
+        const BuildInfo & info,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        DeterministicKeyTransformDag & out_functions_chain) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
@@ -390,36 +468,50 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
-        DataTypePtr & out_type);
+        DataTypePtr & out_type,
+        bool & out_chain_is_positive);
 
-    bool canConstantBeWrappedByFunctions(
+    bool canConstantBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
-        DataTypePtr & out_type);
+        DataTypePtr & out_type,
+        bool & out_is_injective);
 
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and
     /// specifies key column position / type. Besides that it produces the
-    /// chain of functions which should be executed on set, to transform it
-    /// into key column values.
-    bool canSetValuesBeWrappedByFunctions(
+    /// transformation DAG which should be executed on set elements, to
+    /// transform them into key column values.
+    bool canSetValuesBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
         DataTypePtr & out_key_res_column_type,
-        MonotonicFunctionsChain & out_functions_chain);
+        DeterministicKeyTransformDag & out_transform,
+        bool & out_is_injective) const;
 
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
-    bool tryPrepareSetIndex(
+    bool tryPrepareSetIndexForIn(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPNElement & out,
-        bool allow_constant_transformation);
+        RPNElement & out);
+    bool tryPrepareSetIndexForHas(
+        const RPNBuilderFunctionTreeNode & func,
+        const BuildInfo & info,
+        RPNElement & out);
+
+    void analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
+        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
+        std::vector<std::optional<DeterministicKeyTransformDag>> &set_transforming_dags,
+        DataTypes & data_types,
+        size_t & args_count,
+        const BuildInfo & info,
+        bool & out_relaxed);
 
     /// Checks that the index can not be used.
     ///
@@ -484,10 +576,10 @@ private:
 
     struct SpaceFillingCurveDescription
     {
-        size_t key_column_pos;
+        size_t key_column_pos{};
         String function_name;
         std::vector<String> arguments;
-        SpaceFillingCurveType type;
+        SpaceFillingCurveType type{};
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
     SpaceFillingCurveDescriptions key_space_filling_curves;

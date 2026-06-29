@@ -15,12 +15,12 @@ trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT -q "
     SYSTEM INSTRUMENT REMOVE ALL;
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'entry_one';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'entry_two';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'entry_three';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'exit_one';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'exit_two';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'exit_three';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'entry_one';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'entry_two';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'entry_three';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'exit_one';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'exit_two';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'exit_three';
 "
 
 query_id="${CLICKHOUSE_DATABASE}_log"
@@ -29,5 +29,5 @@ $CLICKHOUSE_CLIENT --query-id=$query_id -q "SELECT 1 FORMAT Null;"
 $CLICKHOUSE_CLIENT -q "
     SYSTEM INSTRUMENT REMOVE ALL;
     SYSTEM FLUSH LOGS system.text_log;
-    SELECT extract(message, '.*\): (.+)\nStack trace.*') FROM system.text_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND message ILIKE '%InstrumentationManager%Log%';
+    SELECT extract(message, '.*\): (.+)\nStack trace.*') FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id' AND logger_name = 'InstrumentationManager' AND message LIKE 'Log%' ORDER BY event_time_microseconds;
 "

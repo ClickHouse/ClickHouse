@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -8,7 +9,7 @@ namespace DB
 {
 
 /// Get the connection Id. It's used for MySQL handler only.
-class FunctionConnectionId : public IFunction, WithContext
+class FunctionConnectionId final : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "connectionId";
@@ -16,6 +17,8 @@ public:
     explicit FunctionConnectionId(ContextPtr context_) : WithContext(context_) {}
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionConnectionId>(context_); }
+
+    bool isDeterministic() const override { return false; }
 
     String getName() const override { return name; }
 
@@ -57,7 +60,7 @@ SELECT connectionId();
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionConnectionId>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("connection_id", "connectionID", FunctionFactory::Case::Insensitive);

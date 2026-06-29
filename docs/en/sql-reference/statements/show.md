@@ -240,7 +240,7 @@ SHOW COLUMNS FROM 'orders' LIKE 'delivery_%'
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
-The `SHOW DICTIONARIES` statement displays a list of [Dictionaries](../../sql-reference/dictionaries/index.md).
+The `SHOW DICTIONARIES` statement displays a list of [Dictionaries](./create/dictionary/overview.md).
 
 ### Syntax {#syntax-4}
 
@@ -715,4 +715,14 @@ SHOW MERGES LIKE 'your_t%' LIMIT 1;
 ┌─table──────┬─database─┬─estimate_complete─┬─elapsed─┬─progress─┬─is_mutation─┬─size_compressed─┬─memory_usage─┐
 │ your_table │ default  │              0.14 │    0.36 │    73.01 │           0 │        5.40 MiB │    10.25 MiB │
 └────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
+```
+
+## SHOW CREATE MASKING POLICY {#show-create-masking-policy}
+
+The `SHOW CREATE MASKING POLICY` statement shows parameters which were used at [masking policy creation](../../sql-reference/statements/create/masking-policy.md).
+
+### Syntax {#syntax-26}
+
+```sql title="Syntax"
+SHOW CREATE MASKING POLICY name ON [database.]table
 ```
