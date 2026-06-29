@@ -149,10 +149,12 @@ private:
         if (base_keys_supplied_by_query && !from_named_collection)
             session_token.clear();
 
-        /// The explicit url/key form likewise cannot supply request-auth material, so under the restriction drop
-        /// the server-config SSE-C/SSE-KMS keys (and any inherited headers): they must not be sent to the
-        /// user-chosen endpoint alongside the query's own keys. A named collection is handled by its caller.
-        if (base_keys_supplied_by_query && !from_named_collection && context->shouldRestrictUserQueryS3Credentials())
+        /// Neither the explicit `url, ak, sk` form nor the bare `url` form can supply request-auth material, so
+        /// under the restriction any headers / SSE-C / SSE-KMS here came from the server `<s3>`/endpoint config.
+        /// Drop them: the explicit-key form must not send the server's material alongside the query's keys, and
+        /// the bare-URL form that resolves to an anonymous/NOSIGN client must stay genuinely anonymous rather
+        /// than still sending operator headers or encryption keys. A named collection is handled by its caller.
+        if (!from_named_collection && context->shouldRestrictUserQueryS3Credentials())
         {
             sse_customer_key.clear();
             sse_kms_config = {};

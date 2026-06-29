@@ -151,9 +151,11 @@ TEST(AWSMSKIAMAuth, SetupResolvesEnvironmentCredentials)
     // Kafka AWS_MSK_IAM is server-side, operator-configured authentication, not a user S3 query. The S3
     // credential restriction (`forbid_implicit_credentials`, default true) must not apply here: with
     // `kafka.use_environment_credentials = 1` the provider chain must still resolve the environment credentials.
+    /// NOLINTBEGIN(concurrency-mt-unsafe): single-threaded gtest, no concurrent getenv/setenv.
     ::setenv("AWS_ACCESS_KEY_ID", "AKID_MSK_ENV_TEST", /*overwrite=*/1);
     ::setenv("AWS_SECRET_ACCESS_KEY", "secret_msk_env_test", /*overwrite=*/1);
     ::setenv("AWS_EC2_METADATA_DISABLED", "true", /*overwrite=*/1);
+    /// NOLINTEND(concurrency-mt-unsafe)
 
     cppkafka::Configuration cfg;
     auto config = emptyConfig();
@@ -167,9 +169,11 @@ TEST(AWSMSKIAMAuth, SetupResolvesEnvironmentCredentials)
     /// With the restriction wrongly applied, the chain adds no environment provider and this is empty.
     EXPECT_EQ(ctx->provider->GetAWSCredentials().GetAWSAccessKeyId(), "AKID_MSK_ENV_TEST");
 
+    /// NOLINTBEGIN(concurrency-mt-unsafe): single-threaded gtest, no concurrent getenv/setenv.
     ::unsetenv("AWS_ACCESS_KEY_ID");
     ::unsetenv("AWS_SECRET_ACCESS_KEY");
     ::unsetenv("AWS_EC2_METADATA_DISABLED");
+    /// NOLINTEND(concurrency-mt-unsafe)
 }
 
 TEST(AWSMSKIAMAuth, SetupThrowsOnRegionMismatchWithCachedContext)
