@@ -5,6 +5,7 @@
 #include <base/types.h>
 
 #include <ctime>
+#include <limits>
 #include <string>
 #include <type_traits>
 
@@ -279,6 +280,29 @@ private:
         return lut[toLUTIndex(v)];
     }
 
+    /// Round `value` down to a multiple of `divisor` (towards negative infinity).
+    /// Integer division truncates towards zero, so for negative values we shift the result one step down.
+    /// The computation goes through the remainder to avoid signed overflow when `value` is close to the
+    /// minimum of the type - the natural expression `value + 1 - divisor` overflows there. Such values are
+    /// far outside any valid date range, so on the boundary we saturate to the nearest representable multiple.
+    template <typename DateOrTime, typename Divisor>
+    static DateOrTime roundDownToMultiple(DateOrTime value, Divisor divisor)
+    {
+        if (value >= 0) [[likely]]
+            return static_cast<DateOrTime>(value / divisor * divisor);
+
+        const Int64 v = static_cast<Int64>(value);
+        const Int64 d = static_cast<Int64>(divisor);
+        const Int64 remainder = v % d; /// In (-d, 0] for negative v.
+        if (remainder == 0)
+            return static_cast<DateOrTime>(v);
+
+        const Int64 rounded_towards_zero = v - remainder; /// A multiple of d in [v, 0], never overflows.
+        if (unlikely(rounded_towards_zero < std::numeric_limits<Int64>::min() + d))
+            return static_cast<DateOrTime>(rounded_towards_zero);
+        return static_cast<DateOrTime>(rounded_towards_zero - d);
+    }
+
     template <typename DateOrTime, typename Divisor>
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
@@ -286,14 +310,7 @@ private:
         chassert(divisor > 0);
 
         if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
-        {
-            if (x >= 0) [[likely]]
-                return static_cast<DateOrTime>(x / divisor * divisor);
-
-            /// Integer division for negative numbers rounds them towards zero (up).
-            /// We will shift the number so it will be rounded towards -inf (down).
-            return static_cast<DateOrTime>((x + 1 - divisor) / divisor * divisor);
-        }
+            return roundDownToMultiple(x, divisor);
 
         Time date = find(x).date;
         Time res = date + (x - date) / divisor * divisor;
@@ -973,14 +990,18 @@ public:
     }
 
     /// We count all hour-length intervals, unrelated to offset changes.
-    ALWAYS_INLINE Time toRelativeHourNum(Time t) const
+    /// `NO_SANITIZE_UNDEFINED` because the addition can overflow `Time` for out-of-range arguments
+    /// (e.g. a `DateTime64` close to the limits of `Int64`); the wrapped-around result is meaningless
+    /// but harmless, like for the `add*` functions below.
+    NO_SANITIZE_UNDEFINED ALWAYS_INLINE Time toRelativeHourNum(Time t) const
     {
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return t / 3600;
 
         /// Assume that if offset was fractional, then the fraction is the same as at the beginning of epoch.
         /// NOTE This assumption is false for "Pacific/Pitcairn" and "Pacific/Kiritimati" time zones.
-        return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
+        /// Sum in UInt64 to avoid signed overflow UB on extreme t; non-negative for any representable time, so the result is unchanged.
+        return static_cast<Time>(static_cast<UInt64>(t) + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
     }
 
     template <typename DateOrTime>
@@ -991,9 +1012,10 @@ public:
 
     /// The same formula is used for positive time (after Unix epoch) and negative time (before Unix epoch).
     /// It's needed for correct work of dateDiff function.
-    Time toStableRelativeHourNum(Time t) const
+    NO_SANITIZE_UNDEFINED Time toStableRelativeHourNum(Time t) const
     {
-        return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
+        /// Sum in UInt64 to avoid signed overflow UB on extreme t; non-negative for any representable time, so the result is unchanged.
+        return static_cast<Time>(static_cast<UInt64>(t) + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
     }
 
     template <typename DateOrTime>
@@ -1002,9 +1024,10 @@ public:
         return toStableRelativeHourNum(lut[toLUTIndex(v)].date);
     }
 
-    Time toRelativeMinuteNum(Time t) const /// NOLINT
+    NO_SANITIZE_UNDEFINED Time toRelativeMinuteNum(Time t) const /// NOLINT
     {
-        return (t + DATE_LUT_ADD) / 60 - (DATE_LUT_ADD / 60);
+        /// Sum in UInt64 to avoid signed overflow UB on extreme t; non-negative for any representable time, so the result is unchanged.
+        return static_cast<Time>(static_cast<UInt64>(t) + DATE_LUT_ADD) / 60 - (DATE_LUT_ADD / 60);
     }
 
     template <typename DateOrTime>
@@ -1138,11 +1161,7 @@ public:
     {
         Int64 divisor = 60 * minutes;
         if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
-        {
-            if (t >= 0) [[likely]]
-                return static_cast<DateOrTime>(t / divisor * divisor);
-            return static_cast<DateOrTime>((t + 1 - divisor) / divisor * divisor);
-        }
+            return roundDownToMultiple(t, divisor);
 
         Time date = find(t).date;
         Time res = date + (t - date) / divisor * divisor;

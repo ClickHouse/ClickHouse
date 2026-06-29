@@ -1,4 +1,3 @@
-import glob
 import io
 import json
 import logging
@@ -7,22 +6,18 @@ import random
 import string
 import time
 import uuid
-import threading
 from datetime import datetime
 from multiprocessing.dummy import Pool
 
-import delta
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pyspark
 import pytest
-from azure.storage.blob import BlobServiceClient
-from delta import *
+from delta import DeltaTable
 from deltalake.writer import write_deltalake
 from minio.deleteobjects import DeleteObject
 from pyspark.sql.functions import (
     col,
-    current_timestamp,
     monotonically_increasing_id,
     row_number,
 )
@@ -31,7 +26,6 @@ from pyspark.sql.types import (
     BooleanType,
     DateType,
     IntegerType,
-    LongType,
     ShortType,
     StringType,
     DecimalType,
@@ -42,17 +36,14 @@ from pyspark.sql.types import (
 from decimal import Decimal
 from pyspark.sql.window import Window
 
-import helpers.client
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
-from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import (
     AzureUploader,
     S3Uploader,
     get_file_contents,
     list_s3_objects,
-    prepare_s3_bucket,
     upload_directory,
     LocalDownloader,
     LocalUploader,
@@ -172,7 +163,7 @@ def started_cluster():
             user_configs=["configs/users.d/users.xml"],
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
-            tag="25.3.3.42",
+            tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
@@ -584,8 +575,6 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
 def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_checkpoint")
 
     # For local storage, we need to use the absolute path
@@ -766,7 +755,7 @@ def test_types(started_cluster, use_delta_kernel):
     spark = started_cluster.spark_session
     result_file = randomize_table_name(f"{TABLE_NAME}_result_2")
 
-    delta_table = (
+    (
         DeltaTable.create(spark)
         .tableName(TABLE_NAME)
         .location(f"/{result_file}")
@@ -850,7 +839,7 @@ def test_varchar_char_types(started_cluster, use_delta_kernel):
     # Use the DeltaTable builder with DDL-style type names so that the Delta Lake
     # schema metadata records varchar/char column types. Using VarcharType/CharType
     # directly in a StructType would be rejected by Spark's Catalyst planner.
-    delta_table = (
+    (
         DeltaTable.create(spark)
         .tableName(TABLE_NAME)
         .location(f"/{result_file}")
@@ -1145,7 +1134,6 @@ def test_restart_broken_table_function(started_cluster, use_delta_kernel):
 )
 def test_partition_columns(started_cluster, use_delta_kernel, cluster):
     instance = get_node(started_cluster, use_delta_kernel)
-    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_partition_columns")
@@ -1391,8 +1379,6 @@ test9	2000-01-09	9"""
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_complex_types(started_cluster, use_delta_kernel):
     node = get_node(started_cluster, use_delta_kernel)
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
 
     schema = pa.schema(
         [
@@ -1638,7 +1624,7 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
         f"CREATE DATABASE {DB_NAME} ENGINE=Replicated('/clickhouse/databases/{DB_NAME}', 'shard1', 'node2')"
     )
 
-    parquet_data_path = create_initial_data_file(
+    create_initial_data_file(
         started_cluster,
         node1,
         "SELECT number, toString(number) FROM numbers(100)",
@@ -1680,13 +1666,6 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
             "destination": node2.ip_address,
             "source_port": started_cluster.minio_port,
             "action": "REJECT --reject-with tcp-reset",
-            "protocol": "tcp",
-        }
-        pm_rule_drop_all = {
-            "instance": node2,
-            "destination": node2.ip_address,
-            "source_port": started_cluster.minio_port,
-            "action": "DROP",
             "protocol": "tcp",
         }
         pm.add_rule(pm_rule_reject)
@@ -2178,7 +2157,7 @@ deltaLake(
         ).partitionBy("age").save(path)
         upload_directory(minio_client, bucket, path, "")
 
-    delta_table = (
+    (
         DeltaTable.create(spark)
         .tableName(table_name)
         .location(path)
@@ -2399,7 +2378,7 @@ deltaLake(
 )
 def test_cluster_function(started_cluster, new_analyzer, storage_type):
     instance = started_cluster.instances["node1"]
-    instance_old = started_cluster.instances["node_old"]
+    started_cluster.instances["node_old"]
     table_name = randomize_table_name("test_cluster_function")
 
     schema = pa.schema([("a", pa.int32()), ("b", pa.string())])
@@ -2445,23 +2424,14 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
             f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
         )
 
-        table_function_old = f"""
-    deltaLakeCluster(cluster_old,
-            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
-            '{minio_access_key}',
-            '{minio_secret_key}',
-            SETTINGS allow_experimental_delta_kernel_rs=1)
-        """
 
 
 def test_partition_columns_3(started_cluster):
     instance = started_cluster.instances["node1"]
-    minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_partition_columns_3")
     result_file = f"{TABLE_NAME}"
     partition_columns = ["year"]
-    minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     num_rows = 10
 
@@ -2513,12 +2483,10 @@ def test_partition_columns_3(started_cluster):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_filtering_by_virtual_columns(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
-    minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_filtering_by_virtual_columns")
     result_file = f"{TABLE_NAME}"
     partition_columns = ["year"]
-    minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     num_rows = 10
 
@@ -2622,7 +2590,7 @@ def test_column_pruning(started_cluster):
     )
 
     num_rows = 10000
-    now = datetime.now()
+    datetime.now()
     data = [
         (i, f"name_{i}", 32, "".join("a" for _ in range(100)), "2025")
         for i in range(num_rows)
@@ -2682,12 +2650,10 @@ def test_column_pruning(started_cluster):
 
 def test_concurrent_reads(started_cluster):
     instance = started_cluster.instances["node1"]
-    minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_concurrent_reads")
     result_file = f"{TABLE_NAME}"
     partition_columns = []
-    minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     num_rows = 500000
 
@@ -2904,7 +2870,7 @@ def test_join_with_distributed(started_cluster):
 
     table_function_cluster = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
-    # All cases which were reproted as faulty
+    # All cases which were reported as faulty
     assert (
         int(
             instance.query(
@@ -2957,7 +2923,7 @@ def test_delta_kernel_internal_pruning(started_cluster):
     result_file = f"{TABLE_NAME}"
     partition_columns = ["b", "c", "d", "e", "f", "g", "h"]
 
-    delta_table = (
+    (
         DeltaTable.create(spark)
         .tableName(TABLE_NAME)
         .location(f"/{result_file}")
@@ -3328,8 +3294,6 @@ def test_delta_kernel_internal_pruning(started_cluster):
 
 def test_count_from_cache(started_cluster):
     instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_empty_format_header")
     result_file = f"{TABLE_NAME}"
@@ -3674,9 +3638,7 @@ def test_concurrent_queries(started_cluster, partitioned):
 
 def test_writes_spark_compatibility(started_cluster):
     instance = started_cluster.instances["node1"]
-    instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
+    cluster.instances["node_with_disabled_delta_kernel"]
     table_name = randomize_table_name("test_writes")
     result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
 
@@ -3753,8 +3715,6 @@ def test_writes_spark_compatibility(started_cluster):
 @pytest.mark.parametrize("limit_enabled", [False, True])
 def test_write_limits(started_cluster, partitioned, limit_enabled):
     instance = started_cluster.instances["node1"]
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_write_limits")
     result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
 
@@ -3889,7 +3849,6 @@ def test_subcolumns(started_cluster, column_mapping):
     default_upload_directory(started_cluster, "s3", f"/{path}", "")
 
     s3_objects = list(minio_client.list_objects(bucket, table_name, recursive=True))
-    file_names = []
     object_name = None
     for obj in s3_objects:
         print(f"File: {obj.object_name}")
@@ -3953,9 +3912,7 @@ deltaLake(
 @pytest.mark.parametrize("column_mapping", ["", "name"])
 def test_subcolumns_2(started_cluster, column_mapping):
     instance = started_cluster.instances["node1"]
-    instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
+    cluster.instances["node_with_disabled_delta_kernel"]
     table_name = randomize_table_name("test_write_column_order")
     spark = started_cluster.spark_session
     path = f"/var/lib/clickhouse/user_files/{table_name}"
@@ -4020,8 +3977,6 @@ CREATE TABLE {table_name}
 
 def test_write_column_order(started_cluster):
     instance = started_cluster.instances["node1"]
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_write_column_order")
     result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
     schema = pa.schema([("c1", pa.int32(), False), ("c0", pa.string(), False)])
@@ -4297,7 +4252,7 @@ deltaLake{suffix}({cluster}
         '{minio_secret_key}')
     """
 
-    delta_table = (
+    (
         DeltaTable.create(spark)
         .tableName(table_name)
         .location(path)
@@ -5532,4 +5487,122 @@ def test_azure_empty_blob_path(started_cluster, use_delta_kernel):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
         inserted_data
+    )
+
+
+def test_delta_kernel_rebuild_on_credentials_rotation(started_cluster):
+    """Cache a DeltaLake snapshot, then change the credentials fingerprint between two
+    reads and assert the second read rebuilds the kernel engine instead of silently
+    reusing the stale one.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_rebuild_on_rotation")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # First read: caches the kernel snapshot state under the current credentials fingerprint.
+    baseline_query_id = f"{TABLE_NAME}_baseline"
+    assert int(instance.query(
+        f"SELECT count() FROM {TABLE_NAME}",
+        query_id=baseline_query_id,
+    )) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+    init_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{baseline_query_id}' "
+        "  AND message ILIKE '%Initializing snapshot%'"
+    ).strip())
+    assert init_hits >= 1, "First read should initialize the kernel snapshot state"
+
+    rebuild_hits_pre = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{baseline_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state%'"
+    ).strip())
+    assert rebuild_hits_pre == 0, "First read should NOT trigger the credentials-rotation rebuild"
+
+    # Second read: the failpoint perturbs the credentials fingerprint, simulating an STS
+    # rotation between consecutive reads of the same cached snapshot. The fingerprint
+    # mismatch must trigger the rebuild path; the row count must still come back correct.
+    rotated_query_id = f"{TABLE_NAME}_rotated"
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+    try:
+        assert int(instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
+            query_id=rotated_query_id,
+        )) == 100
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+
+    instance.query("SYSTEM FLUSH LOGS")
+    rebuild_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{rotated_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state (credentials rotated)%'"
+    ).strip())
+    assert rebuild_hits >= 1, (
+        f"Expected the credentials-rotation rebuild log line to fire for query {rotated_query_id}, "
+        f"found {rebuild_hits} hits — the fingerprint check did not rebuild the kernel state."
+    )
+
+
+def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster):
+    """Simulate delta-kernel reporting an `ExpiredToken` during snapshot init. The
+    `delta_kernel_force_stale_token_error` failpoint throws the kernel error exactly
+    once; `object_storage_force_refresh_callback_success` short-circuits the catalog
+    refresh callback to succeed without an actual catalog. The retry path must rebuild
+    the snapshot and return the correct row count.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_retry_on_stale_token")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # Prime the cache so the second read starts from a clean state.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    retry_query_id = f"{TABLE_NAME}_retry"
+    instance.query("SYSTEM ENABLE FAILPOINT object_storage_force_refresh_callback_success")
+    # Drift the fingerprint so initOrUpdateSnapshot enters its rebuild branch; the
+    # stale-token failpoint then trips inside the KernelSnapshotState ctor and the
+    # retry path takes over.
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_stale_token_error")
+    try:
+        assert int(instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
+            query_id=retry_query_id,
+        )) == 100
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+        instance.query("SYSTEM DISABLE FAILPOINT object_storage_force_refresh_callback_success")
+        # delta_kernel_force_stale_token_error is FIU_ONETIME and self-disables, but
+        # disable defensively in case the retry path never reached it.
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_stale_token_error")
+
+    instance.query("SYSTEM FLUSH LOGS")
+    retry_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{retry_query_id}' "
+        "  AND message ILIKE '%stale credentials during snapshot init; rebuilding%'"
+        "  AND message ILIKE '%refreshed via callback: true%'"
+    ).strip())
+    assert retry_hits >= 1, (
+        f"Expected the catalog-callback retry log line to fire for query {retry_query_id}, "
+        f"found {retry_hits} hits — the stale-token retry path was not exercised."
     )
