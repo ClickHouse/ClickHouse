@@ -1,6 +1,8 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 
+SET explain_query_plan_default = 'legacy';
+
 -- { echo }
 
 SET use_query_condition_cache = 0;
