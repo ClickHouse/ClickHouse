@@ -32,4 +32,13 @@ SELECT count(*) OVER () FROM (SELECT 0 FROM t_window_const UNION ALL SELECT 0 FR
 SELECT DISTINCT count(*) OVER () FROM (SELECT 0 AS c FROM t_window_const UNION ALL SELECT 1 AS c FROM t_window_const);
 SELECT DISTINCT count(*) OVER () FROM (SELECT 0 AS c, s FROM t_window_const UNION ALL SELECT 0 AS c, s FROM t_window_const);
 
+-- A projection that holds an IN operator or a subquery is not a constant column and cannot be
+-- evaluated while building the analyze-only header (the prepared set is not registered there).
+-- It used to raise a LOGICAL_ERROR exception "No set is registered for key ...". The query is
+-- planned against a missing cluster so it deterministically reports CLUSTER_DOESNT_EXIST after
+-- the header is built, proving the analyze header construction no longer aborts.
+SELECT DISTINCT count(*) OVER () FROM (SELECT s IN (SELECT toString(number) FROM numbers(1)) FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
+SELECT DISTINCT count(*) OVER () FROM (SELECT s IN ('1', '2') FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
+SELECT DISTINCT count(*) OVER () FROM (SELECT toUInt8(s IN ('1', '2')) + 0 FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
+
 DROP TABLE t_window_const;

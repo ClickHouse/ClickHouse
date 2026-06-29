@@ -80,6 +80,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/misc.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/Planner.h>
@@ -154,6 +155,35 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A projection that contains an IN/GLOBAL IN operator or a subquery node cannot be evaluated
+/// at header build time: the prepared set behind the IN operator is not registered in the
+/// only_analyze table-expression context, and a non-correlated subquery node is not a valid
+/// action node. Building an ActionsDAG for such a projection raises a LOGICAL_ERROR (which aborts
+/// in debug and sanitizer builds). These projections are never constant columns anyway, so detect
+/// them and keep them on the plain-column header path.
+bool projectionCanBeEvaluatedForConstHeader(const QueryTreeNodePtr & node)
+{
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        if (functionIsInOrGlobalInOperator(function_node->getFunctionName()))
+            return false;
+    }
+    else
+    {
+        const auto node_type = node->getNodeType();
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+            return false;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child && !projectionCanBeEvaluatedForConstHeader(child))
+            return false;
+    }
+
+    return true;
+}
 
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
@@ -1516,7 +1546,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             {
                 const auto & projection_column = projection_columns[i];
                 ColumnPtr column;
-                if (projection_nodes && i < projection_nodes->size())
+                if (projection_nodes && i < projection_nodes->size()
+                    && projectionCanBeEvaluatedForConstHeader((*projection_nodes)[i]))
                 {
                     ColumnNodePtrWithHashSet empty_correlated_columns_set;
                     auto [projection_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
