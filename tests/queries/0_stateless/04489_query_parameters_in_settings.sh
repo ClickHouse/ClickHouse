@@ -33,3 +33,10 @@ $CLICKHOUSE_CLIENT -q "SELECT formatQuery('SELECT 1 SETTINGS max_threads = {thre
 # Errors: a value that cannot be parsed as the declared type, and a missing parameter.
 $CLICKHOUSE_CLIENT --param_bad='abc' -q "SELECT 1 SETTINGS max_threads = {bad:UInt64}" 2>&1 | grep -o "BAD_QUERY_PARAMETER" | head -n1
 $CLICKHOUSE_CLIENT -q "SELECT 1 SETTINGS max_threads = {nonexistent:UInt64}" 2>&1 | grep -o "UNKNOWN_QUERY_PARAMETER" | head -n1
+
+# The feature is scoped to the query SETTINGS clause and standalone SET queries (both parsed by
+# ParserSetQuery). The SETTINGS lists of BACKUP / RESTORE go through a separate parser path and do
+# not support query parameters, so the placeholder is rejected at parse time rather than silently
+# misbehaving.
+$CLICKHOUSE_CLIENT --param_threads=4 -q "BACKUP TABLE system.one TO Disk('backups', 'b') SETTINGS max_threads = {threads:UInt64}" 2>&1 | grep -o "SYNTAX_ERROR" | head -n1
+$CLICKHOUSE_CLIENT --param_threads=4 -q "RESTORE TABLE system.one FROM Disk('backups', 'b') SETTINGS max_threads = {threads:UInt64}" 2>&1 | grep -o "SYNTAX_ERROR" | head -n1
