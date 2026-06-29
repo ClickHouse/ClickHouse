@@ -96,6 +96,8 @@ REGISTER_FUNCTION(AddressToLineWithInlines)
 Similar to `addressToLine`, but returns an Array with all inline functions.
 As a result of this, it is slower than `addressToLine`.
 
+The argument is an absolute virtual address inside the running process, as found in the `trace` column of [`system.trace_log`](/operations/system-tables/trace_log) or [`system.stack_trace`](/operations/system-tables/stack_trace). The exact numeric addresses used in the examples below come from one specific build and will not match your binary; for position-independent (PIE) builds they are additionally ASLR-dependent and change between restarts.
+
 To enable this introspection function:
 
 - Install the `clickhouse-common-static-dbg` package.

@@ -98,7 +98,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Thread identifier."},
         {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Thread name."},
         {"query_id", std::make_shared<DataTypeString>(), "Query identifier that can be used to get details about a query that was running from the query_log system table."},
-        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process."},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process. These are absolute (ASLR-dependent) runtime addresses, so symbolization (`symbols`, `lines`, `arrayMap(addressToSymbol, trace)`) is reliable only while the same process that collected the row is alive. Rows persisted across a server restart of a position-independent (PIE) binary may no longer symbolize, because the load base changes."},
         {"size", std::make_shared<DataTypeInt64>(), "For trace types Memory, MemorySample, MemoryAllocatedWithoutCheck or MemoryPeak is the amount of memory allocated, for other trace types is 0."},
         {"ptr", std::make_shared<DataTypeUInt64>(), "The address of the allocated chunk."},
         {"memory_context", std::make_shared<ContextDataType>(context_values), fmt::format("Memory Tracker context (only for Memory/MemoryPeak): {}", context_description)},
@@ -158,16 +158,22 @@ namespace
         {
             const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-            if (const auto * object = symbol_index.thisObject())
+            /// Resolve the object that actually contains the address. The trace stores absolute
+            /// virtual addresses, so a frame may belong to a shared library rather than the main
+            /// binary, and the DWARF lookup has to use that object's `elf` and load base.
+            if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
             {
                 auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
                 if (!std::filesystem::exists(object->name))
                     return {};
 
+                /// DWARF uses file-relative addresses, so convert from virtual address.
+                uintptr_t physical_addr = addr - uintptr_t(object->address_begin);
+
                 Dwarf::LocationInfo location;
                 VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
                 std::string_view result;
-                if (dwarf_it->second.findAddress(addr, location, Dwarf::LocationInfoMode::FAST, frames))
+                if (dwarf_it->second.findAddress(physical_addr, location, Dwarf::LocationInfoMode::FAST, frames))
                 {
                     setResult(result, location, frames);
                     return result;
