@@ -3,8 +3,10 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Disks/DiskCommitTransactionOptions.h>
 #include <Disks/WriteMode.h>
 
+#include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 
 #include <gtest/gtest.h>
@@ -69,6 +71,7 @@ static void writeFile(
     buffer->write(data.data(), data.size());
     buffer->preFinalize();
     buffer->finalize();
+    tx->commit(NoCommitOptions{});
 }
 
 static std::vector<std::string> listAllBlobs(const std::shared_ptr<IObjectStorage> & object_storage)
@@ -87,10 +90,10 @@ static std::vector<std::string> listAllBlobs(const std::shared_ptr<IObjectStorag
     return result;
 }
 
-TEST_F(MetadataPlainDiskTest, RemoveDirectory)
+TEST_F(MetadataPlainDiskTest, RemoveDirectoryNonEmpty)
 {
-    auto metadata = getMetadataStorage("RemoveDirectory");
-    auto object_storage = getObjectStorage("RemoveDirectory");
+    auto metadata = getMetadataStorage("RemoveDirectoryNonEmpty");
+    auto object_storage = getObjectStorage("RemoveDirectoryNonEmpty");
 
     writeFile(metadata, object_storage, "part_id/file1.txt", "content1");
     writeFile(metadata, object_storage, "part_id/file2.bin", "content2");
@@ -100,13 +103,13 @@ TEST_F(MetadataPlainDiskTest, RemoveDirectory)
 
     {
         auto tx = metadata->createTransaction();
-        tx->removeDirectory("part_id");
+        EXPECT_ANY_THROW(tx->removeDirectory("part_id"));
     }
 
-    EXPECT_FALSE(metadata->existsFile("part_id/file1.txt"));
-    EXPECT_FALSE(metadata->existsFile("part_id/file2.bin"));
-    EXPECT_FALSE(metadata->existsFile("part_id/file3.dat"));
-    EXPECT_TRUE(listAllBlobs(object_storage).empty());
+    EXPECT_TRUE(metadata->existsFile("part_id/file1.txt"));
+    EXPECT_TRUE(metadata->existsFile("part_id/file2.bin"));
+    EXPECT_TRUE(metadata->existsFile("part_id/file3.dat"));
+    EXPECT_EQ(listAllBlobs(object_storage).size(), 3u);
 }
 
 TEST_F(MetadataPlainDiskTest, RemoveRecursive)
@@ -122,6 +125,7 @@ TEST_F(MetadataPlainDiskTest, RemoveRecursive)
     {
         auto tx = metadata->createTransaction();
         tx->removeRecursive("uuid-12345", {});
+        tx->commit(NoCommitOptions{});
     }
 
     EXPECT_FALSE(metadata->existsFile("uuid-12345/checksums.txt"));
@@ -134,15 +138,16 @@ TEST_F(MetadataPlainDiskTest, UnlinkFile)
 {
     auto metadata = getMetadataStorage("UnlinkFile");
     auto object_storage = getObjectStorage("UnlinkFile");
-    
+
     writeFile(metadata, object_storage, "some/path/file.txt", "hello");
     ASSERT_TRUE(metadata->existsFile("some/path/file.txt"));
-    
+
     {
         auto tx = metadata->createTransaction();
         tx->unlinkFile("some/path/file.txt", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(NoCommitOptions{});
     }
-    
+
     EXPECT_FALSE(metadata->existsFile("some/path/file.txt"));
     EXPECT_TRUE(listAllBlobs(object_storage).empty());
 }
@@ -150,21 +155,25 @@ TEST_F(MetadataPlainDiskTest, UnlinkFile)
 TEST_F(MetadataPlainDiskTest, RemoveDirectoryNonExistent)
 {
     auto metadata = getMetadataStorage("RemoveDirectoryNonExistent");
-    auto tx = metadata->createTransaction();
-    EXPECT_NO_THROW(tx->removeDirectory("nonexistent_dir"));
+
+    {
+        auto tx = metadata->createTransaction();
+        EXPECT_ANY_THROW(tx->removeDirectory("nonexistent_dir"));
+    }
 }
 
-TEST_F(MetadataPlainDiskTest, RemoveDirectoryInvalidatesObjectMetadataCache)
+TEST_F(MetadataPlainDiskTest, RemoveRecursiveInvalidatesObjectMetadataCache)
 {
-    auto metadata = getMetadataStorage("RemoveDirectoryInvalidatesObjectMetadataCache", /*object_metadata_cache_size=*/1024 * 1024);
-    auto object_storage = getObjectStorage("RemoveDirectoryInvalidatesObjectMetadataCache");
-    
+    auto metadata = getMetadataStorage("RemoveRecursiveInvalidatesObjectMetadataCache", /*object_metadata_cache_size=*/1024 * 1024);
+    auto object_storage = getObjectStorage("RemoveRecursiveInvalidatesObjectMetadataCache");
+
     writeFile(metadata, object_storage, "part_id/file.txt", "12345");
     ASSERT_EQ(metadata->getFileSize("part_id/file.txt"), 5u);
 
     {
         auto tx = metadata->createTransaction();
-        tx->removeDirectory("part_id");
+        tx->removeRecursive("part_id", {});
+        tx->commit(NoCommitOptions{});
     }
 
     EXPECT_FALSE(metadata->getFileSizeIfExists("part_id/file.txt").has_value());
