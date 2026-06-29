@@ -8,12 +8,27 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
 #include <Common/checkStackSize.h>
+#include <Common/CurrentThread.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <fmt/ranges.h>
+
+namespace ProfileEvents
+{
+    extern const Event DataLakeUnityCatalogGetTables;
+    extern const Event DataLakeUnityCatalogGetTablesMicroseconds;
+    extern const Event DataLakeUnityCatalogGetTable;
+    extern const Event DataLakeUnityCatalogGetTableMicroseconds;
+    extern const Event DataLakeUnityCatalogGetTableMetadata;
+    extern const Event DataLakeUnityCatalogGetTableMetadataMicroseconds;
+    extern const Event DataLakeUnityCatalogGetCredentials;
+    extern const Event DataLakeUnityCatalogGetCredentialsMicroseconds;
+    extern const Event DataLakeUnityCatalogGetSchemas;
+    extern const Event DataLakeUnityCatalogGetSchemasMicroseconds;
+}
 
 namespace DB::ErrorCodes
 {
@@ -106,6 +121,8 @@ Poco::JSON::Object::Ptr UnityCatalog::requestReadCredentials(const String & tabl
     request_body.set("operation", "READ");
 
     auto callback = [&request_body] (std::ostream & os) { request_body.stringify(os); };
+    ProfileEvents::increment(ProfileEvents::DataLakeUnityCatalogGetCredentials);
+    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeUnityCatalogGetCredentialsMicroseconds);
     auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
     return json.extract<Poco::JSON::Object::Ptr>();
 }
@@ -167,7 +184,11 @@ bool UnityCatalog::tryGetTableMetadata(
     std::string json_str;
     try
     {
-        std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
+        {
+            ProfileEvents::increment(ProfileEvents::DataLakeUnityCatalogGetTableMetadata);
+            auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeUnityCatalogGetTableMetadataMicroseconds);
+            std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
+        }
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
         if (hasValueAndItsNotNone("name", object) && object->get("name").extract<String>() == table_name)
         {
@@ -288,7 +309,11 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
     Poco::Dynamic::Var json;
     try
     {
-        std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / (warehouse + "." + schema_name + "." + table_name));
+        {
+            ProfileEvents::increment(ProfileEvents::DataLakeUnityCatalogGetTable);
+            auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeUnityCatalogGetTableMicroseconds);
+            std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / (warehouse + "." + schema_name + "." + table_name));
+        }
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
         if (hasValueAndItsNotNone("name", object) && object->get("name").extract<String>() == table_name)
             return true;
@@ -316,7 +341,11 @@ DB::Names UnityCatalog::getTablesForSchema(const std::string & schema, size_t li
 
         try
         {
-            std::tie(json, json_str) = getJSONRequest(TABLES_ENDPOINT, params);
+            {
+                ProfileEvents::increment(ProfileEvents::DataLakeUnityCatalogGetTables);
+                auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeUnityCatalogGetTablesMicroseconds);
+                std::tie(json, json_str) = getJSONRequest(TABLES_ENDPOINT, params);
+            }
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
             if (!hasValueAndItsNotNone("tables", object))
@@ -380,7 +409,11 @@ DataLake::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base
 
         try
         {
-            std::tie(json, json_str) = getJSONRequest(SCHEMAS_ENDPOINT, params);
+            {
+                ProfileEvents::increment(ProfileEvents::DataLakeUnityCatalogGetSchemas);
+                auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeUnityCatalogGetSchemasMicroseconds);
+                std::tie(json, json_str) = getJSONRequest(SCHEMAS_ENDPOINT, params);
+            }
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
             auto schemas_object = object->get("schemas").extract<Poco::JSON::Array::Ptr>();
