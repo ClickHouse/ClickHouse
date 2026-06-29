@@ -1270,7 +1270,14 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     auto impl = pipeline.build();
 
-    if (use_prefetch && impl && !impl->supportsReadAt())
+    /// For small objects the initial sequential prefetch (reading the whole file ahead of
+    /// consumption) is the right strategy and almost doubles throughput when reading lots of
+    /// tiny files. `readBigAt`/parallel reading only helps bigger objects. `use_prefetch`
+    /// already implies the object is small (see `object_too_small` above), so do not let a
+    /// `supportsReadAt()`-capable buffer suppress the prefetch here: otherwise small-file reads
+    /// (e.g. many tiny files via the s3() table function) lose prefetching and fall back to
+    /// synchronous, latency-bound reads.
+    if (use_prefetch && impl)
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
