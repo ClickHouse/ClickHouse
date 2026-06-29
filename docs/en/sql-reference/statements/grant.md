@@ -305,6 +305,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM REDUCE BLOCKING PARTS`
     - `SYSTEM REPLICATION QUEUES`
     - `SYSTEM REPLICA READINESS`
+    - `SYSTEM RESET DDL WORKER`
     - `SYSTEM RESTART DISK`
     - `SYSTEM RESTART REPLICA`
     - `SYSTEM RESTORE REPLICA`
@@ -775,6 +776,12 @@ By default, for backward compatibility reasons, creating a table with a specific
 however you can change this behaviour by setting [`table_engines_require_grant` to true](https://github.com/ClickHouse/ClickHouse/blob/df970ed64eaf472de1e7af44c21ec95956607ebb/programs/server/config.xml#L853-L855)
 in config.xml.
 :::
+
+Some table engines with external sources may require `READ`/`WRITE` permissions on the corresponding source. See [Sources](#sources).
+
+For example, for the AzureBlobStorage table engine, following grant may be required.
+
+- `GRANT READ, WRITE ON AZURE TO john`
 
 ### ALL {#all}
 

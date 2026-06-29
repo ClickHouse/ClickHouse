@@ -48,7 +48,7 @@ namespace ErrorCodes
 /// and use them to calculate the limit for each variant. Each variant is deserialized from
 /// corresponding stream using calculated limit. Offsets column is not deserialized and constructed
 /// according to discriminators.
-class SerializationVariant : public ISerialization
+class SerializationVariant final : public ISerialization
 {
 public:
     struct DiscriminatorsSerializationMode
@@ -70,7 +70,8 @@ public:
         Value value;
     };
 
-    using VariantSerializations = std::vector<SerializationPtr>;
+    using VariantSerializations = VectorWithMemoryTracking<SerializationPtr>;
+    using VariantTypes = VectorWithMemoryTracking<DataTypePtr>;
 
 private:
     explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
@@ -241,7 +242,7 @@ private:
         std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
         const FormatSettings & settings) const;
 
-    DataTypes variant_types;
+    VariantTypes variant_types;
     VariantSerializations variant_serializations;
     std::vector<String> variant_names;
     std::vector<size_t> deserialize_text_order;

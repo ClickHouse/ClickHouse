@@ -98,8 +98,22 @@ void VersionInfo::readFromMultiLineBuffer(ReadBuffer & buf)
     CSN current_removal_csn = Tx::UnknownCSN;
 
     assertString("version: 1", buf);
+    assertChar('\n', buf);
 
-    assertString(String("\n") + STORING_VERSION_STR, buf);
+    /// Old format (before the `storing_version` field was introduced) starts with `creation_tid:` immediately
+    /// after the version header. Convert such metadata to non-transactional instead of throwing a parse exception.
+    /// `checkString` is safe here because the first character differs ('c' vs 's'), so it never partially consumes.
+    if (checkString(CREATION_TID_STR, buf))
+    {
+        storing_version = current_storing_version;
+        creation_tid = Tx::NonTransactionalTID;
+        creation_csn = Tx::NonTransactionalCSN;
+        removal_tid = Tx::EmptyTID;
+        removal_csn = Tx::UnknownCSN;
+        return;
+    }
+
+    assertString(STORING_VERSION_STR, buf);
     readText(current_storing_version, buf);
 
     assertString(String("\n") + CREATION_TID_STR, buf);

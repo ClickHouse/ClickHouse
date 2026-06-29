@@ -12,6 +12,12 @@
 #include <arrow/flight/types.h>
 #include <arrow/table.h>
 
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/hashed_index.hpp>
+#include <boost/multi_index/member.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/multi_index/tag.hpp>
+
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -51,6 +57,8 @@ inline bool hasPollDescriptorPrefix(const String & poll_descriptor)
 {
     return poll_descriptor.starts_with(POLL_DESCRIPTOR_PREFIX);
 }
+
+inline const String PREPARED_STATEMENT_HANDLE_PREFIX = "~PREP-";
 
 /// A ticket name with its expiration time.
 struct TicketWithExpirationTime
@@ -115,11 +123,31 @@ struct PollDescriptorInfo : public PollDescriptorWithExpirationTime
     std::optional<String> next_poll_descriptor;
 };
 
+/// Information about a prepared statement.
+struct PreparedStatementInfo
+{
+    /// Query split at '?' placeholder positions.
+    /// For "SELECT ? + ?" this is ["SELECT ", " + ", ""].
+    /// The number of parameters equals query_parts.size() - 1.
+    std::vector<String> query_parts;
+    /// The user who created this prepared statement.
+    String username;
+    /// Schema of the result set (may be nullptr for non-SELECT queries).
+    std::shared_ptr<arrow::Schema> dataset_schema;
+    /// Bound parameter values (set via DoPut with CommandPreparedStatementQuery).
+    /// Contains one row with one column per '?' placeholder.
+    std::shared_ptr<arrow::RecordBatch> bound_parameters;
+    /// When this prepared statement expires (std::nullopt means no expiration).
+    std::optional<Timestamp> expiration_time;
+
+    size_t numParams() const { return query_parts.empty() ? 0 : query_parts.size() - 1; }
+};
+
 /// Keeps information about calls - e.g. blocks extracted from query pipelines, flight tickets, poll descriptors.
 class CallsData
 {
 public:
-    CallsData(std::optional<Duration> tickets_lifetime_, std::optional<Duration> poll_descriptors_lifetime_, LoggerPtr log_);
+    CallsData(std::optional<Duration> tickets_lifetime_, std::optional<Duration> poll_descriptors_lifetime_, std::optional<Duration> prepared_statements_lifetime_, bool use_session_timeout_for_ps_lifetime_, size_t max_prepared_statements_per_user_, LoggerPtr log_);
 
     /// Creates a flight ticket which allows to download a specified block.
     std::shared_ptr<const TicketInfo> createTicket(std::shared_ptr<arrow::Table> arrow_table);
@@ -178,12 +206,49 @@ public:
 
     void stopWaitingNextExpirationTime();
 
+    /// Creates a prepared statement and returns its opaque handle.
+    /// If session_id is non-empty, the prepared statement is associated with
+    /// that session and will be cleaned up when the session closes.
+    /// If session_timeout is provided and use_session_timeout_for_ps_lifetime is true,
+    /// it overrides prepared_statements_lifetime for expiration.
+    [[nodiscard]] arrow::Result<String> createPreparedStatement(PreparedStatementInfo info, const String & session_id = {}, std::optional<Duration> session_timeout = {});
+
+    /// Returns a snapshot copy of a prepared statement's info by handle.
+    /// Checks that the caller's username matches the owner.
+    [[nodiscard]] arrow::Result<PreparedStatementInfo> getPreparedStatement(const String & handle, const String & username) const;
+
+    /// Binds parameter values to a prepared statement.
+    /// Checks that the caller's username matches the owner.
+    [[nodiscard]] arrow::Status bindParameters(const String & handle, const String & username, std::shared_ptr<arrow::RecordBatch> params);
+
+    /// Closes (removes) a prepared statement by handle.
+    /// Checks that the caller's username matches the owner.
+    void closePreparedStatement(const String & handle, const String & username);
+
+    /// Closes all prepared statements owned by a user.
+    /// If session_id is non-empty, only closes statements associated with that session.
+    /// If session_id is empty, only closes session-less statements (statements
+    /// created with a session are left intact).
+    void closeAllPreparedStatements(const String & username, const String & session_id = {});
+
+    /// Closes all prepared statements associated with a session and user.
+    void closeSessionPreparedStatements(const String & session_id, const String & username);
+
+    /// Refreshes expiration time of all prepared statements in a session.
+    /// Called on each request when use_session_timeout_for_ps_lifetime is true.
+    void refreshSessionPreparedStatements(const String & session_id, const String & username, Duration session_timeout);
+
+    bool usesSessionTimeoutForPsLifetime() const { return use_session_timeout_for_ps_lifetime; }
+    std::optional<Duration> getPreparedStatementsLifetime() const { return prepared_statements_lifetime; }
+
 private:
     static String generateTicketName();
     static String generatePollDescriptorName();
+    static String generatePreparedStatementHandle();
 
     std::optional<Timestamp> calculateTicketExpirationTime(Timestamp current_time) const;
     std::optional<Timestamp> calculatePollDescriptorExpirationTime(Timestamp current_time) const;
+    std::optional<Timestamp> calculatePreparedStatementExpirationTime(Timestamp current_time) const;
 
     void updateNextExpirationTime() TSA_REQUIRES(mutex);
 
@@ -200,6 +265,9 @@ private:
 
     const std::optional<Duration> tickets_lifetime;
     const std::optional<Duration> poll_descriptors_lifetime;
+    const std::optional<Duration> prepared_statements_lifetime;
+    const bool use_session_timeout_for_ps_lifetime;
+    const size_t max_prepared_statements_per_user;
     const LoggerPtr log;
     mutable std::mutex mutex;
     std::unordered_map<String, std::shared_ptr<const TicketInfo>> tickets TSA_GUARDED_BY(mutex);
@@ -212,6 +280,40 @@ private:
     /// `tickets_by_expiration_time` and `poll_descriptors_by_expiration_time` are sorted by `expiration_time` so `std::set` is used.
     std::set<std::pair<Timestamp, String>> tickets_by_expiration_time TSA_GUARDED_BY(mutex);
     std::set<std::pair<Timestamp, String>> poll_descriptors_by_expiration_time TSA_GUARDED_BY(mutex);
+
+    /// A single entry in the prepared statements multi-index container.
+    struct PreparedStatementEntry
+    {
+        String handle;
+        String session_id; /// Empty means no session association.
+        String username;
+        Timestamp expiration_time; /// Timestamp::max() means no expiration.
+        std::shared_ptr<PreparedStatementInfo> info;
+    };
+
+    struct ByHandle {};
+    struct BySessionId {};
+    struct ByUsername {};
+    struct ByExpirationTime {};
+
+    using PreparedStatementsContainer = boost::multi_index_container<
+        PreparedStatementEntry,
+        boost::multi_index::indexed_by<
+            boost::multi_index::hashed_unique<
+                boost::multi_index::tag<ByHandle>,
+                boost::multi_index::member<PreparedStatementEntry, String, &PreparedStatementEntry::handle>>,
+            boost::multi_index::hashed_non_unique<
+                boost::multi_index::tag<BySessionId>,
+                boost::multi_index::member<PreparedStatementEntry, String, &PreparedStatementEntry::session_id>>,
+            boost::multi_index::hashed_non_unique<
+                boost::multi_index::tag<ByUsername>,
+                boost::multi_index::member<PreparedStatementEntry, String, &PreparedStatementEntry::username>>,
+            boost::multi_index::ordered_non_unique<
+                boost::multi_index::tag<ByExpirationTime>,
+                boost::multi_index::member<PreparedStatementEntry, Timestamp, &PreparedStatementEntry::expiration_time>>>>;
+
+    PreparedStatementsContainer prep_statements TSA_GUARDED_BY(mutex);
+
     std::optional<Timestamp> next_expiration_time TSA_GUARDED_BY(mutex);
     mutable std::condition_variable next_expiration_time_updated;
     bool stop_waiting_next_expiration_time TSA_GUARDED_BY(mutex) = false;
