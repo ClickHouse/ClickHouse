@@ -89,15 +89,15 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
     };
 
     /// Sliding aggregator for linear regression: preaggregates each bucket into centered moments, then keeps the
-    /// running combine over the window in a `SlidingSum` (recompute path - the centered moments are not invertible).
+    /// running combine over the window in a `SlidingSum` (two-stacks or recompute, chosen by `createAggregator`).
     struct Aggregator
     {
         AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
         TimestampType base;
         Float64 predict_offset;
 
-        Aggregator(TimestampType base_, Float64 predict_offset_)
-            : base(base_), predict_offset(predict_offset_)
+        Aggregator(size_t stack_size, TimestampType base_, Float64 predict_offset_)
+            : sliding_sum(stack_size), base(base_), predict_offset(predict_offset_)
         {
         }
 
@@ -179,9 +179,39 @@ public:
     {
     }
 
-    Aggregator createAggregator(size_t /* num_populated_buckets */) const
+    /// `createAggregator` switches to the two-stack queue once the average number of populated buckets in a
+    /// window reaches this value; below it, recomputing the window each grid point is cheaper. The
+    /// `timeseries_to_grid_two_stack_vs_recompute` example measures the crossover by driving the real finalize over
+    /// a larger-than-cache dataset (so recompute pays the same per-point cache misses as the real query) and puts
+    /// it around 8-10 populated buckets per window, matching an end-to-end A/B. Sparse data needs no margin here:
+    /// the density factor in `createAggregator` already converts `buckets_per_window` to the populated average.
+    static constexpr size_t AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS = 10;
+
+    /// Hard cap: regardless of average density, use two-stacks once a window can hold this many buckets. The
+    /// density estimate below is an average, but density is not uniform - a low average can still hide a locally
+    /// dense window whose recompute folds far more buckets than the average. Beyond this capacity we stop trusting
+    /// the average and bound the worst case: at this size a fully dense window already makes recompute ~2x slower
+    /// than two-stacks (measured by the `timeseries_to_grid_two_stack_vs_recompute` example).
+    static constexpr size_t BPW_TO_FORCE_TWO_STACKS = 20;
+
+    Aggregator createAggregator(size_t num_populated_buckets) const
     {
-        return Aggregator{Base::start_timestamp, predict_offset};
+        /// Recompute folds the populated buckets in each window - on average `buckets_per_window * density`, where
+        /// `density = num_populated_buckets / bucket_count`. Compare that average (not the dense maximum
+        /// `buckets_per_window`) to the threshold, so sparse data, whose windows hold fewer populated buckets,
+        /// stays on the cheaper recompute path without inflating the threshold. The hard cap still forces
+        /// two-stacks for large windows, where a non-uniform spread could hide a locally dense window.
+        const size_t avg_buckets_in_window = Base::bucket_count
+            ? static_cast<size_t>(static_cast<double>(Base::buckets_per_window) * static_cast<double>(num_populated_buckets)
+                / static_cast<double>(Base::bucket_count))
+            : 0;
+        const bool use_two_stacks = avg_buckets_in_window >= AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS
+            || Base::buckets_per_window >= BPW_TO_FORCE_TWO_STACKS;
+        /// A positive stack size selects the two-stack queue and reserves it for the window's full capacity (a
+        /// window can hold up to `buckets_per_window` populated buckets even when the average is lower); 0 selects
+        /// recompute.
+        const size_t stack_size = use_two_stacks ? Base::buckets_per_window : 0;
+        return Aggregator{stack_size, Base::start_timestamp, predict_offset};
     }
 
     static constexpr UInt16 FORMAT_VERSION = 2;

@@ -93,8 +93,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
         VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> temp_buffer;  /// reused sort buffer
 
-        /// `Summary` is invertible (provides `unmerge`), so the sliding sum maintains the window in O(1) per bucket
-        /// with a running sum instead of recomputing it.
+        /// `Summary::merge` is order-dependent (not commutative), so it must take the invertible running-sum path,
+        /// not the two-stacks path which combines values out of time order.
         static_assert(decltype(sliding_sum)::is_invertible);
 
         IntervalType window;
