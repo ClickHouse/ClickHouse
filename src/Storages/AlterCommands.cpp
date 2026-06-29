@@ -25,6 +25,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
@@ -512,6 +513,16 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     }
     if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
     {
+        /// Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) shape a
+        /// result via derived-table wrapping during direct execution; a stored materialized view query
+        /// cannot support them equivalently (same reasons as the `CREATE VIEW` guard in
+        /// InterpreterCreateQuery::createTable). Reject them here too — including when nested in a
+        /// subquery's own `SETTINGS` — so `ALTER TABLE ... MODIFY QUERY` cannot bypass that guard.
+        if (hasConstructionSettings(*command_ast->select))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) "
+                "are not supported in a materialized view definition. Specify them on the query that reads the view instead.");
+
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_QUERY;

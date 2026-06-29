@@ -24,6 +24,15 @@ CREATE MATERIALIZED VIEW mv_bad TO t_dst AS SELECT x FROM t_src SETTINGS limit =
 SELECT '-- a POPULATE materialized view is rejected too (not silently accepted via the immediate-insert wrapping)';
 CREATE MATERIALIZED VIEW mv_pop ENGINE = MergeTree ORDER BY x POPULATE AS SELECT x FROM t_src SETTINGS limit = 1; -- { serverError NOT_IMPLEMENTED }
 
+SELECT '-- construction settings via ALTER TABLE ... MODIFY QUERY are rejected (cannot bypass the CREATE guard)';
+CREATE MATERIALIZED VIEW mv_alter TO t_dst AS SELECT x FROM t_src;
+ALTER TABLE mv_alter MODIFY QUERY SELECT x FROM t_src SETTINGS limit = 1; -- { serverError NOT_IMPLEMENTED }
+-- the construction setting can hide in a nested subquery's own SETTINGS; reject that too
+ALTER TABLE mv_alter MODIFY QUERY SELECT x FROM (SELECT x FROM t_src SETTINGS limit = 1); -- { serverError NOT_IMPLEMENTED }
+-- a MODIFY QUERY without construction settings still works
+ALTER TABLE mv_alter MODIFY QUERY SELECT x FROM t_src WHERE x > 5;
+DROP TABLE mv_alter;
+
 SELECT '-- a plain view works; the reader applies construction settings to its own SELECT';
 CREATE VIEW v_ok AS SELECT x FROM t_src;
 SELECT x FROM v_ok ORDER BY x SETTINGS limit = 3;
