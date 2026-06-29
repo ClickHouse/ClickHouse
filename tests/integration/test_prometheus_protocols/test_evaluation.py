@@ -1935,7 +1935,7 @@ def test_alignment_with_subquery_step():
     )
 
 
-def test_set_binary_operators():
+def test_set_binary_operators_instant_vector():
     # Behavior: Prometheus `and` returns original LHS samples whose default match signature, all labels except `__name__`, exists on RHS.
     do_query_test_ignoring_result_order(
         "foo and bar",
@@ -2091,7 +2091,7 @@ def test_set_binary_operators():
         "foo and 1",
         150,
         'set operator "and" not allowed in binary scalar expression',
-        "Set binary operator 'and' expects two arguments of type INSTANT_VECTOR",
+        "Binary operator 'and' expects two arguments of type INSTANT_VECTOR",
     )
 
     # Behavior: Prometheus set operators are vector-vector only, so scalar operands are invalid.
@@ -2099,7 +2099,7 @@ def test_set_binary_operators():
         "foo or 1",
         150,
         'set operator "or" not allowed in binary scalar expression',
-        "Set binary operator 'or' expects two arguments of type INSTANT_VECTOR",
+        "Binary operator 'or' expects two arguments of type INSTANT_VECTOR",
     )
 
     # Behavior: Prometheus set operators are vector-vector only, so scalar operands are invalid.
@@ -2107,7 +2107,7 @@ def test_set_binary_operators():
         "foo unless 1",
         150,
         'set operator "unless" not allowed in binary scalar expression',
-        "Set binary operator 'unless' expects two arguments of type INSTANT_VECTOR",
+        "Binary operator 'unless' expects two arguments of type INSTANT_VECTOR",
     )
 
     # Behavior: set operators are many-to-many and Prometheus rejects grouping modifiers.
@@ -2115,7 +2115,7 @@ def test_set_binary_operators():
         "foo and on(shape) group_left bar",
         150,
         'no grouping allowed for "and" operation',
-        "Set binary operator 'and' does not support group modifiers",
+        "Binary operator 'and' doesn't allow group_left",
     )
 
     # Behavior: set operators are many-to-many and Prometheus rejects grouping modifiers.
@@ -2123,7 +2123,7 @@ def test_set_binary_operators():
         "foo or on(shape) group_right bar",
         150,
         'no grouping allowed for "or" operation',
-        "Set binary operator 'or' does not support group modifiers",
+        "Binary operator 'or' doesn't allow group_right",
     )
 
     # Behavior: set operators are many-to-many and Prometheus rejects grouping modifiers.
@@ -2131,7 +2131,7 @@ def test_set_binary_operators():
         "foo unless on(shape) group_left bar",
         150,
         'no grouping allowed for "unless" operation',
-        "Set binary operator 'unless' does not support group modifiers",
+        "Binary operator 'unless' doesn't allow group_left",
     )
 
     # Behavior: Prometheus rejects the `bool` modifier on set operators because it only applies to comparisons.
