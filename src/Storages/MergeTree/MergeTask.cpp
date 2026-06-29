@@ -2278,6 +2278,17 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             {
                 const auto & part = global_ctx->future_part->parts[part_idx];
 
+                /// A part with no rows carries no text-index data: an empty part writes empty index
+                /// streams (no header and no marks, see `MergeTextIndexesTask`), yet its empty `.idx`
+                /// file is still listed in the checksums, so `getDeserializedFormat` below reports the
+                /// index as present and the part would be taken as a merge source "as is". Such a part
+                /// can become an active merge source - for example after `DELETE` or a TTL removes all
+                /// of its rows, or when an outdated empty part is re-activated by a `DETACH`/`ATTACH`
+                /// cycle - and reading its empty Regular substream as a source segment fails with
+                /// `ATTEMPT_TO_READ_AFTER_EOF`. It contributes nothing to the merged index, so skip it.
+                if (part->isEmpty())
+                    continue;
+
                 if (index_ptr->getDeserializedFormat(part->checksums, index_ptr->getFileName(), &part->getDataPartStorage()))
                 {
                     /// If text index exists in the source part, take it as is.
