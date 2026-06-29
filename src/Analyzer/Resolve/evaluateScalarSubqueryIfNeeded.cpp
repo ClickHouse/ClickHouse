@@ -25,6 +25,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
 {

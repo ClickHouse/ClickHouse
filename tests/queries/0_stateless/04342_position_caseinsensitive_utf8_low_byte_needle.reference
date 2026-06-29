@@ -1,0 +1,13 @@
+-- positionCaseInsensitiveUTF8, needle first byte below 0x40
+81
+81
+81
+81
+-- the matched substring also folds case
+81
+-- ILIKE with a low-byte needle in a long haystack
+1
+-- multiSearchAnyCaseInsensitiveUTF8 with a low-byte needle
+1
+-- absent low-byte needle is still not found
+0

@@ -22,7 +22,7 @@ def started_cluster():
         cluster.start()
         for _, node in cluster.instances.items():
             node.query(
-                f"""
+                """
                 CREATE TABLE test_tb (a String) ENGINE = MergeTree ORDER BY a;
                 """
             )

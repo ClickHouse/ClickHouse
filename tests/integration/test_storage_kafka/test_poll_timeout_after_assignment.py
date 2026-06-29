@@ -1,6 +1,13 @@
 """Test Kafka poll timeout after assignment recovery."""
 
-from helpers.kafka.common_direct import *
+import json
+import logging
+import time
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)
@@ -36,18 +43,7 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
-    admin_client = k.get_admin_client(cluster)
-
-    topics = [t for t in admin_client.list_topics() if not t.startswith("_")]
-    logging.debug(f"Deleting topics: {topics}")
-    result = admin_client.delete_topics(topics)
-    for topic, error in result.topic_error_codes:
-        if error != 0:
-            logging.warning(f"Received error {error} while deleting topic {topic}")
-        else:
-            logging.info(f"Deleted topic {topic}")
-
+    k.clean_test_database_and_topics(instance, cluster)
     yield
 
 

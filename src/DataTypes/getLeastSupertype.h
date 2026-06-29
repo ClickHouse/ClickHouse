@@ -2,6 +2,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Common/IntervalKind.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -41,7 +42,7 @@ DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types);
 /// Same as above but return nullptr instead of throwing exception.
 DataTypePtr tryGetLeastSupertype(const DataTypes & types);
 
-using TypeIndexSet = std::unordered_set<TypeIndex>;
+using TypeIndexSet = UnorderedSetWithMemoryTracking<TypeIndex>;
 
 template <LeastSupertypeOnError on_error = LeastSupertypeOnError::Throw>
 DataTypePtr getLeastSupertype(const TypeIndexSet & types);

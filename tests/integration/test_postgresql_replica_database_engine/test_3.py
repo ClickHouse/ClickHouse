@@ -1,40 +1,18 @@
-import os.path as p
-import random
-import threading
 import time
 import uuid
-from random import randrange
 
-import psycopg2
 import pytest
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import (
     PostgresManager,
-    assert_nested_table_is_created,
-    assert_number_of_columns,
     check_several_tables_are_synchronized,
     check_tables_are_synchronized,
-    create_postgres_schema,
-    create_postgres_table,
-    create_postgres_table_with_schema,
-    create_replication_slot,
-    drop_postgres_schema,
-    drop_postgres_table,
-    drop_postgres_table_with_schema,
-    drop_replication_slot,
     get_postgres_conn,
-    postgres_table_template,
-    postgres_table_template_2,
-    postgres_table_template_3,
-    postgres_table_template_4,
-    postgres_table_template_5,
     postgres_table_template_6,
-    queries,
 )
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -170,11 +148,11 @@ def test_table_override(started_cluster):
 
 
 def test_materialized_view(started_cluster):
-    pg_manager.execute(f"DROP TABLE IF EXISTS test_table")
+    pg_manager.execute("DROP TABLE IF EXISTS test_table")
     pg_manager.execute(
-        f"CREATE TABLE test_table (key integer PRIMARY KEY, value integer)"
+        "CREATE TABLE test_table (key integer PRIMARY KEY, value integer)"
     )
-    pg_manager.execute(f"INSERT INTO test_table SELECT 1, 2")
+    pg_manager.execute("INSERT INTO test_table SELECT 1, 2")
     instance.query("DROP DATABASE IF EXISTS test_database")
     instance.query(
         "CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) SETTINGS materialized_postgresql_tables_list='test_table'"
@@ -185,7 +163,7 @@ def test_materialized_view(started_cluster):
         "CREATE MATERIALIZED VIEW mv ENGINE=MergeTree ORDER BY tuple() POPULATE AS SELECT * FROM test_database.test_table"
     )
     assert "1\t2" == instance.query("SELECT * FROM mv").strip()
-    pg_manager.execute(f"INSERT INTO test_table SELECT 3, 4")
+    pg_manager.execute("INSERT INTO test_table SELECT 3, 4")
     check_tables_are_synchronized(instance, "test_table")
     assert "1\t2\n3\t4" == instance.query("SELECT * FROM mv ORDER BY 1, 2").strip()
     instance.query("DROP VIEW mv")
@@ -199,7 +177,7 @@ def test_too_many_parts(started_cluster):
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
         settings=[
-            f"materialized_postgresql_tables_list = 'test_table', materialized_postgresql_backoff_min_ms = 100, materialized_postgresql_backoff_max_ms = 100"
+            "materialized_postgresql_tables_list = 'test_table', materialized_postgresql_backoff_min_ms = 100, materialized_postgresql_backoff_max_ms = 100"
         ],
     )
     check_tables_are_synchronized(
@@ -391,7 +369,7 @@ def test_failed_load_from_snapshot(started_cluster):
 def test_symbols_in_publication_name(started_cluster):
     id = uuid.uuid4()
     db = f"test_{id}"
-    table = f"test_symbols_in_publication_name"
+    table = "test_symbols_in_publication_name"
 
     pg_manager3 = PostgresManager()
     pg_manager3.init(
@@ -858,6 +836,201 @@ def test_quoting_publication(started_cluster):
         result
         == "postgresql-replica-5\npostgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n"
     )
+
+
+def test_use_extended_date_and_time_types_setting(started_cluster):
+    # https://github.com/ClickHouse/ClickHouse/issues/43153
+    # By default PostgreSQL `date`/`timestamp` map to ClickHouse Date32/DateTime64 (wider range).
+    # materialized_postgresql_use_extended_date_and_time_types = 0 falls back to Date/DateTime,
+    # recursing through Nullable and Array.
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_date_types")
+    cursor.execute(
+        "CREATE TABLE test_date_types ("
+        "key integer PRIMARY KEY, d date, t timestamp, "
+        "arr_d date[] NOT NULL, arr_t timestamp[] NOT NULL)"
+    )
+    cursor.execute(
+        "INSERT INTO test_date_types VALUES "
+        "(1, '2000-05-12', '2000-05-12 12:12:12.012345', "
+        "'{2000-05-12,2001-01-01}', '{2000-05-12 12:12:12}')"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_tables_list = 'test_date_types'",
+            "materialized_postgresql_use_extended_date_and_time_types = 0",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    assert_eq_with_retry(
+        instance, "SELECT count() FROM test_database.test_date_types", "1"
+    )
+
+    def col_type(name):
+        return instance.query(
+            "SELECT type FROM system.columns WHERE database='test_database' "
+            f"AND table='test_date_types' AND name='{name}'"
+        ).strip()
+
+    # Narrowing must have happened for every column (scalar, nullable and array).
+    for name in ("d", "t", "arr_d", "arr_t"):
+        typ = col_type(name)
+        assert "Date32" not in typ and "DateTime64" not in typ, f"{name}: {typ}"
+
+    assert "Nullable(Date)" == col_type("d")
+    assert "Nullable(DateTime)" == col_type("t")
+    assert col_type("arr_d").startswith("Array(") and "Date" in col_type("arr_d")
+    assert col_type("arr_t").startswith("Array(") and "DateTime" in col_type("arr_t")
+
+    assert "2000-05-12\t2000-05-12 12:12:12" == instance.query(
+        "SELECT d, t FROM test_database.test_date_types WHERE key = 1"
+    ).strip()
+
+    # Ongoing replication must keep working with the narrower types.
+    cursor.execute(
+        "INSERT INTO test_date_types VALUES "
+        "(2, '2020-01-01', '2020-01-01 01:02:03', '{2020-01-01}', '{2020-01-01 01:02:03}')"
+    )
+    assert_eq_with_retry(
+        instance, "SELECT count() FROM test_database.test_date_types", "2"
+    )
+
+    # Verify the replicated values, not just the row count. MaterializedPostgreSQLConsumer
+    # catches conversion failures and still inserts the row with default values, so a broken
+    # WAL decoder for the narrowed Date/DateTime or array types would pass a count-only check.
+    assert (
+        "2020-01-01\t2020-01-01 01:02:03\t['2020-01-01']\t['2020-01-01 01:02:03']"
+        == instance.query(
+            "SELECT d, t, arr_d, arr_t FROM test_database.test_date_types WHERE key = 2"
+        ).strip()
+    )
+
+    pg_manager.drop_materialized_db()
+    cursor.execute("DROP TABLE IF EXISTS test_date_types")
+
+
+def test_use_extended_date_and_time_types_setting_table_engine_rejected(started_cluster):
+    # The setting only affects the MaterializedPostgreSQL database engine, where the nested
+    # table structure is derived from PostgreSQL. For the table engine the user declares the
+    # column types explicitly, so the setting cannot have any effect and must be rejected with
+    # a clear exception rather than silently ignored.
+    table = "test_date_types_table_engine"
+    error = instance.query_and_get_error(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, d Date)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_use_extended_date_and_time_types = 0
+        """
+    )
+    assert (
+        "materialized_postgresql_use_extended_date_and_time_types" in error
+        and "table engine" in error
+    ), error
+
+
+def test_use_extended_date_and_time_types_setting_alter_database_rejected(started_cluster):
+    # The setting only controls the column types chosen by type inference when the nested tables
+    # are created. The already created nested tables keep their fixed column types, so changing it
+    # for an existing database with `ALTER DATABASE ... MODIFY SETTING` would be a silent no-op and
+    # must be rejected with a clear exception instead.
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_alter_date_types")
+    cursor.execute("CREATE TABLE test_alter_date_types (key integer PRIMARY KEY, d date)")
+    cursor.execute("INSERT INTO test_alter_date_types VALUES (1, '2000-05-12')")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_tables_list = 'test_alter_date_types'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    assert_eq_with_retry(
+        instance, "SELECT count() FROM test_database.test_alter_date_types", "1"
+    )
+
+    error = instance.query_and_get_error(
+        "ALTER DATABASE test_database MODIFY SETTING "
+        "materialized_postgresql_use_extended_date_and_time_types = 0"
+    )
+    assert (
+        "materialized_postgresql_use_extended_date_and_time_types" in error
+        and "cannot be changed for an existing database" in error
+    ), error
+
+    pg_manager.drop_materialized_db()
+    cursor.execute("DROP TABLE IF EXISTS test_alter_date_types")
+
+
+def test_use_extended_date_and_time_types_setting_alter_database_atomic(started_cluster):
+    # A multi-setting `ALTER DATABASE ... MODIFY SETTING` that rejects the immutable
+    # `materialized_postgresql_use_extended_date_and_time_types` must validate the whole statement
+    # before applying anything. Otherwise a mutable setting placed before the immutable one in the
+    # same statement would already be applied (to the live replication handler, the in-memory settings
+    # and the on-disk metadata) when the statement aborts, so the rejected alter could still change the
+    # database. Here `materialized_postgresql_max_block_size` precedes the immutable setting and must
+    # remain unchanged after the failed statement.
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_alter_atomic_date_types")
+    cursor.execute(
+        "CREATE TABLE test_alter_atomic_date_types (key integer PRIMARY KEY, d date)"
+    )
+    cursor.execute("INSERT INTO test_alter_atomic_date_types VALUES (1, '2000-05-12')")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_tables_list = 'test_alter_atomic_date_types'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+            "materialized_postgresql_max_block_size = 11111",
+        ],
+    )
+    assert_eq_with_retry(
+        instance,
+        "SELECT count() FROM test_database.test_alter_atomic_date_types",
+        "1",
+    )
+
+    create_before = instance.query("SHOW CREATE DATABASE test_database")
+    assert "materialized_postgresql_max_block_size = 11111" in create_before, create_before
+
+    # The mutable `materialized_postgresql_max_block_size` precedes the immutable setting, so a
+    # non-atomic implementation would apply it before throwing on the immutable one.
+    error = instance.query_and_get_error(
+        "ALTER DATABASE test_database MODIFY SETTING "
+        "materialized_postgresql_max_block_size = 22222, "
+        "materialized_postgresql_use_extended_date_and_time_types = 0"
+    )
+    assert (
+        "materialized_postgresql_use_extended_date_and_time_types" in error
+        and "cannot be changed for an existing database" in error
+    ), error
+
+    # The rejected statement must not have changed the mutable setting.
+    create_after = instance.query("SHOW CREATE DATABASE test_database")
+    assert "materialized_postgresql_max_block_size = 11111" in create_after, create_after
+    assert "22222" not in create_after, create_after
+
+    # A valid `ALTER DATABASE` of the mutable setting alone still works and is persisted, so the
+    # added pre-validation pass did not break the normal path.
+    instance.query(
+        "ALTER DATABASE test_database MODIFY SETTING materialized_postgresql_max_block_size = 33333"
+    )
+    create_valid = instance.query("SHOW CREATE DATABASE test_database")
+    assert "materialized_postgresql_max_block_size = 33333" in create_valid, create_valid
+
+    pg_manager.drop_materialized_db()
+    cursor.execute("DROP TABLE IF EXISTS test_alter_atomic_date_types")
 
 
 def test_numeric_to_int256(started_cluster):

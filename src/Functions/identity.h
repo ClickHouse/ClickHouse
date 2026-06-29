@@ -83,18 +83,23 @@ public:
     FunctionActionName() : FunctionIdentityBase("__actionName", false) {}
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionActionName>(); }
     size_t getNumberOfArguments() const override { return 2; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
+    /// Do not allow any argument to have type other than String
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!WhichDataType(arguments[1]).isString())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal and should not be used directly");
+        for (const auto & arg : arguments)
+        {
+            if (WhichDataType(arg).isString())
+                continue;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
+        }
 
-        return arguments.front();
+        return FunctionIdentityBase::getReturnTypeImpl(arguments);
     }
 };
 
