@@ -42,6 +42,10 @@ TableFunctionPtr TableFunctionFactory::get(
     ContextPtr context) const
 {
     const auto * table_function = ast_function->as<ASTFunction>();
+    if (!table_function)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Expected a table function (ASTFunction) but got '{}'", ast_function->formatForErrorMessage());
+
     auto res = tryGet(table_function->name, context);
     if (!res)
     {
