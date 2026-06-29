@@ -37,9 +37,7 @@ def started_cluster():
         last_error = None
         for _ in range(20):
             try:
-                cluster.exec_in_container(
-                    hive_container, ["bash", "-c", "bash /prepare_hive_data.sh"]
-                )
+                cluster.exec_in_container(hive_container, ["bash", "-c", "bash /prepare_hive_data.sh"])
                 last_error = None
                 break
             except Exception as e:  # noqa: BLE001
@@ -82,18 +80,10 @@ def test_select_without_where(started_cluster):
 
     # No WHERE clause: this used to crash the server.
     assert query_with_retry(node, "SELECT count(*) FROM default.hive_demo").strip() == "4"
-    assert (
-        node.query("SELECT id, score, day FROM default.hive_demo ORDER BY day, id")
-        == "a\t1\t2021-11-01\nb\t2\t2021-11-05\nc\t3\t2021-11-05\nd\t4\t2021-11-11\n"
-    )
+    assert node.query("SELECT id, score, day FROM default.hive_demo ORDER BY day, id") == "a\t1\t2021-11-01\nb\t2\t2021-11-05\nc\t3\t2021-11-05\nd\t4\t2021-11-11\n"
 
     # A read with a filter exercises partition (and split) pruning ...
-    assert (
-        node.query(
-            "SELECT count(*) FROM default.hive_demo WHERE day = '2021-11-05'"
-        ).strip()
-        == "2"
-    )
+    assert node.query("SELECT count(*) FROM default.hive_demo WHERE day = '2021-11-05'").strip() == "2"
 
     # ... and must not leave stale pruning state on the process-wide cached hive file:
     # a subsequent unfiltered read of the same table still returns all rows.
