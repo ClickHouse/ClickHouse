@@ -315,14 +315,14 @@ bool isExpressionActionsDeterministic(const ExpressionActionsPtr & actions)
 /// callers skip the optimization (and query all shards) rather than assert.
 const ActionsDAG::Node * tryFindShardingKeyOutput(const ActionsDAG & sharding_key_dag, const std::string & sharding_key_column_name)
 {
-    if (const auto * node = sharding_key_dag.tryFindInOutputs(sharding_key_column_name))
+    if (const ActionsDAG::Node * node = sharding_key_dag.tryFindInOutputs(sharding_key_column_name))
         return node;
 
     /// The name lookup missed because the analyzer rewrote the key: it const-folds e.g.
     /// `if(2, toInt32(id), t0)` to the computed output `toInt32(id)`, or folds `if(1, id, id + 1)`
     /// all the way down to the bare source column `id`. The DAG built with `project=false` has the
     /// sharding key output plus its source-column inputs.
-    const auto & outputs = sharding_key_dag.getOutputs();
+    const ActionsDAG::NodeRawConstPtrs & outputs = sharding_key_dag.getOutputs();
 
     /// A single output is unambiguously the sharding key, even when that output is a source column
     /// (a key that folds to a bare column, e.g. `if(1, id, id + 1)` -> `id`).
@@ -331,16 +331,15 @@ const ActionsDAG::Node * tryFindShardingKeyOutput(const ActionsDAG & sharding_ke
 
     /// With several outputs the key is the one that is not a source/input column: for `intHash64(id)`
     /// the outputs are [id, intHash64(id)] and `id` is only a source column.
-    NameSet source_columns;
-    for (const auto & name : sharding_key_dag.getRequiredColumnsNames())
-        source_columns.insert(name);
+    const Names & names = sharding_key_dag.getRequiredColumnsNames();
+    const NameSet source_columns(names.begin(), names.end());
 
     const ActionsDAG::Node * result = nullptr;
-    for (const auto * output : outputs)
+    for (const ActionsDAG::Node * output : outputs)
     {
         if (source_columns.contains(output->result_name))
             continue;
-        if (result)
+        if (result != nullptr)
             return nullptr; /// More than one non-source output: ambiguous, bail out.
         result = output;
     }
@@ -479,7 +478,7 @@ StorageDistributed::StorageDistributed(
         /// `if(2, toInt32(id), t0)` down to `toInt32(id)`, so the raw AST name is absent from the expression
         /// outputs. Resolve it to the actual output name so every consumer that looks the column up in the
         /// expression's result (shard skipping, sharding key IN rewrite, DistributedSink selector) finds it.
-        if (const auto * node = tryFindShardingKeyOutput(sharding_key_expr->getActionsDAG(), sharding_key_column_name))
+        if (const ActionsDAG::Node * node = tryFindShardingKeyOutput(sharding_key_expr->getActionsDAG(), sharding_key_column_name))
             sharding_key_column_name = node->result_name;
         sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
     }
@@ -658,8 +657,8 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     /// For example, if the sharding key is `intHash64(user_id)`, then `getOutputs() = [intHash64(user_id), user_id]`. The `user_id` column is a source
     /// column but not a key value, and should be excluded from checks. We need to find the actual sharding key output
     /// node to check that it depends only on the allowed set of nodes (`irreducible_nodes`).
-    const auto * sharding_key_output = tryFindShardingKeyOutput(sharding_key_dag, sharding_key_column_name);
-    if (!sharding_key_output)
+    const ActionsDAG::Node * sharding_key_output = tryFindShardingKeyOutput(sharding_key_dag, sharding_key_column_name);
+    if (sharding_key_output == nullptr)
         return false;
     return allOutputsDependsOnlyOnAllowedNodes({sharding_key_output}, irreducibe_nodes, matches);
 }
@@ -1833,9 +1832,9 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "optimize_skip_unused_shards_limit out of range (0, {}]", SSIZE_MAX);
     }
 
-    const auto & sharding_key_dag = sharding_key_expr->getActionsDAG();
-    const auto * expr_node = tryFindShardingKeyOutput(sharding_key_dag, sharding_key_column_name);
-    if (!expr_node)
+    const ActionsDAG & sharding_key_dag = sharding_key_expr->getActionsDAG();
+    const ActionsDAG::Node * expr_node = tryFindShardingKeyOutput(sharding_key_dag, sharding_key_column_name);
+    if (expr_node == nullptr)
         /// Sharding key column can't be resolved in the analyzed expression (e.g. a const-folded key like
         /// `if(2, toInt32(id), t0)`). Skip the optimization and query all shards instead of asserting.
         return nullptr;
