@@ -260,6 +260,24 @@ def run_gtests(binary_path, gtest_filter, name):
     )
 
 
+def before_run_started_a_test(result):
+    """Did the before-binary actually start executing a touched test?
+
+    gtest prints "[ RUN      ] Suite.Test" when a test begins. If that marker is present,
+    a failure/crash is attributable to the touched suite — a real reproduction (including
+    a crash *during* the test, a legitimate crash-bug repro). If it is absent, the binary
+    died before any test ran (e.g. a runtime that cannot initialize in this environment),
+    which is an infrastructure problem and must NOT be counted as a reproduction.
+    """
+    for f in result.files or []:
+        try:
+            if "[ RUN " in Shell.get_output(f"cat {f}", verbose=False):
+                return True
+        except OSError as e:
+            print(f"WARNING: could not read gtest log {f}: {e}")
+    return False
+
+
 def mark_reproduced(result):
     """Flip a before-run failure into an expected (XFAIL) success for the report."""
     result.set_label(Result.Label.XFAIL)
@@ -415,6 +433,25 @@ def main():
         return
 
     if not before_result.is_ok():
+        # A failure/crash only counts as a reproduction if the touched suite actually
+        # started executing. If the binary died before any test ran (no "[ RUN ]" marker),
+        # it is an environment/infrastructure problem — e.g. a runtime that cannot
+        # initialize in this container — NOT evidence the test catches the bug. Fail close.
+        if not before_run_started_a_test(before_result):
+            before_result.set_status(Result.Status.ERROR)
+            before_result.set_info(
+                "The before-binary died before running any touched test (no gtest "
+                "'[ RUN ]' marker). This is an infrastructure error — NOT a reproduction. "
+                + (before_result.info or "")
+            )
+            results.append(before_result)
+            finalize(
+                results,
+                "Bugfix validation inconclusive: the before-binary did not start any "
+                "touched test (environment problem, not a reproduction).",
+            )
+            return
+
         # At least one touched test failed or crashed on the before-binary — the bug is
         # reproduced. Flip the expected failure to a success for the report.
         mark_reproduced(before_result)

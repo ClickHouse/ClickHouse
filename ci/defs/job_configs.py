@@ -836,7 +836,13 @@ class JobConfigs:
         name=JobNames.BUGFIX_VALIDATE_UT,
         runs_on=RunnerLabels.AMD_LARGE,
         command="python3 ./ci/jobs/unit_tests_bugfix_validation_job.py",
-        run_in_docker=BINARY_DOCKER_COMMAND,
+        # The job both builds and RUNS the before-binary in this container. Running
+        # `unit_tests_dbms` needs `io_uring` (the `silk` fiber runtime calls
+        # `io_uring_queue_init_params` at startup), which Docker's default seccomp
+        # profile blocks — without this the before-binary aborts before any test runs.
+        # `--privileged` mirrors how the regular unit-test job runs the same binary
+        # (`clickhouse/test-base+--privileged`).
+        run_in_docker=BINARY_DOCKER_COMMAND + "+--privileged",
         needs_submodules=True,
         timeout=3600 * 4,
         digest_config=Job.CacheDigestConfig(
