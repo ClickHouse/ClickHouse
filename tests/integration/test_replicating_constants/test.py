@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -8,10 +8,9 @@ node1 = cluster.add_instance("node1", with_zookeeper=True)
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
-    image="yandex/clickhouse-server",
-    tag="19.1.14",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 
 
@@ -28,7 +27,7 @@ def start_cluster():
 def test_different_versions(start_cluster):
     assert (
         node1.query(
-            "SELECT uniqExact(x) FROM (SELECT version() as x from remote('node{1,2}', system.one))"
+            "SELECT uniqExact(x) FROM (SELECT version() as x from remote('node{1,2}', system.one)) settings serialize_query_plan = 0"
         )
         == "2\n"
     )

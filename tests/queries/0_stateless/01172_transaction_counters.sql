@@ -40,9 +40,8 @@ insert into txn_counters(n) values (5);
 alter table txn_counters drop partition id 'all';
 rollback;
 
-system flush logs;
-select indexOf((select arraySort(groupUniqArray(tid)) from system.transactions_info_log where database=currentDatabase() and table='txn_counters'), tid),
-       (toDecimal64(now64(6), 6) - toDecimal64(event_time, 6)) < 100,
+system flush logs transactions_info_log;
+select indexOf((select arraySort(groupUniqArray(tid)) from system.transactions_info_log where event_date >= yesterday() AND event_time >= now() - 600 AND database=currentDatabase() and table='txn_counters'), tid),
        type,
        thread_id!=0,
        length(query_id)=length(queryID()) or type='Commit' and query_id='',  -- ignore fault injection after commit

@@ -1,2 +1,0 @@
-1	(1)	Tuple(k1 Int8)
-1	([1,2])	Tuple(k1 Array(Int8))

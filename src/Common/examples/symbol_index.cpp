@@ -1,17 +1,19 @@
-#include <Common/SymbolIndex.h>
-#include <Common/Elf.h>
-#include <Common/Dwarf.h>
-#include <Core/Defines.h>
-#include <base/demangle.h>
 #include <iostream>
 #include <dlfcn.h>
+#include <Core/Defines.h>
+#include <base/demangle.h>
+#include <Common/Dwarf.h>
+#include <Common/Elf.h>
+#include <Common/StackTrace.h>
+#include <Common/SymbolIndex.h>
+#include <Examples/clickhouse_examples.h>
 
 [[maybe_unused]] static NO_INLINE const void * getAddress()
 {
     return __builtin_return_address(0);
 }
 
-int main(int argc, char ** argv)
+int mainEntryExampleSymbolIndex(int argc, char ** argv)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     using namespace DB;
@@ -25,14 +27,14 @@ int main(int argc, char ** argv)
     const SymbolIndex & symbol_index = SymbolIndex::instance();
 
     for (const auto & elem : symbol_index.symbols())
-        std::cout << elem.name << ": " << elem.address_begin << " ... " << elem.address_end << "\n";
+        std::cout << elem.name << ": " << elem.offset_begin << " ... " << elem.offset_end << "\n";
     std::cout << "\n";
 
     const void * address = reinterpret_cast<void*>(std::stoull(argv[1], nullptr, 16));
 
     const auto * symbol = symbol_index.findSymbol(address);
     if (symbol)
-        std::cerr << symbol->name << ": " << symbol->address_begin << " ... " << symbol->address_end << "\n";
+        std::cerr << symbol->name << ": " << symbol->offset_begin << " ... " << symbol->offset_end << "\n";
     else
         std::cerr << "SymbolIndex: Not found\n";
 
@@ -46,7 +48,7 @@ int main(int argc, char ** argv)
     Dwarf dwarf(object->elf);
 
     Dwarf::LocationInfo location;
-    std::vector<Dwarf::SymbolizedFrame> frames;
+    VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames;
     if (dwarf.findAddress(uintptr_t(address) - uintptr_t(info.dli_fbase), location, Dwarf::LocationInfoMode::FAST, frames))
         std::cerr << location.file.toString() << ":" << location.line << "\n";
     else

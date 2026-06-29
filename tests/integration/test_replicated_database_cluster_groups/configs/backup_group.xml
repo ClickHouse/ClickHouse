@@ -1,0 +1,3 @@
+<clickhouse>
+    <replica_group_name>backups</replica_group_name>
+</clickhouse>

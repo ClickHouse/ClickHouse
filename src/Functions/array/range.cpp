@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -9,6 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
+#include <Core/Settings.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <numeric>
@@ -17,6 +19,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 function_range_max_elements_in_block;
+}
 
 namespace ErrorCodes
 {
@@ -33,14 +39,14 @@ namespace ErrorCodes
   * range(start, end): [start, end)
   * range(start, end, step): [start, end) with step increments.
   */
-class FunctionRange : public IFunction
+class FunctionRange final : public IFunction
 {
 public:
     static constexpr auto name = "range";
 
     const size_t max_elements;
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionRange>(std::move(context_)); }
-    explicit FunctionRange(ContextPtr context) : max_elements(context->getSettingsRef().function_range_max_elements_in_block) {}
+    explicit FunctionRange(ContextPtr context) : max_elements(context->getSettingsRef()[Setting::function_range_max_elements_in_block]) { }
 
 private:
     String getName() const override { return name; }
@@ -119,7 +125,7 @@ private:
             for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
             {
                 for (T elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
-                    out_data[offset + elem_idx] = static_cast<T>(elem_idx);
+                    out_data[offset + elem_idx] = elem_idx;
 
                 offset += in_data[row_idx];
                 out_offsets[row_idx] = offset;
@@ -127,8 +133,7 @@ private:
 
             return ColumnArray::create(std::move(data_col), std::move(offsets_col));
         }
-        else
-            return nullptr;
+        return nullptr;
     }
 
     template <typename T>
@@ -151,9 +156,9 @@ private:
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "A call to function {} overflows, the 3rd argument step can't be zero", getName());
 
             if (start < end_data[row_idx] && step > 0)
-                row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) - 1) / static_cast<__int128_t>(step) + 1;
+                row_length[row_idx] = static_cast<size_t>((static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) - 1) / static_cast<__int128_t>(step) + 1);
             else if (start > end_data[row_idx] && step < 0)
-                row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) + 1) / static_cast<__int128_t>(step) + 1;
+                row_length[row_idx] = static_cast<size_t>((static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) + 1) / static_cast<__int128_t>(step) + 1);
             else
                 row_length[row_idx] = 0;
 
@@ -181,11 +186,20 @@ private:
         IColumn::Offset offset{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
+            /// Last iteration is peeled to avoid a trailing `value += step` that would
+            /// overflow for valid runs at the high end of the range (e.g. start = Int64::max - 1,
+            /// step = 2 emits one element and would then signed-overflow). Inner loop stays
+            /// branchless so the compiler can keep vectorising it.
+            T value = start;
+            size_t n = row_length[row_idx];
+            for (size_t idx = 0; idx + 1 < n; ++idx)
             {
-                out_data[offset] = static_cast<T>(start + idx * step);
-                ++offset;
+                out_data[offset + idx] = value;
+                value += step;
             }
+            if (n > 0)
+                out_data[offset + n - 1] = value;
+            offset += n;
             out_offsets[row_idx] = offset;
         }
 
@@ -214,9 +228,9 @@ private:
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "A call to function {} overflows, the 3rd argument step can't be zero", getName());
 
             if (start_data[row_idx] < end_data[row_idx] && step > 0)
-                row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) - 1) / static_cast<__int128_t>(step) + 1;
+                row_length[row_idx] = static_cast<size_t>((static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) - 1) / static_cast<__int128_t>(step) + 1);
             else if (start_data[row_idx] > end_data[row_idx] && step < 0)
-                row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) + 1) / static_cast<__int128_t>(step) + 1;
+                row_length[row_idx] = static_cast<size_t>((static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) + 1) / static_cast<__int128_t>(step) + 1);
             else
                 row_length[row_idx] = 0;
 
@@ -277,9 +291,9 @@ private:
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "A call to function {} overflows, the 3rd argument step can't be zero", getName());
 
             if (start < end_data[row_idx] && step_data[row_idx] > 0)
-                row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) - 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
+                row_length[row_idx] = static_cast<size_t>((static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) - 1) / static_cast<__int128_t>(step_data[row_idx]) + 1);
             else if (start > end_data[row_idx] && step_data[row_idx] < 0)
-                row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) + 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
+                row_length[row_idx] = static_cast<size_t>((static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) + 1) / static_cast<__int128_t>(step_data[row_idx]) + 1);
             else
                 row_length[row_idx] = 0;
 
@@ -343,9 +357,9 @@ private:
                 throw Exception{ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "A call to function {} underflows, the 3rd argument step can't be less or equal to zero", getName()};
             if (start_data[row_idx] < end_start[row_idx] && step_data[row_idx] > 0)
-                row_length[row_idx] = (static_cast<__int128_t>(end_start[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) - 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
+                row_length[row_idx] = static_cast<size_t>((static_cast<__int128_t>(end_start[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) - 1) / static_cast<__int128_t>(step_data[row_idx]) + 1);
             else if (start_data[row_idx] > end_start[row_idx] && step_data[row_idx] < 0)
-                row_length[row_idx] = (static_cast<__int128_t>(end_start[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) + 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
+                row_length[row_idx] = static_cast<size_t>((static_cast<__int128_t>(end_start[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) + 1) / static_cast<__int128_t>(step_data[row_idx]) + 1);
             else
                 row_length[row_idx] = 0;
 
@@ -400,11 +414,11 @@ private:
                             "for unsigned/signed integers up to 64 bit", getName());
         }
 
-        auto throwIfNullValue = [&](const ColumnWithTypeAndName & col)
+        auto throw_if_null_value = [&](const ColumnWithTypeAndName & col)
         {
             if (!col.type->isNullable())
                 return;
-            const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(*col.column);
+            const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(col.column.get());
             if (!nullable_col)
                 nullable_col = checkAndGetColumnConstData<ColumnNullable>(col.column.get());
             if (!nullable_col)
@@ -417,12 +431,12 @@ private:
         ColumnPtr res;
         if (arguments.size() == 1)
         {
-            throwIfNullValue(arguments[0]);
+            throw_if_null_value(arguments[0]);
             const auto * col = arguments[0].column.get();
             if (arguments[0].type->isNullable())
             {
-                const auto * nullable = checkAndGetColumn<ColumnNullable>(*arguments[0].column);
-                col = nullable->getNestedColumnPtr().get();
+                const auto & nullable = checkAndGetColumn<ColumnNullable>(*arguments[0].column);
+                col = nullable.getNestedColumnPtr().get();
             }
 
             if (!((res = executeInternal<UInt8>(col)) || (res = executeInternal<UInt16>(col)) || (res = executeInternal<UInt32>(col))
@@ -439,7 +453,7 @@ private:
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            throwIfNullValue(arguments[i]);
+            throw_if_null_value(arguments[i]);
             if (i == 1)
                 columns_holder[i] = castColumn(arguments[i], elem_type)->convertToFullColumnIfConst();
             else
@@ -468,8 +482,8 @@ private:
                 UInt64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getUInt(0);
                 UInt64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getUInt(0);
 
-                if ((res = executeConstStartStep<UInt8>(column_ptrs[1], start, step, input_rows_count))
-                    || (res = executeConstStartStep<UInt16>(column_ptrs[1], start, step, input_rows_count))
+                if ((res = executeConstStartStep<UInt8>(column_ptrs[1], static_cast<UInt8>(start), static_cast<UInt8>(step), input_rows_count))
+                    || (res = executeConstStartStep<UInt16>(column_ptrs[1], static_cast<UInt16>(start), static_cast<UInt16>(step), input_rows_count))
                     || (res = executeConstStartStep<UInt32>(
                             column_ptrs[1], static_cast<UInt32>(start), static_cast<UInt32>(step), input_rows_count))
                     || (res = executeConstStartStep<UInt64>(column_ptrs[1], start, step, input_rows_count)))
@@ -481,8 +495,8 @@ private:
                 Int64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getInt(0);
                 Int64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getInt(0);
 
-                if ((res = executeConstStartStep<Int8>(column_ptrs[1], start, step, input_rows_count))
-                    || (res = executeConstStartStep<Int16>(column_ptrs[1], start, step, input_rows_count))
+                if ((res = executeConstStartStep<Int8>(column_ptrs[1], static_cast<Int8>(start), static_cast<Int8>(step), input_rows_count))
+                    || (res = executeConstStartStep<Int16>(column_ptrs[1], static_cast<Int16>(start), static_cast<Int16>(step), input_rows_count))
                     || (res = executeConstStartStep<Int32>(
                             column_ptrs[1], static_cast<Int32>(start), static_cast<Int32>(step), input_rows_count))
                     || (res = executeConstStartStep<Int64>(column_ptrs[1], start, step, input_rows_count)))
@@ -496,8 +510,8 @@ private:
             {
                 UInt64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getUInt(0);
 
-                if ((res = executeConstStart<UInt8>(column_ptrs[1], column_ptrs[2], start, input_rows_count))
-                    || (res = executeConstStart<UInt16>(column_ptrs[1], column_ptrs[2], start, input_rows_count))
+                if ((res = executeConstStart<UInt8>(column_ptrs[1], column_ptrs[2], static_cast<UInt8>(start), input_rows_count))
+                    || (res = executeConstStart<UInt16>(column_ptrs[1], column_ptrs[2], static_cast<UInt16>(start), input_rows_count))
                     || (res = executeConstStart<UInt32>(column_ptrs[1], column_ptrs[2], static_cast<UInt32>(start), input_rows_count))
                     || (res = executeConstStart<UInt64>(column_ptrs[1], column_ptrs[2], start, input_rows_count)))
                 {
@@ -507,8 +521,8 @@ private:
             {
                 Int64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getInt(0);
 
-                if ((res = executeConstStart<Int8>(column_ptrs[1], column_ptrs[2], start, input_rows_count))
-                    || (res = executeConstStart<Int16>(column_ptrs[1], column_ptrs[2], start, input_rows_count))
+                if ((res = executeConstStart<Int8>(column_ptrs[1], column_ptrs[2], static_cast<Int8>(start), input_rows_count))
+                    || (res = executeConstStart<Int16>(column_ptrs[1], column_ptrs[2], static_cast<Int16>(start), input_rows_count))
                     || (res = executeConstStart<Int32>(column_ptrs[1], column_ptrs[2], static_cast<Int32>(start), input_rows_count))
                     || (res = executeConstStart<Int64>(column_ptrs[1], column_ptrs[2], start, input_rows_count)))
                 {
@@ -521,8 +535,8 @@ private:
             {
                 UInt64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getUInt(0);
 
-                if ((res = executeConstStep<UInt8>(column_ptrs[0], column_ptrs[1], step, input_rows_count))
-                    || (res = executeConstStep<UInt16>(column_ptrs[0], column_ptrs[1], step, input_rows_count))
+                if ((res = executeConstStep<UInt8>(column_ptrs[0], column_ptrs[1], static_cast<UInt8>(step), input_rows_count))
+                    || (res = executeConstStep<UInt16>(column_ptrs[0], column_ptrs[1], static_cast<UInt16>(step), input_rows_count))
                     || (res = executeConstStep<UInt32>(column_ptrs[0], column_ptrs[1], static_cast<UInt32>(step), input_rows_count))
                     || (res = executeConstStep<UInt64>(column_ptrs[0], column_ptrs[1], step, input_rows_count)))
                 {
@@ -532,8 +546,8 @@ private:
             {
                 Int64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getInt(0);
 
-                if ((res = executeConstStep<Int8>(column_ptrs[0], column_ptrs[1], step, input_rows_count))
-                    || (res = executeConstStep<Int16>(column_ptrs[0], column_ptrs[1], step, input_rows_count))
+                if ((res = executeConstStep<Int8>(column_ptrs[0], column_ptrs[1], static_cast<Int8>(step), input_rows_count))
+                    || (res = executeConstStep<Int16>(column_ptrs[0], column_ptrs[1], static_cast<Int16>(step), input_rows_count))
                     || (res = executeConstStep<Int32>(column_ptrs[0], column_ptrs[1], static_cast<Int32>(step), input_rows_count))
                     || (res = executeConstStep<Int64>(column_ptrs[0], column_ptrs[1], step, input_rows_count)))
                 {
@@ -567,7 +581,33 @@ private:
 
 REGISTER_FUNCTION(Range)
 {
-    factory.registerFunction<FunctionRange>();
+    FunctionDocumentation::Description description = R"(
+Returns an array of numbers from `start` to `end - 1` by `step`.
+
+The supported types are:
+- `UInt8/16/32/64`
+- `Int8/16/32/64]`
+
+- All arguments `start`, `end`, `step` must be one of the above supported types. Elements of the returned array will be a super type of the arguments.
+- An exception is thrown if the function returns an array with a total length more than the number of elements specified by setting [`function_range_max_elements_in_block`](../../operations/settings/settings.md#function_range_max_elements_in_block).
+- Returns `NULL` if any argument has Nullable(nothing) type. An exception is thrown if any argument has `NULL` value (Nullable(T) type).
+    )";
+    FunctionDocumentation::Syntax syntax = "range([start, ] end [, step])";
+    FunctionDocumentation::Arguments arguments = {
+        {"start", "Optional. The first element of the array. Required if `step` is used. Default value: `0`."},
+        {"end", "Required. The number before which the array is constructed."},
+        {"step", "Optional. Determines the incremental step between each element in the array. Default value: `1`."},};
+    FunctionDocumentation::ReturnedValue returned_value = {"Array of numbers from `start` to `end - 1` by `step`.", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT range(5), range(1, 5), range(1, 5, 2), range(-1, 5, 2);", R"(
+┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┬─range(-1, 5, 2)─┐
+│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │ [-1,1,3]        │
+└─────────────┴─────────────┴────────────────┴─────────────────┘
+    )"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRange>(documentation);
 }
 
 }

@@ -1,6 +1,8 @@
-DROP TABLE IF EXISTS r1;
-DROP TABLE IF EXISTS r2;
-DROP TABLE IF EXISTS r3;
+-- Tags: no-shared-merge-tree
+
+DROP TABLE IF EXISTS checksums_r3;
+DROP TABLE IF EXISTS checksums_r2;
+DROP TABLE IF EXISTS checksums_r1;
 
 CREATE TABLE checksums_r1 (column1 UInt32, column2 String) Engine = ReplicatedMergeTree('/tables/{database}/checksums_table', 'r1') ORDER BY tuple();
 
@@ -32,9 +34,10 @@ SELECT count() FROM checksums_r1;
 SELECT count() FROM checksums_r2;
 SELECT count() FROM checksums_r3;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS text_log;
 
-SELECT * FROM system.text_log WHERE event_time >= now() - 30 and level == 'Error' and message like '%CHECKSUM_DOESNT_MATCH%'and message like '%checksums_r%';
+SET max_rows_to_read = 0; -- system.text_log can be really big
+SELECT * FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND event_time >= now() - INTERVAL 120 SECOND and level == 'Error' and message like '%CHECKSUM_DOESNT_MATCH%' and logger_name like ('%' || currentDatabase() || '%checksums_r%');
 
 DROP TABLE IF EXISTS checksums_r3;
 DROP TABLE IF EXISTS checksums_r2;

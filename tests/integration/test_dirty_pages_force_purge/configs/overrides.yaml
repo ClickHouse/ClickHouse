@@ -1,0 +1,3 @@
+---
+max_server_memory_usage: 4Gi
+memory_worker_purge_dirty_pages_threshold_ratio: 0.2

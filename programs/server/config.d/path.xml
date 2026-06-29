@@ -3,6 +3,7 @@
     <tmp_path replace="replace">./tmp/</tmp_path>
     <user_files_path replace="replace">./user_files/</user_files_path>
     <format_schema_path replace="replace">./format_schemas/</format_schema_path>
+    <google_protos_path replace="replace">../../contrib/google-protobuf/src/</google_protos_path>
     <access_control_path replace="replace">./access/</access_control_path>
     <top_level_domains_path replace="replace">./top_level_domains/</top_level_domains_path>
 </clickhouse>

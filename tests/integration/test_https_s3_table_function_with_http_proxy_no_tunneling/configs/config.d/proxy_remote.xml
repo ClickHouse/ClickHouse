@@ -1,0 +1,13 @@
+<clickhouse>
+    <proxy>
+        <disable_tunneling_for_https_requests_over_http_proxy>1</disable_tunneling_for_https_requests_over_http_proxy>
+        <https>
+            <resolver>
+                <endpoint>http://resolver:8080/hostname</endpoint>
+                <proxy_scheme>http</proxy_scheme>
+                <proxy_port>80</proxy_port>
+                <proxy_cache_time>10</proxy_cache_time>
+            </resolver>
+        </https>
+    </proxy>
+</clickhouse>

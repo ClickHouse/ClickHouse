@@ -9,6 +9,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -40,14 +41,14 @@ decltype(auto) get(const NameAndAliasPair & name_and_alias)
         return name_and_alias.expression;
 }
 
-using NamesAndAliases = std::vector<NameAndAliasPair>;
+using NamesAndAliases = VectorWithMemoryTracking<NameAndAliasPair>;
 
 }
 
 namespace std
 {
     template <> struct tuple_size<DB::NameAndAliasPair> : std::integral_constant<size_t, 2> {};
-    template <> struct tuple_element<0, DB::NameAndAliasPair> { using type = DB::String; };
+    template <> struct tuple_element<0, DB::NameAndAliasPair> { using type = String; };
     template <> struct tuple_element<1, DB::NameAndAliasPair> { using type = DB::DataTypePtr; };
-    template <> struct tuple_element<2, DB::NameAndAliasPair> { using type = DB::String; };
+    template <> struct tuple_element<2, DB::NameAndAliasPair> { using type = String; };
 }

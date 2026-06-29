@@ -19,22 +19,22 @@
     <storage_configuration>
         <disks>
             <disk1>
-                <path>/disk1/</path>
+                <path>/test_dist_conf_disk1/</path>
             </disk1>
             <disk2>
-                <path>/disk2/</path>
+                <path>/test_dist_conf_disk2/</path>
             </disk2>
         </disks>
 
         <policies>
-            <default>
+            <jbod_policy>
                 <volumes>
                     <main>
                         <disk>disk1</disk>
                         <disk>disk2</disk>
                     </main>
                 </volumes>
-            </default>
+            </jbod_policy>
         </policies>
     </storage_configuration>
 </clickhouse>

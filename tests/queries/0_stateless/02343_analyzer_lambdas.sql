@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
@@ -49,11 +49,11 @@ WITH x -> * AS lambda SELECT lambda(1);
 WITH x -> * AS lambda SELECT lambda(1) FROM test_table;
 
 WITH cast(tuple(1), 'Tuple (value UInt64)') AS compound_value SELECT arrayMap(x -> compound_value.*, [1,2,3]);
-WITH cast(tuple(1, 1), 'Tuple (value_1 UInt64, value_2 UInt64)') AS compound_value SELECT arrayMap(x -> compound_value.*, [1,2,3]); -- { serverError 1 }
+WITH cast(tuple(1, 1), 'Tuple (value_1 UInt64, value_2 UInt64)') AS compound_value SELECT arrayMap(x -> compound_value.*, [1,2,3]); -- { serverError UNSUPPORTED_METHOD }
 WITH cast(tuple(1, 1), 'Tuple (value_1 UInt64, value_2 UInt64)') AS compound_value SELECT arrayMap(x -> plus(compound_value.*), [1,2,3]);
 
 WITH cast(tuple(1), 'Tuple (value UInt64)') AS compound_value SELECT id, test_table.* APPLY x -> compound_value.* FROM test_table;
-WITH cast(tuple(1, 1), 'Tuple (value_1 UInt64, value_2 UInt64)') AS compound_value SELECT id, test_table.* APPLY x -> compound_value.* FROM test_table; -- { serverError 1 }
+WITH cast(tuple(1, 1), 'Tuple (value_1 UInt64, value_2 UInt64)') AS compound_value SELECT id, test_table.* APPLY x -> compound_value.* FROM test_table; -- { serverError UNSUPPORTED_METHOD }
 WITH cast(tuple(1, 1), 'Tuple (value_1 UInt64, value_2 UInt64)') AS compound_value SELECT id, test_table.* APPLY x -> plus(compound_value.*) FROM test_table;
 
 SELECT 'Lambda untuple';
@@ -65,5 +65,39 @@ SELECT 'Lambda carrying';
 WITH (functor, x) -> functor(x) AS lambda, x -> x + 1 AS functor_1, x -> toString(x) AS functor_2 SELECT lambda(functor_1, 1), lambda(functor_2, 1);
 WITH (functor, x) -> functor(x) AS lambda, x -> x + 1 AS functor_1, x -> toString(x) AS functor_2 SELECT lambda(functor_1, id), lambda(functor_2, id) FROM test_table;
 
+
+SELECT 'Lambda legacy syntax';
+
+SELECT arrayMap(lambda(tuple(x), x + 1), [1, 2, 3]);
+
+WITH 222 AS lambda
+SELECT arrayMap(lambda(tuple(x), x + 1), [1, 2, 3]);
+
+SELECT arrayMap(lambda((x,), x + 1), [1, 2, 3]);
+
+SELECT arraySort(lambda((x, y), y), ['world', 'hello'], [2, 1]);
+
+WITH 222 AS lambda
+SELECT arrayMap(lambda((x, ), x + 1), [1, 2, 3]);
+
+WITH x -> x + 1 AS lambda
+SELECT arrayMap(lambda(tuple(x), x + 1), [1, 2, 3]), lambda(1);
+
+-- lambda(tuple(x), x + 1) parsed as lambda definion but not as call of lambda defined in WITH
+WITH (x, y) -> y AS lambda
+SELECT arrayMap(lambda(tuple(x), x + 1), [1, 2, 3]), lambda(tuple(x), x + 1), 1 AS x; -- { serverError BAD_ARGUMENTS }
+
+WITH (x, y) -> y AS lambda2
+SELECT arrayMap(lambda(tuple(x), x + 1), [1, 2, 3]), lambda2(tuple(x), x + 1), 1 AS x;
+
+
 DROP TABLE test_table_tuple;
 DROP TABLE test_table;
+
+WITH x -> (lambda(x) + 1) AS lambda
+SELECT lambda(1); -- {serverError UNSUPPORTED_METHOD }
+
+WITH
+    x -> (lambda1(x) + 1) AS lambda,
+    lambda AS lambda1
+SELECT lambda(1); -- {serverError UNSUPPORTED_METHOD }

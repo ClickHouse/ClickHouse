@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationCustomSimpleText.h>
 
+#include <Formats/ParseError.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -24,6 +25,12 @@ void deserializeFromString(const SerializationCustomSimpleText & domain, IColumn
     domain.deserializeText(column, istr, settings, true);
 }
 
+bool tryDeserializeFromString(const SerializationCustomSimpleText & domain, IColumn & column, const String & s, const FormatSettings & settings)
+{
+    ReadBufferFromString istr(s);
+    return domain.tryDeserializeText(column, istr, settings, true);
+}
+
 }
 
 namespace DB
@@ -34,11 +41,33 @@ SerializationCustomSimpleText::SerializationCustomSimpleText(const Serialization
 {
 }
 
+bool SerializationCustomSimpleText::tryDeserializeText(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, bool whole) const
+{
+    try
+    {
+        deserializeText(column, istr, settings, whole);
+        return true;
+    }
+    catch (...) // Ok: tryDeserializeText is a try-pattern
+    {
+        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+        rethrowIfNotParseError();
+        return false;
+    }
+}
+
 void SerializationCustomSimpleText::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
     readStringUntilEOF(str, istr);
     deserializeFromString(*this, column, str, settings);
+}
+
+bool SerializationCustomSimpleText::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String str;
+    readStringUntilEOF(str, istr);
+    return tryDeserializeFromString(*this, column, str, settings);
 }
 
 void SerializationCustomSimpleText::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -49,20 +78,42 @@ void SerializationCustomSimpleText::serializeTextEscaped(const IColumn & column,
 void SerializationCustomSimpleText::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    readEscapedString(str, istr);
+    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(str, istr) : readEscapedString(str, istr);
     deserializeFromString(*this, column, str, settings);
+}
+
+bool SerializationCustomSimpleText::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String str;
+    readEscapedString(str, istr);
+    return tryDeserializeFromString(*this, column, str, settings);
 }
 
 void SerializationCustomSimpleText::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeQuotedString(serializeToString(*this, column, row_num, settings), ostr);
+    auto str = serializeToString(*this, column, row_num, settings);
+    if (settings.values.escape_quote_with_quote)
+        writeQuotedStringPostgreSQL(str, ostr);
+    else
+        writeQuotedString(str, ostr);
 }
 
 void SerializationCustomSimpleText::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    readQuotedString(str, istr);
+    /// Use SQL-style quoted reader so we accept both `\'` and the SQL-standard `''` apostrophe escapes.
+    /// `serializeTextQuoted` above can emit either form depending on `output_format_values_escape_quote_with_quote`,
+    /// and a value written by us via `Values` must be parseable back by the same path.
+    readQuotedStringWithSQLStyle(str, istr);
     deserializeFromString(*this, column, str, settings);
+}
+
+bool SerializationCustomSimpleText::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String str;
+    if (!tryReadQuotedStringWithSQLStyle(str, istr))
+        return false;
+    return tryDeserializeFromString(*this, column, str, settings);
 }
 
 void SerializationCustomSimpleText::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -77,6 +128,13 @@ void SerializationCustomSimpleText::deserializeTextCSV(IColumn & column, ReadBuf
     deserializeFromString(*this, column, str, settings);
 }
 
+bool SerializationCustomSimpleText::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String str;
+    readCSVStringInto<String, false, false>(str, istr, settings.csv);
+    return tryDeserializeFromString(*this, column, str, settings);
+}
+
 void SerializationCustomSimpleText::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeJSONString(serializeToString(*this, column, row_num, settings), ostr, settings);
@@ -85,8 +143,16 @@ void SerializationCustomSimpleText::serializeTextJSON(const IColumn & column, si
 void SerializationCustomSimpleText::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    readJSONString(str, istr);
+    readJSONString(str, istr, settings.json);
     deserializeFromString(*this, column, str, settings);
+}
+
+bool SerializationCustomSimpleText::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String str;
+    if (!tryReadJSONStringInto(str, istr, settings.json))
+        return false;
+    return tryDeserializeFromString(*this, column, str, settings);
 }
 
 void SerializationCustomSimpleText::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

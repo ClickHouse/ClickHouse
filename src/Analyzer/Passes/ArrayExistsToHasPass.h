@@ -20,7 +20,7 @@ public:
 
     String getDescription() override { return "Rewrite arrayExists(func, arr) functions to has(arr, elem) when logically equivalent"; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 };
 
 }

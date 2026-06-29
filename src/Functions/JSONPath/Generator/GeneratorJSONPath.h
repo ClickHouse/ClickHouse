@@ -35,7 +35,7 @@ public:
         }
         const auto * query = path->jsonpath_query;
 
-        for (auto child_ast : query->children)
+        for (const auto & child_ast : query->children)
         {
             if (typeid_cast<ASTJSONPathRoot *>(child_ast.get()))
             {

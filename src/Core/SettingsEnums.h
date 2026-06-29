@@ -1,42 +1,140 @@
 #pragma once
 
-#include <Core/SettingsFields.h>
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Core/Joins.h>
-#include <QueryPipeline/SizeLimits.h>
+#include <Core/LoadBalancing.h>
+#include <Core/LogsLevel.h>
+#include <Core/MergeSelectorAlgorithm.h>
+#include <Core/MergeTreeSerializationEnums.h>
+#include <Core/ParallelReplicasMode.h>
+#include <Core/QueryLogElementType.h>
+#include <Core/SchemaInferenceMode.h>
+#include <Core/SettingsFields.h>
+#include <Core/ShortCircuitFunctionEvaluation.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Formats/FormatSettings.h>
-#include <IO/ReadSettings.h>
+#include <IO/DistributedCacheLogMode.h>
+#include <IO/DistributedCachePoolBehaviourOnLimit.h>
+#include <IO/ReadMethod.h>
+#include <Parsers/IdentifierQuotingStyle.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
 {
 
-enum class LoadBalancing
-{
-    /// among replicas with a minimum number of errors selected randomly
-    RANDOM = 0,
-    /// a replica is selected among the replicas with the minimum number of errors
-    /// with the minimum number of distinguished characters in the replica name and local hostname
-    NEAREST_HOSTNAME,
-    // replicas with the same number of errors are accessed in the same order
-    // as they are specified in the configuration.
-    IN_ORDER,
-    /// if first replica one has higher number of errors,
-    ///   pick a random one from replicas with minimum number of errors
-    FIRST_OR_RANDOM,
-    // round robin across replicas with the same number of errors.
-    ROUND_ROBIN,
-};
+template <typename Type>
+constexpr auto getEnumValues();
+
+/// NOLINTNEXTLINE
+#define DECLARE_SETTING_ENUM(ENUM_TYPE) \
+    DECLARE_SETTING_ENUM_WITH_RENAME(ENUM_TYPE, ENUM_TYPE)
+
+/// NOLINTNEXTLINE
+#define DECLARE_SETTING_ENUM_WITH_RENAME(NEW_NAME, ENUM_TYPE) \
+    struct SettingField##NEW_NAME##Traits \
+    { \
+        using EnumType = ENUM_TYPE; \
+        using EnumValuePairs = std::pair<const char *, EnumType>[]; \
+        static const String & toString(EnumType value); \
+        static EnumType fromString(std::string_view str); \
+    }; \
+    \
+    using SettingField##NEW_NAME = SettingFieldEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
+    IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, EnumValuePairs, __VA_ARGS__)
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_AUTO_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME) \
+    IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, , getEnumValues<EnumType>())
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, PAIRS_TYPE, ...) \
+    const String & SettingField##NEW_NAME##Traits::toString(typename SettingField##NEW_NAME::EnumType value) \
+    { \
+        static const UnorderedMapWithMemoryTracking<EnumType, String> map = [] { \
+            UnorderedMapWithMemoryTracking<EnumType, String> res; \
+            for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
+                res.emplace(val, name); \
+            return res; \
+        }(); \
+        auto it = map.find(value); \
+        if (it != map.end()) \
+            return it->second; \
+        throw Exception(ERROR_CODE_FOR_UNEXPECTED_NAME, \
+            "Unexpected value of " #NEW_NAME ":{}", std::to_string(std::underlying_type_t<EnumType>(value))); \
+    } \
+    \
+    typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(std::string_view str) \
+    { \
+        static const UnorderedMapWithMemoryTracking<std::string_view, EnumType> map = [] { \
+            UnorderedMapWithMemoryTracking<std::string_view, EnumType> res; \
+            for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
+                res.emplace(name, val); \
+            return res; \
+        }(); \
+        auto it = map.find(str); \
+        if (it != map.end()) \
+            return it->second; \
+        String msg; \
+        bool need_comma = false; \
+        for (auto & name : map | boost::adaptors::map_keys) \
+        { \
+            if (std::exchange(need_comma, true)) \
+                msg += ", "; \
+            msg += "'" + String{name} + "'"; \
+        } \
+        throw Exception(ERROR_CODE_FOR_UNEXPECTED_NAME, "Unexpected value of " #NEW_NAME ": '{}'. Must be one of [{}]", String{str}, msg); \
+    }
+
+/// NOLINTNEXTLINE
+#define DECLARE_SETTING_MULTI_ENUM(ENUM_TYPE) \
+    DECLARE_SETTING_MULTI_ENUM_WITH_RENAME(ENUM_TYPE, ENUM_TYPE)
+
+/// NOLINTNEXTLINE
+#define DECLARE_SETTING_MULTI_ENUM_WITH_RENAME(ENUM_TYPE, NEW_NAME) \
+    struct SettingField##NEW_NAME##Traits \
+    { \
+        using EnumType = ENUM_TYPE; \
+        using EnumValuePairs = std::pair<const char *, EnumType>[]; \
+        static size_t getEnumSize(); \
+        static const String & toString(EnumType value); \
+        static EnumType fromString(std::string_view str); \
+    }; \
+    \
+    using SettingField##NEW_NAME = SettingFieldMultiEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>; \
+    using NEW_NAME##List = typename SettingField##NEW_NAME::ValueType;
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_MULTI_ENUM(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
+    IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
+    IMPLEMENT_SETTING_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)\
+    size_t SettingField##NEW_NAME##Traits::getEnumSize() {\
+        return std::initializer_list<std::pair<const char*, NEW_NAME>> __VA_ARGS__ .size();\
+    }
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_MULTI_AUTO_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME) \
+    IMPLEMENT_SETTING_AUTO_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME)\
+    size_t SettingField##NEW_NAME##Traits::getEnumSize() {\
+        return getEnumValues<EnumType>().size();\
+    }
 
 DECLARE_SETTING_ENUM(LoadBalancing)
 
 DECLARE_SETTING_ENUM(JoinStrictness)
-
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
-
+DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
 
 /// Which rows should be included in TOTALS.
-enum class TotalsMode
+enum class TotalsMode : uint8_t
 {
     BEFORE_HAVING            = 0, /// Count HAVING for all read rows;
                                   ///  including those not in max_rows_to_group_by
@@ -58,7 +156,7 @@ DECLARE_SETTING_ENUM_WITH_RENAME(OverflowModeGroupBy, OverflowMode)
 
 
 /// The setting for executing distributed subqueries inside IN or JOIN sections.
-enum class DistributedProductMode
+enum class DistributedProductMode : uint8_t
 {
     DENY = 0,    /// Disable
     LOCAL,       /// Convert to local query
@@ -68,6 +166,25 @@ enum class DistributedProductMode
 
 DECLARE_SETTING_ENUM(DistributedProductMode)
 
+/// How the query result cache handles queries with non-deterministic functions, e.g. now()
+enum class QueryResultCacheNondeterministicFunctionHandling : uint8_t
+{
+    Throw,
+    Save,
+    Ignore
+};
+
+DECLARE_SETTING_ENUM(QueryResultCacheNondeterministicFunctionHandling)
+
+/// How the query result cache handles queries against system tables, tables in databases 'system.*' and 'information_schema.*'
+enum class QueryResultCacheSystemTableHandling : uint8_t
+{
+    Throw,
+    Save,
+    Ignore
+};
+
+DECLARE_SETTING_ENUM(QueryResultCacheSystemTableHandling)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeInputFormat)
 
@@ -75,36 +192,16 @@ DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeO
 
 DECLARE_SETTING_ENUM_WITH_RENAME(IntervalOutputFormat, FormatSettings::IntervalOutputFormat)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(AggregateFunctionInputFormat, FormatSettings::AggregateFunctionInputFormat)
+
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettings::ParquetVersion)
 
-enum class LogsLevel
-{
-    none = 0,    /// Disable
-    fatal,
-    error,
-    warning,
-    information,
-    debug,
-    trace,
-    test,
-};
-
 DECLARE_SETTING_ENUM(LogsLevel)
-
-
-// Make it signed for compatibility with DataTypeEnum8
-enum QueryLogElementType : int8_t
-{
-    QUERY_START = 1,
-    QUERY_FINISH = 2,
-    EXCEPTION_BEFORE_START = 3,
-    EXCEPTION_WHILE_PROCESSING = 4,
-};
 
 DECLARE_SETTING_ENUM_WITH_RENAME(LogQueriesType, QueryLogElementType)
 
 
-enum class DefaultDatabaseEngine
+enum class DefaultDatabaseEngine : uint8_t
 {
     Ordinary,
     Atomic,
@@ -112,7 +209,7 @@ enum class DefaultDatabaseEngine
 
 DECLARE_SETTING_ENUM(DefaultDatabaseEngine)
 
-enum class DefaultTableEngine
+enum class DefaultTableEngine : uint8_t
 {
     None = 0, /// Disable. Need to use ENGINE =
     Log,
@@ -121,12 +218,26 @@ enum class DefaultTableEngine
     ReplacingMergeTree,
     ReplicatedMergeTree,
     ReplicatedReplacingMergeTree,
+    SharedMergeTree,
+    SharedReplacingMergeTree,
     Memory,
 };
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
-enum class CleanDeletedRows
+enum class TextIndexPostingListApplyMode : uint8_t
+{
+    MATERIALIZE,
+    LAZY,
+};
+
+DECLARE_SETTING_ENUM(TextIndexPostingListApplyMode)
+
+DECLARE_SETTING_ENUM(DistributedCacheLogMode)
+
+DECLARE_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit)
+
+enum class CleanDeletedRows : uint8_t
 {
     Never = 0, /// Disable.
     Always,
@@ -134,7 +245,7 @@ enum class CleanDeletedRows
 
 DECLARE_SETTING_ENUM(CleanDeletedRows)
 
-enum class MySQLDataTypesSupport
+enum class MySQLDataTypesSupport : uint8_t
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
     DATETIME64, // convert MySQL's DATETIME and TIMESTAMP and ClickHouse DateTime64 if precision is > 0 or range is greater that for DateTime.
@@ -144,7 +255,7 @@ enum class MySQLDataTypesSupport
 
 DECLARE_SETTING_MULTI_ENUM(MySQLDataTypesSupport)
 
-enum class SetOperationMode
+enum class SetOperationMode : uint8_t
 {
     Unspecified = 0, // Query UNION / EXCEPT / INTERSECT without SetOperationMode will throw exception
     ALL, // Query UNION / EXCEPT / INTERSECT without SetOperationMode -> SELECT ... UNION / EXCEPT / INTERSECT ALL SELECT ...
@@ -153,36 +264,24 @@ enum class SetOperationMode
 
 DECLARE_SETTING_ENUM(SetOperationMode)
 
-enum class DistributedDDLOutputMode
+enum class DistributedDDLOutputMode : uint8_t
 {
     NONE,
     THROW,
     NULL_STATUS_ON_TIMEOUT,
     NEVER_THROW,
+    THROW_ONLY_ACTIVE,
+    NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE,
+    NONE_ONLY_ACTIVE,
 };
 
 DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
 
-enum class HandleKafkaErrorMode
-{
-    DEFAULT = 0, // Ignore errors with threshold.
-    STREAM, // Put errors to stream in the virtual column named ``_error.
-    /*FIXED_SYSTEM_TABLE, Put errors to in a fixed system table likely system.kafka_errors. This is not implemented now.  */
-    /*CUSTOM_SYSTEM_TABLE, Put errors to in a custom system table. This is not implemented now.  */
-};
-
-DECLARE_SETTING_ENUM(HandleKafkaErrorMode)
-
-enum class ShortCircuitFunctionEvaluation
-{
-    ENABLE, // Use short-circuit function evaluation for functions that are suitable for it.
-    FORCE_ENABLE, // Use short-circuit function evaluation for all functions.
-    DISABLE, // Disable short-circuit function evaluation.
-};
+DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 
-enum class TransactionsWaitCSNMode
+enum class TransactionsWaitCSNMode : uint8_t
 {
     ASYNC,
     WAIT,
@@ -197,48 +296,316 @@ DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(GeoJSONUnsupportedGeometryHandling, FormatSettings::UnsupportedGeometryHandling)
+
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetCompression, FormatSettings::ParquetCompression)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ArrowCompression, FormatSettings::ArrowCompression)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ORCCompression, FormatSettings::ORCCompression)
 
-enum class Dialect
+enum class Dialect : uint8_t
 {
     clickhouse,
     kusto,
-    kusto_auto,
     prql,
+    promql,
+    polyglot,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
 
-enum class ParallelReplicasCustomKeyFilterType : uint8_t
+DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
+
+enum class AlterUpdateMode : uint8_t
 {
-    DEFAULT,
-    RANGE,
+    HEAVY,
+    LIGHTWEIGHT,
+    LIGHTWEIGHT_FORCE,
 };
 
-DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
+DECLARE_SETTING_ENUM(AlterUpdateMode)
+
+enum class UpdateParallelMode : uint8_t
+{
+    SYNC,
+    ASYNC,
+    AUTO,
+};
+
+DECLARE_SETTING_ENUM(UpdateParallelMode)
+
+enum class LightweightDeleteMode : uint8_t
+{
+    ALTER_UPDATE,
+    LIGHTWEIGHT_UPDATE,
+    LIGHTWEIGHT_UPDATE_FORCE,
+};
+
+DECLARE_SETTING_ENUM(LightweightDeleteMode)
+
+enum class LightweightMutationProjectionMode : uint8_t
+{
+    THROW,
+    DROP,
+    REBUILD,
+};
+
+DECLARE_SETTING_ENUM(LightweightMutationProjectionMode)
+
+enum class DeduplicateMergeProjectionMode : uint8_t
+{
+    IGNORE,
+    THROW,
+    DROP,
+    REBUILD,
+};
+
+DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
+
+enum class AlterColumnSecondaryIndexMode : uint8_t
+{
+    THROW,
+    DROP,
+    REBUILD,
+    COMPATIBILITY,
+};
+
+DECLARE_SETTING_ENUM(AlterColumnSecondaryIndexMode)
+
+DECLARE_SETTING_ENUM(ParallelReplicasMode)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
 
-enum class S3QueueMode
+enum class ObjectStorageQueueMode : uint8_t
 {
     ORDERED,
     UNORDERED,
 };
 
-DECLARE_SETTING_ENUM(S3QueueMode)
+DECLARE_SETTING_ENUM(ObjectStorageQueueMode)
 
-enum class S3QueueAction
+enum class ObjectStorageQueueAction : uint8_t
 {
     KEEP,
     DELETE,
+    MOVE,
+    TAG,
 };
 
-DECLARE_SETTING_ENUM(S3QueueAction)
+DECLARE_SETTING_ENUM(ObjectStorageQueueAction)
+
+enum class ObjectStorageQueuePartitioningMode : uint8_t
+{
+    NONE,   /// No per-partition tracking (default)
+    HIVE,   /// Extract partition from path structure (key=value pairs)
+    REGEX,  /// Extract partition from filename using regex
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageQueuePartitioningMode)
+
+enum class ObjectStorageQueueBucketingMode : uint8_t
+{
+    PATH,       /// Hash full file path for bucketing (default, existing behavior)
+    PARTITION,  /// Hash partition key for bucketing (requires partitioning_mode != NONE)
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageQueueBucketingMode)
 
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
+
+DECLARE_SETTING_ENUM(SchemaInferenceMode)
+
+DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
+DECLARE_SETTING_ENUM_WITH_RENAME(InputFormatColumnMatchingCaseSensitivity, FormatSettings::InputFormatColumnMatchingCaseSensitivity)
+
+DECLARE_SETTING_ENUM(SQLSecurityType)
+
+DECLARE_SETTING_ENUM(IdentifierQuotingRule)
+DECLARE_SETTING_ENUM(IdentifierQuotingStyle)
+
+enum class GroupArrayActionWhenLimitReached : uint8_t
+{
+    THROW,
+    DISCARD
+};
+DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
+
+DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
+
+enum class DatabaseDataLakeCatalogType : uint8_t
+{
+    NONE,
+    ICEBERG_REST,
+    UNITY,
+    GLUE,
+    ICEBERG_HIVE,
+    ICEBERG_ONELAKE,
+    ICEBERG_BIGLAKE,
+    PAIMON_REST,
+};
+
+DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
+
+enum class FileCachePolicy : uint8_t
+{
+    LRU,
+    SLRU,
+    SLRU_OVERCOMMIT,
+    LRU_OVERCOMMIT,
+};
+
+DECLARE_SETTING_ENUM(FileCachePolicy)
+
+enum class VectorSearchFilterStrategy : uint8_t
+{
+    AUTO,
+    PREFILTER,
+    POSTFILTER,
+};
+
+DECLARE_SETTING_ENUM(VectorSearchFilterStrategy)
+
+enum class GeoToH3ArgumentOrder : uint8_t
+{
+    LAT_LON,
+    LON_LAT,
+};
+
+DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
+
+
+DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
+DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeMapSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeMapBucketsStrategy)
+
+
+enum class SearchOrphanedPartsDisks : uint8_t
+{
+    NONE,
+    LOCAL,
+    ANY
+};
+
+DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
+
+enum class TextIndexPostingListCodec : uint8_t
+{
+    None,
+    Bitpacking
+};
+
+DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
+
+/// NOTE: Part level min-max index depends on strict columns order.
+///       That means if you want to add new columns segment to index - it will not be materialized until
+///       previous segment will be materialized in all data parts via mutation or merge.
+///       This is an upgrade semantics of this index.
+enum class MergeTreePartMinMaxIndexColumns : uint64_t
+{
+    PARTITION_KEY_ONLY = 0,
+    WITH_BLOCK_NUMBER_OFFSET = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)
+
+enum class DecorrelationJoinKind : uint8_t
+{
+    LEFT = 0,
+    RIGHT,
+};
+
+DECLARE_SETTING_ENUM(DecorrelationJoinKind)
+
+enum class IcebergMetadataLogLevel : uint8_t
+{
+    None = 0,
+    Metadata = 1,
+    ManifestListMetadata = 2,
+    ManifestListEntry = 3,
+    ManifestFileMetadata = 4,
+    ManifestFileEntry = 5,
+};
+DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
+
+enum class ObjectStorageGranularityLevel : uint8_t
+{
+    FILE = 0,
+    BUCKET = 1,
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageGranularityLevel)
+enum class ArrowFlightDescriptorType : uint8_t
+{
+    Path = 0,
+    Command
+};
+
+DECLARE_SETTING_ENUM(ArrowFlightDescriptorType)
+
+enum class DeduplicateInsertSelectMode : uint8_t
+{
+    DISABLE = 0,
+    FORCE_ENABLE,
+    ENABLE_WHEN_POSSIBLE,
+    ENABLE_EVEN_FOR_BAD_QUERIES
+};
+
+DECLARE_SETTING_ENUM(DeduplicateInsertSelectMode)
+
+enum class DeduplicateInsertMode : uint8_t
+{
+    BACKWARD_COMPATIBLE_CHOICE = 0,
+    ENABLE,
+    DISABLE
+};
+
+DECLARE_SETTING_ENUM(DeduplicateInsertMode)
+
+enum class InsertDeduplicationVersions : uint8_t
+{
+    OLD_SEPARATE_HASHES = 0,
+    COMPATIBLE_DOUBLE_HASHES,
+    NEW_UNIFIED_HASHES,
+};
+
+DECLARE_SETTING_ENUM(InsertDeduplicationVersions)
+
+enum class JemallocProfileFormat : uint8_t
+{
+    Raw = 0,
+    Symbolized,
+    Collapsed
+};
+
+DECLARE_SETTING_ENUM(JemallocProfileFormat)
+
+enum class S3UriStyle : uint8_t
+{
+    AUTO,
+    PATH,
+    VIRTUAL_HOSTED,
+};
+
+DECLARE_SETTING_ENUM(S3UriStyle)
+
+enum class ExplainQueryPlanDefault : uint8_t
+{
+    LEGACY,
+    PRETTY,
+};
+DECLARE_SETTING_ENUM(ExplainQueryPlanDefault)
+
+enum class FileLikeEngineDefaultPartitionStrategy : uint8_t
+{
+    WILDCARD,
+    HIVE,
+};
+DECLARE_SETTING_ENUM(FileLikeEngineDefaultPartitionStrategy)
 
 }

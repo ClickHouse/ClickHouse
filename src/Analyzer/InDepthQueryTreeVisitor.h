@@ -3,7 +3,6 @@
 #include <base/scope_guard.h>
 
 #include <Common/Exception.h>
-#include <Core/Settings.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/QueryNode.h>
@@ -14,6 +13,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /** Visitor that traverse query tree in depth.
   * Derived class must implement `visitImpl` method.
@@ -99,7 +103,7 @@ using ConstInDepthQueryTreeVisitor = InDepthQueryTreeVisitor<Derived, true /*con
   * 2. enterImpl – This method is called before children are processed.
   * 3. leaveImpl – This method is called after children are processed.
   */
-template <typename Derived, bool const_visitor = false>
+template <typename Derived>
 class InDepthQueryTreeVisitorWithContext
 {
 public:
@@ -169,31 +173,44 @@ private:
         return *static_cast<Derived *>(this);
     }
 
-    bool shouldSkipSubtree(
+    void visitChildIfNeeded(
         VisitQueryTreeNodeType & parent,
-        VisitQueryTreeNodeType & child,
-        size_t subtree_index)
+        VisitQueryTreeNodeType & child)
     {
         bool need_visit_child = getDerived().needChildVisit(parent, child);
         if (!need_visit_child)
-            return true;
+            return;
 
+        // We do not visit ListNode with arguments of TableFunctionNode directly, because
+        // we need to know which arguments are in the unresolved state.
+        // It must be safe because we do not modify table function arguments list in any visitor.
         if (auto * table_function_node = parent->as<TableFunctionNode>())
         {
+            if (child != table_function_node->getArgumentsNode())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionNode is expected to have only one child node");
+
             const auto & unresolved_indexes = table_function_node->getUnresolvedArgumentIndexes();
-            return std::find(unresolved_indexes.begin(), unresolved_indexes.end(), subtree_index) != unresolved_indexes.end();
+
+            size_t index = 0;
+            for (auto & argument : table_function_node->getArguments())
+            {
+                if (std::find(unresolved_indexes.begin(),
+                              unresolved_indexes.end(),
+                              index) == unresolved_indexes.end())
+                    visit(argument);
+                ++index;
+            }
+            return;
         }
-        return false;
+        visit(child);
     }
 
     void visitChildren(VisitQueryTreeNodeType & expression)
     {
-        size_t index = 0;
         for (auto & child : expression->getChildren())
         {
-            if (child && !shouldSkipSubtree(expression, child, index))
-                visit(child);
-            ++index;
+            if (child)
+                visitChildIfNeeded(expression, child);
         }
     }
 

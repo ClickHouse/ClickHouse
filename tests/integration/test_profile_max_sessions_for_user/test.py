@@ -1,16 +1,23 @@
 import os
-
-import grpc
-import pymysql.connections
-import psycopg2 as py_psql
-import pytest
 import sys
 import threading
+import time
 
-from helpers.cluster import ClickHouseCluster, run_and_check
+import grpc
+import psycopg2 as py_psql
+import pymysql.connections
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_logs_contain_with_retry
-
 from helpers.uclient import client, prompt
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
+grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
+if grpc_protocol_pb2_dir not in sys.path:
+    sys.path.append(grpc_protocol_pb2_dir)
+import clickhouse_grpc_pb2  # Execute grpc_protocol_pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
 
 MAX_SESSIONS_FOR_USER = 2
 POSTGRES_SERVER_PORT = 5433
@@ -20,22 +27,8 @@ GRPC_PORT = 9100
 TEST_USER = "test_user"
 TEST_PASSWORD = "123"
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_ENCODING = "utf-8"
 
-# Use grpcio-tools to generate *pb2.py files from *.proto.
-proto_dir = os.path.join(SCRIPT_DIR, "./protos")
-gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
-os.makedirs(gen_dir, exist_ok=True)
-run_and_check(
-    f"python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} {proto_dir}/clickhouse_grpc.proto",
-    shell=True,
-)
-
-sys.path.append(gen_dir)
-
-import clickhouse_grpc_pb2
-import clickhouse_grpc_pb2_grpc
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -50,7 +43,6 @@ instance = cluster.add_instance(
     ],
     user_configs=["configs/users.xml"],
     env_variables={
-        "UBSAN_OPTIONS": "print_stacktrace=1",
         # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
         "TSAN_OPTIONS": "report_atomic_races=0 "
         + os.getenv("TSAN_OPTIONS", default=""),
@@ -59,7 +51,7 @@ instance = cluster.add_instance(
 
 
 def get_query(name, id):
-    return f"SElECT '{name}', {id}, number from system.numbers"
+    return f"SELECT '{name}', {id}, COUNT(*) from system.numbers"
 
 
 def grpc_get_url():
@@ -98,13 +90,23 @@ def threaded_run_test(sessions):
     if len(sessions) > MAX_SESSIONS_FOR_USER:
         # High retry amount to avoid flakiness in ASAN (+Analyzer) tests
         assert_logs_contain_with_retry(
-            instance, "overflown session count", retry_count=60
+            instance, "overflown session count", retry_count=120
         )
 
-    instance.query(f"KILL QUERY WHERE user='{TEST_USER}' SYNC")
+    # A single KILL snapshots system.processes once. An accepted session whose
+    # query has not registered yet (slow under sanitizers) survives and its
+    # thread blocks forever. Re-issue KILL until every worker thread has exited.
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        instance.query(f"KILL QUERY WHERE user='{TEST_USER}' SYNC")
+        for thread in thread_list:
+            thread.join(timeout=1)
+        if not any(thread.is_alive() for thread in thread_list):
+            break
 
-    for thread in thread_list:
-        thread.join()
+    # Bounded: never fall through to an unbounded join (would hang to the pytest timeout).
+    if any(thread.is_alive() for thread in thread_list):
+        pytest.fail("Timed out waiting for session threads to finish after KILL QUERY")
 
 
 @pytest.fixture(scope="module")

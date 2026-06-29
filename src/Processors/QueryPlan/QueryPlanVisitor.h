@@ -99,7 +99,7 @@ protected:
         {
             const IQueryPlanStep * current_step = node->step.get();
             LOG_DEBUG(
-                &Poco::Logger::get("QueryPlanVisitor"),
+                getLogger("QueryPlanVisitor"),
                 "{}: {}: {}",
                 prefix,
                 getStepId(current_step),

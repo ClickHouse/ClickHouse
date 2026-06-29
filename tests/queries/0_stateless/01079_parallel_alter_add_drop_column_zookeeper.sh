@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-fasttest
+# Tags: zookeeper, no-fasttest, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,7 +27,9 @@ done
 
 function alter_thread()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         REPLICA=$(($RANDOM % 3 + 1))
         ADD=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_alter_add_drop_$REPLICA ADD COLUMN value$ADD UInt32 DEFAULT 42 SETTINGS replication_alter_partitions_sync=0"; # additionaly we don't wait anything for more heavy concurrency
@@ -40,7 +42,9 @@ function alter_thread()
 
 function optimize_thread()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         REPLICA=$(($RANDOM % 3 + 1))
         $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE concurrent_alter_add_drop_$REPLICA FINAL SETTINGS replication_alter_partitions_sync=0";
         sleep 0.$RANDOM
@@ -49,7 +53,9 @@ function optimize_thread()
 
 function insert_thread()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         REPLICA=$(($RANDOM % 3 + 1))
         $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_alter_add_drop_$REPLICA VALUES($RANDOM, 7)"
         sleep 0.$RANDOM
@@ -58,27 +64,23 @@ function insert_thread()
 
 
 echo "Starting alters"
-export -f alter_thread;
-export -f optimize_thread;
-export -f insert_thread;
 
-
-TIMEOUT=30
+TIMEOUT=20
 
 # Sometimes we detach and attach tables
-timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
+alter_thread 2> /dev/null &
+alter_thread 2> /dev/null &
+alter_thread 2> /dev/null &
 
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+optimize_thread 2> /dev/null &
+optimize_thread 2> /dev/null &
+optimize_thread 2> /dev/null &
 
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
 
 wait
 
@@ -107,10 +109,10 @@ check_replication_consistency "concurrent_alter_add_drop_" "count(), sum(key), s
 
 for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_alter_add_drop_$i"
-    $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE is_done = 0 and table = 'concurrent_alter_add_drop_$i'"
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE is_done = 0 and table = 'concurrent_alter_add_drop_$i'"
-    $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.replication_queue WHERE table = 'concurrent_alter_add_drop_$i'"
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue WHERE table = 'concurrent_alter_add_drop_$i' and (type = 'ALTER_METADATA' or type = 'MUTATE_PART')"
+    $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE is_done = 0 and table = 'concurrent_alter_add_drop_$i' and database='$CLICKHOUSE_DATABASE'"
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE is_done = 0 and table = 'concurrent_alter_add_drop_$i' and database='$CLICKHOUSE_DATABASE'"
+    $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.replication_queue WHERE table = 'concurrent_alter_add_drop_$i' and database='$CLICKHOUSE_DATABASE'"
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue WHERE table = 'concurrent_alter_add_drop_$i' and (type = 'ALTER_METADATA' or type = 'MUTATE_PART') and database='$CLICKHOUSE_DATABASE'"
 
     $CLICKHOUSE_CLIENT --query "DETACH TABLE concurrent_alter_add_drop_$i"
     $CLICKHOUSE_CLIENT --query "ATTACH TABLE concurrent_alter_add_drop_$i"

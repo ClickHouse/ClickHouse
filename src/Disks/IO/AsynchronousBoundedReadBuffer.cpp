@@ -1,11 +1,15 @@
-#include "AsynchronousBoundedReadBuffer.h"
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Common/CurrentThread.h>
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
+#include <Common/ThreadStatus.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
@@ -40,26 +44,57 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     ImplPtr impl_,
     IAsynchronousReader & reader_,
-    const ReadSettings & settings_,
+    size_t buffer_size_,
+    size_t min_bytes_for_seek_,
+    Priority priority_,
+    size_t page_cache_block_size_,
+    bool enable_prefetches_log_,
     AsyncReadCountersPtr async_read_counters_,
     FilesystemReadPrefetchesLogPtr prefetches_log_)
-    : ReadBufferFromFileBase(chooseBufferSizeForRemoteReading(settings_, impl_->getFileSize()), nullptr, 0)
+    : ReadBufferFromFileBase(0, nullptr, 0, impl_->getFileSize())
     , impl(std::move(impl_))
-    , read_settings(settings_)
+    , base_priority(priority_)
+    , page_cache_block_size(page_cache_block_size_)
+    , enable_prefetches_log(enable_prefetches_log_)
+    , buffer_size(buffer_size_)
+    , min_bytes_for_seek(min_bytes_for_seek_)
+    /// Avoid calling thread-unsafe impl->getFileName() while prefetch is in progress.
+    /// If impl's getFileName() can change on the fly, our getFileName() won't reflect that.
+    /// That is ok, it's not used for anything important.
+    , file_name(impl->getFileName())
     , reader(reader_)
-    , prefetch_buffer(chooseBufferSizeForRemoteReading(read_settings, impl->getFileSize()))
-    , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
+    , query_id(CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , current_reader_id(getRandomASCIIString(8))
-    , log(&Poco::Logger::get("AsynchronousBoundedReadBuffer"))
+    , log(getLogger("AsynchronousBoundedReadBuffer"))
     , async_read_counters(async_read_counters_)
     , prefetches_log(prefetches_log_)
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
+
+    const auto * cached_impl = typeid_cast<const CachedInMemoryReadBufferFromFile *>(impl.get());
+    if (cached_impl)
+    {
+        use_page_cache = true;
+        buffer_size = page_cache_block_size;
+    }
+    LOG_TEST(log, "Using buffer size {} while reading {}", buffer_size, file_name);
+
+    if (buffer_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Buffer size cannot be zero");
+}
+
+String AsynchronousBoundedReadBuffer::getInfoForLog()
+{
+    if (prefetch_future.valid())
+        prefetch_future.wait();
+    return impl->getInfoForLog();
 }
 
 bool AsynchronousBoundedReadBuffer::hasPendingDataToRead()
@@ -71,10 +106,13 @@ bool AsynchronousBoundedReadBuffer::hasPendingDataToRead()
 
         if (file_offset_of_buffer_end > *read_until_position)
         {
+            /// Avoid race condition on impl->getInfoForLog().
+            if (prefetch_future.valid())
+                prefetch_future.wait();
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Read beyond last offset ({} > {}, info: {})",
-                file_offset_of_buffer_end, *read_until_position, impl->getInfoForLog());
+                "Read beyond last offset ({} > {}): file size = {}, info: {}",
+                file_offset_of_buffer_end, *read_until_position, getFileSize(), impl->getInfoForLog());
         }
     }
 
@@ -83,18 +121,26 @@ bool AsynchronousBoundedReadBuffer::hasPendingDataToRead()
 
 std::future<IAsynchronousReader::Result> AsynchronousBoundedReadBuffer::readAsync(char * data, size_t size, Priority priority)
 {
+    if (use_page_cache)
+        chassert(data == nullptr);
+    else
+        chassert(data != nullptr);
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl, async_read_counters);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
-    request.priority = Priority{read_settings.priority.value + priority.value};
+    request.priority = Priority{base_priority.value + priority.value};
     request.ignore = bytes_to_ignore;
     return reader.submit(request);
 }
 
 IAsynchronousReader::Result AsynchronousBoundedReadBuffer::readSync(char * data, size_t size)
 {
+    if (use_page_cache)
+        chassert(data == nullptr);
+    else
+        chassert(data != nullptr);
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl, async_read_counters);
     request.buf = data;
@@ -115,8 +161,11 @@ void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
     last_prefetch_info.submit_time = std::chrono::system_clock::now();
     last_prefetch_info.priority = priority;
 
-    chassert(prefetch_buffer.size() == chooseBufferSizeForRemoteReading(read_settings, impl->getFileSize()));
-    prefetch_future = readAsync(prefetch_buffer.data(), prefetch_buffer.size(), priority);
+    /// Don't allocate any buffers if page cache is in use, the cache has its own buffers (PageCacheCell).
+    if (!use_page_cache)
+        prefetch_buffer.resize(buffer_size);
+
+    prefetch_future = readAsync(prefetch_buffer.data(), buffer_size, priority);
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
 
@@ -127,17 +176,21 @@ void AsynchronousBoundedReadBuffer::setReadUntilPosition(size_t position)
         if (position < file_offset_of_buffer_end)
         {
             /// file has been read beyond new read until position already
-            if (working_buffer.size() >= file_offset_of_buffer_end - position)
+            if (available() >= file_offset_of_buffer_end - position)
             {
-                /// new read until position is inside working buffer
+                /// new read until position is after the current position in the working buffer
+                working_buffer.resize(working_buffer.size() - (file_offset_of_buffer_end - position));
                 file_offset_of_buffer_end = position;
+                pos = std::min(pos, working_buffer.end());
             }
             else
             {
-                /// new read until position is before working buffer begin
+                if (prefetch_future.valid())
+                    prefetch_future.wait();
+                /// new read until position is before the current position in the working buffer
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Attempt to set read until position before already read data ({} > {}, info: {})",
+                    "Attempt to set read until position before already read data ({} < {}, info: {})",
                     position,
                     getPosition(),
                     impl->getInfoForLog());
@@ -186,7 +239,8 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     if (!hasPendingDataToRead())
         return false;
 
-    chassert(file_offset_of_buffer_end <= impl->getFileSize());
+    chassert(file_offset_of_buffer_end <= getFileSize());
+    size_t old_file_offset_of_buffer_end = file_offset_of_buffer_end;
 
     IAsynchronousReader::Result result;
     if (prefetch_future.valid())
@@ -201,7 +255,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
         prefetch_future = {};
         prefetch_buffer.swap(memory);
 
-        if (read_settings.enable_filesystem_read_prefetches_log)
+        if (enable_prefetches_log)
             appendToPrefetchLog(FilesystemPrefetchState::USED, result.size, result.execution_watch);
 
         last_prefetch_info = {};
@@ -211,35 +265,64 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     }
     else
     {
-        chassert(memory.size() == chooseBufferSizeForRemoteReading(read_settings, impl->getFileSize()));
+        /// Don't allocate any buffers if page cache is in use, the cache has its own buffers (PageCacheCell).
+        if (!use_page_cache)
+            memory.resize(buffer_size);
 
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousRemoteReadWaitMicroseconds);
-            result = readSync(memory.data(), memory.size());
+            result = readSync(memory.data(), buffer_size);
         }
 
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedBytes, result.size);
     }
 
+    bytes_to_ignore = 0;
+    resetWorkingBuffer();
+
+    chassert(use_page_cache || !result.page_cache_cell);
+
+    /// Diagnostic asserts for the bounds-corruption class of bug tracked in
+    /// `https://github.com/ClickHouse/ClickHouse/issues/104692`. The
+    /// `working_buffer` we hand back to the caller MUST be a sub-range of the
+    /// `Memory<>` we own (`memory.data()`, `memory.size()`), or, when the page
+    /// cache is in use, a sub-range of the cache cell that backs `result.buf`.
+    /// Anything else means an inner buffer (`ReadBufferFromS3`,
+    /// `ReadBufferFromRemoteFSGather`) returned a corrupt range.
+    chassert(result.offset <= result.size);
+    if (!use_page_cache)
+    {
+        chassert(result.size <= memory.size());
+        chassert(result.size == 0 || result.buf == memory.data());
+    }
+
     size_t bytes_read = result.size - result.offset;
     if (bytes_read)
     {
-        /// Adjust the working buffer so that it ignores `offset` bytes.
-        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-        working_buffer = Buffer(memory.data() + result.offset, memory.data() + result.size);
+        page_cache_cell = result.page_cache_cell;
+        working_buffer = Buffer(result.buf + result.offset, result.buf + result.size);
         pos = working_buffer.begin();
     }
 
-    file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
-    bytes_to_ignore = 0;
+    file_offset_of_buffer_end = result.file_offset_of_buffer_end;
 
-    /// In case of multiple files for the same file in clickhouse (i.e. log family)
-    /// file_offset_of_buffer_end will not match getImplementationBufferOffset()
-    /// so we use [impl->getImplementationBufferOffset(), impl->getFileSize()]
-    chassert(file_offset_of_buffer_end <= impl->getFileSize());
+    chassert(file_offset_of_buffer_end <= getFileSize());
 
-    return bytes_read;
+    if (read_until_position && (file_offset_of_buffer_end > *read_until_position))
+    {
+        size_t excessive_bytes_read = file_offset_of_buffer_end - *read_until_position;
+
+        if (excessive_bytes_read > working_buffer.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "File offset moved too far: old_file_offset = {}, new_file_offset = {}, read_until_position = {}, bytes_read = {}",
+                            old_file_offset_of_buffer_end, file_offset_of_buffer_end, *read_until_position, bytes_read);
+
+        working_buffer.resize(working_buffer.size() - excessive_bytes_read);
+        file_offset_of_buffer_end = *read_until_position;
+    }
+
+    return !working_buffer.empty();
 }
 
 
@@ -247,10 +330,10 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
 
-    size_t new_pos;
+    size_t new_pos = 0;
     if (whence == SEEK_SET)
     {
-        assert(offset >= 0);
+        chassert(offset >= 0);
         new_pos = offset;
     }
     else if (whence == SEEK_CUR)
@@ -276,12 +359,12 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
             /// Position is still inside the buffer.
             /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
             pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
-            assert(pos >= working_buffer.begin());
-            assert(pos <= working_buffer.end());
+            chassert(pos >= working_buffer.begin());
+            chassert(pos <= working_buffer.end());
 
             return new_pos;
         }
-        else if (prefetch_future.valid())
+        if (prefetch_future.valid())
         {
             read_from_prefetch = true;
 
@@ -294,24 +377,23 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
         if (read_from_prefetch)
         {
             ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
-            if (read_settings.enable_filesystem_read_prefetches_log)
-            {
+            if (enable_prefetches_log)
                 appendToPrefetchLog(FilesystemPrefetchState::CANCELLED_WITH_SEEK, -1, nullptr);
-            }
         }
 
         break;
     }
 
-    assert(!prefetch_future.valid());
+    chassert(!prefetch_future.valid());
 
     /// First reset the buffer so the next read will fetch new data to the buffer.
     resetWorkingBuffer();
+    page_cache_cell = nullptr;
     bytes_to_ignore = 0;
 
     if (read_until_position && new_pos > *read_until_position)
     {
-        if (!impl->seekIsCheap())
+        if (!impl->isSeekCheap())
             ProfileEvents::increment(ProfileEvents::RemoteFSSeeksWithReset);
         file_offset_of_buffer_end = new_pos = *read_until_position; /// read_until_position is a non-included boundary.
         impl->seek(file_offset_of_buffer_end, SEEK_SET);
@@ -322,15 +404,15 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
     * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
     * Note: we read in range [file_offset_of_buffer_end, read_until_position).
     */
-    if (!impl->seekIsCheap() && file_offset_of_buffer_end && read_until_position && new_pos < *read_until_position
-        && new_pos > file_offset_of_buffer_end && new_pos < file_offset_of_buffer_end + read_settings.remote_read_min_bytes_for_seek)
+    if (!impl->isSeekCheap() && file_offset_of_buffer_end && read_until_position && new_pos < *read_until_position
+        && new_pos > file_offset_of_buffer_end && new_pos < file_offset_of_buffer_end + min_bytes_for_seek)
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSLazySeeks);
         bytes_to_ignore = new_pos - file_offset_of_buffer_end;
     }
     else
     {
-        if (!impl->seekIsCheap())
+        if (!impl->isSeekCheap())
             ProfileEvents::increment(ProfileEvents::RemoteFSSeeksWithReset);
         file_offset_of_buffer_end = new_pos;
         impl->seek(file_offset_of_buffer_end, SEEK_SET);
@@ -353,7 +435,7 @@ AsynchronousBoundedReadBuffer::~AsynchronousBoundedReadBuffer()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
     }
 }
 
@@ -362,11 +444,11 @@ void AsynchronousBoundedReadBuffer::resetPrefetch(FilesystemPrefetchState state)
     if (!prefetch_future.valid())
         return;
 
-    auto [size, offset, _] = prefetch_future.get();
+    auto result = prefetch_future.get();
     prefetch_future = {};
     last_prefetch_info = {};
 
-    ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, size);
+    ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, result.size);
 
     switch (state)
     {
@@ -380,6 +462,18 @@ void AsynchronousBoundedReadBuffer::resetPrefetch(FilesystemPrefetchState state)
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of prefetch: {}", magic_enum::enum_name(state));
     }
+}
+
+size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const
+{
+    /// If we plan to use readBigAt, then we should not call prefetch(),
+    /// because readBigAt by itself is already parallelized.
+    chassert(!prefetch_future.valid(), "Prefetch is valid for file " + file_name);
+
+    if (impl->supportsReadAt())
+        return impl->readBigAt(to, n, range_begin, progress_callback);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() is not implemented for a given implementation");
 }
 
 }

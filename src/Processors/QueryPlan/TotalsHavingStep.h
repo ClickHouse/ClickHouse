@@ -1,28 +1,26 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/Transforms/finalizeChunk.h>
+#include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
 
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
-
-enum class TotalsMode;
+enum class TotalsMode : uint8_t;
 
 /// Execute HAVING and calculate totals. See TotalsHavingTransform.
 class TotalsHavingStep : public ITransformingStep
 {
 public:
     TotalsHavingStep(
-        const DataStream & input_stream_,
+        SharedHeader input_header_,
         const AggregateDescriptions & aggregates_,
         bool overflow_row_,
-        const ActionsDAGPtr & actions_dag_,
+        std::optional<ActionsDAG> actions_dag_,
         const std::string & filter_column_,
         bool remove_filter_,
         TotalsMode totals_mode_,
-        double auto_include_threshold_,
+        float auto_include_threshold_,
         bool final_);
 
     String getName() const override { return "TotalsHaving"; }
@@ -32,19 +30,33 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const ActionsDAGPtr & getActions() const { return actions_dag; }
+    const ActionsDAG * getActions() const { return actions_dag ? &*actions_dag : nullptr; }
+    const String & getFilterColumnName() const { return filter_column_name; }
+
+    bool hasCorrelatedExpressions() const override
+    {
+        if (actions_dag)
+            return actions_dag->hasCorrelatedColumns();
+        return false;
+    }
+
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     const AggregateDescriptions aggregates;
 
     bool overflow_row;
-    ActionsDAGPtr actions_dag;
+    std::optional<ActionsDAG> actions_dag;
     String filter_column_name;
     bool remove_filter;
     TotalsMode totals_mode;
-    double auto_include_threshold;
+    float auto_include_threshold;
     bool final;
 };
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Common/Logger.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -18,6 +18,8 @@ public:
 
 private:
     ASTPtr query_ptr;
+
+    LoggerPtr log = getLogger("InterpreterCheckQuery");
 };
 
 }

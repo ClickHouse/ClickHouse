@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Access/Credentials.h>
+#include <Common/Logger.h>
 #include <base/types.h>
 #include <memory>
 
@@ -20,6 +21,12 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+#if USE_KRB5
+/// Copy a GSS buffer into a String verbatim, preserving any trailing NUL bytes.
+/// Exposed for unit testing; see the definition for the rationale.
+String bufferToString(const gss_buffer_desc & buf);
+#endif
+
 class GSSAcceptorContext
     : public Credentials
 {
@@ -33,7 +40,7 @@ public:
     };
 
     explicit GSSAcceptorContext(const Params & params_);
-    virtual ~GSSAcceptorContext() override;
+    ~GSSAcceptorContext() override;
 
     GSSAcceptorContext(const GSSAcceptorContext &) = delete;
     GSSAcceptorContext(GSSAcceptorContext &&) = delete;
@@ -42,7 +49,7 @@ public:
 
     const String & getRealm() const;
     bool isFailed() const;
-    MAYBE_NORETURN String processToken(const String & input_token, Poco::Logger * log);
+    MAYBE_NORETURN String processToken(const String & input_token, LoggerPtr log);
 
 private:
     void reset();

@@ -1,9 +1,12 @@
+#include <cstdlib>
+#include <string_view>
 #include <unistd.h>
 #include <sys/ioctl.h>
 #if defined(OS_SUNOS)
 #  include <sys/termios.h>
 #endif
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/TerminalSize.h>
 #include <boost/program_options.hpp>
 
@@ -13,21 +16,59 @@ namespace DB::ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-uint16_t getTerminalWidth()
+std::pair<uint16_t, uint16_t> getTerminalSize(int in_fd, int err_fd)
 {
     struct winsize terminal_size {};
-    if (isatty(STDIN_FILENO))
+    if (isatty(in_fd))
     {
-        if (ioctl(STDIN_FILENO, TIOCGWINSZ, &terminal_size))
-            DB::throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", DB::ErrorCodes::SYSTEM_ERROR);
+        if (ioctl(in_fd, TIOCGWINSZ, &terminal_size))
+            throw DB::ErrnoException(DB::ErrorCodes::SYSTEM_ERROR, "Cannot obtain terminal window size (ioctl TIOCGWINSZ)");
     }
-    else if (isatty(STDERR_FILENO))
+    else if (isatty(err_fd))
     {
-        if (ioctl(STDERR_FILENO, TIOCGWINSZ, &terminal_size))
-            DB::throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", DB::ErrorCodes::SYSTEM_ERROR);
+        if (ioctl(err_fd, TIOCGWINSZ, &terminal_size))
+            throw DB::ErrnoException(DB::ErrorCodes::SYSTEM_ERROR, "Cannot obtain terminal window size (ioctl TIOCGWINSZ)");
     }
     /// Default - 0.
-    return terminal_size.ws_col;
+    return {terminal_size.ws_col, terminal_size.ws_row};
+}
+
+uint16_t getTerminalWidth(int in_fd, int err_fd)
+{
+    return getTerminalSize(in_fd, err_fd).first;
+}
+
+bool terminalSupportsUTF8()
+{
+    /// The character encoding is determined by the locale environment variables,
+    /// in order of precedence: LC_ALL, LC_CTYPE, LANG.
+    const char * locale = nullptr;
+    for (const char * name : {"LC_ALL", "LC_CTYPE", "LANG"})
+    {
+        const char * value = std::getenv(name); /// NOLINT(concurrency-mt-unsafe)
+        if (value && *value)
+        {
+            locale = value;
+            break;
+        }
+    }
+
+    /// If no locale is set, the default "C"/"POSIX" locale is in effect, which is not UTF-8.
+    if (!locale)
+        return false;
+
+    /// Look for the substring "UTF" (case-insensitively), as in "en_US.UTF-8" or "C.utf8".
+    /// No standard locale or encoding name contains these letters except for UTF encodings.
+    std::string_view value(locale);
+    for (size_t i = 0; i + 3 <= value.size(); ++i)
+    {
+        if ((value[i] == 'U' || value[i] == 'u')
+            && (value[i + 1] == 'T' || value[i + 1] == 't')
+            && (value[i + 2] == 'F' || value[i + 2] == 'f'))
+            return true;
+    }
+
+    return false;
 }
 
 po::options_description createOptionsDescription(const std::string & caption, uint16_t terminal_width)

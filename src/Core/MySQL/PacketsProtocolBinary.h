@@ -1,12 +1,12 @@
 #pragma once
 
 #include <vector>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
-#include "Core/DecimalFunctions.h"
-#include "DataTypes/IDataType.h"
-#include "DataTypes/Serializations/ISerialization.h"
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -16,23 +16,17 @@ namespace ProtocolBinary
 {
 class ResultSetRow : public IMySQLWritePacket
 {
-    using DateTime64ComponentsWithScale = std::pair<DecimalUtils::DecimalComponents<DateTime64>, UInt32>;
-
-private:
-    DateTime64ComponentsWithScale getDateTime64ComponentsWithScale(DataTypePtr data_type, ColumnPtr col) const;
-    ColumnPtr getColumn(size_t i) const;
-
 protected:
-    int row_num;
+    size_t row_num;
     const Columns & columns;
     const DataTypes & data_types;
     const Serializations & serializations;
 
-    std::vector<String> serialized = std::vector<String>(columns.size());
+    VectorWithMemoryTracking<String> serialized = VectorWithMemoryTracking<String>(columns.size());
 
     // See https://dev.mysql.com/doc/dev/mysql-server/8.1.0/page_protocol_binary_resultset.html#sect_protocol_binary_resultset_row
     size_t null_bitmap_size = (columns.size() + 7 + 2) / 8;
-    std::vector<char> null_bitmap = std::vector<char>(null_bitmap_size, static_cast<char>(0));
+    VectorWithMemoryTracking<char> null_bitmap = VectorWithMemoryTracking<char>(null_bitmap_size, static_cast<char>(0));
 
     size_t payload_size = 0;
 
@@ -41,7 +35,7 @@ protected:
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
 public:
-    ResultSetRow(const Serializations & serializations_, const DataTypes & data_types_, const Columns & columns_, int row_num_);
+    ResultSetRow(const Serializations & serializations_, const DataTypes & data_types_, const Columns & columns_, size_t row_num_);
 };
 }
 }

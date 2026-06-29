@@ -1,3 +1,4 @@
+#include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
 
 namespace DB

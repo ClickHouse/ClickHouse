@@ -60,4 +60,5 @@ SELECT dictHas('02185_range_dictionary', 0, 0);
 SELECT dictHas('02185_range_dictionary', 0, 5001);
 SELECT dictHas('02185_range_dictionary', 0, 10001);
 
+DROP DICTIONARY 02185_range_dictionary;
 DROP TABLE 02185_range_dictionary_source_table;

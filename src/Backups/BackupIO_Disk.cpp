@@ -1,4 +1,5 @@
 #include <Backups/BackupIO_Disk.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -9,7 +10,7 @@ namespace DB
 {
 
 BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
-    : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderDisk"))
+    : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderDisk"))
     , disk(disk_)
     , root_path(root_path_)
     , data_source_description(disk->getDataSourceDescription())
@@ -20,7 +21,7 @@ BackupReaderDisk::~BackupReaderDisk() = default;
 
 bool BackupReaderDisk::fileExists(const String & file_name)
 {
-    return disk->exists(root_path / file_name);
+    return disk->existsFile(root_path / file_name);
 }
 
 UInt64 BackupReaderDisk::getFileSize(const String & file_name)
@@ -28,7 +29,7 @@ UInt64 BackupReaderDisk::getFileSize(const String & file_name)
     return disk->getFileSize(root_path / file_name);
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupReaderDisk::readFile(const String & file_name)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderDisk::readFile(const String & file_name)
 {
     return disk->readFile(root_path / file_name, read_settings);
 }
@@ -57,7 +58,7 @@ void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file
 
 
 BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
-    : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterDisk"))
+    : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterDisk"))
     , disk(disk_)
     , root_path(root_path_)
     , data_source_description(disk->getDataSourceDescription())
@@ -68,7 +69,7 @@ BackupWriterDisk::~BackupWriterDisk() = default;
 
 bool BackupWriterDisk::fileExists(const String & file_name)
 {
-    return disk->exists(root_path / file_name);
+    return disk->existsFile(root_path / file_name);
 }
 
 UInt64 BackupWriterDisk::getFileSize(const String & file_name)
@@ -91,20 +92,42 @@ std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_nam
 void BackupWriterDisk::removeFile(const String & file_name)
 {
     disk->removeFileIfExists(root_path / file_name);
-    if (disk->isDirectory(root_path) && disk->isDirectoryEmpty(root_path))
-        disk->removeDirectory(root_path);
 }
 
-void BackupWriterDisk::removeFiles(const Strings & file_names)
+void BackupWriterDisk::removeEmptyDirectories()
 {
-    for (const auto & file_name : file_names)
-        disk->removeFileIfExists(root_path / file_name);
-    if (disk->isDirectory(root_path) && disk->isDirectoryEmpty(root_path))
-        disk->removeDirectory(root_path);
+    /// When using archive-based backups, root_path is the parent of the archive filename.
+    /// For single-component paths like "backup1.tzst", this becomes empty (the disk root).
+    /// We must not traverse and remove directories starting from the disk root,
+    /// as that would affect the entire disk, not just the backup's directories.
+    if (root_path.empty())
+        return;
+
+    removeEmptyDirectoriesImpl(root_path);
 }
 
-void BackupWriterDisk::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                                        bool copy_encrypted, UInt64 start_pos, UInt64 length)
+void BackupWriterDisk::removeEmptyDirectoriesImpl(const fs::path & current_dir)
+{
+    checkStackSize();
+
+    if (!disk->existsDirectory(current_dir))
+        return;
+
+    if (disk->isDirectoryEmpty(current_dir))
+    {
+        disk->removeDirectory(current_dir);
+        return;
+    }
+
+    for (auto it = disk->iterateDirectory(current_dir); it->isValid(); it->next())
+        removeEmptyDirectoriesImpl(current_dir / it->name());
+
+    if (disk->isDirectoryEmpty(current_dir))
+        disk->removeDirectory(current_dir);
+}
+
+void BackupWriterDisk::copyFileFromDisk(
+    const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// Use IDisk::copyFile() as a more optimal way to copy a file if it's possible.
     /// However IDisk::copyFile() can't use throttling for reading, and can't copy an encrypted file or copy a part of the file.
@@ -126,6 +149,15 @@ void BackupWriterDisk::copyFileFromDisk(const String & path_in_backup, DiskPtr s
 
     /// Fallback to copy through buffers.
     BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
+}
+
+void BackupWriterDisk::copyFile(const String & destination, const String & source, size_t /*size*/)
+{
+    LOG_TRACE(log, "Copying file inside backup from {} to {} ", source, destination);
+    auto dest_file_path = root_path / destination;
+    auto src_file_path = root_path / source;
+    disk->createDirectories(dest_file_path.parent_path());
+    disk->copyFile(src_file_path, *disk, dest_file_path, read_settings, write_settings);
 }
 
 }

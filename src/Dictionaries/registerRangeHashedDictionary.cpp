@@ -1,9 +1,17 @@
-#include "RangeHashedDictionary.h"
-#include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/RangeHashedDictionary.h>
+
+#include <Core/Settings.h>
+#include <Dictionaries/ClickHouseDictionarySource.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool dictionary_use_async_executor;
+}
 
 namespace ErrorCodes
 {
@@ -16,6 +24,7 @@ static DictionaryPtr createRangeHashedDictionary(const std::string & full_name,
                             const DictionaryStructure & dict_struct,
                             const Poco::Util::AbstractConfiguration & config,
                             const std::string & config_prefix,
+                            ContextPtr global_context,
                             DictionarySourcePtr source_ptr)
 {
     static constexpr auto layout_name = dictionary_key_type == DictionaryKeyType::Simple ? "range_hashed" : "complex_key_range_hashed";
@@ -52,11 +61,16 @@ static DictionaryPtr createRangeHashedDictionary(const std::string & full_name,
     else if (range_lookup_strategy == "max")
         lookup_strategy = RangeHashedDictionaryLookupStrategy::max;
 
+    auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+    const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
+    bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef()[Setting::dictionary_use_async_executor];
+
     RangeHashedDictionaryConfiguration configuration
     {
         .convert_null_range_bound_to_open = convert_null_range_bound_to_open,
         .lookup_strategy = lookup_strategy,
-        .require_nonempty = require_nonempty
+        .require_nonempty = require_nonempty,
+        .use_async_executor = use_async_executor,
     };
 
     DictionaryPtr result = std::make_unique<RangeHashedDictionary<dictionary_key_type>>(
@@ -69,6 +83,7 @@ static DictionaryPtr createRangeHashedDictionary(const std::string & full_name,
     return result;
 }
 
+void registerDictionaryRangeHashed(DictionaryFactory & factory);
 void registerDictionaryRangeHashed(DictionaryFactory & factory)
 {
     auto create_layout_simple = [=](const std::string & full_name,
@@ -76,26 +91,32 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr,
-                             ContextPtr /* global_context */,
+                             ContextPtr global_context,
                              bool /*created_from_ddl*/) -> DictionaryPtr
     {
-        return createRangeHashedDictionary<DictionaryKeyType::Simple>(full_name, dict_struct, config, config_prefix, std::move(source_ptr));
+        return createRangeHashedDictionary<DictionaryKeyType::Simple>(full_name, dict_struct, config, config_prefix, global_context, std::move(source_ptr));
     };
 
-    factory.registerLayout("range_hashed", create_layout_simple, false);
+    factory.registerLayout("range_hashed", create_layout_simple, false, true, Documentation{
+        .description = "Stores the dictionary in memory as a hash table with ordered ranges and their values, allowing a key to be looked up together with a value that falls within a range (for example, a date range).",
+        .syntax = "LAYOUT(RANGE_HASHED())",
+        .related = {"complex_key_range_hashed", "hashed"}});
 
     auto create_layout_complex = [=](const std::string & full_name,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr,
-                             ContextPtr /* context */,
+                             ContextPtr global_context,
                              bool /*created_from_ddl*/) -> DictionaryPtr
     {
-        return createRangeHashedDictionary<DictionaryKeyType::Complex>(full_name, dict_struct, config, config_prefix, std::move(source_ptr));
+        return createRangeHashedDictionary<DictionaryKeyType::Complex>(full_name, dict_struct, config, config_prefix, global_context, std::move(source_ptr));
     };
 
-    factory.registerLayout("complex_key_range_hashed", create_layout_complex, true);
+    factory.registerLayout("complex_key_range_hashed", create_layout_complex, true, true, Documentation{
+        .description = "Like `range_hashed`, but supports composite keys.",
+        .syntax = "LAYOUT(COMPLEX_KEY_RANGE_HASHED())",
+        .related = {"range_hashed"}});
 }
 
 }

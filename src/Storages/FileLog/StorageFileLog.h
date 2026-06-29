@@ -4,9 +4,9 @@
 
 #include <Storages/FileLog/Buffer_fwd.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
-#include <Storages/FileLog/FileLogSettings.h>
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Common/SettingsChanges.h>
 
@@ -25,6 +25,7 @@ namespace ErrorCodes
 }
 
 class FileLogDirectoryWatcher;
+struct FileLogSettings;
 
 class StorageFileLog final : public IStorage, WithContext
 {
@@ -38,18 +39,19 @@ public:
         const String & format_name_,
         std::unique_ptr<FileLogSettings> settings,
         const String & comment,
-        bool attach);
+        LoadingStrictnessLevel mode);
 
     using Files = std::vector<String>;
 
     std::string getName() const override { return "FileLog"; }
 
-    bool noPushingToViews() const override { return true; }
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -62,7 +64,7 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    enum class FileStatus
+    enum class FileStatus : uint8_t
     {
         OPEN, /// First time open file after table start up.
         NO_CHANGE,
@@ -101,10 +103,6 @@ public:
     String getFullMetaPath(const String & file_name) const { return std::filesystem::path(metadata_base_path) / file_name; }
     String getFullDataPath(const String & file_name) const { return std::filesystem::path(root_data_path) / file_name; }
 
-    NamesAndTypesList getVirtuals() const override;
-
-    static Names getVirtualColumnNames();
-
     static UInt64 getInode(const String & file_name);
 
     void openFilesAndSetPos();
@@ -123,8 +121,7 @@ public:
     {
         if (auto it = map.find(key); it != map.end())
             return it->second;
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} doesn't exist.", key);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} doesn't exist.", key);
     }
 
     void increaseStreams();
@@ -135,6 +132,9 @@ public:
     const auto & getFileLogSettings() const { return filelog_settings; }
 
 private:
+    friend class ReadFromStorageFileLog;
+
+    ContextMutablePtr filelog_context;
     std::unique_ptr<FileLogSettings> filelog_settings;
 
     const String path;
@@ -148,7 +148,7 @@ private:
     FileInfos file_infos;
 
     const String format_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     DiskPtr disk;
 
@@ -170,15 +170,15 @@ private:
 
     struct TaskContext
     {
-        BackgroundSchedulePool::TaskHolder holder;
+        BackgroundSchedulePoolTaskHolder holder;
         std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
+        explicit TaskContext(BackgroundSchedulePoolTaskHolder&& task_) : holder(std::move(task_))
         {
         }
     };
     std::shared_ptr<TaskContext> task;
 
-    std::unique_ptr<FileLogDirectoryWatcher> directory_watch = nullptr;
+    std::unique_ptr<FileLogDirectoryWatcher> directory_watch;
 
     void loadFiles();
 
@@ -194,6 +194,17 @@ private:
     bool checkDependencies(const StorageID & table_id);
 
     bool updateFileInfos();
+
+    /// Apply a "file `file_name` now refers to a regular file with `inode`" event
+    /// (shared by `DW_ITEM_ADDED` and `DW_ITEM_MOVED_TO` branches).
+    /// If the name was previously tracked with a different inode (delete+recreate
+    /// or rename-over), cleans up the stale `meta_by_inode` entry and removes the
+    /// stale on-disk meta file, guarded by filename ownership: we only drop the
+    /// stale entry if it still claims this `file_name`, so that a rename pair
+    /// re-assigning the old inode to a different filename earlier in the batch
+    /// is not clobbered. Leaves `context_by_name[file_name]` at `{OPEN, inode}`
+    /// and pushes the name into `file_names` exactly once.
+    void onFileAppeared(const String & file_name, UInt64 inode);
 
     size_t getTableDependentCount() const;
 
@@ -211,6 +222,8 @@ private:
         UInt64 inode = 0;
     };
     ReadMetadataResult readMetadata(const String & filename) const;
+
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
 }

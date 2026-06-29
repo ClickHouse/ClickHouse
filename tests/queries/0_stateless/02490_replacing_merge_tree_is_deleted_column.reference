@@ -91,6 +91,28 @@ d4	1	0
 == (Replicas) Test settings ==
 c2	1	0
 c4	1	0
+no cleanup 1	d1	5	0
+no cleanup 1	d2	1	0
+no cleanup 1	d3	1	0
+no cleanup 1	d4	3	0
+no cleanup 1	d5	1	0
+no cleanup 2	d1	5	0
+no cleanup 2	d2	1	0
+no cleanup 2	d3	1	0
+no cleanup 2	d4	3	0
+no cleanup 2	d5	1	0
+no cleanup 2	d6	2	1
+no cleanup 3	d1	5	0
+no cleanup 3	d2	1	0
+no cleanup 3	d3	1	0
+no cleanup 3	d4	3	0
+no cleanup 3	d5	1	0
+no cleanup 4	d1	5	0
+no cleanup 4	d2	1	0
+no cleanup 4	d3	1	0
+no cleanup 4	d4	3	0
+no cleanup 4	d5	1	0
+no cleanup 4	d6	2	1
 == Check cleanup & settings for other merge trees ==
 d1	1	1
 d1	1	1

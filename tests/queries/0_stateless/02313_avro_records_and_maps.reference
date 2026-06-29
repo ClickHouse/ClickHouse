@@ -1,8 +1,8 @@
-t	Tuple(a Int32, b String)					
+t	Tuple(\n    a Int32,\n    b String)					
 (0,'String')
 (1,'String')
 (2,'String')
-t	Tuple(a Int32, b Tuple(c Int32, d Int32), e Array(Int32))					
+t	Tuple(\n    a Int32,\n    b Tuple(\n        c Int32,\n        d Int32),\n    e Array(Int32))					
 (0,(1,2),[])
 (1,(2,3),[0])
 (2,(3,4),[0,1])
@@ -11,7 +11,7 @@ a.c	Array(Int32)
 [0,1]	[2,3]
 [1,2]	[3,4]
 [2,3]	[4,5]
-a.b	Array(Array(Tuple(c Int32, d Int32)))					
+a.b	Array(Array(Tuple(\n    c Int32,\n    d Int32)))					
 [[(0,1),(2,3)]]
 [[(1,2),(3,4)]]
 [[(2,3),(4,5)]]
@@ -19,7 +19,7 @@ m	Map(String, Int64)
 {'key_0':0}
 {'key_1':1}
 {'key_2':2}
-m	Map(String, Tuple(`1` Int64, `2` Array(Int64)))					
+m	Map(String, Tuple(\n    `1` Int64,\n    `2` Array(Int64)))					
 {'key_0':(0,[])}
 {'key_1':(1,[0])}
 {'key_2':(2,[0,1])}

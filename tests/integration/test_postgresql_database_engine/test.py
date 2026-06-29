@@ -1,15 +1,14 @@
 import pytest
-import psycopg2
+import uuid
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
+from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import get_postgres_conn
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/named_collections.xml"],
+    main_configs=["configs/named_collections.xml", "configs/backups.xml"],
     user_configs=["configs/users.xml"],
     with_postgres=True,
 )
@@ -59,7 +58,7 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
     )
     assert "postgres_database" in node1.query("SHOW DATABASES")
 
@@ -67,13 +66,17 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
 
     cursor.execute("ALTER TABLE test_table ADD COLUMN data Text")
+    assert "data" in node1.query("SHOW COLUMNS FROM postgres_database.test_table")
+    assert "PRIMARY" in node1.query("SHOW INDEX FROM postgres_database.test_table")
     assert "data" in node1.query(
-        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'"
+        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'",
+        settings={"show_remote_databases_in_system_tables": 1},
     )
 
     cursor.execute("ALTER TABLE test_table DROP COLUMN data")
     assert "data" not in node1.query(
-        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'"
+        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'",
+        settings={"show_remote_databases_in_system_tables": 1},
     )
 
     node1.query("DROP DATABASE postgres_database")
@@ -89,7 +92,7 @@ def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
     )
 
     create_postgres_table(cursor, "test_table")
@@ -120,7 +123,7 @@ def test_postgresql_database_engine_queries(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
     )
 
     create_postgres_table(cursor, "test_table")
@@ -150,7 +153,7 @@ def test_get_create_table_query_with_multidim_arrays(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
     )
 
     cursor.execute(
@@ -193,7 +196,7 @@ def test_postgresql_database_engine_table_cache(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword', '', 1)"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}', '', 1)"
     )
 
     create_postgres_table(cursor, "test_table")
@@ -252,7 +255,7 @@ def test_postgresql_database_with_schema(started_cluster):
     cursor.execute("CREATE TABLE table3 (a integer)")
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword', 'test_schema')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}', 'test_schema')"
     )
 
     assert node1.query("SHOW TABLES FROM postgres_database") == "table1\ntable2\n"
@@ -276,25 +279,26 @@ def test_postgresql_database_with_schema(started_cluster):
 
 def test_predefined_connection_configuration(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_table")
-    cursor.execute(f"CREATE TABLE test_table (a integer PRIMARY KEY, b integer)")
+    cursor.execute("DROP TABLE IF EXISTS test_table")
+    cursor.execute("CREATE TABLE test_table (a integer PRIMARY KEY, b integer)")
 
     node1.query("DROP DATABASE IF EXISTS postgres_database")
     node1.query("CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1)")
 
     result = node1.query(
-        "select create_table_query from system.tables where database ='postgres_database'"
+        "select create_table_query from system.tables where database ='postgres_database'",
+        settings={"show_remote_databases_in_system_tables": 1},
     )
     print(f"kssenii: {result}")
     assert result.strip().endswith(
-        "ENGINE = PostgreSQL(postgres1, table = \\'test_table\\')"
+        "ENGINE = PostgreSQL(postgres1, `table` = \\'test_table\\')"
     )
 
     node1.query(
         "INSERT INTO postgres_database.test_table SELECT number, number from numbers(100)"
     )
     assert (
-        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
+        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
         == "100"
     )
 
@@ -309,7 +313,7 @@ def test_predefined_connection_configuration(started_cluster):
         "INSERT INTO postgres_database.test_table SELECT number from numbers(200)"
     )
     assert (
-        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
+        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
         == "200"
     )
 
@@ -327,7 +331,7 @@ def test_predefined_connection_configuration(started_cluster):
         "CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres3, port=5432)"
     )
     assert (
-        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
+        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
         == "100"
     )
     node1.query(
@@ -337,13 +341,13 @@ def test_predefined_connection_configuration(started_cluster):
         """
     )
     assert (
-        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
+        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
         == "100"
     )
     assert node1.contains_in_log("Cached table `test_table`")
 
     node1.query("DROP DATABASE postgres_database")
-    cursor.execute(f"DROP TABLE test_table ")
+    cursor.execute("DROP TABLE test_table ")
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
 
 
@@ -354,13 +358,13 @@ def test_postgres_database_old_syntax(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        """
-        CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword', 1);
+        f"""
+        CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}', 1);
         """
     )
     create_postgres_table(cursor, "test_table")
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
-    cursor.execute(f"DROP TABLE test_table")
+    cursor.execute("DROP TABLE test_table")
     node1.query("DROP DATABASE IF EXISTS postgres_database;")
 
 
@@ -377,13 +381,14 @@ def test_postgresql_fetch_tables(started_cluster):
     cursor.execute("CREATE TABLE table3 (a integer)")
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
     )
 
     assert node1.query("SHOW TABLES FROM postgres_database") == "table3\n"
     assert not node1.contains_in_log("PostgreSQL table table1 does not exist")
 
-    cursor.execute(f"DROP TABLE table3")
+    node1.query("DROP DATABASE postgres_database")
+    cursor.execute("DROP TABLE table3")
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
 
 
@@ -400,6 +405,72 @@ def test_datetime(started_cluster):
     assert "DateTime64(6)" in node1.query("show create table pg.test")
 
 
+def test_numeric_detach_attach(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_table")
+    cursor.execute("""
+        CREATE TABLE test_table (
+            numeric_1 numeric NOT NULL,
+            numeric_2 numeric(10) NOT NULL,
+            numeric_3 numeric(10, 0) NOT NULL,
+            numeric_4 numeric(5, 2) NOT NULL,
+            numeric_5 numeric(10, 5) NOT NULL,
+            numeric_6 numeric(20, 10) NOT NULL,
+            numeric_7 numeric(50, 20) NOT NULL,
+            decimal_1 decimal NOT NULL,
+            decimal_2 decimal(10) NOT NULL,
+            decimal_3 decimal(10, 0) NOT NULL,
+            decimal_4 decimal(5, 2) NOT NULL,
+            decimal_5 decimal(10, 5) NOT NULL,
+            decimal_6 decimal(20, 10) NOT NULL,
+            decimal_7 decimal(50, 20) NOT NULL
+        )
+    """)
+
+    node1.query("DROP DATABASE IF EXISTS postgres_database")
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1)"
+    )
+
+    expected_clickhouse_column_types = {
+        "numeric_1": "Decimal(38, 19)",
+        "numeric_2": "Decimal(10, 0)",
+        "numeric_3": "Decimal(10, 0)",
+        "numeric_4": "Decimal(5, 2)",
+        "numeric_5": "Decimal(10, 5)",
+        "numeric_6": "Decimal(20, 10)",
+        "numeric_7": "Decimal(50, 20)",
+        "decimal_1": "Decimal(38, 19)",
+        "decimal_2": "Decimal(10, 0)",
+        "decimal_3": "Decimal(10, 0)",
+        "decimal_4": "Decimal(5, 2)",
+        "decimal_5": "Decimal(10, 5)",
+        "decimal_6": "Decimal(20, 10)",
+        "decimal_7": "Decimal(50, 20)",
+    }
+
+    def get_actual_clickhouse_column_types():
+        res = node1.query(
+            "SELECT name, type FROM system.columns WHERE database = 'postgres_database' AND table = 'test_table'",
+            settings={"show_remote_databases_in_system_tables": 1},
+        )
+
+        return dict(line.split('\t') for line in res.splitlines())
+
+    assert get_actual_clickhouse_column_types() == expected_clickhouse_column_types
+
+    create_ddl = node1.query("SHOW CREATE TABLE postgres_database.test_table")
+    for column, expected_type in expected_clickhouse_column_types.items():
+        assert f"`{column}` {expected_type}" in create_ddl
+
+    node1.query("DETACH TABLE postgres_database.test_table")
+    node1.query("ATTACH TABLE postgres_database.test_table")
+
+    assert get_actual_clickhouse_column_types() == expected_clickhouse_column_types
+
+    node1.query("DROP DATABASE postgres_database")
+    cursor.execute("DROP TABLE test_table")
+
 def test_postgresql_password_leak(started_cluster):
     conn = get_postgres_conn(
         started_cluster.postgres_ip, started_cluster.postgres_port, database=True
@@ -413,16 +484,16 @@ def test_postgresql_password_leak(started_cluster):
 
     node1.query("DROP DATABASE IF EXISTS postgres_database")
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword', 'test_schema')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}', 'test_schema')"
     )
 
     node1.query("DROP DATABASE IF EXISTS postgres_database2")
     node1.query(
-        "CREATE DATABASE postgres_database2 ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+        f"CREATE DATABASE postgres_database2 ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
     )
 
-    assert "mysecretpassword" not in node1.query("SHOW CREATE postgres_database.table1")
-    assert "mysecretpassword" not in node1.query(
+    assert f"{pg_pass}" not in node1.query("SHOW CREATE postgres_database.table1")
+    assert f"{pg_pass}" not in node1.query(
         "SHOW CREATE postgres_database2.table2"
     )
 
@@ -431,6 +502,87 @@ def test_postgresql_password_leak(started_cluster):
 
     cursor.execute("DROP SCHEMA test_schema CASCADE")
     cursor.execute("DROP TABLE table2")
+
+
+# PostgreSQL database engine is created async in ClickHouse (first create the object then another thread
+# do the connection), causing a created database object with an inaccessible URI, and access of system.tables
+# timed out when touching the inaccessible database. We add the filter engine ability so we add a test here.
+def test_inaccessible_postgresql_database_engine_filterable_on_system_tables(
+    started_cluster,
+):
+    # This query takes some time depending on the trial times and conn timeout setting.
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('google.com:5432', 'dummy', 'dummy', 'dummy')"
+    )
+    assert "postgres_database" in node1.query("SHOW DATABASES")
+
+    # Should quickly return result instead of wasting time in connection since it gets filtered.
+    assert (
+        node1.query(
+            "SELECT DISTINCT(name) FROM system.tables WHERE engine!='PostgreSQL' AND name='COLUMNS'"
+        )
+        == "COLUMNS\n"
+    )
+
+    # Enigne of system.tables in fact means storage name, so View should not get filtered.
+    assert (
+        node1.query(
+            "SELECT DISTINCT(name) FROM system.tables WHERE engine='View' and name='COLUMNS'"
+        )
+        == "COLUMNS\n"
+    )
+
+    node1.query("DROP DATABASE postgres_database")
+    assert "postgres_database" not in node1.query("SHOW DATABASES")
+
+def test_postgresql_database_engine_comment(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    conn.cursor()
+
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword') \
+        comment 'test postgres database with comment'"
+    )
+
+    node1.query(
+        "ALTER DATABASE postgres_database MODIFY COMMENT 'new comment on postgres database engine'"
+    )
+
+    assert (
+        node1.query("SELECT comment FROM system.databases WHERE name = 'postgres_database'").rstrip()
+        == "new comment on postgres database engine"
+    )
+
+    node1.query("DROP DATABASE postgres_database")
+    assert "postgres_database" not in node1.query("SHOW DATABASES")
+
+
+def test_backup_database(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    conn.cursor()
+
+    node1.query(
+        "CREATE DATABASE backup_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+    )
+
+    backup_id = uuid.uuid4().hex
+    backup_name = f"File('/backups/test_backup_{backup_id}/')"
+
+    node1.query(f"BACKUP DATABASE backup_database TO {backup_name}")
+    node1.query("DROP DATABASE backup_database SYNC")
+    assert "backup_database" not in node1.query("SHOW DATABASES")
+
+    node1.query(f"RESTORE DATABASE backup_database FROM {backup_name}")
+    assert (
+        node1.query("SHOW CREATE DATABASE backup_database")
+        == "CREATE DATABASE backup_database\\nENGINE = PostgreSQL(\\'postgres1:5432\\', \\'postgres_database\\', \\'postgres\\', \\'[HIDDEN]\\')\n"
+    )
+
+    node1.query("DROP DATABASE backup_database")
 
 
 if __name__ == "__main__":

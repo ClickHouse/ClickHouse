@@ -1,18 +1,25 @@
 #include <Storages/NATS/NATSSource.h>
 
+#include <Columns/IColumn.h>
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Storages/NATS/NATSConsumer.h>
-#include <IO/EmptyReadBuffer.h>
+#include <Storages/NATS/INATSConsumer.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMilliseconds rabbitmq_max_wait_ms;
+}
 
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
 {
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->getSampleBlockForColumns({"_subject"});
+    auto virtual_header = storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
 
     return {non_virtual_header, virtual_header};
 }
@@ -31,8 +38,9 @@ NATSSource::NATSSource(
     const StorageSnapshotPtr & storage_snapshot_,
     ContextPtr context_,
     const Names & columns,
-    size_t max_block_size_)
-    : NATSSource(storage_, storage_snapshot_, getHeaders(storage_snapshot_), context_, columns, max_block_size_)
+    size_t max_block_size_,
+    StreamingHandleErrorMode handle_error_mode_)
+    : NATSSource(storage_, storage_snapshot_, getHeaders(storage_snapshot_), context_, columns, max_block_size_, handle_error_mode_)
 {
 }
 
@@ -42,26 +50,28 @@ NATSSource::NATSSource(
     std::pair<Block, Block> headers,
     ContextPtr context_,
     const Names & columns,
-    size_t max_block_size_)
-    : ISource(getSampleBlock(headers.first, headers.second))
+    size_t max_block_size_,
+    StreamingHandleErrorMode handle_error_mode_)
+    : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
+    , handle_error_mode(handle_error_mode_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
 {
-    storage.incrementReader();
 }
 
 
 NATSSource::~NATSSource()
 {
-    storage.decrementReader();
-
     if (!consumer)
         return;
+
+    if (unsubscribe_on_destroy)
+        consumer->unsubscribe();
 
     storage.pushConsumer(consumer);
 }
@@ -83,9 +93,14 @@ Chunk NATSSource::generate()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::rabbitmq_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
-        consumer->subscribe();
+
+        if (consumer && !consumer->isSubscribed())
+        {
+            consumer->subscribe();
+            unsubscribe_on_destroy = true;
+        }
     }
 
     if (!consumer || is_finished)
@@ -96,17 +111,43 @@ Chunk NATSSource::generate()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
-
-    StreamingFormatExecutor executor(non_virtual_header, input_format);
-
+        storage.getFormatName(),
+        empty_buf,
+        non_virtual_header,
+        context,
+        max_block_size,
+        std::nullopt,
+        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
+    std::optional<String> exception_message;
     size_t total_rows = 0;
+    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
+    {
+        if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+        {
+            exception_message = e.message();
+            for (size_t i = 0; i < result_columns.size(); ++i)
+            {
+                // We could already push some rows to result_columns before exception, we need to fix it.
+                result_columns[i]->rollback(*checkpoints[i]);
+
+                // All data columns will get default value in case of error.
+                result_columns[i]->insertDefault();
+            }
+
+            return 1;
+        }
+
+        throw std::move(e);
+    };
+
+    StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
     while (true)
     {
         if (consumer->queueEmpty())
             break;
 
+        exception_message.reset();
         size_t new_rows = 0;
         if (auto buf = consumer->consume())
             new_rows = executor.execute(*buf);
@@ -115,6 +156,21 @@ Chunk NATSSource::generate()
         {
             auto subject = consumer->getSubject();
             virtual_columns[0]->insertMany(subject, new_rows);
+            virtual_columns[1]->insertMany(storage.getStorageID().getTableName(), new_rows);
+            if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+            {
+                if (exception_message)
+                {
+                    const auto & current_message = consumer->getCurrentMessage();
+                    virtual_columns[2]->insertData(current_message);
+                    virtual_columns[3]->insertData(*exception_message);
+                }
+                else
+                {
+                    virtual_columns[2]->insertDefault();
+                    virtual_columns[3]->insertDefault();
+                }
+            }
 
             total_rows = total_rows + new_rows;
         }

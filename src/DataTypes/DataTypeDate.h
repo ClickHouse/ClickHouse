@@ -12,8 +12,8 @@ public:
     static constexpr auto family_name = "Date";
 
     TypeIndex getTypeId() const override { return TypeIndex::Date; }
+    TypeIndex getColumnType() const override { return TypeIndex::UInt16; }
     const char * getFamilyName() const override { return family_name; }
-    String getSQLCompatibleName() const override { return "DATE"; }
 
     bool canBeUsedAsVersion() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
@@ -21,7 +21,7 @@ public:
     bool equals(const IDataType & rhs) const override;
 
 protected:
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
 };
 
 }

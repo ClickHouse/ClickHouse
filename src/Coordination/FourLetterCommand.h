@@ -1,17 +1,18 @@
 #pragma once
 
-#include <sstream>
-#include <string>
+#include "config.h"
+
+#include <atomic>
+#include <memory>
 #include <unordered_map>
-
-#include <Coordination/KeeperDispatcher.h>
-#include <IO/WriteBufferFromString.h>
-
-#include "config_version.h"
-
+#include <vector>
+#include <base/types.h>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
+
+class KeeperDispatcher;
 
 struct IFourLetterCommand;
 using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;
@@ -23,17 +24,17 @@ using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;
 struct IFourLetterCommand
 {
 public:
-    using StringBuffer = DB::WriteBufferFromOwnString;
     explicit IFourLetterCommand(KeeperDispatcher & keeper_dispatcher_);
 
     virtual String name() = 0;
     virtual String run() = 0;
+    virtual String runWithArgument(const std::string &);
 
     virtual ~IFourLetterCommand();
     int32_t code();
 
     static String toName(int32_t code);
-    static inline int32_t toCode(const String & name);
+    static int32_t toCode(std::string_view name);
 
 protected:
     KeeperDispatcher & keeper_dispatcher;
@@ -48,8 +49,9 @@ public:
     /// Represents '*' which is used in allow list.
     static constexpr int32_t ALLOW_LIST_ALL = 0;
 
-    bool isKnown(int32_t code);
-    bool isEnabled(int32_t code);
+    bool isKnown(int32_t code) const;
+    bool isEnabled(int32_t code) const;
+    bool supportArguments(int32_t code) const;
 
     FourLetterCommandPtr get(int32_t code);
 
@@ -104,8 +106,10 @@ struct RuokCommand : public IFourLetterCommand
  * zk_approximate_data_size    27
  * zk_open_file_descriptor_count 23    - only available on Unix platforms
  * zk_max_file_descriptor_count 1024   - only available on Unix platforms
- * zk_followers 2                      - only exposed by the Leader
- * zk_synced_followers  2              - only exposed by the Leader
+ * zk_learners 2                       - only exposed by the Leader
+ * zk_followers 1                      - only exposed by the Leader
+ * zk_synced_followers  1              - only exposed by the Leader
+ * zk_synced_non_voting_followers 1    - only exposed by the Leader
  * zk_pending_syncs 0                  - only exposed by the Leader
  */
 struct MonitorCommand : public IFourLetterCommand
@@ -414,5 +418,108 @@ struct FeatureFlagsCommand : public IFourLetterCommand
     String run() override;
     ~FeatureFlagsCommand() override = default;
 };
+
+/// Yield leadership and become follower.
+struct YieldLeadershipCommand : public IFourLetterCommand
+{
+    explicit YieldLeadershipCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "ydld"; }
+    String run() override;
+    ~YieldLeadershipCommand() override = default;
+};
+
+#if USE_JEMALLOC
+struct JemallocDumpStats : public IFourLetterCommand
+{
+    explicit JemallocDumpStats(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmst"; }
+    String run() override;
+    ~JemallocDumpStats() override = default;
+
+};
+
+struct JemallocFlushProfile : public IFourLetterCommand
+{
+    explicit JemallocFlushProfile(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmfp"; }
+    String run() override;
+    ~JemallocFlushProfile() override = default;
+};
+
+struct JemallocEnableProfile : public IFourLetterCommand
+{
+    explicit JemallocEnableProfile(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmep"; }
+    String run() override;
+    ~JemallocEnableProfile() override = default;
+};
+
+struct JemallocDisableProfile : public IFourLetterCommand
+{
+    explicit JemallocDisableProfile(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmdp"; }
+    String run() override;
+    ~JemallocDisableProfile() override = default;
+};
+#endif
+
+struct ProfileEventsCommand : public IFourLetterCommand
+{
+    explicit ProfileEventsCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "pfev"; }
+    String run() override;
+    ~ProfileEventsCommand() override = default;
+};
+
+struct ToggleRequestLogging : public IFourLetterCommand
+{
+    explicit ToggleRequestLogging(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "lgrq"; }
+    String run() override;
+    ~ToggleRequestLogging() override = default;
+};
+
+/// Command which allow complex reconfiguration via 4lw command with argument
+struct ReconfigureCommand : public IFourLetterCommand
+{
+    explicit ReconfigureCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "rcfg"; }
+    String run() override;
+    String runWithArgument(const std::string & argument) override;
+    ~ReconfigureCommand() override = default;
+};
+
 
 }

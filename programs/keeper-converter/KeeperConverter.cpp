@@ -1,9 +1,11 @@
 #include <iostream>
-#include <optional>
 #include <boost/program_options.hpp>
 
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperStorage.h>
 #include <Coordination/ZooKeeperDataReader.h>
+#include <Coordination/KeeperContext.h>
 #include <Common/TerminalSize.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/AutoPtr.h>
@@ -12,6 +14,7 @@
 #include <Disks/DiskLocal.h>
 
 
+int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
 {
     using namespace DB;
@@ -28,19 +31,19 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
     po::store(po::command_line_parser(argc, argv).options(desc).run(), options);
     Poco::AutoPtr<Poco::ConsoleChannel> console_channel(new Poco::ConsoleChannel);
 
-    Poco::Logger * logger = &Poco::Logger::get("KeeperConverter");
+    LoggerPtr logger = getLogger("KeeperConverter");
     logger->setChannel(console_channel);
 
-    if (options.count("help"))
+    if (options.contains("help"))
     {
-        std::cout << "Usage: " << argv[0] << " --zookeeper-logs-dir /var/lib/zookeeper/data/version-2 --zookeeper-snapshots-dir /var/lib/zookeeper/data/version-2 --output-dir /var/lib/clickhouse/coordination/snapshots" << std::endl;
+        std::cout << "Usage: clickhouse keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/data/version-2 --zookeeper-snapshots-dir /var/lib/zookeeper/data/version-2 --output-dir /var/lib/clickhouse/coordination/snapshots" << std::endl;
         std::cout << desc << std::endl;
         return 0;
     }
 
     try
     {
-        auto keeper_context = std::make_shared<KeeperContext>(true);
+        auto keeper_context = std::make_shared<KeeperContext>(true, std::make_shared<CoordinationSettings>());
         keeper_context->setDigestEnabled(true);
         keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("Keeper-snapshots", options["output-dir"].as<std::string>()));
 
@@ -51,12 +54,12 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
 
         DB::deserializeLogsAndApplyToStorage(storage, options["zookeeper-logs-dir"].as<std::string>(), logger);
         DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(storage.getZXID(), 1, std::make_shared<nuraft::cluster_config>());
-        DB::KeeperStorageSnapshot snapshot(&storage, snapshot_meta);
+        DB::KeeperStorageSnapshot snapshot(&storage, snapshot_meta, nullptr, keeper_context->getWriteSnapshotVersion());
 
         DB::KeeperSnapshotManager manager(1, keeper_context);
         auto snp = manager.serializeSnapshotToBuffer(snapshot);
         auto file_info = manager.serializeSnapshotBufferToDisk(*snp, storage.getZXID());
-        std::cout << "Snapshot serialized to path:" << fs::path(file_info.disk->getPath()) / file_info.path << std::endl;
+        std::cout << "Snapshot serialized to path:" << fs::path(file_info->disk->getPath()) / file_info->path << std::endl;
     }
     catch (...)
     {

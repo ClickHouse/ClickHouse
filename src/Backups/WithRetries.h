@@ -1,8 +1,10 @@
 #pragma once
 
-#include <Storages/MergeTree/ZooKeeperRetries.h>
+#include <Backups/BackupKeeperSettings.h>
 #include <Common/ZooKeeper/Common.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+
 
 namespace DB
 {
@@ -15,17 +17,13 @@ class WithRetries
 {
 public:
     using FaultyKeeper = Coordination::ZooKeeperWithFaultInjection::Ptr;
-    using RenewerCallback = std::function<void(FaultyKeeper &)>;
+    using RenewerCallback = std::function<void(FaultyKeeper)>;
 
-    struct KeeperSettings
+    enum Kind
     {
-        UInt64 keeper_max_retries{0};
-        UInt64 keeper_retry_initial_backoff_ms{0};
-        UInt64 keeper_retry_max_backoff_ms{0};
-        UInt64 batch_size_for_keeper_multiread{10000};
-        Float64 keeper_fault_injection_probability{0};
-        UInt64 keeper_fault_injection_seed{42};
-        UInt64 keeper_value_max_size{1048576};
+        kNormal,
+        kInitialization,
+        kErrorHandling,
     };
 
     /// For simplicity a separate ZooKeeperRetriesInfo and a faulty [Zoo]Keeper client
@@ -45,21 +43,25 @@ public:
 
     private:
         friend class WithRetries;
-        RetriesControlHolder(const WithRetries * parent, const String & name);
+        RetriesControlHolder(const WithRetries * parent, const String & name, Kind kind);
     };
 
-    RetriesControlHolder createRetriesControlHolder(const String & name);
-    WithRetries(Poco::Logger * log, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings, RenewerCallback callback);
+    RetriesControlHolder createRetriesControlHolder(const String & name, Kind kind = Kind::kNormal) const;
+    WithRetries(LoggerPtr log, zkutil::GetZooKeeper get_zookeeper_, const BackupKeeperSettings & settings, QueryStatusPtr process_list_element_, RenewerCallback callback = {});
 
     /// Used to re-establish new connection inside a retry loop.
     void renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const;
+
+    const BackupKeeperSettings & getKeeperSettings() const;
 private:
     /// This will provide a special wrapper which is useful for testing
     FaultyKeeper getFaultyZooKeeper() const;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     zkutil::GetZooKeeper get_zookeeper;
-    KeeperSettings settings;
+    BackupKeeperSettings settings;
+    QueryStatusPtr process_list_element;
+
     /// This callback is called each time when a new [Zoo]Keeper session is created.
     /// In backups it is primarily used to re-create an ephemeral node to signal the coordinator
     /// that the host is alive and able to continue writing the backup.
@@ -69,7 +71,6 @@ private:
     /// it could lead just to a failed backup which could possibly be successful
     /// if there were a little bit more retries.
     RenewerCallback callback;
-    ZooKeeperRetriesInfo global_zookeeper_retries_info;
 
     /// This is needed only to protect zookeeper object
     mutable std::mutex zookeeper_mutex;

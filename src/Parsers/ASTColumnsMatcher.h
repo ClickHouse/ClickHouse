@@ -2,11 +2,6 @@
 
 #include <Parsers/IAST.h>
 
-namespace re2
-{
-class RE2;
-}
-
 
 namespace DB
 {
@@ -25,18 +20,16 @@ public:
     void appendColumnName(WriteBuffer & ostr) const override;
     void setPattern(String pattern);
     const String & getPattern() const;
-    const std::shared_ptr<re2::RE2> & getMatcher() const;
-    bool isColumnMatching(const String & column_name) const;
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     ASTPtr expression;
     ASTPtr transformers;
+
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
 private:
-    std::shared_ptr<re2::RE2> column_matcher;
-    String original_pattern;
+    String pattern;
 };
 
 /// Same as the above but use a list of column names to do matching.
@@ -50,8 +43,9 @@ public:
     ASTPtr expression;
     ASTPtr column_list;
     ASTPtr transformers;
+
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 /// Same as ASTColumnsRegexpMatcher. Qualified identifier is first child.
@@ -62,19 +56,18 @@ public:
     ASTPtr clone() const override;
 
     void appendColumnName(WriteBuffer & ostr) const override;
-    const std::shared_ptr<re2::RE2> & getMatcher() const;
-    void setPattern(String pattern, bool set_matcher = true);
-    void setMatcher(std::shared_ptr<re2::RE2> matcher);
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+    void setPattern(String pattern_);
+    const String & getPattern() const;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     ASTPtr qualifier;
     ASTPtr transformers;
+
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
 private:
-    std::shared_ptr<re2::RE2> column_matcher;
-    String original_pattern;
+    String pattern;
 };
 
 /// Same as ASTColumnsListMatcher. Qualified identifier is first child.
@@ -88,8 +81,9 @@ public:
     ASTPtr qualifier;
     ASTPtr column_list;
     ASTPtr transformers;
+
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 }

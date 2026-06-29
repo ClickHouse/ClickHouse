@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-/** Query SHOW TABLES or SHOW DATABASES or SHOW CLUSTERS or SHOW CACHES
+/** Query SHOW TABLES or SHOW DATABASES or SHOW CLUSTERS or SHOW CACHES or SHOW MERGES
   */
 class ASTShowTablesQuery : public ASTQueryWithOutput
 {
@@ -19,12 +19,13 @@ public:
     bool cluster = false;
     bool dictionaries = false;
     bool m_settings = false;
+    bool merges = false;
     bool changed = false;
     bool temporary = false;
     bool caches = false;
     bool full = false;
 
-    IAST * from;
+    IAST * from{};
 
     String cluster_str;
     String like;
@@ -42,9 +43,9 @@ public:
     String getFrom() const;
 
 protected:
-    void formatLike(const FormatSettings & settings) const;
-    void formatLimit(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatLike(WriteBuffer & ostr, const FormatSettings & settings) const;
+    void formatLimit(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 }

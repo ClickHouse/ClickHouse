@@ -1,16 +1,10 @@
 -- EXPLAIN PLAN sorting for MergeTree w/o sorting key
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a
-Sorting (Global): a ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): a ASC
-Sorting (None)
-Sorting (None)
+Sorting: a ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a
-Sorting (Global): a ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): a_0 ASC
-Sorting (None)
-Sorting (None)
+Sorting: __table1.a ASC
 -- disable optimization -> sorting order is NOT propagated from subquery -> full sort
 -- QUERY: set optimize_sorting_by_input_stream_properties=0;set query_plan_read_in_order=0;set max_threads=3;EXPLAIN PIPELINE SELECT a FROM (SELECT a FROM optimize_sorting) ORDER BY a
 MergingSortedTransform 3 → 1
@@ -28,145 +22,77 @@ LimitsCheckingTransform × 3
 PartialSortingTransform × 3
 -- ExpressionStep preserves sort mode
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a
-Sorting (Global): a ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): a ASC
-Sorting (Stream): a ASC
-Sorting (Stream): a ASC
+Sorting: a ASC
+Sorting: a ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a
-Sorting (Global): a ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): a_0 ASC
-Sorting (Stream): a_0 ASC
-Sorting (Stream): a ASC
+Sorting: __table1.a ASC
+Sorting: a ASC
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a+1
-Sorting (None)
 Sorting (Sorting for ORDER BY)
-Sorting (Global): plus(a, 1) ASC
-Sorting (Chunk): a ASC
-Sorting (Chunk): a ASC
+Sorting: plus(a, 1) ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a+1
-Sorting (None)
 Sorting (Sorting for ORDER BY)
-Sorting (Global): plus(a_0, 1_UInt8) ASC
-Sorting (Chunk): a_0 ASC
-Sorting (Chunk): a ASC
+Sorting: plus(__table1.a, 1_UInt8) ASC
 -- ExpressionStep breaks sort mode
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a+1 FROM optimize_sorting ORDER BY a+1
-Sorting (Global): plus(a, 1) ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): plus(a, 1) ASC
-Sorting (None)
-Sorting (Chunk): a ASC
+Sorting: plus(a, 1) ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a+1 FROM optimize_sorting ORDER BY a+1
-Sorting (Global): plus(a, 1) ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): plus(a_0, 1_UInt8) ASC
-Sorting (None)
-Sorting (Chunk): a ASC
+Sorting: plus(__table1.a, 1_UInt8) ASC
 -- FilterStep preserves sort mode
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting WHERE a > 0
-Sorting (Chunk): a ASC
-Sorting (Chunk): a ASC
-Sorting (Chunk): a ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting WHERE a > 0
-Sorting (Chunk): a ASC
-Sorting (Chunk): a_0 ASC
-Sorting (Chunk): a ASC
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting WHERE a+1 > 0
-Sorting (Chunk): a ASC
-Sorting (Chunk): a ASC
-Sorting (Chunk): a ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting WHERE a+1 > 0
-Sorting (Chunk): a ASC
-Sorting (Chunk): a_0 ASC
-Sorting (Chunk): a ASC
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, a+1 FROM optimize_sorting WHERE a+1 > 0
-Sorting (Chunk): a ASC
-Sorting (Chunk): a ASC
-Sorting (Chunk): a ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, a+1 FROM optimize_sorting WHERE a+1 > 0
-Sorting (Chunk): a ASC
-Sorting (Chunk): a_0 ASC
-Sorting (Chunk): a ASC
 -- FilterStep breaks sort mode
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a > 0 FROM optimize_sorting WHERE a > 0
-Sorting (None)
-Sorting (None)
-Sorting (Chunk): a ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a > 0 FROM optimize_sorting WHERE a > 0
-Sorting (None)
-Sorting (None)
-Sorting (Chunk): a ASC
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a+1 FROM optimize_sorting WHERE a+1 > 0
-Sorting (None)
-Sorting (None)
-Sorting (Chunk): a ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a+1 FROM optimize_sorting WHERE a+1 > 0
-Sorting (None)
-Sorting (None)
-Sorting (Chunk): a ASC
 -- aliases break sorting order
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM (SELECT sipHash64(a) AS a FROM (SELECT a FROM optimize_sorting ORDER BY a)) ORDER BY a
-Sorting (Global): a ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): a ASC
-Sorting (None)
+Sorting: a ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): a ASC
-Sorting (Stream): a ASC
-Sorting (Stream): a ASC
+Sorting: a ASC
+Sorting: a ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM (SELECT sipHash64(a) AS a FROM (SELECT a FROM optimize_sorting ORDER BY a)) ORDER BY a
-Sorting (Global): a ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): a_0 ASC
-Sorting (None)
+Sorting: __table1.a ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): a_2 ASC
-Sorting (Stream): a_2 ASC
-Sorting (Stream): a ASC
+Sorting: __table3.a ASC
+Sorting: a ASC
 -- aliases DONT break sorting order
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, b FROM (SELECT x AS a, y AS b FROM (SELECT a AS x, b AS y FROM optimize_sorting) ORDER BY x, y)
-Sorting (Global): a ASC, b ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): x ASC, y ASC
-Sorting (Stream): x ASC, y ASC
-Sorting (Stream): a ASC, b ASC
+Sorting: x ASC, y ASC
+Sorting: a ASC, b ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, b FROM (SELECT x AS a, y AS b FROM (SELECT a AS x, b AS y FROM optimize_sorting) ORDER BY x, y)
-Sorting (Global): a ASC, b ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): x_2 ASC, y_3 ASC
-Sorting (Stream): x_2 ASC, y_3 ASC
-Sorting (Stream): a ASC, b ASC
+Sorting: __table2.x ASC, __table2.y ASC
+Sorting: a ASC, b ASC
 -- actions chain breaks sorting order: input(column a)->sipHash64(column a)->alias(sipHash64(column a), a)->plus(alias a, 1)
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, z FROM (SELECT sipHash64(a) AS a, a + 1 AS z FROM (SELECT a FROM optimize_sorting ORDER BY a + 1)) ORDER BY a + 1
-Sorting (None)
 Sorting (Sorting for ORDER BY)
-Sorting (Global): plus(a, 1) ASC
-Sorting (None)
+Sorting: plus(a, 1) ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): plus(a, 1) ASC
-Sorting (Chunk): a ASC
-Sorting (Chunk): a ASC
+Sorting: plus(a, 1) ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, z FROM (SELECT sipHash64(a) AS a, a + 1 AS z FROM (SELECT a FROM optimize_sorting ORDER BY a + 1)) ORDER BY a + 1
-Sorting (None)
 Sorting (Sorting for ORDER BY)
-Sorting (Global): plus(a_0, 1_UInt8) ASC
-Sorting (Global): plus(a_3, 1_UInt8) ASC
+Sorting: plus(__table1.a, 1_UInt8) ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): plus(a_3, 1_UInt8) ASC
-Sorting (Chunk): a_3 ASC
-Sorting (Chunk): a ASC
+Sorting: plus(__table3.a, 1_UInt8) ASC
 -- check that correct sorting info is provided in case of only prefix of sorting key is in ORDER BY clause but all sorting key columns returned by query
 -- QUERY: set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN sorting=1 SELECT a, b FROM optimize_sorting ORDER BY a
-Sorting (Global): a ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): a ASC
-Sorting (Stream): a ASC
-Sorting (Stream): a ASC
+Sorting: a ASC
+Sorting: a ASC
 -- QUERY (analyzer): set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0;EXPLAIN PLAN sorting=1 SELECT a, b FROM optimize_sorting ORDER BY a
-Sorting (Global): a ASC
 Sorting (Sorting for ORDER BY)
-Sorting (Global): a_0 ASC
-Sorting (Stream): a_0 ASC
-Sorting (Stream): a ASC
+Sorting: __table1.a ASC
+Sorting: a ASC

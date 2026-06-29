@@ -19,7 +19,7 @@ bool FieldVisitorSum::operator() (UInt64 & x) const
     return x != 0;
 }
 
-bool FieldVisitorSum::operator() (Float64 & x) const { x += rhs.get<Float64>(); return x != 0; }
+bool FieldVisitorSum::operator() (Float64 & x) const { x += rhs.safeGet<Float64>(); return x != 0; }
 
 bool FieldVisitorSum::operator() (Null &) const
 {

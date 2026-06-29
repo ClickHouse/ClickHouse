@@ -1,10 +1,11 @@
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 #include <Storages/StorageSnapshot.h>
-#include <Storages/LightweightDeleteDescription.h>
-#include <Storages/BlockNumberColumn.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/IStorage.h>
-#include <DataTypes/ObjectUtils.h>
-#include <DataTypes/NestedUtils.h>
-#include <Storages/StorageView.h>
+#include <Common/quoteString.h>
+
+#include <base/StringViewHash.h>
 #include <sparsehash/dense_hash_set>
 
 namespace DB
@@ -18,50 +19,62 @@ namespace ErrorCodes
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
 }
 
-void StorageSnapshot::init()
+StorageSnapshot::StorageSnapshot(
+    const IStorage & storage_,
+    StorageMetadataPtr metadata_)
+    : storage(storage_)
+    , metadata(std::move(metadata_))
 {
-    for (const auto & [name, type] : storage.getVirtuals())
-        virtual_columns[name] = type;
+}
 
-    if (storage.hasLightweightDeletedMask())
-        system_columns[LightweightDeleteDescription::FILTER_COLUMN.name] = LightweightDeleteDescription::FILTER_COLUMN.type;
-    system_columns[BlockNumberColumn::name] = BlockNumberColumn::type;
+StorageSnapshot::StorageSnapshot(
+    const IStorage & storage_,
+    StorageMetadataPtr metadata_,
+    DataPtr data_)
+    : storage(storage_)
+    , metadata(std::move(metadata_))
+    , data(std::move(data_))
+{
+}
+
+std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
+{
+    return std::make_shared<StorageSnapshot>(storage, metadata, std::move(data_));
+}
+
+ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
+{
+    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+    auto column_names_and_types = getColumns(get_column_options);
+
+    return ColumnsDescription{column_names_and_types};
 }
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
 {
-    auto all_columns = getMetadataForQuery()->getColumns().get(options);
+    auto all_columns = metadata->getColumns().get(options);
 
-    if (options.with_extended_objects)
-        extendObjectColumns(all_columns, object_columns, options.with_subcolumns);
+    if (options.virtuals_kind == VirtualsKind::None || metadata->virtuals.empty())
+        return all_columns;
 
-    NameSet column_names;
-    if (options.with_virtuals)
+    /// Iterate virtuals directly: skip the `Block` round-trip in `getSampleBlock` and
+    /// the throwaway `NameSet` over every column of the table. There are typically a
+    /// handful of virtuals and many regular columns, so a linear `find` per virtual is
+    /// cheaper than hashing all regular columns up front.
+    auto virtuals_list = metadata->virtuals.getNamesAndTypes(options.virtuals_kind, options.virtuals_place);
+    for (const auto & virtual_column : virtuals_list)
     {
-        /// Virtual columns must be appended after ordinary,
-        /// because user can override them.
-        if (!virtual_columns.empty())
+        bool already_present = false;
+        for (const auto & existing : all_columns)
         {
-            for (const auto & column : all_columns)
-                column_names.insert(column.name);
-
-            for (const auto & [name, type] : virtual_columns)
-                if (!column_names.contains(name))
-                    all_columns.emplace_back(name, type);
+            if (existing.name == virtual_column.name)
+            {
+                already_present = true;
+                break;
+            }
         }
-    }
-
-    if (options.with_system_columns)
-    {
-        if (!system_columns.empty() && column_names.empty())
-        {
-            for (const auto & column : all_columns)
-                column_names.insert(column.name);
-        }
-
-        for (const auto & [name, type] : system_columns)
-            if (!column_names.contains(name))
-                all_columns.emplace_back(name, type);
+        if (!already_present)
+            all_columns.push_back(virtual_column);
     }
 
     return all_columns;
@@ -77,30 +90,15 @@ NamesAndTypesList StorageSnapshot::getColumnsByNames(const GetColumnsOptions & o
 
 std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOptions & options, const String & column_name) const
 {
-    const auto & columns = getMetadataForQuery()->getColumns();
-    auto column = columns.tryGetColumn(options, column_name);
-    if (column && (!column->type->hasDynamicSubcolumns() || !options.with_extended_objects))
+    const auto & columns = metadata->getColumns();
+    if (auto column = columns.tryGetColumn(options, column_name))
         return column;
 
-    if (options.with_extended_objects)
+    if (options.virtuals_kind != VirtualsKind::None)
     {
-        auto object_column = object_columns.tryGetColumn(options, column_name);
-        if (object_column)
-            return object_column;
-    }
-
-    if (options.with_virtuals)
-    {
-        auto it = virtual_columns.find(column_name);
-        if (it != virtual_columns.end())
-            return NameAndTypePair(column_name, it->second);
-    }
-
-    if (options.with_system_columns)
-    {
-        auto it = system_columns.find(column_name);
-        if (it != system_columns.end())
-            return NameAndTypePair(column_name, it->second);
+        auto virtual_column = metadata->virtuals.tryGet(column_name, options.virtuals_kind, options.virtuals_place);
+        if (virtual_column)
+            return NameAndTypePair{virtual_column->name, virtual_column->type};
     }
 
     return {};
@@ -119,24 +117,19 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
 {
     Block res;
 
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
     for (const auto & column_name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
-        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
-        if (column && !object_column)
+        if (column)
         {
             res.insert({column->type->createColumn(), column->type, column_name});
         }
-        else if (object_column)
-        {
-            res.insert({object_column->type->createColumn(), object_column->type, column_name});
-        }
-        else if (auto it = virtual_columns.find(column_name); it != virtual_columns.end())
+        else if (auto virtual_column = metadata->virtuals.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All))
         {
             /// Virtual columns must be appended after ordinary, because user can
             /// override them.
-            const auto & type = it->second;
+            const auto & type = virtual_column->type;
             res.insert({type->createColumn(), type, column_name});
         }
         else
@@ -151,25 +144,19 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
 ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & column_names) const
 {
     ColumnsDescription res;
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
     for (const auto & name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::All, name);
-        auto object_column = object_columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::All, name);
-        if (column && !object_column)
+        if (column)
         {
             res.add(*column, "", false, false);
         }
-        else if (object_column)
-        {
-            res.add(*object_column, "", false, false);
-        }
-        else if (auto it = virtual_columns.find(name); it != virtual_columns.end())
+        else if (auto virtual_column = metadata->virtuals.tryGet(name, VirtualsKind::All, VirtualsMaterializationPlace::All))
         {
             /// Virtual columns must be appended after ordinary, because user can
             /// override them.
-            const auto & type = it->second;
-            res.add({name, type});
+            res.add({name, virtual_column->type});
         }
         else
         {
@@ -183,12 +170,12 @@ ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & colum
 
 namespace
 {
-    using DenseHashSet = google::dense_hash_set<StringRef, StringRefHash>;
+    using DenseHashSet = google::dense_hash_set<std::string_view, StringViewHash>;
 }
 
 void StorageSnapshot::check(const Names & column_names) const
 {
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
 
     if (column_names.empty())
@@ -199,13 +186,11 @@ void StorageSnapshot::check(const Names & column_names) const
     }
 
     DenseHashSet unique_names;
-    unique_names.set_empty_key(StringRef());
+    unique_names.set_empty_key(std::string_view());
 
     for (const auto & name : column_names)
     {
-        bool has_column = columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name)
-            || object_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name)
-            || virtual_columns.contains(name);
+        bool has_column = columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name) || metadata->virtuals.has(name);
 
         if (!has_column)
         {
@@ -222,13 +207,12 @@ void StorageSnapshot::check(const Names & column_names) const
     }
 }
 
-DataTypePtr StorageSnapshot::getConcreteType(const String & column_name) const
+std::optional<ColumnDefault> StorageSnapshot::getDefault(const String & column_name) const
 {
-    auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
-    if (object_column)
-        return object_column->type;
+    if (auto column_default = metadata->getColumns().getDefault(column_name))
+        return column_default;
 
-    return metadata->getColumns().get(column_name).type;
+    return metadata->virtuals.getDefault(column_name);
 }
 
 }

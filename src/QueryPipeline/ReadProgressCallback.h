@@ -13,7 +13,7 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class EnabledQuota;
 
 struct StorageLimits;
-using StorageLimitsList = std::list<StorageLimits>;
+using StorageLimitsList = std::list<StorageLimits>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 
 class ReadProgressCallback
@@ -41,7 +41,6 @@ private:
     /// The total number of bytes to read. For progress bar.
     std::atomic_size_t total_bytes = 0;
 
-    std::mutex limits_and_quotas_mutex;
     Stopwatch total_stopwatch{CLOCK_MONOTONIC_COARSE};  /// Including waiting time
 
     bool update_profile_events = true;

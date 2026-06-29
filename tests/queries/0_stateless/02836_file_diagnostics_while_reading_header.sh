@@ -6,6 +6,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 FILENAME="${CLICKHOUSE_TMP}/test.csv"
 
-printf 'Bad\rHeader\n123\n' > "${FILENAME}"
+printf 'Bad,Header\n123\n' > "${FILENAME}"
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${CLICKHOUSE_TMP}/t*e*s*t.csv')" 2>&1 | grep -o -P 'in file/uri|test\.csv'
 rm "${FILENAME}"

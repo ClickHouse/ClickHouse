@@ -1,8 +1,12 @@
 #pragma once
+
 #include <base/types.h>
 #include <vector>
+
+
 namespace DB
 {
+
 /* Parse a string that generates shards and replicas. Separator - one of two characters '|' or ','
  *  depending on whether shards or replicas are generated.
  * For example:

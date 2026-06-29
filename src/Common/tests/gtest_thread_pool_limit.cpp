@@ -8,6 +8,7 @@ namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
 /// Test for thread self-removal when number of free threads in pool is too large.
@@ -16,7 +17,7 @@ namespace CurrentMetrics
 template <typename Pool>
 int test()
 {
-    Pool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, 10, 2, 10);
+    Pool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 10, 2, 10);
 
     std::atomic<int> counter{0};
     for (size_t i = 0; i < 10; ++i)

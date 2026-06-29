@@ -1,12 +1,12 @@
 JSONEachRow
 x	Nullable(Int64)					
 x	Array(Nullable(Int64))					
-x	Map(String, Array(Nullable(Int64)))					
-x	Map(String, Array(Nullable(Int64)))					
+x	Tuple(\n    a Array(Nullable(Int64)))					
+x	Tuple(\n    a Array(Nullable(Int64)),\n    b Array(Nullable(Int64)))					
 x	Nullable(Float64)					
 x	Nullable(Float64)					
 x	Array(Nullable(Float64))					
-x	Map(String, Array(Nullable(Float64)))					
+x	Tuple(\n    a Array(Nullable(Int64)),\n    b Array(Nullable(Float64)))					
 CSV
 c1	Nullable(Int64)					
 c1	Array(Nullable(Int64))					

@@ -10,14 +10,14 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    TABLE id: 3, table_name: default.regression_for_in_operator_view
+    TABLE id: 3, alias: __table1, table_name: default.regression_for_in_operator_view
   WHERE
     FUNCTION id: 4, function_name: in, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 5, nodes: 2
           COLUMN id: 6, column_name: g, result_type: String, source_id: 3
           CONSTANT id: 7, constant_value: Tuple_(\'5\', \'6\'), constant_value_type: Tuple(String, String)
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 2
 2
 QUERY id: 0
@@ -27,7 +27,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    TABLE id: 3, table_name: default.regression_for_in_operator_view
+    TABLE id: 3, alias: __table1, table_name: default.regression_for_in_operator_view
   WHERE
     FUNCTION id: 4, function_name: or, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -42,4 +42,4 @@ QUERY id: 0
               LIST id: 11, nodes: 2
                 COLUMN id: 8, column_name: g, result_type: String, source_id: 3
                 CONSTANT id: 12, constant_value: \'6\', constant_value_type: String
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1

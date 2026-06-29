@@ -8,6 +8,9 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <base/scope_guard.h>
+#include <Common/thread_local_rng.h>
+#include <Common/ErrnoException.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <thread>
 #include <memory>
@@ -32,11 +35,8 @@ namespace ErrorCodes
 
 
 /// Various illegal actions to test diagnostic features of ClickHouse itself. Should not be enabled in production builds.
-class FunctionTrap : public IFunction
+class FunctionTrap final : public IFunction, private WithContext
 {
-private:
-    ContextPtr context;
-
 public:
     static constexpr auto name = "trap";
     static FunctionPtr create(ContextPtr context)
@@ -44,7 +44,7 @@ public:
         return std::make_shared<FunctionTrap>(context);
     }
 
-    FunctionTrap(ContextPtr context_) : context(context_) {}
+    explicit FunctionTrap(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override
     {
@@ -135,11 +135,11 @@ public:
             }
             else if (mode == "throw exception")
             {
-                std::vector<int>().at(0);
+                VectorWithMemoryTracking<int>().at(0);
             }
             else if (mode == "access context")
             {
-                (void)context->getCurrentQueryId();
+                (void)getContext()->getCurrentQueryId();
             }
             else if (mode == "stack overflow")
             {
@@ -152,7 +152,7 @@ public:
             }
             else if (mode == "mmap many")
             {
-                std::vector<void *> maps;
+                VectorWithMemoryTracking<void *> maps;
                 SCOPE_EXIT(
                 {
                     //for (void * map : maps)
@@ -165,7 +165,7 @@ public:
                         std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(thread_local_rng));
                     void * map = mmap(hint, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
                     if (MAP_FAILED == map)
-                        throwFromErrno("Allocator: Cannot mmap", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                        throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot mmap");
                     maps.push_back(map);
                 }
             }
@@ -177,7 +177,7 @@ public:
             }
             else if (mode == "logical error")
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: trap");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trap");
             }
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown trap mode");

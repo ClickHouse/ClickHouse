@@ -23,17 +23,15 @@ struct ProcessorProfileInfo
     void update(const Chunk & block);
 };
 
-class LimitsCheckingTransform : public ISimpleTransform
+class LimitsCheckingTransform final : public ISimpleTransform
 {
 public:
 
-    LimitsCheckingTransform(const Block & header_, StreamLocalLimits limits_);
+    LimitsCheckingTransform(SharedHeader header_, StreamLocalLimits limits_);
 
     String getName() const override { return "LimitsCheckingTransform"; }
 
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) { quota = quota_; }
-
-    PartialResultStatus getPartialResultProcessorSupportStatus() const override { return PartialResultStatus::SkipSupported; }
 
 protected:
     void transform(Chunk & chunk) override;

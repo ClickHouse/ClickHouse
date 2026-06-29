@@ -7,10 +7,17 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
+
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_injective_functions_inside_uniq;
+}
 
 namespace
 {
@@ -33,7 +40,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_injective_functions_inside_uniq)
+        if (!getSettings()[Setting::optimize_injective_functions_inside_uniq])
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -41,53 +48,64 @@ public:
             return;
 
         bool replaced_argument = false;
-        auto & uniq_function_arguments_nodes = function_node->getArguments().getNodes();
+        auto replaced_uniq_function_arguments_nodes = function_node->getArguments().getNodes();
 
-        for (auto & uniq_function_argument_node : uniq_function_arguments_nodes)
+        /// Replace injective function with its single argument
+        auto remove_injective_function = [&replaced_argument](QueryTreeNodePtr & arg) -> bool
         {
-            auto * uniq_function_argument_node_typed = uniq_function_argument_node->as<FunctionNode>();
-            if (!uniq_function_argument_node_typed || !uniq_function_argument_node_typed->isOrdinaryFunction())
-                continue;
-
-            auto & uniq_function_argument_node_argument_nodes = uniq_function_argument_node_typed->getArguments().getNodes();
+            auto * arg_typed = arg->as<FunctionNode>();
+            if (!arg_typed || !arg_typed->isOrdinaryFunction())
+                return false;
 
             /// Do not apply optimization if injective function contains multiple arguments
-            if (uniq_function_argument_node_argument_nodes.size() != 1)
-                continue;
+            auto & arg_arguments_nodes = arg_typed->getArguments().getNodes();
+            if (arg_arguments_nodes.size() != 1)
+                return false;
 
-            const auto & uniq_function_argument_node_function = uniq_function_argument_node_typed->getFunction();
-            if (!uniq_function_argument_node_function->isInjective({}))
-                continue;
+            const auto & arg_function = arg_typed->getFunction();
+            if (!arg_function->isInjective({}))
+                return false;
 
-            /// Replace injective function with its single argument
-            uniq_function_argument_node = uniq_function_argument_node_argument_nodes[0];
-            replaced_argument = true;
+            arg = arg_arguments_nodes[0];
+            return replaced_argument = true;
+        };
+
+        for (auto & uniq_function_argument_node : replaced_uniq_function_arguments_nodes)
+        {
+            while (remove_injective_function(uniq_function_argument_node))
+                ;
         }
 
         if (!replaced_argument)
             return;
 
-        const auto & function_node_argument_nodes = function_node->getArguments().getNodes();
+        DataTypes replaced_argument_types;
+        replaced_argument_types.reserve(replaced_uniq_function_arguments_nodes.size());
 
-        DataTypes argument_types;
-        argument_types.reserve(function_node_argument_nodes.size());
+        for (const auto & function_node_argument : replaced_uniq_function_arguments_nodes)
+            replaced_argument_types.emplace_back(function_node_argument->getResultType());
 
-        for (const auto & function_node_argument : function_node_argument_nodes)
-            argument_types.emplace_back(function_node_argument->getResultType());
-
+        auto current_aggregate_function = function_node->getAggregateFunction();
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(function_node->getFunctionName(),
-            argument_types,
-            function_node->getAggregateFunction()->getParameters(),
+        auto replaced_aggregate_function = AggregateFunctionFactory::instance().get(
+            function_node->getFunctionName(),
+            NullsAction::EMPTY,
+            replaced_argument_types,
+            current_aggregate_function->getParameters(),
             properties);
 
-        function_node->resolveAsAggregateFunction(std::move(aggregate_function));
+        /// uniqCombined returns nullable with nullable arguments so the result type might change which breaks the pass
+        if (!replaced_aggregate_function->getResultType()->equals(*current_aggregate_function->getResultType()))
+            return;
+
+        function_node->getArguments().getNodes() = std::move(replaced_uniq_function_arguments_nodes);
+        function_node->resolveAsAggregateFunction(std::move(replaced_aggregate_function));
     }
 };
 
 }
 
-void UniqInjectiveFunctionsEliminationPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void UniqInjectiveFunctionsEliminationPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     UniqInjectiveFunctionsEliminationVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

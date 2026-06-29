@@ -33,7 +33,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::RENAME_TO}.ignore(pos, expected))
                 return false;
 
             return parseIdentifierOrStringLiteral(pos, expected, new_name);
@@ -44,13 +44,13 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword{"NOT KEYED"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::NOT_KEYED}.ignore(pos, expected))
             {
                 key_type = QuotaKeyType::NONE;
                 return true;
             }
 
-            if (!ParserKeyword{"KEY BY"}.ignore(pos, expected) && !ParserKeyword{"KEYED BY"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::KEY_BY}.ignore(pos, expected) && !ParserKeyword{Keyword::KEYED_BY}.ignore(pos, expected))
                 return false;
 
             Strings names;
@@ -77,6 +77,39 @@ namespace
         });
     }
 
+    bool parseIpPrefixBits(IParserBase::Pos & pos, Expected & expected,
+                           std::optional<MaskBits> & ipv4_bits, std::optional<MaskBits> & ipv6_bits)
+    {
+        auto try_parse_prefix = [&](Keyword keyword, std::optional<MaskBits> & prefix_bits, UInt8 max_bits)
+        {
+            return IParserBase::wrapParseImpl(pos, [&]
+            {
+                if (!ParserKeyword{keyword}.ignore(pos, expected))
+                    return false;
+
+                ASTPtr value_ast;
+                if (!ParserUnsignedInteger{}.parse(pos, value_ast, expected))
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected integer prefix length for IP address masking");
+
+                UInt64 prefix = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value_ast->as<ASTLiteral &>().value);
+
+                if (prefix > max_bits)
+                    throw Exception(
+                        ErrorCodes::SYNTAX_ERROR,
+                        "{} prefix must be between 0 and {}",
+                        toStringView(keyword),
+                        static_cast<unsigned>(max_bits));
+
+                prefix_bits = static_cast<MaskBits>(prefix);
+
+                return true;
+            });
+        };
+        bool parsed_any = false;
+        parsed_any |= try_parse_prefix(Keyword::IPV4_PREFIX_BITS, ipv4_bits, 32);
+        parsed_any |= try_parse_prefix(Keyword::IPV6_PREFIX_BITS, ipv6_bits, 128);
+        return parsed_any;
+    }
 
     bool parseQuotaType(IParserBase::Pos & pos, Expected & expected, QuotaType & quota_type)
     {
@@ -84,7 +117,7 @@ namespace
         {
             for (auto qt : collections::range(QuotaType::MAX))
             {
-                if (ParserKeyword{QuotaTypeInfo::get(qt).keyword}.ignore(pos, expected))
+                if (ParserKeyword::createDeprecated(QuotaTypeInfo::get(qt).keyword).ignore(pos, expected))
                 {
                     quota_type = qt;
                     return true;
@@ -114,9 +147,8 @@ namespace
     T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.get<std::string>()));
-        else
-            return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
+            return static_cast<T>(parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.safeGet<std::string>())));
+        return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
     bool parseMaxValue(IParserBase::Pos & pos, Expected & expected, QuotaType quota_type, QuotaValue & max_value)
@@ -130,7 +162,7 @@ namespace
         if (type_info.output_denominator == 1)
             max_value = fieldToNumber<QuotaValue>(max_field);
         else
-            max_value = static_cast<QuotaValue>(fieldToNumber<double>(max_field) * type_info.output_denominator);
+            max_value = static_cast<QuotaValue>(fieldToNumber<double>(max_field) * static_cast<double>(type_info.output_denominator));
         return true;
     }
 
@@ -141,9 +173,9 @@ namespace
 
         auto parse_limit = [&]
         {
-            max_prefix_encountered |= ParserKeyword{"MAX"}.ignore(pos, expected);
+            max_prefix_encountered |= ParserKeyword{Keyword::MAX}.ignore(pos, expected);
 
-            QuotaType quota_type;
+            QuotaType quota_type = {};
             if (!parseQuotaType(pos, expected, quota_type))
                 return false;
 
@@ -153,11 +185,11 @@ namespace
             }
             else
             {
-                if (!ParserKeyword{"MAX"}.ignore(pos, expected))
+                if (!ParserKeyword{Keyword::MAX}.ignore(pos, expected))
                     return false;
             }
 
-            QuotaValue max_value;
+            QuotaValue max_value = 0;
             if (!parseMaxValue(pos, expected, quota_type, max_value))
                 return false;
 
@@ -178,13 +210,13 @@ namespace
 
         auto parse_interval_with_limits = [&]
         {
-            if (!ParserKeyword{"FOR"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::FOR}.ignore(pos, expected))
                 return false;
 
             ASTCreateQuotaQuery::Limits limits;
-            limits.randomize_interval = ParserKeyword{"RANDOMIZED"}.ignore(pos, expected);
+            limits.randomize_interval = ParserKeyword{Keyword::RANDOMIZED}.ignore(pos, expected);
 
-            ParserKeyword{"INTERVAL"}.ignore(pos, expected);
+            ParserKeyword{Keyword::INTERVAL}.ignore(pos, expected);
 
             ASTPtr num_intervals_ast;
             if (!ParserNumber{}.parse(pos, num_intervals_ast, expected))
@@ -199,11 +231,11 @@ namespace
             limits.duration = std::chrono::seconds(static_cast<UInt64>(num_intervals * interval_kind.toAvgSeconds()));
             std::vector<std::pair<QuotaType, QuotaValue>> new_limits;
 
-            if (ParserKeyword{"NO LIMITS"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::NO_LIMITS}.ignore(pos, expected))
             {
                 limits.drop = true;
             }
-            else if (ParserKeyword{"TRACKING ONLY"}.ignore(pos, expected))
+            else if (ParserKeyword{Keyword::TRACKING_ONLY}.ignore(pos, expected))
             {
             }
             else if (parseLimits(pos, expected, new_limits))
@@ -225,17 +257,17 @@ namespace
         return true;
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr node;
             ParserRolesOrUsersSet roles_p;
             roles_p.allowAll().allowRoles().allowUsers().allowCurrentUser().useIDMode(id_mode);
-            if (!ParserKeyword{"TO"}.ignore(pos, expected) || !roles_p.parse(pos, node, expected))
+            if (!ParserKeyword{Keyword::TO}.ignore(pos, expected) || !roles_p.parse(pos, node, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTRolesOrUsersSet>(node);
+            roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(node);
             return true;
         });
     }
@@ -244,7 +276,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 }
@@ -255,14 +287,14 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     bool alter = false;
     if (attach_mode)
     {
-        if (!ParserKeyword{"ATTACH QUOTA"}.ignore(pos, expected))
+        if (!ParserKeyword{Keyword::ATTACH_QUOTA}.ignore(pos, expected))
             return false;
     }
     else
     {
-        if (ParserKeyword{"ALTER QUOTA"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::ALTER_QUOTA}.ignore(pos, expected))
             alter = true;
-        else if (!ParserKeyword{"CREATE QUOTA"}.ignore(pos, expected))
+        else if (!ParserKeyword{Keyword::CREATE_QUOTA}.ignore(pos, expected))
             return false;
     }
 
@@ -271,14 +303,14 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     bool or_replace = false;
     if (alter)
     {
-        if (ParserKeyword{"IF EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected))
             if_exists = true;
     }
     else
     {
-        if (ParserKeyword{"IF NOT EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::IF_NOT_EXISTS}.ignore(pos, expected))
             if_not_exists = true;
-        else if (ParserKeyword{"OR REPLACE"}.ignore(pos, expected))
+        else if (ParserKeyword{Keyword::OR_REPLACE}.ignore(pos, expected))
             or_replace = true;
     }
 
@@ -288,6 +320,8 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     String new_name;
     std::optional<QuotaKeyType> key_type;
+    std::optional<MaskBits> ipv4_prefix_bits;
+    std::optional<MaskBits> ipv6_prefix_bits;
     std::vector<ASTCreateQuotaQuery::Limits> all_limits;
     String cluster;
     String storage_name;
@@ -299,12 +333,20 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!key_type)
         {
-            QuotaKeyType new_key_type;
+            QuotaKeyType new_key_type = {};
             if (parseKeyType(pos, expected, new_key_type))
             {
                 key_type = new_key_type;
+                if (new_key_type == QuotaKeyType::IP_ADDRESS || new_key_type == QuotaKeyType::FORWARDED_IP_ADDRESS)
+                    parseIpPrefixBits(pos, expected, ipv4_prefix_bits, ipv6_prefix_bits);
                 continue;
             }
+        }
+
+        if (!ipv4_prefix_bits || !ipv6_prefix_bits)
+        {
+            if (parseIpPrefixBits(pos, expected, ipv4_prefix_bits, ipv6_prefix_bits))
+                continue;
         }
 
         if (parseIntervalsWithLimits(pos, expected, all_limits))
@@ -313,19 +355,28 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
             continue;
 
-        if (storage_name.empty() && ParserKeyword{"IN"}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
+        if (storage_name.empty() && ParserKeyword{Keyword::IN}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
             continue;
 
         break;
     }
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
     parseToRoles(pos, expected, attach_mode, roles);
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
-    auto query = std::make_shared<ASTCreateQuotaQuery>();
+    /// Validate that prefix bits are only used with IP_ADDRESS or FORWARDED_IP_ADDRESS key type
+    if ((ipv4_prefix_bits || ipv6_prefix_bits) && key_type
+        && *key_type != QuotaKeyType::IP_ADDRESS && *key_type != QuotaKeyType::FORWARDED_IP_ADDRESS)
+    {
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "IP prefix bits can only be specified for quotas KEYED BY ip_address or forwarded_ip_address");
+    }
+
+    auto query = make_intrusive<ASTCreateQuotaQuery>();
     node = query;
 
     query->alter = alter;
@@ -336,6 +387,8 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->names = std::move(names);
     query->new_name = std::move(new_name);
     query->key_type = key_type;
+    query->ipv4_prefix_bits = ipv4_prefix_bits;
+    query->ipv6_prefix_bits = ipv6_prefix_bits;
     query->all_limits = std::move(all_limits);
     query->roles = std::move(roles);
     query->storage_name = std::move(storage_name);

@@ -8,20 +8,34 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/Passes/CNF.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/HashUtils.h>
+
+#include <Core/Settings.h>
 
 #include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>
-#include "Analyzer/HashUtils.h"
-#include "Analyzer/IQueryTreeNode.h"
-#include "Interpreters/ComparisonGraph.h"
-#include "base/types.h"
+#include <Interpreters/ComparisonGraph.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool convert_query_to_cnf;
+    extern const SettingsBool optimize_append_index;
+    extern const SettingsBool optimize_substitute_columns;
+    extern const SettingsBool optimize_using_constraints;
+}
 
 namespace
 {
+
+/// Constraint-based optimization is scoped to a single query node: each (sub)query is optimized
+/// independently. Subqueries (`isSubqueryNodeType`) must therefore be treated as opaque boundaries,
+/// both when one is a clause root (e.g. constraint reduction collapses `cond OR (subquery)` to just
+/// the subquery) and when one is nested inside an expression (e.g. `exists((subquery))`). Crossing
+/// the boundary would rewrite a subquery's correlated columns, which must stay plain ColumnNodes for
+/// decorrelation.
 
 std::optional<Analyzer::CNF> tryConvertQueryToCNF(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
@@ -40,7 +54,7 @@ enum class MatchState : uint8_t
     NONE,
 };
 
-MatchState match(const Analyzer::CNF::AtomicFormula & a, const Analyzer::CNF::AtomicFormula & b)
+MatchState match(const Analyzer::CNFAtomicFormula & a, const Analyzer::CNFAtomicFormula & b)
 {
     using enum MatchState;
     if (a.node_with_hash != b.node_with_hash)
@@ -101,7 +115,24 @@ bool checkIfGroupAlwaysTrueGraph(const Analyzer::CNF::OrGroup & group, const Com
     return false;
 }
 
-bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNF::AtomicFormula & atom, const ConstraintsDescription::QueryTreeData & query_tree_constraints)
+bool checkIfGroupAlwaysTrueAtoms(const Analyzer::CNF::OrGroup & group)
+{
+    /// Filters out groups containing mutually exclusive atoms,
+    /// since these groups are always True
+
+    for (const auto & atom : group)
+    {
+        auto negated(atom);
+        negated.negative = !atom.negative;
+        if (group.contains(negated))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNFAtomicFormula & atom, const ConstraintsDescription::QueryTreeData & query_tree_constraints)
 {
     const auto constraint_atom_ids = query_tree_constraints.getAtomIds(atom.node_with_hash);
     if (constraint_atom_ids)
@@ -117,7 +148,7 @@ bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNF::AtomicFormula & atom, 
     return false;
 }
 
-bool checkIfAtomAlwaysFalseGraph(const Analyzer::CNF::AtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
+bool checkIfAtomAlwaysFalseGraph(const Analyzer::CNFAtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
 {
     const auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
     if (!function_node)
@@ -134,6 +165,12 @@ bool checkIfAtomAlwaysFalseGraph(const Analyzer::CNF::AtomicFormula & atom, cons
 
 void replaceToConstants(QueryTreeNodePtr & term, const ComparisonGraph<QueryTreeNodePtr> & graph)
 {
+    /// Do not cross into subqueries: replacing a correlated column with its constant equivalent
+    /// would corrupt the subquery's correlated_columns_list, which the planner expects to hold
+    /// ColumnNodes (see isSubqueryNodeType).
+    if (isSubqueryNodeType(term->getNodeType()))
+        return;
+
     const auto equal_constant = graph.getEqualConst(term);
     if (equal_constant)
     {
@@ -148,7 +185,7 @@ void replaceToConstants(QueryTreeNodePtr & term, const ComparisonGraph<QueryTree
     }
 }
 
-Analyzer::CNF::AtomicFormula replaceTermsToConstants(const Analyzer::CNF::AtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
+Analyzer::CNFAtomicFormula replaceTermsToConstants(const Analyzer::CNFAtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
 {
     auto node = atom.node_with_hash.node->clone();
     replaceToConstants(node, graph);
@@ -160,7 +197,7 @@ StorageSnapshotPtr getStorageSnapshot(const QueryTreeNodePtr & node)
     StorageSnapshotPtr storage_snapshot{nullptr};
     if (auto * table_node = node->as<TableNode>())
         return table_node->getStorageSnapshot();
-    else if (auto * table_function_node = node->as<TableFunctionNode>())
+    if (auto * table_function_node = node->as<TableFunctionNode>())
         return table_function_node->getStorageSnapshot();
 
     return nullptr;
@@ -275,7 +312,7 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
 
             for (const auto & primary_key_node : primary_key_only_nodes)
             {
-                ComparisonGraphCompareResult actual_result;
+                ComparisonGraphCompareResult actual_result = {};
                 if (index == 0)
                     actual_result = graph.compare(primary_key_node, arguments[index]);
                 else
@@ -288,7 +325,7 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
                     helper_function_node.getArguments().getNodes()[index] = primary_key_node->clone();
                     auto reverse_function_name = getReverseRelationMap().at(mostStrict(expected_result, actual_result));
                     helper_function_node.resolveAsFunction(FunctionFactory::instance().get(reverse_function_name, context));
-                    result.insert(Analyzer::CNF::AtomicFormula{atom.negative, std::move(helper_node)});
+                    result.insert(Analyzer::CNFAtomicFormula{atom.negative, std::move(helper_node)});
                     return true;
                 }
             }
@@ -341,7 +378,7 @@ void addIndexConstraint(Analyzer::CNF & cnf, const QueryTreeNodes & table_expres
         {
             Analyzer::CNF::OrGroup new_group;
             auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
-            index_hint_node->getArguments().getNodes().push_back(Analyzer::CNF{std::move(and_group)}.toQueryTree(context));
+            index_hint_node->getArguments().getNodes().push_back(Analyzer::CNF{std::move(and_group)}.toQueryTree());
             index_hint_node->resolveAsFunction(FunctionFactory::instance().get("indexHint", context));
             new_group.insert({false, QueryTreeNodePtrWithHash{std::move(index_hint_node)}});
 
@@ -393,6 +430,11 @@ public:
         const ComparisonGraph<QueryTreeNodePtr> & graph_)
         : components(components_), query_node_to_component(query_node_to_component_), graph(graph_)
     {}
+
+    static bool needChildVisit(const VisitQueryTreeNodeType &, const VisitQueryTreeNodeType & child)
+    {
+        return !isSubqueryNodeType(child->getNodeType());
+    }
 
     void visitImpl(const QueryTreeNodePtr & node)
     {
@@ -447,6 +489,11 @@ public:
         ContextPtr context_)
         : query_node_to_component(query_node_to_component_), id_to_query_node_map(id_to_query_node_map_), context(std::move(context_))
     {}
+
+    static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
+    {
+        return !isSubqueryNodeType(child->getNodeType());
+    }
 
     void visitImpl(QueryTreeNodePtr & node)
     {
@@ -557,16 +604,24 @@ void substituteColumns(QueryNode & query_node, const QueryTreeNodes & table_expr
 
         auto run_for_all = [&](const auto function)
         {
-            function(query_node.getProjectionNode());
+            /// The needChildVisit guards in the visitors only stop subqueries nested inside a larger
+            /// expression; a clause that is itself a subquery is the visit root, so guard it here.
+            const auto run_unless_subquery = [&](QueryTreeNodePtr & node)
+            {
+                if (!isSubqueryNodeType(node->getNodeType()))
+                    function(node);
+            };
+
+            run_unless_subquery(query_node.getProjectionNode());
 
             if (query_node.hasWhere())
-                function(query_node.getWhere());
+                run_unless_subquery(query_node.getWhere());
 
             if (query_node.hasPrewhere())
-                function(query_node.getPrewhere());
+                run_unless_subquery(query_node.getPrewhere());
 
             if (query_node.hasHaving())
-                function(query_node.getHaving());
+                run_unless_subquery(query_node.getHaving());
         };
 
         std::set<UInt64> components;
@@ -646,9 +701,10 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
         cnf.filterAlwaysTrueGroups([&](const auto & group)
            {
                /// remove always true groups from CNF
-               return !checkIfGroupAlwaysTrueFullMatch(group, query_tree_constraints) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
+               return !checkIfGroupAlwaysTrueFullMatch(group, query_tree_constraints)
+                   && !checkIfGroupAlwaysTrueGraph(group, compare_graph) && !checkIfGroupAlwaysTrueAtoms(group);
            })
-           .filterAlwaysFalseAtoms([&](const Analyzer::CNF::AtomicFormula & atom)
+           .filterAlwaysFalseAtoms([&](const Analyzer::CNFAtomicFormula & atom)
            {
                /// remove always false atoms from CNF
                return !checkIfAtomAlwaysFalseFullMatch(atom, query_tree_constraints) && !checkIfAtomAlwaysFalseGraph(atom, compare_graph);
@@ -663,7 +719,7 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
     cnf.pushNotIntoFunctions(context);
 
     const auto & settings = context->getSettingsRef();
-    if (settings.optimize_append_index)
+    if (settings[Setting::optimize_append_index])
         addIndexConstraint(cnf, table_expressions, context);
 }
 
@@ -675,10 +731,26 @@ void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressi
     if (!cnf)
         return;
 
-    if (settings.optimize_using_constraints)
+    if (settings[Setting::optimize_using_constraints])
         optimizeWithConstraints(*cnf, table_expressions, context);
 
-    auto new_node = cnf->toQueryTree(context);
+    auto new_node = cnf->toQueryTree();
+
+    /// Constraint reduction can collapse a filter into a standalone correlated subquery. For example,
+    /// with `CONSTRAINT c ASSUME (a <= b) AND (b <= c) AND (c <= d) AND (d <= a)` (so all columns are
+    /// equal), the filter
+    ///     WHERE (b < d) OR (SELECT a < c)
+    /// reduces to
+    ///     WHERE (SELECT a < c)
+    /// because `b < d` is always false. A standalone correlated subquery predicate is not always
+    /// decorrelated correctly today: the outer plan may not keep the captured columns (e.g.
+    /// `SELECT count() ... WHERE (SELECT a < c)` raises NOT_FOUND_COLUMN_IN_BLOCK, while `SELECT *`
+    /// works). Keep the original filter so the optimization never turns a working query into a
+    /// failing one. `new_node` is null when the filter reduces to a constant and is dropped, which is
+    /// fine to apply.
+    if (new_node && isCorrelatedQueryOrUnionNode(new_node))
+        return;
+
     node = std::move(new_node);
 }
 
@@ -713,17 +785,17 @@ public:
         optimize_filter(query_node->getPrewhere());
         optimize_filter(query_node->getHaving());
 
-        if (has_filter && settings.optimize_substitute_columns)
+        if (has_filter && settings[Setting::optimize_substitute_columns])
             substituteColumns(*query_node, table_expressions, context);
     }
 };
 
 }
 
-void ConvertLogicalExpressionToCNFPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void ConvertLogicalExpressionToCNFPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    if (!settings.convert_query_to_cnf)
+    if (!settings[Setting::convert_query_to_cnf])
         return;
 
     ConvertQueryToCNFVisitor visitor(std::move(context));

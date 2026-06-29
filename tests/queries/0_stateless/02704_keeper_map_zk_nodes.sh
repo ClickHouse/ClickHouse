@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 table_name="02704_keeper_map_zk_nodes"
 table_name_another="02704_keeper_map_zk_nodes_new_table"
 
-$CLICKHOUSE_CLIENT --multiquery --query="
+$CLICKHOUSE_CLIENT --query="
 DROP TABLE IF EXISTS $table_name;
 DROP TABLE IF EXISTS $table_name_another;
 CREATE TABLE $table_name (key UInt64, value UInt64)

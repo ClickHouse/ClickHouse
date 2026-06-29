@@ -1,0 +1,52 @@
+
+message Message
+{
+    message H
+    {
+        uint32 k = 1;
+    }
+    H h = 1;
+    message A
+    {
+        uint32 g = 1;
+        message B
+        {
+            uint32 c = 1;
+            uint32 f = 2;
+            message D
+            {
+                uint32 e = 1;
+            }
+            D d = 3;
+        }
+        B b = 2;
+    }
+    A a = 2;
+}
+46	(45,(42,44,43))
+
+struct Message
+{
+    struct H
+    {
+        k @0 : UInt8;
+    }
+    h @0 : H;
+    struct A
+    {
+        g @0 : UInt8;
+        struct B
+        {
+            c @0 : UInt8;
+            f @1 : UInt8;
+            struct D
+            {
+                e @0 : UInt8;
+            }
+            d @2 : D;
+        }
+        b @1 : B;
+    }
+    a @1 : A;
+}
+(46)	(45,(42,44,(43)))

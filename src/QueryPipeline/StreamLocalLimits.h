@@ -13,7 +13,7 @@ namespace DB
   *  It is checks max_{rows,bytes}_to_read in progress handler and use info from ProcessListElement::progress_in for this.
   *  Currently this check is performed only in leaf streams.
   */
-enum class LimitsMode
+enum class LimitsMode : uint8_t
 {
     LIMITS_CURRENT,
     LIMITS_TOTAL,
@@ -37,6 +37,6 @@ struct StorageLimits
     SizeLimits leaf_limits;
 };
 
-using StorageLimitsList = std::list<StorageLimits>;
+using StorageLimitsList = std::list<StorageLimits>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 }

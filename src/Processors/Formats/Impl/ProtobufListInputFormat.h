@@ -6,6 +6,7 @@
 #    include <Formats/FormatSchemaInfo.h>
 #    include <Processors/Formats/IRowInputFormat.h>
 #    include <Processors/Formats/ISchemaReader.h>
+#    include <Formats/ProtobufSchemas.h>
 
 namespace DB
 {
@@ -26,14 +27,16 @@ class ProtobufListInputFormat final : public IRowInputFormat
 public:
     ProtobufListInputFormat(
         ReadBuffer & in_,
-        const Block & header_,
+        SharedHeader header_,
         const Params & params_,
         const ProtobufSchemaInfo & schema_info_,
-        bool flatten_google_wrappers_);
+        bool flatten_google_wrappers_,
+        const String & google_protos_path);
 
     String getName() const override { return "ProtobufListInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetParser() override;
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
@@ -43,10 +46,11 @@ private:
 
     std::unique_ptr<ProtobufReader> reader;
     std::vector<size_t> missing_column_indices;
+    ProtobufSchemas::DescriptorHolder descriptor_holder;
     std::unique_ptr<ProtobufSerializer> serializer;
 };
 
-class ProtobufListSchemaReader : public IExternalSchemaReader
+class ProtobufListSchemaReader final : public IExternalSchemaReader
 {
 public:
     explicit ProtobufListSchemaReader(const FormatSettings & format_settings);
@@ -55,7 +59,9 @@ public:
 
 private:
     const FormatSchemaInfo schema_info;
-    bool skip_unsopported_fields;
+    bool skip_unsupported_fields;
+    bool oneof_presence;
+    const String google_protos_path;
 };
 
 }

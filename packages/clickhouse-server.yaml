@@ -1,6 +1,13 @@
 # package sources should be placed in ${PWD}/root
 # nfpm should run from the same directory with a config
 name: "clickhouse-server"
+description: |
+  Server binary for ClickHouse
+    ClickHouse is a column-oriented database management system
+    that allows generating analytical data reports in real time.
+    This package provides clickhouse common configuration files
+
+# Common packages config
 arch: "${DEB_ARCH}" # amd64, arm64
 platform: "linux"
 version: "${CLICKHOUSE_VERSION_STRING}"
@@ -9,23 +16,20 @@ homepage: "https://clickhouse.com"
 license: "Apache"
 section: "database"
 priority: "optional"
+maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
+deb:
+  fields:
+    Source: clickhouse
 
-conflicts:
-- clickhouse-keeper
+# Package specific content
 replaces:
 - clickhouse-server-common
 - clickhouse-server-base
 provides:
+- clickhouse-keeper
 - clickhouse-server-common
 recommends:
 - libcap2-bin
-
-maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
-description: |
-  Server binary for ClickHouse
-    ClickHouse is a column-oriented database management system
-    that allows generating analytical data reports in real time.
-    This package provides clickhouse common configuration files
 
 overrides:
   deb:
@@ -34,10 +38,6 @@ overrides:
   rpm:
     depends:
     - clickhouse-common-static = ${CLICKHOUSE_VERSION_STRING}
-
-deb:
-  fields:
-    Source: clickhouse
 
 contents:
 - src: root/etc/clickhouse-server/config.xml
@@ -50,18 +50,23 @@ contents:
   dst: /etc/init.d/clickhouse-server
 - src: clickhouse-server.service
   dst: /lib/systemd/system/clickhouse-server.service
-- src: root/usr/bin/clickhouse-copier
-  dst: /usr/bin/clickhouse-copier
+- src: root/usr/bin/clickhouse-server
+  dst: /usr/bin/clickhouse-server
+# clickhouse-keeper part
+- src: root/etc/clickhouse-keeper/keeper_config.xml
+  dst: /etc/clickhouse-keeper/keeper_config.xml
+  type: config|noreplace
+- src: clickhouse-keeper.service
+  dst: /lib/systemd/system/clickhouse-keeper.service
 - src: clickhouse
   dst: /usr/bin/clickhouse-keeper
   type: symlink
 - src: clickhouse
   dst: /usr/bin/clickhouse-keeper-client
   type: symlink
-- src: root/usr/bin/clickhouse-report
-  dst: /usr/bin/clickhouse-report
-- src: root/usr/bin/clickhouse-server
-  dst: /usr/bin/clickhouse-server
+- src: clickhouse
+  dst: /usr/bin/clickhouse-keeper-converter
+  type: symlink
 # docs
 - src: ../AUTHORS
   dst: /usr/share/doc/clickhouse-server/AUTHORS

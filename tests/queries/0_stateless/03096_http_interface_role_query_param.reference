@@ -1,0 +1,39 @@
+### Shows the default role when there are no role parameters
+03096_role_query_param_role_enabled_by_default
+### Shows a single role from the query parameters
+03096_role_query_param_role1
+### Shows multiple roles from the query parameters
+03096_role_query_param_role1
+03096_role_query_param_role2
+### Sets the default role alongside with another granted one
+03096_role_query_param_role1
+03096_role_query_param_role_enabled_by_default
+### Sets a role with special characters in the name
+03096_role_query_param_@!\\$
+### Sets a role with special characters in the name with another granted role
+03096_role_query_param_@!\\$
+03096_role_query_param_role1
+### Sets a role once when it's present in the query parameters multiple times
+03096_role_query_param_role1
+### Sets a role when there are other parameters in the query (before the role parameter)
+03096_role_query_param_role1
+max_result_rows	42
+### Sets a role when there are other parameters in the query (after the role parameter)
+03096_role_query_param_role1
+max_result_rows	42
+### Sets multiple roles when there are other parameters in the query
+03096_role_query_param_role1
+03096_role_query_param_role2
+max_result_rows	42
+### Cannot set a role that does not exist (single parameter)
+Code: 511
+UNKNOWN_ROLE
+### Cannot set a role that does not exist (multiple parameters)
+Code: 511
+UNKNOWN_ROLE
+### Cannot set a role that is not granted to the user (single parameter)
+Code: 512
+SET_NON_GRANTED_ROLE
+### Cannot set a role that is not granted to the user (multiple parameters)
+Code: 512
+SET_NON_GRANTED_ROLE

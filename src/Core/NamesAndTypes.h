@@ -1,18 +1,26 @@
 #pragma once
 
-#include <map>
+#include <Core/Names.h>
+#include <DataTypes/IDataType.h>
+#include <base/types.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+
+#include <initializer_list>
 #include <list>
 #include <optional>
 #include <string>
-#include <set>
-#include <initializer_list>
-
-#include <DataTypes/IDataType.h>
-#include <Core/Names.h>
 
 
 namespace DB
 {
+
+using DataTypePtr = std::shared_ptr<const IDataType>;
+using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
+
+class ReadBuffer;
+class WriteBuffer;
 
 struct NameAndTypePair
 {
@@ -30,17 +38,14 @@ public:
     bool isSubcolumn() const { return subcolumn_delimiter_position != std::nullopt; }
     const DataTypePtr & getTypeInStorage() const { return type_in_storage; }
 
-    bool operator<(const NameAndTypePair & rhs) const
-    {
-        return std::forward_as_tuple(name, type->getName()) < std::forward_as_tuple(rhs.name, rhs.type->getName());
-    }
-
-    bool operator==(const NameAndTypePair & rhs) const
-    {
-        return name == rhs.name && type->equals(*rhs.type);
-    }
+    bool operator<(const NameAndTypePair & rhs) const;
+    bool operator==(const NameAndTypePair & rhs) const;
 
     String dump() const;
+
+    /// Can be used to convert "t.a.b.c" from meaning "column `t` in storage, subcolumn `a.b.c` inside it"
+    /// to meaning "column `t.a.b` in storage, subcolumn `c` inside it".
+    void setDelimiterAndTypeInStorage(const String & name_in_storage_, DataTypePtr type_in_storage_);
 
     String name;
     DataTypePtr type;
@@ -71,19 +76,19 @@ std::tuple_element_t<I, NameAndTypePair> & get(NameAndTypePair & name_and_type)
         return name_and_type.type;
 }
 
-using NamesAndTypes = std::vector<NameAndTypePair>;
+using NamesAndTypes = VectorWithMemoryTracking<NameAndTypePair>;
 
-class NamesAndTypesList : public std::list<NameAndTypePair>
+class NamesAndTypesList : public ListWithMemoryTracking<NameAndTypePair>
 {
 public:
     NamesAndTypesList() = default;
 
-    NamesAndTypesList(std::initializer_list<NameAndTypePair> init) : std::list<NameAndTypePair>(init) {}
+    NamesAndTypesList(std::initializer_list<NameAndTypePair> init) : ListWithMemoryTracking<NameAndTypePair>(init) {}
 
     template <typename Iterator>
-    NamesAndTypesList(Iterator begin, Iterator end) : std::list<NameAndTypePair>(begin, end) {}
+    NamesAndTypesList(Iterator begin, Iterator end) : ListWithMemoryTracking<NameAndTypePair>(begin, end) {}
 
-    void readText(ReadBuffer & buf);
+    void readText(ReadBuffer & buf, bool check_eof = true);
     void writeText(WriteBuffer & buf) const;
 
     String toString() const;
@@ -100,7 +105,11 @@ public:
     void getDifference(const NamesAndTypesList & rhs, NamesAndTypesList & deleted, NamesAndTypesList & added) const;
 
     Names getNames() const;
+    NameSet getNameSet() const;
     DataTypes getTypes() const;
+
+    /// Creates a mapping from name to the type
+    UnorderedMapWithMemoryTracking<std::string, DataTypePtr> getNameToTypeMap() const;
 
     /// Remove columns which names are not in the `names`.
     void filterColumns(const NameSet & names);
@@ -111,11 +120,15 @@ public:
     /// Leave only the columns whose names are in the `names`. In `names` there can be superfluous columns.
     NamesAndTypesList filter(const Names & names) const;
 
+    /// Leave only the columns whose names are not in the `names`.
+    NamesAndTypesList eraseNames(const NameSet & names) const;
+
     /// Unlike `filter`, returns columns in the order in which they go in `names`.
     NamesAndTypesList addTypes(const Names & names) const;
 
-    /// Check that column contains in list
+    /// Check if `name` is one of the column names
     bool contains(const String & name) const;
+    bool containsCaseInsensitive(const String & name) const;
 
     /// Try to get column by name, returns empty optional if column not found
     std::optional<NameAndTypePair> tryGetByName(const std::string & name) const;
@@ -124,15 +137,19 @@ public:
     size_t getPosByName(const std::string & name) const noexcept;
 
     String toNamesAndTypesDescription() const;
+    /// Same as NamesAndTypesList::readText, but includes `type_in_storage`.
+    void readTextWithNamesInStorage(ReadBuffer & buf);
+    /// Same as NamesAndTypesList::writeText, but includes `type_in_storage`.
+    void writeTextWithNamesInStorage(WriteBuffer & buf) const;
 };
 
-using NamesAndTypesLists = std::vector<NamesAndTypesList>;
+using NamesAndTypesLists = VectorWithMemoryTracking<NamesAndTypesList>;
 
 }
 
 namespace std
 {
     template <> struct tuple_size<DB::NameAndTypePair> : std::integral_constant<size_t, 2> {};
-    template <> struct tuple_element<0, DB::NameAndTypePair> { using type = DB::String; };
+    template <> struct tuple_element<0, DB::NameAndTypePair> { using type = String; };
     template <> struct tuple_element<1, DB::NameAndTypePair> { using type = DB::DataTypePtr; };
 }

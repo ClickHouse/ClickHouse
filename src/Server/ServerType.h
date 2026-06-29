@@ -1,7 +1,7 @@
 #pragma once
 
 #include <base/types.h>
-#include <unordered_set>
+#include <set>
 
 namespace DB
 {
@@ -11,13 +11,15 @@ class ServerType
 public:
     enum Type
     {
-        TCP,
         TCP_WITH_PROXY,
         TCP_SECURE,
+        TCP_SSH,
+        TCP,
         HTTP,
         HTTPS,
         MYSQL,
         GRPC,
+        ARROW_FLIGHT,
         POSTGRESQL,
         PROMETHEUS,
         CUSTOM,
@@ -26,11 +28,15 @@ public:
         QUERIES_ALL,
         QUERIES_DEFAULT,
         QUERIES_CUSTOM,
+        CLOUD,
         END
     };
 
-    using Types = std::unordered_set<Type>;
-    using CustomNames = std::unordered_set<String>;
+    /// Use ordered sets so iteration is deterministic across runs and across
+    /// `format → parse → format` roundtrips (the debug-build sanity check in
+    /// `executeQueryImpl` compares the second formatting against the first).
+    using Types = std::set<Type>;
+    using CustomNames = std::set<String>;
 
     ServerType() = default;
 
@@ -50,7 +56,7 @@ public:
     bool shouldStart(Type server_type, const std::string & server_custom_name = "") const;
     bool shouldStop(const std::string & port_name) const;
 
-    Type type;
+    Type type{};
     std::string custom_name;
 
     Types exclude_types;

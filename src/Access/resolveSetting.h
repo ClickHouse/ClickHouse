@@ -46,14 +46,6 @@ inline Field settingCastValueUtil(std::string_view full_name, const Field & valu
     });
 }
 
-inline String settingValueToStringUtil(std::string_view full_name, const Field & value)
-{
-    return resolveSetting(full_name, [&] <typename T> (std::string_view short_name, SettingsType<T>)
-    {
-        return T::valueToStringUtil(short_name, value);
-    });
-}
-
 inline Field settingStringToValueUtil(std::string_view full_name, const String & str)
 {
     return resolveSetting(full_name, [&] <typename T> (std::string_view short_name, SettingsType<T>)
@@ -89,10 +81,9 @@ inline String settingFullName<MergeTreeSettings>(std::string_view short_name)
 
 inline std::string resolveSettingName(std::string_view full_name)
 {
-    return resolveSetting(full_name, [&] <typename T> (std::string_view short_name, SettingsType<T>)
-    {
-        return settingFullName<T>(T::Traits::resolveName(short_name));
-    });
+    return resolveSetting(
+        full_name,
+        [&]<typename T>(std::string_view short_name, SettingsType<T>) { return settingFullName<T>(T::resolveName(short_name)); });
 }
 
 }

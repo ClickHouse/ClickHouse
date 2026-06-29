@@ -34,3 +34,27 @@ SELECT accurateCastOrDefault(nan, 'UInt64'), accurateCastOrDefault(nan, 'UInt64'
 SELECT accurateCastOrDefault(nan, 'UInt256'), accurateCastOrDefault(nan, 'UInt256', toUInt256(5));
 
 SELECT accurateCastOrDefault(number + 127, 'Int8') AS x, accurateCastOrDefault(number + 127, 'Int8', toInt8(5)) AS x_with_default FROM numbers (2) ORDER BY number;
+
+select accurateCastOrDefault('test', 'Nullable(Bool)');
+select accurateCastOrDefault('test', 'Bool');
+select accurateCastOrDefault('truex', 'Bool');
+select accurateCastOrDefault('xfalse', 'Bool');
+select accurateCastOrDefault('true', 'Bool');
+select accurateCastOrDefault('false', 'Bool');
+select accurateCastOrDefault('1', 'Bool');
+select accurateCastOrDefault('0', 'Bool');
+select accurateCastOrDefault(1, 'Bool');
+select accurateCastOrDefault(0, 'Bool');
+
+select accurateCastOrDefault('test', 'Nullable(IPv4)');
+select accurateCastOrDefault('test', 'IPv4');
+select accurateCastOrDefault('2001:db8::1', 'IPv4');
+select accurateCastOrDefault('::ffff:192.0.2.1', 'IPv4');
+select accurateCastOrDefault('192.0.2.1', 'IPv4');
+select accurateCastOrDefault('192.0.2.1x', 'IPv4');
+
+select accurateCastOrDefault('test', 'Nullable(IPv6)');
+select accurateCastOrDefault('test', 'IPv6');
+select accurateCastOrDefault('192.0.2.1', 'IPv6');
+select accurateCastOrDefault('2001:db8::1', 'IPv6');
+select accurateCastOrDefault('2001:db8::1x', 'IPv6');

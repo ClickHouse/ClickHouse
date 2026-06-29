@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 
 #include <Core/MySQL/IMySQLReadPacket.h>
@@ -67,16 +68,16 @@ class ResultSetRow : public IMySQLWritePacket
 {
 protected:
     const Columns & columns;
-    int row_num;
+    size_t row_num;
     size_t payload_size = 0;
-    std::vector<String> serialized;
+    VectorWithMemoryTracking<String> serialized;
 
     size_t getPayloadSize() const override;
 
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
 public:
-    ResultSetRow(const Serializations & serializations, const Columns & columns_, int row_num_);
+    ResultSetRow(const Serializations & serializations, const DataTypes & data_types, const Columns & columns_, size_t row_num_);
 };
 
 class ComFieldList : public LimitedReadPacket

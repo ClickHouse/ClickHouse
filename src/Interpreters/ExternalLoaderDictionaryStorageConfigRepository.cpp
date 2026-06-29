@@ -1,4 +1,4 @@
-#include "ExternalLoaderDictionaryStorageConfigRepository.h"
+#include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 
 #include <Interpreters/Context.h>
 #include <Storages/StorageDictionary.h>
@@ -24,11 +24,6 @@ std::set<std::string> ExternalLoaderDictionaryStorageConfigRepository::getAllLoa
 bool ExternalLoaderDictionaryStorageConfigRepository::exists(const std::string & loadable_definition_name)
 {
     return getName() == loadable_definition_name;
-}
-
-Poco::Timestamp ExternalLoaderDictionaryStorageConfigRepository::getUpdateTime(const std::string &)
-{
-    return dictionary_storage.getUpdateTime();
 }
 
 LoadablesConfigurationPtr ExternalLoaderDictionaryStorageConfigRepository::load(const std::string &)

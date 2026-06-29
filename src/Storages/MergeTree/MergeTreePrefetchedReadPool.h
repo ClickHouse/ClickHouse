@@ -1,5 +1,6 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/ThreadPool_fwd.h>
 #include <IO/AsyncReadCounters.h>
 #include <boost/heap/priority_queue.hpp>
@@ -10,22 +11,30 @@ namespace DB
 class IMergeTreeReader;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 /// A class which is responsible for creating read tasks
 /// which are later taken by readers via getTask method.
 /// Does prefetching for the read tasks it creates.
-class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase, private WithContext
+class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase
 {
 public:
     MergeTreePrefetchedReadPool(
         RangesInDataParts && parts_,
+        MutationsSnapshotPtr mutations_snapshot_,
+        VirtualFields shared_virtual_fields_,
+        const IndexReadTasks & index_read_tasks_,
         const StorageSnapshotPtr & storage_snapshot_,
+        const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
-        const Names & virtual_column_names_,
         const PoolSettings & settings_,
-        const ContextPtr & context_);
+        const MergeTreeReadTask::BlockSizeParams & params_,
+        const ContextPtr & context_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     String getName() const override { return "PrefetchedReadPool"; }
     bool preservesOrderOfRanges() const override { return false; }
@@ -48,11 +57,11 @@ private:
         size_t required_readers_num = 0;
     };
 
-    class PrefetechedReaders
+    class PrefetchedReaders
     {
     public:
-        PrefetechedReaders() = default;
-        PrefetechedReaders(MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & pool_);
+        PrefetchedReaders(
+            ThreadPool & pool, MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & read_prefetch);
 
         void wait();
         MergeTreeReadTask::Readers get();
@@ -61,28 +70,32 @@ private:
     private:
         bool is_valid = false;
         MergeTreeReadTask::Readers readers;
-        std::vector<std::future<void>> prefetch_futures;
+
+        ThreadPoolCallbackRunnerLocal<void> prefetch_runner;
     };
 
     struct ThreadTask
     {
-        using InfoPtr = MergeTreeReadTask::InfoPtr;
+        using InfoPtr = MergeTreeReadTaskInfoPtr;
 
-        ThreadTask(InfoPtr read_info_, MarkRanges ranges_, Priority priority_)
-            : read_info(std::move(read_info_)), ranges(std::move(ranges_)), priority(priority_)
-        {
-        }
+        ThreadTask(InfoPtr read_info_, MarkRanges ranges_, std::vector<MarkRanges> patches_ranges_, Priority priority_);
 
         ~ThreadTask()
         {
-            if (readers_future.valid())
-                readers_future.wait();
+            if (readers_future && readers_future->valid())
+                readers_future->wait();
+        }
+
+        bool isValidReadersFuture() const
+        {
+            return readers_future && readers_future->valid();
         }
 
         InfoPtr read_info;
         MarkRanges ranges;
+        std::vector<MarkRanges> patches_ranges;
         Priority priority;
-        PrefetechedReaders readers_future;
+        std::unique_ptr<PrefetchedReaders> readers_future;
     };
 
     struct TaskHolder
@@ -102,12 +115,14 @@ private:
 
     void startPrefetches();
     void createPrefetchedReadersForTask(ThreadTask & task);
-    std::future<void> createPrefetchedFuture(IMergeTreeReader * reader, Priority priority);
+    std::function<void()> createPrefetchedTask(IMergeTreeReader * reader, Priority priority);
 
     MergeTreeReadTaskPtr stealTask(size_t thread, MergeTreeReadTask * previous_task);
     MergeTreeReadTaskPtr createTask(ThreadTask & thread_task, MergeTreeReadTask * previous_task);
 
     static std::string dumpTasks(const TasksPerThread & tasks);
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     mutable std::mutex mutex;
     ThreadPool & prefetch_threadpool;
@@ -116,7 +131,7 @@ private:
     TasksPerThread per_thread_tasks;
     std::priority_queue<TaskHolder> prefetch_queue; /// the smallest on top
     bool started_prefetches = false;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// A struct which allows to track max number of tasks which were in the
     /// threadpool simultaneously (similar to CurrentMetrics, but the result
@@ -126,17 +141,14 @@ private:
         explicit PrefetchIncrement(std::shared_ptr<AsyncReadCounters> counters_)
             : counters(counters_)
         {
-            std::lock_guard lock(counters->mutex);
-            ++counters->total_prefetch_tasks;
-            if (++counters->current_parallel_prefetch_tasks > counters->max_parallel_prefetch_tasks)
-                counters->max_parallel_prefetch_tasks = counters->current_parallel_prefetch_tasks;
-
+            counters->total_prefetch_tasks.fetch_add(1, std::memory_order_relaxed);
+            AsyncReadCounters::incrementAndUpdateMax(
+                counters->current_parallel_prefetch_tasks, counters->max_parallel_prefetch_tasks);
         }
 
         ~PrefetchIncrement()
         {
-            std::lock_guard lock(counters->mutex);
-            --counters->current_parallel_prefetch_tasks;
+            counters->current_parallel_prefetch_tasks.fetch_sub(1, std::memory_order_relaxed);
         }
 
         std::shared_ptr<AsyncReadCounters> counters;

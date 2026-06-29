@@ -1,0 +1,5 @@
+42	UInt32
+Hello	String
+[1,2,3]	Array(UInt32)
+{'a':42,'b':'Hello','c':[1,2,3]}
+[('a',42),('b','Hello'),('c',[1,2,3])]	Array(Tuple(String, Variant(Array(UInt32), String, UInt32)))

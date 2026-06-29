@@ -1,16 +1,22 @@
-#include "PolygonDictionaryImplementations.h"
-#include "DictionaryFactory.h"
+#include <Core/NamesAndTypes.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/PolygonDictionaryImplementations.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-
+#include <Dictionaries/ClickHouseDictionarySource.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-
-#include <numeric>
+#include <Core/Settings.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool dictionary_use_async_executor;
+}
 
 namespace ErrorCodes
 {
@@ -25,9 +31,10 @@ PolygonDictionarySimple::PolygonDictionarySimple(
         Configuration configuration_)
     : IPolygonDictionary(dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, configuration_)
 {
+    calculateBytesAllocated();
 }
 
-std::shared_ptr<const IExternalLoadable> PolygonDictionarySimple::clone() const
+std::shared_ptr<IExternalLoadable> PolygonDictionarySimple::clone() const
 {
     return std::make_shared<PolygonDictionarySimple>(
             this->getDictionaryID(),
@@ -68,13 +75,14 @@ PolygonDictionaryIndexEach::PolygonDictionaryIndexEach(
     buckets.reserve(polygons.size());
     for (const auto & polygon : polygons)
     {
-        std::vector<Polygon> single;
+        VectorWithMemoryTracking<Polygon> single;
         single.emplace_back(polygon);
         buckets.emplace_back(single);
     }
+    calculateBytesAllocated();
 }
 
-std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexEach::clone() const
+std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexEach::clone() const
 {
     return std::make_shared<PolygonDictionaryIndexEach>(
             this->getDictionaryID(),
@@ -86,6 +94,15 @@ std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexEach::clone() con
             this->max_depth);
 }
 
+size_t PolygonDictionaryIndexEach::getIndexBytesAllocated() const
+{
+    size_t total = grid.getBytesAllocated();
+    total += buckets.capacity() * sizeof(SlabsPolygonIndex);
+    for (const auto & bucket : buckets)
+        total += bucket.getBytesAllocated();
+    return total;
+}
+
 bool PolygonDictionaryIndexEach::find(const Point & point, size_t & polygon_index) const
 {
     const auto * cell = grid.find(point.x(), point.y());
@@ -93,7 +110,7 @@ bool PolygonDictionaryIndexEach::find(const Point & point, size_t & polygon_inde
     {
         for (const auto & candidate : cell->polygon_ids)
         {
-            size_t unused;
+            size_t unused = 0;
             if (buckets[candidate].find(point, unused))
             {
                 polygon_index = candidate;
@@ -122,9 +139,10 @@ PolygonDictionaryIndexCell::PolygonDictionaryIndexCell(
       min_intersections(min_intersections_),
       max_depth(max_depth_)
 {
+    calculateBytesAllocated();
 }
 
-std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexCell::clone() const
+std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexCell::clone() const
 {
     return std::make_shared<PolygonDictionaryIndexCell>(
             this->getDictionaryID(),
@@ -134,6 +152,11 @@ std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexCell::clone() con
             this->configuration,
             this->min_intersections,
             this->max_depth);
+}
+
+size_t PolygonDictionaryIndexCell::getIndexBytesAllocated() const
+{
+    return index.getBytesAllocated();
 }
 
 bool PolygonDictionaryIndexCell::find(const Point & point, size_t & polygon_index) const
@@ -156,15 +179,14 @@ bool PolygonDictionaryIndexCell::find(const Point & point, size_t & polygon_inde
 }
 
 template <class PolygonDictionary>
-DictionaryPtr createLayout(const std::string & ,
+DictionaryPtr createLayout(const std::string & /*name*/,
                            const DictionaryStructure & dict_struct,
                            const Poco::Util::AbstractConfiguration & config,
                            const std::string & config_prefix,
                            DictionarySourcePtr source_ptr,
-                           ContextPtr /* global_context */,
+                           ContextPtr global_context,
                            bool /*created_from_ddl*/)
 {
-    const String database = config.getString(config_prefix + ".database", "");
     const String name = config.getString(config_prefix + ".name");
 
     if (!dict_struct.key)
@@ -176,12 +198,13 @@ DictionaryPtr createLayout(const std::string & ,
     const auto key_type = (*dict_struct.key)[0].type;
     const auto f64 = std::make_shared<DataTypeFloat64>();
     const auto multi_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(f64))));
-    const auto multi_polygon_tuple = DataTypeArray(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}))));
+    const auto multi_polygon_tuple = DataTypeArray(
+        std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{f64, f64}))));
     const auto simple_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(f64));
-    const auto simple_polygon_tuple = DataTypeArray(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}));
+    const auto simple_polygon_tuple = DataTypeArray(std::make_shared<DataTypeTuple>(DataTypes{f64, f64}));
 
-    IPolygonDictionary::InputType input_type;
-    IPolygonDictionary::PointType point_type;
+    IPolygonDictionary::InputType input_type = {};
+    IPolygonDictionary::PointType point_type = {};
 
     if (key_type->equals(multi_polygon_array))
     {
@@ -219,11 +242,16 @@ DictionaryPtr createLayout(const std::string & ,
     config.keys(layout_prefix, keys);
     const auto & dict_prefix = layout_prefix + "." + keys.front();
 
+    ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+    const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
+    bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef()[Setting::dictionary_use_async_executor];
+
     IPolygonDictionary::Configuration configuration
     {
         .input_type = input_type,
         .point_type = point_type,
-        .store_polygon_key_column = config.getBool(dict_prefix + ".store_polygon_key_column", false)
+        .store_polygon_key_column = config.getBool(dict_prefix + ".store_polygon_key_column", false),
+        .use_async_executor = use_async_executor,
     };
 
     if (dict_struct.range_min || dict_struct.range_max)
@@ -246,14 +274,27 @@ DictionaryPtr createLayout(const std::string & ,
         return std::make_unique<PolygonDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, configuration);
 }
 
+void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryPolygon(DictionaryFactory & factory)
 {
-    factory.registerLayout("polygon_simple", createLayout<PolygonDictionarySimple>, true);
-    factory.registerLayout("polygon_index_each", createLayout<PolygonDictionaryIndexEach>, true);
-    factory.registerLayout("polygon_index_cell", createLayout<PolygonDictionaryIndexCell>, true);
+    factory.registerLayout("polygon_simple", createLayout<PolygonDictionarySimple>, true, true, Documentation{
+        .description = "A polygon dictionary that performs a linear scan over all polygons for each queried point. The simplest but slowest polygon layout.",
+        .syntax = "LAYOUT(POLYGON_SIMPLE())",
+        .related = {"polygon"}});
+    factory.registerLayout("polygon_index_each", createLayout<PolygonDictionaryIndexEach>, true, true, Documentation{
+        .description = "A polygon dictionary that builds a separate grid index for each polygon.",
+        .syntax = "LAYOUT(POLYGON_INDEX_EACH())",
+        .related = {"polygon"}});
+    factory.registerLayout("polygon_index_cell", createLayout<PolygonDictionaryIndexCell>, true, true, Documentation{
+        .description = "A polygon dictionary that builds a single grid index over all polygons.",
+        .syntax = "LAYOUT(POLYGON_INDEX_CELL())",
+        .related = {"polygon"}});
 
     /// Alias to the most performant dictionary type - polygon_index_cell
-    factory.registerLayout("polygon", createLayout<PolygonDictionaryIndexCell>, true);
+    factory.registerLayout("polygon", createLayout<PolygonDictionaryIndexCell>, true, true, Documentation{
+        .description = "Maps points (coordinates) to the polygons that contain them, for geographical lookups. This is an alias for the `polygon_index_cell` layout.",
+        .syntax = "LAYOUT(POLYGON())",
+        .related = {"polygon_simple", "polygon_index_each", "polygon_index_cell"}});
 }
 
 }

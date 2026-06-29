@@ -65,9 +65,9 @@ enum Command
 class SSLRequest : public IMySQLReadPacket
 {
 public:
-    uint32_t capability_flags;
-    uint32_t max_packet_size;
-    uint8_t character_set;
+    uint32_t capability_flags{};
+    uint32_t max_packet_size{};
+    uint8_t character_set{};
 
 protected:
     void readPayloadImpl(ReadBuffer & buf) override;
@@ -93,7 +93,7 @@ protected:
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
 public:
-    OKPacket(uint32_t capabilities_);
+    explicit OKPacket(uint32_t capabilities_);
 
     OKPacket(uint8_t header_, uint32_t capabilities_, uint64_t affected_rows_,
              uint32_t status_flags_, int16_t warnings_, String session_state_changes_ = "", String info_ = "");
@@ -180,7 +180,7 @@ protected:
     void readPayloadImpl(ReadBuffer & payload) override;
 
 public:
-    ResponsePacket(UInt32 server_capability_flags_);
+    explicit ResponsePacket(UInt32 server_capability_flags_);
 
     ResponsePacket(UInt32 server_capability_flags_, bool is_handshake_);
 };

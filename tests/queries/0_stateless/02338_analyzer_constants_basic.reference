@@ -25,11 +25,11 @@ NULL	Nullable(Nothing)
 (1, 1)	Tuple(UInt8, UInt8)					
 (1,1)
 --
-array((1, 1))	Array(Tuple(UInt8, UInt8))					
+[(1, 1)]	Array(Tuple(UInt8, UInt8))					
 [(1,1)]
 NULL	Nullable(Nothing)					
 1	UInt8					
 \'test\'	String					
 [1, 2, 3]	Array(UInt8)					
-array((1, 1), (1, 1))	Array(Tuple(UInt8, UInt8))					
+[(1, 1), (1, 1)]	Array(Tuple(UInt8, UInt8))					
 \N	1	test	[1,2,3]	[(1,1),(1,1)]

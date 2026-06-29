@@ -17,7 +17,7 @@ public:
 
     String getDescription() override { return "Rewrite _shard_num column into shardNum() function"; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

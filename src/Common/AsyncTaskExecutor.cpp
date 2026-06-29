@@ -1,4 +1,7 @@
 #include <Common/AsyncTaskExecutor.h>
+#include <base/scope_guard.h>
+#include <fmt/format.h>
+
 
 namespace DB
 {
@@ -46,8 +49,10 @@ void AsyncTaskExecutor::cancel()
 {
     std::lock_guard guard(fiber_lock);
     is_cancelled = true;
-    cancelBefore();
-    destroyFiber();
+    {
+        SCOPE_EXIT({ destroyFiber(); });
+        cancelBefore();
+    }
     cancelAfter();
 }
 

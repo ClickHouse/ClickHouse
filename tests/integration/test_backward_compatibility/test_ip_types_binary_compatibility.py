@@ -1,16 +1,15 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 # Version 21.6.3.14 has incompatible partition id for tables with UUID in partition key.
-node_22_6 = cluster.add_instance(
-    "node_22_6",
+node = cluster.add_instance(
+    "node",
     image="clickhouse/clickhouse-server",
-    tag="22.6",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 
 
@@ -25,18 +24,18 @@ def start_cluster():
 
 
 def test_ip_types_binary_compatibility(start_cluster):
-    node_22_6.query(
+    node.query(
         "create table tab (ipv4 IPv4, ipv6 IPv6) engine = MergeTree order by tuple()"
     )
-    node_22_6.query(
+    node.query(
         "insert into tab values ('123.231.213.132', '0123:4567:89ab:cdef:fedc:ba98:7654:3210')"
     )
-    res_22_6 = node_22_6.query("select * from tab")
+    res_old = node.query("select * from tab")
 
-    node_22_6.restart_with_latest_version()
+    node.restart_with_latest_version()
 
-    res_latest = node_22_6.query("select * from tab")
+    res_latest = node.query("select * from tab")
 
-    assert res_22_6 == res_latest
+    assert res_old == res_latest
 
-    node_22_6.query("drop table tab")
+    node.query("drop table tab")

@@ -1,17 +1,20 @@
+#include <Access/Common/AccessFlags.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeString.h>
+#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Parsers/ASTShowTablesQuery.h>
-#include <Parsers/formatAST.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
-#include <DataTypes/DataTypeString.h>
-#include <Storages/ColumnsDescription.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/executeQuery.h>
+#include <Parsers/ASTShowTablesQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Access/Common/AccessFlags.h>
+#include <Storages/ColumnsDescription.h>
+#include <Common/Macros.h>
 #include <Common/typeid_cast.h>
-#include <IO/Operators.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -48,16 +51,16 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
                 << DB::quote << query.like;
         }
 
-        if (query.limit_length)
-            rewritten_query << " LIMIT " << query.limit_length;
-
         /// (*)
         rewritten_query << " ORDER BY name";
+
+        if (query.limit_length)
+            rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
 
         return rewritten_query.str();
     }
 
-    /// SHOW CLUSTER/CLUSTERS
+    /// SHOW CLUSTERS
     if (query.clusters)
     {
         WriteBufferFromOwnString rewritten_query;
@@ -76,16 +79,21 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << " ORDER BY cluster";
 
         if (query.limit_length)
-            rewritten_query << " LIMIT " << query.limit_length;
+            rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
 
         return rewritten_query.str();
     }
-    else if (query.cluster)
+
+    /// SHOW CLUSTER
+    if (query.cluster)
     {
         WriteBufferFromOwnString rewritten_query;
-        rewritten_query << "SELECT * FROM system.clusters";
+        rewritten_query
+            << "SELECT cluster, shard_num, replica_num, host_name, host_address, port FROM system.clusters";
 
-        rewritten_query << " WHERE cluster = " << DB::quote << query.cluster_str;
+        auto cluster_name_expanded = getContext()->getMacros()->expand(query.cluster_str);
+
+        rewritten_query << " WHERE cluster = " << DB::quote << cluster_name_expanded;
 
         /// (*)
         rewritten_query << " ORDER BY cluster, shard_num, replica_num, host_name, host_address, port";
@@ -112,6 +120,41 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
         /// (*)
         rewritten_query << " ORDER BY name, type, value ";
+
+        return rewritten_query.str();
+    }
+
+    /// SHOW MERGES
+    if (query.merges)
+    {
+        WriteBufferFromOwnString rewritten_query;
+        rewritten_query << R"(
+            SELECT
+                table,
+                database,
+                merges.progress > 0 ? round(merges.elapsed * (1 - merges.progress) / merges.progress, 2) : NULL AS estimate_complete,
+                round(elapsed, 2) AS elapsed,
+                round(progress * 100, 2) AS progress,
+                is_mutation,
+                formatReadableSize(total_size_bytes_compressed) AS size_compressed,
+                formatReadableSize(memory_usage) AS memory_usage
+            FROM system.merges
+            )";
+
+        if (!query.like.empty())
+        {
+            rewritten_query
+                << " WHERE table "
+                << (query.not_like ? "NOT " : "")
+                << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
+                << DB::quote << query.like;
+        }
+
+        /// (*)
+        rewritten_query << " ORDER BY elapsed desc";
+
+        if (query.limit_length)
+            rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
 
         return rewritten_query.str();
     }
@@ -156,13 +199,13 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
             << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
             << DB::quote << query.like;
     else if (query.where_expression)
-        rewritten_query << " AND (" << query.where_expression << ")";
+        rewritten_query << " AND (" << query.where_expression->formatWithSecretsOneLine() << ")";
 
-        /// (*)
+    /// (*)
     rewritten_query << " ORDER BY name ";
 
     if (query.limit_length)
-        rewritten_query << " LIMIT " << query.limit_length;
+        rewritten_query << " LIMIT " << query.limit_length->formatWithSecretsOneLine();
 
     return rewritten_query.str();
 }
@@ -182,17 +225,38 @@ BlockIO InterpreterShowTablesQuery::execute()
             res_columns[0]->insert(name);
         BlockIO res;
         size_t num_rows = res_columns[0]->size();
-        auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+        auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
         res.pipeline = QueryPipeline(std::move(source));
 
         return res;
     }
-
-    return executeQuery(getRewrittenQuery(), getContext(), true);
+    auto rewritten_query = getRewrittenQuery();
+    String database = getContext()->resolveDatabase(query.getFrom());
+    auto query_context = Context::createCopy(getContext());
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("");
+    if (DatabaseCatalog::instance().isRemoteDatabase(database))
+    {
+        /// Explicit SHOW TABLES should include tables from the requested remote database.
+        /// system.databases already shows all databases unconditionally, so no override is needed for SHOW DATABASES.
+        query_context->setSetting("show_remote_databases_in_system_tables", true);
+    }
+    return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
 }
 
 /// (*) Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to
 ///     sort the output of SHOW <INFO> otherwise (SELECT * FROM (SHOW <INFO> ...) ORDER BY ...) is rejected) and 3. some
 ///     SQL tests can take advantage of this.
+
+
+void registerInterpreterShowTablesQuery(InterpreterFactory & factory);
+void registerInterpreterShowTablesQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowTablesQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowTablesQuery", create_fn);
+}
 
 }

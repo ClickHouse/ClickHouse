@@ -21,11 +21,15 @@ struct ProfileInfo;
 class PullingAsyncPipelineExecutor
 {
 public:
-    explicit PullingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool has_partial_result_setting = false);
+    explicit PullingAsyncPipelineExecutor(QueryPipeline & pipeline_);
     ~PullingAsyncPipelineExecutor();
 
     /// Get structure of returned block or chunk.
     const Block & getHeader() const;
+
+    /// Set a callback that is polled every interactive_timeout_ms during pull().
+    /// When set, pull() uses the timeout internally and calls the callback on each iteration.
+    void setCancelCallback(std::function<bool()> callback, uint64_t interactive_timeout_ms_);
 
     /// Methods return false if query is finished.
     /// If milliseconds > 0, returns empty object and `true` after timeout exceeded. Otherwise method is blocking.
@@ -58,10 +62,12 @@ private:
 
     void cancelWithExceptionHandling(CancelFunc && cancel_func);
 
-private:
     QueryPipeline & pipeline;
     std::shared_ptr<LazyOutputFormat> lazy_format;
     std::unique_ptr<Data> data;
+
+    std::function<bool()> cancel_callback;
+    uint64_t interactive_timeout_ms = 0;
 };
 
 }

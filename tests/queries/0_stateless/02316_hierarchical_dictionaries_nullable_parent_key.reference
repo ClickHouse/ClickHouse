@@ -106,6 +106,42 @@ Get descendants at first level
 []
 []
 []
+HashedArray dictionary
+Get hierarchy
+[0]
+[1,0]
+[2,1,0]
+[3]
+[4,2,1,0]
+[]
+Get is in hierarchy
+1
+1
+1
+1
+1
+0
+Get children
+[1]
+[2]
+[4]
+[]
+[]
+[]
+Get all descendants
+[1,2,4]
+[2,4]
+[4]
+[]
+[]
+[]
+Get descendants at first level
+[1]
+[2]
+[4]
+[]
+[]
+[]
 Cache dictionary
 Get hierarchy
 [0]

@@ -9,7 +9,6 @@
 #include <Columns/ColumnUnique.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -17,11 +16,12 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/iota.h>
 
 
 using namespace DB;
 
-void stableGetColumnPermutation(
+static void stableGetColumnPermutation(
     const IColumn & column,
     IColumn::PermutationSortDirection direction,
     size_t limit,
@@ -32,8 +32,7 @@ void stableGetColumnPermutation(
 
     size_t size = column.size();
     out_permutation.resize(size);
-    for (size_t i = 0; i < size; ++i)
-        out_permutation[i] = i;
+    iota(out_permutation.data(), size, IColumn::Permutation::value_type(0));
 
     std::stable_sort(
         out_permutation.begin(),
@@ -49,7 +48,7 @@ void stableGetColumnPermutation(
         });
 }
 
-void columnGetPermutation(
+static void columnGetPermutation(
     const IColumn & column,
     IColumn::PermutationSortDirection direction,
     size_t limit,
@@ -59,7 +58,7 @@ void columnGetPermutation(
     column.getPermutation(direction, IColumn::PermutationSortStability::Stable, limit, nan_direction_hint, out_permutation);
 }
 
-void printColumn(const IColumn & column)
+[[maybe_unused]] static void printColumn(const IColumn & column)
 {
     size_t column_size = column.size();
     Field value;
@@ -74,7 +73,7 @@ void printColumn(const IColumn & column)
 }
 
 template <typename ValueTransform>
-void generateRanges(std::vector<std::vector<Field>> & ranges, size_t range_size, ValueTransform value_transform)
+void generateRanges(VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & ranges, size_t range_size, ValueTransform value_transform)
 {
     for (auto & range : ranges)
     {
@@ -93,7 +92,7 @@ void generateRanges(std::vector<std::vector<Field>> & ranges, size_t range_size,
     }
 }
 
-void insertRangesIntoColumn(std::vector<std::vector<Field>> & ranges, const std::vector<size_t> & ranges_permutations, IColumn & column)
+static void insertRangesIntoColumn(VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & ranges, const VectorWithMemoryTracking<size_t> & ranges_permutations, IColumn & column)
 {
     for (const auto & range_permutation : ranges_permutations)
     {
@@ -106,7 +105,7 @@ void insertRangesIntoColumn(std::vector<std::vector<Field>> & ranges, const std:
     }
 }
 
-void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const IColumn::Permutation & rhs, size_t limit)
+static void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const IColumn::Permutation & rhs, size_t limit)
 {
     if (limit == 0)
     {
@@ -119,7 +118,7 @@ void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const IColumn
     }
 }
 
-void assertColumnPermutation(
+static void assertColumnPermutation(
     const IColumn & column,
     IColumn::PermutationSortDirection direction,
     size_t limit,
@@ -142,14 +141,11 @@ template <typename ColumnCreateFunc, typename ValueTransform>
 void assertColumnPermutations(ColumnCreateFunc column_create_func, ValueTransform value_transform)
 {
     static constexpr size_t ranges_size = 3;
-    static const std::vector<size_t> range_sizes = {1, 5, 50, 500};
+    static const VectorWithMemoryTracking<size_t> range_sizes = {1, 5, 50, 500};
 
-    std::vector<std::vector<Field>> ranges(ranges_size);
-    std::vector<size_t> ranges_permutations(ranges_size);
-    for (size_t i = 0; i < ranges_size; ++i)
-    {
-        ranges_permutations[i] = i;
-    }
+    VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> ranges(ranges_size);
+    VectorWithMemoryTracking<size_t> ranges_permutations(ranges_size);
+    iota(ranges_permutations.data(), ranges_size, IColumn::Permutation::value_type(0));
 
     IColumn::Permutation actual_permutation;
     IColumn::Permutation expected_permutation;

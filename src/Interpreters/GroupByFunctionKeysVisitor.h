@@ -1,14 +1,10 @@
 #pragma once
 
 #include <Functions/FunctionFactory.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -38,7 +34,7 @@ struct KeepFunctionMatcher
             return;
         }
 
-        if (!data.key_names_to_keep.count(function_node->getColumnName()))
+        if (!data.key_names_to_keep.contains(function_node->getColumnName()))
         {
             Visitor(data).visit(function_node->arguments);
         }
@@ -46,7 +42,7 @@ struct KeepFunctionMatcher
 
     static void visit(ASTIdentifier * ident, Data & data)
     {
-        if (!data.key_names_to_keep.count(ident->shortName()))
+        if (!data.key_names_to_keep.contains(ident->shortName()))
         {
             /// if variable of a function is not in GROUP BY keys, this function should not be deleted
             data.keep_key = true;

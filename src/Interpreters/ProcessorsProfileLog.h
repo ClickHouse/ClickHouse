@@ -1,9 +1,10 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Processors/IProcessor.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -18,17 +19,21 @@ struct ProcessorProfileLogElement
 
     UInt64 plan_step{};
     UInt64 plan_group{};
+    String plan_step_name;
+    String plan_step_description;
 
     String initial_query_id;
     String query_id;
     String processor_name;
+    String processor_uniq_id;
+    String step_uniq_id;
 
     /// Milliseconds spend in IProcessor::work()
-    UInt32 elapsed_us{};
+    UInt64 elapsed_us{};
     /// IProcessor::NeedData
-    UInt32 input_wait_elapsed_us{};
+    UInt64 input_wait_elapsed_us{};
     /// IProcessor::PortFull
-    UInt32 output_wait_elapsed_us{};
+    UInt64 output_wait_elapsed_us{};
 
     size_t input_rows{};
     size_t input_bytes{};
@@ -36,10 +41,9 @@ struct ProcessorProfileLogElement
     size_t output_bytes{};
 
     static std::string name() { return "ProcessorsProfileLog"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class ProcessorsProfileLog : public SystemLog<ProcessorProfileLogElement>
@@ -47,5 +51,10 @@ class ProcessorsProfileLog : public SystemLog<ProcessorProfileLogElement>
 public:
     using SystemLog<ProcessorProfileLogElement>::SystemLog;
 };
+
+VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);
+
+void logProcessorProfile(ContextPtr context, const Processors & processors);
+void logProcessorProfile(ContextPtr context, const VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump);
 
 }

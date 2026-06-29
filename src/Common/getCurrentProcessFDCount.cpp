@@ -36,7 +36,7 @@ Int64 getCurrentProcessFDCount()
             readIntText(result, command->out);
             command->wait();
         }
-        catch (...)
+        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
         }
     }

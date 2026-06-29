@@ -1,6 +1,6 @@
 QUERY id: 0
   PROJECTION COLUMNS
-    uniqCombined(tuple(\'\')) UInt64
+    uniqCombined((\'\')) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: uniqCombined, function_type: aggregate, result_type: UInt64
@@ -13,8 +13,78 @@ QUERY id: 0
                     LIST id: 6, nodes: 1
                       CONSTANT id: 7, constant_value: \'\', constant_value_type: String
   JOIN TREE
-    TABLE_FUNCTION id: 8, table_function_name: numbers
+    TABLE_FUNCTION id: 8, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 9, nodes: 1
           CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
 1
+QUERY id: 0
+  PROJECTION COLUMNS
+    uniqCombined((materialize((number)))) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: uniqCombined, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+  JOIN TREE
+    TABLE_FUNCTION id: 5, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 6, nodes: 1
+          CONSTANT id: 7, constant_value: UInt64_10, constant_value_type: UInt8
+10
+QUERY id: 0
+  PROJECTION COLUMNS
+    uniq(abs(number)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: uniq, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: abs, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 8, nodes: 1
+          CONSTANT id: 9, constant_value: UInt64_10, constant_value_type: UInt8
+QUERY id: 0
+  PROJECTION COLUMNS
+    uniq(toString(abs(materialize(number)))) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: uniq, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: abs, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  FUNCTION id: 6, function_name: materialize, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+  JOIN TREE
+    TABLE_FUNCTION id: 9, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 10, nodes: 1
+          CONSTANT id: 11, constant_value: UInt64_10, constant_value_type: UInt8
+QUERY id: 0
+  PROJECTION COLUMNS
+    uniq((number, 1)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: uniq, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: tuple, function_type: ordinary, result_type: Tuple(UInt64, UInt8)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 9, nodes: 1
+          CONSTANT id: 10, constant_value: UInt64_10, constant_value_type: UInt8

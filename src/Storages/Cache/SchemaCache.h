@@ -22,17 +22,18 @@ const size_t DEFAULT_SCHEMA_CACHE_ELEMENTS = 4096;
 class SchemaCache
 {
 public:
-    SchemaCache(size_t max_elements_);
+    explicit SchemaCache(size_t max_elements_);
 
     struct Key
     {
         String source;
         String format;
         String additional_format_info;
+        String schema_inference_mode;
 
         bool operator==(const Key & other) const
         {
-            return source == other.source && format == other.format && additional_format_info == other.additional_format_info;
+            return source == other.source && format == other.format && additional_format_info == other.additional_format_info && schema_inference_mode == other.schema_inference_mode;
         }
     };
 
@@ -42,7 +43,7 @@ public:
     {
         size_t operator()(const Key & key) const
         {
-            return std::hash<String>()(key.source + key.format + key.additional_format_info);
+            return std::hash<String>()(key.source + key.format + key.additional_format_info + key.schema_inference_mode);
         }
     };
 
@@ -50,7 +51,7 @@ public:
     {
         std::optional<ColumnsDescription> columns;
         std::optional<size_t> num_rows;
-        time_t registration_time;
+        time_t registration_time{};
     };
 
     using LastModificationTimeGetter = std::function<std::optional<time_t>()>;

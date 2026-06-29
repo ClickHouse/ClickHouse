@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemAsynchronousInserts.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -6,37 +7,41 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Context.h>
-#include <Parsers/queryToString.h>
 #include <Core/DecimalFunctions.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 
 namespace DB
 {
 
 static constexpr auto TIME_SCALE = 6;
 
-NamesAndTypesList StorageSystemAsynchronousInserts::getNamesAndTypes()
+ColumnsDescription StorageSystemAsynchronousInserts::getColumnsDescription()
 {
-    return
+    return ColumnsDescription
     {
-        {"query", std::make_shared<DataTypeString>()},
-        {"database", std::make_shared<DataTypeString>()},
-        {"table", std::make_shared<DataTypeString>()},
-        {"format", std::make_shared<DataTypeString>()},
-        {"first_update", std::make_shared<DataTypeDateTime64>(TIME_SCALE)},
-        {"total_bytes", std::make_shared<DataTypeUInt64>()},
-        {"entries.query_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"entries.bytes", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+        {"query", std::make_shared<DataTypeString>(), "Query text."},
+        {"database", std::make_shared<DataTypeString>(), "Database name."},
+        {"table", std::make_shared<DataTypeString>(), "Table name."},
+        {"format", std::make_shared<DataTypeString>(), "Format name."},
+        {"first_update", std::make_shared<DataTypeDateTime64>(TIME_SCALE), "First insert time with microseconds resolution."},
+        {"total_bytes", std::make_shared<DataTypeUInt64>(), "Total number of bytes waiting in the queue."},
+        {"entries.query_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Array of query ids of the inserts waiting in the queue."},
+        {"entries.bytes", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Array of bytes of each insert query waiting in the queue."},
     };
 }
 
-void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     using namespace std::chrono;
 
-    auto * insert_queue = context->getAsynchronousInsertQueue();
+    auto * insert_queue = context->tryGetAsynchronousInsertQueue();
     if (!insert_queue)
         return;
+
+    const auto current_user_id = context->getUserID();
+    const bool show_all = context->getAccess()->isGranted(AccessType::SHOW_USERS);
 
     for (size_t shard_num = 0; shard_num < insert_queue->getPoolSize(); ++shard_num)
     {
@@ -46,19 +51,22 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
         {
             const auto & [key, data] = elem;
 
+            if (!show_all && key.user_id != current_user_id)
+                continue;
+
             auto time_in_microseconds = [](const time_point<steady_clock> & timestamp)
             {
                 auto time_diff = duration_cast<microseconds>(steady_clock::now() - timestamp);
                 auto time_us = (system_clock::now() - time_diff).time_since_epoch().count();
 
                 DecimalUtils::DecimalComponents<DateTime64> components{time_us / 1'000'000, time_us % 1'000'000};
-                return DecimalField(DecimalUtils::decimalFromComponents<DateTime64>(components, TIME_SCALE), TIME_SCALE);
+                return DecimalField<DateTime64>(DecimalUtils::decimalFromComponents<DateTime64>(components, TIME_SCALE), TIME_SCALE);
             };
 
             const auto & insert_query = key.query->as<const ASTInsertQuery &>();
             size_t i = 0;
 
-            res_columns[i++]->insert(queryToString(insert_query));
+            res_columns[i++]->insert(insert_query.formatForLogging());
 
             /// If query is "INSERT INTO FUNCTION" then table_id is empty.
             if (insert_query.table_id)
@@ -82,7 +90,7 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
             for (const auto & entry : data->entries)
             {
                 arr_query_id.push_back(entry->query_id);
-                arr_bytes.push_back(entry->bytes.size());
+                arr_bytes.push_back(entry->chunk.byteSize());
             }
 
             res_columns[i++]->insert(arr_query_id);
@@ -92,3 +100,6 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemAsynchronousInserts) }

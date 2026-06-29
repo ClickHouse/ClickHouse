@@ -1,10 +1,7 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Dictionaries/registerDictionaries.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/DumpASTNode.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/tests/gtest_global_context.h>
@@ -48,7 +45,7 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
                    " COMMENT 'hello world!'";
 
     ParserCreateDictionaryQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
     DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
 
@@ -119,7 +116,7 @@ TEST(ConvertDictionaryAST, TrickyAttributes)
                    " SOURCE(CLICKHOUSE(HOST 'localhost'))";
 
     ParserCreateDictionaryQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
     DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
 
@@ -164,7 +161,7 @@ TEST(ConvertDictionaryAST, ComplexKeyAndLayoutWithParams)
                    " LIFETIME(MIN 1 MAX 10)";
 
     ParserCreateDictionaryQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
     DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
 
@@ -215,7 +212,7 @@ TEST(ConvertDictionaryAST, ComplexSource)
                    " RANGE(MIN second_column MAX third_column)";
 
     ParserCreateDictionaryQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
     DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
     /// source

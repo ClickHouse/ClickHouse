@@ -9,7 +9,7 @@ SELECT max(x) - min(x) FROM t;
 
 TRUNCATE TABLE t;
 INSERT INTO t SELECT value FROM system.events WHERE event = 'OverflowThrow';
-SELECT count() FROM system.numbers SETTINGS max_rows_to_read = 1, read_overflow_mode = 'throw'; -- { serverError 158 }
+SELECT count() FROM system.numbers SETTINGS max_rows_to_read = 1, read_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS }
 INSERT INTO t SELECT value FROM system.events WHERE event = 'OverflowThrow';
 SELECT max(x) - min(x) FROM t;
 

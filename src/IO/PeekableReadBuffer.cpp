@@ -9,38 +9,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= 0*/)
+PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= 0*/) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `stack_memory` is scratch space, written before read
         : BufferWithOwnMemory(start_size_), sub_buf(&sub_buf_)
 {
     padded &= sub_buf->isPadded();
     /// Read from sub-buffer
-    Buffer & sub_working = sub_buf->buffer();
-    BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf->offset());
-
-    checkStateCorrect();
-}
-
-void PeekableReadBuffer::reset()
-{
-    checkStateCorrect();
-}
-
-void PeekableReadBuffer::setSubBuffer(ReadBuffer & sub_buf_)
-{
-    sub_buf = &sub_buf_;
-    resetImpl();
-}
-
-void PeekableReadBuffer::resetImpl()
-{
-    peeked_size = 0;
-    checkpoint = std::nullopt;
-    checkpoint_in_own_memory = false;
-    use_stack_memory = true;
-
-    if (!currentlyReadFromOwnMemory())
-        sub_buf->position() = pos;
-
     Buffer & sub_working = sub_buf->buffer();
     BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf->offset());
 
@@ -125,7 +98,11 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
 {
     checkStateCorrect();
 
-    assert(checkpoint);
+    chassert(checkpoint);
+
+    /// Reset canceled flag since the purpose of rollback is to retry reading from the beginning.
+    /// This is important for schema detection where we try multiple formats and expect some to fail.
+    canceled = false;
 
     if (recursive_checkpoints_offsets.empty())
     {
@@ -137,7 +114,7 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
         else
         {
             /// Checkpoint is in own memory and position is not.
-            assert(checkpointInOwnMemory());
+            chassert(checkpointInOwnMemory());
 
             char * memory_data = getMemoryData();
             /// Switch to reading from own memory.
@@ -155,7 +132,7 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
         else
         {
             /// Checkpoint is in own memory and position is not.
-            assert(checkpointInOwnMemory());
+            chassert(checkpointInOwnMemory());
 
             size_t offset_from_checkpoint_in_own_memory = offsetFromCheckpointInOwnMemory();
             if (offset_from_checkpoint >= offset_from_checkpoint_in_own_memory)
@@ -187,7 +164,7 @@ bool PeekableReadBuffer::nextImpl()
     ///        if some pointers were invalidated.
 
     checkStateCorrect();
-    bool res;
+    bool res = false;
     bool checkpoint_at_end = checkpoint && *checkpoint == working_buffer.end() && currentlyReadFromOwnMemory();
 
     if (checkpoint)
@@ -310,9 +287,7 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
         {
             size_t pos_offset = pos - memory.data();
 
-            size_t new_size_amortized = memory.size() * 2;
-            if (new_size_amortized < new_size)
-                new_size_amortized = new_size;
+            size_t new_size_amortized = std::max(memory.size() * 2, new_size);
             memory.resize(new_size_amortized);
 
             if (need_update_checkpoint)

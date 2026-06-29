@@ -1,0 +1,4 @@
+Code: 62. DB::Ex---tion: When creating a materialized view you can't declare both 'TO [db].[table]' and 'EMPTY'. (SYNTAX_ERROR) (version reference)
+Code: 62. DB::Ex---tion: When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'. (SYNTAX_ERROR) (version reference)
+Code: 62. DB::Ex---tion: When creating a materialized view you can't declare both 'TO [db].[table]' and 'ENGINE'. (SYNTAX_ERROR) (version reference)
+Code: 62. DB::Ex---tion: When creating a materialized view you can't declare both 'ENGINE' and 'TO [db].[table]'. (SYNTAX_ERROR) (version reference)

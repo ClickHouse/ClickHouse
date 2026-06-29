@@ -14,7 +14,7 @@ public:
 
     String getDescription() override { return "Replaces all the 'or's with {i}like to multiMatchAny"; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 };
 
 }

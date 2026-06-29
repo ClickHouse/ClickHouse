@@ -1,6 +1,8 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
 
+#include <Common/Exception.h>
+#include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <pcg_random.hpp>
 #include <gtest/gtest.h>
@@ -14,7 +16,7 @@
 using namespace DB;
 static pcg64 rng(randomSeed());
 
-std::pair<MutableColumnPtr, MutableColumnPtr> createColumns(size_t n, size_t k)
+static std::pair<MutableColumnPtr, MutableColumnPtr> createColumns(size_t n, size_t k)
 {
     auto values = ColumnVector<UInt64>::create();
     auto offsets = ColumnVector<UInt64>::create();
@@ -43,7 +45,7 @@ std::pair<MutableColumnPtr, MutableColumnPtr> createColumns(size_t n, size_t k)
     return std::make_pair(std::move(sparse), std::move(full));
 }
 
-bool checkEquals(const IColumn & lhs, const IColumn & rhs)
+static bool checkEquals(const IColumn & lhs, const IColumn & rhs)
 {
     if (lhs.size() != rhs.size())
         return false;
@@ -191,7 +193,7 @@ TEST(ColumnSparse, Permute)
         auto [sparse_src, full_src] = createColumns(n, k);
 
         IColumn::Permutation perm(n);
-        std::iota(perm.begin(), perm.end(), 0);
+        iota(perm.data(), perm.size(), size_t(0));
         std::shuffle(perm.begin(), perm.end(), rng);
 
         auto sparse_dst = sparse_src->permute(perm, limit);

@@ -1,5 +1,4 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
-#include <Processors/Transforms/PartialResultTransform.h>
 #include <Access/EnabledQuota.h>
 
 namespace DB
@@ -7,7 +6,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_ROWS_OR_BYTES;
 }
 
@@ -19,7 +17,7 @@ void ProcessorProfileInfo::update(const Chunk & block)
     bytes += block.bytes();
 }
 
-LimitsCheckingTransform::LimitsCheckingTransform(const Block & header_, StreamLocalLimits limits_)
+LimitsCheckingTransform::LimitsCheckingTransform(SharedHeader header_, StreamLocalLimits limits_)
     : ISimpleTransform(header_, header_, false)
     , limits(std::move(limits_))
 {
@@ -33,7 +31,7 @@ void LimitsCheckingTransform::transform(Chunk & chunk)
         info.started = true;
     }
 
-    if (!limits.speed_limits.checkTimeLimit(info.total_stopwatch, limits.timeout_overflow_mode))
+    if (!limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode))
     {
         stopReading();
         return;

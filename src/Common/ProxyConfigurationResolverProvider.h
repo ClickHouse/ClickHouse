@@ -15,6 +15,11 @@ public:
     using Protocol = ProxyConfiguration::Protocol;
 
     /*
+     * Tries to use global context to call the below methods. If global context can't be fetched, returns env resolver
+     * */
+    static std::shared_ptr<ProxyConfigurationResolver> get(Protocol protocol);
+
+    /*
      * Returns appropriate ProxyConfigurationResolver based on current CH settings (Remote resolver or List resolver).
      * If no configuration is found, returns Environment Resolver.
      * */
@@ -27,16 +32,17 @@ public:
      * If no configuration is found, returns nullptr.
      * */
     static std::shared_ptr<ProxyConfigurationResolver> getFromOldSettingsFormat(
+        Protocol request_protocol,
         const String & config_prefix,
         const Poco::Util::AbstractConfiguration & configuration
     );
 
 private:
     static std::shared_ptr<ProxyConfigurationResolver> getFromSettings(
+        bool is_new_syntax,
         Protocol protocol,
         const String & config_prefix,
-        const Poco::Util::AbstractConfiguration & configuration
-    );
+        const Poco::Util::AbstractConfiguration & configuration);
 };
 
 }

@@ -1,10 +1,11 @@
 #pragma once
 
 #include <tuple>
+#include <unordered_map>
 
-#include <IO/WriteHelpers.h>
 #include <base/types.h>
 #include <Common/PODArray.h>
+#include <Common/JemallocCacheAllocator.h>
 
 
 namespace DB
@@ -18,25 +19,12 @@ struct MarkInCompressedFile
     size_t offset_in_compressed_file;
     size_t offset_in_decompressed_block;
 
-    bool operator==(const MarkInCompressedFile & rhs) const
-    {
-        return std::tie(offset_in_compressed_file, offset_in_decompressed_block)
-            == std::tie(rhs.offset_in_compressed_file, rhs.offset_in_decompressed_block);
-    }
-    bool operator!=(const MarkInCompressedFile & rhs) const { return !(*this == rhs); }
+    auto operator<=>(const MarkInCompressedFile &) const = default;
 
     auto asTuple() const { return std::make_tuple(offset_in_compressed_file, offset_in_decompressed_block); }
 
-    String toString() const
-    {
-        return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ")";
-    }
-
-    String toStringWithRows(size_t rows_num) const
-    {
-        return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ","
-            + DB::toString(rows_num) + ")";
-    }
+    String toString() const;
+    String toStringWithRows(size_t rows_num) const;
 };
 
 /**
@@ -57,11 +45,13 @@ class MarksInCompressedFile
 public:
     using PlainArray = PODArray<MarkInCompressedFile>;
 
-    MarksInCompressedFile(const PlainArray & marks);
+    explicit MarksInCompressedFile(const PlainArray & marks);
 
     MarkInCompressedFile get(size_t idx) const;
 
     size_t approximateMemoryUsage() const;
+
+    size_t getNumberOfMarks() const { return num_marks; }
 
 private:
     /** Throughout this class:
@@ -95,12 +85,12 @@ private:
         size_t min_y = UINT64_MAX;
 
         // Place in `packed` where this block start.
-        size_t bit_offset_in_packed_array;
+        size_t bit_offset_in_packed_array{};
 
         // How many bits each mark takes. These numbers are bit-packed in the `packed` array.
         // Can be zero. (Especially for y, which is typically all zeroes.)
-        UInt8 bits_for_x;
-        UInt8 bits_for_y;
+        UInt8 bits_for_x{};
+        UInt8 bits_for_y{};
         // The `y` values should be <<'ed by this amount.
         // Useful for integer columns when marks granularity is a power of 2; in this case all
         // offset_in_decompressed_block values are divisible by 2^15 or so.
@@ -110,11 +100,13 @@ private:
     static constexpr size_t MARKS_PER_BLOCK = 256;
 
     size_t num_marks;
-    PODArray<BlockInfo> blocks;
-    PODArray<UInt64> packed;
+    PODArray<BlockInfo, 4096, JemallocCacheAllocator> blocks;
+    PODArray<UInt64, 4096, JemallocCacheAllocator> packed;
 
     // Mark idx -> {block info, bit offset in `packed`}.
     std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;
 };
+
+using PlainMarksByName = std::unordered_map<String, std::unique_ptr<MarksInCompressedFile::PlainArray>>;
 
 }

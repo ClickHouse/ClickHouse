@@ -5,6 +5,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Common/isLocalAddress.h>
+#include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -26,7 +27,7 @@ namespace
     /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
     void visitCreateQuery(ASTCreateQuery & create, const DDLRenamingVisitor::Data & data)
     {
-        if (create.temporary)
+        if (create.isTemporary())
         {
             /// CREATE TEMPORARY TABLE
             String table_name = create.getTable();
@@ -37,7 +38,7 @@ namespace
                 create.setTable(new_table_name.table);
                 if (new_table_name.database != DatabaseCatalog::TEMPORARY_DATABASE)
                 {
-                    create.temporary = false;
+                    create.setIsTemporary(false);
                     create.setDatabase(new_table_name.database);
                 }
             }
@@ -57,7 +58,7 @@ namespace
                     create.setTable(new_table_name.table);
                     if (new_table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
                     {
-                        create.temporary = true;
+                        create.setIsTemporary(true);
                         create.setDatabase("");
                     }
                     else
@@ -86,12 +87,19 @@ namespace
             create.as_table = as_table_new.table;
         }
 
-        QualifiedTableName to_table{create.to_table_id.database_name, create.to_table_id.table_name};
-        if (!to_table.table.empty() && !to_table.database.empty())
+        if (create.targets)
         {
-            auto to_table_new = data.renaming_map.getNewTableName(to_table);
-            if (to_table_new != to_table)
-                create.to_table_id = StorageID{to_table_new.database, to_table_new.table};
+            for (auto & target : create.targets->targets)
+            {
+                auto & table_id = target.table_id;
+                if (!table_id.database_name.empty() && !table_id.table_name.empty())
+                {
+                    QualifiedTableName target_name{table_id.database_name, table_id.table_name};
+                    auto new_target_name = data.renaming_map.getNewTableName(target_name);
+                    if (new_target_name != target_name)
+                        table_id = StorageID{new_target_name.database, new_target_name.table};
+                }
+            }
         }
     }
 
@@ -119,7 +127,7 @@ namespace
         if (new_qualified_name == qualified_name)
             return;
 
-        expr.database_and_table_name = std::make_shared<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
+        expr.database_and_table_name = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
         expr.children.push_back(expr.database_and_table_name);
     }
 
@@ -173,7 +181,7 @@ namespace
 
         if (database_name_field && table_name_field)
         {
-            QualifiedTableName qualified_name{database_name_field->get<String>(), table_name_field->get<String>()};
+            QualifiedTableName qualified_name{database_name_field->safeGet<String>(), table_name_field->safeGet<String>()};
             if (!qualified_name.database.empty() && !qualified_name.table.empty())
             {
                 auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
@@ -200,7 +208,7 @@ namespace
             if (literal->value.getType() != Field::Types::String)
                 return;
 
-            auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.get<String>());
+            auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
             /// Just return if name if invalid
             if (!maybe_qualified_name || maybe_qualified_name->database.empty() || maybe_qualified_name->table.empty())
                 return;
@@ -223,7 +231,7 @@ namespace
                 return;
 
             auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
-            arg = std::make_shared<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
+            arg = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
             return;
         }
     }
@@ -240,7 +248,7 @@ namespace
         if (!literal || (literal->value.getType() != Field::Types::String))
             return;
 
-        auto database_name = literal->value.get<String>();
+        auto database_name = literal->value.safeGet<String>();
         if (database_name.empty())
             return;
 
@@ -346,7 +354,7 @@ void DDLRenamingMap::setNewDatabaseName(const String & old_database_name, const 
 }
 
 
-const String & DDLRenamingMap::getNewDatabaseName(const String & old_database_name) const
+String DDLRenamingMap::getNewDatabaseName(const String & old_database_name) const
 {
     auto it = old_to_new_database_names.find(old_database_name);
     if (it != old_to_new_database_names.end())
