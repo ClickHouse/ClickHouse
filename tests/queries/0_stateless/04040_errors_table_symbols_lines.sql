@@ -1,5 +1,3 @@
--- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage
-
 -- Force an error to populate system.errors
 SELECT throwIf(true, '04040_errors_table_symbols_lines'); -- { serverError 395 }
 
