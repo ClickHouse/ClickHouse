@@ -217,10 +217,10 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
         {
             Array materialized_indices;
-            auto secondary_indices_descriptions = part->storage.getInMemoryMetadataPtr()->secondary_indices;
-            for (const auto & index_description : secondary_indices_descriptions)
+            auto metadata_snapshot = part->storage.getInMemoryMetadataPtr();
+            for (const auto & index_description : metadata_snapshot->secondary_indices)
             {
-                if (part->hasSecondaryIndex(index_description.name))
+                if (part->hasSecondaryIndex(index_description.name, metadata_snapshot))
                     materialized_indices.push_back(index_description.name);
             }
             columns[res_index++]->insert(materialized_indices);
