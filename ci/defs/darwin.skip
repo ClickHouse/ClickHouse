@@ -143,9 +143,5 @@
 
 # Tagged no-fasttest/long: not executed by the fast-test run anyway, so the skip entry is likely
 # redundant. Confirm the tags and drop from this list.
-02366_kql_create_table
 02420_stracktrace_debug_symbols
-03721_right_join_logical_step
-03916_system_table
-04061_http_pool_tcp_buffer_async_metrics
 04097_distributed_join_kinds
