@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_emp;
     CREATE TABLE t_hypo_emp (a UInt64, b UInt64, c String)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
     -- 100 granules of 100 rows; b = a (sorted), c = a % 100 (every granule has every value)
     INSERT INTO t_hypo_emp SELECT number, number, toString(number % 100) FROM numbers(10000);
@@ -65,7 +65,7 @@ $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_real;
     CREATE TABLE t_hypo_real (a UInt64, b UInt64, c UInt64, INDEX idx_b_real b TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_real SELECT number, intDiv(number, 100), number FROM numbers(10000);
 "
 
@@ -83,7 +83,7 @@ $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_proof;
     CREATE TABLE t_hypo_proof (p UInt8, a UInt64, b UInt64)
     ENGINE = MergeTree PARTITION BY p ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
     INSERT INTO t_hypo_proof SELECT 0, number, 0 FROM numbers(5000);
     INSERT INTO t_hypo_proof SELECT 1, number, 1 FROM numbers(5000);
@@ -101,7 +101,7 @@ $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_split;
     CREATE TABLE t_hypo_split (a UInt64, b String, c Float64)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 8192, index_granularity_bytes = 16384, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 16384, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_split SELECT number, repeat(toString(number), 10), number * 1.1 FROM numbers(1000);
 
     CREATE HYPOTHETICAL INDEX idx_a_minmax ON t_hypo_split (a) TYPE minmax GRANULARITY 1;
@@ -115,7 +115,7 @@ echo "--- empirical on sparse-serialized column ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_sparse;
     CREATE TABLE t_hypo_sparse (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, ratio_of_defaults_for_sparse_serialization = 0.0;
+    SETTINGS index_granularity = 100, ratio_of_defaults_for_sparse_serialization = 0.0, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_sparse SELECT number, number % 3 = 0 ? 0 : number FROM numbers(1000);
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_sparse (b) TYPE set(200) GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_sparse WHERE b = 5;
