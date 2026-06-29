@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <functional>
 #include <utility>
 
 #include <absl/container/flat_hash_map.h>
@@ -111,7 +112,7 @@ private:
         TimestampType,
         ValueType,
         absl::container_internal::hash_default_hash<TimestampType>,
-        absl::container_internal::hash_default_eq<TimestampType>,
+        std::equal_to<>,
         AllocatorWithMemoryTracking<std::pair<const TimestampType, ValueType>>> buffer;
 };
 

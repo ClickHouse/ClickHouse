@@ -93,10 +93,12 @@ public:
                     /// Flush the back stack into the front stack, reversing it so the oldest value ends up on top.
                     while (!back_stack.empty())
                     {
-                        SummaryType combined = back_stack.back().single;
+                        auto & back = back_stack.back();
+                        SummaryType combined = back.single;
                         if (!front_stack.empty())
                             combined.merge(front_stack.back().combined);
-                        front_stack.push_back({back_stack.back().last_timestamp, back_stack.back().single, std::move(combined)});
+                        /// `back` is popped right after, so move its single value into the front entry instead of copying it.
+                        front_stack.push_back({back.last_timestamp, std::move(back.single), std::move(combined)});
                         back_stack.pop_back();
                     }
                 }

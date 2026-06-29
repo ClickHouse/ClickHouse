@@ -207,10 +207,9 @@ public:
             : 0;
         const bool use_two_stacks = avg_buckets_in_window >= AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS
             || Base::buckets_per_window >= BPW_TO_FORCE_TWO_STACKS;
-        /// A positive stack size selects the two-stack queue and reserves it for the window's full capacity (a
-        /// window can hold up to `buckets_per_window` populated buckets even when the average is lower); 0 selects
-        /// recompute.
-        const size_t stack_size = use_two_stacks ? Base::buckets_per_window : 0;
+        /// Reserve at most `buckets_per_window`, but capped by `num_populated_buckets` - else a huge window
+        /// (forced onto two-stacks by the hard cap) would `reserve(~INT64_MAX)` and fail to allocate.
+        const size_t stack_size = use_two_stacks ? std::min(Base::buckets_per_window, num_populated_buckets) : 0;
         return Aggregator{stack_size, Base::start_timestamp, predict_offset};
     }
 

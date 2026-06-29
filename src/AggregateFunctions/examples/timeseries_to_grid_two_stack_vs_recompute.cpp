@@ -46,11 +46,12 @@ constexpr size_t WINDOWS[]
 /// Every non-invertible sliding aggregator stores its samples in this bucket type (one sample per step here).
 using Bucket = AggregateFunctionTimeseriesSamples<UInt32, Float64>;
 using Buckets = UnorderedMapWithMemoryTracking<size_t, Bucket>;
+using Dataset = std::vector<Buckets>;  /// one Buckets map per series; STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// Creates NUM_SERIES series, each with BASE_GRID single-sample buckets at indices 0..BASE_GRID-1 (dense).
-std::vector<Buckets> buildDataset()
+Dataset buildDataset()
 {
-    std::vector<Buckets> dataset(NUM_SERIES);
+    Dataset dataset(NUM_SERIES);
     for (size_t series = 0; series < NUM_SERIES; ++series)
     {
         Buckets & buckets = dataset[series];
@@ -68,7 +69,7 @@ std::vector<Buckets> buildDataset()
 /// Returns the best (minimum over REPEATS) ns per grid point for sliding a window of `buckets_per_window` buckets.
 /// `stack_size` controls whether it's two-stack (stack_size > 0) or recompute algorithm (stack_size == 0).
 template <typename MakeAggregator>
-Float64 measureNanoseconds(size_t buckets_per_window, size_t stack_size, const std::vector<Buckets> & dataset,
+Float64 measureNanoseconds(size_t buckets_per_window, size_t stack_size, const Dataset & dataset,
     const MakeAggregator & make_aggregator, Float64 & checksum)
 {
     Float64 best = std::numeric_limits<Float64>::infinity();
@@ -99,7 +100,7 @@ Float64 measureNanoseconds(size_t buckets_per_window, size_t stack_size, const s
 /// Finds AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS and BPW_TO_FORCE_TWO_STACKS
 /// for a specified aggregator.
 template <typename MakeAggregator>
-void runFunction(const char * name, const std::vector<Buckets> & dataset, const MakeAggregator & make_aggregator, Float64 & checksum)
+void runFunction(const char * name, const Dataset & dataset, const MakeAggregator & make_aggregator, Float64 & checksum)
 {
     fmt::println("\n{}: two-stacks vs recompute, ns per grid point ({} series x {} buckets).\n",
         name, NUM_SERIES, BASE_GRID);
@@ -129,7 +130,7 @@ void runFunction(const char * name, const std::vector<Buckets> & dataset, const 
 
 int mainEntryExampleTimeSeriesToGridTwoStackVsRecompute(int, char **)
 {
-    const std::vector<Buckets> dataset = buildDataset();
+    const Dataset dataset = buildDataset();
     Float64 checksum = 0;
 
     /// Linear regression (`timeSeriesDerivToGrid` / `timeSeriesPredictLinearToGrid` share the same `Summary`, so

@@ -28,10 +28,10 @@
 #include <Examples/clickhouse_examples.h>
 
 #include <fmt/format.h>
+#include <pcg_random.hpp>
 
 #include <algorithm>
 #include <cmath>
-#include <random>
 #include <vector>
 
 namespace
@@ -49,6 +49,7 @@ constexpr int REPEATS = 5;  /// timing iterations per measurement; the minimum o
 
 using Bucket = AggregateFunctionTimeseriesSamples<UInt32, Float64>;
 using Buckets = UnorderedMapWithMemoryTracking<size_t, Bucket>;
+using Dataset = std::vector<Buckets>;  /// one Buckets map per series; STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// One populated bucket and its index, for the collect-and-sort strategy. Sorted by `index`.
 struct IndexedBucket
@@ -75,20 +76,20 @@ size_t bucketCountForDensity(Float64 density)
 /// Places the BASE_GRID populated buckets at random distinct positions in `[0, bucket_count)`. A random
 /// (irregular) layout matches real data - bucket indices come from sample timestamps, not a regular lattice -
 /// and avoids the introsort cost artifact a regular layout triggers at some densities.
-std::vector<Buckets> buildDataset(Float64 density)
+Dataset buildDataset(Float64 density)
 {
     const size_t bucket_count = bucketCountForDensity(density);
-    std::vector<Buckets> dataset(NUM_SERIES);
+    Dataset dataset(NUM_SERIES);
     for (size_t series = 0; series < NUM_SERIES; ++series)
     {
-        std::mt19937_64 rng(series + 1);     /// deterministic per series
+        pcg64_fast rng(series + 1);     /// deterministic per series
         Buckets & buckets = dataset[series];
         buckets.reserve(BASE_GRID);
         /// Floyd's algorithm: BASE_GRID distinct indices drawn uniformly from [0, bucket_count), in O(BASE_GRID).
         for (size_t i = bucket_count - BASE_GRID; i < bucket_count; ++i)
         {
             const size_t candidate = static_cast<size_t>(rng() % (i + 1));
-            const size_t k = (buckets.find(candidate) != buckets.end()) ? i : candidate;
+            const size_t k = buckets.contains(candidate) ? i : candidate;
             Bucket bucket;
             bucket.add(static_cast<UInt32>(static_cast<Int64>(k) * STEP), static_cast<Float64>((k * 7 + series * 3) % 101));
             buckets.emplace(k, std::move(bucket));
@@ -100,7 +101,7 @@ std::vector<Buckets> buildDataset(Float64 density)
 enum class Strategy { RangeScan, StdSort };
 
 /// Best (minimum over REPEATS) ns per populated bucket for one strategy over the whole dataset.
-Float64 measureNanoseconds(Strategy strategy, size_t bucket_count, const std::vector<Buckets> & dataset, Float64 & checksum)
+Float64 measureNanoseconds(Strategy strategy, size_t bucket_count, const Dataset & dataset, Float64 & checksum)
 {
     Float64 best = 1e30;
     for (int r = 0; r < REPEATS; ++r)
@@ -152,7 +153,7 @@ int mainEntryExampleTimeSeriesToGridRangeScanVsStdSort(int, char **)
     bool range_still_winning = true;
     for (Float64 density : {1.0, 0.9, 0.8, 0.7, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1})
     {
-        const std::vector<Buckets> dataset = buildDataset(density);
+        const Dataset dataset = buildDataset(density);
         const size_t bucket_count = bucketCountForDensity(density);
         const Float64 range_scan_ns = measureNanoseconds(Strategy::RangeScan, bucket_count, dataset, checksum);
         const Float64 std_sort_ns = measureNanoseconds(Strategy::StdSort, bucket_count, dataset, checksum);
