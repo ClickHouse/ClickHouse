@@ -71,12 +71,6 @@
 03221_merge_profile_events
 03761_trace_profile_events_list
 
-# Case-insensitive filesystem (APFS): MergeTreeData hashes stream filenames unconditionally on a
-# case-insensitive FS, so on-disk column filenames differ from the case-sensitive references.
-02889_parts_columns_filenames
-03369_variant_escape_filename_merge_tree
-03526_columns_substreams_in_wide_parts
-
 # Transactions are not supported on this build (experimental, NOT_IMPLEMENTED).
 03803_transaction_mutation_race
 03916_attach_as_replicated_implicit_transaction
