@@ -40,8 +40,20 @@ git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --br
 echo "Download clickhouse-server from the previous release"
 mkdir previous_release_package_folder
 
-echo $previous_release_tag | download_release_packages && echo -e "Download script exit code$OK" >> /test_output/test_results.tsv \
-    || echo -e "Download script failed$FAIL" >> /test_output/test_results.tsv
+# --- download previous release packages: fail closed on a missing required one ---
+# `download_release_packages` exits nonzero when a required previous-release
+# package is missing or fails to download. Stop here at the download boundary
+# with a clear, attributable status instead of letting the later `install_packages`
+# die with an opaque `dpkg` glob error. (`set -e` does not fire inside an
+# `&& ... || ...` list, so the nonzero status must be handled explicitly.)
+if echo $previous_release_tag | download_release_packages; then
+    echo -e "Download script exit code$OK" >> /test_output/test_results.tsv
+else
+    echo -e "Download script failed$FAIL" >> /test_output/test_results.tsv
+    echo -e 'failure\tFailed to download previous release packages' > /test_output/check_status.tsv
+    exit 1
+fi
+# --- end download previous release packages ---
 
 # Check if we cloned previous release repository successfully
 if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
@@ -100,7 +112,7 @@ if [ $((RANDOM % 2)) -eq 0 ]; then
 fi
 
 # Start server from previous release
-configure "${configure_opts[@]}"
+configure "${configure_opts[@]}" --previous-release
 
 # But we still need default disk because some tables loaded only into it
 sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
@@ -315,6 +327,7 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `CANNOT_PARSE_TEXT` errors come from:
 #       - 00834_kill_mutation{,_replicated_zookeeper}: `DELETE WHERE toUInt32(s) = 1` on String data ('a', 'b')
 #       - 01414_mutations_and_errors_zookeeper: `MODIFY COLUMN value UInt64` on String data ('Hello')
+#       - 04338_on_fly_mutation_read_overwritten_lc_source: `MODIFY COLUMN v UInt64` on String data ('x')
 #       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
 #       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
@@ -414,6 +427,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "is lost forever." \
            -e "Unknown index: idx." \
            -e "Cannot parse string 'Hello' as UInt64" \
+           -e "Cannot parse string 'x' as UInt64" \
            -e "Cannot parse string 'Hello' as UInt32" \
            -e "Cannot parse string \'Hello\' as UInt32" \
            -e "Cannot parse string \\'Hello\\' as UInt32" \

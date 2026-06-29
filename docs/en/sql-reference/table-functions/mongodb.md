@@ -123,5 +123,5 @@ SELECT * FROM mongodb(
 
 ## Related {#related}
 
-- [The `MongoDB` table engine](engines/table-engines/integrations/mongodb.md)
+- [The `MongoDB` table engine](/engines/table-engines/integrations/mongodb.md)
 - [Using MongoDB as a dictionary source](../statements/create/dictionary/sources/mongodb.md)

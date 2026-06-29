@@ -1,7 +1,9 @@
 #include <Processors/Transforms/LimitByTransform.h>
 
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsCommon.h>
 #include <Core/Block.h>
+#include <Core/SortCursor.h>
 #include <DataTypes/IDataType.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
@@ -87,6 +89,9 @@ ChunkRowRange shrinkRunToLimitWindow(
         = group_rows_seen_after_offset < group_limit_end ? group_limit_end - group_rows_seen_after_offset : 0;
 
     const UInt64 rows_kept_from_run = std::min(run_row_count - offset_rows_in_run, remaining_rows_until_limit_end);
+
+    chassert(offset_rows_in_run + rows_kept_from_run <= run_row_count);
+
     return {run_start_row + offset_rows_in_run, rows_kept_from_run};
 }
 
@@ -100,6 +105,24 @@ UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt
     UInt64 output_row_count = 0;
     for (const auto & slice : slices)
         output_row_count += slice.length;
+
+    chassert(!slices.empty());
+    chassert(output_row_count <= source_row_count);
+#ifndef NDEBUG
+    {
+        for (const auto & column : source_columns)
+            chassert(column->size() == source_row_count);
+
+        UInt64 previous_slice_end = 0;
+        for (const auto & slice : slices)
+        {
+            chassert(slice.length > 0);
+            chassert(slice.start >= previous_slice_end);
+            chassert(slice.start + slice.length <= source_row_count);
+            previous_slice_end = slice.start + slice.length;
+        }
+    }
+#endif
 
     const UInt64 first_slice_start = slices.front().start;
     const UInt64 last_slice_end = slices.back().start + slices.back().length;
@@ -151,6 +174,9 @@ UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt
 
     Columns output_columns;
     output_columns.reserve(source_columns.size());
+
+    chassert(countBytesInFilter(mask) == output_row_count);
+
     /// For `ColumnConst`, `filter` would work too, but it would scan the mask
     /// again to count selected rows. We already know `output_row_count`, so use `cut`.
     for (const auto & column : source_columns)
@@ -181,6 +207,7 @@ LimitByTransform::LimitByTransform(SharedHeader header, UInt64 group_length_, UI
 
 void LimitByTransform::processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
 {
+    chassert(group_idx < group_counts.size());
     const UInt64 group_rows_seen_before_run = group_counts[group_idx];
     if (group_rows_seen_before_run >= group_limit_end)
         return;
@@ -212,7 +239,11 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
             key_emplace_result.setMapped(mappedFromGroupIndex(row_group_idx));
         }
         else /// Existing grouping key
+        {
             row_group_idx = groupIndexFromMapped(key_emplace_result.getMapped());
+
+            chassert(row_group_idx < group_counts.size());
+        }
 
         if (row_idx == 0)
             current_run_group_idx = row_group_idx;
@@ -230,6 +261,12 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
 
 void LimitByTransform::transform(Chunk & chunk)
 {
+    /// `output_slices` is a member scratch buffer reused across chunks. A previous call may
+    /// have thrown after populating it (for example MEMORY_LIMIT_EXCEEDED while the grouping
+    /// hash table grows), and `ISimpleTransform::work` keeps this transform alive and calls
+    /// it again on the next chunk, so always start from an empty buffer.
+    output_slices.clear();
+
     const UInt64 row_count = chunk.getNumRows();
     if (row_count == 0)
         return;
@@ -277,7 +314,6 @@ void LimitByTransform::transform(Chunk & chunk)
         return;
 
     const UInt64 output_row_count = materializeSlicesIntoChunk(chunk, std::move(chunk_columns), row_count, output_slices);
-    output_slices.clear();
 
     if (rows_before_limit_at_least)
         rows_before_limit_at_least->add(output_row_count);
@@ -285,12 +321,17 @@ void LimitByTransform::transform(Chunk & chunk)
 
 
 LimitBySortedStreamTransform::LimitBySortedStreamTransform(
-    SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names)
+    SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr)
     : ISimpleTransform(header, header, true)
-    , grouping_key_positions(filterNonConstKeys(header, column_names).positions)
     , group_offset(group_offset_)
     , group_limit_end(computeGroupLimitEnd(group_length_, group_offset_))
 {
+    Names key_names;
+    key_names.reserve(sorted_columns_descr.size());
+    for (const auto & column_description : sorted_columns_descr)
+        key_names.push_back(column_description.column_name);
+    grouping_key_positions = filterNonConstKeys(header, key_names).positions;
+
     previous_chunk_last_grouping_key_columns.reserve(grouping_key_positions.size());
     for (size_t position : grouping_key_positions)
         previous_chunk_last_grouping_key_columns.push_back(header->getByPosition(position).type->createColumn());
@@ -301,16 +342,6 @@ bool LimitBySortedStreamTransform::firstRowContinuesPreviousChunkGroup(const Col
     for (size_t key_idx = 0; key_idx < chunk_columns.size(); ++key_idx)
     {
         if (chunk_columns[key_idx]->compareAt(0, 0, *previous_chunk_last_grouping_key_columns[key_idx], 1) != 0)
-            return false;
-    }
-    return true;
-}
-
-bool LimitBySortedStreamTransform::hasSameGroupingKeyAsPreviousRow(const Columns & chunk_columns, UInt64 row_idx) const
-{
-    for (const auto & column : chunk_columns)
-    {
-        if (column->compareAt(row_idx, row_idx - 1, *column, 1) != 0)
             return false;
     }
     return true;
@@ -343,6 +374,10 @@ void LimitBySortedStreamTransform::processRun(UInt64 run_start_row, UInt64 run_r
 
 void LimitBySortedStreamTransform::transform(Chunk & chunk)
 {
+    /// See `LimitByTransform::transform`: a previous call may have thrown after populating
+    /// this reused scratch buffer, so start each chunk from empty.
+    output_slices.clear();
+
     const UInt64 row_count = chunk.getNumRows();
     if (row_count == 0)
         return;
@@ -363,21 +398,19 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     if (have_previous_chunk_key && !firstRowContinuesPreviousChunkGroup(normalized_grouping_key_columns))
         current_group_rows_seen = 0;
 
+    /// Segment the sorted chunk into maximal runs of rows that share one grouping key. Each run is
+    /// one group.
     UInt64 current_run_start_row = 0;
-    for (UInt64 row_idx = 1; row_idx < row_count; ++row_idx)
+    while (current_run_start_row < row_count)
     {
-        if (hasSameGroupingKeyAsPreviousRow(normalized_grouping_key_columns, row_idx))
-            continue;
+        const UInt64 run_end = getEqualRangeEndAssumeSorted(normalized_grouping_key_columns, current_run_start_row, row_count, 1);
+        processRun(current_run_start_row, run_end - current_run_start_row);
 
-        /// The grouping key changed within the chunk, so finish the current run
-        /// and reset the counter before starting the next group's run.
-        processRun(current_run_start_row, row_idx - current_run_start_row);
-        current_group_rows_seen = 0;
-        current_run_start_row = row_idx;
+        /// A group boundary inside the chunk resets the per-group counter before the next run.
+        if (run_end != row_count)
+            current_group_rows_seen = 0;
+        current_run_start_row = run_end;
     }
-
-    /// Flush the final run, which extends to the end of the chunk.
-    processRun(current_run_start_row, row_count - current_run_start_row);
 
     /// Save the last grouping key so the next chunk can detect whether its first
     /// row continues the same group or starts a new one. With no non-constant grouping
@@ -389,7 +422,6 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         return;
 
     const UInt64 output_row_count = materializeSlicesIntoChunk(chunk, std::move(chunk_columns), row_count, output_slices);
-    output_slices.clear();
 
     if (rows_before_limit_at_least)
         rows_before_limit_at_least->add(output_row_count);

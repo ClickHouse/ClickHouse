@@ -175,7 +175,7 @@ TEST(KeyConditionIsTrivialCast, InternalCastWithMatchingTypeIsStripped)
 
     auto shape = buildEqualsWithCast(context, nullable_int32, nullable_int32, nullable_int32, CastType::nonAccurate);
 
-    ActionsDAGWithInversionPushDown filter_dag(shape.predicate, context);
+    ActionsDAGWithInversionPushDown filter_dag(shape.predicate, context, /* boolean_context */ false);
     ASSERT_TRUE(filter_dag.dag.has_value());
 
     /// `_CAST` is the wrapper that the patch teaches `isTrivialCast` to
@@ -200,7 +200,7 @@ TEST(KeyConditionIsTrivialCast, PublicCastWithMatchingTypeIsStillStripped)
     /// resulting `FUNCTION` node has the public name `CAST`.
     auto shape = buildEqualsWithCast(context, nullable_int32, nullable_int32, nullable_int32, CastType::accurate);
 
-    ActionsDAGWithInversionPushDown filter_dag(shape.predicate, context);
+    ActionsDAGWithInversionPushDown filter_dag(shape.predicate, context, /* boolean_context */ false);
     ASSERT_TRUE(filter_dag.dag.has_value());
 
     EXPECT_FALSE(dagContainsFunction(*filter_dag.dag, "CAST"));
@@ -223,7 +223,7 @@ TEST(KeyConditionIsTrivialCast, InternalCastWithMismatchedTypeIsNotStripped)
     /// survive cloning.
     auto shape = buildEqualsWithCast(context, nullable_int32, int32, nullable_int32, CastType::nonAccurate);
 
-    ActionsDAGWithInversionPushDown filter_dag(shape.predicate, context);
+    ActionsDAGWithInversionPushDown filter_dag(shape.predicate, context, /* boolean_context */ false);
     ASSERT_TRUE(filter_dag.dag.has_value());
 
     EXPECT_TRUE(dagContainsFunction(*filter_dag.dag, "_CAST"));

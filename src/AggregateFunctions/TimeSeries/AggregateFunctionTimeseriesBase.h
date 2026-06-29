@@ -415,7 +415,7 @@ public:
     {
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & buckets = data(place)->buckets;
         const auto & rhs_buckets = data(rhs)->buckets;
