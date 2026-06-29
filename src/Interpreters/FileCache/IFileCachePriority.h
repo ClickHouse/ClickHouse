@@ -317,6 +317,14 @@ public:
 
     virtual PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) = 0;
 
+    /// Which cursor a candidate-collection pass resumes from.
+    enum class EvictionCursor
+    {
+        FromHead,   /// Start from the queue head; do not persist a position.
+        Reserve,    /// Foreground reserve path (shared by concurrent reservers).
+        Background, /// Background free-space keeping thread.
+    };
+
     /// Collect eviction candidates sufficient to free `size` bytes
     /// and `elements` elements from cache.
     virtual bool collectCandidatesForEviction(
@@ -325,7 +333,7 @@ public:
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
         IteratorPtr reservee,
-        bool continue_from_last_eviction_pos,
+        EvictionCursor eviction_cursor,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
@@ -359,7 +367,7 @@ public:
         const OriginInfo & origin_info,
         const CacheStateGuard::Lock & lock) = 0;
 
-    virtual void resetEvictionPos() = 0;
+    virtual void resetEvictionPos(EvictionCursor cursor) = 0;
 
     /// Remove given queue entries for the queue.
     /// Used to cleanup invalidated queue entries.
