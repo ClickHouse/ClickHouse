@@ -34,7 +34,7 @@ class Validator:
         if Settings.USE_CUSTOM_GH_AUTH and not Settings.GH_AUTH_LAMBDA_NAME:
             cls.evaluate_check_simple(
                 Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY and Settings.SECRET_GH_APP_INSTALLATION_ID,
-                f"Setting SECRET_GH_APP_ID, SECRET_GH_APP_PEM_KEY and SECRET_GH_APP_INSTALLATION_ID must be provided with USE_CUSTOM_GH_AUTH == True",
+                "Setting SECRET_GH_APP_ID, SECRET_GH_APP_PEM_KEY and SECRET_GH_APP_INSTALLATION_ID must be provided with USE_CUSTOM_GH_AUTH == True",
             )
 
         workflows = _get_workflows(_for_validation_check=True)
@@ -174,26 +174,26 @@ class Validator:
                         and Settings.DOCKER_BUILD_AMD_RUNS_ON
                         and Settings.DOCKER_BUILD_ARM_RUNS_ON
                         != Settings.DOCKER_BUILD_AMD_RUNS_ON,
-                        f"Settings: DOCKER_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON, DOCKER_BUILD_AMD_RUNS_ON must be provided and be different CPU architecture machines",
+                        "Settings: DOCKER_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON, DOCKER_BUILD_AMD_RUNS_ON must be provided and be different CPU architecture machines",
                     )
                 else:
                     cls.evaluate_check(
                         Settings.DOCKER_MERGE_RUNS_ON,
-                        f"DOCKER_BUILD_AND_MERGE_RUNS_ON settings must be defined if workflow has dockers",
+                        "DOCKER_BUILD_AND_MERGE_RUNS_ON settings must be defined if workflow has dockers",
                         workflow_name=workflow.name,
                     )
 
             if workflow.set_latest_for_docker_merged_manifest:
                 cls.evaluate_check(
                     workflow.enable_dockers_manifest_merge,
-                    f".set_latest_for_docker_merged_manifest workflow setting is applicable with .enable_dockers_manifest_merge=True",
+                    ".set_latest_for_docker_merged_manifest workflow setting is applicable with .enable_dockers_manifest_merge=True",
                     workflow_name=workflow.name,
                 )
 
             if workflow.enable_open_issues_check:
                 cls.evaluate_check(
                     workflow.enable_report,
-                    f".enable_open_issues_check workflow setting is applicable with .enable_report=True",
+                    ".enable_open_issues_check workflow setting is applicable with .enable_report=True",
                     workflow_name=workflow.name,
                 )
 
@@ -229,7 +229,7 @@ class Validator:
             if workflow.enable_open_issues_check:
                 cls.evaluate_check(
                     workflow.enable_merge_ready_status,
-                    f".enable_open_issues_check workflow setting is applicable with .enable_merge_ready_status=True",
+                    ".enable_open_issues_check workflow setting is applicable with .enable_merge_ready_status=True",
                     workflow_name=workflow.name,
                 )
 
@@ -390,7 +390,7 @@ class Validator:
         if check_ok:
             return
         else:
-            print(f"ERROR: Validation failed:")
+            print("ERROR: Validation failed:")
             for message in messages:
                 print(" ||  " + message)
             raise

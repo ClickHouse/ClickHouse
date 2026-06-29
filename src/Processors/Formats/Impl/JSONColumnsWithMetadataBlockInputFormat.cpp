@@ -56,6 +56,7 @@ NamesAndTypesList JSONColumnsWithMetadataSchemaReader::readSchema()
     return JSONUtils::readMetadata(in, format_settings.json);
 }
 
+void registerInputFormatJSONColumnsWithMetadata(FormatFactory & factory);
 void registerInputFormatJSONColumnsWithMetadata(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -71,6 +72,7 @@ void registerInputFormatJSONColumnsWithMetadata(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("JSONColumnsWithMetadata");
 }
 
+void registerJSONColumnsWithMetadataSchemaReader(FormatFactory & factory);
 void registerJSONColumnsWithMetadataSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(

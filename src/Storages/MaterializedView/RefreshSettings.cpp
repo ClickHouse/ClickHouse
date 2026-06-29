@@ -24,10 +24,7 @@ RefreshSettings::RefreshSettings(const RefreshSettings & settings) : impl(std::m
 {
 }
 
-RefreshSettings::RefreshSettings(RefreshSettings && settings) noexcept
-    : impl(std::make_unique<RefreshSettingsImpl>(std::move(*settings.impl)))
-{
-}
+RefreshSettings::RefreshSettings(RefreshSettings && settings) noexcept = default;
 
 RefreshSettings::~RefreshSettings() = default;
 

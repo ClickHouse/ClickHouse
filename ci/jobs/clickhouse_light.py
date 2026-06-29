@@ -1,18 +1,13 @@
 import argparse
 import atexit
 import dataclasses
-import fcntl
 import http.client
 import os
-import pty
-import re
-import select
 import shlex
 import subprocess
 import sys
 import time
 import urllib.parse
-from enum import Enum
 from pathlib import Path
 
 sys.path.append("./")
@@ -82,7 +77,7 @@ class TestResult:
                     query_result.description.expected_results
                     != query_result.description.actual_results
                 ):
-                    info += f"Result mismatch:\n"
+                    info += "Result mismatch:\n"
                     info += f"Expected: {query_result.description.expected_results}\n"
                     info += f"Actual:   {query_result.description.actual_results}\n"
                 else:
@@ -197,7 +192,6 @@ class ClickHouseSetup:
         test_name = test_name.split(".")[0]
         test_file = Path(f"./ci/jobs/queries/{test_name}.sql")
         expected_results_file = Path(f"./ci/jobs/queries/{test_name}.reference")
-        result = {}
         if not test_file.exists():
             raise Exception(f"Test file {test_file} does not exist")
 
@@ -270,12 +264,12 @@ if __name__ == "__main__":
         action="extend",
     )
     args = parser.parse_args()
-    Shell.check(f"rm -rf /home/max/work/ClickHouse/ci/tmp/wd/")
+    Shell.check("rm -rf /home/max/work/ClickHouse/ci/tmp/wd/")
     Shell.check(f"chmod +x {args.path}")
     Shell.check(f"{args.path} --version", strict=True)
 
     def cleanup():
-        Shell.check(f"pkill -f 'clickhouse server'", verbose=True, strict=False)
+        Shell.check("pkill -f 'clickhouse server'", verbose=True, strict=False)
 
     atexit.register(cleanup)
     CH = ClickHouseSetup(args.workdir, args.path)

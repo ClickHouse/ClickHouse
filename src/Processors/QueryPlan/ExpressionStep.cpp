@@ -249,6 +249,7 @@ QueryPlanStepPtr ExpressionStep::clone() const
     return std::make_unique<ExpressionStep>(*this);
 }
 
+void registerExpressionStep(QueryPlanStepRegistry & registry);
 void registerExpressionStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Expression", ExpressionStep::deserialize);

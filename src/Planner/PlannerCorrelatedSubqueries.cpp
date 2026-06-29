@@ -7,6 +7,8 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
+#include <Columns/ColumnConst.h>
+
 #include <Core/Joins.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
@@ -79,6 +81,20 @@ void CorrelatedSubtrees::assertEmpty(std::string_view reason) const
 
 namespace
 {
+
+/// The joins built during decorrelation are internal implementation details, not user joins, so
+/// the user's join size limits must not apply to them. In particular, under join_overflow_mode =
+/// 'break' a size limit lets the build side stop early and drop rows, which both yields a wrong
+/// subquery result and lets the probe side start before the build side has fully consumed its
+/// input (the source of the ChunkBuffer / runtime-filter "before all inputs are finished" logical
+/// errors). Run such joins unbounded with THROW.
+void makeInternalDecorrelationJoinUnbounded(JoinStepLogical & join_step)
+{
+    auto & join_settings = join_step.getJoinSettings();
+    join_settings.max_rows_in_join = 0;
+    join_settings.max_bytes_in_join = 0;
+    join_settings.join_overflow_mode = OverflowMode::THROW;
+}
 
 using CorrelatedPlanStepMap = std::unordered_map<QueryPlan::Node *, bool>;
 
@@ -234,6 +250,7 @@ QueryPlan decorrelateQueryPlan(
             JoinSettings(settings),
             SortingStep::Settings(settings));
         decorrelated_join->setStepDescription("JOIN to evaluate correlated expression");
+        makeInternalDecorrelationJoinUnbounded(*decorrelated_join);
 
         /// Add CROSS JOIN to combine data streams from left and right plans.
         QueryPlan result_plan;
@@ -430,8 +447,8 @@ void buildExistsResultExpression(
 {
     ActionsDAG dag(query_plan.getCurrentHeader()->getNamesAndTypesList());
     auto result_type = std::make_shared<DataTypeUInt8>();
-    auto column = result_type->createColumnConst(1, 1);
-    const auto * exists_result = &dag.materializeNode(dag.addColumn(ColumnWithTypeAndName(column, result_type, correlated_subquery.action_node_name)));
+    auto column = result_type->createColumnConst(0, 1);
+    const auto * exists_result = &dag.materializeNode(dag.addColumn(std::move(column), result_type, correlated_subquery.action_node_name));
 
     if (project_only_correlated_columns)
     {
@@ -519,6 +536,7 @@ QueryPlan buildLogicalJoin(
         JoinSettings(settings),
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
+    makeInternalDecorrelationJoinUnbounded(*result_join);
 
     /// Depending on correlated_subqueries_use_in_memory_buffer setting,
     /// the RHS input stream can be buffered in memory.

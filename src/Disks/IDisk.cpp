@@ -141,7 +141,7 @@ UInt128 IDisk::getEncryptedFileIV(const String &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-void asyncCopy(
+static void asyncCopy(
     IDisk & from_disk,
     String from_path,
     IDisk & to_disk,

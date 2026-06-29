@@ -111,7 +111,7 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
     return {};
 }
 
-std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
+static std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
 {
     std::vector<ActionsAndName> res;
 
@@ -284,7 +284,7 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "FilterStep must have one input stream");
 
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
     bool remove_filter_column = bool(flags & 1);
@@ -469,6 +469,7 @@ QueryPlanStepPtr FilterStep::clone() const
     return std::make_unique<FilterStep>(*this);
 }
 
+void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Filter", FilterStep::deserialize);

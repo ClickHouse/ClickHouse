@@ -182,7 +182,7 @@ static inline T ALWAYS_INLINE packFixed(
 
     for (size_t j = 0; j < keys_size; ++j)
     {
-        bool is_null;
+        bool is_null = false;
 
         if (!has_bitmap)
             is_null = false;
@@ -264,7 +264,7 @@ static T inline packFixedShuffle(
                 _mm_loadu_si128(reinterpret_cast<const __m128i *>(&masks[i * sizeof(T)]))));
     }
 
-    T out;
+    T out{};
     __builtin_memcpy(&out, &res, sizeof(T));
     return out;
 }

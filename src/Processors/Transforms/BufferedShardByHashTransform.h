@@ -3,6 +3,7 @@
 #include <deque>
 
 #include <Columns/IColumn.h>
+#include <Common/PODArray.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
@@ -13,8 +14,8 @@ namespace DB
 {
 
 /// Shards input rows to N output ports by hash(key) % N.
-/// Hashes the key columns with WeakHash32 and physically splits every column with
-/// IColumn::scatter so each output chunk holds only the rows belonging to its shard.
+/// Hashes the key columns with `IColumn::computeHashInto` and physically splits every column with
+/// `IColumn::scatter` so each output chunk holds only the rows belonging to its shard.
 ///
 /// Output ports can only accept one chunk at a time (canPush/push). But one input chunk
 /// produces N output chunks (one per shard), and downstream consume them at different rates.
@@ -58,6 +59,7 @@ private:
     std::vector<std::deque<Chunk>> output_queues;
 
     /// Reused across input chunks to skip per-chunk reallocation.
+    PaddedPODArray<UInt32> hash_buffer;
     IColumn::Selector selector;
     std::vector<MutableColumns> shard_columns;
 };

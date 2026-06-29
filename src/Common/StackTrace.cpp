@@ -37,6 +37,9 @@
 #include <execinfo.h>
 #endif
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+
 namespace
 {
 /// Currently this variable is set up once on server startup.
@@ -578,6 +581,8 @@ void StackTrace::tryCapture()
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
 
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+
 /// ClickHouse uses bundled libc++ so type names will be the same on every system thus it's safe to hardcode them
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
@@ -585,7 +590,7 @@ constexpr std::pair<std::string_view, std::string_view> replacements[]
 // Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
 // information but pollute stack traces).
 // Replace parts from @c replacements with shorter aliases
-String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
+static String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
 {
     if (symbol_name.empty())
         return "?";
@@ -612,6 +617,8 @@ String collapseDemangledNames(std::optional<std::string_view> file, String symbo
 
     return symbol_name;
 }
+
+#endif
 
 struct StackTraceRefTriple
 {
@@ -812,3 +819,5 @@ void StackTrace::dropCache()
 
 thread_local bool asynchronous_stack_unwinding = false;
 thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;
+
+#pragma clang diagnostic pop

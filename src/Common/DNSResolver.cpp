@@ -89,7 +89,7 @@ void splitHostAndPort(const std::string & host_and_port, std::string & out_host,
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing port number");
 
-    unsigned port;
+    unsigned port = 0;
     if (Poco::NumberParser::tryParseUnsigned(port_str, port) && port <= 0xFFFF)
     {
         out_port = static_cast<UInt16>(port);
@@ -316,7 +316,7 @@ DNSResolver::IPAddresses DNSResolver::resolveHostAll(const std::string & host)
 Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_and_port)
 {
     String host;
-    UInt16 port;
+    UInt16 port = 0;
     splitHostAndPort(host_and_port, host, port);
 
     if (impl->disable_cache)

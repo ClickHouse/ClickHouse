@@ -2,6 +2,8 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
+SET explain_query_plan_default = 'legacy';
+
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
 SET optimize_trivial_count_query = 1;
