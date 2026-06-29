@@ -24,6 +24,7 @@
 #include <Core/AccurateComparison.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/NaNUtils.h>
 #include <Common/FieldAccurateComparison.h>
@@ -622,15 +623,27 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     src_size);
 
             for (const auto & elem : src_container)
-                if (elem.getType() != Field::Types::Float64)
+            {
+                if (dst_element_size == 8)
+                {
+                    /// Int8 QBit accepts any numeric field; the value is converted to Int8 below.
+                    if (elem.getType() != Field::Types::Int64 && elem.getType() != Field::Types::UInt64
+                        && elem.getType() != Field::Types::Float64)
+                        throw Exception(
+                            ErrorCodes::TYPE_MISMATCH,
+                            "QBit(Int8) can only be constructed from numeric values, got {}",
+                            elem.getTypeName());
+                }
+                else if (elem.getType() != Field::Types::Float64)
                     throw Exception(
                         ErrorCodes::TYPE_MISMATCH,
                         "QBit can only be constructed from BFloat16, Float32 and Float64 values, got {}",
                         elem.getTypeName());
+            }
 
             Tuple res(dst_element_size);
 
-            auto transpose_bits = [&]<typename Word, typename FloatType>()
+            auto transpose_bits = [&]<typename Word, typename ElementType>()
             {
                 /// Prepare output tuple buffers
                 std::vector<std::string> out(dst_element_size, std::string(bytes_per_fixedstring, '\0'));
@@ -644,7 +657,33 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     Word w = 0;
                     if (i < dst_dimension)
                     {
-                        FloatType v = static_cast<const FloatType>(src_container[i].template safeGet<FloatType>());
+                        ElementType v;
+                        if constexpr (std::is_same_v<ElementType, Int8>)
+                        {
+                            /// Truncate (wrap) the numeric field to Int8 so QBit(Int8) construction has a single
+                            /// contract, matching how `toInt8` / `CAST(... AS Int8)` and the VALUES / Array(Int8)
+                            /// conversions handle out-of-range values (e.g. 128 -> -128). Non-finite or absurdly
+                            /// large Float64 values cannot be wrapped (and casting them to a narrow integer is
+                            /// undefined behaviour), so reject them explicitly, as `toInt8` does for inf/nan.
+                            const Field & elem = src_container[i];
+                            if (elem.getType() == Field::Types::Float64)
+                            {
+                                const Float64 f = elem.safeGet<Float64>();
+                                if (!isFinite(f) || f < static_cast<Float64>(std::numeric_limits<Int64>::min())
+                                    || f >= static_cast<Float64>(std::numeric_limits<Int64>::max()))
+                                    throw Exception(
+                                        ErrorCodes::TYPE_MISMATCH,
+                                        "Cannot convert {} to the Int8 element of QBit",
+                                        applyVisitor(FieldVisitorToString(), elem));
+                                v = static_cast<Int8>(static_cast<Int64>(f));
+                            }
+                            else if (elem.getType() == Field::Types::UInt64)
+                                v = static_cast<Int8>(elem.safeGet<UInt64>());
+                            else
+                                v = static_cast<Int8>(elem.safeGet<Int64>());
+                        }
+                        else
+                            v = static_cast<const ElementType>(src_container[i].template safeGet<ElementType>());
                         std::memcpy(&w, &v, sizeof(Word));
                     }
 
@@ -656,7 +695,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     res[i] = Field(std::move(out[i]));
             };
 
-            if (dst_element_size == 16)
+            if (dst_element_size == 8)
+                transpose_bits.template operator()<uint8_t, Int8>();
+            else if (dst_element_size == 16)
                 transpose_bits.template operator()<UInt16, BFloat16>();
             else if (dst_element_size == 32)
                 transpose_bits.template operator()<UInt32, Float32>();
@@ -821,6 +862,8 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
 
 Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict)
 {
+    checkStackSize();
+
     if (from_value.isNull())
         return from_value;
 
