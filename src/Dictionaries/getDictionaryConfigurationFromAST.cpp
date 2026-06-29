@@ -1,6 +1,5 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
-#include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
@@ -8,11 +7,13 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
+#include <Core/UUID.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -45,7 +46,7 @@ struct AttributeConfiguration
     std::string expression;
 };
 
-using AttributeNameToConfiguration = std::unordered_map<std::string, AttributeConfiguration>;
+using AttributeNameToConfiguration = UnorderedMapWithMemoryTracking<std::string, AttributeConfiguration>;
 
 String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_attr)
 {
@@ -234,7 +235,7 @@ void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
             "MIN {} attribute is not defined in the dictionary attributes", range->min_attr_name);
 
-    auto range_max_attribute_it = all_attrs.find(range->min_attr_name);
+    auto range_max_attribute_it = all_attrs.find(range->max_attr_name);
     if (range_max_attribute_it == all_attrs.end())
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
             "MAX {} attribute is not defined in the dictionary attributes", range->max_attr_name);
@@ -382,7 +383,7 @@ void buildPrimaryKeyConfiguration(
 
         auto identifier_name = key_names.front();
 
-        const auto * it = std::find_if(
+        const auto it = std::find_if(
             children.begin(),
             children.end(),
             [&](const ASTPtr & node)
@@ -514,6 +515,11 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
                     "Please update the dictionary definition to remove function usage");
             }
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
+            if (!builder)
+            {
+                throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                    "The dictionary definition contains unsupported function {}", func->name);
+            }
             auto function = builder->build({});
             function->prepare({});
 
@@ -612,7 +618,7 @@ void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names
 
 }
 
-void checkLifetime(const ASTCreateQuery & query)
+static void checkLifetime(const ASTCreateQuery & query)
 {
     if (query.dictionary->layout && query.dictionary->layout->layout_type == "direct")
     {
@@ -713,7 +719,7 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
     UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
 
     String host = config->getString("dictionary.source.clickhouse.host", "localhost");
-    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", default_port);
+    UInt16 port = static_cast<UInt16>(config->getUInt("dictionary.source.clickhouse.port", default_port));
     String database = config->getString("dictionary.source.clickhouse.db", "");
     String table = config->getString("dictionary.source.clickhouse.table", "");
 

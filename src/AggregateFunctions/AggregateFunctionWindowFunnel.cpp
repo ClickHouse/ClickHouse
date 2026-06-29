@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <base/sort.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
@@ -10,6 +11,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <list>
 
@@ -24,6 +27,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -37,7 +41,7 @@ void mergeEventsList(T & events_list, size_t prefix_size, bool prefix_sorted, bo
 {
     /// either sort whole container or do so partially merging ranges afterwards
     if (!prefix_sorted && !suffix_sorted)
-        std::stable_sort(std::begin(events_list), std::end(events_list));
+        ::stableSort(std::begin(events_list), std::end(events_list));
     else
     {
         const auto begin = std::begin(events_list);
@@ -45,10 +49,10 @@ void mergeEventsList(T & events_list, size_t prefix_size, bool prefix_sorted, bo
         const auto end = std::end(events_list);
 
         if (!prefix_sorted)
-            std::stable_sort(begin, middle);
+            ::stableSort(begin, middle);
 
         if (!suffix_sorted)
-            std::stable_sort(middle, end);
+            ::stableSort(middle, end);
 
         std::inplace_merge(begin, middle, end);
     }
@@ -100,7 +104,7 @@ struct AggregateFunctionWindowFunnelData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(events_list), std::end(events_list));
+            ::stableSort(std::begin(events_list), std::end(events_list));
             sorted = true;
         }
     }
@@ -121,7 +125,7 @@ struct AggregateFunctionWindowFunnelData
     {
         readBinary(sorted, buf);
 
-        size_t size;
+        size_t size = 0;
         readBinary(size, buf);
 
         if (size > 100'000'000) /// The constant is arbitrary
@@ -130,8 +134,8 @@ struct AggregateFunctionWindowFunnelData
         events_list.clear();
         events_list.reserve(size);
 
-        T timestamp;
-        UInt8 event;
+        T timestamp{};
+        UInt8 event = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -221,7 +225,7 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(events_list), std::end(events_list));
+            ::stableSort(std::begin(events_list), std::end(events_list));
             sorted = true;
         }
     }
@@ -243,7 +247,7 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     {
         readBinary(sorted, buf);
 
-        size_t events_size;
+        size_t events_size = 0;
         readBinary(events_size, buf);
 
         if (events_size > 100'000'000) /// Arbitrary limit to prevent excessive memory allocation
@@ -252,8 +256,8 @@ struct AggregateFunctionWindowFunnelStrictOnceData
         events_list.clear();
         events_list.reserve(events_size);
 
-        T timestamp;
-        UInt8 event_type;
+        T timestamp{};
+        UInt8 event_type = 0;
         UInt64 unique_id = 0;
 
         for (size_t i = 0; i < events_size; ++i)
@@ -300,7 +304,7 @@ private:
     UInt8 getEventLevelNonStrictOnce(const AggregateFunctionWindowFunnelData<T>::TimestampEvents & events_list) const
     {
         /// events_timestamp stores the timestamp of the first and previous i-th level event happen within time window
-        std::vector<std::optional<std::pair<UInt64, UInt64>>> events_timestamp(events_size);
+        VectorWithMemoryTracking<std::optional<std::pair<UInt64, UInt64>>> events_timestamp(events_size);
         bool first_event = false;
         for (size_t i = 0; i < events_list.size(); ++i)
         {
@@ -314,12 +318,21 @@ private:
             }
             if (event_idx == 0)
             {
-                events_timestamp[0] = std::make_pair(timestamp, timestamp);
+                events_timestamp[0] = std::make_pair(static_cast<UInt64>(timestamp), static_cast<UInt64>(timestamp));
                 first_event = true;
             }
             else if (strict_deduplication && events_timestamp[event_idx].has_value())
             {
-                return events_list[i - 1].second;
+                /// A duplicate event was found — return the current max level reached.
+                /// The old code incorrectly returned events_list[i-1].second which is just
+                /// the condition index of the previous event in the sorted list, not the
+                /// actual max funnel level. See #37177.
+                for (size_t event = events_timestamp.size(); event > 0; --event)
+                {
+                    if (events_timestamp[event - 1].has_value())
+                        return static_cast<UInt8>(event);
+                }
+                return 0;
             }
             else if (strict_order && first_event && !events_timestamp[event_idx - 1].has_value())
             {
@@ -330,7 +343,7 @@ private:
                 for (size_t event = 0; event < events_timestamp.size(); ++event)
                 {
                     if (!events_timestamp[event].has_value())
-                        return event;
+                        return static_cast<UInt8>(event);
                 }
             }
             else if (events_timestamp[event_idx - 1].has_value())
@@ -341,7 +354,7 @@ private:
                     time_matched = time_matched && events_timestamp[event_idx - 1]->second < timestamp;
                 if (time_matched)
                 {
-                    events_timestamp[event_idx] = std::make_pair(first_timestamp, timestamp);
+                    events_timestamp[event_idx] = std::make_pair(first_timestamp, static_cast<UInt64>(timestamp));
                     if (event_idx + 1 == events_size)
                         return events_size;
                 }
@@ -351,19 +364,22 @@ private:
         for (size_t event = events_timestamp.size(); event > 0; --event)
         {
             if (events_timestamp[event - 1].has_value())
-                return event;
+                return static_cast<UInt8>(event);
         }
         return 0;
     }
 
     UInt8 getEventLevelStrictOnce(const AggregateFunctionWindowFunnelStrictOnceData<T>::TimestampEvents & events_list) const
     {
-        /// Stores the timestamp of the first and last i-th level event happen within time window
+        /// Stores the timestamp of the first and last i-th level event happen within time window.
+        /// `event_path` must be zero-initialized: the full array is copied by `auto prev_path = it->event_path`
+        /// even though only the prefix [0..event_idx] is logically used, so leaving the tail uninitialized
+        /// would read indeterminate values under MSan/ASan.
         struct EventMatchTimeWindow
         {
-            UInt64 first_timestamp;
-            UInt64 last_timestamp;
-            std::array<UInt64, MAX_EVENTS> event_path;
+            UInt64 first_timestamp{};
+            UInt64 last_timestamp{};
+            std::array<UInt64, MAX_EVENTS> event_path{};
 
             EventMatchTimeWindow() = default;
             EventMatchTimeWindow(UInt64 first_ts, UInt64 last_ts)
@@ -375,7 +391,7 @@ private:
         /// For example: for events 'start', 'a', 'b', 'a', 'end'.
         /// The second occurrence of 'a' should be counted only once in one sequence.
         /// However, we do not know in advance if the next event will be 'b' or 'end', so we try to keep both paths.
-        std::vector<std::list<EventMatchTimeWindow>> event_sequences(events_size);
+        VectorWithMemoryTracking<ListWithMemoryTracking<EventMatchTimeWindow>> event_sequences(events_size);
 
         bool has_first_event = false;
         for (size_t i = 0; i < events_list.size(); ++i)
@@ -394,13 +410,20 @@ private:
             }
             else if (event_idx == 0)
             {
-                auto & event_seq = event_sequences[0].emplace_back(timestamp, timestamp);
+                auto & event_seq = event_sequences[0].emplace_back(static_cast<UInt64>(timestamp), static_cast<UInt64>(timestamp));
                 event_seq.event_path[0] = unique_id;
                 has_first_event = true;
             }
             else if (strict_deduplication && !event_sequences[event_idx].empty())
             {
-                return events_list[i - 1].event_type;
+                /// Same fix as in getEventLevelNonStrictOnce — return actual max level,
+                /// not the previous event's type. See #37177.
+                for (size_t event = event_sequences.size(); event > 0; --event)
+                {
+                    if (!event_sequences[event - 1].empty())
+                        return static_cast<UInt8>(event);
+                }
+                return 0;
             }
             else if (strict_order && has_first_event && event_sequences[event_idx - 1].empty())
             {
@@ -411,7 +434,7 @@ private:
                 for (size_t event = 0; event < event_sequences.size(); ++event)
                 {
                     if (event_sequences[event].empty())
-                        return event;
+                        return static_cast<UInt8>(event);
                 }
             }
             else if (!event_sequences[event_idx - 1].empty())
@@ -446,7 +469,7 @@ private:
                     {
                         prev_path[event_idx] = unique_id;
 
-                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, timestamp);
+                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, static_cast<UInt64>(timestamp));
                         new_seq.event_path = std::move(prev_path);
                         if (event_idx + 1 == events_size)
                             return events_size;
@@ -459,7 +482,7 @@ private:
         for (size_t event = event_sequences.size(); event > 0; --event)
         {
             if (!event_sequences[event - 1].empty())
-                return event;
+                return static_cast<UInt8>(event);
         }
         return 0;
     }
@@ -489,7 +512,7 @@ public:
     AggregateFunctionWindowFunnel(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>(arguments, params, std::make_shared<DataTypeUInt8>())
     {
-        events_size = arguments.size() - 1;
+        events_size = static_cast<UInt8>(arguments.size() - 1);
         window = params.at(0).safeGet<UInt64>();
 
         strict_deduplication = false;
@@ -547,7 +570,7 @@ public:
             this->data(place).advanceId();
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -559,7 +582,28 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
     {
-        this->data(place).deserialize(buf);
+        auto & data = this->data(place);
+        data.deserialize(buf);
+
+        /// Event types come from untrusted serialized state. getEventLevel* uses (event - 1) to index
+        /// events_timestamp / event_sequences, both sized events_size, so an out-of-range event would
+        /// read and write out of bounds. Valid event types are [1, events_size]; 0 is the no-event
+        /// sentinel produced only with strict_order, so it is accepted only in that mode.
+        const UInt8 min_event = strict_order ? 0 : 1;
+        for (const auto & event : data.events_list)
+        {
+            UInt8 event_type = 0;
+            if constexpr (Data::strict_once_enabled)
+                event_type = event.event_type;
+            else
+                event_type = event.second;
+
+            if (event_type < min_event || event_type > events_size)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Invalid event type {} in the state of function {}, must be in range [{}, {}]",
+                    static_cast<UInt16>(event_type), getName(), static_cast<UInt16>(min_event), static_cast<UInt16>(events_size));
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -623,9 +667,10 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
 
 }
 
+void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory);
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("windowFunnel", createAggregateFunctionWindowFunnel);
+    factory.registerFunction("windowFunnel", {createAggregateFunctionWindowFunnel, {}});
 }
 
 }

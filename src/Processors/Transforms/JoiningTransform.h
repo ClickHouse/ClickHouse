@@ -5,6 +5,7 @@
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+#include <Processors/ISource.h>
 #include <Interpreters/IJoin.h>
 
 namespace DB
@@ -37,7 +38,7 @@ using FinishCounterPtr = std::shared_ptr<FinishCounter>;
 /// First input is for data from left table.
 /// Second input has empty header and is connected with FillingRightJoinSide.
 /// We can process left table only when Join is filled. Second input is used to signal that FillingRightJoinSide is finished.
-class JoiningTransform : public IProcessor
+class JoiningTransform final : public IProcessor
 {
 public:
     JoiningTransform(
@@ -91,7 +92,7 @@ private:
 /// Fills Join with block from right table.
 /// Has single input and single output port.
 /// Output port has empty header. It is closed when all data is inserted in join.
-class FillingRightJoinSideTransform : public IProcessor
+class FillingRightJoinSideTransform final : public IProcessor
 {
 public:
     FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
@@ -112,6 +113,7 @@ private:
     bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;
+    bool post_build_phase = false;
 };
 
 class DelayedBlocksTask : public ChunkInfoCloneable<DelayedBlocksTask>
@@ -133,7 +135,7 @@ using DelayedBlocksTaskPtr = std::shared_ptr<const DelayedBlocksTask>;
 
 
 /// Reads delayed joined blocks from Join
-class DelayedJoinedBlocksTransform : public IProcessor
+class DelayedJoinedBlocksTransform final : public IProcessor
 {
 public:
     explicit DelayedJoinedBlocksTransform(size_t num_streams, JoinPtr join_);
@@ -150,7 +152,7 @@ private:
     bool finished = false;
 };
 
-class DelayedJoinedBlocksWorkerTransform : public IProcessor
+class DelayedJoinedBlocksWorkerTransform final : public IProcessor
 {
 public:
     using NonJoinedStreamBuilder = std::function<IBlocksStreamPtr()>;
@@ -172,6 +174,33 @@ private:
 
     void resetTask();
     Block nextNonJoinedBlock();
+};
+
+/// Generates non-joined rows from the right table for a specific bucket partition
+class NonJoinedBlocksTransform final : public ISource
+{
+public:
+    NonJoinedBlocksTransform(
+        SharedHeader output_header,
+        JoinPtr join_,
+        Block left_sample_block_,
+        UInt64 max_block_size_,
+        size_t stream_index_,
+        size_t num_streams_);
+
+    String getName() const override { return "NonJoinedBlocksTransform"; }
+
+protected:
+    Chunk generate() override;
+
+private:
+    JoinPtr join;
+    Block left_sample_block;
+    Block result_sample_block;
+    UInt64 max_block_size;
+    size_t stream_index;
+    size_t num_streams;
+    IBlocksStreamPtr non_joined_blocks;
 };
 
 }

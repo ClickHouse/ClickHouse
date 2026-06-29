@@ -4,9 +4,7 @@
 #include <utility>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadSettings.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
-#include "config.h"
 
 namespace Poco { class Logger; }
 
@@ -26,9 +24,11 @@ public:
     explicit AsynchronousBoundedReadBuffer(
         ImplPtr impl_,
         IAsynchronousReader & reader_,
-        const ReadSettings & settings_,
         size_t buffer_size_,
         size_t min_bytes_for_seek_,
+        Priority priority_,
+        size_t page_cache_block_size_,
+        bool enable_prefetches_log_,
         AsyncReadCountersPtr async_read_counters_ = nullptr,
         FilesystemReadPrefetchesLogPtr prefetches_log_ = nullptr);
 
@@ -61,8 +61,10 @@ public:
 
 private:
     const ImplPtr impl;
-    const ReadSettings read_settings;
-    const size_t buffer_size;
+    const Priority base_priority;
+    const size_t page_cache_block_size;
+    const bool enable_prefetches_log;
+    size_t buffer_size;
     const size_t min_bytes_for_seek;
     const String file_name;
     IAsynchronousReader & reader;
@@ -75,6 +77,11 @@ private:
 
     Memory<> prefetch_buffer;
     std::future<IAsynchronousReader::Result> prefetch_future;
+
+    /// When using userspace page cache, we directly use memory owned by the cache instead of
+    /// allocating our own buffers.
+    bool use_page_cache = false;
+    PageCacheCellPtr page_cache_cell;
 
     const std::string query_id;
     const std::string current_reader_id;

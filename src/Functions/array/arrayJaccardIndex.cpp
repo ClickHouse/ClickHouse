@@ -7,7 +7,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -18,7 +17,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionArrayJaccardIndex : public IFunction
+class FunctionArrayJaccardIndex final : public IFunction
 {
 private:
     using ResultType = Float64;
@@ -32,8 +31,8 @@ private:
     template <bool left_is_const, bool right_is_const>
     static LeftAndRightSizes getArraySizes(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, size_t i)
     {
-        size_t left_size;
-        size_t right_size;
+        size_t left_size = 0;
+        size_t right_size = 0;
 
         if constexpr (left_is_const)
             left_size = left_offsets[0];
@@ -55,7 +54,7 @@ private:
         {
             LeftAndRightSizes sizes = getArraySizes<left_is_const, right_is_const>(left_offsets, right_offsets, i);
             size_t intersect_size = intersect_offsets[i] - intersect_offsets[i - 1];
-            res[i] = static_cast<ResultType>(intersect_size) / (sizes.left_size + sizes.right_size - intersect_size);
+            res[i] = static_cast<ResultType>(intersect_size) / static_cast<ResultType>(sizes.left_size + sizes.right_size - intersect_size);
         }
     }
 
@@ -75,7 +74,10 @@ public:
     static constexpr auto name = "arrayJaccardIndex";
     String getName() const override { return name; }
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayJaccardIndex>(context_); }
-    explicit FunctionArrayJaccardIndex(ContextPtr context_) : context(context_) {}
+    explicit FunctionArrayJaccardIndex(ContextPtr context_)
+        : array_intersect(FunctionFactory::instance().get("arrayIntersect", context_))
+    {
+    }
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -108,7 +110,7 @@ public:
         const auto & [left_array, left_is_const] = cast_to_array(arguments[0]);
         const auto & [right_array, right_is_const] = cast_to_array(arguments[1]);
 
-        auto intersect_array = FunctionFactory::instance().get("arrayIntersect", context)->build(arguments);
+        auto intersect_array = array_intersect->build(arguments);
 
         ColumnWithTypeAndName intersect_column;
         intersect_column.type = intersect_array->getResultType();
@@ -146,7 +148,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr array_intersect;
 };
 
 REGISTER_FUNCTION(ArrayJaccardIndex)

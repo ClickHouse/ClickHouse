@@ -84,12 +84,6 @@ struct NgramDistanceImpl
 #endif
     }
 
-    template <size_t Offset, class Container, size_t... I>
-    static ALWAYS_INLINE inline void unrollLowering(Container & cont, const std::index_sequence<I...> &)
-    {
-        ((cont[Offset + I] = std::tolower(cont[Offset + I])), ...);
-    }
-
     static size_t readASCIICodePoints(CodePoint * code_points, const char *& pos, const char * end)
     {
         /// Offset before which we copy some data.
@@ -111,8 +105,10 @@ struct NgramDistanceImpl
         {
             /// Due to PODArray padding accessing more elements should be OK
             __msan_unpoison(code_points + (N - 1), padding_offset * sizeof(CodePoint));
-            /// We really need template lambdas with C++20 to do it inline
-            unrollLowering<N - 1>(code_points, std::make_index_sequence<padding_offset>());
+            [&]<size_t... I>(std::index_sequence<I...>)
+            {
+                ((code_points[N - 1 + I] = static_cast<CodePoint>(std::tolower(code_points[N - 1 + I]))), ...);
+            }(std::make_index_sequence<padding_offset>());
         }
         pos += padding_offset;
         if (pos > end)
@@ -300,9 +296,9 @@ struct NgramDistanceImpl
             size_t first_size = dispatchSearcher(calculateHaystackStatsAndMetric<false>, data.data(), data_size, common_stats.get(), distance, nullptr);
             /// For !symmetric version we should not use first_size.
             if constexpr (symmetric)
-                res = distance * 1.f / std::max(first_size + second_size, 1uz);
+                res = static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(first_size + second_size, 1uz));
             else
-                res = 1.f - distance * 1.f / std::max(second_size, 1uz);
+                res = 1.f - static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(second_size, 1uz));
         }
         else
         {
@@ -368,9 +364,9 @@ struct NgramDistanceImpl
 
                 /// For !symmetric version we should not use haystack_stats_size.
                 if constexpr (symmetric)
-                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, 1uz);
+                    res[i] = static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(haystack_stats_size + needle_stats_size, 1uz));
                 else
-                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, 1uz);
+                    res[i] = 1.f - static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(needle_stats_size, 1uz));
             }
             else
             {
@@ -439,7 +435,7 @@ struct NgramDistanceImpl
                     for (size_t j = 0; j < needle_stats_size; ++j)
                         --common_stats[needle_ngram_storage[j]];
 
-                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, 1uz);
+                    res[i] = 1.f - static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(needle_stats_size, 1uz));
                 }
                 else
                 {
@@ -487,9 +483,9 @@ struct NgramDistanceImpl
                     ngram_storage.get());
                 /// For !symmetric version we should not use haystack_stats_size.
                 if constexpr (symmetric)
-                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, 1uz);
+                    res[i] = static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(haystack_stats_size + needle_stats_size, 1uz));
                 else
-                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, 1uz);
+                    res[i] = 1.f - static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(needle_stats_size, 1uz));
             }
             else
             {

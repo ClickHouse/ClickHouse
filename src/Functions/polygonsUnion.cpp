@@ -23,7 +23,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonsUnion : public IFunction
+class FunctionPolygonsUnion final : public IFunction
 {
 public:
     static inline const char * name;

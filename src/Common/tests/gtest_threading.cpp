@@ -193,7 +193,7 @@ void PerfTestSharedMutexReadersOnly()
         for (auto & thread : threads)
             thread.join();
 
-        double ns = watch.elapsedNanoseconds();
+        double ns = static_cast<double>(watch.elapsedNanoseconds());
         std::cout << "thrs = " << thrs << ":\t" << ns / requests << " ns\t" << requests * 1e9 / ns << " rps" << std::endl;
     }
 }
@@ -231,7 +231,7 @@ void PerfTestSharedMutexWritersOnly()
 
         ASSERT_EQ(counter, requests * 2);
 
-        double ns = watch.elapsedNanoseconds();
+        double ns = static_cast<double>(watch.elapsedNanoseconds());
         std::cout << "thrs = " << thrs << ":\t" << ns / requests << " ns\t" << requests * 1e9 / ns << " rps" << std::endl;
     }
 }
@@ -275,7 +275,7 @@ void PerfTestSharedMutexRW()
 
         ASSERT_EQ(counter, requests);
 
-        double ns = watch.elapsedNanoseconds();
+        double ns = static_cast<double>(watch.elapsedNanoseconds());
         std::cout << "thrs = " << thrs << ":\t" << ns / requests << " ns\t" << requests * 1e9 / ns << " rps" << std::endl;
     }
 }

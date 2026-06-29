@@ -1,14 +1,5 @@
 #pragma once
 
-#include <string.h>
-
-#include <math.h>
-
-#include <new>
-#include <utility>
-
-#include <boost/noncopyable.hpp>
-
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -19,9 +10,16 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/CacheLine.h>
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
+
+#include <boost/noncopyable.hpp>
+
+#include <utility>
+#include <math.h>
+#include <string.h>
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
     #include <iostream>
@@ -257,12 +255,12 @@ struct HashTableGrower
         else if (initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
             size_degree = initial_size_degree;
         else
-            size_degree = static_cast<size_t>(log2(num_elems - 1)) + 2;
+            size_degree = static_cast<UInt8>(static_cast<size_t>(log2(num_elems - 1)) + 2);
     }
 
     void setBufSize(size_t buf_size_)
     {
-        size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
+        size_degree = static_cast<UInt8>(static_cast<size_t>(log2(buf_size_ - 1) + 1));
     }
 };
 
@@ -272,7 +270,7 @@ struct HashTableGrower
   * This grower assume 0.5 load factor
   */
 template <size_t initial_size_degree = 8>
-class alignas(64) HashTableGrowerWithPrecalculation
+class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculation
 {
     /// The state of this structure is enough to get the buffer size of the hash table.
 
@@ -319,18 +317,18 @@ public:
         else if (initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
             size_degree = initial_size_degree;
         else
-            size_degree = static_cast<size_t>(log2(num_elems - 1)) + 2;
+            size_degree = static_cast<UInt8>(log2(num_elems - 1)) + 2;
         increaseSizeDegree(0);
     }
 
     void setBufSize(size_t buf_size_)
     {
-        size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
+        size_degree = static_cast<UInt8>(log2(buf_size_ - 1) + 1);
         increaseSizeDegree(0);
     }
 };
 
-static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == 64);
+static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CH_CACHE_LINE_SIZE);
 
 /** When used as a Grower, it turns a hash table into something like a lookup table.
   * It remains non-optimal - the cells store the keys.
@@ -361,11 +359,11 @@ template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
 
 template <typename Cell>
-struct ZeroValueStorage<true, Cell>
+struct ZeroValueStorage<true, Cell> // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `zero_value_storage` is raw storage for placement new, only written when `has_zero` becomes true
 {
 private:
     bool has_zero = false;
-    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)];
 
 public:
     bool hasZero() const { return has_zero; }
@@ -532,32 +530,33 @@ protected:
             new_grower.increaseSize();
 
         /// Expand the space.
-
         size_t old_buffer_size = getBufferSizeInBytes();
         buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, allocCheckOverflow(new_grower.bufSize())));
-
         grower = new_grower;
 
-        /** Now some items may need to be moved to a new location.
-          * The element can stay in place, or move to a new location "on the right",
-          *  or move to the left of the collision resolution chain, because the elements to the left of it have been moved to the new "right" location.
-          */
-        size_t i = 0;
-        for (; i < old_size; ++i)
-            if (!buf[i].isZero(*this))
-                reinsert(buf[i], buf[i].getHash(*this));
+        if (!empty())
+        {
+            /** Now some items may need to be moved to a new location.
+              * The element can stay in place, or move to a new location "on the right",
+              *  or move to the left of the collision resolution chain, because the elements to the left of it have been moved to the new "right" location.
+              */
+            size_t i = 0;
+            for (; i < old_size; ++i)
+                if (!buf[i].isZero(*this))
+                    reinsert(buf[i], buf[i].getHash(*this));
 
-        /** There is also a special case:
-          *    if the element was to be at the end of the old buffer,                  [        x]
-          *    but is at the beginning because of the collision resolution chain,      [o       x]
-          *    then after resizing, it will first be out of place again,               [        xo        ]
-          *    and in order to transfer it where necessary,
-          *    after transferring all the elements from the old halves you need to     [         o   x    ]
-          *    process tail from the collision resolution chain immediately after it   [        o    x    ]
-          */
-        size_t new_size = grower.bufSize();
-        for (; i < new_size && !buf[i].isZero(*this); ++i)
-            reinsert(buf[i], buf[i].getHash(*this));
+            /** There is also a special case:
+              *    if the element was to be at the end of the old buffer,                  [        x]
+              *    but is at the beginning because of the collision resolution chain,      [o       x]
+              *    then after resizing, it will first be out of place again,               [        xo        ]
+              *    and in order to transfer it where necessary,
+              *    after transferring all the elements from the old halves you need to     [         o   x    ]
+              *    process tail from the collision resolution chain immediately after it   [        o    x    ]
+              */
+            size_t new_size = grower.bufSize();
+            for (; i < new_size && !buf[i].isZero(*this); ++i)
+                reinsert(buf[i], buf[i].getHash(*this));
+        }
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         watch.stop();
@@ -848,7 +847,7 @@ public:
         return *this;
     }
 
-    HashTable & operator=(const HashTable & rhs) noexcept
+    HashTable & operator=(const HashTable & rhs)
     {
         if (this == &rhs)
             return *this;
@@ -1075,7 +1074,7 @@ protected:
 
             // The hash table was rehashed, so we have to re-find the key.
             size_t new_place = findCell(key, hash_value, grower.place(hash_value));
-            assert(!buf[new_place].isZero(*this));
+            chassert(!buf[new_place].isZero(*this));
             it = &buf[new_place];
         }
     }
@@ -1090,13 +1089,19 @@ protected:
         emplaceNonZeroImpl(place_value, key_holder, it, inserted, hash_value);
     }
 
+public:
     void ALWAYS_INLINE prefetchByHash(size_t hash_key) const
     {
         const auto place = grower.place(hash_key);
         __builtin_prefetch(&buf[place]);
     }
 
-public:
+    bool ALWAYS_INLINE isEmptyCell(size_t hash_key) const
+    {
+        const auto place = grower.place(hash_key);
+        return buf[place].isZero(*this);
+    }
+
     void reserve(size_t num_elements)
     {
         resize(num_elements);
@@ -1146,6 +1151,9 @@ public:
         const auto & key = keyHolderGetKey(key_holder);
         const auto key_hash = hash(key);
         prefetchByHash(key_hash);
+        /// Release any temporary key memory held by the holder (e.g. `SerializedKeyHolder` rolls back the Arena allocation).
+        /// Without this, every prefetch would leak the serialized key bytes in the aggregation pool.
+        keyHolderDiscardKey(key_holder);
     }
 
     /** Insert the key.
@@ -1259,7 +1267,7 @@ public:
             return false;
 
         /// We need to guarantee loop termination because there will be empty position
-        assert(m_size < grower.bufSize());
+        chassert(m_size < grower.bufSize());
 
         size_t next_position = erased_key_position;
 

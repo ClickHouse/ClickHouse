@@ -53,6 +53,7 @@ public:
     void consume(Chunk & chunk) override;
     void onStart() override;
     void onFinish() override;
+    void setHasDependentMaterializedViews(bool has_dependent_views) override;
 
 protected:
     StorageMergeTree & storage;
@@ -62,10 +63,11 @@ protected:
     StorageSnapshotPtr storage_snapshot;
     UInt64 num_blocks_processed = 0;
     bool deduplicate = true;
+    bool synchronously_commit_part_for_dependent_views = false;
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<MergeTreeDelayedChunk> delayed_chunk;
 
-    std::vector<std::string> commitPart(MutableDataPartPtr & part, const std::vector<String> & block_ids);
+    std::vector<std::string> commitPart(MutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes);
     virtual void finishDelayedChunk();
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
 };

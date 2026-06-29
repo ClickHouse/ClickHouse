@@ -22,7 +22,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionNormalizedQueryHash : public IFunction
+class FunctionNormalizedQueryHash final : public IFunction
 {
 private:
     bool keep_names;
@@ -75,6 +75,10 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    bool useDefaultImplementationForVariant() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {

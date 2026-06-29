@@ -32,9 +32,7 @@ To show internal subcolumns of other data types, use the [describe_include_subco
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE describe_example (
     id UInt64, text String DEFAULT 'unknown' CODEC(ZSTD),
     user Tuple (name String, age UInt8)
@@ -44,9 +42,7 @@ DESCRIBE TABLE describe_example;
 DESCRIBE TABLE describe_example SETTINGS describe_include_subcolumns=1;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id   │ UInt64                        │              │                    │         │                  │                │
 │ text │ String                        │ DEFAULT      │ 'unknown'          │         │ ZSTD(1)          │                │
@@ -56,7 +52,7 @@ Result:
 
 The second query additionally shows subcolumns:
 
-```text
+```text title="Response"
 ┌─name──────┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┬─is_subcolumn─┐
 │ id        │ UInt64                        │              │                    │         │                  │                │            0 │
 │ text      │ String                        │ DEFAULT      │ 'unknown'          │         │ ZSTD(1)          │                │            0 │
@@ -65,6 +61,24 @@ The second query additionally shows subcolumns:
 │ user.age  │ UInt8                         │              │                    │         │                  │                │            1 │
 └───────────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┴──────────────┘
 ```
+
+The DESCRIBE statement can also be used with subqueries or scalar expressions:
+
+``` SQL
+DESCRIBE SELECT 1 FORMAT TSV;
+```
+
+or
+
+``` SQL
+DESCRIBE (SELECT 1) FORMAT TSV;
+```
+
+``` text title="Response"
+1       UInt8
+```
+
+This usage returns metadata about the result columns of the specified query or subquery. It is useful for understanding the structure of complex queries before execution.
 
 **See Also**
 

@@ -2,7 +2,9 @@
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/SignalHandlers.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Macros.h>
@@ -30,6 +32,8 @@
 #include <Utils.h>
 #include <Server/CloudPlacementInfo.h>
 #include <IO/SharedThreadPools.h>
+#include <Common/ThreadPool.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Poco/FileChannel.h>
 
@@ -136,7 +140,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         {
             command = getCommandByName(arguments[0]);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             return {arguments.back()};
         }
@@ -154,7 +158,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
     {
         command = getCommandByName(arguments[0]);
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return {last_token};
     }
@@ -243,7 +247,7 @@ bool DisksApp::processQueryText(const String & text)
         {
             error_string = err.what();
         }
-        catch (...)
+        catch (...) // Ok: report unknown exception
         {
             error_string = "Unknown exception";
         }
@@ -324,10 +328,15 @@ void DisksApp::registerCommands()
     command_descriptions.emplace("link", makeCommandLink());
     command_descriptions.emplace("write", makeCommandWrite());
     command_descriptions.emplace("read", makeCommandRead());
+    command_descriptions.emplace("sed", makeCommandSed());
+    command_descriptions.emplace("read-bitmap", makeCommandReadBitmap());
     command_descriptions.emplace("mkdir", makeCommandMkDir());
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
     command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
     command_descriptions.emplace("touch", makeCommandTouch());
+    command_descriptions.emplace("du", makeCommandDiskUsage());
+    command_descriptions.emplace("wc", makeCommandWordCount());
+    command_descriptions.emplace("read-checksums", makeCommandReadChecksums());
     command_descriptions.emplace("help", makeCommandHelp(*this));
 #if CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
@@ -468,6 +477,7 @@ String DisksApp::getDefaultConfigFileName()
 
 int DisksApp::main(const std::vector<String> & /*args*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("DisksApp");
     std::vector<std::string> keys;
     config().keys(keys);
     if (config().has("config-file") || fs::exists(getDefaultConfigFileName()))
@@ -621,8 +631,16 @@ void DisksApp::runInteractive()
 }
 }
 
+int mainEntryClickHouseDisks(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv)
 {
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
+
     try
     {
         DB::DisksApp app;

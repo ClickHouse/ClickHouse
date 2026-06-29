@@ -134,9 +134,8 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
             IdentifierSemantic::setMembership(identifier, table_pos);
 
             /// In case if column from the joined table are in source columns, change it's name to qualified.
-            /// Also always leave unusual identifiers qualified.
             const auto & table = data.tables[table_pos].table;
-            if (table_pos && (data.hasColumn(short_name) || !isValidIdentifierBegin(short_name.at(0))))
+            if (table_pos && (data.hasColumn(short_name)))
                 IdentifierSemantic::setColumnLongName(identifier, table);
             else
                 IdentifierSemantic::setColumnShortName(identifier, table);
@@ -240,7 +239,7 @@ static void addIdentifier(ASTs & nodes, const DatabaseAndTableWithAlias & table,
     String table_name = table.getQualifiedNamePrefix(false);
     if (!table_name.empty()) parts.insert(parts.begin(), table_name);
 
-    nodes.emplace_back(std::make_shared<ASTIdentifier>(std::move(parts)));
+    nodes.emplace_back(make_intrusive<ASTIdentifier>(std::move(parts)));
 }
 
 /// Replace *, alias.*, database.table.* with a list of columns.
@@ -263,6 +262,16 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             else if (const auto * qa = child->as<ASTQualifiedAsterisk>())
             {
                 visit(*qa, child, data); /// check if it's OK before rewrite
+                has_asterisk = true;
+            }
+            else if (const auto * qualified_columns_regexp_matcher = child->as<ASTQualifiedColumnsRegexpMatcher>())
+            {
+                if (!qualified_columns_regexp_matcher->qualifier)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified COLUMNS matcher must have a qualifier");
+
+                ASTQualifiedAsterisk qualified_asterisk;
+                qualified_asterisk.qualifier = qualified_columns_regexp_matcher->qualifier;
+                visit(qualified_asterisk, child, data); /// check if it's OK before rewrite
                 has_asterisk = true;
             }
         }
@@ -358,6 +367,35 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (qualified_asterisk->transformers)
             {
                 for (const auto & transformer : qualified_asterisk->transformers->children)
+                    IASTColumnsTransformer::transform(transformer, columns);
+            }
+        }
+        else if (const auto * qualified_columns_regexp_matcher = child->as<ASTQualifiedColumnsRegexpMatcher>())
+        {
+            String pattern = qualified_columns_regexp_matcher->getPattern();
+            re2::RE2 regexp(pattern, re2::RE2::Quiet);
+            if (!regexp.ok())
+                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                    "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp.error());
+
+            DatabaseAndTableWithAlias ident_db_and_name(qualified_columns_regexp_matcher->qualifier);
+
+            for (const auto & table : tables_with_columns)
+            {
+                if (ident_db_and_name.satisfies(table.table, true))
+                {
+                    for (const auto & column : table.columns)
+                    {
+                        if (re2::RE2::PartialMatch(column.name, regexp))
+                            addIdentifier(columns, table.table, column.name);
+                    }
+                    break;
+                }
+            }
+
+            if (qualified_columns_regexp_matcher->transformers)
+            {
+                for (const auto & transformer : qualified_columns_regexp_matcher->transformers->children)
                     IASTColumnsTransformer::transform(transformer, columns);
             }
         }

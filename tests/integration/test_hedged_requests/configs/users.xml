@@ -6,6 +6,7 @@
             <receive_data_timeout_ms>2000</receive_data_timeout_ms>
             <async_socket_for_remote>1</async_socket_for_remote>
             <use_hedged_requests>1</use_hedged_requests>
+            <allow_changing_replica_until_first_data_packet>1</allow_changing_replica_until_first_data_packet>
         </default>
     </profiles>
 </clickhouse>

@@ -7,6 +7,7 @@ namespace DB
 
 template <typename T1, typename T2> using AggregateFunctionCorr = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, CorrMoments>>;
 
+void registerAggregateFunctionsStatisticsCorr(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsCorr(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -15,6 +16,8 @@ Calculates the [Pearson correlation coefficient](https://en.wikipedia.org/wiki/P
 $$
 \frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{\sqrt{\Sigma{(x - \bar{x})^2} * \Sigma{(y - \bar{y})^2}}}
 $$
+
+<br/>
 
 :::note
 This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`corrStable`](../reference/corrStable.md) function. It is slower but provides a more accurate result.
@@ -54,7 +57,7 @@ FROM series
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("corr", {createAggregateFunctionStatisticsBinary<AggregateFunctionCorr, StatisticsFunctionKind::corr>, AggregateFunctionProperties{}, documentation }, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("corr", {createAggregateFunctionStatisticsBinary<AggregateFunctionCorr, StatisticsFunctionKind::corr>, documentation }, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

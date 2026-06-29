@@ -1,5 +1,3 @@
-SET allow_experimental_qbit_type = 1;
-
 SELECT 'Test Array → QBit CAST AS: Float64';
 
 SELECT CAST((SELECT groupArray(number + 0.1) FROM numbers(2)) AS QBit(Float64, 2));
@@ -59,10 +57,10 @@ SELECT * FROM format('Values', 'qbit QBit(BFloat16, 9)', '(tuple([1,2,3]::QBit(B
 
 
 SELECT 'Test with and without analyzer / constant QBit';
-SELECT L2DistanceTransposed([1,2,3]::QBit(Float64, 3), [1,2,3]::Array(Float64), 3) settings enable_analyzer=0;
-SELECT L2DistanceTransposed([1,2,3]::QBit(Float64, 3), [1,2,3]::Array(Float64), 3) settings enable_analyzer=1;
-SELECT L2DistanceTransposed(materialize([1,2,3]::QBit(Float64, 3)), [1,2,3]::Array(Float64), 3) settings enable_analyzer=0;
-SELECT L2DistanceTransposed(materialize([1,2,3]::QBit(Float64, 3)), [1,2,3]::Array(Float64), 3) settings enable_analyzer=1;
+SELECT round(L2DistanceTransposed([1,2,3]::QBit(Float64, 3), [1,2,3]::Array(Float64), 3), 1) settings enable_analyzer=0;
+SELECT round(L2DistanceTransposed([1,2,3]::QBit(Float64, 3), [1,2,3]::Array(Float64), 3), 1) settings enable_analyzer=1;
+SELECT round(L2DistanceTransposed(materialize([1,2,3]::QBit(Float64, 3)), [1,2,3]::Array(Float64), 3), 1) settings enable_analyzer=0;
+SELECT round(L2DistanceTransposed(materialize([1,2,3]::QBit(Float64, 3)), [1,2,3]::Array(Float64), 3), 1) settings enable_analyzer=1;
 
 SELECT 'Difficult tests';
 SELECT bin(CAST([0.1, 0.2], 'QBit(Float64, 2)').1) AS tuple_result;

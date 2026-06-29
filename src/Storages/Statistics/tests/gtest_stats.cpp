@@ -3,11 +3,15 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/StatisticsDescription.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
@@ -96,9 +100,9 @@ TEST(Statistics, Estimator)
     stats_c->build(std::move(c));
 
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
-    estimator_builder.addStatistics(stats_a);
-    estimator_builder.addStatistics(stats_b);
-    estimator_builder.addStatistics(stats_c);
+    estimator_builder.addStatistics("a", stats_a);
+    estimator_builder.addStatistics("b", stats_b);
+    estimator_builder.addStatistics("c", stats_c);
     estimator_builder.incrementRowCount(10000);
 
     auto estimator = estimator_builder.getEstimator();
@@ -146,4 +150,253 @@ TEST(Statistics, Estimator)
     test_f("(a > 3 and a < 1000) or ((a > 3 and a < 1011) and (b = 500))", 1001, 0.05); /// 5% error
     test_f("((a > 3 and a < 1000) or (a > 3 and a < 1011)) and (b = 500)", 503);
     test_f("a = 5 and a != 6", 1);
+}
+
+TEST(Statistics, MinMaxEstimateLess)
+{
+    auto test_minmax = [](Field min_val, Field max_val, UInt64 row_count, Field val, Float64 expected)
+    {
+        StatisticsMinMax stats(min_val, max_val, row_count);
+        auto result = stats.estimateLess(val);
+        ASSERT_TRUE(result.has_value()) << "estimateLess returned nullopt";
+        EXPECT_DOUBLE_EQ(*result, expected);
+    };
+
+    /// UInt64: interpolation over [0, 9] with 10 rows
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(0),  0.0);           /// at min    → (0/9)*10 = 0
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(9),  10.0);          /// at max    → (9/9)*10 = 10
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(10), 10.0);          /// above max → all rows
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(5),  5.0/9.0*10.0); /// midpoint
+
+    /// Int64: negative range [-100, 100] with 201 rows
+    test_minmax(Int64(-100), Int64(100), 201, Int64(-200), 0.0);               /// below min
+    test_minmax(Int64(-100), Int64(100), 201, Int64(200),  201.0);             /// above max
+    test_minmax(Int64(-100), Int64(100), 201, Int64(0),    100.0/200.0*201.0); /// midpoint
+
+    /// All rows have the same value: min == max
+    test_minmax(UInt64(42), UInt64(42), 50, UInt64(42), 50.0); /// v == min == max → all rows
+    test_minmax(UInt64(42), UInt64(42), 50, UInt64(43), 50.0); /// v > max         → all rows
+    test_minmax(UInt64(42), UInt64(42), 50, UInt64(41), 0.0);  /// v < min         → 0 rows
+
+    /// Precision: UInt64 values near 2^53 where Float64 loses consecutive integers.
+    /// Float64(2^53 + 1) rounds to Float64(2^53), so naive conversion gives numerator = 0.
+    /// interpolateLinear must use UInt128 internally to recover the correct result.
+    const UInt64 base = (1ULL << 53); /// = 9007199254740992
+    test_minmax(UInt64(base), UInt64(base + 2), 3, UInt64(base + 1), 1.5); /// (1/2)*3 = 1.5
+
+    /// estimateLess returns nullopt when row_count = 0
+    StatisticsMinMax empty(Field{}, Field{}, 0);
+    EXPECT_FALSE(empty.estimateLess(Field(UInt64(42))).has_value());
+}
+
+namespace
+{
+
+/// Build a `ColumnStatistics` carrying the requested types over `data_type`.
+ColumnStatisticsPtr createTestStats(
+    const std::vector<StatisticsType> & types,
+    const DataTypePtr & data_type)
+{
+    ColumnStatisticsDescription desc;
+    desc.data_type = data_type;
+    for (auto type : types)
+        desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, nullptr, false));
+    return MergeTreeStatisticsFactory::instance().get(desc);
+}
+
+/// Build a `Nullable(Int32)` column with `total` rows where every `null_every`-th row is NULL.
+/// Non-NULL row `i` carries value `static_cast<Int32>(i)`. Returns built statistics.
+ColumnStatisticsPtr buildNullableInt32Stats(
+    const std::vector<StatisticsType> & types,
+    size_t total,
+    size_t null_every)
+{
+    auto data_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+    MutableColumnPtr col = data_type->createColumn();
+    auto * nullable_col = assert_cast<ColumnNullable *>(col.get());
+    for (size_t i = 0; i < total; ++i)
+    {
+        if (i % null_every == 0)
+            nullable_col->insertDefault();
+        else
+            nullable_col->insert(static_cast<Int32>(i));
+    }
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(col));
+    return stats;
+}
+
+/// Estimate the row count for a SQL boolean expression evaluated against `estimator`.
+template <class Estimator>
+Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+{
+    ParserExpressionWithOptionalAlias exp_parser(false);
+    ContextPtr context = getContext().context;
+    RPNBuilderTreeContext tree_context(
+        context,
+        Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}},
+        {});
+    ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
+    RPNBuilderTreeNode node(ast.get(), tree_context);
+    return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
+}
+
+}
+
+TEST(Statistics, NullableEstimatorWithBasic)
+{
+    /// Two Nullable(Int32) columns with three-valued logic exercised across ranges and IS [NOT] NULL.
+    ///
+    /// column a: Nullable(Int32), 1000 rows, every 5th NULL  → 200 NULLs, 800 non-NULLs in [1, 999]
+    /// column b: Nullable(Int32), 1000 rows, every 10th NULL → 100 NULLs, 900 non-NULLs in [1, 999]
+    ///
+    /// `basic` populates numeric min/max (1 .. 999) plus null_count, so:
+    ///   estimateLess(500) = (500-1)/(999-1) * non_null = 0.5 * non_null
+    ///   → 400 for column a, 450 for column b
+    tryRegisterFunctions();
+
+    auto stats_a = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/1000, /*null_every=*/5);
+    auto stats_b = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/1000, /*null_every=*/10);
+    ASSERT_EQ(stats_a->getNonNullRowCount(), 800u);
+    ASSERT_EQ(stats_b->getNonNullRowCount(), 900u);
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("a", stats_a);
+    builder.addStatistics("b", stats_b);
+    builder.incrementRowCount(1000);
+    auto estimator = builder.getEstimator();
+
+    auto check = [&](const String & expression, Float64 expected, Float64 eps)
+    {
+        Float64 actual = estimateRowsFor(estimator, expression);
+        EXPECT_NEAR(actual, expected, eps) << "Expression: " << expression;
+    };
+
+    /// Single column — plain ranges (NULL rows are excluded).
+    check("a > 500",       400.0, 1.0);
+    check("a < 500",       400.0, 1.0);
+    check("b > 500",       450.0, 1.0);
+    check("b < 500",       450.0, 1.0);
+
+    /// Single column — IS NULL / IS NOT NULL.
+    check("a IS NULL",     200.0, 1e-6);
+    check("a IS NOT NULL", 800.0, 1e-6);
+    check("b IS NULL",     100.0, 1e-6);
+    check("b IS NOT NULL", 900.0, 1e-6);
+
+    /// Single column — IS NULL AND range → contradiction (the range is FALSE on NULL rows).
+    check("a IS NULL AND a > 500", 0.0, 1e-6);
+    check("b IS NULL AND b < 500", 0.0, 1e-6);
+
+    /// Single column — IS NULL OR range → null rows ∪ matching range rows.
+    check("a IS NULL OR a > 500", 600.0, 1.0);   /// 200 + 400
+    check("b IS NULL OR b < 500", 550.0, 1.0);   /// 100 + 450
+
+    /// Single column — IS NOT NULL AND range → equals the range (NULL filtering is implicit).
+    check("a IS NOT NULL AND a > 500", 400.0, 1.0);
+    check("b IS NOT NULL AND b < 500", 450.0, 1.0);
+
+    /// Single column — IS NOT NULL OR range → IS NOT NULL dominates.
+    check("a IS NOT NULL OR a > 500", 800.0, 1.0);
+    check("b IS NOT NULL OR b < 500", 900.0, 1.0);
+
+    /// Cross-column — range AND range, independent: 0.4 * 0.45 = 0.18.
+    check("a > 500 AND b > 500", 180.0, 2.0);
+
+    /// Cross-column — range OR range: 1 - (1-0.4)*(1-0.45) = 0.67.
+    check("a > 500 OR b > 500", 670.0, 2.0);
+
+    /// Cross-column — IS NULL AND range, independent columns: 0.2 * 0.45 = 0.09.
+    check("a IS NULL AND b > 500", 90.0, 2.0);
+
+    /// Cross-column — IS NULL OR range: 1 - P(a IS NOT NULL) * P(b <= 500) = 1 - 0.8 * 0.55 = 0.56.
+    check("a IS NULL OR b > 500", 560.0, 2.0);
+
+    /// Cross-column — IS NULL AND IS NULL: 0.2 * 0.1 = 0.02.
+    check("a IS NULL AND b IS NULL", 20.0, 2.0);
+
+    /// Cross-column — IS NULL OR IS NULL: 1 - 0.8 * 0.9 = 0.28.
+    check("a IS NULL OR b IS NULL", 280.0, 2.0);
+
+    /// Cross-column — IS NOT NULL AND IS NOT NULL: 0.8 * 0.9 = 0.72.
+    check("a IS NOT NULL AND b IS NOT NULL", 720.0, 2.0);
+
+    /// Cross-column — IS NOT NULL AND IS NULL (different columns): 0.8 * 0.1 = 0.08.
+    check("a IS NOT NULL AND b IS NULL", 80.0, 2.0);
+
+    /// Cross-column — range AND IS NULL (different columns): 0.4 * 0.1 = 0.04.
+    check("a > 500 AND b IS NULL", 40.0, 2.0);
+
+    /// `a IS NOT NULL AND a > 500` collapses to `a > 500` (P = 0.4); then AND `b IS NULL` (P = 0.1).
+    check("a IS NOT NULL AND a > 500 AND b IS NULL", 40.0, 2.0);
+
+    /// Contradictions spanning two columns.
+    check("a > 500 AND b > 500 AND b IS NULL", 0.0, 1e-6);  /// b > 500 contradicts b IS NULL
+    check("a IS NULL AND a > 500 AND b IS NULL", 0.0, 1e-6); /// a IS NULL contradicts a > 500
+}
+
+TEST(Statistics, LikeSelectivity)
+{
+    /// Build a simple estimator to test LIKE / NOT LIKE / ILIKE / NOT ILIKE
+    /// selectivity defaults and their complement behavior under NOT.
+    DataTypePtr data_type = std::make_shared<DataTypeInt32>();
+
+    MutableColumnPtr col = DataTypeInt32().createColumn();
+    for (Int32 i = 0; i < 10000; i++)
+        col->insert(i + 1);
+
+    ColumnStatisticsDescription mock_description;
+    mock_description.data_type = data_type;
+    mock_description.types_to_desc.emplace(StatisticsType::TDigest, SingleStatisticsDescription(StatisticsType::TDigest, nullptr, false));
+
+    ColumnDescription column_desc;
+    column_desc.name = "a";
+    column_desc.type = data_type;
+    column_desc.statistics = mock_description;
+    auto stats = MergeTreeStatisticsFactory::instance().get(column_desc);
+    stats->build(std::move(col));
+
+    ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
+    estimator_builder.addStatistics("a", stats);
+    estimator_builder.incrementRowCount(10000);
+    auto estimator = estimator_builder.getEstimator();
+
+    /// Helper: estimate rows for a condition string.
+    auto estimate = [&](const String & expression) -> UInt64
+    {
+        ParserExpressionWithOptionalAlias exp_parser(false);
+        ContextPtr context = getContext().context;
+        RPNBuilderTreeContext tree_context(context, Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}}, {});
+        ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
+        RPNBuilderTreeNode node(ast.get(), tree_context);
+        return estimator->estimateRelationProfile(nullptr, node).rows;
+    };
+
+    /// default_like_factor = 0.1, total_rows = 10000.
+    /// LIKE: 0.1 * 10000 = 1000 rows.
+    UInt64 like_rows = estimate("a like '%pattern%'");
+    EXPECT_EQ(like_rows, 1000u);
+
+    /// NOT LIKE: (1 - 0.1) * 10000 = 9000 rows.
+    UInt64 not_like_rows = estimate("not(a like '%pattern%')");
+    EXPECT_EQ(not_like_rows, 9000u);
+
+    /// Complement: LIKE + NOT LIKE = total rows.
+    EXPECT_EQ(like_rows + not_like_rows, 10000u);
+
+    /// ILIKE: same as LIKE.
+    UInt64 ilike_rows = estimate("a ilike '%pattern%'");
+    EXPECT_EQ(ilike_rows, 1000u);
+
+    /// NOT ILIKE: same as NOT LIKE.
+    UInt64 not_ilike_rows = estimate("not(a ilike '%pattern%')");
+    EXPECT_EQ(not_ilike_rows, 9000u);
+
+    /// notLike function directly: 0.9 * 10000 = 9000 rows.
+    UInt64 notlike_direct_rows = estimate("a not like '%pattern%'");
+    EXPECT_EQ(notlike_direct_rows, 9000u);
+
+    /// notILike function directly: 0.9 * 10000 = 9000 rows.
+    UInt64 notilike_direct_rows = estimate("a not ilike '%pattern%'");
+    EXPECT_EQ(notilike_direct_rows, 9000u);
 }

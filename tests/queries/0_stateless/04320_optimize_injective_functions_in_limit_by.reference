@@ -1,0 +1,200 @@
+-- { echo }
+
+SET enable_analyzer = 1;
+SET optimize_limit_by_function_keys = 0;
+SET optimize_injective_functions_in_limit_by = 1;
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (g UInt32, x UInt32) ENGINE = MergeTree ORDER BY (g, x);
+INSERT INTO test SELECT number % 3 AS g, number AS x FROM numbers(10);
+-- An injective function is replaced by its argument.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(g);
+SELECT __table1.g AS g
+FROM default.test AS __table1
+ORDER BY __table1.x ASC
+LIMIT _CAST(2, \'UInt64\') BY __table1.g
+SELECT g FROM test ORDER BY x LIMIT 2 BY toString(g);
+0
+1
+2
+0
+1
+2
+-- Nested injective functions are fully unwrapped.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(toString(g));
+SELECT __table1.g AS g
+FROM default.test AS __table1
+ORDER BY __table1.x ASC
+LIMIT _CAST(2, \'UInt64\') BY __table1.g
+SELECT g FROM test ORDER BY x LIMIT 2 BY toString(toString(g));
+0
+1
+2
+0
+1
+2
+-- A multi-argument injective function is replaced by all of its arguments.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY tuple(g, x);
+SELECT __table1.g AS g
+FROM default.test AS __table1
+ORDER BY __table1.x ASC
+LIMIT _CAST(2, \'UInt64\') BY
+    __table1.g,
+    __table1.x
+SELECT g FROM test ORDER BY x LIMIT 2 BY tuple(g, x);
+0
+1
+2
+0
+1
+2
+0
+1
+2
+0
+-- A non-injective function is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY abs(x - 5);
+SELECT __table1.g AS g
+FROM default.test AS __table1
+ORDER BY __table1.x ASC
+LIMIT _CAST(2, \'UInt64\') BY abs(minus(__table1.x, 5))
+SELECT g FROM test ORDER BY x LIMIT 2 BY abs(x - 5);
+0
+1
+2
+0
+1
+2
+0
+1
+2
+0
+-- Constant arguments of an injective function are dropped; the remaining argument becomes the key.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY tuple(g, 1);
+SELECT __table1.g AS g
+FROM default.test AS __table1
+ORDER BY __table1.x ASC
+LIMIT _CAST(2, \'UInt64\') BY __table1.g
+SELECT g FROM test ORDER BY x LIMIT 2 BY tuple(g, 1);
+0
+1
+2
+0
+1
+2
+-- After unwrapping, toString(g) coincides with g and the duplicate is removed by the duplicate-elimination pass.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(g), g;
+SELECT __table1.g AS g
+FROM default.test AS __table1
+ORDER BY __table1.x ASC
+LIMIT _CAST(2, \'UInt64\') BY __table1.g
+SELECT g FROM test ORDER BY x LIMIT 2 BY toString(g), g;
+0
+1
+2
+0
+1
+2
+-- LIMIT BY inside a subquery is optimized.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM (SELECT g, x FROM test ORDER BY x LIMIT 2 BY toString(g));
+SELECT __table1.g AS g
+FROM
+(
+    SELECT __table2.g AS g
+    FROM default.test AS __table2
+    ORDER BY __table2.x ASC
+    LIMIT _CAST(2, \'UInt64\') BY __table2.g
+) AS __table1
+SELECT g FROM (SELECT g, x FROM test ORDER BY x LIMIT 2 BY toString(g));
+0
+1
+2
+0
+1
+2
+-- OFFSET and a negative limit are preserved while the wrapper is unwrapped.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 OFFSET 3 BY toString(g);
+SELECT __table1.g AS g
+FROM default.test AS __table1
+ORDER BY __table1.x ASC
+LIMIT _CAST(3, \'UInt64\'), _CAST(2, \'UInt64\') BY __table1.g
+SELECT g FROM test ORDER BY x LIMIT 2 OFFSET 3 BY toString(g);
+0
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT -2 BY toString(g);
+SELECT __table1.g AS g
+FROM default.test AS __table1
+ORDER BY __table1.x ASC
+LIMIT _CAST(-2, \'Int64\') BY __table1.g
+SELECT g FROM test ORDER BY x LIMIT -2 BY toString(g);
+1
+2
+0
+1
+2
+0
+-- With the optimization disabled the wrapper is kept and the result is unchanged.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(g) SETTINGS optimize_injective_functions_in_limit_by = 0;
+SELECT __table1.g AS g
+FROM default.test AS __table1
+ORDER BY __table1.x ASC
+LIMIT _CAST(2, \'UInt64\') BY toString(__table1.g)
+SETTINGS optimize_injective_functions_in_limit_by = 0
+SELECT g FROM test ORDER BY x LIMIT 2 BY toString(g) SETTINGS optimize_injective_functions_in_limit_by = 0;
+0
+1
+2
+0
+1
+2
+-- A constant key keeps a single partition, so the LIMIT BY is not emptied (toString(1) folds to a
+-- constant and is kept directly).
+SELECT count() FROM (SELECT x FROM test ORDER BY x LIMIT 3 BY toString(1));
+3
+-- materialize is injective but is not constant-folded, so materialize(1) reaches the pass and would
+-- unwrap to an empty list. The empty-list guard keeps it, so the single partition still keeps three rows.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 3 BY materialize(1);
+SELECT __table1.g AS g
+FROM default.test AS __table1
+ORDER BY __table1.x ASC
+LIMIT _CAST(3, \'UInt64\') BY materialize(1)
+SELECT count() FROM (SELECT x FROM test ORDER BY x LIMIT 3 BY materialize(1));
+3
+-- Aggregate functions are allowed in LIMIT BY (after GROUP BY); an aggregate key is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x);
+SELECT
+    __table1.g AS g,
+    sum(__table1.x) AS `sum(x)`
+FROM default.test AS __table1
+GROUP BY __table1.g
+ORDER BY __table1.g ASC
+LIMIT _CAST(1, \'UInt64\') BY sum(__table1.x)
+SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x);
+0	18
+1	12
+2	15
+-- An injective wrapper around an aggregate is unwrapped to the aggregate, which is then kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY toString(sum(x));
+SELECT
+    __table1.g AS g,
+    sum(__table1.x) AS `sum(x)`
+FROM default.test AS __table1
+GROUP BY __table1.g
+ORDER BY __table1.g ASC
+LIMIT _CAST(1, \'UInt64\') BY sum(__table1.x)
+SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY toString(sum(x));
+0	18
+1	12
+2	15
+-- Window functions behave like aggregates: an injective wrapper is unwrapped to the window function, which is then kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT x FROM test ORDER BY x LIMIT 2 BY toString(sum(x) OVER (PARTITION BY g));
+SELECT __table1.x AS x
+FROM default.test AS __table1
+ORDER BY __table1.x ASC
+LIMIT _CAST(2, \'UInt64\') BY sum(__table1.x) OVER (PARTITION BY __table1.g)
+SELECT x FROM test ORDER BY x LIMIT 2 BY toString(sum(x) OVER (PARTITION BY g));
+0
+1
+2
+3
+4
+5
+DROP TABLE test;

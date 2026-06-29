@@ -67,5 +67,19 @@ def test_xml_full_conf():
             == "1\n"
         )
 
+        assert (
+            node.query(
+                "select value from system.server_settings where name = 'logger.level'"
+            )
+            == "test\n"
+        )
+
+        assert (
+            node.query(
+                "select changed from system.server_settings where name = 'logger.level'"
+            )
+            == "1\n"
+        )
+
     finally:
         cluster.shutdown()

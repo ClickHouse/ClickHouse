@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey;
 CREATE TABLE customer(c_custkey Int32, c_nationkey Int32, c_nationkey_copy Int32) ENGINE MergeTree ORDER BY c_custkey SETTINGS index_granularity=10;
 
@@ -13,6 +14,8 @@ SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
 SET enable_join_runtime_filters=0;
 SET query_plan_join_swap_table = 0;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 
 SELECT explain FROM (
         EXPLAIN actions = 1

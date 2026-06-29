@@ -35,7 +35,13 @@ void BackupWriterNull::copyDataToFile(const String & /* path_in_backup */, const
     /// no op
 }
 
-void BackupWriterNull::copyFileFromDisk(const String & /* path_in_backup */, DiskPtr /* src_disk */, const String & /* src_path */, bool /* copy_encrypted */, UInt64 /* start_pos */, UInt64 /* length */)
+void BackupWriterNull::copyFileFromDisk(
+    const String & /* path_in_backup */,
+    DiskPtr /* src_disk */,
+    const String & /* src_path */,
+    bool /* copy_encrypted */,
+    UInt64 /* start_pos */,
+    UInt64 /* length */)
 {
     /// no op
 }
@@ -84,6 +90,8 @@ bool BackupWriterNull::fileContentsEqual(const String & file_name, const String 
     throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup entry {} not found (Null backup is always empty)", file_name);
 }
 
+
+void registerBackupEngineNull(BackupFactory & factory);
 
 void registerBackupEngineNull(BackupFactory & factory)
 {

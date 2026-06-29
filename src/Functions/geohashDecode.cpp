@@ -9,8 +9,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <string>
-
 
 namespace DB
 {
@@ -23,7 +21,7 @@ namespace
 {
 
 // geohashDecode(string) => (lon float64, lat float64)
-class FunctionGeohashDecode : public IFunction
+class FunctionGeohashDecode final : public IFunction
 {
 public:
     static constexpr auto name = "geohashDecode";

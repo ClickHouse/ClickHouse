@@ -6,11 +6,11 @@ Header: 1 UInt8
     Header: __table1.c0 Int32
       ReadFromMemoryStorage
       Header: c0 Int32
-    BuildRuntimeFilter (Build runtime join filter on __table2.a (_runtime_filter_UNIQ_ID_0))
+    BuildRuntimeFilter (Build runtime join filter on __table2.a)
     Header: __table2.a UInt8
       Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
       Header: __table2.a UInt8
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
         Header: dummy UInt8
 1
 Expression ((Project names + Projection))
@@ -23,15 +23,15 @@ Header: 1 UInt8
       ReadFromMemoryStorage
       Header: c0 Int32
               c1 Int32
-    BuildRuntimeFilter (Build runtime join filter on __table2.b (_runtime_filter_UNIQ_ID_1))
+    BuildRuntimeFilter (Build runtime join filter on __table2.b)
     Header: __table2.a UInt8
             __table2.b UInt8
-      BuildRuntimeFilter (Build runtime join filter on __table2.a (_runtime_filter_UNIQ_ID_0))
+      BuildRuntimeFilter (Build runtime join filter on __table2.a)
       Header: __table2.a UInt8
               __table2.b UInt8
         Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
         Header: __table2.a UInt8
                 __table2.b UInt8
-          ReadFromStorage (SystemOne)
+          ReadFromSystemOne
           Header: dummy UInt8
 1

@@ -12,7 +12,7 @@ namespace DB
 bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     String cluster_str;
-    auto query = std::make_shared<ASTKillQueryQuery>();
+    auto query = make_intrusive<ASTKillQueryQuery>();
 
     ParserKeyword p_kill{Keyword::KILL};
     ParserKeyword p_query{Keyword::QUERY};

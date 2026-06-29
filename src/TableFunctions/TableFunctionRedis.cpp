@@ -118,7 +118,7 @@ void TableFunctionRedis::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
 void registerTableFunctionRedis(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionRedis>();
+    factory.registerFunction<TableFunctionRedis>({});
 }
 
 }
