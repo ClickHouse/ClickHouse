@@ -114,6 +114,13 @@ struct FindReadingStepContext
     bool read_in_order_through_join;
 
     std::list<JoinStep *> joins_to_keep_in_order = {};
+
+    /// Set to true when the traversal descends through an order-preserving step that performs
+    /// per-row CPU work above the reading step (a residual `FilterStep`, i.e. a `WHERE` not pushed
+    /// into `PREWHERE`, or an `ArrayJoinStep`). Callers use this to keep the per-stream reading
+    /// pipeline parallel so that `PrefetchingConcatProcessor` does not collapse it into a single
+    /// stream and serialize that residual work.
+    bool passed_residual_cpu_step = false;
 };
 
 QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext & data)
@@ -125,8 +132,17 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
     if (node.children.empty())
         return nullptr;
 
-    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+    if (typeid_cast<ExpressionStep *>(step))
         return findReadingStep(*node.children.front(), data);
+
+    /// A residual `FilterStep` (a `WHERE` not pushed into `PREWHERE`) or an `ArrayJoinStep`
+    /// performs per-row CPU work above the reading step. Record it so the caller can keep the
+    /// per-stream pipeline parallel (see `passed_residual_cpu_step`).
+    if (typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+    {
+        data.passed_residual_cpu_step = true;
+        return findReadingStep(*node.children.front(), data);
+    }
 
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
         return findReadingStep(*node.children.front(), data);
@@ -1220,6 +1236,14 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
             if (!can_read)
                 return nullptr;
+
+            /// If there is residual per-row CPU work (a `WHERE` not pushed into `PREWHERE`, or an
+            /// `ArrayJoin`) between the reading step and this sort, keep the per-stream pipeline
+            /// parallel: `PrefetchingConcatProcessor` would otherwise collapse the streams into a
+            /// single output and serialize that work, regressing mixed `PREWHERE` + `WHERE` reads.
+            /// The streams are merged later, in the `SortingStep` itself.
+            if (find_reading_ctx.passed_residual_cpu_step)
+                reading->setPreferMultipleStreams();
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);

@@ -71,6 +71,39 @@ SELECT arr = arraySort(arr) AS is_sorted, length(arr) AS n FROM (
     )
 ) SETTINGS optimize_distinct_in_order = 1;
 
+-- A residual `WHERE` (not pushed into `PREWHERE`) is per-row CPU work above the read step.
+-- The old multi-stream path runs it in parallel across streams and merges only at the final
+-- sort, while PrefetchingConcat would collapse the streams into one and serialize it. So when a
+-- residual filter is present, PrefetchingConcat must NOT be used. Use an explicit PREWHERE to
+-- satisfy the per-chunk-work gate and disable prewhere movement so the second predicate stays as
+-- a residual FilterStep above the read.
+SELECT 'no_prefetching_residual_filter';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE
+    SELECT * FROM t_prefetching_concat
+    PREWHERE path LIKE '%file.log'
+    WHERE value % 7 = 0
+    ORDER BY path
+) WHERE explain LIKE '%PrefetchingConcat%'
+SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+
+-- Correctness: output of the mixed PREWHERE + residual WHERE read must still be globally sorted,
+-- and the residual filter must keep exactly the rows it should (compared against an independent
+-- count). Both columns must be 1.
+SELECT 'residual_filter_correctness';
+SELECT
+    countIf(path < prev_path) = 0 AS is_sorted,
+    count() = (SELECT countIf(value % 7 = 0) FROM t_prefetching_concat WHERE path LIKE '%file.log') AS count_matches
+FROM (
+    SELECT path, lagInFrame(path, 1, '') OVER (ORDER BY rowNumberInAllBlocks()) AS prev_path
+    FROM (
+        SELECT path FROM t_prefetching_concat
+        PREWHERE path LIKE '%file.log'
+        WHERE value % 7 = 0
+        ORDER BY path
+    )
+) SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+
 DROP TABLE t_prefetching_concat;
 
 -- PrefetchingConcat should NOT be used with multiple parts whose ranges
