@@ -139,7 +139,8 @@ DatabaseDataLake::DatabaseDataLake(
     ASTPtr table_engine_definition_,
     UUID uuid,
     bool allow_server_credentials_in_user_queries_,
-    bool is_loading_from_existing_metadata_)
+    bool is_loading_from_existing_metadata_,
+    bool lazy_init)
     : IDatabase(database_name_)
     , url(url_)
     , settings(settings_)
@@ -151,30 +152,14 @@ DatabaseDataLake::DatabaseDataLake(
     , db_uuid(uuid)
 {
     validateSettings();
-    try
+    /// On ATTACH (server startup / restore / user `ATTACH DATABASE`) defer catalog construction to first use:
+    /// building it can perform network I/O or credential validation that must not block startup. On CREATE
+    /// build eagerly so misconfiguration (including a restricted server-credential catalog) is reported
+    /// immediately.
+    if (!lazy_init)
     {
-        initialize();
-    }
-    catch (const Exception & e)
-    {
-        /// On metadata load, a catalog that resolves the now-restricted server identity must not abort startup:
-        /// leave it unavailable (`getCatalog` reports the reason on every query), mirroring S3/S3Queue tables.
-        if (is_loading_from_existing_metadata && e.code() == ErrorCodes::ACCESS_DENIED
-            && Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
-        {
-            LOG_WARNING(
-                log,
-                "Loading this DataLakeCatalog database without a working catalog client: it resolves "
-                "server-managed credentials that are restricted for user queries "
-                "(s3_allow_server_credentials_in_user_queries = 0). The database will be inaccessible until "
-                "its credentials resolve to a permitted source. Set the server setting "
-                "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead. Reason: {}",
-                e.message());
-            catalog_impl = nullptr;
-            catalog_unavailable_reason = e.message();
-        }
-        else
-            throw;
+        std::lock_guard lock(catalog_mutex);
+        initializeOrLeaveUnavailable();
     }
 }
 
@@ -195,11 +180,10 @@ void DatabaseDataLake::validateSettings()
     }
 }
 
-void DatabaseDataLake::initialize()
+void DatabaseDataLake::initialize() const
 {
-    /// This function is intentionally not synchronized: it is invoked only from the
-    /// constructor, before the `DatabaseDataLake` instance becomes reachable by any
-    /// other thread.
+    /// Caller holds `catalog_mutex`: this runs either from the constructor (CREATE, eager)
+    /// or from `getCatalog` on first access (ATTACH, lazy).
     if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
 
@@ -347,14 +331,49 @@ void DatabaseDataLake::initialize()
 
 std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 {
+    std::lock_guard lock(catalog_mutex);
+    /// Lazily build the catalog on first access for databases attached at startup (see ctor).
     if (!catalog_impl)
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "DataLakeCatalog database is inaccessible: its catalog uses server-managed credentials that are "
-            "restricted for user queries and could not be resolved when the database was loaded from metadata. "
-            "Provide explicit credentials, or enable `s3_allow_server_credentials_in_user_queries`. Reason: {}",
-            catalog_unavailable_reason);
+    {
+        initializeOrLeaveUnavailable();
+        if (!catalog_impl)
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "DataLakeCatalog database is inaccessible: its catalog uses server-managed credentials that are "
+                "restricted for user queries and could not be resolved when the database was loaded from metadata. "
+                "Provide explicit credentials, or enable `s3_allow_server_credentials_in_user_queries`. Reason: {}",
+                catalog_unavailable_reason);
+    }
     return catalog_impl;
+}
+
+void DatabaseDataLake::initializeOrLeaveUnavailable() const
+{
+    try
+    {
+        initialize();
+    }
+    catch (const Exception & e)
+    {
+        /// On metadata load, a catalog that resolves the now-restricted server identity must not abort startup:
+        /// leave it unavailable (`getCatalog` reports the reason on every query), mirroring S3/S3Queue tables.
+        if (is_loading_from_existing_metadata && e.code() == ErrorCodes::ACCESS_DENIED
+            && Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
+        {
+            LOG_WARNING(
+                log,
+                "Loading this DataLakeCatalog database without a working catalog client: it resolves "
+                "server-managed credentials that are restricted for user queries "
+                "(s3_allow_server_credentials_in_user_queries = 0). The database will be inaccessible until "
+                "its credentials resolve to a permitted source. Set the server setting "
+                "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead. Reason: {}",
+                e.message());
+            catalog_impl = nullptr;
+            catalog_unavailable_reason = e.message();
+        }
+        else
+            throw;
+    }
 }
 
 std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfiguration(
@@ -1049,9 +1068,13 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
 
         const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
-        if (!auth_header_str.empty())
+        /// Validate `auth_header` on CREATE only (matches the `allow_experimental_database_*`
+        /// gates below, which also self-skip on attach). An already-persisted database whose
+        /// `auth_header` was accepted by an older version must still attach at startup, so a
+        /// single misconfigured database cannot block the server from starting. The malformed
+        /// header is then reported lazily on first use of the database.
+        if (!args.create_query.attach && !auth_header_str.empty())
         {
-            /// Validate `auth_header` against the forbidden HTTP header filter at creation time.
             /// Only headers with a valid `name: value` format are accepted.
             auto pos = auth_header_str.find(':');
             if (pos != std::string::npos)
@@ -1195,7 +1218,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             std::move(engine_for_tables),
             args.uuid,
             allow_server_credentials_in_user_queries,
-            is_loading_from_existing_metadata);
+            is_loading_from_existing_metadata,
+            /*lazy_init=*/args.create_query.attach);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism

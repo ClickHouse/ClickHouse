@@ -24,7 +24,8 @@ public:
         ASTPtr table_engine_definition_,
         UUID uuid,
         bool allow_server_credentials_in_user_queries_,
-        bool is_loading_from_existing_metadata_);
+        bool is_loading_from_existing_metadata_,
+        bool lazy_init);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
     UUID getUUID() const override { return db_uuid; }
@@ -94,19 +95,26 @@ private:
     /// inaccessible -- mirroring the behavior of persistent S3/S3Queue tables.
     const bool is_loading_from_existing_metadata;
 
-    std::shared_ptr<DataLake::ICatalog> catalog_impl;
+    mutable std::mutex catalog_mutex;
+    mutable std::shared_ptr<DataLake::ICatalog> catalog_impl TSA_GUARDED_BY(catalog_mutex);
     /// Set when `catalog_impl` could not be built because its server-managed credentials are restricted on
     /// load; `getCatalog` then throws this so every query against the database reports a clear error.
-    String catalog_unavailable_reason;
+    mutable String catalog_unavailable_reason TSA_GUARDED_BY(catalog_mutex);
 
     void validateSettings();
 
-    /// Builds `catalog_impl` based on the configured catalog type.
-    /// Called only from the constructor, so no synchronization is required; `catalog_impl`
-    /// is published when the constructed `DatabaseDataLake` is handed off to other threads.
-    /// If `initialize` is called outside the constructor (e.g. on config reload),
-    /// a mutex must be added to guard `catalog_impl` against concurrent readers in `getCatalog`.
-    void initialize();
+    /// Builds `catalog_impl` based on the configured catalog type. Constructing a catalog can
+    /// validate credentials and perform network I/O (e.g. RestCatalog reads the catalog config),
+    /// so on ATTACH (server startup) it is deferred to the first access via `getCatalog` instead
+    /// of running eagerly in the constructor. That keeps one misconfigured or unreachable database
+    /// from blocking server startup. On CREATE it still runs eagerly so problems are reported up
+    /// front. Guarded by `catalog_mutex` because lazy initialization can race concurrent readers.
+    void initialize() const TSA_REQUIRES(catalog_mutex);
+
+    /// `initialize`, but when loading from existing metadata a catalog that resolves the now-restricted server
+    /// identity is left unavailable (its reason recorded) instead of propagating, so server startup is not
+    /// aborted; a user-initiated create/attach stays fail-closed and the `ACCESS_DENIED` propagates.
+    void initializeOrLeaveUnavailable() const TSA_REQUIRES(catalog_mutex);
 
     std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type,
