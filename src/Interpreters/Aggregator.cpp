@@ -634,7 +634,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
           params.max_threads))
 {
     /// The execute path measures memory usage via a dedicated Thread-level tracker created under the
-    /// current query tracker. 
+    /// current query tracker.
     // The merge path can't use this because it recieves pre-allocated state that can not be covered by
     // the memory tracker, so it falls back to the delta in query memory.
     if (params.only_merge)
