@@ -275,7 +275,7 @@ public:
             std::max(start_time_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false)));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (WhichDataType(arguments[0].type).isDateTime())
         {
@@ -352,7 +352,16 @@ public:
             const auto start_time_scale = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get())->getScale();
             const auto duration_scale = assert_cast<const DataTypeDecimal64 *>(arguments[1].type.get())->getScale();
 
-            auto res = ColumnArray::create(DataTypeDateTime64(start_time_scale).createColumn());
+            /// The result element scale is max(start_time_scale, duration_scale) as declared by
+            /// getReturnTypeImpl; read it from result_type so the column object always carries the
+            /// scale of its declared type. Building the column at start_time_scale alone leaves a
+            /// scale-N values column labelled DateTime64(M) when duration_scale > start_time_scale,
+            /// a structural inconsistency invisible in SQL output but rejected by structure-sensitive
+            /// consumers such as array push/concat.
+            const auto result_scale = assert_cast<const DataTypeDateTime64 &>(
+                *assert_cast<const DataTypeArray &>(*result_type).getNestedType()).getScale();
+
+            auto res = ColumnArray::create(DataTypeDateTime64(result_scale).createColumn());
             DataTypeDateTime64::ColumnType::Container & res_values = typeid_cast<DataTypeDateTime64::ColumnType &>(res->getData()).getData();
 
             if (starts && durations)
