@@ -531,10 +531,6 @@ private:
     /// Safe to call from a worker concurrently with the foreground.
     void decryptInPlace(char * data, size_t size, size_t logical_offset);
 
-    /// Streams a granular block of a resident run straight from the plan's held cache
-    /// readers; `serveHitStep` calls it to serve a resident cursor step.
-    ChainedBuffers serveCacheBlock(size_t position_phys, size_t to_read);
-
     /// The collect verb. With a machine in flight for this gap: if its step
     /// started/finished, COLLECT it (wait the release edge, reclaim its
     /// connection, backfill, finalize) into `chain` and return true; if still

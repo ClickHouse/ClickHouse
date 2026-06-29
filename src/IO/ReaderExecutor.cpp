@@ -721,12 +721,12 @@ VectorWithMemoryTracking<ByteRange> ReaderExecutor::mergeRanges(const VectorWith
     return merged;
 }
 
-ChainedBuffers ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_read)
+ChainedBuffers ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, size_t position_phys)
 {
-    /// Stream the contiguous resident run straight from the plan's held (pinning) cache
-    /// readers - no per-window discovery, no source. Serve each tier's range from its own
-    /// reader, advancing the cursor so the appended runs stay disjoint; stop at the first
-    /// gap (the next call serves it). A machine for a downstream gap may be in flight here
+    /// A resident step: stream its contiguous resident run straight from the plan's held
+    /// (pinning) cache readers - no per-window discovery, no source. Serve each tier's range
+    /// from its own reader, advancing the cursor so the appended runs stay disjoint; stop at the
+    /// first gap (the next call serves it). A machine for a downstream gap may be in flight here
     /// (the resident/prefetch overlap): this path touches ONLY the caches and the (empty,
     /// moved-to-the-machine) foreground connection cluster, never the worker's machine.
     ChainedBuffers chain;
@@ -738,7 +738,9 @@ ChainedBuffers ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_r
 
     /// Serve a BLOCK at a time (not a full window): a cache hit has no remote open to
     /// amortise over a window, so block-sizing just bounds the in-flight ChainedBuffers memory per
-    /// call. The loop also stops at the resident run end / `plan_end`.
+    /// call. The loop also stops at the resident run end / `plan_end`. Bound to the step (the
+    /// maximal cross-tier resident run) and the extent / file end before sub-sizing to a block.
+    const size_t to_read = std::min(readCeiling(), step.output.end() - position_phys);
     const size_t window_end = position_phys
         + std::min(effectiveBlockSize(read_plan.geometry()->pressure_level), to_read);
     StatTimer get_scope(stats, Stats::CacheGetMicroseconds);
@@ -771,7 +773,7 @@ ChainedBuffers ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_r
 
     if (data_start_offset)
         chain.shift(-static_cast<ssize_t>(data_start_offset));
-    LOG_TRACE(log, "serveCacheBlock: streamed resident [{}, {}) from cache",
+    LOG_TRACE(log, "serveHitStep: streamed resident [{}, {}) from cache",
         position_phys, position_phys + chain.range().size);
     return chain;
 }
@@ -2332,7 +2334,7 @@ void ReaderExecutor::advanceCursor()
     auto & cursor = read_plan.cursor;
     const auto & steps = read_plan.schedule.steps;
     /// A single step (a whole resident run or a whole gap) can span several windows
-    /// (`serveCacheBlock` sub-sizes by block/window), so advance to the
+    /// (`serveHitStep` sub-sizes by block/window), so advance to the
     /// step that now contains the position rather than incrementing once per window.
     while (cursor + 1 < steps.size() && steps[cursor].output.end() <= pos_phys)
         ++cursor;
@@ -2710,13 +2712,6 @@ void ReaderExecutor::serveWindowFromCells(
             }
         }
     }
-}
-
-ChainedBuffers ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, size_t position_phys)
-{
-    /// A resident step: stream it from the held cache buffers, bounded to the step (the
-    /// maximal cross-tier resident run) and to one block. Reuses the resident serve path.
-    return serveCacheBlock(position_phys, std::min(readCeiling(), step.output.end() - position_phys));
 }
 
 ChainedBuffers ReaderExecutor::interpretStep(size_t position_phys)
