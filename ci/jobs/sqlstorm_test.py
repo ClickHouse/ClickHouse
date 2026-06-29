@@ -126,17 +126,6 @@ class ClickHouseBinary:
         # so the `Distributed` engine used by the log senders can resolve the
         # central CI logs cluster. Must run before the server is started.
         print("Create log export config")
-        config_file = Path(self.config_path) / "config.d" / "system_logs_export.yaml"
-        config_file.parent.mkdir(parents=True, exist_ok=True)
-
-        # The log-replication materialized views are created with
-        # `DEFINER = ci_logs_sender`, so that user must exist on the server.
-        Shell.check(
-            f"mkdir -p {self.config_path}/users.d"
-            f" && cp ./tests/config/users.d/ci_logs_sender.yaml {self.config_path}/users.d/",
-            verbose=True,
-            strict=True,
-        )
 
         self.log_export_host, self.log_export_password = (
             Secret.Config(
@@ -152,6 +141,18 @@ class ClickHouseBinary:
                 )
             )
             .get_value()
+        )
+
+        config_file = Path(self.config_path) / "config.d" / "system_logs_export.yaml"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # The log-replication materialized views are created with
+        # `DEFINER = ci_logs_sender`, so that user must exist on the server.
+        Shell.check(
+            f"mkdir -p {self.config_path}/users.d"
+            f" && cp ./tests/config/users.d/ci_logs_sender.yaml {self.config_path}/users.d/",
+            verbose=True,
+            strict=True,
         )
 
         config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
@@ -354,13 +355,21 @@ def main():
     def start():
         if not ch.install():
             return False
-        # Configure export of system log tables to the central CI logs cluster
-        # (skipped for local runs, where the credentials are not available).
+        # Configure export of system log tables to the central CI logs cluster.
+        # Skip only when AWS credentials are absent in the environment.
         if not info.is_local_run:
-            ch.create_log_export_config()
+            aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
+            aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+            if aws_access_key_id and aws_secret_access_key:
+                ch.create_log_export_config()
+            else:
+                print(
+                    "WARNING: AWS credentials are not available, "
+                    "skipping system log export setup"
+                )
         if not ch.start():
             return False
-        if not info.is_local_run:
+        if ch.log_export_host:
             if not ch.start_log_exports(check_start_time=stop_watch.start_time):
                 print("WARNING: Failed to start log export")
         return True
@@ -550,7 +559,8 @@ def main():
         )
 
     # Detach log replication (flushes the remaining records first).
-    if not info.is_local_run:
+    # Only meaningful when log export was actually configured.
+    if ch.log_export_host:
         ch.stop_log_exports()
 
     Result.create_from(

@@ -27,6 +27,19 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
     j for j in JobConfigs.functional_tests_jobs if "amd_debug, parallel" in j.name
 ][0]
 
+def _normalize_gh_aliases(items):
+    if not items:
+        return items
+    normalized = []
+    seen = set()
+    for item in items:
+        base = item[:-3] if item.endswith("_GH") else item
+        if base not in seen:
+            normalized.append(base)
+            seen.add(base)
+    return normalized
+
+
 workflow = Workflow.Config(
     name="Community PR",
     event=Workflow.Event.PULL_REQUEST,
@@ -134,6 +147,8 @@ workflow = Workflow.Config(
 for i, job in enumerate(workflow.jobs):
     workflow.jobs[i] = copy.deepcopy(job)
     workflow.jobs[i].enable_commit_status = False
+    workflow.jobs[i].provides = _normalize_gh_aliases(workflow.jobs[i].provides)
+    workflow.jobs[i].requires = _normalize_gh_aliases(workflow.jobs[i].requires)
 
 for i, artifact in enumerate(workflow.artifacts):
     workflow.artifacts[i] = copy.deepcopy(artifact)

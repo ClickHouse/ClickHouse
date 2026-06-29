@@ -213,6 +213,18 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_binary)' --workflow "NightlyKeeperNoFaults" --ci --timestamp
 
+      - name: Upload artifact CH_ARM_BIN_GH
+        id: upload_CH_ARM_BIN_GH
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: CH_ARM_BIN_GH
+          path: ci/tmp/build/programs/self-extracting/clickhouse
+          retention-days: 1
+      - name: Warn on failed upload of CH_ARM_BIN_GH
+        if: steps.upload_CH_ARM_BIN_GH.outcome == 'failure'
+        run: echo "::warning title=GH artifact upload failed::Failed to upload [CH_ARM_BIN_GH] to GitHub artifacts (e.g. quota/rate limit). Downstream consumers will fall back to S3."
+
   keeper_stress_no_faults:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
     needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm]
@@ -249,6 +261,13 @@ jobs:
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
+
+      - name: Download artifact CH_ARM_BIN_GH
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: CH_ARM_BIN_GH
+          path: ./ci/tmp
 
       - name: Run
         id: run

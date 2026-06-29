@@ -204,16 +204,17 @@ class Runner:
         if job.requires and not _is_praktika_job(job.name):
             print("Download required artifacts")
             required_artifacts = []
+            required_gh_artifacts = []
             job_names_with_provides = {
                 j.name for j in workflow.jobs if j.provides
             }
             for requires_artifact_name in job.requires:
                 for artifact in workflow.artifacts:
-                    if (
-                        artifact.name == requires_artifact_name
-                        and artifact.type == Artifact.Type.S3
-                    ):
-                        required_artifacts.append(artifact)
+                    if artifact.name == requires_artifact_name:
+                        if artifact.type == Artifact.Type.S3:
+                            required_artifacts.append(artifact)
+                        elif artifact.type == Artifact.Type.GH:
+                            required_gh_artifacts.append(artifact)
                         break
                 else:
                     if requires_artifact_name in job_names_with_provides:
@@ -267,6 +268,88 @@ class Runner:
 
                     if artifact.compress_zst:
                         Utils.decompress_file(Path(Settings.INPUT_DIR) / artifact_path)
+
+            # GH artifacts are downloaded by workflow YAML steps. If they are missing (e.g. rerun after
+            # short GH retention expiry), attempt fallback to matching S3 artifact by name.
+            for gh_artifact in required_gh_artifacts:
+                if isinstance(gh_artifact.path, (tuple, list)):
+                    gh_paths = gh_artifact.path
+                else:
+                    gh_paths = [gh_artifact.path]
+
+                expected_local_paths = []
+                unresolved_pattern = False
+                for gh_path in gh_paths:
+                    if "*" in gh_path:
+                        unresolved_pattern = True
+                        continue
+                    expected_local_paths.append(Path(Settings.INPUT_DIR) / Path(gh_path).name)
+
+                if expected_local_paths and all(p.exists() for p in expected_local_paths):
+                    continue
+
+                if unresolved_pattern and not expected_local_paths:
+                    print(
+                        f"WARNING: Cannot resolve expected local path for GH artifact [{gh_artifact.name}] with wildcard path [{gh_artifact.path}] - skip S3 fallback"
+                    )
+                    continue
+
+                s3_fallback_name = (
+                    gh_artifact.name[:-3]
+                    if gh_artifact.name.endswith("_GH")
+                    else gh_artifact.name
+                )
+                s3_fallback_artifact = None
+                for artifact in workflow.artifacts:
+                    if (
+                        artifact.name == s3_fallback_name
+                        and artifact.type == Artifact.Type.S3
+                    ):
+                        s3_fallback_artifact = artifact
+                        break
+
+                if not s3_fallback_artifact:
+                    print(
+                        f"WARNING: GH artifact [{gh_artifact.name}] is missing and no S3 fallback artifact [{s3_fallback_name}] is configured"
+                    )
+                    continue
+
+                print(
+                    f"GH artifact [{gh_artifact.name}] is missing; fallback to S3 artifact [{s3_fallback_artifact.name}]"
+                )
+                fallback_prefix = env.get_s3_prefix()
+
+                fallback_artifact = dataclasses.replace(s3_fallback_artifact)
+                if fallback_artifact.compress_zst:
+                    assert not isinstance(
+                        fallback_artifact.path, (tuple, list)
+                    ), "Not yes supported for compressed artifacts"
+                    fallback_artifact.path = f"{Path(fallback_artifact.path).name}.zst"
+
+                if isinstance(fallback_artifact.path, (tuple, list)):
+                    fallback_paths = fallback_artifact.path
+                else:
+                    fallback_paths = [fallback_artifact.path]
+
+                for fallback_path in fallback_paths:
+                    recursive = False
+                    include_pattern = ""
+                    if "*" in fallback_path:
+                        s3_path = f"{Settings.S3_ARTIFACT_PATH}/{fallback_prefix}/{Utils.normalize_string(fallback_artifact._provided_by)}/"
+                        recursive = True
+                        include_pattern = Path(fallback_path).name
+                        assert "*" in include_pattern
+                    else:
+                        s3_path = f"{Settings.S3_ARTIFACT_PATH}/{fallback_prefix}/{Utils.normalize_string(fallback_artifact._provided_by)}/{Path(fallback_path).name}"
+                    S3.copy_file_from_s3(
+                        s3_path=s3_path,
+                        local_path=Settings.INPUT_DIR,
+                        recursive=recursive,
+                        include_pattern=include_pattern,
+                    )
+
+                    if fallback_artifact.compress_zst:
+                        Utils.decompress_file(Path(Settings.INPUT_DIR) / fallback_path)
 
         if not local_run and job.needs_submodules and Settings.ENABLE_SUBMODULE_CACHE:
             self._restore_submodule_cache()
