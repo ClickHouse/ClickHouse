@@ -205,6 +205,7 @@ public:
     }
     ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const;
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isNameInsensitive() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
@@ -292,6 +293,8 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool isNameInsensitive() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override;
 

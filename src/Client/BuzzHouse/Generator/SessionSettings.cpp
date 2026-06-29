@@ -1098,10 +1098,12 @@ std::unordered_map<String, CHSetting> serverSettings = {
          [](RandomGenerator & rg, FuzzConfig &)
          {
              static const DB::Strings choices = {
-                 "'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'nearest_hostname'", "'first_or_random'", "'random'"};
+                 "'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'hostname_longest_common_prefix'",
+                 "'hostname_longest_common_suffix'", "'nearest_hostname'", "'first_or_random'", "'random'"};
              return rg.pickRandomly(choices);
          },
-         {"'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'nearest_hostname'", "'first_or_random'", "'random'"},
+         {"'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'hostname_longest_common_prefix'",
+          "'hostname_longest_common_suffix'", "'nearest_hostname'", "'first_or_random'", "'random'"},
          false)},
     {"load_balancing_first_offset",
      CHSetting(

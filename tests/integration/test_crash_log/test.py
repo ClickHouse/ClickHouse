@@ -109,4 +109,4 @@ def test_pkill_query_log(started_node):
         send_signal(started_node, signal)
         wait_for_clickhouse_stop(started_node)
         started_node.restart_clickhouse()
-        assert started_node.query("SELECT COUNT(*) FROM system.query_log") >= f"3\n"
+        assert started_node.query("SELECT COUNT(*) FROM system.query_log") >= "3\n"

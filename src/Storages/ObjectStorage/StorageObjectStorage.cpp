@@ -353,12 +353,14 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
 {
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getFakeColumnSizes();
 }
 
 bool StorageObjectStorage::supportsDelete() const
@@ -408,7 +410,8 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     if (!state)
         return;
 
-    auto new_metadata = *getInMemoryMetadataPtr(query_context, false);
+    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto new_metadata = *current_metadata;
     /// Always pin the current snapshot version to prevent logical races between query
     /// analysis (which picks the schema) and query execution (which iterates files).
     new_metadata.setDataLakeTableState(*state);
@@ -468,7 +471,8 @@ void StorageObjectStorage::read(
     size_t num_streams)
 {
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
-        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+        num_streams = clampClusterFunctionNumStreams(
+            local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
     /// For data lake we did update in getExternalDynamicMetadata.
     if (!is_table_function && !configuration->isDataLakeConfiguration())
@@ -833,7 +837,8 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
     configuration->alter(object_storage, params, context, getStorageID(), catalog);

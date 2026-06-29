@@ -171,16 +171,6 @@ bool ArraySlice::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ArraySortAsc::convertImpl(String & out, IParser::Pos & pos)
-{
-    return directMapping(out, pos, "kql_array_sort_asc");
-}
-
-bool ArraySortDesc::convertImpl(String & out, IParser::Pos & pos)
-{
-    return directMapping(out, pos, "kql_array_sort_desc");
-}
-
 bool ArraySplit::convertImpl(String & out, IParser::Pos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);

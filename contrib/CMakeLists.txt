@@ -62,6 +62,8 @@ enable_heavy_build_check_if_needed()
 
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
+add_contrib (ipnsort-cmake ipnsort)
+add_contrib (driftsort-cmake driftsort)
 add_contrib (pocketfft-cmake pocketfft)
 add_contrib (crc32-vpmsum-cmake crc32-vpmsum)
 add_contrib (sparsehash-c11-cmake sparsehash-c11)
@@ -149,8 +151,7 @@ add_contrib (libuv-cmake libuv)
 add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
-add_contrib (curl-cmake curl)
-add_contrib (azure-cmake azure) # requires: curl
+add_contrib (azure-cmake azure)
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5

@@ -90,6 +90,7 @@ CREATE TABLE table
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, positions = 0 | 1 ]
                             )
 )
 ENGINE = MergeTree
@@ -123,6 +124,7 @@ ALTER TABLE table
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, positions = 0 | 1 ]
                             )
 
 ```
@@ -289,6 +291,13 @@ SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 
 **Other arguments (optional)**.
 
+Experimental parameter `positions` (default: `0`) controls whether the index stores token positions.
+When set to `1`, the index additionally stores positional data (in a `.pos` file) which enables exact phrase matching via direct reads for the [`hasPhrase`](#functions-example-hasphrase) function.
+Storing positions increases the on-disk size of the index and the write cost, so it is opt-in.
+The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
+Creating an index with `positions = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_positions`](/operations/settings/merge-tree-settings#allow_experimental_text_index_positions) to be enabled.
+Set `positions = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
+
 <details markdown="1">
 
 <summary>Optional advanced parameters</summary>
@@ -305,6 +314,26 @@ Optional parameter `posting_list_block_size` (default: 1048576) specifies the si
 Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
 - `none` - the posting lists are stored without additional compression.
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size). Slows down SELECT queries, not recommended at the moment.
+
+The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: [`text_index_dictionary_block_size`](/operations/settings/merge-tree-settings#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/operations/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/operations/settings/merge-tree-settings#text_index_posting_list_block_size), and [`text_index_posting_list_codec`](/operations/settings/merge-tree-settings#text_index_posting_list_codec).
+They apply to every text index of the table that does not specify the parameter explicitly.
+
+The main use case of the table-level settings is to change the index parameters of an existing table without dropping and re-creating the text index on all table parts.
+Changing a table-level setting applies the new parameters only to text indexes built for new parts; existing parts keep their current layout.
+
+An argument given in the index definition takes precedence over the table setting, for example:
+
+```sql
+CREATE TABLE table(
+    s String,
+    -- This index uses 'bitpacking', overriding the table-level default below:
+    INDEX idx_a s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking'),
+    -- This index inherits 'none' from the table setting:
+    INDEX idx_b lower(s) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree()
+ORDER BY tuple()
+SETTINGS text_index_posting_list_codec = 'none';
+```
 </details>
 
 *Index granularity.*
@@ -1426,8 +1455,12 @@ For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` wo
 
 ## Related content {#related-content}
 
-- Presentation: https://github.com/ClickHouse/clickhouse-presentations/blob/master/2025-tumuchdata-munich/ClickHouse_%20full-text%20search%20-%2011.11.2025%20Munich%20Database%20Meetup.pdf
-- Presentation: https://presentations.clickhouse.com/2026-fosdem-inverted-index/Inverted_indexes_the_what_the_why_the_how.pdf
+- Blog: [Announcing General Availability of ClickHouse Full-text Search](https://clickhouse.com/blog/full-text-search-ga-release)
+- Blog: [Building high-performance full-text search for object storage](https://clickhouse.com/blog/clickhouse-full-text-search-object-storage)
+- Video: [Intro to Full-Text Search in ClickHouse](https://www.youtube.com/watch?v=9zPmf1a_heU)
+- Video: [Under the Hood: Full Text Search at ClickHouse scale and speed](https://www.youtube.com/watch?v=8JbqE_ubfkU)
+- Presentation: [Inside ClickHouse full-text search: fast, native and columnar](https://github.com/ClickHouse/clickhouse-presentations/blob/master/2025-tumuchdata-munich/ClickHouse_%20full-text%20search%20-%2011.11.2025%20Munich%20Database%20Meetup.pdf)
+- Presentation: [Inverted database indexes: The why, the what, and the how, FOSDEM 2026](https://presentations.clickhouse.com/2026-fosdem-inverted-index/Inverted_indexes_the_what_the_why_the_how.pdf)
 
 **Outdated material**
 
