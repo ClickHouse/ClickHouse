@@ -3,6 +3,7 @@
 #if USE_LIBDEFLATE
 
 #include <Common/Exception.h>
+#include <IO/WithFileName.h>
 
 #include <libdeflate.h>
 
@@ -239,6 +240,23 @@ bool LibdeflateInflatingReadBuffer::parseTrailer()
 
 bool LibdeflateInflatingReadBuffer::nextImpl()
 {
+    try
+    {
+        return decompressImpl();
+    }
+    catch (Exception & e)
+    {
+        /// Annotate decompression (and nested read) failures with the source file name, so a corrupted
+        /// `.gz`/`url`/`s3` stream reports "While reading from: <file>" like every other codec does.
+        const auto file_name = getFileNameFromReadBuffer(*in);
+        if (!file_name.empty())
+            e.addMessage("While reading from: {}", file_name);
+        throw;
+    }
+}
+
+bool LibdeflateInflatingReadBuffer::decompressImpl()
+{
     while (true)
     {
         switch (state)
@@ -270,50 +288,73 @@ bool LibdeflateInflatingReadBuffer::nextImpl()
                     memmove(memory.data(), memory.data() + recent - new_win, new_win);
                 window_nbytes = new_win;
 
-                if (in_pos == in_end && !input_eof)
-                    fillInput();
-
-                char * out = memory.data() + window_nbytes;
-                const size_t out_avail = memory.size() - window_nbytes;
-                size_t in_used = 0;
-                size_t out_used = 0;
-                const libdeflate_result r = libdeflate_deflate_decompress_stream(
-                    decompressor, input_eof ? 1 : 0,
-                    in_buf.data() + in_pos, in_end - in_pos,
-                    out, out_avail, window_nbytes, &in_used, &out_used);
-                in_pos += in_used;
-
-                if (out_used)
-                    checksum = gzip ? libdeflate_crc32(checksum, out, out_used)
-                                    : libdeflate_adler32(checksum, out, out_used);
-                member_out += out_used;
-                produced_end = window_nbytes + out_used;
-
-                switch (r)
+                /// Decompress into the output region after the window, accumulating across as many
+                /// libdeflate calls as needed. Output produced at a non-final block boundary
+                /// (LIBDEFLATE_STREAM_NEED_INPUT) is deliberately NOT exposed yet: the stream may end at
+                /// the very next block, and its trailer must be validated before the final bytes reach the
+                /// caller. We expose the accumulated output only when the buffer fills at a block boundary
+                /// (the stream is then provably incomplete, so more output follows) or once the final block
+                /// is decoded and its trailer verified. This mirrors ZlibInflatingReadBuffer, which has
+                /// validated the trailer by the time it hands back the final bytes, so a reader that
+                /// consumes an exact byte count with readStrict (and never calls nextImpl again) cannot
+                /// skip the integrity check.
+                size_t produced = 0;
+                while (true)
                 {
-                    case LIBDEFLATE_BAD_DATA:
+                    if (in_pos == in_end && !input_eof)
+                        fillInput();
+
+                    char * out = memory.data() + window_nbytes + produced;
+                    const size_t out_avail = memory.size() - window_nbytes - produced;
+                    /// The valid history immediately before `out` is the window plus everything produced so
+                    /// far in this call (contiguous in `memory`), capped at the 32 KiB back-reference reach.
+                    const size_t cur_window = std::min(window_nbytes + produced, DEFLATE_WINDOW);
+                    size_t in_used = 0;
+                    size_t out_used = 0;
+                    const libdeflate_result r = libdeflate_deflate_decompress_stream(
+                        decompressor, input_eof ? 1 : 0,
+                        in_buf.data() + in_pos, in_end - in_pos,
+                        out, out_avail, cur_window, &in_used, &out_used);
+                    in_pos += in_used;
+
+                    if (out_used)
+                        checksum = gzip ? libdeflate_crc32(checksum, out, out_used)
+                                        : libdeflate_adler32(checksum, out, out_used);
+                    member_out += out_used;
+                    produced += out_used;
+
+                    if (r == LIBDEFLATE_BAD_DATA)
                         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Malformed {} stream", gzip ? "gzip" : "zlib");
-                    case LIBDEFLATE_SUCCESS:
-                        state = State::Trailer;
+
+                    if (r == LIBDEFLATE_SUCCESS)
+                    {
+                        /// Final block decoded: verify the gzip/zlib trailer (CRC32/Adler32/ISIZE) and
+                        /// advance to the next member (or EOF) before exposing the bytes below.
+                        /// finishMember() also updates produced_end for the next member.
+                        finishMember();
                         break;
-                    case LIBDEFLATE_STREAM_NEED_INPUT:
-                        if (out_used == 0)
+                    }
+
+                    if (r == LIBDEFLATE_STREAM_NEED_INPUT)
+                    {
+                        /// At a non-final block boundary with the input exhausted. With end_of_input=true
+                        /// the decoder never returns NEED_INPUT, so this means more input must exist; if the
+                        /// nested stream is already at EOF the data is truncated. Otherwise pull more input
+                        /// (or mark EOF, so the retry passes end_of_input=true and the final block finishes)
+                        /// and keep accumulating into the same buffer.
+                        if (input_eof)
+                            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Unexpected end of {} stream", gzip ? "gzip" : "zlib");
+                        fillInput();
+                        continue;
+                    }
+
+                    if (r == LIBDEFLATE_STREAM_NEED_OUTPUT)
+                    {
+                        if (produced == 0)
                         {
-                            if (input_eof)
-                                throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Unexpected end of {} stream", gzip ? "gzip" : "zlib");
-                            /// Make forward progress: append more compressed input, or detect nested
-                            /// EOF (sets input_eof so the retry passes end_of_input=true and the
-                            /// decoder can finish the final block). Needed even when in_buf still has
-                            /// unconsumed bytes (a partial final block that can't complete without
-                            /// knowing the stream ended).
-                            fillInput();
-                        }
-                        break;
-                    case LIBDEFLATE_STREAM_NEED_OUTPUT:
-                        if (out_used == 0)
-                        {
-                            /* A single block exceeds the output buffer: grow it (preserving the window) and retry,
-                             * but fail closed instead of growing without bound for a decompression bomb. */
+                            /* A single block exceeds the whole output buffer: grow it (the window at the
+                             * front is preserved) and retry, but fail closed past a fixed bound instead of
+                             * growing without limit for a crafted single-block decompression bomb. */
                             if (memory.size() + out_capacity > MAX_OUTPUT_BUFFER)
                                 throw Exception(
                                     ErrorCodes::CANNOT_DECOMPRESS,
@@ -322,35 +363,42 @@ bool LibdeflateInflatingReadBuffer::nextImpl()
                             memory.resize(memory.size() + out_capacity);
                             continue;
                         }
+                        /// Output buffer full at a block boundary: the stream is provably incomplete (the
+                        /// final block was not reached), so more output follows and it is safe to expose
+                        /// what we have without a trailer check. The window carries to the next call.
+                        produced_end = window_nbytes + produced;
                         break;
-                    default:
-                        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Unexpected libdeflate result {}", static_cast<int>(r));
+                    }
+
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Unexpected libdeflate result {}", static_cast<int>(r));
                 }
 
-                if (out_used)
+                if (produced)
                 {
-                    working_buffer = Buffer(out, out + out_used);
+                    working_buffer = Buffer(memory.data() + window_nbytes, memory.data() + window_nbytes + produced);
                     return true;
                 }
-                /* No output yet (SUCCESS of an empty member, or NEED_INPUT with more to read): keep going. */
-                continue;
-            }
-
-            case State::Trailer:
-            {
-                parseTrailer();
-                if (in_pos == in_end && !input_eof)
-                    fillInput();
-                if (in_pos == in_end && input_eof)
-                {
-                    state = State::Eof;
-                    return false;
-                }
-                state = State::Header; /* another concatenated member */
-                produced_end = 0;
+                /* No output this call (e.g. SUCCESS of an empty member): advance to the next state. */
                 continue;
             }
         }
+    }
+}
+
+void LibdeflateInflatingReadBuffer::finishMember()
+{
+    parseTrailer();
+    /// Detect whether another concatenated member follows or the stream ends here.
+    if (in_pos == in_end && !input_eof)
+        fillInput();
+    if (in_pos == in_end && input_eof)
+    {
+        state = State::Eof;
+    }
+    else
+    {
+        state = State::Header; /* another concatenated member */
+        produced_end = 0;
     }
 }
 

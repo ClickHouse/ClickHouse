@@ -37,6 +37,10 @@ public:
 
 private:
     bool nextImpl() override;
+    /// The actual decompression loop. nextImpl wraps it to annotate decompression failures with the
+    /// source file name (matching the other *InflatingReadBuffer codecs), so errors on a corrupted
+    /// `.gz`/`url`/`s3` source carry "While reading from: <file>" context.
+    bool decompressImpl();
 
     /// Make at least one more byte of compressed input available in in_buf (read from `in`).
     /// Returns false if the nested stream is at EOF.
@@ -49,6 +53,10 @@ private:
     bool parseHeader();
     /// Read and verify the member trailer. Returns true when done.
     bool parseTrailer();
+    /// Called once a member's DEFLATE body completes: verify its trailer and move to the next
+    /// member (State::Header) or end of stream (State::Eof). Done before the member's final bytes
+    /// are returned so the integrity check is never skipped by an exact-size read.
+    void finishMember();
 
     libdeflate_decompressor * decompressor = nullptr;
     const bool gzip;
@@ -57,7 +65,6 @@ private:
     {
         Header,
         Body,
-        Trailer,
         Eof,
     };
     State state;

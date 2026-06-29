@@ -125,6 +125,25 @@ TEST_P(LibdeflateInflateTest, MalformedThrows)
     EXPECT_ANY_THROW(decompressViaBuffer(garbage, method, 8, 4096));
 }
 
+/// A corrupted gzip/zlib trailer (wrong CRC32/Adler32/ISIZE) must be rejected even when the caller
+/// reads exactly the uncompressed byte count with readStrict and never reaches EOF. The trailer is
+/// verified as the final DEFLATE block's output is produced, so the check cannot be skipped.
+TEST_P(LibdeflateInflateTest, CorruptTrailerRejectedOnExactRead)
+{
+    const CompressionMethod method = GetParam();
+    const std::string data = makeData(10000, 5);
+    for (size_t buf : {size_t(4096), size_t(1 << 16) /* whole stream in the final SUCCESS chunk */})
+    {
+        std::string compressed = zlibCompress(data, method, 6);
+        /// Flip a bit in the last trailer byte: gzip ISIZE high byte, or zlib Adler32 low byte.
+        compressed.back() ^= 0x01;
+
+        LibdeflateInflatingReadBuffer rb(std::make_unique<ChunkedReadBuffer>(compressed, 4096), method, buf);
+        std::vector<char> dest(data.size());
+        EXPECT_ANY_THROW(rb.readStrict(dest.data(), dest.size())) << "buf=" << buf;
+    }
+}
+
 INSTANTIATE_TEST_SUITE_P(
     GzipAndZlib,
     LibdeflateInflateTest,
