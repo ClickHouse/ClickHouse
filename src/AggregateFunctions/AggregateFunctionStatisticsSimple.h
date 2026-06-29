@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 
 #include <base/arithmeticOverflow.h>
@@ -52,6 +53,7 @@ struct StatFuncOneArg
     using Data = VarMoments<ResultType, _level>;
 
     static constexpr UInt32 num_args = 1;
+    static constexpr size_t level = _level;
 };
 
 template <typename T1, typename T2, template <typename> typename Moments>
@@ -114,14 +116,66 @@ public:
         }
     }
 
+    /// Accumulate `len` contiguous, already-converted `ResultType` values into `data` using `W`
+    /// independent struct-of-arrays lane accumulators (`s1[W]`, `s2[W]`, ...), then fold the lanes
+    /// into the moment state. The lanes are local so the `W`-wide inner loop holds them in vector
+    /// registers and auto-vectorizes (`vaddpd`/`vmulpd` over `ymm` for `Float64`); the fixed lane
+    /// layout keeps the summation order deterministic across builds and platforms.
+    static ALWAYS_INLINE void addManyContiguous(const ResultType * __restrict src, size_t len, typename StatFunc::Data & data)
+    {
+        static constexpr size_t W = 4;
+        static constexpr size_t level = StatFunc::level;
+
+        ResultType s1[W]{};
+        ResultType s2[W]{};
+        [[maybe_unused]] ResultType s3[W]{};
+        [[maybe_unused]] ResultType s4[W]{};
+
+        const size_t vectorized = len / W * W;
+        for (size_t i = 0; i < vectorized; i += W)
+            for (size_t s = 0; s < W; ++s)
+            {
+                const ResultType x = src[i + s];
+                s1[s] += x;
+                s2[s] += x * x;
+                if constexpr (level >= 3) s3[s] += x * x * x;
+                if constexpr (level >= 4) s4[s] += x * x * x * x;
+            }
+
+        /// Fold the lanes with an explicit fixed-order horizontal sum. A reduction *loop* here
+        /// would force the lane arrays to stay addressable in memory and degrade the main loop to
+        /// 128-bit; the unrolled form lets the lanes live in `ymm` registers. `W == 4` assumed.
+        static_assert(W == 4);
+        data.m[1] += s1[0] + s1[1] + s1[2] + s1[3];
+        data.m[2] += s2[0] + s2[1] + s2[2] + s2[3];
+        if constexpr (level >= 3) data.m[3] += s3[0] + s3[1] + s3[2] + s3[3];
+        if constexpr (level >= 4) data.m[4] += s4[0] + s4[1] + s4[2] + s4[3];
+        data.m[0] += static_cast<ResultType>(vectorized);
+
+        for (size_t i = vectorized; i < len; ++i)
+            data.add(src[i]);
+    }
+
     /// Vectorizable fast path for the common single-argument, unconditional case.
-    /// The per-row `add` reduces into a single moment state, which serializes the loop and
-    /// blocks auto-vectorization. Here we accumulate into `unroll` independent partial states
-    /// (no cross-iteration dependency) directly off the typed column pointer, then merge them.
-    /// This changes summation order relative to a strict sequential sum (last-bit float
-    /// differences), but the result is identical across builds and platforms - consistent with
-    /// how `merge` already tree-reduces partial states across blocks. Conditional aggregation
-    /// (`if_argument_pos >= 0`) and the two-argument kinds fall back to the scalar base loop.
+    ///
+    /// The per-row `add` reduces into a single moment state, so the loop-carried dependency on
+    /// `m[1]`/`m[2]` serializes it and blocks auto-vectorization. `addManyContiguous` instead
+    /// accumulates into `W` independent struct-of-arrays lanes, which vectorizes for `Float64`.
+    ///
+    /// For types that need a per-element conversion (integers, `Decimal`) we convert a small
+    /// cache-resident tile to `ResultType` first and then accumulate that tile. Decoupling the
+    /// (often scalar, e.g. `Int64`/`Decimal` have no `vcvtqq2pd` at `x86-64-v3`) conversion from
+    /// the accumulation lets both run at full throughput - far faster than interleaving them.
+    ///
+    /// The lane layout changes summation order relative to a strict sequential sum (last-bit float
+    /// differences). Because lanes are folded per `addBatchSinglePlace` call, the result also
+    /// depends on the block size - the same way parallel aggregation already makes float
+    /// `sum`/`avg`/variance non-bit-reproducible across `max_threads`; the "simple" variance is
+    /// documented as numerically unstable, so this is within contract. For a fixed chunking the
+    /// reduction order is fully determined by the source (lane layout + explicit horizontal sum,
+    /// independent of whether the compiler vectorizes), so it is reproducible across builds and
+    /// platforms. Conditional aggregation (`if_argument_pos >= 0`) and the two-argument kinds fall
+    /// back to the scalar base loop.
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
@@ -132,36 +186,45 @@ public:
     {
         if constexpr (StatFunc::num_args == 1)
         {
-            if (if_argument_pos < 0)
+            if (if_argument_pos < 0 && row_end > row_begin)
             {
+                static constexpr size_t W = 4;
+
                 const auto & vec = static_cast<const ColVecT1 &>(*columns[0]).getData();
-                const T1 * __restrict ptr = vec.data();
+                const T1 * __restrict ptr = vec.data() + row_begin;
+                const size_t total = row_end - row_begin;
+                auto & data = this->data(place);
 
-                static constexpr size_t unroll = 4;
-                typename StatFunc::Data partial[unroll];
-
-                size_t i = row_begin;
-                const size_t unrolled_end = row_begin + (row_end - row_begin) / unroll * unroll;
-
-                for (; i < unrolled_end; i += unroll)
-                    for (size_t s = 0; s < unroll; ++s)
+                if constexpr (std::is_same_v<T1, ResultType>)
+                {
+                    /// No conversion needed (`Float32`/`Float64`): accumulate directly off the column.
+                    addManyContiguous(ptr, total, data);
+                }
+                else
+                {
+                    static constexpr size_t TILE = 1024; /// multiple of W; ResultType[TILE] stays in L1
+                    ResultType buf[TILE];
+                    for (size_t off = 0; off + W <= total; off += TILE)
                     {
-                        if constexpr (is_decimal<T1>)
-                            partial[s].add(convertFromDecimal<DataTypeDecimal<T1>, DataTypeFloat64>(ptr[i + s], src_scale));
-                        else
-                            partial[s].add(static_cast<ResultType>(ptr[i + s]));
+                        const size_t tile = std::min(TILE, (total - off) / W * W);
+                        for (size_t k = 0; k < tile; ++k)
+                        {
+                            if constexpr (is_decimal<T1>)
+                                buf[k] = convertFromDecimal<DataTypeDecimal<T1>, DataTypeFloat64>(ptr[off + k], src_scale);
+                            else
+                                buf[k] = static_cast<ResultType>(ptr[off + k]);
+                        }
+                        addManyContiguous(buf, tile, data);
                     }
 
-                auto & data = this->data(place);
-                for (const auto & p : partial)
-                    data.merge(p);
-
-                for (; i < row_end; ++i)
-                {
-                    if constexpr (is_decimal<T1>)
-                        data.add(convertFromDecimal<DataTypeDecimal<T1>, DataTypeFloat64>(ptr[i], src_scale));
-                    else
-                        data.add(static_cast<ResultType>(ptr[i]));
+                    /// Overall tail (fewer than `W` elements) that no full tile covered.
+                    for (size_t i = total / W * W; i < total; ++i)
+                    {
+                        if constexpr (is_decimal<T1>)
+                            data.add(convertFromDecimal<DataTypeDecimal<T1>, DataTypeFloat64>(ptr[i], src_scale));
+                        else
+                            data.add(static_cast<ResultType>(ptr[i]));
+                    }
                 }
                 return;
             }
