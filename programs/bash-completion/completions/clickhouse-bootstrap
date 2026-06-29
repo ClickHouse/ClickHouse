@@ -156,12 +156,20 @@ function _clickhouse_get_options()
 {
     local extra_args=()
 
-    # By default client/local/benchmark --help will not print all settings, this is done only under --verbose
-    case "$1" in
-        *client*) extra_args+=(--verbose) ;;
-        *local*) extra_args+=(--verbose) ;;
-        *benchmark*) extra_args+=(--verbose) ;;
+    local command_base="${1/*\/}"
+    # Some tools like client/local/benchmark --help will not print all settings, this is done only under --verbose
+    case "$command_base" in
+        chc|clickhouse-client) extra_args+=(--verbose) ;;
+        ch|clickhouse-local) extra_args+=(--verbose) ;;
+        clickhouse-benchmark) extra_args+=(--verbose) ;;
     esac
+    if [ "$command_base" = "clickhouse" ]; then
+        case "$2" in
+            client) extra_args+=(--verbose) ;;
+            local) extra_args+=(--verbose) ;;
+            benchmark) extra_args+=(--verbose) ;;
+        esac
+    fi
 
     "$@" --help "${extra_args[@]}" 2>&1 | LANG=c awk -F '[ ,=<>.]' '{ for (i=1; i <= NF; ++i) { if (substr($i, 1, 1) == "-" && length($i) > 1) print $i; } }' | sort -u
 }

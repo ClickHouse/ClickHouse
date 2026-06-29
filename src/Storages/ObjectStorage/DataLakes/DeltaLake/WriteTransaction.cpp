@@ -12,10 +12,13 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
+#include <base/scope_guard.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 
@@ -31,6 +34,7 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace DeltaLake
@@ -51,8 +55,7 @@ void exportTable(
 {
     auto batch = table->CombineChunksToBatch();
     if (!batch.ok())
-        throw DB::Exception(DB::ErrorCodes::UNKNOWN_EXCEPTION,
-            "Failed to create chunks batch: {}", batch.status().ToString());
+        DB::throwFromArrowStatus(batch.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create chunks batch");
 
     arrow::Status status = arrow::ExportRecordBatch(
         **batch,
@@ -60,12 +63,7 @@ void exportTable(
         reinterpret_cast<ArrowSchema *>(&schema));
 
     if (!status.ok())
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::UNKNOWN_EXCEPTION,
-            "Failed to export record batch: {}",
-            status.ToString());
-    }
+        DB::throwFromArrowStatus(status, DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to export record batch");
 }
 
 std::shared_ptr<arrow::Table> getWriteMetadata(
@@ -79,8 +77,8 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
             std::make_shared<DB::DataTypeString>()), "partitionValues"},
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
-        {DB::DataTypeFactory::instance().get("Bool"), "dataChange"},
-        {std::make_shared<DB::DataTypeInt64>(), "numRecords"},
+        {std::make_shared<DB::DataTypeTuple>(
+                DB::DataTypes{std::make_shared<DB::DataTypeString>()}, DB::Names{"stats_json"}), "stats"}
     };
 
     DB::MutableColumns columns;
@@ -101,8 +99,9 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
         columns[1]->insert(partition_values);
         columns[2]->insert(size_bytes);
         columns[3]->insert(getCurrentTime());
-        columns[4]->insert(true);
-        columns[5]->insert(size_rows);
+        std::string stats_json = fmt::format("{{\"numRecords\":{}}}", size_rows);
+        DB::Tuple stats{stats_json};
+        columns[4]->insert(stats);
     }
 
     DB::FormatSettings format_settings;
@@ -214,9 +213,11 @@ void WriteTransaction::validateSchema(const DB::Block & header) const
     auto header_column_names = header.getNamesAndTypesList().getNameSet();
     if (write_column_names != header_column_names)
     {
+        /// Reachable from user input (e.g. Nested subcolumns, explicit column subsets),
+        /// so this is a user error, not an internal invariant violation.
         throw DB::Exception(
-            DB::ErrorCodes::LOGICAL_ERROR,
-            "Header does not match write schema. Expected: {}, got: {}",
+            DB::ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "Inserted columns do not match the DeltaLake table schema. Expected: {}, got: {}",
             fmt::join(write_column_names, ", "), fmt::join(header_column_names, ", "));
     }
 }
@@ -228,8 +229,8 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Will commit {} files", files.size());
     auto write_metadata = getWriteMetadata(files, log);
 
-    ffi::FFI_ArrowArray array;
-    ffi::FFI_ArrowSchema schema;
+    ffi::FFI_ArrowArray array{};
+    ffi::FFI_ArrowSchema schema{};
     SCOPE_EXIT({
         if (schema.release)
             schema.release(&schema);
@@ -241,7 +242,7 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     {
         /// Takes ownership of `array` (but not`schema`) if successfully called.
         engine_data = DeltaLake::KernelUtils::unwrapResult(
-            ffi::get_engine_data(array, &schema, engine.get()),
+            ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
             "get_engine_data");
     }
     catch (...)

@@ -21,7 +21,7 @@ namespace
 
 /// Prints whitespace n-times. Actually, space() could also be pushed down to repeat(). Chose a standalone-implementation because
 /// we can do memset() whereas repeat() does memcpy().
-class FunctionSpace : public IFunction
+class FunctionSpace final : public IFunction
 {
 private:
     static constexpr auto space = ' ';
@@ -191,7 +191,7 @@ Concatenates a space (` `) as many times with itself as specified.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSpace>(documentation, FunctionFactory::Case::Insensitive);
 }

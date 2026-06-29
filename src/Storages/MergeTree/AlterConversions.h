@@ -42,6 +42,9 @@ public:
     /// Get column old name before rename (lookup by key in rename_map)
     std::string getColumnOldName(const std::string & new_name) const;
 
+    /// Column was dropped by a pending mutation (data in part is stale)
+    bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
+
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);
     static bool isSupportedMetadataMutation(MutationCommand::Type type);
@@ -52,6 +55,11 @@ public:
     bool hasPatches() const { return !patch_parts.empty(); }
     bool hasMutations() const { return !mutation_commands.empty(); }
     bool hasLightweightDelete() const;
+    /// True if a pending ALTER DELETE filters out rows on read without touching any column.
+    /// Such a delete is not reflected in all_updated_columns or _row_exists, so callers that
+    /// reason about per-part data staleness (e.g. minmax-based top-k granule selection) must
+    /// account for it separately.
+    bool hasDeleteMutation() const;
 
     /// Returns prewhere expression steps to apply
     /// mutations that affect columns from @read_columns.
@@ -90,6 +98,10 @@ private:
     /// Rename map new_name -> old_name.
     std::vector<RenamePair> rename_map;
 
+    /// Columns that were dropped by pending mutations.
+    /// If a column with the same name is re-added, old data in parts should be ignored.
+    NameSet dropped_columns;
+
     /// All mutations commands that should be applied.
     MutationCommands mutation_commands;
 
@@ -102,6 +114,7 @@ private:
     size_t number_of_alter_mutations = 0;
 
     /// Names of columns which are updated by mutation commands.
+    /// Used to check dependencies for ALTERs, lightweight deletes and MATERIALIZED columns
     NameSet all_updated_columns;
 
     /// Patches required to be applied for a part.

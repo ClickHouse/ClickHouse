@@ -18,6 +18,7 @@ class MergeTreeDataPartWide : public IMergeTreeDataPart
 public:
     MergeTreeDataPartWide(
         const MergeTreeData & storage_,
+        const MergeTreeSettings & storage_settings,
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
@@ -40,7 +41,6 @@ public:
     void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
     void removeMarksFromCache(MarkCache * mark_cache) const override;
 
-protected:
     static void loadIndexGranularityImpl(
         MergeTreeIndexGranularityPtr & index_granularity_ptr,
         MergeTreeIndexGranularityInfo & index_granularity_info_,
@@ -48,6 +48,7 @@ protected:
         const std::string & any_column_file_name,
         const MergeTreeSettings & storage_settings);
 
+protected:
     void doCheckConsistency(bool require_part_metadata) const override;
 
 private:
@@ -58,6 +59,11 @@ private:
 
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 
+    ColumnSize calculateSubcolumnSize(const String & subcolumn_name) const override;
+
+    void addStreamToColumnSize(const String & stream_name, ColumnSize & size) const;
+
+    std::vector<String> getListOfStreamsForColumn(const NameAndTypePair & column) const;
 };
 
 }

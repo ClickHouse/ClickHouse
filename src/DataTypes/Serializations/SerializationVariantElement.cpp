@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
@@ -13,6 +14,24 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
+{
+    SipHash hash;
+    hash.update("VariantElement");
+    hash.update(nested_->getHash());
+    hash.update(variant_element_name_.size());
+    hash.update(variant_element_name_);
+    hash.update(variant_discriminator_);
+    return hash.get128();
+}
+
+SerializationPtr SerializationVariantElement::create(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
+{
+    if (!nested_->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_));
+    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_); });
 }
 
 struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : public ISerialization::DeserializeBinaryBulkState
@@ -38,6 +57,7 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
         return new_state;
     }
 };
+
 
 void SerializationVariantElement::enumerateStreams(
     DB::ISerialization::EnumerateStreamsSettings & settings,
@@ -138,7 +158,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
         /// We will apply rows_offset on discriminators later.
         if (discriminators_state->mode.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
         {
-            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(
+            SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(
                 *variant_element_state->discriminators->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
         }
         else
@@ -250,6 +270,11 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     nested_serialization->deserializeBinaryBulkWithMultipleStreams(variant_element_state->variant, *variant_rows_offset, *variant_limit, nested_settings, variant_element_state->variant_element_state, cache);
     removeVariantFromPath(settings.path);
 
+    /// We want to keep dynamic structure of the variant during deserialization.
+    /// Keeping dynamic structure improves performance of insertFrom/insertRangeFrom methods.
+    if (mutable_column->empty())
+        mutable_column->takeExactDynamicStructureFrom(*variant_element_state->variant);
+
     /// If there was nothing to deserialize or nothing was actually deserialized when variant_limit > 0, just insert defaults.
     /// The second case means that we don't have a stream for such sub-column. It may happen during ALTER MODIFY column with Variant extension.
     if (variant_limit == 0 || variant_element_state->variant->empty())
@@ -337,7 +362,7 @@ std::pair<size_t, size_t> SerializationVariantElement::deserializeCompactDiscrim
         }
         else
         {
-            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(discriminators, *stream, 0, limit_in_granule, 0);
+            SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(discriminators, *stream, 0, limit_in_granule, 0);
             size_t start = discriminators_data.size() - limit_in_granule;
             size_t skipped_rows = std::min(rows_offset, limit_in_granule);
 
@@ -394,7 +419,7 @@ DataTypePtr SerializationVariantElement::VariantSubcolumnCreator::create(const D
 
 SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
-    return std::make_shared<SerializationVariantElement>(prev, variant_element_name, global_variant_discriminator);
+    return SerializationVariantElement::create(prev, variant_element_name, global_variant_discriminator);
 }
 
 ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::ColumnPtr & prev) const
@@ -451,6 +476,11 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
     }
 
     return res_column;
+}
+
+size_t SerializationVariantElement::allocatedBytes() const
+{
+    return sizeof(*this) + variant_element_name.capacity();
 }
 
 }

@@ -3,13 +3,13 @@ description: 'Allows ClickHouse to connect to external databases via JDBC.'
 sidebar_label: 'JDBC'
 sidebar_position: 100
 slug: /engines/table-engines/integrations/jdbc
-title: 'JDBC'
+title: 'JDBC table engine'
 doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# JDBC
+# JDBC table engine
 
 <CloudNotSupportedBadge/>
 
@@ -45,7 +45,7 @@ ENGINE = JDBC(datasource, external_database, external_table)
 
 - `external_table` — Name of the table in an external database or a select query like `select * from table1 where column1=1`.
 
-- These parameters can also be passed using [named collections](operations/named-collections.md).
+- These parameters can also be passed using [named collections](/operations/named-collections.md).
 
 ## Usage example {#usage-example}
 

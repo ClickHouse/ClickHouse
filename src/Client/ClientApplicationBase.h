@@ -40,7 +40,7 @@ public:
     ~ClientApplicationBase() override;
 
     void init(int argc, char ** argv);
-    std::vector<String> getAllRegisteredNames() const override { return cmd_options; }
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override { return cmd_options; }
 
 protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
@@ -57,7 +57,7 @@ private:
     /// in case of typo.
     void addOptionsToHints(const OptionsDescription & options_description);
 
-    std::vector<String> cmd_options;
+    VectorWithMemoryTracking<String> cmd_options;
 
     LoggerPtr fatal_log;
     Poco::AutoPtr<Poco::SplitterChannel> fatal_channel_ptr;

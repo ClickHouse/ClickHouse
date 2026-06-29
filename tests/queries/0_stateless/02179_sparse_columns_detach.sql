@@ -37,8 +37,15 @@ OPTIMIZE TABLE t_sparse_detach FINAL;
 
 SELECT count() FROM t_sparse_detach WHERE s != '';
 
+-- Filter out empty covering parts left by TRUNCATE. After the clearEmptyParts fix,
+-- TRUNCATE's empty parts are cleaned up asynchronously after outdated-parts loading,
+-- so they may or may not be visible here depending on timing.
 SELECT column, serialization_kind FROM system.parts_columns
 WHERE table = 't_sparse_detach' AND database = currentDatabase() AND active
+AND part_name IN (
+    SELECT name FROM system.parts
+    WHERE table = 't_sparse_detach' AND database = currentDatabase() AND rows > 0
+)
 ORDER BY column;
 
 DETACH TABLE t_sparse_detach;
@@ -48,6 +55,10 @@ SELECT count() FROM t_sparse_detach WHERE s != '';
 
 SELECT column, serialization_kind FROM system.parts_columns
 WHERE table = 't_sparse_detach' AND database = currentDatabase() AND active
+AND part_name IN (
+    SELECT name FROM system.parts
+    WHERE table = 't_sparse_detach' AND database = currentDatabase() AND rows > 0
+)
 ORDER BY column;
 
 DROP TABLE t_sparse_detach;

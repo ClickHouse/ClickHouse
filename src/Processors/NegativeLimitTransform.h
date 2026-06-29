@@ -12,7 +12,7 @@ namespace DB
 
 /// Implementation for LIMIT -N OFFSET -M (drops last M rows, then gives last N rows)
 /// This processor support multiple inputs and outputs (the same number).
-/// Each pair of input and output port works independently.
+/// The output ports are interchangeable, chunks can be pushed to any available output.
 /// The reason to have multiple ports is to be able to stop all sources when limit is reached, in a query like:
 ///     SELECT * FROM system.numbers_mt WHERE number = 1000000 LIMIT -1
 ///
@@ -29,7 +29,6 @@ private:
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 
     /// State of port's pair.
-    /// Chunks from different port pairs are not mixed for better cache locality.
     struct PortsData
     {
         InputPort * input_port = nullptr;
@@ -60,9 +59,10 @@ private:
 
     struct ChunkWithPort
     {
-        OutputPort * output_port = nullptr;
         Chunk chunk;
     };
+
+    size_t next_output_port = 0;
 
     /// Stores the pending chunks which are not yet confirmed whether they are
     /// full outside the limit + offset or not. Once we can be sure that a chunk is fully
@@ -74,8 +74,7 @@ public:
 
     String getName() const override { return "NegativeLimit"; }
 
-    Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
-    Status prepare() override; /// Compatibility for TreeExecutor.
+    Status prepare() override;
 
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
@@ -85,17 +84,25 @@ public:
 
 private:
     /// Process a single input port, populates `queue`.
-    Status advancePort(PortsData & data);
+    Status advancePort(size_t pos);
 
-    /// Tries to push the Suffix part of the front chunk of the queue that is within LIMIT
-    /// and Prefix part might be outside LIMIT + OFFSET
+    /// Find an output port that can accept data at the moment.
+    OutputPort * getAvailableOutputPort();
+
+    bool allOutputsFinished() const;
+
+    /// Tries to push the suffix of the front chunk that is within LIMIT.
+    /// The prefix might be outside LIMIT + OFFSET and will be discarded.
+    /// Returns PortFull only if there is no output port that can accept data at the moment.
     Status tryPushChunkSuffixWithinLimit();
 
-    /// Tries to push the front chunk of the queue that is completely within LIMIT
+    /// Tries to push as many whole front chunks as possible without going into OFFSET.
+    /// Returns PortFull only if there is no output port that can accept data at the moment.
     Status tryPushWholeFrontChunk();
 
-    /// Tries to push the Prefix part of the front chunk of the queue that is within LIMIT
-    /// and Suffix part might be inside OFFSET
+    /// Tries to push the prefix of the front chunk that is within LIMIT.
+    /// The suffix might be inside OFFSET and will not be pushed.
+    /// Returns PortFull only if there is no output port that can accept data at the moment.
     Status tryPushChunkPrefixWithinLimit();
 };
 

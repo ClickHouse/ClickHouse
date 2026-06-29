@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Core/Defines.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -31,7 +32,8 @@ struct JoinOnKeyColumns
     Sizes key_sizes;
 
     JoinOnKeyColumns(
-        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
+        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
+        bool keep_lowcardinality = false);
 
     bool isRowFiltered(size_t i) const
     {
@@ -75,12 +77,16 @@ struct LazyOutput
         ++row_count;
     }
 
-    [[nodiscard]] size_t buildOutput(size_t size_to_reserve,
+    [[nodiscard]] size_t buildOutput(
+        size_t size_to_reserve,
+        const Block & left_block,
+        const IColumn::Offsets & left_offsets,
         MutableColumns & columns,
         const UInt64 * row_refs_begin,
         const UInt64 * row_refs_end,
         size_t rows_offset,
-        size_t rows_limit) const;
+        size_t rows_limit,
+        size_t bytes_limit) const;
 
     void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
@@ -94,7 +100,10 @@ struct LazyOutput
 
     [[nodiscard]] size_t buildOutputFromBlocksLimitAndOffset(
         MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
-        size_t rows_offset, size_t rows_limit) const;
+        const PaddedPODArray<UInt64> & left_sizes, const IColumn::Offsets & left_offsets,
+        size_t rows_offset, size_t rows_limit, size_t bytes_limit) const;
+
+private:
 };
 
 template <bool lazy>
@@ -117,6 +126,7 @@ public:
         , additional_filter_expression(additional_filter_expression_)
         , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
+        , enable_prefetch(join.enableSoftwarePrefetch())
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -149,7 +159,7 @@ public:
 
         if (is_asof_join)
         {
-            assert(join_on_keys.size() == 1);
+            chassert(join_on_keys.size() == 1);
             const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
             addColumn(right_asof_column);
             left_asof_key = join_on_keys[0].key_columns.back();
@@ -182,7 +192,7 @@ public:
         if constexpr (lazy)
         {
 #ifndef NDEBUG
-            checkColumns(*row_ref_list->columns);
+            checkColumns(row_ref_list->columns_info->columns);
 #endif
             if (has_columns_to_add)
             {
@@ -224,6 +234,7 @@ public:
     size_t max_joined_block_rows = 0;
     size_t rows_to_add;
     bool need_filter = false;
+    bool enable_prefetch = true;
 
     MutableColumns columns;
     IColumn::Offsets offsets_to_replicate;
@@ -251,7 +262,7 @@ public:
 
         if (need_replicate)
             /// Reserve 10% more space for columns, because some rows can be repeated
-            reserve_size = static_cast<size_t>(1.1 * reserve_size);
+            reserve_size = static_cast<size_t>(1.1 * static_cast<double>(reserve_size));
 
         for (auto & column : columns)
             column->reserve(reserve_size);
@@ -273,6 +284,12 @@ private:
                                     dest_column->getName(), column_from_block->getName());
                 dest_column = nullable_col->getNestedColumnPtr().get();
             }
+
+            if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column_from_block))
+                column_from_block = column_replicated->getNestedColumn().get();
+            if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(dest_column))
+                dest_column = column_replicated->getNestedColumn().get();
+
             /** Using dest_column->structureEquals(*column_from_block) will not work for low cardinality columns,
               * because dictionaries can be different, while calling insertFrom on them is safe, for example:
               * ColumnLowCardinality(size = 0, UInt8(size = 0), ColumnUnique(size = 1, String(size = 1)))
@@ -303,14 +320,6 @@ private:
     }
 };
 
-/// Adapter class to pass into addFoundRowAll
-/// In joinRightColumnsWithAdditionalFilter we don't want to add rows directly into AddedColumns,
-/// because they need to be filtered by additional_filter_expression.
-class PreSelectedRows : public std::vector<const RowRef *>
-{
-public:
-    void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
-    static constexpr bool isLazy() { return false; }
-};
+std::pair<const IColumn *, size_t> getBlockColumnAndRow(const RowRef * row_ref, size_t column_index);
 
 }

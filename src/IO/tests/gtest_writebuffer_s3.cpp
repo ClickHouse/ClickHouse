@@ -24,7 +24,6 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
 #include <IO/FileEncryptionCommon.h>
-#include <IO/WriteBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/AsyncReadCounters.h>
 #include <IO/ReadBufferFromS3.h>
@@ -163,7 +162,7 @@ class S3MemStrore
 public:
     void CreateBucket(const std::string & bucket)
     {
-        assert(!buckets.contains(bucket));
+        chassert(!buckets.contains(bucket));
         buckets.emplace(bucket, BucketMemStore{});
     }
 
@@ -250,8 +249,7 @@ struct Client : DB::S3::Client
             /* enable_s3_requests_logging = */ true,
             /* for_disk_s3 = */ false,
             /* opt_disk_name = */ {},
-            /* get_request_throttler = */ {},
-            /* put_request_throttler = */ {});
+            /* request_throttler = */ {});
     }
 
     void setInjectionModel(std::shared_ptr<MockS3::InjectionModel> injections_)
@@ -523,13 +521,13 @@ struct SimpleAsyncTasks : BaseSyncPolicy
 
 using namespace DB;
 
-void writeAsOneBlock(WriteBuffer& buf, size_t size)
+static void writeAsOneBlock(WriteBuffer& buf, size_t size)
 {
     std::vector<char> data(size, 'a');
     buf.write(data.data(), data.size());
 }
 
-void writeAsPieces(WriteBuffer& buf, size_t size)
+static void writeAsPieces(WriteBuffer& buf, size_t size)
 {
     size_t ceil = 15ull*1024*1024*1024;
     size_t piece = 1;
@@ -1188,7 +1186,7 @@ TEST_P(SyncAsync, StrictUploadPartSize) {
     }
 }
 
-String fillStringWithPattern(String pattern, int n)
+[[maybe_unused]] static String fillStringWithPattern(String pattern, int n)
 {
     String data;
     for (int i = 0; i < n; ++i)

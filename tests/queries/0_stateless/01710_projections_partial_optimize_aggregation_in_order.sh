@@ -56,7 +56,7 @@ function run_query()
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS processors_profile_log"
 
     echo "Used processors:"
-    $CLICKHOUSE_CLIENT --param_query_id "$query_id" -q "SELECT DISTINCT name FROM system.processors_profile_log WHERE query_id = {query_id:String} AND name LIKE 'Aggregating%'"
+    $CLICKHOUSE_CLIENT --param_query_id "$query_id" -q "SELECT DISTINCT name FROM system.processors_profile_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = {query_id:String} AND name LIKE 'Aggregating%'"
 }
 
 run_query "SELECT k1, k2, k3, sum(value) v FROM in_order_agg_partial_01710 GROUP BY k1, k2, k3 ORDER BY k1, k2, k3 SETTINGS optimize_aggregation_in_order=0"

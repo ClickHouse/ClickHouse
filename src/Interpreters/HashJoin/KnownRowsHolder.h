@@ -105,11 +105,11 @@ void addFoundRowAll(
 
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            if (!known_rows.isKnown(makePairNoInit(it->columns, it->row_num)))
+            if (!known_rows.isKnown(makePairNoInit(&it->columns_info->columns, it->row_num)))
             {
                 added.appendFromBlock(*it, false);
                 ++current_offset;
-                new_known_rows_ptr.emplace_back(it->columns, it->row_num);
+                new_known_rows_ptr.emplace_back(&it->columns_info->columns, it->row_num);
 
                 if (used_flags)
                 {
@@ -128,10 +128,20 @@ void addFoundRowAll(
     }
     else
     {
-        for (auto it = mapped.begin(); it.ok(); ++it)
+        /// Fast path mirroring the lazy branch above: when the list has a single row,
+        /// skip constructing a ForwardIterator and feed the inline RowRef directly.
+        if (mapped.rows == 1)
         {
-            added.appendFromBlock(*it, false);
+            added.appendFromBlock(static_cast<const RowRef *>(&mapped), false);
             ++current_offset;
+        }
+        else
+        {
+            for (auto it = mapped.begin(); it.ok(); ++it)
+            {
+                added.appendFromBlock(*it, false);
+                ++current_offset;
+            }
         }
     }
 }

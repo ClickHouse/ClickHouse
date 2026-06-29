@@ -2,7 +2,6 @@
 
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/logger_useful.h>
 #include <Poco/Logger.h>

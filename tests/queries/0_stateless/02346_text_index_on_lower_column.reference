@@ -1,16 +1,14 @@
 1
-Filter column: __text_index_idx_text_hasToken_085e7413c29346061f4779aace56199c (removed)
+Actions: INPUT : 0 -> __text_index_idx_text_hasToken_425d21a9e64c3b652fe967bc06aca4fc UInt8 : 0
 Name: idx_text
 1
-Filter column: hasToken(lower(__table1.text), _CAST(\'hello\'_String, \'String\'_String)) (removed)
 1
-Filter column: __text_index_idx_text_hasAllTokens_88af2da9d2b54687e40fc54faa64dcf6 (removed)
+Actions: INPUT : 0 -> __text_index_idx_text_hasAllTokens_7a7a737e1ade44463de66430e2c21507 UInt8 : 0
 Name: idx_text
 1
-Filter column: hasToken(__table1.text, \'Hello\'_String) (removed)
 1
-Filter column: __text_index_idx_text_hasToken_0e8aab2b09caebd5246da95a37cab465 (removed)
+Actions: INPUT : 0 -> __text_index_idx_text_hasToken_b62d561255328e2b7a6fbfbceec36f9b UInt8 : 0
 Name: idx_text
 1
-Filter column: __text_index_idx_text_hasAllTokens_7ae13ebd9e5d86daabbd76a520971ef3 (removed)
+Actions: INPUT : 0 -> __text_index_idx_text_hasAllTokens_458a6f0c95f141515db966345d9a0f2e UInt8 : 0
 Name: idx_text

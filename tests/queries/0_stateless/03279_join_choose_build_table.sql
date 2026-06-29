@@ -1,10 +1,13 @@
+-- Tags: no-parallel-replicas
 
+SET use_statistics = 0;
+SET query_plan_join_swap_table = 'auto';
+SET query_plan_optimize_join_order_algorithm = 'greedy';
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
 
 SET enable_analyzer = 1;
--- Force using skip indexes in planning to make test deterministic with `query_plan_join_swap_table` setting.
-SET use_skip_indexes_on_data_read = 0;
 
 CREATE TABLE sales (
     id Int32,
@@ -21,6 +24,7 @@ INSERT INTO products SELECT number, 'product ' || toString(number) FROM numbers(
 
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_limit = 2;
+SET enable_join_runtime_filters = 0;
 
 SELECT * FROM products, sales
 WHERE sales.product_id = products.id AND date = '2024-05-07'
@@ -53,7 +57,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND query like '%products, sales%'
 AND log_comment = '03279_join_choose_build_table_no_idx'
 ORDER BY event_time DESC
@@ -65,7 +69,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND query like '%sales, products%'
 AND log_comment = '03279_join_choose_build_table_no_idx'
 ORDER BY event_time DESC
@@ -79,7 +83,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND query like '%products, sales%'
 AND log_comment = '03279_join_choose_build_table_idx'
 ORDER BY event_time DESC
@@ -91,7 +95,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND query like '%sales, products%'
 AND log_comment = '03279_join_choose_build_table_idx'
 ORDER BY event_time DESC

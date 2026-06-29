@@ -37,7 +37,7 @@ ColumnsDescription BackupLogElement::getColumnsDescription()
         {"end_time", std::make_shared<DataTypeDateTime64>(6), "End time of the operation."},
         {"num_files", std::make_shared<DataTypeUInt64>(), "Number of files stored in the backup."},
         {"total_size", std::make_shared<DataTypeUInt64>(), "Total size of files stored in the backup."},
-        {"num_entries", std::make_shared<DataTypeUInt64>(), "Number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder, or the number of files inside the archive if the backup is stored as an archive. It is not the same as num_files if it's an incremental backup or if it contains empty files or duplicates. The following is always true: num_entries <= num_files."},
+        {"num_entries", std::make_shared<DataTypeUInt64>(), "Number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder, or the number of files inside the archive if the backup is stored as an archive. It is not the same as `num_files` if it's an incremental backup or if it contains empty files or duplicates. The following is always true: `num_entries ≤ num_files`."},
         {"uncompressed_size", std::make_shared<DataTypeUInt64>(), "Uncompressed size of the backup."},
         {"compressed_size", std::make_shared<DataTypeUInt64>(), "Compressed size of the backup. If the backup is not stored as an archive it equals to uncompressed_size."},
         {"files_read", std::make_shared<DataTypeUInt64>(), "Number of files read during the restore operation."},

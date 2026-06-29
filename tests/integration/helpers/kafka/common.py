@@ -1,5 +1,26 @@
-from helpers.kafka.common_direct import *
-from helpers.kafka.common_direct import _VarintBytes
+from contextlib import contextmanager
+import io
+import logging
+import os.path as p
+import random
+import socket
+import string
+import time
+
+import avro.datafile
+import avro.io
+import avro.schema
+from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
+from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
+from kafka.admin import NewTopic
+import kafka.errors
+from kafka.protocol.admin import DescribeGroupsRequest_v1
+from kafka.protocol.group import MemberAssignment
+
+from ..client import QueryRuntimeException
+from . import kafka_pb2, oneof_transaction_pb2, social_pb2
+from ..test_tools import TSV
+from google.protobuf.internal.encoder import _VarintBytes
 
 
 def get_kafka_producer(port, serializer, retries):
@@ -58,7 +79,20 @@ def kafka_create_topic(
 
 
 def kafka_delete_topic(admin_client, topic, max_retries=50):
-    result = admin_client.delete_topics([topic])
+    # Retry the delete RPC on transient broker/controller errors, like kafka_create_topic.
+    retries = 0
+    while True:
+        try:
+            result = admin_client.delete_topics([topic])
+            break
+        except Exception as e:
+            retries += 1
+            time.sleep(0.5)
+            if retries < max_retries:
+                logging.warning(f"Failed to delete topic {e}")
+            else:
+                raise
+
     for topic, e in result.topic_error_codes:
         if e == 0:
             logging.debug(f"Topic {topic} deleted")
@@ -110,10 +144,20 @@ def existing_kafka_topic(admin_client, topic_name, max_retries=50):
         kafka_delete_topic(admin_client, topic_name, max_retries)
 
 
-def get_admin_client(kafka_cluster):
-    return KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
+def get_admin_client(kafka_cluster, retries=15):
+    # Broker may not be reachable yet; retry like get_kafka_producer() instead of
+    # raising NoBrokersAvailable on the first attempt.
+    errors = []
+    for _ in range(retries):
+        try:
+            return KafkaAdminClient(
+                bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+            )
+        except kafka.errors.NoBrokersAvailable as e:
+            errors += [str(e)]
+            time.sleep(1)
+
+    raise Exception("Admin client connection not established, {}".format(errors))
 
 
 def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
@@ -191,10 +235,40 @@ def kafka_consume_with_retry(
     return messages
 
 
+def kafka_produce_protobuf_messages_protobuflist(
+    kafka_cluster, topic, start_index, num_messages
+):
+    """Produce Kafka messages in ProtobufList format.
+
+    Each Kafka message is a single ProtobufList envelope containing
+    all num_messages rows. The wire format is:
+      varint(envelope_size) + repeated { varint(field_tag) + varint(msg_size) + msg_bytes }
+    """
+    # Build the envelope body: repeated field 1 (KeyValuePair) entries
+    envelope_body = b""
+    FIELD_TAG = _VarintBytes((1 << 3) | 2)  # field 1, wire type 2 (length-delimited)
+    for i in range(start_index, start_index + num_messages):
+        msg = kafka_pb2.KeyValuePair()
+        msg.key = i
+        msg.value = str(i)
+        serialized_msg = msg.SerializeToString()
+        envelope_body += FIELD_TAG + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+    # Wrap with the envelope size prefix
+    data = _VarintBytes(len(envelope_body)) + envelope_body
+
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
+        value_serializer=producer_serializer,
+    )
+    producer.send(topic=topic, value=data)
+    producer.flush()
+    logging.debug("Produced {} ProtobufList messages for topic {}".format(num_messages, topic))
+
+
 def kafka_produce_protobuf_messages_no_delimiters(
     kafka_cluster, topic, start_index, num_messages
 ):
-    data = ""
     producer = KafkaProducer(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -298,7 +372,7 @@ def avro_confluent_message(schema_registry_client, value):
 
 
 def create_settings_string(settings):
-    if settings is None:
+    if settings is None or len(settings) == 0:
         return ""
 
     def format_value(value):
@@ -489,6 +563,43 @@ def describe_consumer_group(kafka_cluster, name):
         member_info["assignment"] = member_topics_assignment
         res.append(member_info)
     return res
+
+def clean_test_database_and_topics(instance, cluster):
+    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
+    admin_client = get_admin_client(cluster)
+
+    def get_topics_to_delete():
+        return [t for t in admin_client.list_topics() if not t.startswith("_")]
+
+    topics = get_topics_to_delete()
+    logging.debug(f"Deleting topics: {topics}")
+    # Retry the delete RPC on transient broker/controller errors, like kafka_create_topic.
+    retries = 0
+    while True:
+        try:
+            result = admin_client.delete_topics(topics)
+            break
+        except Exception as e:
+            retries += 1
+            time.sleep(0.5)
+            if retries < 50:
+                logging.warning(f"Failed to delete topics {e}")
+            else:
+                raise
+    for topic, error in result.topic_error_codes:
+        if error != 0:
+            logging.warning(f"Received error {error} while deleting topic {topic}")
+        else:
+            logging.info(f"Deleted topic {topic}")
+
+    retries = 0
+    topics = get_topics_to_delete()
+    while len(topics) != 0:
+        logging.info(f"Existing topics: {topics}")
+        if retries >= 5:
+            raise Exception(f"Failed to delete topics {topics}")
+        retries += 1
+        time.sleep(0.5)
 
 
 KAFKA_TOPIC_OLD = "old_t"

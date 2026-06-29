@@ -10,6 +10,7 @@ namespace DB
 {
 
 class WriteBuffer;
+struct ExplainFormatSettings;
 
 namespace JSONBuilder { class JSONMap; }
 
@@ -20,8 +21,10 @@ struct AggregateDescription
     Names argument_names;
     String column_name;      /// What name to use for a column with aggregate function values
 
-    void explain(WriteBuffer & out, size_t indent) const; /// Get description for EXPLAIN query.
+    void explain(WriteBuffer & out, const std::string & prefix, size_t additonal_indent) const; /// Get description for EXPLAIN query.
     void explain(JSONBuilder::JSONMap & map) const;
+
+    void explainPretty(ExplainFormatSettings & settings) const;
 };
 
 using AggregateDescriptions = std::vector<AggregateDescription>;

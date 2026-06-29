@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Common/WeakHash.h>
-
+#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
@@ -40,12 +39,12 @@ public:
 
     Field operator[](size_t) const override;
     void get(size_t, Field &) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
     void insert(const Field &) override;
     bool tryInsert(const Field &) override { return false; }
     bool isDefaultAt(size_t) const override;
 
-    StringRef getDataAt(size_t) const override
+    std::string_view getDataAt(size_t) const override
     {
         return {};
     }
@@ -55,19 +54,29 @@ public:
         ++s;
     }
 
-    StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override;
+    std::string_view serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t /*n*/, SipHash & /*hash*/) const override
     {
     }
 
-    WeakHash32 getWeakHash32() const override
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
     {
-        return WeakHash32(s);
+        /// A dummy column has a single fixed per-row hash (`WEAK_HASH32_INITIAL_VALUE`). The
+        /// non-initial path still combines that finalized value (like an empty ColumnTuple) so a
+        /// materialized dummy and a ColumnConst wrapper of it compose identically.
+        /// See IColumn::computeHashInto.
+        const size_t n = row_end - row_begin;
+        if (initial)
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
+        else
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = combineWeakHash32(WEAK_HASH32_INITIAL_VALUE, hash_out[i]);
     }
 
     void updateHashFast(SipHash & /*hash*/) const override
@@ -94,6 +103,8 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override;
 
+    void filter(const Filter & filt) override;
+
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
@@ -110,14 +121,14 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
     double getRatioOfDefaultRows(double) const override;
     UInt64 getNumberOfDefaultRows() const override;
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override;
     void gather(ColumnGathererStream &) override;
 
-    void getExtremes(Field &, Field &) const override
+    void getExtremes(Field &, Field &, size_t, size_t) const override
     {
     }
 

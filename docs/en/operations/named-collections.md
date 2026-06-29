@@ -548,7 +548,7 @@ SETTINGS kafka_num_consumers = 4,
 
 ## Named collections for backups {#named-collections-for-backups}
 
-For the description of parameters see [Backup and Restore](./backup.md).
+For the description of parameters see [Backup and Restore](/operations/backup/overview).
 
 ### DDL example {#ddl-example-4}
 

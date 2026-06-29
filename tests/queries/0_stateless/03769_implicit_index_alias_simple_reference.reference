@@ -1,0 +1,5 @@
+auto_minmax_index_a	minmax	a
+auto_minmax_index_d	minmax	a > 0
+0	0	0	0
+10	10	10	1
+20	20	20	1

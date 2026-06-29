@@ -25,7 +25,7 @@ include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsFeatureTests.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsThreadAffinity.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsThreadName.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsSIMD.cmake")
-include("${ClickHouse_SOURCE_DIR}/contrib/aws-crt-cpp/cmake/AwsGetVersion.cmake")
+include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsGetVersion.cmake")
 
 set (AWS_STUBS "${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/aws_stubs.cpp")
 
@@ -82,8 +82,8 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/auth/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/auth/bearer-token-provider/*.cpp"
-    "${AWS_SDK_CORE_DIR}/source/auth/signer/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/auth/signer-provider/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/auth/signer/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/client/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/config/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/config/defaults/*.cpp"
@@ -102,6 +102,8 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/smithy/tracing/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/base64/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/cbor/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/checksum/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/component-registry/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/crt/*.cpp"
@@ -130,8 +132,6 @@ configure_file("${AWS_SDK_CORE_DIR}/include/aws/core/SDKConfig.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/include/aws/core/SDKConfig.h" @ONLY)
 
 aws_get_version(AWS_CRT_CPP_VERSION_MAJOR AWS_CRT_CPP_VERSION_MINOR AWS_CRT_CPP_VERSION_PATCH FULL_VERSION GIT_HASH)
-# Don't include the hash of HEAD in a config file. It's just terrible for build caching and useless
-set(GIT_HASH "")
 set(FULL_VERSION "${AWS_CRT_CPP_VERSION_MAJOR}.${AWS_CRT_CPP_VERSION_MINOR}.${AWS_CRT_CPP_VERSION_PATCH}-clickhouse")
 configure_file("${AWS_CRT_DIR}/include/aws/crt/Config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/include/aws/crt/Config.h" @ONLY)
 
@@ -320,6 +320,7 @@ file(GLOB AWS_CRT_SRC
     "${AWS_CRT_DIR}/source/external/*.cpp"
     "${AWS_CRT_DIR}/source/http/*.cpp"
     "${AWS_CRT_DIR}/source/io/*.cpp"
+    "${AWS_CRT_DIR}/source/cbor/*.cpp"
     "${AWS_CRT_DIR}/source/checksum/*.cpp"
 )
 
@@ -397,7 +398,7 @@ aws_set_thread_name_method(_aws)
 
 # The library is large - avoid bloat.
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_aws PRIVATE -g0)
+    target_compile_options (_aws PRIVATE -g1)
 endif()
 
 add_library(ch_contrib::aws_s3 ALIAS _aws)

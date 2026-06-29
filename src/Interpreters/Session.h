@@ -2,9 +2,11 @@
 
 #include <Common/SettingsChanges.h>
 #include <Access/AuthenticationData.h>
+#include <Interpreters/ClientCertificateInfo.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SessionTracker.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <chrono>
 #include <memory>
@@ -23,6 +25,7 @@ class NamedSessionsStorage;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 class SessionLog;
+class X509Certificate;
 
 /** Represents user-session from the server perspective,
  *  basically it is just a smaller subset of Context API, simplifies Context management.
@@ -51,11 +54,11 @@ public:
 
     /// Sets the current user, checks the credentials and that the specified address is allowed to connect from.
     /// The function throws an exception if there is no such user or password is wrong.
-    void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & external_roles_ = {});
+    void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const std::optional<Poco::Net::SocketAddress> & connection_address = {}, const Strings & external_roles_ = {});
 
     /// `external_roles_` names of the additional roles (over what is granted via local access control mechanisms) that would be granted to user during this session.
     /// Role is not granted if it can't be found by name via AccessControl (i.e. doesn't exist on this instance).
-    void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & external_roles_ = {});
+    void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const std::optional<Poco::Net::SocketAddress> & connection_address = {}, const Strings & external_roles_ = {});
 
     // Verifies whether the user's validity extends beyond the current time.
     // Throws an exception if the user's validity has expired.
@@ -63,6 +66,10 @@ public:
 
     /// Writes a row about login failure into session log (if enabled)
     void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
+
+    /// Remembers the TLS client certificate presented on this connection (if any), so that
+    /// session_log records it for the login/logout events of this session.
+    void setClientCertificate(const X509Certificate & certificate);
 
     /// Returns a reference to the session's ClientInfo.
     const ClientInfo & getClientInfo() const;
@@ -119,6 +126,9 @@ private:
     std::optional<UUID> user_id;
     std::vector<UUID> external_roles;
     AuthenticationData user_authenticated_with;
+
+    /// TLS client certificate presented on this connection, if any.
+    std::optional<ClientCertificateInfo> certificate_info;
 
     ContextMutablePtr session_context;
     mutable bool query_context_created = false;

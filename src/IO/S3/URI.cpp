@@ -17,7 +17,7 @@ namespace DB
 
 struct URIConverter
 {
-    static void modifyURI(Poco::URI & uri, std::unordered_map<std::string, std::string> mapper)
+    static void modifyURI(Poco::URI & uri, NameToNameMap mapper)
     {
         Macros macros({{"bucket", uri.getHost()}});
         uri = macros.expand(mapper[uri.getScheme()]).empty() ? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + uri.getPathAndQuery());
@@ -32,22 +32,12 @@ namespace ErrorCodes
 namespace S3
 {
 
-URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
+URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style)
 {
-    /// Case when bucket name represented in domain name of S3 URL.
-    /// E.g. (https://bucket-name.s3.region.amazonaws.com/key)
-    /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
-    static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3express[\-a-z0-9]+|s3|cos|obs|oss-data-acc|oss|eos)([.\-][a-z0-9\-.:]+))");
-
     /// Case when AWS Private Link Interface is being used
     /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/bucket-name/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/userguide/privatelink-interface-endpoints.html
     static const RE2 aws_private_link_style_pattern(R"(bucket\.vpce\-([a-z0-9\-.]+)\.vpce\.amazonaws\.com(:\d{1,5})?)");
-
-    /// Case when bucket name and key represented in the path of S3 URL.
-    /// E.g. (https://s3.region.amazonaws.com/bucket-name/key)
-    /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
-    static const RE2 path_style_pattern("^/([^/]*)(?:/?(.*))");
 
     if (allow_archive_path_syntax)
         std::tie(uri_str, archive_pattern) = getURIAndArchivePattern(uri_);
@@ -55,15 +45,40 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         uri_str = uri_;
 
     uri = Poco::URI(uri_str);
+    /// Keep a copy of how Poco parsed the original string before any mapping
+    Poco::URI original_uri(uri_str);
+    bool looks_like_presigned = false;
+    for (const auto & [qk, qv] : original_uri.getQueryParameters())
+    {
+        if (
+            qk == "versionId" ||
+            qk == "AWSAccessKeyId" ||
+            qk == "Signature" ||
+            qk == "Expires" ||
+            qk.starts_with("X-Amz-") ||
+            qk == "GoogleAccessId" ||
+            qk.starts_with("X-Goog-")
+        )
+        {
+            looks_like_presigned = true;
+            break;
+        }
+    }
 
-    std::unordered_map<std::string, std::string> mapper;
+    /// In compatibility mode, we want to treat pre-signed URLs like plain ones,
+    /// so we fold their query into the key (like make '?' behave as wildcard)
+    /// Do it by unmarking presigned here, but if it actually looks like a presigned URL
+    if (!keep_presigned_query_parameters && looks_like_presigned)
+        looks_like_presigned = false;
+
+    NameToNameMap mapper;
     auto context = Context::getGlobalContextInstance();
     if (context)
     {
         const auto *config = &context->getConfigRef();
         if (config->has("url_scheme_mappers"))
         {
-            std::vector<String> config_keys;
+            Strings config_keys;
             config->keys("url_scheme_mappers", config_keys);
             for (const std::string & config_key : config_keys)
                 mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".to");
@@ -94,68 +109,108 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
             has_version_id = true;
         }
     }
-
-    /// Poco::URI will ignore '?' when parsing the path, but if there is a versionId in the http parameter,
-    /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
-    /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
-    /// It is necessary to encode '?' to avoid deletion during parsing path.
-    if (!has_version_id && uri_.contains('?'))
+    if (!has_version_id && !looks_like_presigned && uri_.contains('?'))
     {
         String uri_with_question_mark_encode;
         Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
         uri = Poco::URI(uri_with_question_mark_encode);
+        if (!mapper.empty())
+            URIConverter::modifyURI(uri, mapper);
     }
 
-    String name;
-    String endpoint_authority_from_uri;
+    /// Defer handling of non-versionId, non-presigned queries until after style detection.
 
     bool is_using_aws_private_link_interface = re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern);
-
-    if (!is_using_aws_private_link_interface
-        && re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
+    switch (uri_style)
     {
-        is_virtual_hosted_style = true;
-        if (name == "oss-data-acc")
+    case S3UriStyle::AUTO:
+    {
+        if (!tryInitVirtualHostedStyle(is_using_aws_private_link_interface, true) && !tryInitPathStyle())
         {
-            bucket = bucket.substr(0, bucket.find('.'));
-            endpoint = uri.getScheme() + "://" + uri.getHost().substr(bucket.length() + 1);
+            /// Custom endpoint, e.g. a public domain of Cloudflare R2,
+            /// which could be served by a custom server-side code.
+            storage_name = "S3";
+            bucket = "default";
+            is_virtual_hosted_style = false;
+            endpoint = uri.getScheme() + "://" + uri.getAuthority();
+            if (!uri.getPath().empty())
+                key = uri.getPath().substr(1);
         }
-        else
-        {
-            endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
-        }
-
-        if (!uri.getPath().empty())
-        {
-            /// Remove leading '/' from path to extract key.
-            key = uri.getPath().substr(1);
-        }
-
-        boost::to_upper(name);
-        if (name == "COS")
-            storage_name = "COSN";
-        else
-            storage_name = name;
+        break;
     }
-    else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
+    case S3UriStyle::VIRTUAL_HOSTED:
     {
-        is_virtual_hosted_style = false;
-        endpoint = uri.getScheme() + "://" + uri.getAuthority();
+        if (!tryInitVirtualHostedStyle(is_using_aws_private_link_interface, false))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 virtual-hosted-style uri: {}", !uri.empty() ? uri.toString() : "");
+        break;
     }
-    else
+    case S3UriStyle::PATH:
     {
-        /// Custom endpoint, e.g. a public domain of Cloudflare R2,
-        /// which could be served by a custom server-side code.
-        storage_name = "S3";
-        bucket = "default";
-        is_virtual_hosted_style = false;
-        endpoint = uri.getScheme() + "://" + uri.getAuthority();
-        if (!uri.getPath().empty())
-            key = uri.getPath().substr(1);
+        if (!tryInitPathStyle())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 path-style uri: {}", !uri.empty() ? uri.toString() : "");
+        break;
+    }
     }
 
     validateBucket(bucket, uri);
     validateKey(key, uri);
+}
+
+bool URI::tryInitPathStyle()
+{
+    /// Case when bucket name and key represented in the path of S3 URL.
+    /// E.g. (https://s3.region.amazonaws.com/bucket-name/key)
+    /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
+    static const RE2 path_style_pattern("^/([^/]*)(?:/?(.*))");
+
+    if (!re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
+        return false;
+
+    is_virtual_hosted_style = false;
+    endpoint = uri.getScheme() + "://" + uri.getAuthority();
+    return true;
+}
+
+bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bool use_strict_pattern)
+{
+    /// Case when bucket name represented in domain name of S3 URL.
+    /// E.g. (https://bucket-name.s3.region.amazonaws.com/key)
+    /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
+    static const RE2 virtual_hosted_style_pattern_strict(R"((.+)\.(s3express[\-a-z0-9]+|s3|cos|obs|oss-data-acc|oss|eos)([.\-][a-z0-9\-.:]+))");
+    static const RE2 virtual_hosted_style_pattern_light(R"(([\-a-z0-9]+)\.([\-a-z0-9]+)([.\-][a-z0-9\-.:]+))");
+
+    if (is_using_aws_private_link_interface)
+        return false;
+
+    String name;
+    String endpoint_authority_from_uri;
+
+    if (!re2::RE2::FullMatch(uri.getAuthority(), (use_strict_pattern) ? virtual_hosted_style_pattern_strict : virtual_hosted_style_pattern_light, &bucket, &name, &endpoint_authority_from_uri))
+        return false;
+
+    is_virtual_hosted_style = true;
+    if (name == "oss-data-acc")
+    {
+        bucket = bucket.substr(0, bucket.find('.'));
+        endpoint = uri.getScheme() + "://" + uri.getHost().substr(bucket.length() + 1);
+    }
+    else
+    {
+        endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
+    }
+
+    if (!uri.getPath().empty())
+    {
+        /// Remove leading '/' from path to extract key.
+        key = uri.getPath().substr(1);
+    }
+
+    boost::to_upper(name);
+    if (name == "COS")
+        storage_name = "COSN";
+    else
+        storage_name = name;
+    return true;
 }
 
 void URI::addRegionToURI(const std::string &region)

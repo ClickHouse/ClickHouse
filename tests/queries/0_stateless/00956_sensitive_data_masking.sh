@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-flaky-check
 
 # Get all server logs
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
@@ -107,13 +107,13 @@ echo 7
 # and finally querylog
 $CLICKHOUSE_CLIENT \
   --server_logs_file=/dev/null \
-  --query="select * from system.query_log where current_database = currentDatabase() AND event_date >= yesterday() and query like '%TOPSECRET%';"
+  --query="select * from system.query_log where current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= now() - 600 and query like '%TOPSECRET%';"
 
 echo '7.1'
 # query_log exceptions
 $CLICKHOUSE_CLIENT \
   --server_logs_file=/dev/null \
-  --query="select * from system.query_log where current_database = currentDatabase() AND event_date >= yesterday() and exception like '%TOPSECRET%'"
+  --query="select * from system.query_log where current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= now() - 600 and exception like '%TOPSECRET%'"
 
 echo '7.2'
 
@@ -143,8 +143,8 @@ $CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS text_log" --server_logs_file=/dev/
 echo 9
 $CLICKHOUSE_CLIENT \
    --server_logs_file=/dev/null \
-   --query="SELECT if( count() > 0, 'text_log non empty', 'text_log empty') FROM system.text_log WHERE event_date >= yesterday() and message like '%find_me%';
-   select * from system.text_log where event_date >= yesterday() and message like '%TOPSECRET=TOPSECRET%' SETTINGS max_rows_to_read = 0"  --ignore-error
+   --query="SELECT if( count() > 0, 'text_log non empty', 'text_log empty') FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 and message like '%find_me%';
+   select * from system.text_log where event_date >= yesterday() AND event_time >= now() - 600 and message like '%TOPSECRET=TOPSECRET%' SETTINGS max_rows_to_read = 0"  --ignore-error
 echo 'finish'
 rm -f "$tmp_file" >/dev/null 2>&1
 rm -f "$tmp_file2" >/dev/null 2>&1

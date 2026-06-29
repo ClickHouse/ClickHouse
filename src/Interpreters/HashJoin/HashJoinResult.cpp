@@ -1,5 +1,6 @@
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnReplicated.h>
 #include <Common/memcpySmall.h>
 
 namespace DB
@@ -53,14 +54,16 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
     ColumnWithTypeAndName right_column = left_column;
     right_column.name = renamed_right_column;
 
-    if (null_map_filter)
-        right_column.column = JoinCommon::filterWithBlanks(right_column.column, *null_map_filter);
+    right_column.column = right_column.column->convertToFullColumnIfConst();
 
     bool should_be_nullable = isNullableOrLowCardinalityNullable(right_key_type);
     if (null_map_filter)
         correctNullabilityInplace(right_column, should_be_nullable, *null_map_filter);
     else
         correctNullabilityInplace(right_column, should_be_nullable);
+
+    if (null_map_filter)
+        right_column.column = JoinCommon::filterWithBlanks(right_column.column, *null_map_filter);
 
     if (!right_column.type->equals(*right_key_type))
     {
@@ -70,6 +73,20 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
 
     right_column.column = right_column.column->convertToFullColumnIfConst();
     return right_column;
+}
+
+static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes, bool force_lazy_replication)
+{
+    if ((force_lazy_replication && !column->isConst()) || isLazyReplicationUseful(column))
+    {
+        if (!indexes)
+            indexes = convertOffsetsToIndexes(offsets);
+        column = ColumnReplicated::create(column, indexes);
+    }
+    else
+    {
+        column = column->replicate(offsets);
+    }
 }
 
 static void appendRightColumns(
@@ -82,6 +99,17 @@ static void appendRightColumns(
 {
     size_t existing_columns = block.columns();
     const auto & table_join = properties.table_join;
+
+    /// Avoid lazy replication that grow the output size on not useful columns (e.g. small types)
+    /// because it can be much slower than eager replication.
+    bool is_replication_growing = !offsets.empty() && offsets.back() > offsets.size();
+    if (is_replication_growing)
+    {
+        auto cols = block.getColumns();
+        for (auto & col : cols)
+            col = convertToFullColumnIfReplicationNotUseful(col, /*with_size_check=*/ false);
+        block.setColumns(cols);
+    }
 
     std::set<size_t> block_columns_to_erase;
     if (HashJoin::canRemoveColumnsFromLeftBlock(table_join))
@@ -106,6 +134,13 @@ static void appendRightColumns(
     }
 
     bool is_asof_join = table_join.strictness() == JoinStrictness::Asof;
+    /// For `LEFT ANTI` (and `RIGHT ANTI` after `TableJoin::swapSides`), the upstream filter
+    /// in `HashJoinResult::next` has already kept only unmatched rows, so right-side key
+    /// columns must hold defaults rather than left key values (issue #99959).
+    bool is_left_anti_join = table_join.kind() == JoinKind::Left && table_join.strictness() == JoinStrictness::Anti;
+    /// `JoinFeatures::need_filter` is always true for `is_anti_join && left`, so `block.rows()`
+    /// here is the number of unmatched rows. No `filter_ptr` handling is needed.
+    chassert(!is_left_anti_join || properties.need_filter);
     std::vector<size_t> right_keys_to_replicate;
 
     /// Add join key columns from right block if needed.
@@ -116,14 +151,26 @@ static void appendRightColumns(
         if (is_asof_join && right_key.name == table_join.getOnlyClause().key_names_right.back())
             continue;
 
-        const auto & left_column = block.getByName(properties.required_right_keys_sources[i]);
         const auto & right_col_name = table_join.renamedRightColumnName(right_key.name);
-        const auto * filter_ptr = properties.need_filter ? nullptr : &filter;
-        auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, filter_ptr);
+
+        ColumnWithTypeAndName right_col;
+        if (is_left_anti_join)
+        {
+            /// All rows in the block are unmatched: emit type defaults for the right key.
+            auto column = right_key.type->createColumn();
+            column->insertManyDefaults(block.rows());
+            right_col = ColumnWithTypeAndName(std::move(column), right_key.type, right_col_name);
+        }
+        else
+        {
+            const auto & left_column = block.getByName(properties.required_right_keys_sources[i]);
+            const auto * filter_ptr = properties.need_filter ? nullptr : &filter;
+            right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, filter_ptr);
+        }
         block.insert(std::move(right_col));
 
         if (!offsets.empty())
-            right_keys_to_replicate.push_back(block.getPositionByName(right_col_name));
+            right_keys_to_replicate.push_back(block.columns() - 1);
     }
 
     if (!offsets.empty())
@@ -132,10 +179,30 @@ static void appendRightColumns(
         chassert(offsets.size() == block.rows());
 
         auto columns_to_replicate = block.getColumns();
-        for (size_t i = 0; i < existing_columns; ++i)
-            columns_to_replicate[i] = columns_to_replicate[i]->replicate(offsets);
-        for (size_t pos : right_keys_to_replicate)
-            columns_to_replicate[pos] = columns_to_replicate[pos]->replicate(offsets);
+        if (properties.enable_lazy_columns_replication || properties.enable_lazy_columns_indexing)
+        {
+            std::vector<size_t> positions;
+            positions.reserve(existing_columns + right_keys_to_replicate.size());
+            for (size_t i = 0; i < existing_columns; ++i)
+                positions.push_back(i);
+            for (size_t pos : right_keys_to_replicate)
+                positions.push_back(pos);
+
+            bool force_lazy_replication = properties.enable_lazy_columns_indexing && !is_replication_growing;
+            ColumnPtr indexes;
+            transformColumnsWithSharedIndex(
+                columns_to_replicate,
+                [&](const ColumnPtr & index) { return index->replicate(offsets); },
+                [&](ColumnPtr & col) { replicateColumnLazily(col, offsets, indexes, force_lazy_replication); },
+                positions);
+        }
+        else
+        {
+            for (size_t i = 0; i < existing_columns; ++i)
+                columns_to_replicate[i] = columns_to_replicate[i]->replicate(offsets);
+            for (size_t pos : right_keys_to_replicate)
+                columns_to_replicate[pos] = columns_to_replicate[pos]->replicate(offsets);
+        }
 
         block.setColumns(columns_to_replicate);
     }
@@ -143,7 +210,7 @@ static void appendRightColumns(
     block.erase(block_columns_to_erase);
 }
 
-MutableColumns copyEmptyColumns(const MutableColumns & columns)
+static MutableColumns copyEmptyColumns(const MutableColumns & columns)
 {
     MutableColumns res_columns;
     res_columns.reserve(columns.size());
@@ -152,7 +219,7 @@ MutableColumns copyEmptyColumns(const MutableColumns & columns)
     return res_columns;
 }
 
-void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offsets & out_offsets, UInt64 shift, UInt64 limit)
+static void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offsets & out_offsets, UInt64 shift, UInt64 limit)
 {
     out_offsets.clear();
     out_offsets.resize_fill(offsets.size(), 0);
@@ -204,9 +271,9 @@ Block HashJoinResult::generateBlock(
     else
     {
         rows_added = lazy_output.buildOutput(
-            state->rows_to_reserve, columns,
+            state->rows_to_reserve, state->block, state->offsets, columns,
             off_data + state->row_ref_begin, off_data + state->row_ref_end,
-            state->state_row_offset, state->state_row_limit);
+            state->state_row_offset, state->state_row_limit, state->state_bytes_limit);
     }
 
     IColumn::Offsets offsets;
@@ -241,6 +308,14 @@ Block HashJoinResult::generateBlock(
         state->filter,
         lazy_output.type_name,
         properties);
+
+    if (!properties.enable_lazy_columns_indexing)
+    {
+        auto cols = block.getColumns();
+        for (auto & col : cols)
+            col = convertToFullColumnIfReplicationNotUseful(col);
+        block.setColumns(cols);
+    }
 
     if (is_state_finished)
         state.reset();
@@ -312,21 +387,29 @@ static size_t getAvgBytesPerRow(const Block & block)
     return block.allocatedBytes() / std::max<size_t>(1, block.rows());
 }
 
+void HashJoinResult::setNextBlock(ScatteredBlock && block)
+{
+    next_scattered_block.emplace(std::move(block));
+}
+
 IJoinResult::JoinResultBlock HashJoinResult::next()
 {
+    ScatteredBlock * next_block_ptr = next_scattered_block ? &next_scattered_block.value() : nullptr;
     if (current_row_state)
     {
         bool is_last = current_row_state->is_last;
         auto block = generateBlock(current_row_state, lazy_output, properties);
-        return {std::move(block), is_last && !current_row_state.has_value()};
+        return {std::move(block), next_block_ptr, is_last && !current_row_state.has_value()};
     }
 
     if (!scattered_block)
-        return {};
+        return {Block(), next_block_ptr, true};
 
     size_t limit_rows_per_key = 0;
+    size_t limit_bytes_per_key = 0;
     /// We can split when using lazy_output with row_refs and offsets
     if (properties.joined_block_split_single_row
+        && properties.max_joined_block_rows > 0
         /// ignore join get, it has any join semantics
         && !properties.is_join_get
         && !offsets.empty()
@@ -338,6 +421,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         && std::ranges::all_of(columns, [](const auto & col) { return col->empty(); }))
     {
         limit_rows_per_key = properties.max_joined_block_rows;
+        limit_bytes_per_key = properties.max_joined_block_bytes;
     }
 
     size_t avg_bytes_per_row = properties.avg_joined_bytes_per_row + getAvgBytesPerRow(scattered_block->getSourceBlock());
@@ -349,7 +433,10 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
         if (properties.need_filter)
             scattered_block->filter(std::span<UInt64>{matched_rows});
-        scattered_block->filterBySelector();
+        if (properties.enable_lazy_columns_indexing)
+            scattered_block->filterBySelectorLazily();
+        else
+            scattered_block->filterBySelector();
 
         current_row_state.emplace(GenerateCurrentRowState{
             .block = std::move(*scattered_block).getSourceBlock(),
@@ -362,11 +449,12 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             .matched_rows = std::span<UInt64>{matched_rows},
             .is_last = true,
             .state_row_limit = limit_rows_per_key,
+            .state_bytes_limit = limit_bytes_per_key,
         });
 
         auto block = generateBlock(current_row_state, lazy_output, properties);
         scattered_block.reset();
-        return {std::move(block), !current_row_state.has_value()};
+        return {std::move(block), next_block_ptr, !current_row_state.has_value()};
     }
 
     const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
@@ -462,7 +550,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             /// Copy data from the original columns to preserve columns size in the block.
             rhs_columns.reserve(columns.size());
             for (auto & column : columns)
-                rhs_columns.push_back(column->cut(start_row, num_rhs_rows)->assumeMutable());
+                rhs_columns.push_back(column->cut(prev_offset, num_rhs_rows)->assumeMutable());
 
             if (is_last)
                 columns.clear();
@@ -474,7 +562,10 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
     if (properties.need_filter)
         current_scattered_block.filter(partial_matched_rows);
-    current_scattered_block.filterBySelector();
+    if (properties.enable_lazy_columns_indexing)
+        current_scattered_block.filterBySelectorLazily();
+    else
+        current_scattered_block.filterBySelector();
 
     current_row_state.emplace(GenerateCurrentRowState{
         .block = std::move(current_scattered_block).getSourceBlock(),
@@ -487,13 +578,14 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         .matched_rows = partial_matched_rows,
         .is_last = is_last,
         .state_row_limit = limit_rows_per_key,
+        .state_bytes_limit = limit_bytes_per_key,
     });
 
     auto block = generateBlock(current_row_state, lazy_output, properties);
     if (is_last)
         scattered_block.reset();
 
-    return {std::move(block), is_last && !current_row_state.has_value()};
+    return {std::move(block), next_block_ptr, is_last && !current_row_state.has_value()};
 }
 
 }

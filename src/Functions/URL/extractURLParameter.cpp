@@ -111,7 +111,7 @@ SELECT extractURLParameter('http://example.com/?param1=value1&param2=value2', 'p
     };
     FunctionDocumentation::IntroducedIn introduced_in_extractURLParameter = {1, 1};
     FunctionDocumentation::Category category_extractURLParameter = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_extractURLParameter = {description_extractURLParameter, syntax_extractURLParameter, arguments_extractURLParameter, returned_value_extractURLParameter, examples_extractURLParameter, introduced_in_extractURLParameter, category_extractURLParameter};
+    FunctionDocumentation documentation_extractURLParameter = {description_extractURLParameter, syntax_extractURLParameter, arguments_extractURLParameter, {}, returned_value_extractURLParameter, examples_extractURLParameter, introduced_in_extractURLParameter, category_extractURLParameter};
 
     factory.registerFunction<FunctionExtractURLParameter>(documentation_extractURLParameter);
 }

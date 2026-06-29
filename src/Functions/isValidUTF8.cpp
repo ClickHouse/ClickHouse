@@ -1,7 +1,7 @@
+#include <Common/isValidUTF8.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
-#include <Common/isValidUTF8.h>
 
 namespace DB
 {
@@ -215,7 +215,7 @@ SOFTWARE.
         memset(buf + len + 1, 0, 16);
         check_packed(_mm_loadu_si128(reinterpret_cast<__m128i *>(buf + 1)));
 
-        return _mm_testz_si128(error, error);
+        return static_cast<UInt8>(_mm_testz_si128(error, error));
     }
 #endif
 
@@ -291,7 +291,7 @@ Checks if the set of bytes constitutes valid UTF-8-encoded text.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionValidUTF8>(documentation);
 }

@@ -4,13 +4,11 @@ description: 'CoalescingMergeTree inherits from the MergeTree engine. Its key fe
 sidebar_label: 'CoalescingMergeTree'
 sidebar_position: 50
 slug: /engines/table-engines/mergetree-family/coalescingmergetree
-title: 'CoalescingMergeTree'
+title: 'CoalescingMergeTree table engine'
 keywords: ['CoalescingMergeTree']
 show_related_blogs: true
 doc_type: 'reference'
 ---
-
-# CoalescingMergeTree
 
 :::note Available from version 25.6
 This table engine is available from version 25.6 and higher in both OSS and Cloud.
@@ -43,10 +41,7 @@ For a description of request parameters, see [request description](../../../sql-
 
 #### Columns {#columns}
 
-`columns` - a tuple with the names of columns where values will be united. Optional parameter.
-    The columns must be of a numeric type and must not be in the partition or sorting key.
-
- If `columns` is not specified, ClickHouse unites the values in all columns that are not in the sorting key.
+`columns` - Optional. A tuple with the names of columns where values will be united. The provided columns must not be in the partition or sorting key. If `columns` is not specified, ClickHouse unites the values in all columns that are not in the sorting key.
 
 ### Query clauses {#query-clauses}
 
@@ -138,3 +133,43 @@ SELECT key, last_value(value_int), last_value(value_string), last_value(value_da
 ```
 
 :::
+
+## Tuple element aggregation {#tuple-element-aggregation}
+
+When the `allow_tuple_element_aggregation` setting is enabled, `Tuple` columns are recursively flattened so that each leaf element participates in coalescing independently. This allows you to store multiple fields in a single `Tuple` column and have them coalesced element-wise during merges — each `Nullable` sub-column retains the latest non-NULL value independently.
+
+The same rules apply to the flattened sub-columns as to regular columns:
+
+- Sub-columns that belong to a `Tuple` in the sorting key or partition key are excluded from coalescing.
+- If `columns` is specified, only sub-columns of the listed `Tuple` columns are coalesced.
+
+:::note
+This setting is immutable and must be specified at table creation time.
+:::
+
+```sql
+CREATE TABLE coalescing_tuples
+(
+    key UInt64,
+    data Tuple(
+        value_a Nullable(UInt64),
+        value_b Nullable(String),
+        nested Tuple(
+            value_c Nullable(UInt64)
+        )
+    )
+) ENGINE = CoalescingMergeTree()
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO coalescing_tuples VALUES (1, (100, NULL, (NULL)));
+INSERT INTO coalescing_tuples VALUES (1, (NULL, 'hello', (42)));
+
+SELECT key, data.value_a, data.value_b, data.nested.value_c FROM coalescing_tuples FINAL;
+```
+
+```text
+┌─key─┬─data.value_a─┬─data.value_b─┬─data.nested.value_c─┐
+│   1 │          100 │ hello        │                  42 │
+└─────┴──────────────┴──────────────┴─────────────────────┘
+```

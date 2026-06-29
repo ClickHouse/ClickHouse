@@ -12,7 +12,8 @@ INSERT INTO src SETTINGS materialized_views_ignore_errors = 0 VALUES (1); -- { s
 
 INSERT INTO src SETTINGS materialized_views_ignore_errors = 1 VALUES (2);
 
-SELECT * FROM src ORDER BY x;
+--- value 2 should be in src, value 1 could be in src
+SELECT * FROM src WHERE x = 2;
 
 DROP TABLE src;
 DROP TABLE dst;

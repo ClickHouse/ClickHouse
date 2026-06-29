@@ -4,7 +4,7 @@ description: 'The GenerateRandom table engine produces random data for given tab
 sidebar_label: 'GenerateRandom'
 sidebar_position: 140
 slug: /engines/table-engines/special/generate
-title: 'GenerateRandom Table Engine'
+title: 'GenerateRandom table engine'
 doc_type: 'reference'
 ---
 

@@ -1,13 +1,15 @@
+SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree=1;
-SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET parallel_replicas_mark_segment_size = 128;
-SET parallel_replicas_min_number_of_rows_per_replica = 1000;
 SET enable_analyzer = 1;
+
+-- With small index granularity, the amount of rows left to read after the index analysis might be too small to utilize parallel replicas. So, we set it to 0.
+SET parallel_replicas_min_number_of_rows_per_replica = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -32,6 +34,6 @@ SELECT
     sum(ProfileEvents['ParallelReplicasUsedCount']) > 0,
     sum(ProfileEvents['TextIndexUsedEmbeddedPostings']) > 0
 FROM system.query_log
-WHERE (current_database = currentDatabase() OR position(query, currentDatabase()) > 0) AND query LIKE '%SELECT%tab%hasAnyTokens%' AND type = 'QueryFinish';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (current_database = currentDatabase() OR position(query, currentDatabase()) > 0) AND query LIKE '%SELECT%tab%hasAnyTokens%' AND type = 'QueryFinish';
 
 DROP TABLE tab;

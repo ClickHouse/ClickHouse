@@ -1,4 +1,5 @@
 #include <Storages/StorageMergeTreeIndex.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -109,7 +110,8 @@ void TableFunctionMergeTreeIndex::parseArguments(const ASTPtr & ast_function, Co
 
 static NameSet getAllPossibleStreamNames(
     const NameAndTypePair & column,
-    const MergeTreeDataPartsVector & data_parts)
+    const MergeTreeDataPartsVector & data_parts,
+    const MergeTreeSettingsPtr & storage_settings)
 {
     NameSet all_streams;
 
@@ -121,7 +123,7 @@ static NameSet getAllPossibleStreamNames(
 
     auto callback = [&](const auto & substream_path)
     {
-        auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
+        auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
         all_streams.insert(Nested::concatenateName(stream_name, "mark"));
     };
 
@@ -136,7 +138,7 @@ static NameSet getAllPossibleStreamNames(
     for (const auto & part : data_parts)
     {
         serialization = part->tryGetSerialization(column.name);
-        if (serialization && serialization->getKind() == ISerialization::Kind::SPARSE)
+        if (serialization && ISerialization::hasKind(serialization->getKindStack(), ISerialization::Kind::SPARSE))
         {
             serialization->enumerateStreams(callback);
             break;
@@ -149,7 +151,11 @@ static NameSet getAllPossibleStreamNames(
 ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
-    auto metadata_snapshot = source_table->getInMemoryMetadataPtr();
+    auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
+
+    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
+    if (!merge_tree)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
 
     ColumnsDescription columns;
     for (const auto & column : StorageMergeTreeIndex::virtuals_sample_block)
@@ -158,11 +164,8 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
     if (with_minmax)
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
-        if (!partition_key.column_names.empty() && partition_key.expression)
-        {
-            for (const auto & column : partition_key.expression->getRequiredColumnsWithTypes())
-                columns.add({fmt::format("minmax_{}", column.name), std::make_shared<DataTypeTuple>(DataTypes{column.type, column.type})});
-        }
+        for (const auto & column : MergeTreeData::getMinMaxColumns(partition_key, merge_tree->getSettings()))
+            columns.add({fmt::format("minmax_{}", column.name), std::make_shared<DataTypeTuple>(DataTypes{makeNullableSafe(column.type), makeNullableSafe(column.type)})});
     }
 
     for (const auto & column : metadata_snapshot->getPrimaryKey().sample_block)
@@ -175,16 +178,13 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
             DataTypes{element_type, element_type},
             Names{"offset_in_compressed_file", "offset_in_decompressed_block"});
 
-        const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
-        if (!merge_tree)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
-
         auto data_parts = merge_tree->getDataPartsVectorForInternalUsage();
         auto columns_list = Nested::convertToSubcolumns(metadata_snapshot->getColumns().getAllPhysical());
+        const auto & storage_settings = merge_tree->getSettings();
 
         for (const auto & column : columns_list)
         {
-            auto all_streams = getAllPossibleStreamNames(column, data_parts);
+            auto all_streams = getAllPossibleStreamNames(column, data_parts, storage_settings);
             for (const auto & stream_name : all_streams)
             {
                 /// There may be shared substreams of columns (e.g. for Nested type)
@@ -215,18 +215,17 @@ StoragePtr TableFunctionMergeTreeIndex::executeImpl(
     return res;
 }
 
+void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeIndex>(
-    {
-        .documentation =
         {
             .description = "Represents the contents of index and marks files of MergeTree tables. It can be used for introspection",
             .examples = {{"mergeTreeIndex", "SELECT * FROM mergeTreeIndex(currentDatabase(), mt_table, with_marks = true, with_minmax = true)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = true,
-    });
+        {.allow_readonly = true}
+    );
 }
 
 }

@@ -6,7 +6,7 @@ import time
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
-from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -410,7 +410,7 @@ def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
     def run_check_table_and_measure_time():
         start_time = time.time()
         result = node1.query(
-            f"CHECK TABLE {table_name} SETTINGS max_threads=1", query_id=query_id
+            f"CHECK TABLE {table_name} SETTINGS max_threads=1, check_query_single_value_result = 1", query_id=query_id
         )
         end_time = time.time()
         assert result == "0\n"  # 0 means error

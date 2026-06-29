@@ -54,16 +54,16 @@ String ASTCreateSettingsProfileQuery::getID(char) const
 
 ASTPtr ASTCreateSettingsProfileQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateSettingsProfileQuery>(*this);
+    auto res = make_intrusive<ASTCreateSettingsProfileQuery>(*this);
 
     if (to_roles)
-        res->to_roles = std::static_pointer_cast<ASTRolesOrUsersSet>(to_roles->clone());
+        res->to_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(to_roles->clone());
 
     if (settings)
-        res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
+        res->settings = boost::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
     if (alter_settings)
-        res->alter_settings = std::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
+        res->alter_settings = boost::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
 
     return res;
 }

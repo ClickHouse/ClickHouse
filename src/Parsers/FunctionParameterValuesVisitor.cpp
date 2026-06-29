@@ -3,7 +3,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/parseQuery.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTHelpers.h>
 #include <Common/assert_cast.h>

@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDetached.h>
 
 #include <Columns/ColumnBLOB.h>
@@ -18,6 +19,23 @@ extern const int LOGICAL_ERROR;
 SerializationDetached::SerializationDetached(const SerializationPtr & nested_) : nested(nested_)
 {
 }
+
+
+UInt128 SerializationDetached::getHash(const SerializationPtr & nested_)
+{
+    SipHash hash;
+    hash.update("Detached");
+    hash.update(nested_->getHash());
+    return hash.get128();
+}
+
+ISerialization::KindStack SerializationDetached::getKindStack() const
+{
+    auto kind_stack = nested->getKindStack();
+    kind_stack.push_back(Kind::DETACHED);
+    return kind_stack;
+}
+
 
 void SerializationDetached::serializeBinaryBulk(
     const IColumn & column, WriteBuffer & ostr, [[maybe_unused]] size_t offset, [[maybe_unused]] size_t limit) const
@@ -78,4 +96,12 @@ void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnBLOB should be converted to a regular column before usage");
 }
+
+SerializationPtr SerializationDetached::create(const SerializationPtr & nested_)
+{
+    if (!nested_->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationDetached(nested_));
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationDetached(nested_); });
+}
+
 }

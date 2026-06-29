@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -21,6 +22,8 @@ namespace DB
 
 ColumnsDescription StorageSystemProcesses::getColumnsDescription()
 {
+    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
     auto description = ColumnsDescription
     {
         {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Whether this query comes directly from user or was issues by ClickHouse server in a scope of distributed query execution."},
@@ -40,6 +43,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"os_user", std::make_shared<DataTypeString>(), "Operating system username who runs clickhouse-client."},
         {"client_hostname", std::make_shared<DataTypeString>(), "Hostname of the client machine where the clickhouse-client or another TCP client is run."},
         {"client_name", std::make_shared<DataTypeString>(), "The clickhouse-client or another TCP client name."},
+        {"client_agent", low_cardinality_string, "The AI coding agent that invoked the client (e.g. `claude-code`, `cursor`), detected from environment variables. Empty if no agent was detected."},
         {"client_revision", std::make_shared<DataTypeUInt64>(), "Revision of the clickhouse-client or another TCP client."},
         {"client_version_major", std::make_shared<DataTypeUInt64>(), "Major version of the clickhouse-client or another TCP client."},
         {"client_version_minor", std::make_shared<DataTypeUInt64>(), "Minor version of the clickhouse-client or another TCP client."},
@@ -68,10 +72,13 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"query_kind", std::make_shared<DataTypeString>(), "The type of the query - SELECT, INSERT, etc."},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The list of identifiers of all threads which participated in this query."},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "ProfileEvents calculated for this query."},
-        {"Settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "The list of modified user-level settings."},
+        {"peak_threads_usage", std::make_shared<DataTypeUInt64>(), "Maximum count of simultaneous threads executing the query."},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "ProfileEvents calculated for this query."},
+        {"Settings", std::make_shared<DataTypeMap>(low_cardinality_string, low_cardinality_string), "The list of modified user-level settings."},
 
         {"current_database", std::make_shared<DataTypeString>(), "The name of the current database."},
+
+        {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
     };
 
     description.setAliases({
@@ -109,6 +116,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.client_info.os_user);
         res_columns[i++]->insert(process.client_info.client_hostname);
         res_columns[i++]->insert(process.client_info.client_name);
+        res_columns[i++]->insert(process.client_info.client_agent);
         res_columns[i++]->insert(process.client_info.client_tcp_protocol_version);
         res_columns[i++]->insert(process.client_info.client_version_major);
         res_columns[i++]->insert(process.client_info.client_version_minor);
@@ -144,6 +152,8 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[i++]->insert(threads_array);
         }
 
+        res_columns[i++]->insert(process.peak_threads_usage);
+
         {
             IColumn * column = res_columns[i++].get();
 
@@ -167,7 +177,11 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         }
 
         res_columns[i++]->insert(process.current_database);
+        res_columns[i++]->insert(process.is_internal);
     }
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProcesses) }

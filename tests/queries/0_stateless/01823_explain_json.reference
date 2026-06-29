@@ -9,8 +9,8 @@
           "Node Id": "Expression_13",
           "Plans": [
             {
-              "Node Type": "ReadFromStorage",
-              "Node Id": "ReadFromStorage_0"
+              "Node Type": "ReadFromSystemOne",
+              "Node Id": "ReadFromSystemOne_0"
             }
           ]
         },
@@ -19,8 +19,8 @@
           "Node Id": "Expression_16",
           "Plans": [
             {
-              "Node Type": "ReadFromStorage",
-              "Node Id": "ReadFromStorage_4"
+              "Node Type": "ReadFromSystemOne",
+              "Node Id": "ReadFromSystemOne_4"
             }
           ]
         }

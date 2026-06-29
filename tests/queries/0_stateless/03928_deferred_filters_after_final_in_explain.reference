@@ -1,0 +1,96 @@
+= full plan: both deferred =
+Expression (Project names)
+Actions: INPUT : 0 -> __table1.y String : 0
+         INPUT : 1 -> __table1.x UInt32 : 1
+         INPUT : 2 -> __table1.version UInt32 : 2
+         ALIAS __table1.y :: 0 -> y String : 3
+         ALIAS __table1.x :: 1 -> x UInt32 : 0
+         ALIAS __table1.version :: 2 -> version UInt32 : 1
+Positions: 0 3 1
+  Sorting (Sorting for ORDER BY)
+  Prefix sort description: __table1.x ASC
+  Result sort description: __table1.x ASC
+    Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+    Actions: INPUT : 0 -> y String : 0
+             INPUT : 1 -> x UInt32 : 1
+             INPUT : 2 -> version UInt32 : 2
+             ALIAS y :: 0 -> __table1.y String : 3
+             ALIAS x :: 1 -> __table1.x UInt32 : 0
+             ALIAS version :: 2 -> __table1.version UInt32 : 1
+    Positions: 0 3 1
+      ReadFromMergeTree (default.tab)
+      ReadType: InOrder
+      Parts: 3
+      Granules: 3
+      Prewhere info
+      Need filter: 1
+        Prewhere filter
+        Prewhere filter column: notEquals(y, \'ccc\'_String) (removed)
+        Actions: INPUT : 0 -> y String : 0
+                 COLUMN Const(String) -> \'ccc\'_String String : 1
+                 FUNCTION notEquals(y : 0, \'ccc\'_String :: 1) -> notEquals(y, \'ccc\'_String) UInt8 : 2
+        Positions: 2 0
+        Row level filter
+        Row level filter column: notEquals(y, \'ccc\'_String) (removed)
+        Actions: INPUT : 0 -> y String : 0
+                 COLUMN Const(String) -> \'ccc\'_String String : 1
+                 FUNCTION notEquals(y : 0, \'ccc\'_String :: 1) -> notEquals(y, \'ccc\'_String) UInt8 : 2
+        Positions: 2 0
+        Deferred filters (applied after FINAL)
+          Deferred row level filter column: notEquals(y, \'ccc\'_String)
+          Deferred prewhere filter column: notEquals(y, \'ccc\'_String)
+= full plan: nothing deferred =
+Expression (Project names)
+Actions: INPUT : 0 -> __table1.y String : 0
+         INPUT : 1 -> __table1.x UInt32 : 1
+         INPUT : 2 -> __table1.version UInt32 : 2
+         ALIAS __table1.y :: 0 -> y String : 3
+         ALIAS __table1.x :: 1 -> x UInt32 : 0
+         ALIAS __table1.version :: 2 -> version UInt32 : 1
+Positions: 0 3 1
+  Sorting (Sorting for ORDER BY)
+  Prefix sort description: __table1.x ASC
+  Result sort description: __table1.x ASC
+    Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+    Actions: INPUT : 0 -> y String : 0
+             INPUT : 1 -> x UInt32 : 1
+             INPUT : 2 -> version UInt32 : 2
+             ALIAS y :: 0 -> __table1.y String : 3
+             ALIAS x :: 1 -> __table1.x UInt32 : 0
+             ALIAS version :: 2 -> __table1.version UInt32 : 1
+    Positions: 0 3 1
+      ReadFromMergeTree (default.tab)
+      ReadType: InOrder
+      Parts: 3
+      Granules: 3
+      Prewhere info
+      Need filter: 1
+        Prewhere filter
+        Prewhere filter column: notEquals(y, \'ccc\'_String) (removed)
+        Actions: INPUT : 0 -> y String : 0
+                 COLUMN Const(String) -> \'ccc\'_String String : 1
+                 FUNCTION notEquals(y : 0, \'ccc\'_String :: 1) -> notEquals(y, \'ccc\'_String) UInt8 : 2
+        Positions: 2 0
+        Row level filter
+        Row level filter column: notEquals(y, \'ccc\'_String) (removed)
+        Actions: INPUT : 0 -> y String : 0
+                 COLUMN Const(String) -> \'ccc\'_String String : 1
+                 FUNCTION notEquals(y : 0, \'ccc\'_String :: 1) -> notEquals(y, \'ccc\'_String) UInt8 : 2
+        Positions: 2 0
+= row policy deferred =
+        Deferred filters (applied after FINAL)
+          Deferred row level filter column: notEquals(y, \'ccc\'_String)
+= row policy not deferred =
+= prewhere deferred =
+        Deferred filters (applied after FINAL)
+          Deferred prewhere filter column: notEquals(y, \'ccc\'_String)
+= prewhere not deferred =
+= both deferred =
+        Deferred filters (applied after FINAL)
+          Deferred row level filter column: notEquals(y, \'ccc\'_String)
+          Deferred prewhere filter column: notEquals(y, \'ccc\'_String)
+= row policy on non-sorting-key defers prewhere =
+        Deferred filters (applied after FINAL)
+          Deferred row level filter column: notEquals(y, \'ccc\'_String)
+          Deferred prewhere filter column: notEquals(y, \'ccc\'_String)
+= no FINAL - no deferred =

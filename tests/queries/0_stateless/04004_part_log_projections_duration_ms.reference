@@ -1,0 +1,4 @@
+scenario 1: merge projection merge	MergeParts	1	1
+scenario 1: insert has empty map	{}
+scenario 2: merge projection rebuild	MergeParts	1
+scenario 3: replicated projection merge	MergeParts	1	1

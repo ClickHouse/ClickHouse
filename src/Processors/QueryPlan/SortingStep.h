@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Core/SortDescription.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -41,6 +42,9 @@ public:
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
+        bool read_in_order_use_virtual_row_per_block = false;
+        size_t temporary_files_buffer_size = 0;
+        String temporary_files_codec = {};
 
         explicit Settings(const DB::Settings & settings);
         explicit Settings(size_t max_block_size_);
@@ -79,10 +83,9 @@ public:
     SortingStep(
         const SharedHeader & input_header,
         SortDescription sort_description_,
-        size_t max_block_size_,
+        const Settings & settings_,
         UInt64 limit_ = 0,
-        bool always_read_till_end_ = false
-    );
+        bool always_read_till_end_ = false);
 
     String getName() const override { return "Sorting"; }
 
@@ -103,6 +106,9 @@ public:
 
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
+    void enableBuffering() { use_buffering = true; }
+    bool getUseBuffering() const { return use_buffering; }
+
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }
 
@@ -113,23 +119,34 @@ public:
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
         UInt64 limit_,
-        bool skip_partial_sort = false);
+        bool skip_partial_sort = false,
+        TopKThresholdTrackerPtr threshold_tracker = nullptr);
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return type == Type::Full && partition_by_description.empty(); }
 
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+    void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
+
+    void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_);
 
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputHeader() override;
 
+    /// Adds a per-stream `LimitByTransform` before sorted streams are merged into one.
+    /// This reduces rows processed by the final merge and later pipeline steps.
+    /// It is applied only when `LIMIT BY` keys are a prefix of `stream_sort_desc`.
+    void addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc);
+
     static void mergeSorting(
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
-        UInt64 limit_);
+        UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker);
 
     void mergingSorted(
         QueryPipelineBuilder & pipeline,
@@ -161,7 +178,13 @@ private:
     bool use_buffering = false;
     bool apply_virtual_row_conversions = false;
 
+    TopKThresholdTrackerPtr threshold_tracker;
+
     Settings sort_settings;
+
+    /// See `pushLimitByIntoSort`. Empty means no hint.
+    Names limit_by_columns;
+    UInt64 limit_by_group_length = 0;
 };
 
 }
