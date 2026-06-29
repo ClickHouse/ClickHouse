@@ -58,12 +58,16 @@ public:
     {
         const Key key;
         const size_t offset;
-        const KeyMetadataPtr key_metadata;
+        /// Weak so invalidated entries awaiting lazy removal do not pin KeyMetadata.
+        /// While Active it is kept alive by the metadata bucket.
+        const KeyMetadataWeakPtr key_metadata;
 
         std::atomic<size_t> size;
-        std::atomic<size_t> hits = 0;
 
         std::string toString(const std::string & prefix = "") const;
+
+        /// Locks `key_metadata`, throwing if it expired.
+        KeyMetadataPtr getKeyMetadata() const;
 
         enum class State
         {
