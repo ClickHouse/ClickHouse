@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <Server/HTTP/HTTPRequestHandler.h>
 
 
@@ -77,67 +76,6 @@ public:
     explicit JavaScriptWebUIRequestHandler(IServer &) {}
     explicit JavaScriptWebUIRequestHandler(IServer & server_, const std::unordered_map<String, String> & http_response_headers_override_)
         : JavaScriptWebUIRequestHandler(server_)
-    {
-        http_response_headers_override = http_response_headers_override_;
-    }
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
-private:
-    /// Overrides for response headers.
-    std::unordered_map<String, String> http_response_headers_override;
-};
-
-class JemallocWebUIRequestHandler : public HTTPRequestHandler
-{
-public:
-    explicit JemallocWebUIRequestHandler(IServer &) {}
-    explicit JemallocWebUIRequestHandler(IServer & server_, const std::unordered_map<String, String> & http_response_headers_override_)
-        : JemallocWebUIRequestHandler(server_)
-    {
-        http_response_headers_override = http_response_headers_override_;
-    }
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
-private:
-    /// Overrides for response headers.
-    std::unordered_map<String, String> http_response_headers_override;
-};
-
-class SchemaWebUIRequestHandler : public HTTPRequestHandler
-{
-public:
-    explicit SchemaWebUIRequestHandler(IServer &) {}
-    explicit SchemaWebUIRequestHandler(IServer & server_, const std::unordered_map<String, String> & http_response_headers_override_)
-        : SchemaWebUIRequestHandler(server_)
-    {
-        http_response_headers_override = http_response_headers_override_;
-    }
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
-private:
-    /// Overrides for response headers.
-    std::unordered_map<String, String> http_response_headers_override;
-};
-
-class ClickStackUIRequestHandler : public HTTPRequestHandler
-{
-public:
-    explicit ClickStackUIRequestHandler(IServer &) {}
-    explicit ClickStackUIRequestHandler(IServer & server_, const std::unordered_map<String, String> & http_response_headers_override_)
-        : ClickStackUIRequestHandler(server_)
-    {
-        http_response_headers_override = http_response_headers_override_;
-    }
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
-private:
-    /// Overrides for response headers.
-    std::unordered_map<String, String> http_response_headers_override;
-    std::string getResourcePath(const std::string & uri) const;
-};
-
-class ProcessorsProfileWebUIRequestHandler : public HTTPRequestHandler
-{
-public:
-    explicit ProcessorsProfileWebUIRequestHandler(IServer &) {}
-    explicit ProcessorsProfileWebUIRequestHandler(IServer & server_, const std::unordered_map<String, String> & http_response_headers_override_)
-        : ProcessorsProfileWebUIRequestHandler(server_)
     {
         http_response_headers_override = http_response_headers_override_;
     }

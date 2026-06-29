@@ -6,7 +6,6 @@ keywords: ['CSV']
 output_format: true
 slug: /interfaces/formats/CSV
 title: 'CSV'
-doc_type: 'reference'
 ---
 
 ## Description {#description}

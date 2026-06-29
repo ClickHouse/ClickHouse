@@ -87,7 +87,7 @@ namespace Protocol
             TablesStatusResponse = 9,       /// A response to TablesStatus request.
             Log = 10,                       /// System logs of the query execution
             TableColumns = 11,              /// Columns' description for default values calculation
-            PartUUIDs = 12,                 /// Obsolete: was used for query deduplication based on part UUIDs (allow_experimental_query_deduplication). Kept for protocol compatibility.
+            PartUUIDs = 12,                 /// List of unique parts ids.
             ReadTaskRequest = 13,           /// String (UUID) describes a request for which next task is needed
                                             /// This is such an inverted logic, where server sends requests
                                             /// And client returns back response
@@ -105,6 +105,18 @@ namespace Protocol
         /// if the packet is invalid.
         /// See https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
         std::string_view toString(UInt64 packet);
+
+        inline size_t stringsInMessage(UInt64 msg_type)
+        {
+            switch (msg_type)
+            {
+                case TableColumns:
+                    return 2;
+                default:
+                    break;
+            }
+            return 0;
+        }
     }
 
     /// Packet types that client transmits.
@@ -122,7 +134,7 @@ namespace Protocol
             TablesStatusRequest = 5,        /// Check status of tables on the server.
             KeepAlive = 6,                  /// Keep the connection alive
             Scalar = 7,                     /// A block of data (compressed or not).
-            IgnoredPartUUIDs = 8,           /// Obsolete: was used for query deduplication based on part UUIDs (allow_experimental_query_deduplication). Kept for protocol compatibility.
+            IgnoredPartUUIDs = 8,           /// List of unique parts ids to exclude from query processing
             ReadTaskResponse = 9,           /// A filename to read from s3 (used in s3Cluster)
             MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
 

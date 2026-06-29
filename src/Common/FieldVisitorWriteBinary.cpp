@@ -1,5 +1,4 @@
 #include <Common/FieldVisitorWriteBinary.h>
-#include <Common/checkStackSize.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -13,7 +12,7 @@ void FieldVisitorWriteBinary::operator() (const Int64 & x, WriteBuffer & buf) co
 void FieldVisitorWriteBinary::operator() (const Float64 & x, WriteBuffer & buf) const { writeFloatBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const String & x, WriteBuffer & buf) const { writeStringBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const UInt128 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
-void FieldVisitorWriteBinary::operator() (const Int128 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const Int128 & x, WriteBuffer & buf) const { writeVarInt(x, buf); }
 void FieldVisitorWriteBinary::operator() (const UInt256 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const Int256 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const UUID & x, WriteBuffer & buf) const { writeBinary(x, buf); }
@@ -32,7 +31,6 @@ void FieldVisitorWriteBinary::operator() (const AggregateFunctionStateData & x, 
 
 void FieldVisitorWriteBinary::operator() (const Array & x, WriteBuffer & buf) const
 {
-    checkStackSize();
     const size_t size = x.size();
     writeBinary(size, buf);
 
@@ -46,7 +44,6 @@ void FieldVisitorWriteBinary::operator() (const Array & x, WriteBuffer & buf) co
 
 void FieldVisitorWriteBinary::operator() (const Tuple & x, WriteBuffer & buf) const
 {
-    checkStackSize();
     const size_t size = x.size();
     writeBinary(size, buf);
 
@@ -61,7 +58,6 @@ void FieldVisitorWriteBinary::operator() (const Tuple & x, WriteBuffer & buf) co
 
 void FieldVisitorWriteBinary::operator() (const Map & x, WriteBuffer & buf) const
 {
-    checkStackSize();
     const size_t size = x.size();
     writeBinary(size, buf);
 
@@ -75,7 +71,6 @@ void FieldVisitorWriteBinary::operator() (const Map & x, WriteBuffer & buf) cons
 
 void FieldVisitorWriteBinary::operator() (const Object & x, WriteBuffer & buf) const
 {
-    checkStackSize();
     const size_t size = x.size();
     writeBinary(size, buf);
 

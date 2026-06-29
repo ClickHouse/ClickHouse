@@ -1,4 +1,5 @@
 #pragma once
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -7,7 +8,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnQBit.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name, typename ResultType, bool is_suitable_for_short_circuit_arguments_execution = true>
-class FunctionStringOrArrayToT final : public IFunction
+class FunctionStringOrArrayToT : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -48,14 +48,6 @@ public:
         return is_suitable_for_short_circuit_arguments_execution;
     }
 
-    /// Whether the Impl opts into handling the QBit data type (returns a constant equal to the vector dimension).
-    static constexpr bool supportsQBit()
-    {
-        if constexpr (requires { Impl::supports_qbit; })
-            return Impl::supports_qbit;
-        return false;
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0])
@@ -63,8 +55,7 @@ public:
             && !isMap(arguments[0])
             && !isUUID(arguments[0])
             && !isIPv6(arguments[0])
-            && !isIPv4(arguments[0])
-            && !(supportsQBit() && isQBit(arguments[0])))
+            && !isIPv4(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeNumber<ResultType>>();
@@ -76,20 +67,6 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-
-    bool hasInformationAboutMonotonicity() const override
-    {
-        if constexpr (requires { Impl::has_information_about_monotonicity; })
-            return Impl::has_information_about_monotonicity;
-        return false;
-    }
-
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
-    {
-        if constexpr (requires(const IDataType & t, const Field & f) { Impl::getMonotonicityForRange(t, f, f); })
-            return Impl::getMonotonicityForRange(type, left, right);
-        return {};
-    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -109,8 +86,7 @@ public:
             if (Impl::is_fixed_to_constant)
             {
                 ResultType res = 0;
-                if (input_rows_count)
-                    Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res, input_rows_count);
+                Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res, input_rows_count);
 
                 return result_type->createColumnConst(col_fixed->size(), toField(res));
             }
@@ -122,17 +98,6 @@ public:
             Impl::vectorFixedToVector(col_fixed->getChars(), col_fixed->getN(), vec_res, input_rows_count);
 
             return col_res;
-        }
-        if constexpr (supportsQBit())
-        {
-            if (const ColumnQBit * col_qbit = checkAndGetColumn<ColumnQBit>(column.get()))
-            {
-                ResultType res = 0;
-                if (input_rows_count)
-                    Impl::qbitToConstant(col_qbit->getDimension(), res);
-
-                return result_type->createColumnConst(col_qbit->size(), toField(res));
-            }
         }
         if (const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(column.get()))
         {
