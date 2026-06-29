@@ -42,6 +42,7 @@ Each row describes one data part.
 - `secondary_indices_compressed_bytes` ([UInt64](/sql-reference/data-types/int-uint)) — Total size of compressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included.
 - `secondary_indices_uncompressed_bytes` ([UInt64](/sql-reference/data-types/int-uint)) — Total size of uncompressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included.
 - `secondary_indices_marks_bytes` ([UInt64](/sql-reference/data-types/int-uint)) — The size of the file with marks for secondary indices.
+- `secondary_indices_materialized` ([Array(String)](/sql-reference/data-types/array)) — The names of the secondary (data skipping) indices that are materialized in this data part. A secondary index declared on the table is only listed here for parts in which it has actually been written; an index added with `ALTER TABLE ... ADD INDEX` but not yet materialized into existing parts (see `ALTER TABLE ... MATERIALIZE INDEX`) is absent for those parts.
 - `modification_time` ([DateTime](/sql-reference/data-types/datetime)) — The time the directory with the data part was modified. This usually corresponds to the time of data part creation.
 - `remove_time` ([DateTime](/sql-reference/data-types/datetime)) — The time when the data part became inactive.
 - `refcount` ([UInt32](/sql-reference/data-types/int-uint)) — The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges.
@@ -121,6 +122,7 @@ data_uncompressed_bytes:               91
 secondary_indices_compressed_bytes:    58
 secondary_indices_uncompressed_bytes:  6
 secondary_indices_marks_bytes:         48
+secondary_indices_materialized:        ['idx']
 marks_bytes:                           144
 modification_time:                     2020-06-18 13:01:49
 remove_time:                           1970-01-01 00:00:00

@@ -43,6 +43,7 @@ The schema of this table is the same as [system.parts](./parts.md)
 - `secondary_indices_compressed_bytes` ([UInt64](/sql-reference/data-types/int-uint)) — Total size of compressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included.
 - `secondary_indices_uncompressed_bytes` ([UInt64](/sql-reference/data-types/int-uint)) — Total size of uncompressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included.
 - `secondary_indices_marks_bytes` ([UInt64](/sql-reference/data-types/int-uint)) — The size of the file with marks for secondary indices.
+- `secondary_indices_materialized` ([Array(String)](/sql-reference/data-types/array)) — The names of the secondary (data skipping) indices that are materialized in this data part.
 - `modification_time` ([DateTime](/sql-reference/data-types/datetime)) — The time the directory with the data part was modified. This usually corresponds to the time of data part creation.
 - `remove_time` ([DateTime](/sql-reference/data-types/datetime)) — The time when the data part became inactive.
 - `refcount` ([UInt32](/sql-reference/data-types/int-uint)) — The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges.
