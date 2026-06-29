@@ -588,21 +588,21 @@ def test_reset_deduplication_v2_guard(started_cluster):
             f"WHERE name = 'deduplication_v2' AND table = '{table_name}'"
         ).strip()
 
-    assert dedup_value() == "0"
+    assert dedup_value() == "false"
 
     # Without the opt-in, RESET must be rejected (it would flip `deduplication_v2` back to default).
     error = node1.query_and_get_error(
         f"ALTER TABLE {table_name} RESET SETTING deduplication_v2"
     )
     assert "deduplication_v2" in error and "s3queue_allow_unsafe_alter" in error
-    assert dedup_value() == "0"
+    assert dedup_value() == "false"
 
     # With the explicit opt-in the reset goes through (back to the default `true`).
     node1.query(
         f"ALTER TABLE {table_name} RESET SETTING deduplication_v2",
         settings={"s3queue_allow_unsafe_alter": 1},
     )
-    assert dedup_value() == "1"
+    assert dedup_value() == "true"
 
 
 @pytest.mark.skip(

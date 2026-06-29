@@ -599,18 +599,23 @@ def _assert_recovered_without_already_processed_error(
     # No data was lost: every file's rows ended up processed.
     assert union_distinct() == expected
 
+    # No file ended up permanently Failed. Check the authoritative Keeper state
+    # (`<keeper_path>/failed`), not the per-replica in-memory `system.s3queue_metadata_cache`: under
+    # the lock takeover a replica's local processing attempt can race and leave a transient `Failed`
+    # in its own in-memory cache even though the file was ultimately processed (data is present
+    # above). `.retriable` markers are transient retry state, not permanent failures, so exclude
+    # them. Keeper state is shared, so checking it once is enough.
+    keeper_path = f"/clickhouse/test_{table_name}"
+    failed_nodes = node1.query(
+        f"SELECT count() FROM system.zookeeper "
+        f"WHERE path = '{keeper_path}/failed' AND name NOT LIKE '%.retriable'"
+    ).strip()
+    assert failed_nodes == "0", f"unexpected permanently-failed files in Keeper: {failed_nodes}"
+
     for node in (node1, node2):
-        # The race must not produce the incident's `LOGICAL_ERROR`...
+        # The race must not produce the incident's `LOGICAL_ERROR` ...
         assert not node.contains_in_log(
             "is already processed, while expected it not to be"
-        )
-        # ... no file ended up Failed ...
-        assert (
-            node.query(
-                f"SELECT count() FROM system.s3queue_metadata_cache "
-                f"WHERE zookeeper_path ILIKE '%{table_name}%' AND status = 'Failed'"
-            ).strip()
-            == "0"
         )
         # ... and the server is still responsive.
         assert node.query("SELECT 1").strip() == "1"
