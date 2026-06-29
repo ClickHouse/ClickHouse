@@ -1664,6 +1664,74 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
 
         if (compound_expr)
             return { .resolved_identifier = compound_expr, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+
+        /// The subcolumn was not found in the array-joined column itself. It may still be an
+        /// `ALIAS` column declared in the table whose name shares a prefix with the array-joined
+        /// column. For example, column `a` is a `Map`, and `a.k` is declared as `ALIAS mapKeys(a)`;
+        /// the query `SELECT aa.k FROM t ARRAY JOIN a AS aa` must behave like the old analyzer,
+        /// where `aa.k` is array-joined element-wise. See issue #83434.
+        ///
+        /// Resolve the dotted identifier (`a.k`) from the underlying table. The analyzer rewrites
+        /// such an `ALIAS` into a subcolumn of the source column (`a.k` -> `a.keys`). Because `a`
+        /// is array-joined, that subcolumn must be array-joined too, so we rebuild it on top of the
+        /// array-joined column, i.e. resolve `aa.k` exactly like `aa.keys`.
+        auto & array_join_column_inner_expression = array_join_column_expression_typed.getExpressionOrThrow();
+        if (const auto * inner_column = array_join_column_inner_expression->as<ColumnNode>())
+        {
+            const auto & original_column_name = inner_column->getColumnName();
+            std::vector<std::string> new_parts;
+            new_parts.push_back(original_column_name);
+            for (size_t i = 0; i < identifier_view.getPartsSize(); ++i)
+                new_parts.push_back(std::string(identifier_view.at(i)));
+
+            IdentifierLookup new_lookup{Identifier(std::move(new_parts)), identifier_lookup.lookup_context};
+            auto table_resolve_result = tryResolveIdentifierFromJoinTreeNode(new_lookup, from_array_join_node.getTableExpression(), scope);
+            if (table_resolve_result.resolved_identifier)
+            {
+                /// Unwrap an `ALIAS` column to the expression it stands for.
+                QueryTreeNodePtr resolved_table_expression = table_resolve_result.resolved_identifier;
+                if (const auto * resolved_column = resolved_table_expression->as<ColumnNode>();
+                    resolved_column && resolved_column->hasExpression())
+                    resolved_table_expression = resolved_column->getExpression();
+
+                /// The `ALIAS` is useful only if it denotes a subcolumn of the array-joined column,
+                /// so that it can be array-joined element-wise. Map keys/values are the relevant
+                /// case: `mapKeys(a)` is the `a.keys` subcolumn and `mapValues(a)` is `a.values`.
+                /// `getSubcolumn(a, '...')` (an `ALIAS` onto an existing subcolumn) is handled too.
+                std::optional<String> array_join_subcolumn_name;
+                if (const auto * resolved_function = resolved_table_expression->as<FunctionNode>())
+                {
+                    const auto & function_name = resolved_function->getFunctionName();
+                    const auto & function_arguments = resolved_function->getArguments().getNodes();
+
+                    if ((function_name == "mapKeys" || function_name == "mapValues")
+                        && function_arguments.size() == 1
+                        && function_arguments[0]->isEqual(*array_join_column_inner_expression))
+                    {
+                        array_join_subcolumn_name = function_name == "mapKeys" ? "keys" : "values";
+                    }
+                    else if (function_name == "getSubcolumn"
+                        && function_arguments.size() == 2
+                        && function_arguments[0]->isEqual(*array_join_column_inner_expression))
+                    {
+                        if (const auto * subcolumn_name_node = function_arguments[1]->as<ConstantNode>();
+                            subcolumn_name_node && subcolumn_name_node->getValue().getType() == Field::Types::String)
+                            array_join_subcolumn_name = subcolumn_name_node->getValue().safeGet<String>();
+                    }
+                }
+
+                /// Rebuild the subcolumn on top of the array-joined column so it gets unrolled
+                /// element-wise, i.e. resolve `aa.k` exactly like `aa.keys`.
+                if (array_join_subcolumn_name)
+                {
+                    auto array_joined_column_node = std::make_shared<ColumnNode>(
+                        array_join_column_expression_typed.getColumn(), array_join_column_expression_typed.getColumnSource());
+                    auto subcolumn_expression = wrapExpressionNodeInSubcolumn(
+                        std::move(array_joined_column_node), *array_join_subcolumn_name, scope.context);
+                    return { .resolved_identifier = std::move(subcolumn_expression), .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+                }
+            }
+        }
     }
 
     if (!resolve_result.resolved_identifier)
