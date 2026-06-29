@@ -72,6 +72,32 @@ namespace
         return tag_columns;
     }
 
+    /// Builds a plain-table `ASTTableExpression` referring to `table_id`.
+    ASTPtr makeTableExpression(const StorageID & table_id)
+    {
+        auto table_exp = make_intrusive<ASTTableExpression>();
+        table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(table_id);
+        table_exp->children.push_back(table_exp->database_and_table_name);
+        return table_exp;
+    }
+
+    /// Wraps a table expression (a plain table or a subquery) into an `ASTTablesInSelectQueryElement`.
+    ASTPtr makeTableElement(ASTPtr table_expression)
+    {
+        auto table_elem = make_intrusive<ASTTablesInSelectQueryElement>();
+        table_elem->table_expression = table_expression;
+        table_elem->children.push_back(std::move(table_expression));
+        return table_elem;
+    }
+
+    /// Wraps a table expression as the single entry of an `ASTTablesInSelectQuery` (a one-table FROM).
+    ASTPtr makeSingleTableList(ASTPtr table_expression)
+    {
+        auto tables = make_intrusive<ASTTablesInSelectQuery>();
+        tables->children.push_back(makeTableElement(std::move(table_expression)));
+        return tables;
+    }
+
     /// Builds the outer `tags` column: combines the inner `tags` Map, the metric name (as the `__name__`
     /// tag), and the tags promoted to their own columns by the `tags_to_columns` setting into one
     /// Map(String, String), sorted by tag name with duplicates and empty values removed.
@@ -100,6 +126,16 @@ namespace
             make_intrusive<ASTLiteral>(key));
     }
 
+    /// Builds `if(empty(<column>), tags['<tag_key>'], <column>)` — a tag value that normally lives in its own
+    /// `<column>` but may instead be stored in the inner `tags` Map (an empty column means "look in the Map").
+    ASTPtr makeColumnWithMapFallback(const String & column_name, const String & tag_key)
+    {
+        return makeASTFunction("if",
+            makeASTFunction("empty", make_intrusive<ASTIdentifier>(column_name)),
+            makeInnerTagAccess(tag_key),
+            make_intrusive<ASTIdentifier>(column_name));
+    }
+
     /// Builds a reduced outer `tags` column containing only `keys`, each resolved from its cheapest source
     /// instead of reconstructing the whole normalized Map. Used when the query touches `tags` only as
     /// `tags['<const key>']`: it avoids reading the other promoted columns and the per-row normalization while
@@ -117,15 +153,9 @@ namespace
         {
             ASTPtr value;
             if (key == TimeSeriesTagNames::MetricName)
-                value = makeASTFunction("if",
-                    makeASTFunction("empty", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName)),
-                    makeInnerTagAccess(key),
-                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+                value = makeColumnWithMapFallback(TimeSeriesColumnNames::MetricName, key);
             else if (auto it = column_by_tag_name.find(key); it != column_by_tag_name.end())
-                value = makeASTFunction("if",
-                    makeASTFunction("empty", make_intrusive<ASTIdentifier>(it->second)),
-                    makeInnerTagAccess(key),
-                    make_intrusive<ASTIdentifier>(it->second));
+                value = makeColumnWithMapFallback(it->second, key);
             else
                 value = makeInnerTagAccess(key);
 
@@ -155,13 +185,7 @@ namespace
     /// the inner tags table with an empty `metric_name` column), so fall back to that.
     ASTPtr makeMetricNameColumn()
     {
-        auto from_tags = makeASTFunction("arrayElement",
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags),
-            make_intrusive<ASTLiteral>(String{TimeSeriesTagNames::MetricName}));
-        auto metric_name = makeASTFunction("if",
-            makeASTFunction("empty", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName)),
-            std::move(from_tags),
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+        auto metric_name = makeColumnWithMapFallback(TimeSeriesColumnNames::MetricName, TimeSeriesTagNames::MetricName);
         metric_name->setAlias(TimeSeriesColumnNames::MetricName);
         return metric_name;
     }
@@ -243,6 +267,64 @@ namespace
         return "^" + regex + "$";
     }
 
+    /// Follows ALIAS nodes down to the underlying node.
+    const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
+    {
+        while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+            node = node->children.front();
+        return node;
+    }
+
+    /// Whether `node` is the input column `column_name` (possibly qualified, e.g. `__table1.timestamp`).
+    bool isInputNamed(const ActionsDAG::Node * node, std::string_view column_name)
+    {
+        node = unwrapAlias(node);
+        return node->type == ActionsDAG::ActionType::INPUT
+            && (node->result_name == column_name || node->result_name.ends_with(String(".") + String(column_name)));
+    }
+
+    /// Whether the input column `column_name` is referenced anywhere in the subtree of `node`.
+    bool referencesInput(const ActionsDAG::Node * node, std::string_view column_name)
+    {
+        if (isInputNamed(node, column_name))
+            return true;
+        for (const auto * child : node->children)
+            if (referencesInput(child, column_name))
+                return true;
+        return false;
+    }
+
+    /// Whether any input column other than `allowed_column` is referenced in the subtree of `node`.
+    bool referencesOtherInput(const ActionsDAG::Node * node, std::string_view allowed_column)
+    {
+        if (node->type == ActionsDAG::ActionType::INPUT && !isInputNamed(node, allowed_column))
+            return true;
+        for (const auto * child : node->children)
+            if (referencesOtherInput(child, allowed_column))
+                return true;
+        return false;
+    }
+
+    /// Reads a constant value from a constant node.
+    bool getConstField(const ActionsDAG::Node * node, Field & out)
+    {
+        node = unwrapAlias(node);
+        if (node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+            return false;
+        out = (*node->column)[0];
+        return true;
+    }
+
+    /// Reads a String constant from a constant node (false if it isn't a String constant).
+    bool getConstString(const ActionsDAG::Node * node, String & out)
+    {
+        Field value;
+        if (!getConstField(node, value) || value.getType() != Field::Types::String)
+            return false;
+        out = value.safeGet<String>();
+        return true;
+    }
+
     /// Builds an index-usable predicate to push onto the raw "tags" table scan, from the query filter's
     /// top-level conjuncts on key-like columns. `<col>` below is written in the query as `metric_name` or as
     /// `tags['<tag>']` where `<tag>` is promoted to its own column via `tags_to_columns`:
@@ -265,30 +347,6 @@ namespace
         if (!filter_actions_dag || filter_actions_dag->getOutputs().empty())
             return nullptr;
 
-        auto unwrap_alias = [](const ActionsDAG::Node * node)
-        {
-            while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
-                node = node->children.front();
-            return node;
-        };
-
-        /// Input column names can be qualified (e.g. `__table1.metric_name`).
-        auto input_is = [&](const ActionsDAG::Node * node, std::string_view column_name)
-        {
-            return node->type == ActionsDAG::ActionType::INPUT
-                && (node->result_name == column_name || node->result_name.ends_with(String(".") + String(column_name)));
-        };
-        auto get_const_string = [](const ActionsDAG::Node * node, String & out)
-        {
-            if (node->type != ActionsDAG::ActionType::COLUMN || !node->column)
-                return false;
-            Field value = (*node->column)[0];
-            if (value.getType() != Field::Types::String)
-                return false;
-            out = value.safeGet<String>();
-            return true;
-        };
-
         std::unordered_map<String, String> column_by_tag_name;
         for (const auto & [tag_name, column_name] : tag_columns)
             column_by_tag_name[tag_name] = column_name;
@@ -308,14 +366,14 @@ namespace
         /// or `arrayElement(tags, '<tag>')` -> `<tag>`. Returns none for anything else.
         auto expr_tag_name = [&](const ActionsDAG::Node * expr) -> std::optional<String>
         {
-            if (input_is(expr, TimeSeriesColumnNames::MetricName))
+            if (isInputNamed(expr, TimeSeriesColumnNames::MetricName))
                 return String{TimeSeriesTagNames::MetricName};
             if (expr->type == ActionsDAG::ActionType::FUNCTION && expr->function_base
                 && expr->function_base->getName() == "arrayElement" && expr->children.size() == 2)
             {
                 String tag_name;
-                if (input_is(unwrap_alias(expr->children[0]), TimeSeriesColumnNames::Tags)
-                    && get_const_string(unwrap_alias(expr->children[1]), tag_name))
+                if (isInputNamed(unwrapAlias(expr->children[0]), TimeSeriesColumnNames::Tags)
+                    && getConstString(unwrapAlias(expr->children[1]), tag_name))
                     return tag_name;
             }
             return std::nullopt;
@@ -389,7 +447,7 @@ namespace
 
         for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_actions_dag->getOutputs().front()))
         {
-            const auto * node = unwrap_alias(atom);
+            const auto * node = unwrapAlias(atom);
             if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
                 continue;
             const auto function_name = node->function_base->getName();
@@ -397,15 +455,15 @@ namespace
             /// `metric_name = <value>` or `tags['<tag>'] = <value>`.
             if (function_name == "equals" && node->children.size() == 2)
             {
-                const auto * lhs = unwrap_alias(node->children[0]);
-                const auto * rhs = unwrap_alias(node->children[1]);
+                const auto * lhs = unwrapAlias(node->children[0]);
+                const auto * rhs = unwrapAlias(node->children[1]);
 
                 /// One side must be a String constant (the compared value).
                 String value;
                 const ActionsDAG::Node * expr = nullptr;
-                if (get_const_string(rhs, value))
+                if (getConstString(rhs, value))
                     expr = lhs;
-                else if (get_const_string(lhs, value))
+                else if (getConstString(lhs, value))
                     expr = rhs;
                 else
                     continue;
@@ -418,15 +476,15 @@ namespace
                 && node->children.size() == 2)
             {
                 String argument;
-                if (auto tag = expr_tag_name(unwrap_alias(node->children[0]));
-                    tag && get_const_string(unwrap_alias(node->children[1]), argument))
+                if (auto tag = expr_tag_name(unwrapAlias(node->children[0]));
+                    tag && getConstString(unwrapAlias(node->children[1]), argument))
                     record_tag_match(*tag, function_name, argument);
             }
             /// `timeSeriesSelectorMatchTags('<selector>', ...)` -> the selector's equality matchers.
             else if (function_name == "timeSeriesSelectorMatchTags" && !node->children.empty())
             {
                 String selector;
-                if (get_const_string(unwrap_alias(node->children[0]), selector))
+                if (getConstString(unwrapAlias(node->children[0]), selector))
                     record_selector_matchers(selector);
             }
         }
@@ -451,54 +509,6 @@ namespace
         if (conditions.empty())
             return nullptr;
         return makeASTForLogicalAnd(std::move(conditions));
-    }
-
-    /// Follows ALIAS nodes down to the underlying node.
-    const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
-    {
-        while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
-            node = node->children.front();
-        return node;
-    }
-
-    /// Whether `node` is the input column `column_name` (possibly qualified, e.g. `__table1.timestamp`).
-    bool isInputNamed(const ActionsDAG::Node * node, std::string_view column_name)
-    {
-        node = unwrapAlias(node);
-        return node->type == ActionsDAG::ActionType::INPUT
-            && (node->result_name == column_name || node->result_name.ends_with(String(".") + String(column_name)));
-    }
-
-    /// Whether the input column `column_name` is referenced anywhere in the subtree of `node`.
-    bool referencesInput(const ActionsDAG::Node * node, std::string_view column_name)
-    {
-        if (isInputNamed(node, column_name))
-            return true;
-        for (const auto * child : node->children)
-            if (referencesInput(child, column_name))
-                return true;
-        return false;
-    }
-
-    /// Whether any input column other than `allowed_column` is referenced in the subtree of `node`.
-    bool referencesOtherInput(const ActionsDAG::Node * node, std::string_view allowed_column)
-    {
-        if (node->type == ActionsDAG::ActionType::INPUT && !isInputNamed(node, allowed_column))
-            return true;
-        for (const auto * child : node->children)
-            if (referencesOtherInput(child, allowed_column))
-                return true;
-        return false;
-    }
-
-    /// Reads a constant value from a constant node.
-    bool getConstField(const ActionsDAG::Node * node, Field & out)
-    {
-        node = unwrapAlias(node);
-        if (node->type != ActionsDAG::ActionType::COLUMN || !node->column)
-            return false;
-        out = (*node->column)[0];
-        return true;
     }
 
     /// Reconstructs the AST of an expression over the `timestamp` column so it can be pushed onto the "samples"
@@ -708,17 +718,7 @@ namespace
     /// Sets `FROM <samples_table_id> [WHERE <samples_filter>] GROUP BY id` on a samples-side SELECT.
     void setSamplesFromGroupBy(ASTSelectQuery & select_query, const StorageID & samples_table_id, const ASTPtr & samples_filter)
     {
-        auto table_exp = make_intrusive<ASTTableExpression>();
-        table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(samples_table_id);
-        table_exp->children.push_back(table_exp->database_and_table_name);
-
-        auto table_elem = make_intrusive<ASTTablesInSelectQueryElement>();
-        table_elem->table_expression = table_exp;
-        table_elem->children.push_back(table_exp);
-
-        auto tables = make_intrusive<ASTTablesInSelectQuery>();
-        tables->children.push_back(table_elem);
-        select_query.setExpression(ASTSelectQuery::Expression::TABLES, tables);
+        select_query.setExpression(ASTSelectQuery::Expression::TABLES, makeSingleTableList(makeTableExpression(samples_table_id)));
 
         if (samples_filter)
             select_query.setExpression(ASTSelectQuery::Expression::WHERE, samples_filter->clone());
@@ -826,42 +826,22 @@ namespace
     /// so the predicate is applied at the tags scan and its primary key can skip granules.
     ASTPtr makeTagsTableElement(const StorageID & tags_table_id, const ASTPtr & index_filter)
     {
+        if (!index_filter)
+            return makeTableElement(makeTableExpression(tags_table_id));
+
+        /// `(SELECT * FROM tags WHERE <index_filter>) AS __tags`.
+        auto inner = make_intrusive<ASTSelectQuery>();
+        auto select_list = make_intrusive<ASTExpressionList>();
+        select_list->children.push_back(make_intrusive<ASTAsterisk>());
+        inner->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
+        inner->setExpression(ASTSelectQuery::Expression::TABLES, makeSingleTableList(makeTableExpression(tags_table_id)));
+        inner->setExpression(ASTSelectQuery::Expression::WHERE, index_filter->clone());
+
         auto tags_exp = make_intrusive<ASTTableExpression>();
-
-        if (index_filter)
-        {
-            auto inner = make_intrusive<ASTSelectQuery>();
-
-            auto select_list = make_intrusive<ASTExpressionList>();
-            select_list->children.push_back(make_intrusive<ASTAsterisk>());
-            inner->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
-
-            auto inner_exp = make_intrusive<ASTTableExpression>();
-            inner_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
-            inner_exp->children.push_back(inner_exp->database_and_table_name);
-            auto inner_elem = make_intrusive<ASTTablesInSelectQueryElement>();
-            inner_elem->table_expression = inner_exp;
-            inner_elem->children.push_back(inner_exp);
-            auto inner_tables = make_intrusive<ASTTablesInSelectQuery>();
-            inner_tables->children.push_back(inner_elem);
-            inner->setExpression(ASTSelectQuery::Expression::TABLES, inner_tables);
-
-            inner->setExpression(ASTSelectQuery::Expression::WHERE, index_filter->clone());
-
-            tags_exp->subquery = make_intrusive<ASTSubquery>(wrapInUnionQuery(std::move(inner)));
-            tags_exp->subquery->setAlias("__tags");
-            tags_exp->children.push_back(tags_exp->subquery);
-        }
-        else
-        {
-            tags_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
-            tags_exp->children.push_back(tags_exp->database_and_table_name);
-        }
-
-        auto tags_elem = make_intrusive<ASTTablesInSelectQueryElement>();
-        tags_elem->table_expression = tags_exp;
-        tags_elem->children.push_back(tags_exp);
-        return tags_elem;
+        tags_exp->subquery = make_intrusive<ASTSubquery>(wrapInUnionQuery(std::move(inner)));
+        tags_exp->subquery->setAlias("__tags");
+        tags_exp->children.push_back(tags_exp->subquery);
+        return makeTableElement(tags_exp);
     }
 
     /// Builds `SEMI LEFT JOIN (samples grouped by id) AS __samples USING id` — attaches the `time_series`
@@ -900,17 +880,18 @@ namespace
         return func;
     }
 
-    /// Builds `SELECT <requested columns> FROM <metrics_table_id> GROUP BY metric_family_name`. The inner
-    /// column `metric_family_name` is exposed under the outer column name `metric_family`. Grouping by the
-    /// metric family collapses duplicate metadata rows to one row per family. The "metrics" table is a
-    /// ReplacingMergeTree by default, but its engine is not guaranteed, so we deduplicate by aggregation
-    /// rather than with FINAL.
-    ASTPtr makeMetricsOnlySelect(const StorageID & metrics_table_id, const NameSet & column_names)
+    /// Builds the metadata select list for a "metrics" table read. With `as_join_key`, the raw
+    /// `metric_family_name` is always selected (the join key — the outer query renames it to `metric_family`);
+    /// otherwise `metric_family_name` is exposed as the outer `metric_family` column only when requested. The
+    /// requested `type`/`unit`/`help` columns are added as `any(...)` (one value per family).
+    ASTPtr makeMetricsSelectList(const NameSet & column_names, bool as_join_key)
     {
-        auto select_query = make_intrusive<ASTSelectQuery>();
         auto select_list = make_intrusive<ASTExpressionList>();
-
-        if (column_names.contains(TimeSeriesColumnNames::MetricFamily))
+        if (as_join_key)
+        {
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName));
+        }
+        else if (column_names.contains(TimeSeriesColumnNames::MetricFamily))
         {
             auto metric_family = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName);
             metric_family->setAlias(TimeSeriesColumnNames::MetricFamily);
@@ -922,20 +903,17 @@ namespace
             select_list->children.push_back(makeAnyAggregate(TimeSeriesColumnNames::Unit));
         if (column_names.contains(TimeSeriesColumnNames::Help))
             select_list->children.push_back(makeAnyAggregate(TimeSeriesColumnNames::Help));
+        return select_list;
+    }
 
-        select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
-
-        auto table_exp = make_intrusive<ASTTableExpression>();
-        table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(metrics_table_id);
-        table_exp->children.push_back(table_exp->database_and_table_name);
-
-        auto table_elem = make_intrusive<ASTTablesInSelectQueryElement>();
-        table_elem->table_expression = table_exp;
-        table_elem->children.push_back(table_exp);
-
-        auto tables = make_intrusive<ASTTablesInSelectQuery>();
-        tables->children.push_back(table_elem);
-        select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
+    /// Builds `(SELECT <select_list> FROM <metrics> GROUP BY metric_family_name)`. Grouping by the family
+    /// deduplicates the metadata rows; the "metrics" engine isn't guaranteed to be ReplacingMergeTree, so we
+    /// deduplicate by aggregation rather than with FINAL.
+    ASTPtr makeMetricsSelect(const StorageID & metrics_table_id, ASTPtr select_list)
+    {
+        auto select_query = make_intrusive<ASTSelectQuery>();
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+        select_query->setExpression(ASTSelectQuery::Expression::TABLES, makeSingleTableList(makeTableExpression(metrics_table_id)));
 
         auto group_by = make_intrusive<ASTExpressionList>();
         group_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName));
@@ -944,41 +922,17 @@ namespace
         return wrapInUnionQuery(std::move(select_query));
     }
 
-    /// Builds `(SELECT metric_family_name, any(type) AS type, ... FROM <metrics> GROUP BY metric_family_name)`
-    /// wrapped in ASTSelectWithUnionQuery so it can sit inside an ASTSubquery in a JOIN. Grouping by the
-    /// metric family deduplicates the metadata rows (see makeMetricsOnlySelect). Besides `metric_family_name`
-    /// (always selected — it is the join key) only the requested metadata columns are returned.
+    /// The "metrics"-only read (no join): `metric_family_name` is exposed as the outer `metric_family` column.
+    ASTPtr makeMetricsOnlySelect(const StorageID & metrics_table_id, const NameSet & column_names)
+    {
+        return makeMetricsSelect(metrics_table_id, makeMetricsSelectList(column_names, /* as_join_key= */ false));
+    }
+
+    /// The deduplicated "metrics" subquery that sits inside the multi-table read's JOIN; `metric_family_name`
+    /// (the join key) is always selected.
     ASTPtr makeDeduplicatedMetricsSubquery(const StorageID & metrics_table_id, const NameSet & column_names)
     {
-        auto select_query = make_intrusive<ASTSelectQuery>();
-
-        auto select_list = make_intrusive<ASTExpressionList>();
-        select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName));
-        if (column_names.contains(TimeSeriesColumnNames::Type))
-            select_list->children.push_back(makeAnyAggregate(TimeSeriesColumnNames::Type));
-        if (column_names.contains(TimeSeriesColumnNames::Unit))
-            select_list->children.push_back(makeAnyAggregate(TimeSeriesColumnNames::Unit));
-        if (column_names.contains(TimeSeriesColumnNames::Help))
-            select_list->children.push_back(makeAnyAggregate(TimeSeriesColumnNames::Help));
-        select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
-
-        auto table_exp = make_intrusive<ASTTableExpression>();
-        table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(metrics_table_id);
-        table_exp->children.push_back(table_exp->database_and_table_name);
-
-        auto table_elem = make_intrusive<ASTTablesInSelectQueryElement>();
-        table_elem->table_expression = table_exp;
-        table_elem->children.push_back(table_exp);
-
-        auto tables = make_intrusive<ASTTablesInSelectQuery>();
-        tables->children.push_back(table_elem);
-        select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
-
-        auto group_by = make_intrusive<ASTExpressionList>();
-        group_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName));
-        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_by);
-
-        return wrapInUnionQuery(std::move(select_query));
+        return makeMetricsSelect(metrics_table_id, makeMetricsSelectList(column_names, /* as_join_key= */ true));
     }
 
     /// Builds `FULL JOIN (deduplicated metrics) AS __metrics ON metric_family_name = timeSeriesMetricNameToFamily(metric_name)`

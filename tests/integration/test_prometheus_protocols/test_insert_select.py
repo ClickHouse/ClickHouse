@@ -85,6 +85,8 @@ def insert_three_series():
 
 
 def test_select_metric_name_and_tags():
+    """The `metric_name` and `tags` outer columns are reconstructed from the tags table — together, and each
+    on its own (single-column tags-table reads)."""
     insert_three_series()
 
     assert node.query(
@@ -94,26 +96,10 @@ def test_select_metric_name_and_tags():
         ["http_requests_total", "{'__name__':'http_requests_total','instance':'a','job':'api'}"],
         ["http_requests_total", "{'__name__':'http_requests_total','instance':'b','job':'api'}"],
     ])
-
-
-def test_select_only_metric_name():
-    insert_three_series()
-
-    assert node.query(
-        "SELECT metric_name FROM prometheus ORDER BY metric_name"
-    ) == TSV([
-        ["cpu_usage"],
-        ["http_requests_total"],
-        ["http_requests_total"],
+    assert node.query("SELECT metric_name FROM prometheus ORDER BY metric_name") == TSV([
+        ["cpu_usage"], ["http_requests_total"], ["http_requests_total"],
     ])
-
-
-def test_select_only_tags():
-    insert_three_series()
-
-    assert node.query(
-        "SELECT tags FROM prometheus ORDER BY tags"
-    ) == TSV([
+    assert node.query("SELECT tags FROM prometheus ORDER BY tags") == TSV([
         ["{'__name__':'cpu_usage','host':'h1'}"],
         ["{'__name__':'http_requests_total','instance':'a','job':'api'}"],
         ["{'__name__':'http_requests_total','instance':'b','job':'api'}"],
@@ -223,19 +209,6 @@ def test_select_count():
     assert node.query("SELECT count() FROM prometheus") == "3\n"
 
 
-def test_select_with_where_on_metric_name():
-    """WHERE-only columns must be passed through to the inner SELECT even when they're not in
-    the SELECT list. Here `metric_name` is in WHERE, not in SELECT, and the filter still works."""
-    insert_three_series()
-
-    assert node.query(
-        "SELECT count() FROM prometheus WHERE metric_name = 'cpu_usage'"
-    ) == "1\n"
-    assert node.query(
-        "SELECT count() FROM prometheus WHERE metric_name = 'http_requests_total'"
-    ) == "2\n"
-
-
 def test_select_with_where_on_tags_map_element():
     """A predicate that pokes into the tags Map exercises the `tags` column being in WHERE only."""
     insert_three_series()
@@ -249,14 +222,21 @@ def test_select_with_where_on_tags_map_element():
 
 
 def test_select_only_time_series():
-    """Bare samples branch: time_series alone, no Tags JOIN. Each row is one time series'
-    grouped (timestamp, value) tuples."""
-    insert_three_series()
+    """Bare samples branch (time_series alone, no Tags JOIN): one row per series, each carrying its grouped
+    (timestamp, value) tuples in order."""
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
+        " ('m', {}, [(toDateTime64(1000, 3), 1.5), (toDateTime64(2000, 3), 2.5)]),"
+        " ('m', {'k': '1'}, [(toDateTime64(3000, 3), 0.5)])"
+    )
 
-    # Three time series → three rows; sort by length so the assertion is order-independent.
+    # Two series -> two rows; the array carries the actual (timestamp, value) tuples.
     assert node.query(
-        "SELECT length(time_series) AS n FROM prometheus ORDER BY n"
-    ) == TSV([["1"], ["1"], ["1"]])
+        "SELECT time_series FROM prometheus ORDER BY length(time_series)"
+    ) == TSV([
+        ["[('1970-01-01 00:50:00.000',0.5)]"],
+        ["[('1970-01-01 00:16:40.000',1.5),('1970-01-01 00:33:20.000',2.5)]"],
+    ])
 
 
 def test_select_metric_name_and_time_series():
@@ -276,20 +256,6 @@ def test_select_metric_name_and_time_series():
     ])
 
 
-def test_select_full_time_series_array():
-    """Sanity: the time_series array carries the actual (timestamp, value) tuples."""
-    node.query(
-        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
-        " ('m', {}, [(toDateTime64(1000, 3), 1.5), (toDateTime64(2000, 3), 2.5)])"
-    )
-
-    assert node.query(
-        "SELECT time_series FROM prometheus"
-    ) == TSV([
-        ["[('1970-01-01 00:16:40.000',1.5),('1970-01-01 00:33:20.000',2.5)]"],
-    ])
-
-
 def insert_two_metric_families():
     """Helper for the metrics tests: two series in two metric families, each carrying metadata."""
     node.query(
@@ -301,8 +267,14 @@ def insert_two_metric_families():
 
 def test_select_only_metrics_metadata():
     """metrics-only branch: reads the metrics table, exposing inner `metric_family_name` as `metric_family`.
-    One row per metric family, independent of how many time series belong to it."""
+    One row per metric family (independent of how many time series belong to it), deduplicated by aggregation
+    since the metrics engine isn't guaranteed to merge duplicate rows on read."""
     insert_two_metric_families()
+    # A duplicate metadata row for one family must collapse to a single row.
+    node.query(
+        "INSERT INTO prometheus (metric_family, type, unit, help) VALUES"
+        " ('http_requests', 'counter', 'requests', 'Total HTTP requests')"
+    )
 
     assert node.query(
         "SELECT metric_family, type, unit, help FROM prometheus ORDER BY metric_family"
@@ -317,80 +289,42 @@ def test_select_only_metrics_metadata():
     ) == TSV([["counter"], ["gauge"]])
 
 
-def test_select_tags_and_metrics_metadata():
-    """tags + metrics branch: each time series is joined to its metric family's metadata via the
-    family computed from its metric name. Several series in one family share the same metadata row."""
+def test_select_tags_and_metrics():
+    """tags + metrics branch (each series joined to its family's metadata via the family computed from its
+    metric name). Exercises every facet of the FULL join at once: metadata shared by several series in one
+    family; a series whose family has no metadata (empty metadata columns, row kept); and a metric family with
+    no time series (empty metric_name/tags, row kept)."""
+    # A series with its family's metadata.
     node.query(
         "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type, unit, help) VALUES"
         " ('http_requests_total', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)], 'http_requests', 'counter', 'requests', 'Total HTTP requests')"
     )
-    # A second series in the same family ('_total' stripped to 'http_requests'), inserted without metadata.
+    # A second series in the same family ('_total' stripped to 'http_requests'), without its own metadata:
+    # it shares the family's metadata row.
     node.query(
         "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
         " ('http_requests_total', {'job': 'web'}, [(toDateTime64(2000, 3), 2.0)])"
     )
-
-    assert node.query(
-        "SELECT metric_name, tags, metric_family, type, unit, help FROM prometheus ORDER BY tags"
-    ) == TSV([
-        ["http_requests_total", "{'__name__':'http_requests_total','job':'api'}", "http_requests", "counter", "requests", "Total HTTP requests"],
-        ["http_requests_total", "{'__name__':'http_requests_total','job':'web'}", "http_requests", "counter", "requests", "Total HTTP requests"],
-    ])
-
-
-def test_select_tags_and_metrics_missing_metadata():
-    """The FULL join keeps time series whose metric family has no metadata row; their metadata
-    columns come back empty (the row is not dropped)."""
+    # A series whose family ('cpu_usage') has no metadata at all.
     node.query(
         "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
-        " ('cpu_usage', {'host': 'h1'}, [(toDateTime64(1000, 3), 0.5)])"
+        " ('cpu_usage', {'host': 'h1'}, [(toDateTime64(3000, 3), 0.5)])"
     )
-
-    assert node.query(
-        "SELECT metric_name, type, unit, help FROM prometheus"
-    ) == TSV([["cpu_usage", "", "", ""]])
-
-
-def test_select_tags_and_metrics_family_without_series():
-    """The FULL join also keeps metric families that have metadata but no stored time series; their
-    metric_name and tags come back empty."""
-    # A normal series together with its family's metadata.
-    node.query(
-        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type, unit, help) VALUES"
-        " ('http_requests_total', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)], 'http_requests', 'counter', 'requests', 'Total HTTP requests')"
-    )
-    # Metadata for a family with no time series at all: only metrics columns are inserted, so nothing
-    # is written to the tags table.
+    # Metadata for a family with no time series at all (only metrics columns inserted).
     node.query(
         "INSERT INTO prometheus (metric_family, type, unit, help) VALUES"
         " ('memory_bytes', 'gauge', 'bytes', 'Memory usage')"
     )
 
     assert node.query(
-        "SELECT metric_name, tags, metric_family, type, unit, help FROM prometheus ORDER BY metric_family"
+        "SELECT metric_name, tags, metric_family, type, unit, help FROM prometheus"
+        " ORDER BY metric_name, metric_family, tags"
     ) == TSV([
+        ["",                    "{}",                                             "memory_bytes",  "gauge",   "bytes",    "Memory usage"],
+        ["cpu_usage",           "{'__name__':'cpu_usage','host':'h1'}",           "",              "",        "",         ""],
         ["http_requests_total", "{'__name__':'http_requests_total','job':'api'}", "http_requests", "counter", "requests", "Total HTTP requests"],
-        ["",                    "{}",            "memory_bytes",  "gauge",   "bytes",    "Memory usage"],
+        ["http_requests_total", "{'__name__':'http_requests_total','job':'web'}", "http_requests", "counter", "requests", "Total HTTP requests"],
     ])
-
-
-def test_select_metrics_metadata_deduplicated():
-    """The metrics metadata is deduplicated per family: the metrics table may hold several not-yet-merged
-    rows for one family (its engine isn't guaranteed to deduplicate on read), so each family appears once."""
-    # Two metadata rows for the same family (only `help` differs).
-    node.query(
-        "INSERT INTO prometheus (metric_family, type, unit, help) VALUES"
-        " ('http_requests', 'counter', 'requests', 'First help')"
-    )
-    node.query(
-        "INSERT INTO prometheus (metric_family, type, unit, help) VALUES"
-        " ('http_requests', 'counter', 'requests', 'Second help')"
-    )
-
-    # One row, not two (the family is collapsed by aggregation).
-    assert node.query(
-        "SELECT metric_family, type, unit FROM prometheus"
-    ) == TSV([["http_requests", "counter", "requests"]])
 
 
 def test_select_tags_and_metrics_deduplicated():
@@ -467,32 +401,36 @@ def _insert_two_series_with_timestamps():
     )
 
 
-def test_select_where_timestamp_reshapes_time_series():
+def test_select_where_timestamp_filter():
     """`timestamp` is a filter-only virtual column: it never appears in the output, but a condition on it
-    selects the time range, so the `time_series` array keeps only in-range samples."""
+    selects the time range. The condition is pushed onto the samples table — any deterministic predicate over
+    `timestamp` alone (`>=`/`<=`/BETWEEN/`!=`/function-of-timestamp) — reshaping each series' `time_series`
+    array to the matching samples and dropping series that have no matching sample."""
     _insert_two_series_with_timestamps()
-    # Lower bound: 'cpu' keeps the samples at 2000 and 3000.
+    # Reshape: 'cpu' keeps the samples at 2000 and 3000.
     assert node.query(
         "SELECT length(time_series) FROM prometheus WHERE metric_name='cpu' AND timestamp >= toDateTime64(2000,3)"
     ) == "2\n"
-    # A range (BETWEEN becomes `>=` AND `<=`): only the sample at 2000 survives.
+    # BETWEEN (-> `>=` AND `<=`): only the sample at 2000 survives.
     assert node.query(
         "SELECT length(time_series) FROM prometheus"
         " WHERE metric_name='cpu' AND timestamp BETWEEN toDateTime64(1500,3) AND toDateTime64(2500,3)"
     ) == "1\n"
-
-
-def test_select_where_timestamp_prunes_series():
-    """A series with no sample in the selected time range is not returned at all."""
-    _insert_two_series_with_timestamps()
-    # Only 'cpu' has samples at or before 3000.
+    # Prune series: only 'cpu' has a sample at or before 3000; only 'mem' at or after 5000.
     assert node.query(
         "SELECT metric_name FROM prometheus WHERE timestamp <= toDateTime64(3000,3) ORDER BY metric_name"
     ) == "cpu\n"
-    # Only 'mem' has samples at or after 5000.
     assert node.query(
         "SELECT count() FROM prometheus WHERE timestamp >= toDateTime64(5000,3)"
     ) == "1\n"
+    # `!=` and a function of `timestamp` are pushed verbatim too (both keep cpu's 1000 and 3000).
+    assert node.query(
+        "SELECT length(time_series) FROM prometheus WHERE metric_name='cpu' AND timestamp != toDateTime64(2000,3)"
+    ) == "2\n"
+    assert node.query(
+        "SELECT length(time_series) FROM prometheus"
+        " WHERE metric_name='cpu' AND toUnixTimestamp64Milli(timestamp) >= 2000000"
+    ) == "2\n"
 
 
 def test_select_where_timestamp_without_min_max_columns():
@@ -510,22 +448,6 @@ def test_select_where_timestamp_without_min_max_columns():
         ) == "1\n"
     finally:
         node.query("DROP TABLE IF EXISTS prom_no_minmax SYNC")
-
-
-def test_select_where_timestamp_general_predicate():
-    """Any deterministic condition over `timestamp` alone is pushed onto the samples table verbatim, so
-    `!=` and function-of-timestamp predicates reshape the `time_series` array correctly (not just the
-    `<`/`<=`/`>`/`>=`/`=` comparisons that also drive the `min_time`/`max_time` pruning)."""
-    _insert_two_series_with_timestamps()
-    # `!=` keeps cpu's samples at 1000 and 3000 (2000 excluded).
-    assert node.query(
-        "SELECT length(time_series) FROM prometheus WHERE metric_name='cpu' AND timestamp != toDateTime64(2000,3)"
-    ) == "2\n"
-    # A function of timestamp: keep samples at or after 2000s (2000000 ms).
-    assert node.query(
-        "SELECT length(time_series) FROM prometheus"
-        " WHERE metric_name='cpu' AND toUnixTimestamp64Milli(timestamp) >= 2000000"
-    ) == "2\n"
 
 
 def test_select_where_timestamp_mixed_with_other_column_rejected():
