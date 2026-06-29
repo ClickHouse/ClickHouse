@@ -108,7 +108,7 @@ A `NAIVE_BAYES` dictionary has a fixed shape:
 - Alongside it, declare **exactly two unsigned-integer attributes**: the class label and the occurrence count.
 - The `class_attribute` layout parameter names which attribute is the class label; the other is automatically the count. The two attributes can be declared in either order.
 
-The source table holds **pre-aggregated** counts: one row per `(n-gram, class)` with how many times that n-gram was observed in that class. Producing those counts (tokenizing your corpus and grouping) is done by your training pipeline; the dictionary only consumes them.
+The source table holds **pre-aggregated** counts: one row per `(n-gram, class)` with how many times that n-gram was observed in that class. Producing those counts (tokenizing your corpus and grouping) is done by your training pipeline, or in ClickHouse itself from raw labelled text — see [Build training data from raw text](#build-training-data-from-raw-text); the dictionary only consumes them.
 
 **Updating the model.** Because the model is a dictionary backed by a table, retrain by updating the table and reloading:
 
@@ -116,6 +116,40 @@ The source table holds **pre-aggregated** counts: one row per `(n-gram, class)` 
 INSERT INTO sentiment_ngrams VALUES (0, 'awesome', 5);
 SYSTEM RELOAD DICTIONARY sentiment;
 ```
+
+## Build training data from raw text {#build-training-data-from-raw-text}
+
+If you start from raw labelled text rather than pre-aggregated counts, the [`naiveBayesNgrams`](/sql-reference/functions/machine-learning-functions#naivebayesngrams) function tokenizes text into exactly the n-grams this layout expects — the same `mode`, `n`, and boundary tokens — so the training data matches what the dictionary produces at query time. Pass it the same `n` / `mode` / `start_token` / `end_token` you use in the layout.
+
+Given a table of `(class_id, text)` rows, build the `(ngram, class_id, count)` source with one `GROUP BY`:
+
+```sql
+CREATE TABLE docs (class_id UInt32, text String) ENGINE = MergeTree ORDER BY class_id;
+INSERT INTO docs VALUES
+    (0, 'good great wonderful'), (0, 'great good nice'),
+    (1, 'bad terrible awful'), (1, 'terrible bad horrible');
+
+CREATE TABLE training_data (ngram String, class_id UInt32, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+
+INSERT INTO training_data
+SELECT ngram, class_id, count()
+FROM docs
+ARRAY JOIN naiveBayesNgrams(text, 1, 'token') AS ngram
+GROUP BY ngram, class_id;
+```
+
+`training_data` is now a valid source for a `NAIVE_BAYES` dictionary (here token unigrams; change the `n` and `mode` arguments to match the layout). Do not normalize the text (for example with `lower`) unless you are prepared for query-time input — which the dictionary tokenizes as-is — to no longer match.
+
+:::note Priors and document counts
+The `proportional` prior (the default) is weighted by each class's **total n-gram count**, not by its number of documents. If you want the classic document-frequency prior (`documents_in_class / total_documents`), compute it from the raw `docs` table and pass it with `priors_mode 'explicit'`:
+
+```sql
+SELECT arrayStringConcat(
+         groupArray(concat(toString(class_id), '=', toString(round(frac, 6)))), ',')
+FROM (SELECT class_id, count() / sum(count()) OVER () AS frac FROM docs GROUP BY class_id);
+```
+:::
 
 ## Layout parameters {#layout-parameters}
 
