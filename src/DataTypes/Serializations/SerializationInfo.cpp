@@ -38,7 +38,6 @@ constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
 constexpr auto KEY_NULLABLE_SERIALIZATION_VERSION = "nullable";
 constexpr auto KEY_MAP_SERIALIZATION_VERSION = "map";
 constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
-constexpr auto KEY_SKIPPED_COLUMNS = "skipped_columns"; // legacy read compat
 constexpr auto KEY_MISSING_COLUMNS = "missing_columns";
 constexpr auto KEY_MISSING_COL_NAME = "name";
 constexpr auto KEY_MISSING_COL_DEFAULT = "default";
@@ -565,7 +564,6 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     Poco::JSON::Array::Ptr columns_array;
     Poco::JSON::Object::Ptr type_versions_obj;
     Poco::JSON::Array::Ptr missing_columns_array;
-    Poco::JSON::Array::Ptr legacy_skipped_columns_array;
     bool propagate_types_serialization_versions_to_nested_types = false;
     for (const auto & [key, value] : *object)
     {
@@ -588,11 +586,6 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         else if (key == KEY_MISSING_COLUMNS)
         {
             missing_columns_array = value.extract<Poco::JSON::Array::Ptr>();
-        }
-        else if (key == KEY_SKIPPED_COLUMNS)
-        {
-            /// Legacy format: plain string array of column names (all type_default).
-            legacy_skipped_columns_array = value.extract<Poco::JSON::Array::Ptr>();
         }
         else
         {
@@ -698,18 +691,6 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             {
                 mc.default_kind = MissingColumnInfo::DefaultKind::TypeDefault;
             }
-            infos.missing_columns.push_back(std::move(mc));
-        }
-        std::sort(infos.missing_columns.begin(), infos.missing_columns.end());
-    }
-    else if (legacy_skipped_columns_array)
-    {
-        /// Backward compat: old format was a plain array of column name strings.
-        for (const auto & elem : *legacy_skipped_columns_array)
-        {
-            MissingColumnInfo mc;
-            mc.name = elem.extract<String>();
-            mc.default_kind = MissingColumnInfo::DefaultKind::TypeDefault;
             infos.missing_columns.push_back(std::move(mc));
         }
         std::sort(infos.missing_columns.begin(), infos.missing_columns.end());
