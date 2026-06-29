@@ -1210,6 +1210,15 @@ private:
         /// To avoid duplicates of equals when starting from both sides, i.e. large and small constant.
         QueryTreeNodePtrWithHashMap<std::unordered_set<const ConstantNode *>> equal_funcs;
 
+        /// Conjuncts already present in the AND, used to keep this optimization idempotent: a derived
+        /// transitive conjunct is appended only if an equal one is not already there. The identifier
+        /// resolve cache can hand the same node to several use sites, and the pass visitor is not
+        /// deduplicating, so a shared AND would otherwise accumulate the same derived conjunct once per
+        /// visit and desync from a singly-referenced copy (e.g. a GROUP BY key matched by formatted name).
+        QueryTreeNodePtrWithHashSet existing_conjuncts;
+        for (const auto & argument : function_node.getArguments().getNodes())
+            existing_conjuncts.emplace(argument);
+
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
         std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType)> findPairs
             = [&](const ComparePairs & pairs, QueryTreeNodePtr current, const ConstantNode * constant, CompareType type)
@@ -1246,7 +1255,8 @@ private:
                         and_node->getArguments().getNodes().push_back(constant->clone());
                         and_node->resolveAsFunction(
                             FunctionFactory::instance().get(compare_function_name, getContext()));
-                        function_node.getArguments().getNodes().push_back(and_node);
+                        if (existing_conjuncts.emplace(and_node).second)
+                            function_node.getArguments().getNodes().push_back(and_node);
                     }
 
                     findPairs(pairs, left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
