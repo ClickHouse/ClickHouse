@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
@@ -78,6 +79,17 @@ public:
                             name, name);
         }
         TimeSeriesTagsFunctionHelpers::checkArgumentTypesForTagNamesAndValues(name, arguments, 0);
+    }
+
+    /// A dry run is used to compute headers / partial results during query planning
+    /// (e.g. constant folding in `tryMergeExpressions`). It must not access the per-query tags
+    /// collector via `getContext`: the context the function was created with may already have
+    /// expired by plan-optimization time, which would otherwise raise a `Context has expired`
+    /// logical error. The real group lookup only needs to happen at execution time, so the
+    /// dry run returns a column of the right type without consulting the collector.
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return result_type->createColumn()->cloneResized(input_rows_count);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override

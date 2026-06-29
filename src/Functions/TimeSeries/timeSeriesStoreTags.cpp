@@ -82,6 +82,17 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypesForTagNamesAndValues(name, arguments, 1);
     }
 
+    /// A dry run is used to compute headers / partial results during query planning
+    /// (e.g. constant folding in `tryMergeExpressions`). It must not perform the side effect
+    /// of storing tags, nor access the query context via `getContext`: the context the function
+    /// was created with may already have expired by plan-optimization time, which would otherwise
+    /// raise a `Context has expired` logical error. The function returns its `id` argument
+    /// unchanged, so the dry-run result is just that column.
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    {
+        return arguments[0].column;
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & id_type = TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0, /* allow_nullable = */ true);

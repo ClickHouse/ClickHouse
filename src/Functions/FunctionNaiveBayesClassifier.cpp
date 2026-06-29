@@ -264,6 +264,17 @@ public:
         return "(StringOrFixedString, StringOrFixedString) -> UInt32";
     }
 
+    /// A dry run is used to compute headers / partial results during query planning
+    /// (e.g. constant folding in `tryMergeExpressions`). It must not access the model registry
+    /// via `getContext`: the context the function was created with may already have expired by
+    /// plan-optimization time, which would otherwise raise a `Context has expired` logical error.
+    /// Classification only needs to happen at execution time, so the dry run returns a column of
+    /// the right type without loading any model.
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return result_type->createColumn()->cloneResized(input_rows_count);
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & models = NBModelRegistry::instance(getContext());
