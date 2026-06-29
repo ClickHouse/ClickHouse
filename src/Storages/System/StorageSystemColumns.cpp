@@ -1,4 +1,5 @@
 #include <optional>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnsNumber.h>
@@ -546,3 +547,6 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemColumns) }
