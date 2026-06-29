@@ -7,7 +7,8 @@
 #include <span>
 #include <vector>
 
-namespace DB::PFor {
+namespace DB::PFor
+{
 
 using detail::BLOCK;
 
