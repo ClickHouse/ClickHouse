@@ -10,6 +10,7 @@
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
+#include <Parsers/ASTFunction.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -31,6 +32,27 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsFileLikeEngineDefaultPartitionStrategy file_like_engine_default_partition_strategy;
+}
+
+namespace
+{
+
+/// `body(...)` is supported only by the `url` table function (it forms the HTTP request body). Object
+/// storages have no request-body semantics. The positional argument parsers reject it, but the
+/// named-collection path silently ignores non-`equals` function arguments (with the default
+/// `allow_named_collection_override_by_default = 1`), so reject it explicitly before that branch.
+void rejectBodyArgument(const ASTs & args)
+{
+    for (const auto & arg : args)
+    {
+        const auto * function = arg->as<ASTFunction>();
+        if (function && function->name == "body")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The 'body' argument is supported only by the 'url' table function.");
+    }
+}
+
 }
 
 void StorageObjectStorageConfiguration::update( ///NOLINT
@@ -112,7 +134,12 @@ void StorageObjectStorageConfiguration::initialize(
     if (!disk_name.empty())
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
     else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
+    {
+        /// `fromNamedCollection` does not see the raw arguments, so an unsupported `body(...)` would be
+        /// silently dropped here. Reject it before taking the named-collection branch.
+        rejectBodyArgument(engine_args);
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
+    }
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
 

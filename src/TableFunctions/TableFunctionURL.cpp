@@ -8,6 +8,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Access/ContextAccess.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
@@ -32,6 +33,11 @@ namespace Setting
     extern const SettingsString url_base;
 }
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
@@ -42,9 +48,14 @@ VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(cons
 
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
-        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
-            result.push_back(i);
+        if (auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>())
+        {
+            const auto & function_name = function_node->getFunctionName();
+            if (function_name == "headers" || function_name == "body")
+            {
+                result.push_back(i);
+            }
+        }
     }
 
     return result;
@@ -68,24 +79,26 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         format = configuration.format;
 
-        StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
+        StorageURL::evalArgsAndCollectHeadersAndBody(args, configuration.headers, configuration.body, context);
     }
     else
     {
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
-        /// ITableFunctionFileLike cannot parse headers argument, so remove it.
-        ASTPtr headers_ast;
-        if (count != args.size())
+        size_t count = StorageURL::evalArgsAndCollectHeadersAndBody(args, configuration.headers, configuration.body, context);
+        /// ITableFunctionFileLike cannot parse `headers(...)` or `body(...)`, so set them aside.
+        const size_t extra = args.size() - count;
+        chassert(extra <= 2);
+        ASTs extras;
+        extras.reserve(extra);
+        for (size_t i = 0; i < extra; ++i)
         {
-            chassert(count + 1 == args.size());
-            headers_ast = args.back();
+            extras.push_back(std::move(args.back()));
             args.pop_back();
         }
 
         ITableFunctionFileLike::parseArgumentsImpl(args, context);
 
-        if (headers_ast)
-            args.push_back(headers_ast);
+        for (auto it = extras.rbegin(); it != extras.rend(); ++it)
+            args.push_back(std::move(*it));
     }
 
     /// Resolve relative URLs against the url_base setting.
@@ -113,6 +126,16 @@ StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr context,
     const std::string & table_name, const String & compression_method_, bool is_insert_query) const
 {
+    /// The `body(...)` argument only makes sense for reading, where it forms the HTTP request body.
+    /// For `INSERT INTO FUNCTION url(...)` the inserted rows themselves are sent as the request body
+    /// (see `IStorageURLBase::write`), so a user-provided `body` would be silently ignored. Reject it
+    /// explicitly instead of dropping it.
+    if (is_insert_query && !configuration.body.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The 'body' argument is not supported for INSERT INTO FUNCTION url(...): "
+            "the inserted data is sent as the request body.");
+
     const auto & settings = context->getSettingsRef();
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
@@ -150,6 +173,7 @@ StoragePtr TableFunctionURL::getStorage(
         context,
         compression_method_,
         configuration.headers,
+        configuration.body,
         configuration.http_method,
         nullptr,
         /*distributed_processing=*/false);
@@ -160,6 +184,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
     if (structure == "auto")
     {
         ColumnsDescription columns;
+        if (const auto access_object = getSourceAccessObject())
+            context->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(*access_object), getFunctionURINormalized());
 
         if (format == "auto")
         {
@@ -167,6 +193,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 filename,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
+                configuration.body,
                 std::nullopt,
                 context).first;
         }
@@ -176,6 +203,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 filename,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
+                configuration.body,
                 std::nullopt,
                 context);
         }

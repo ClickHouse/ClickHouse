@@ -392,13 +392,33 @@ bool looksLikeBoolArgument(const ASTPtr & arg)
     return type == Field::Types::Which::Bool || type == Field::Types::Which::UInt64;
 }
 
+/// `body(...)` is supported only by the `url` table function, not by S3. The positional parser rejects it
+/// (see below), but the named-collection branch ignores non-`equals` function arguments, so reject it
+/// there explicitly to avoid silently dropping the argument.
+void rejectBodyArgument(const ASTs & args)
+{
+    for (const auto & arg : args)
+    {
+        const auto * function = arg->as<ASTFunction>();
+        if (function && function->name == "body")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The 'body' argument is supported only by the 'url' table function, not by S3.");
+    }
+}
+
 }
 
 void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     auto extra_credentials = extractExtraCredentials(args);
+    StorageURL::Body tmp_body;
+    size_t count = StorageURL::evalArgsAndCollectHeadersAndBody(args, headers_from_ast, tmp_body, context);
 
-    size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
+    if (!tmp_body.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The 'body' argument is supported only by the 'url' table function, not by S3.");
 
     ASTs key_value_asts;
     if (auto first_key_value_arg_it = getFirstKeyValueArgument(args);
@@ -760,6 +780,10 @@ static void addStructureAndFormatToArgsIfNeededS3(
 {
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
+        /// The named-collection branch ignores non-`equals` function arguments, so an unsupported
+        /// `body(...)` would be silently dropped. Reject it explicitly (the positional branch below
+        /// rejects it via `evalArgsAndCollectHeadersAndBody`).
+        rejectBodyArgument(args);
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
         if (collection->getOrDefault<String>("format", "auto") == "auto")
@@ -781,7 +805,13 @@ static void addStructureAndFormatToArgsIfNeededS3(
 
         HTTPHeaderEntries tmp_headers;
 
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
+        StorageURL::Body tmp_body;
+        size_t count = StorageURL::evalArgsAndCollectHeadersAndBody(args, tmp_headers, tmp_body, context);
+
+        if (!tmp_body.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The 'body' argument is supported only by the 'url' table function, not by S3.");
 
         ASTs key_value_asts;
         auto first_key_value_arg_it = getFirstKeyValueArgument(args);
