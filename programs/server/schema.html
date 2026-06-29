@@ -741,12 +741,19 @@ function resetCredentialsStatus() {
 let checkCredentialsNum = 0;
 async function checkCredentials() {
     const num = ++checkCredentialsNum;
+    /// The status must describe the *current* `url` / `user` / `password`. Snapshot the values
+    /// this probe is testing, so a result that arrives after they change - the user edits a
+    /// field, or `loadAll` runs with different credentials - cannot repaint the now-stale result.
+    const url = $('url').value;
+    const user = $('user').value;
+    const password = $('password').value;
+    const isCurrent = () => num === checkCredentialsNum
+        && $('url').value === url && $('user').value === user && $('password').value === password;
     try {
         const res = await chQuery('SELECT version() AS v');
-        if (num !== checkCredentialsNum) return;   /// a newer probe superseded this one
-        setCredentialStatus(true, res.rows[0] && res.rows[0].v);
+        if (isCurrent()) setCredentialStatus(true, res.rows[0] && res.rows[0].v);
     } catch (e) {
-        if (num === checkCredentialsNum) setCredentialStatus(false);
+        if (isCurrent()) setCredentialStatus(false);
     }
 }
 
