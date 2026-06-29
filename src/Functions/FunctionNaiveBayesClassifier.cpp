@@ -4,10 +4,12 @@
 #include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -31,14 +33,25 @@ extern const int BAD_ARGUMENTS;
 namespace
 {
 
-void validateArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
+bool isStringOrNullableString(const IDataType & type)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return isString(*nullable->getNestedType());
+    return isString(type);
+}
+
+void validateArguments(
+    const IFunction & func,
+    const ColumnsWithTypeAndName & arguments,
+    FunctionArgumentDescriptor::TypeValidator input_validator = &isStringOrNullableString,
+    const char * input_description = "String or Nullable(String)")
 {
     validateFunctionArguments(
         func,
         arguments,
         {
             {"dictionary_name", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
-            {"input_text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"input_text", input_validator, nullptr, input_description},
         });
 }
 
@@ -107,6 +120,7 @@ public:
 
     bool isVariadic() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -127,7 +141,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateArguments(*this, arguments);
-        return std::make_shared<DataTypeUInt32>();
+        DataTypePtr result_type = std::make_shared<DataTypeUInt32>();
+        return arguments[1].type->isNullable() ? makeNullable(result_type) : result_type;
     }
 
     ColumnPtr
@@ -136,14 +151,25 @@ public:
         auto result_column = ColumnUInt32::create(input_rows_count);
         auto & data = result_column->getData();
 
+        const auto * input_nullable = checkAndGetColumn<ColumnNullable>(arguments[1].column.get());
+        ColumnsWithTypeAndName effective_arguments = arguments;
+        const NullMap * null_map = nullptr;
+        if (input_nullable)
+        {
+            effective_arguments[1].column = input_nullable->getNestedColumnPtr();
+            null_map = &input_nullable->getNullMapData();
+        }
+
         executeNaiveBayes(
             context,
             access_checked,
-            arguments,
+            effective_arguments,
             input_rows_count,
             [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
-            { data[i] = model.classify(text, scratch); });
+            { data[i] = (null_map && (*null_map)[i]) ? 0 : model.classify(text, scratch); });
 
+        if (input_nullable)
+            return ColumnNullable::create(std::move(result_column), input_nullable->getNullMapColumnPtr());
         return result_column;
     }
 };
@@ -164,7 +190,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateArguments(*this, arguments);
-        return makeClassProbTuple();
+        DataTypePtr result_type = makeClassProbTuple();
+        return arguments[1].type->isNullable() ? makeNullable(result_type) : result_type;
     }
 
     ColumnPtr
@@ -175,13 +202,29 @@ public:
         auto & class_data = class_col->getData();
         auto & prob_data = prob_col->getData();
 
+        const auto * input_nullable = checkAndGetColumn<ColumnNullable>(arguments[1].column.get());
+        ColumnsWithTypeAndName effective_arguments = arguments;
+        const NullMap * null_map = nullptr;
+        if (input_nullable)
+        {
+            effective_arguments[1].column = input_nullable->getNestedColumnPtr();
+            null_map = &input_nullable->getNullMapData();
+        }
+
         executeNaiveBayes(
             context,
             access_checked,
-            arguments,
+            effective_arguments,
             input_rows_count,
             [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
             {
+                /// A NULL row is masked by the null map, so leave defaults instead of classifying.
+                if (null_map && (*null_map)[i])
+                {
+                    class_data[i] = 0;
+                    prob_data[i] = 0;
+                    return;
+                }
                 auto [best_class, best_prob] = model.classifyWithProb(text, scratch);
                 class_data[i] = best_class;
                 prob_data[i] = best_prob;
@@ -190,7 +233,11 @@ public:
         Columns tuple_columns;
         tuple_columns.emplace_back(std::move(class_col));
         tuple_columns.emplace_back(std::move(prob_col));
-        return ColumnTuple::create(std::move(tuple_columns));
+        ColumnPtr tuple_column = ColumnTuple::create(std::move(tuple_columns));
+
+        if (input_nullable)
+            return ColumnNullable::create(tuple_column, input_nullable->getNullMapColumnPtr());
+        return tuple_column;
     }
 };
 
@@ -210,11 +257,11 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateArguments(*this, arguments);
-        return std::make_shared<DataTypeArray>(makeClassProbTuple());
+        DataTypePtr result_type = std::make_shared<DataTypeArray>(makeClassProbTuple());
+        return arguments[1].type->isNullable() ? makeNullableSafe(result_type) : result_type;
     }
 
-    ColumnPtr
-    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto class_col = ColumnUInt32::create();
         auto prob_col = ColumnFloat64::create();
@@ -223,18 +270,31 @@ public:
         auto offsets_col = ColumnArray::ColumnOffsets::create(input_rows_count);
         auto & offsets = offsets_col->getData();
 
+        const auto * input_nullable = checkAndGetColumn<ColumnNullable>(arguments[1].column.get());
+        ColumnsWithTypeAndName effective_arguments = arguments;
+        const NullMap * null_map = nullptr;
+        if (input_nullable)
+        {
+            effective_arguments[1].column = input_nullable->getNestedColumnPtr();
+            null_map = &input_nullable->getNullMapData();
+        }
+
         executeNaiveBayes(
             context,
             access_checked,
-            arguments,
+            effective_arguments,
             input_rows_count,
             [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
             {
-                const auto & probabilities = model.classifyWithAllProbs(text, scratch);
-                for (const auto & [class_id, prob] : probabilities)
+                /// A NULL row is skipped, leaving an empty array; if the result is Nullable it is masked to NULL below.
+                if (!(null_map && (*null_map)[i]))
                 {
-                    class_data.push_back(class_id);
-                    prob_data.push_back(prob);
+                    const auto & probabilities = model.classifyWithAllProbs(text, scratch);
+                    for (const auto & [class_id, prob] : probabilities)
+                    {
+                        class_data.push_back(class_id);
+                        prob_data.push_back(prob);
+                    }
                 }
                 offsets[i] = class_data.size();
             });
@@ -243,7 +303,11 @@ public:
         tuple_columns.emplace_back(std::move(class_col));
         tuple_columns.emplace_back(std::move(prob_col));
         auto nested_col = ColumnTuple::create(std::move(tuple_columns));
-        return ColumnArray::create(std::move(nested_col), std::move(offsets_col));
+        ColumnPtr array_column = ColumnArray::create(std::move(nested_col), std::move(offsets_col));
+
+        if (input_nullable && result_type->isNullable())
+            return ColumnNullable::create(array_column, input_nullable->getNullMapColumnPtr());
+        return array_column;
     }
 };
 
