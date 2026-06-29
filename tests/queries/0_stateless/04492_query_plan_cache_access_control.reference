@@ -1,0 +1,18 @@
+-- 1. self-join: column requirements are unioned across both plan leaves
+-- miss (allowed):
+1
+2
+-- hit (both columns still granted, allowed):
+1
+2
+-- hit after revoking SELECT(b) must be denied:
+ACCESS_DENIED
+-- 2. scalar subquery: a hit requires table-level SELECT
+-- miss (allowed):
+1	300
+2	300
+-- hit with only column grants must be denied (table-level SELECT required):
+ACCESS_DENIED
+-- after granting table-level SELECT the hit is allowed:
+1	300
+2	300
