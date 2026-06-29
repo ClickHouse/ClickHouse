@@ -507,16 +507,17 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
             return QueryProcessingStage::WithMergeableStateAfterAggregation;
         }
 
-        /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
-        /// (since in this case queries processed separately and the initiator is just a proxy in this case).
+        /// distributed_group_by_no_merge=1 does not respect distributed_push_down_limit:
+        /// shards process the query independently and the initiator just concatenates.
         ///
-        /// We always return Complete here regardless of to_stage, because with
-        /// distributed_group_by_no_merge=1 each shard processes the full query
-        /// independently and the initiator just concatenates results.
-        /// The caller may request a lower stage (e.g. StorageMerge passes
-        /// WithMergeableState when it wraps multiple tables), but that's fine —
-        /// the caller handles storage_stage > processed_stage correctly.
-        return QueryProcessingStage::Complete;
+        /// Each shard processes to Complete, so report at least Complete. Use max with
+        /// to_stage so a caller asking for a higher stage (WithMergeableStateAfterAggregation
+        /// or WithMergeableStateAfterAggregationAndLimit) is not silently downgraded.
+        /// If a caller asks for a lower stage (e.g. StorageMerge passing WithMergeableState
+        /// for a multi-table merge), `read()` still honors `processed_stage` and sends the
+        /// right query to shards; StorageMerge caps its own advertised stage so this
+        /// Complete does not leak into outer headers.
+        return std::max(to_stage, QueryProcessingStage::Complete);
     }
 
     /// Nested distributed query cannot return Complete stage,
@@ -1026,8 +1027,9 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     auto shard_filter_generator = ClusterProxy::getShardFilterGeneratorForCustomKey(
-        *modified_query_info.getCluster(), local_context, getInMemoryMetadataPtr(local_context, false)->columns);
+        *modified_query_info.getCluster(), local_context, metadata_snapshot->columns);
 
     ClusterProxy::executeQuery(
         query_plan,
@@ -1316,8 +1318,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto cluster = getCluster();
 
     /// Select query is needed for pruining on virtual columns
+    const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, cluster, src_storage_cluster.getInMemoryMetadataPtr(local_context, false));
+        predicate, filter.get(), local_context, cluster, storage_metadata);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -1433,7 +1436,8 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
         }
     }
 
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     commands.apply(new_metadata, local_context);
     checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
 }
@@ -1443,7 +1447,8 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
     auto table_id = getStorageID();
 
     checkAlterIsPossible(params, local_context);
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the PNG format requires libpng and base64, and the fast-test build does not enable base64
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -6,6 +8,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 OUT="${CLICKHOUSE_TMP}/04326_png_format"
 mkdir -p "${OUT}"
+
+# Render over HTTP so the image is produced by the server. With the native protocol the result is
+# formatted on the client, which would not exercise the server-side PNG encoder at all.
+png_http()
+{
+    # $1: extra URL settings (image dimensions etc., may be empty); $2: query
+    curl -sS "${CLICKHOUSE_URL}&$1" --data-binary "$2"
+}
 
 check_png_header()
 {
@@ -35,39 +45,39 @@ check_png_header()
 }
 
 # RGB implicit (color_type=2)
-$CLICKHOUSE_CLIENT --output_format_image_width=4 --output_format_image_height=2 --query "
+png_http "output_format_image_width=4&output_format_image_height=2" "
     SELECT toUInt8(number * 60) AS r, toUInt8(number * 30) AS g, toUInt8(255 - number * 50) AS b
     FROM numbers(8) FORMAT PNG
 " > "${OUT}/rgb.png"
 check_png_header "${OUT}/rgb.png" 4 2 2
 
 # RGBA implicit (color_type=6)
-$CLICKHOUSE_CLIENT --output_format_image_width=2 --output_format_image_height=2 --query "
+png_http "output_format_image_width=2&output_format_image_height=2" "
     SELECT toUInt8(number * 60) AS r, toUInt8(number * 30) AS g, toUInt8(255 - number * 50) AS b, toUInt8(number * 80) AS a
     FROM numbers(4) FORMAT PNG
 " > "${OUT}/rgba.png"
 check_png_header "${OUT}/rgba.png" 2 2 6
 
 # Grayscale (integer 'v'), color_type=0
-$CLICKHOUSE_CLIENT --output_format_image_width=3 --output_format_image_height=3 --query "
+png_http "output_format_image_width=3&output_format_image_height=3" "
     SELECT toUInt8(number * 30) AS v FROM numbers(9) FORMAT PNG
 " > "${OUT}/gray.png"
 check_png_header "${OUT}/gray.png" 3 3 0
 
 # Grayscale (float 'v' in [0, 1] mapped to [0, 255]), color_type=0
-$CLICKHOUSE_CLIENT --output_format_image_width=2 --output_format_image_height=2 --query "
+png_http "output_format_image_width=2&output_format_image_height=2" "
     SELECT toFloat64(number) / 3 AS v FROM numbers(4) FORMAT PNG
 " > "${OUT}/gray_float.png"
 check_png_header "${OUT}/gray_float.png" 2 2 0
 
 # Binary 'v' (Bool), color_type=0 (rendered as 8-bit grayscale)
-$CLICKHOUSE_CLIENT --output_format_image_width=2 --output_format_image_height=2 --query "
+png_http "output_format_image_width=2&output_format_image_height=2" "
     SELECT (number % 2 = 0) AS v FROM numbers(4) FORMAT PNG
 " > "${OUT}/binary.png"
 check_png_header "${OUT}/binary.png" 2 2 0
 
 # Explicit coordinates. Out-of-range coords are silently ignored.
-$CLICKHOUSE_CLIENT --output_format_image_width=4 --output_format_image_height=4 --query "
+png_http "output_format_image_width=4&output_format_image_height=4" "
     WITH data AS (
         SELECT * FROM VALUES('x Int32, y Int32, r UInt8, g UInt8, b UInt8',
             (0, 0, 255, 0, 0),
@@ -82,7 +92,7 @@ $CLICKHOUSE_CLIENT --output_format_image_width=4 --output_format_image_height=4 
 check_png_header "${OUT}/explicit.png" 4 4 2
 
 # Defaults: 1024x1024, RGB color_type=2
-$CLICKHOUSE_CLIENT --query "
+png_http "" "
     SELECT toUInt8(0) AS r, toUInt8(0) AS g, toUInt8(0) AS b FROM numbers(1) FORMAT PNG
 " > "${OUT}/default.png"
 check_png_header "${OUT}/default.png" 1024 1024 2
@@ -139,25 +149,25 @@ for arg in sys.argv[2:]:
 PYEOF
 
 # Implicit RGB, filled in scanline (row-major) order.
-$CLICKHOUSE_CLIENT --output_format_image_width=2 --output_format_image_height=1 --query "
+png_http "output_format_image_width=2&output_format_image_height=1" "
     SELECT * FROM VALUES('r UInt8, g UInt8, b UInt8', (10, 20, 30), (40, 50, 60)) FORMAT PNG
 " > "${OUT}/px_rgb.png"
 python3 "${DECODER}" "${OUT}/px_rgb.png" 0,0 1,0
 
 # Explicit coordinates: the later write to the same pixel wins; untouched pixels stay black.
-$CLICKHOUSE_CLIENT --output_format_image_width=2 --output_format_image_height=1 --query "
+png_http "output_format_image_width=2&output_format_image_height=1" "
     SELECT * FROM VALUES('x Int32, y Int32, r UInt8, g UInt8, b UInt8', (0, 0, 1, 2, 3), (0, 0, 9, 8, 7)) FORMAT PNG
 " > "${OUT}/px_explicit.png"
 python3 "${DECODER}" "${OUT}/px_explicit.png" 0,0 1,0
 
 # Float grayscale clamping: <0 -> 0, in [0,1] -> scaled to [0,255], >1 -> 255.
-$CLICKHOUSE_CLIENT --output_format_image_width=3 --output_format_image_height=1 --query "
+png_http "output_format_image_width=3&output_format_image_height=1" "
     SELECT * FROM VALUES('v Float64', (-0.5), (0.5), (2.0)) FORMAT PNG
 " > "${OUT}/px_float.png"
 python3 "${DECODER}" "${OUT}/px_float.png" 0,0 1,0 2,0
 
 # Binary (Bool) grayscale: true -> 255, false -> 0.
-$CLICKHOUSE_CLIENT --output_format_image_width=2 --output_format_image_height=1 --query "
+png_http "output_format_image_width=2&output_format_image_height=1" "
     SELECT * FROM VALUES('v Bool', (true), (false)) FORMAT PNG
 " > "${OUT}/px_binary.png"
 python3 "${DECODER}" "${OUT}/px_binary.png" 0,0 1,0
@@ -166,29 +176,39 @@ python3 "${DECODER}" "${OUT}/px_binary.png" 0,0 1,0
 $CLICKHOUSE_LOCAL --query "INSERT INTO FUNCTION file('${OUT}/append.png', 'PNG') SELECT toUInt8(0) AS v FROM numbers(1)" 2>&1 1>/dev/null
 $CLICKHOUSE_LOCAL --query "INSERT INTO FUNCTION file('${OUT}/append.png', 'PNG') SELECT toUInt8(0) AS v FROM numbers(1)" 2>&1 1>/dev/null | grep -oE "CANNOT_APPEND_TO_FILE" | head -1
 
-# Dimension above the PNG 31-bit limit -> exception (not silently truncated)
-${CLICKHOUSE_CLIENT} --output_format_image_width=4294967297 --query "
+# Dimension far above any supported size -> exception (not silently truncated)
+png_http "output_format_image_width=4294967297" "
     SELECT toUInt8(0) AS v FROM numbers(1) FORMAT PNG
-" 2>&1 1>/dev/null | grep -oE "BAD_ARGUMENTS" | head -1
+" | grep -oE "BAD_ARGUMENTS" | head -1
+
+# Dimension above the encoder's per-dimension limit but below the 31-bit range -> exception, not a libpng failure
+png_http "output_format_image_width=10000000&output_format_image_height=1" "
+    SELECT toUInt8(number % 256) AS v FROM numbers(1) FORMAT PNG
+" | grep -oE "BAD_ARGUMENTS" | head -1
+
+# Same for the height (the limit applies to each dimension independently)
+png_http "output_format_image_width=1&output_format_image_height=10000000" "
+    SELECT toUInt8(number % 256) AS v FROM numbers(1) FORMAT PNG
+" | grep -oE "BAD_ARGUMENTS" | head -1
 
 # Unknown column -> exception
-${CLICKHOUSE_CLIENT} --query "
+png_http "" "
     SELECT number AS foo FROM numbers(1) FORMAT PNG
-" 2>&1 1>/dev/null | grep -oE "BAD_ARGUMENTS" | head -1
+" | grep -oE "BAD_ARGUMENTS" | head -1
 
 # Ambiguous: mixing v with r,g,b -> exception
-${CLICKHOUSE_CLIENT} --query "
+png_http "" "
     SELECT toUInt8(1) AS r, toUInt8(2) AS g, toUInt8(3) AS b, toUInt8(4) AS v FROM numbers(1) FORMAT PNG
-" 2>&1 1>/dev/null | grep -oE "BAD_ARGUMENTS" | head -1
+" | grep -oE "BAD_ARGUMENTS" | head -1
 
 # Only one of x/y -> exception
-${CLICKHOUSE_CLIENT} --query "
+png_http "" "
     SELECT toInt32(1) AS x, toUInt8(0) AS r, toUInt8(0) AS g, toUInt8(0) AS b FROM numbers(1) FORMAT PNG
-" 2>&1 1>/dev/null | grep -oE "BAD_ARGUMENTS" | head -1
+" | grep -oE "BAD_ARGUMENTS" | head -1
 
 # Missing one of r,g,b -> exception
-${CLICKHOUSE_CLIENT} --query "
+png_http "" "
     SELECT toUInt8(1) AS r, toUInt8(2) AS g FROM numbers(1) FORMAT PNG
-" 2>&1 1>/dev/null | grep -oE "BAD_ARGUMENTS" | head -1
+" | grep -oE "BAD_ARGUMENTS" | head -1
 
 rm -rf "${OUT}"

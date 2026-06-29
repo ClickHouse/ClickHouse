@@ -101,7 +101,7 @@ size_t MergeTreeReaderIndex::readRows(
         /// If there are rows to read, apply bitmap filtering.
         if (max_rows_to_read > 0)
         {
-            auto mutable_filter_column = filter_column->assumeMutable();
+            auto mutable_filter_column = IColumn::mutate(std::move(filter_column));
             auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
             index_read_result->projection_index_read_result->appendToFilter(filter_data, starting_row, max_rows_to_read);
             filter_column = std::move(mutable_filter_column);
@@ -129,7 +129,7 @@ size_t MergeTreeReaderIndex::readRows(
         /// If there are rows to read, apply bitmap filtering.
         if (max_rows_to_read > 0)
         {
-            auto mutable_filter_column = filter_column->assumeMutable();
+            auto mutable_filter_column = IColumn::mutate(std::move(filter_column));
             auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
             size_t old_size = filter_data.size();
             filter_data.resize(old_size + max_rows_to_read);

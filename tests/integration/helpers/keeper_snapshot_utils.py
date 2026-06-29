@@ -56,7 +56,7 @@ def generate_keeper_configs(configs_dir, clusters):
                 f"            </server>"
             )
         return (
-            f"<clickhouse>\n"
+            "<clickhouse>\n"
             + (f"{storage_block}\n" if storage_block else "")
             + f"    <keeper_server>{snapshot_disk_line}\n"
             f"        <tcp_port>9181</tcp_port>\n"
@@ -73,9 +73,9 @@ def generate_keeper_configs(configs_dir, clusters):
             f"\n"
             f"        <raft_configuration>\n"
             + "\n".join(servers) + "\n"
-            f"        </raft_configuration>\n"
-            f"    </keeper_server>\n"
-            f"</clickhouse>\n"
+            "        </raft_configuration>\n"
+            "    </keeper_server>\n"
+            "</clickhouse>\n"
         )
 
     os.makedirs(configs_dir, exist_ok=True)

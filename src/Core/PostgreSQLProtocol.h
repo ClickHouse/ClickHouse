@@ -9,6 +9,8 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/ParserPreparedStatement.h>
@@ -221,6 +223,9 @@ public:
     {
         Int32 size = 0;
         readBinaryBigEndian(size, *in);
+        if (size < 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} received from client, it must be at least 4", size);
         in->ignore(size - 4);
     }
 
@@ -411,7 +416,7 @@ public:
     String user;
     String database;
     // includes username, may also include database and other runtime parameters
-    std::unordered_map<String, String> parameters;
+    UnorderedMapWithMemoryTracking<String, String> parameters;
 
     explicit StartupMessage(Int32 payload_size_) : FirstMessage(payload_size_) {}
 
@@ -516,8 +521,15 @@ public:
         readNullTerminated(auth_method, in);
         Int32 size_sasl_mechanism = 0;
         readBinaryBigEndian(size_sasl_mechanism, in);
-        sasl_mechanism.resize(size_sasl_mechanism);
-        in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
+        /// -1 is the protocol sentinel for "no initial response"; any other negative value is malformed.
+        if (size_sasl_mechanism < -1)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong SASL mechanism length {} in SASLInitialResponse, it must not be less than -1", size_sasl_mechanism);
+        if (size_sasl_mechanism > 0)
+        {
+            sasl_mechanism.resize(size_sasl_mechanism);
+            in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
+        }
     }
 
     MessageType getMessageType() const override
@@ -566,6 +578,9 @@ public:
         readBinaryBigEndian(message_type, in);
         Int32 size = 0;
         readBinaryBigEndian(size, in);
+        if (size < 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in SASLResponse, it must be at least 4", size);
         sasl_mechanism.resize(size - 4);
         in.readStrict(sasl_mechanism.data(), size - 4);
     }
@@ -748,7 +763,7 @@ class BindQuery : FrontMessage
 public:
     String portal_name;
     String function_name;
-    std::vector<String> parameters;
+    VectorWithMemoryTracking<String> parameters;
     Int16 num_params{};
 
     void deserialize(ReadBuffer & in) override
@@ -770,6 +785,16 @@ public:
         {
             Int32 sz_param = 0;
             readBinaryBigEndian(sz_param, in);
+            /// -1 is the protocol sentinel for a NULL parameter and no value bytes follow;
+            /// any other negative value is malformed.
+            if (sz_param < -1)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
+            if (sz_param == -1)
+            {
+                parameters.emplace_back("NULL");
+                continue;
+            }
             String current_param(sz_param, 0);
             in.readStrict(current_param.data(), sz_param);
             parameters.push_back(current_param);
@@ -978,10 +1003,10 @@ public:
 class RowDescription : BackendMessage
 {
 private:
-    const std::vector<FieldDescription> & fields_descr;
+    const VectorWithMemoryTracking<FieldDescription> & fields_descr;
 
 public:
-    explicit RowDescription(const std::vector<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
+    explicit RowDescription(const VectorWithMemoryTracking<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -1038,10 +1063,10 @@ public:
 class DataRow : BackendMessage
 {
 private:
-    const std::vector<std::shared_ptr<ISerializable>> & row;
+    const VectorWithMemoryTracking<std::shared_ptr<ISerializable>> & row;
 
 public:
-    explicit DataRow(const std::vector<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
+    explicit DataRow(const VectorWithMemoryTracking<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -1151,6 +1176,9 @@ public:
     {
         Int32 sz = 0;
         readBinaryBigEndian(sz, in);
+        if (sz < static_cast<Int32>(sizeof(Int32)))
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in CopyData, it must be at least 4", sz);
         query.reserve(sz - sizeof(Int32));
         for (size_t i = 0; i < sz - sizeof(Int32); ++i)
         {
@@ -1183,9 +1211,9 @@ public:
 
 class CopyOutData : public BackendMessage
 {
-    std::vector<char> data;
+    VectorWithMemoryTracking<char> data;
 public:
-    explicit CopyOutData(std::vector<char> data_)
+    explicit CopyOutData(VectorWithMemoryTracking<char> data_)
         : data(data_)
     {
     }
@@ -1355,7 +1383,7 @@ public:
 
     static Command classifyQuery(const String & query)
     {
-        static const std::vector<std::pair<String, Command>> query_patterns = {
+        static const VectorWithMemoryTracking<std::pair<String, Command>> query_patterns = {
             {"CREATE TEMPORARY TABLE", Command::CREATE_TABLE},
             {"CREATE TABLE", Command::CREATE_TABLE},
             {"CREATE DATABASE", Command::CREATE_DATABASE},
@@ -1628,10 +1656,10 @@ class AuthenticationManager
 {
 private:
     LoggerPtr log = getLogger("AuthenticationManager");
-    std::unordered_map<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
+    UnorderedMapWithMemoryTracking<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
 
 public:
-    explicit AuthenticationManager(const std::vector<std::shared_ptr<AuthenticationMethod>> & auth_methods)
+    explicit AuthenticationManager(const VectorWithMemoryTracking<std::shared_ptr<AuthenticationMethod>> & auth_methods)
     {
         for (const std::shared_ptr<AuthenticationMethod> & method : auth_methods)
         {
@@ -1757,11 +1785,11 @@ public:
     }
 
 private:
-    std::unordered_map<String, String> statements;
+    UnorderedMapWithMemoryTracking<String, String> statements;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
 
-    String getStatement(const String & function_name, const std::vector<String> & arguments)
+    String getStatement(const String & function_name, const VectorWithMemoryTracking<String> & arguments)
     {
         auto it = statements.find(function_name);
         if (it == statements.end())

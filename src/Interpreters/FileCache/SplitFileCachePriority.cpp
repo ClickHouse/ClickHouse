@@ -312,7 +312,7 @@ bool SplitFileCachePriority::tryIncreasePriority(
     CachePriorityGuard & queue_guard,
     CacheStateGuard & state_guard)
 {
-    const auto type = getPriorityType(iterator.getEntry()->key_metadata->origin.segment_type);
+    const auto type = getPriorityType(iterator.getEntry()->getKeyMetadata()->origin.segment_type);
     return getPriority(type).tryIncreasePriority(iterator, is_space_reservation_complete, queue_guard, state_guard);
 }
 
@@ -355,9 +355,14 @@ void SplitFileCachePriority::SplitIterator::remove(const CachePriorityGuard::Wri
     iterator->remove(lock);
 }
 
-void SplitFileCachePriority::SplitIterator::invalidate()
+void SplitFileCachePriority::SplitIterator::invalidate() noexcept
 {
     iterator->invalidate();
+}
+
+void SplitFileCachePriority::SplitIterator::invalidateBeforeRemove(const CachePriorityGuard::WriteLock & lock) noexcept
+{
+    iterator->invalidateBeforeRemove(lock);
 }
 
 void SplitFileCachePriority::SplitIterator::incrementSize(
