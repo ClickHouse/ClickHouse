@@ -343,6 +343,84 @@ def test_audit_log_check_grant_classified_as_dcl(start_cluster):
     node_user_dcl.query("DROP USER IF EXISTS check_grant_test_user")
 
 
+def test_audit_log_database_object_names(start_cluster):
+    """Database-level DDL (CREATE/DROP DATABASE) must record the database name in OBJECT_NAMES.
+    These statements populate only query_databases (no table/view names), so the affected object
+    name must be taken from there as well."""
+    node_ddl.query("DROP DATABASE IF EXISTS audit_db_objnames")
+    node_ddl.query("CREATE DATABASE audit_db_objnames")
+    node_ddl.query("DROP DATABASE audit_db_objnames")
+
+    assert_audit_log_contain_with_retry(node_ddl, "audit_db_objnames")
+    log_content = node_ddl.grep_in_log("audit_db_objnames", from_host=True, filename="clickhouse-server.audit.log")
+    lines = [line for line in log_content.strip().split("\n") if "audit_db_objnames" in line]
+
+    create_lines = [line for line in lines if "Create" in line]
+    drop_lines = [line for line in lines if "Drop" in line]
+    assert len(create_lines) >= 1, "CREATE DATABASE must produce a DDL audit record"
+    assert len(drop_lines) >= 1, "DROP DATABASE must produce a DDL audit record"
+
+    # The database name must appear in OBJECT_NAMES *in addition to* the query text, so it occurs
+    # at least twice on the line. Before the fix OBJECT_NAMES was empty (database name only in the
+    # query text, i.e. exactly once).
+    assert create_lines[0].count("audit_db_objnames") >= 2, \
+        f"CREATE DATABASE must record the database in OBJECT_NAMES: {create_lines[0]}"
+    assert drop_lines[0].count("audit_db_objnames") >= 2, \
+        f"DROP DATABASE must record the database in OBJECT_NAMES: {drop_lines[0]}"
+    for line in create_lines + drop_lines:
+        assert "DDL" in line, "CREATE/DROP DATABASE must be classified as DDL"
+
+
+def test_audit_log_failed_query_before_start(start_cluster):
+    """Queries that fail before execution starts (e.g. a parse error) must still be audited.
+    Such queries never reach logQueryFinish/logQueryException, so the audit record has to be
+    emitted from logExceptionBeforeStart. A parse error has no AST and is classified as MISC."""
+    try:
+        node_dml_misc.query("SELECT 'audit_before_start_marker' FROM")
+    except Exception:
+        pass  # Expected to fail with a syntax error
+
+    assert_audit_log_contain_with_retry(node_dml_misc, "audit_before_start_marker")
+    log_content = node_dml_misc.grep_in_log("audit_before_start_marker", from_host=True, filename="clickhouse-server.audit.log")
+    lines = [line for line in log_content.strip().split("\n") if "audit_before_start_marker" in line and "AUDIT:" in line]
+    assert len(lines) >= 1, "A query that fails before start must produce an audit record"
+
+    # Audit message format: "TYPE, COMMAND, EXCEPTION_CODE, USER, IP, OBJECT_NAMES, QUERY".
+    audit_part = lines[0].split("AUDIT: ", 1)[1]
+    fields = audit_part.split(", ")
+    assert fields[0] == "MISC", f"A parse error (no AST) must be classified as MISC: {lines[0]}"
+    assert fields[2] != "0", f"A failed query must record a non-zero exception code: {lines[0]}"
+
+
+def test_audit_log_pg_unsupported_auth_method(start_cluster):
+    """A user whose only authentication method cannot be used by the PostgreSQL wire protocol
+    (for example sha256_password) must still produce a LoginFailure audit record when a
+    PostgreSQL client attempts to log in. This exercises the unsupported-method negotiation path
+    that throws before Session::authenticate is reached."""
+    unique_user = "pg_unsupported_method_user"
+    node_user_dcl.query(f"DROP USER IF EXISTS {unique_user}")
+    node_user_dcl.query(f"CREATE USER {unique_user} IDENTIFIED WITH sha256_password BY 'secret'")
+    time.sleep(1)
+
+    try:
+        s = socket.create_connection((node_user_dcl.ip_address, 9005), timeout=10)
+        try:
+            s.sendall(pg_startup_message(unique_user))
+            s.settimeout(5)
+            s.recv(4096)  # read the server's "authentication method is not supported" error
+        finally:
+            s.close()
+    except Exception:
+        pass  # The connection is expected to be rejected
+    finally:
+        node_user_dcl.query(f"DROP USER IF EXISTS {unique_user}")
+
+    assert_audit_log_contain_with_retry(node_user_dcl, unique_user)
+    log_content = node_user_dcl.grep_in_log(unique_user, from_host=True, filename="clickhouse-server.audit.log")
+    assert "LoginFailure" in log_content, "LoginFailure must be emitted for a PostgreSQL unsupported-method auth failure"
+    assert "Unknown Host" not in log_content, "Client IP must be recorded for the auth failure, not 'Unknown Host'"
+
+
 AUDIT_LOG_CONFIG_PATH = "/etc/clickhouse-server/config.d/logger_audit_reload.xml"
 AUDIT_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.audit.log"
 
