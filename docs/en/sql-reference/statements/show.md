@@ -726,3 +726,29 @@ The `SHOW CREATE MASKING POLICY` statement shows parameters which were used at [
 ```sql title="Syntax"
 SHOW CREATE MASKING POLICY name ON [database.]table
 ```
+
+## SHOW TYPES {#show-types}
+
+The `SHOW TYPES` statement lists the names of all user-defined types created with
+[`CREATE TYPE`](./create/type.md).
+
+### Syntax {#syntax-27}
+
+```sql title="Syntax"
+SHOW TYPES
+```
+
+### See also {#see-also-8}
+
+- [`system.user_defined_types`](../../operations/system-tables/user_defined_types.md) table
+
+## SHOW TYPE {#show-type}
+
+The `SHOW TYPE` statement shows the definition of a single user-defined type. Requesting
+an unknown type raises the `UNKNOWN_TYPE` exception.
+
+### Syntax {#syntax-28}
+
+```sql title="Syntax"
+SHOW TYPE name
+```

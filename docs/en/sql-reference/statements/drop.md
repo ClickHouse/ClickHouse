@@ -135,6 +135,28 @@ CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
 DROP FUNCTION linear_equation;
 ```
 
+## DROP TYPE {#drop-type}
+
+Deletes a user-defined type created by [CREATE TYPE](./create/type.md). Built-in types
+can not be dropped.
+
+**Syntax**
+
+```sql
+DROP TYPE [IF EXISTS] name
+```
+
+Dropping a non-existent type without `IF EXISTS` raises the `UNKNOWN_TYPE` exception.
+Tables that already use the type are not affected, because the type is expanded to its
+definition when a table is created.
+
+**Example**
+
+```sql
+CREATE TYPE UserId AS UInt64;
+DROP TYPE UserId;
+```
+
 ## DROP NAMED COLLECTION {#drop-named-collection}
 
 Deletes a named collection.
