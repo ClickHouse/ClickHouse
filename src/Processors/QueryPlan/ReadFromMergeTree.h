@@ -332,6 +332,10 @@ public:
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool isQueryWithSampling() const;
 
+    /// After a PREWHERE is attached post-analysis, re-run the query condition cache mark trimming on the
+    /// already-analyzed parts so the cache is consulted under the PREWHERE key. See updatePrewhereInfo.
+    void applyQueryConditionCacheToAnalyzedResult();
+
     /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column
     void replaceVectorColumnWithDistanceColumn(const String & vector_column);
     bool isVectorColumnReplaced() const;

@@ -3000,6 +3000,33 @@ bool ReadFromMergeTree::readsInOrder() const
     return reader_settings.read_in_order;
 }
 
+void ReadFromMergeTree::applyQueryConditionCacheToAnalyzedResult()
+{
+    /// Re-run only the query condition cache mark trimming on the already-analyzed parts.
+    /// This is the same cheap, read-only step selectRangesToRead runs before primary-key/skip-index
+    /// analysis (filterPartsByQueryConditionCache), but here it runs with prewhere_info set so the
+    /// PREWHERE (qualified) cache key is consulted. It only narrows already-selected mark ranges; it
+    /// never re-reads indexes or re-checks row limits, so it is safe under parallel replicas.
+    auto & result = *analyzed_result_ptr;
+    MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
+        result.parts_with_ranges, query_info, vector_search_parameters, mutations_snapshot, context, log);
+
+    /// Refresh the derived selection counters so EXPLAIN / system.query_log reflect the trimmed ranges.
+    size_t sum_marks = 0;
+    size_t sum_ranges = 0;
+    size_t sum_rows = 0;
+    for (const auto & part : result.parts_with_ranges)
+    {
+        sum_ranges += part.ranges.size();
+        sum_marks += part.getMarksCount();
+        sum_rows += part.getRowsCount();
+    }
+    result.selected_parts = result.parts_with_ranges.size();
+    result.selected_ranges = sum_ranges;
+    result.selected_marks = sum_marks;
+    result.selected_rows = sum_rows;
+}
+
 void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     query_info.prewhere_info = prewhere_info_value;
@@ -3020,6 +3047,20 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
     /// would re-execute the IN-subquery and double-count its rows against `max_rows_to_read`.
     if (query_info.prewhere_info && indexes.has_value())
         VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.prewhere_info->prewhere_actions, context);
+
+    /// Analysis cached before this PREWHERE was attached read the query condition cache under the
+    /// WHERE-filter key, not the PREWHERE key the per-granule entries are written under, so a warm run
+    /// would miss. Re-run only the cheap cache trimming with prewhere_info now set; do NOT discard
+    /// analyzed_result_ptr to force a full re-analysis (it aborts under parallel replicas). The `indexes`
+    /// guard mirrors the buildSets guard above (skip the considerEnablingParallelReplicas pre-pass).
+    /// This runs before initializePipeline finalizes reader_settings, so apply the same eligibility
+    /// gates the regular consult/skip path uses: `allow_query_condition_cache` (cleared for
+    /// hand-constructed join lookups, lazy FINAL, etc.) and `!hasUniqueKey()` (the cache is
+    /// CSN-oblivious and server-shared, so trimming marks on a UNIQUE KEY read can make an
+    /// older-snapshot reader skip a mark whose rows are live at its CSN -> missing rows).
+    if (reader_settings.use_query_condition_cache && allow_query_condition_cache && query_info.prewhere_info
+        && analyzed_result_ptr && indexes.has_value() && !storage_snapshot->metadata->hasUniqueKey())
+        applyQueryConditionCacheToAnalyzedResult();
 
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
