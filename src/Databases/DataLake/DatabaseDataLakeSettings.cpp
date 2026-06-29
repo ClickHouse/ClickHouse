@@ -30,6 +30,7 @@ namespace ErrorCodes
     DECLARE(String, region, "", "Region for Glue catalog", 0) \
     DECLARE(String, aws_role_arn, "", "Role arn for AWS connection for Glue catalog", 0) \
     DECLARE(String, aws_role_session_name, "", "Role session name for AWS connection for Glue catalog", 0) \
+    DECLARE(String, aws_external_id, "", "External id for the AWS STS AssumeRole trust policy for Glue catalog", 0) \
     DECLARE(String, storage_endpoint, "", "Object storage endpoint", 0) \
     DECLARE(S3UriStyle, storage_uri_style, S3UriStyle::AUTO, "URL style used when constructing object storage URLs from catalog-provided table locations. Use 'virtual_hosted' when the object storage server requires the bucket in the hostname (e.g. https://bucket.endpoint.com/path/)", 0) \
     DECLARE(String, onelake_tenant_id, "", "Tenant id from azure", 0) \
@@ -46,7 +47,7 @@ namespace ErrorCodes
     DECLARE(String, google_adc_credentials_file, "", "Deprecated setting, will throw an exception if used", 0) \
     DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
     DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
-    DECLARE(Bool, force_add_bucket, false, "Add bucket name to the metadata path", 0) \
+    DECLARE(Bool, force_add_bucket, false, "When constructing object-storage URLs from the catalog-provided table location and storage_endpoint, prepend the bucket/container name even if the endpoint already contains it. Useful for catalogs that hand back paths without the bucket and expect it to be added at URL construction (Polaris-style paths).", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \

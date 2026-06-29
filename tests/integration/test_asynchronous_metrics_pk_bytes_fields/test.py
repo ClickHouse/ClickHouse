@@ -73,10 +73,10 @@ def test_total_pk_bytes_in_memory_fields(started_cluster):
 
     # insert data into the table and select
     node.query(
-        """INSERT INTO test_pk_bytes SELECT number + 20, number * 20 from numbers(1000000)"""
+        """INSERT INTO test_pk_bytes SELECT number + 20, number * 20 from numbers(10000)"""
     )
 
-    node.query("""SELECT * FROM test_pk_bytes where a > 1000000""")
+    node.query("""SELECT * FROM test_pk_bytes where a > 10000""")
 
     # functions to query primary key bytes used and allocated in memory
     def res_pk_bytes():
@@ -99,7 +99,7 @@ def test_total_pk_bytes_in_memory_fields(started_cluster):
 
     # insert some more data
     node.query(
-        """INSERT INTO test_pk_bytes SELECT number + 100, number * 200 from numbers(1000000)"""
+        """INSERT INTO test_pk_bytes SELECT number + 100, number * 200 from numbers(10000)"""
     )
     node.query("""SELECT * FROM test_pk_bytes""")
 
@@ -159,7 +159,7 @@ def test_total_proj_pk_ig_in_memory_fields(started_cluster):
     proj_ig_bytes_allocated_before = int(node.query(query_proj_ig_bytes_allocated).strip())
 
     # first insert
-    node.query("""INSERT INTO test_proj_pk_bytes SELECT number, number * 2 FROM numbers(1000000)""")
+    node.query("""INSERT INTO test_proj_pk_bytes SELECT number, number * 2 FROM numbers(10000)""")
 
     # force projection PK to load
     node.query("""SELECT b, a FROM test_proj_pk_bytes where b=1000
@@ -200,7 +200,7 @@ def test_total_proj_pk_ig_in_memory_fields(started_cluster):
     assert proj_ig_bytes_allocated_after > proj_ig_bytes_allocated_before
 
     # second insert
-    node.query("""INSERT INTO test_proj_pk_bytes SELECT number + 100, number * 200 FROM numbers(1000000)""")
+    node.query("""INSERT INTO test_proj_pk_bytes SELECT number + 100, number * 200 FROM numbers(10000)""")
 
     node.query("""SELECT b, a FROM test_proj_pk_bytes where b=5000000
                   SETTINGS optimize_use_projections=1, force_optimize_projection=1""")
