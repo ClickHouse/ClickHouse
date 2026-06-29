@@ -168,6 +168,10 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 
 Clears the query condition cache.
 
+## SYSTEM CLEAR|DROP QUERY PLAN CACHE {#drop-query-plan-cache}
+
+Clears the [query plan cache](../../operations/query-plan-cache.md).
+
 ## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
 
 ```sql

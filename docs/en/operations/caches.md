@@ -31,6 +31,7 @@ There are also a host of additional cache types:
 - [Userspace page cache](/operations/userspace-page-cache)
 - [Query cache](query-cache.md).
 - [Query condition cache](query-condition-cache.md).
+- [Query plan cache](query-plan-cache.md).
 - Format schema cache.
 
 Should you wish to clear one of the caches, for performance tuning, troubleshooting, or data consistency reasons,
