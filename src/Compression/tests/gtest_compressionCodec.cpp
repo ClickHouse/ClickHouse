@@ -14,6 +14,8 @@
 #include <Compression/LZ4_decompress_faster.h>
 #include <IO/BufferWithOwnMemory.h>
 
+#include "config.h"
+
 #include <random>
 #include <bitset>
 #include <cmath>
@@ -1355,6 +1357,44 @@ TEST(LZ4Test, DecompressMalformedInput)
     auto codec = CompressionCodecFactory::instance().get("LZ4", {});
     ASSERT_THROW(codec->decompress(source, source_size, memory.data()), Exception);
 }
+
+#if USE_IGUANA
+TEST(IguanaTest, DecompressMalformedInput)
+{
+    /// These malformed Iguana payloads were found by an AddressSanitizer fuzz harness over the
+    /// vendored decoder. Each previously triggered an out-of-bounds access: copy_raw claiming more
+    /// bytes than the payload holds (an unbounded data segment), and an entropy command with absurd
+    /// substream lengths. They must now be rejected with an exception instead of corrupting memory.
+    /// The codec is obtained through the parser (not the string overload) because it is registered
+    /// under the mixed-case name "Iguana", which the uppercasing string lookup would not find.
+    auto codec = makeCodec("Iguana", std::make_shared<DataTypeUInt8>());
+
+    const std::initializer_list<std::vector<uint8_t>> payloads = {
+        {0xff, 0x80, 0x81},        /// copy_raw command claims 127 bytes from a 3-byte payload
+        {0xff, 0xff, 0xff, 0x85},  /// decode_ans32 command with out-of-range substream lengths
+    };
+
+    for (const auto & payload : payloads)
+    {
+        constexpr UInt32 uncompressed_size = 64;
+        const UInt8 header_size = ICompressionCodec::getHeaderSize();
+
+        DB::Memory<> source;
+        source.resize(header_size + payload.size());
+        unalignedStoreLittleEndian<uint8_t>(source.data(), static_cast<uint8_t>(CompressionMethodByte::Iguana));
+        unalignedStoreLittleEndian<uint32_t>(&source[1], static_cast<uint32_t>(source.size()));
+        unalignedStoreLittleEndian<uint32_t>(&source[5], uncompressed_size);
+        std::memcpy(&source[header_size], payload.data(), payload.size());
+
+        DB::Memory<> dest;
+        dest.resize(uncompressed_size + 64);
+
+        EXPECT_THROW(
+            codec->decompress(source.data(), static_cast<UInt32>(source.size()), dest.data()),
+            Exception);
+    }
+}
+#endif
 
 TEST(DoubleDeltaTest, TranscodeRawInput)
 {
