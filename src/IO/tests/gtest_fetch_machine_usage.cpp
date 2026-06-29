@@ -90,7 +90,7 @@ TEST(FetchMachineUsage, TakeoverSavesPartialWorkAndResumesLater)
     /// wrap up at its next safe point, collects the partial product, and can
     /// later re-arm the machine to continue from the cursor.
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<TileMachine>();
     m->total_tiles = 6;
@@ -130,7 +130,7 @@ TEST(FetchMachineUsage, InterruptWithinBreakevenCompletesInstead)
     /// streaming window. The waiter is still released promptly: the leftover
     /// is bounded by the breakeven by construction.
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<TileMachine>();
     m->total_tiles = 4;
@@ -157,7 +157,7 @@ TEST(FetchMachineUsage, CancelWhileQueuedExitsAtEntryWithEmptyProduct)
     /// the caller degrades to the revoke path (`tryCollectMachine` falls back
     /// to the sync read on an empty interrupted product).
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<TileMachine>();
     m->run_step = makeTileStep(*m);
@@ -180,7 +180,7 @@ TEST(FetchMachineUsage, CancelLadderRevokeThenAbortAndJoin)
     /// join; the wait is bounded by one safe point, and the products are
     /// discarded by dropping the machine.
     auto pool = std::make_shared<PrefetchThreadPool>(1, /*queue_size=*/4);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     /// Queued: the single worker is busy, the step cannot start.
     {
@@ -236,7 +236,7 @@ TEST(FetchMachineUsage, DeferredCancelParksOnSoftListJoinsLater)
     /// false again once consumed. Track joined-ness by dropping the machine
     /// from the list, never by re-probing after a join.
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<TileMachine>();
     m->total_tiles = 6;
@@ -277,7 +277,7 @@ TEST(FetchMachineUsage, BarrierThenReArmForThePutStep)
     /// fetch's interrupt must not leak into the put) and drops the resolved
     /// handle (a later pool-full park must not leave a stale joinable handle).
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     struct TwoPhaseMachine : MachineBase
     {

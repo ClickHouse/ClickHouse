@@ -248,7 +248,7 @@ ReaderExecutor::ReaderExecutor(
     , long_connection_max_bound(options.long_connection_max_bound)
     , fill_ahead_lead(options.fill_ahead_lead)
     , prefetch_pool(std::move(options.prefetch_pool))
-    , runner(prefetch_pool ? std::make_unique<FetchMachineRunner>(prefetch_pool) : nullptr)
+    , runner(prefetch_pool ? std::make_unique<PoolFetchMachineRunner>(prefetch_pool) : nullptr)
     , long_connection_limit(std::move(options.long_connection_limit))
     , reader_executor_log(std::move(options.reader_executor_log))
     , active_metric(CurrentMetrics::ReaderExecutorActive)

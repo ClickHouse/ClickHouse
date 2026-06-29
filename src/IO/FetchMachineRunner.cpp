@@ -5,12 +5,12 @@
 namespace DB
 {
 
-FetchMachineRunner::FetchMachineRunner(std::shared_ptr<PrefetchThreadPool> pool_)
+PoolFetchMachineRunner::PoolFetchMachineRunner(std::shared_ptr<PrefetchThreadPool> pool_)
     : pool(std::move(pool_))
 {
 }
 
-bool FetchMachineRunner::schedule(std::shared_ptr<MachineBase> machine)
+bool PoolFetchMachineRunner::schedule(std::shared_ptr<MachineBase> machine)
 {
     chassert(machine && machine->run_step);
 
@@ -58,7 +58,7 @@ bool FetchMachineRunner::schedule(std::shared_ptr<MachineBase> machine)
     return true;
 }
 
-bool FetchMachineRunner::tryCancelQueued(MachineBase & machine)
+bool PoolFetchMachineRunner::tryCancelQueued(MachineBase & machine)
 {
     if (!machine.current_step || !machine.current_step->tryCancel())
         return false;
@@ -69,12 +69,12 @@ bool FetchMachineRunner::tryCancelQueued(MachineBase & machine)
     return true;
 }
 
-void FetchMachineRunner::requestInterrupt(MachineBase & machine)
+void PoolFetchMachineRunner::requestInterrupt(MachineBase & machine)
 {
     machine.interrupt_requested.store(true);
 }
 
-void FetchMachineRunner::waitReleased(MachineBase & machine)
+void PoolFetchMachineRunner::waitReleased(MachineBase & machine)
 {
     if (!machine.current_step)
         return;

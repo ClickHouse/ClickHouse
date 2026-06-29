@@ -36,7 +36,7 @@ namespace DB
 
 class PrefetchThreadPool;
 class ReaderExecutorLog;
-class FetchMachineRunner;
+class IFetchMachineRunner;
 class ReaderExecutorInspector;
 
 /// Reads a logical file (one or more `StoredObject`s mapped by `OffsetMap`)
@@ -1002,7 +1002,7 @@ private:
     /// the revoke/release edges live there; every policy decision stays here.
     /// Created in the constructor from `Options::prefetch_pool`; null without a pool.
     /// Drives the FETCH machines only.
-    std::unique_ptr<FetchMachineRunner> runner;
+    std::unique_ptr<IFetchMachineRunner> runner;
     /// Single source of truth for "is a background machine in flight". The
     /// machine is co-owned with the pool job; the worker reads and writes ONLY
     /// the machine payload, and the foreground reclaims it through the

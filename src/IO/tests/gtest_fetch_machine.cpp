@@ -53,7 +53,7 @@ private:
 TEST(FetchMachine, ScheduleRunsStepAndParksAtBarrier)
 {
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<CountingMachine>();
     m->run_step = [self = m.get()]
@@ -73,7 +73,7 @@ TEST(FetchMachine, ScheduleRunsStepAndParksAtBarrier)
 TEST(FetchMachine, StepResultDoneReachesTerminalState)
 {
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<CountingMachine>();
     m->run_step = [] { return StepResult::Done; };
@@ -87,7 +87,7 @@ TEST(FetchMachine, StepResultDoneReachesTerminalState)
 TEST(FetchMachine, PoolFullParksMachineExecutorOwned)
 {
     auto pool = std::make_shared<FullPool>();
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<CountingMachine>();
     m->run_step = [self = m.get()]
@@ -110,7 +110,7 @@ TEST(FetchMachine, CancelQueuedReclaimsUntouchedMachine)
     /// Single worker blocked by another job; the machine's step stays Queued,
     /// so the revoke CAS wins and the payload provably never ran.
     auto pool = std::make_shared<PrefetchThreadPool>(1, /*queue_size=*/4);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     std::latch worker_latch{1};
     auto blocker = pool->submitJob([&] { worker_latch.wait(); });
@@ -138,7 +138,7 @@ TEST(FetchMachine, CancelQueuedReclaimsUntouchedMachine)
 TEST(FetchMachine, CancelRunningFailsAndReleaseIsWaited)
 {
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     std::latch started{1};
     std::latch release{1};
@@ -164,7 +164,7 @@ TEST(FetchMachine, CancelRunningFailsAndReleaseIsWaited)
 TEST(FetchMachine, StepExceptionLandsInFailureNotInWait)
 {
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<CountingMachine>();
     m->run_step = []() -> StepResult { throw std::runtime_error("step failed"); };
@@ -185,7 +185,7 @@ TEST(FetchMachine, InterruptFlagVisibleInsideStep)
     /// observes a flag set after it started (the stage-2 interrupt-point
     /// contract; here only the visibility half is pinned).
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     std::latch started{1};
     std::latch flagged{1};
@@ -212,7 +212,7 @@ TEST(FetchMachine, InterruptFlagVisibleInsideStep)
 TEST(FetchMachine, InterruptedResultParksAsInterrupted)
 {
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<CountingMachine>();
     m->run_step = [] { return StepResult::Interrupted; };
@@ -231,7 +231,7 @@ TEST(FetchMachine, FlagsAreCooperativeOnly)
     /// early is entirely the step body's contract; only `tryCancelQueued`
     /// prevents a queued step from running at all.
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<CountingMachine>();
     m->run_step = [self = m.get()]
@@ -255,7 +255,7 @@ TEST(FetchMachine, ScheduleDoesNotResetStickyFlags)
     /// consumed takeover flag itself so the next step does not inherit it
     /// (see `schedulePutStep`).
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<CountingMachine>();
     std::atomic<bool> seen_at_entry{false};
@@ -276,7 +276,7 @@ TEST(FetchMachine, ScheduleDoesNotResetStickyFlags)
 TEST(FetchMachine, TryCancelWithoutScheduleIsFalse)
 {
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<CountingMachine>();
     EXPECT_FALSE(runner.tryCancelQueued(*m));
@@ -289,7 +289,7 @@ TEST(FetchMachine, TryCancelFinishedIsFalse)
     /// the step up - a revoke never un-runs a completed step or overwrites
     /// its final state.
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<CountingMachine>();
     m->run_step = [] { return StepResult::Done; };
@@ -307,7 +307,7 @@ TEST(FetchMachine, RevokeIsOneShot)
     /// fired) and the state stays Cancelled - the "never ran" guarantee
     /// cannot be claimed twice.
     auto pool = std::make_shared<PrefetchThreadPool>(1, /*queue_size=*/4);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     std::latch worker_latch{1};
     auto blocker = pool->submitJob([&] { worker_latch.wait(); });
@@ -331,7 +331,7 @@ TEST(FetchMachine, ScheduleAgainAfterPoolFullPark)
     /// The reschedule ladder (`sweepPutMachines`): a ParkedPoolFull machine is
     /// still executor-owned and intact, so a later `schedule` simply retries.
     auto pool = std::make_shared<InlinePool>(/*reject_first=*/1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<CountingMachine>();
     m->run_step = [self = m.get()]
@@ -358,7 +358,7 @@ TEST(FetchMachine, ReleaseEdgePublishesFinalState)
     /// re-scheduled many times: each `schedule` installs a fresh handle, no
     /// manual reset between steps is required.
     auto pool = std::make_shared<PrefetchThreadPool>(1);
-    FetchMachineRunner runner(pool);
+    PoolFetchMachineRunner runner(pool);
 
     auto m = std::make_shared<CountingMachine>();
     for (size_t round = 0; round < 64; ++round)

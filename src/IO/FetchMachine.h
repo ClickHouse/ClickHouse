@@ -10,7 +10,7 @@
 namespace DB
 {
 
-/// Lifecycle of a fetch machine (driven by `FetchMachineRunner`). Stored in one
+/// Lifecycle of a fetch machine (driven by an `IFetchMachineRunner`). Stored in one
 /// atomic word that doubles as the ownership token: the executor owns the
 /// machine in every parked/terminal state; a pool worker owns it while
 /// Scheduled/Running. `Running` is never reclaimed - only flagged
