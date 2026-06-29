@@ -3716,6 +3716,265 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsPinnedSegment)
     EXPECT_EQ(result, content);
 }
 
+/// Reproduces the `chassert(!is_last_holder)` abort in `FileSegment::complete`'s
+/// DOWNLOADING branch. `planResidencyView` credits a concurrently-DOWNLOADING
+/// segment's committed prefix as a HIT, so its `read_holder` passively pins the
+/// in-flight segment for the plan's lifetime, with no writer of its own. When a
+/// query is interrupted, that read view can outlive the segment's downloader and
+/// become its LAST holder while it is still DOWNLOADING; the holder dtor then runs
+/// `complete()` as a NON-downloader last holder and trips the assert. The drops run
+/// on a helper thread so `getCallerId()` (thread-id based) differs from the
+/// downloader -- exactly the cross-thread split a `max_threads` read produces
+/// (download on a worker thread, teardown on the query thread). Legacy never hits
+/// this: it downloads and resets the DOWNLOADING state on the same thread, so a
+/// non-downloader is never the last holder of a DOWNLOADING segment.
+TEST(ReaderExecutor, RealDiskCacheSiblingReadViewOutlivesDownloaderOfDownloadingSegment)
+{
+    DB::ServerUUID::setRandomForUnitTests();
+
+    auto * saved_thread = DB::current_thread;
+    DB::current_thread = nullptr;
+    SCOPE_EXIT({ DB::current_thread = saved_thread; });
+
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("reader_exec_sibling_downloading");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    namespace fs = std::filesystem;
+    auto cache_path = fs::temp_directory_path() / "reader_exec_sibling_dl_cache";
+    fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+    SCOPE_EXIT({ fs::remove_all(cache_path); });
+
+    DB::FileCacheSettings settings;
+    settings[DB::FileCacheSetting::path] = cache_path.string();
+    settings[DB::FileCacheSetting::max_size] = 64 * 1024;
+    settings[DB::FileCacheSetting::max_elements] = 8;
+    settings[DB::FileCacheSetting::max_file_segment_size] = 8 * 1024;
+    settings[DB::FileCacheSetting::boundary_alignment] = 8 * 1024;
+    settings[DB::FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[DB::FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reader_exec_sibling_dl", settings);
+    cache->initialize();
+
+    DB::FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    /// Fix the key + origin so the manual download lands on exactly the segment
+    /// `planResidencyView` will probe.
+    auto key = DB::FileCacheKey::fromPath("sib_obj");
+    auto origin = DB::FileCache::getCommonOrigin();
+    auto provider = std::make_shared<DB::DiskCacheProvider>(
+        cache, cache_settings, /*query_id_=*/String{}, /*local_throttler_=*/nullptr,
+        std::optional<DB::FileCacheKey>(key), std::optional<DB::FileCacheOriginInfo>(origin));
+
+    DB::StoredObject object("sib_obj", "sib_obj", 8192);
+
+    /// Download a committed prefix and leave the segment DOWNLOADING (the downloader
+    /// never completes -- modelling a download interrupted mid-flight). This thread
+    /// holds the downloader role.
+    auto dl_holder = cache->getOrSet(key, 0, 8192, 8192, DB::CreateFileSegmentSettings{}, 0, origin);
+    ASSERT_EQ(dl_holder->size(), 1u);
+    {
+        auto & seg = dl_holder->front();
+        ASSERT_EQ(seg.getOrSetDownloader(), DB::FileSegment::getCallerId());
+        std::string failure_reason;
+        ASSERT_TRUE(seg.reserve(2048, 1000, failure_reason)) << failure_reason;
+        auto key_str = key.toString();
+        auto subdir = fs::path(cache_path) / key_str.substr(0, 3) / key_str;
+        if (!fs::exists(subdir))
+            fs::create_directories(subdir);
+        std::string payload(2048, 'Q');
+        seg.write(payload.data(), payload.size(), seg.getCurrentWriteOffset());
+        /// NB: no completePartAndResetDownloader -> stays DOWNLOADING, we remain the downloader.
+        ASSERT_EQ(seg.state(), DB::FileSegment::State::DOWNLOADING);
+    }
+
+    /// A residency read view over the same range: its `read_holder` now passively
+    /// pins the DOWNLOADING segment (committed prefix credited as a hit).
+    auto view = provider->planResidencyView(object, /*object_file_offset=*/0, DB::ByteRange{0, 8192});
+    ASSERT_TRUE(view != nullptr);
+
+    /// Drop both holders on a HELPER thread: its thread-id makes `getCallerId()`
+    /// differ from the downloader, so `complete()` does NOT reset the DOWNLOADING
+    /// state. Dropping the downloader holder first leaves the segment DOWNLOADING
+    /// held only by the read view; dropping the read view then completes a
+    /// DOWNLOADING segment as a NON-downloader LAST holder -> the abort (pre-fix).
+    std::thread dropper([&]
+    {
+        dl_holder.reset();   // non-downloader, not last -> segment stays DOWNLOADING
+        view.reset();        // non-downloader, LAST holder of DOWNLOADING -> abort (pre-fix)
+    });
+    dropper.join();
+
+    /// With the fix the abandoned download is recovered to PARTIALLY_DOWNLOADED (keeping the
+    /// committed prefix) rather than completed-as-DOWNLOADING, so a fresh probe sees no stuck
+    /// DOWNLOADING segment and the committed bytes survive for reuse.
+    auto after = cache->get(key, 0, 8192, /*file_segments_limit=*/0, origin.user_id);
+    bool has_live_downloading = false;
+    bool has_committed_prefix = false;
+    if (after)
+        for (const auto & seg : *after)
+        {
+            if (seg->state() == DB::FileSegment::State::DOWNLOADING)
+                has_live_downloading = true;
+            if (seg->state() == DB::FileSegment::State::PARTIALLY_DOWNLOADED
+                || seg->state() == DB::FileSegment::State::DOWNLOADED)
+                has_committed_prefix = true;
+        }
+    EXPECT_FALSE(has_live_downloading);
+    EXPECT_TRUE(has_committed_prefix);
+}
+
+namespace
+{
+
+/// A source whose buffer opens fine but throws on the first read. It drives the
+/// executor's foreground inline-write path past `electDownloaders` (-> the miss segment
+/// becomes DOWNLOADING) and then throws inside `fetch_into`, before any write completes
+/// the segment -- the exact window the L1 guard must cover.
+class ThrowOnReadBuffer : public ReadBufferFromFileBase
+{
+public:
+    explicit ThrowOnReadBuffer(size_t file_size_)
+        : ReadBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0, file_size_) {}
+
+    String getFileName() const override { return "ThrowOnReadBuffer"; }
+
+    off_t seek(off_t off, int whence) override
+    {
+        if (whence == SEEK_SET)
+            file_offset = static_cast<size_t>(off);
+        else if (whence == SEEK_CUR)
+            file_offset += static_cast<size_t>(off);
+        resetWorkingBuffer();
+        return static_cast<off_t>(file_offset);
+    }
+
+    off_t getPosition() override { return static_cast<off_t>(file_offset); }
+    size_t getFileOffsetOfBufferEnd() const override { return file_offset; }
+
+private:
+    bool nextImpl() override
+    {
+        throw DB::Exception(DB::ErrorCodes::CANNOT_OPEN_FILE, "ThrowOnReadBuffer: injected source read failure");
+    }
+
+    size_t file_offset = 0;
+};
+
+class ThrowOnReadSource : public IFileBasedSourceReader
+{
+public:
+    explicit ThrowOnReadSource(size_t file_size_) : file_size(file_size_) {}
+
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject &) override
+    {
+        return std::make_unique<ThrowOnReadBuffer>(file_size);
+    }
+
+    String name() const override { return "ThrowOnReadSource"; }
+
+private:
+    size_t file_size;
+};
+
+}
+
+/// Executor-level repro of the abort via the FOREGROUND inline-write path
+/// (`fetchAndBackfillGaps`): a cold read elects the FileCache downloader of a miss
+/// segment (-> DOWNLOADING), then the source throws before the write completes it. The
+/// foreground (unlike the worker's `coordinatedPrefetch`, which has a `releaseElected
+/// Downloaders` scope guard) does NOT reset the elected downloader on the exception, so
+/// the segment is left DOWNLOADING in the retained plan. Destroying the executor on
+/// another thread (the teardown thread is not the foreground/downloader thread, as in a
+/// `max_threads` read) then completes a DOWNLOADING segment as a non-downloader last
+/// holder -> the abort. The L1 foreground guard resets it on the foreground thread, so
+/// teardown is clean.
+TEST(ReaderExecutor, ForegroundElectThenSourceThrowLeavesNoDownloadingSegment)
+{
+    DB::ServerUUID::setRandomForUnitTests();
+
+    auto * saved_thread = DB::current_thread;
+    DB::current_thread = nullptr;
+    SCOPE_EXIT({ DB::current_thread = saved_thread; });
+
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("reader_exec_fg_elect_throw");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    namespace fs = std::filesystem;
+    auto cache_path = fs::temp_directory_path() / "reader_exec_fg_elect_throw_cache";
+    fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+    SCOPE_EXIT({ fs::remove_all(cache_path); });
+
+    DB::FileCacheSettings settings;
+    settings[DB::FileCacheSetting::path] = cache_path.string();
+    settings[DB::FileCacheSetting::max_size] = 64 * 1024;
+    settings[DB::FileCacheSetting::max_elements] = 8;
+    settings[DB::FileCacheSetting::max_file_segment_size] = 8 * 1024;
+    settings[DB::FileCacheSetting::boundary_alignment] = 8 * 1024;
+    settings[DB::FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[DB::FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reader_exec_fg_elect_throw", settings);
+    cache->initialize();
+
+    DB::FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+    auto provider = std::make_shared<DB::DiskCacheProvider>(cache, cache_settings, /*query_id_=*/String{});
+
+    auto source = std::make_shared<ThrowOnReadSource>(8000);
+    StoredObjects objects;
+    objects.emplace_back("fg_obj", "fg_obj", 8000);
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(provider);
+
+    auto limit = std::make_shared<LongConnectionLimit>(10);
+    /// No prefetch pool -> the foreground does the fetch synchronously on THIS thread.
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 2000;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.long_connection_limit = limit;
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
+
+    /// Foreground read on THIS thread: elects the miss segment (-> DOWNLOADING) then the
+    /// source throws. The elected downloader's role is bound to this thread.
+    EXPECT_ANY_THROW(executor->readNextWindow());
+
+    /// Tear the executor down on a DIFFERENT thread (not the downloader thread). Without
+    /// the L1 guard the retained plan still pins the DOWNLOADING segment, and its read
+    /// holder completes it as a non-downloader last holder -> abort. With the guard the
+    /// segment was reset on the foreground thread, so teardown is clean.
+    std::thread destroyer([&] { executor.reset(); });
+    destroyer.join();
+
+    SUCCEED();
+}
+
 /// The metrics tests read the executor's ProfileEvents from a fresh per-test ThreadGroup
 /// (starts at zero) -- the same path that feeds `system.events`.
 TEST(ReaderExecutor, ProfileEventsCountSourceReadsAndBytes)

@@ -256,7 +256,7 @@ private:
     size_t getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const;
 
     void setDownloadState(State state, const FileSegmentGuard::Lock &);
-    void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock &);
+    void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock &, bool allow_non_downloader = false);
     void setDetachedState(const FileSegmentGuard::Lock &);
 
     String getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const;
