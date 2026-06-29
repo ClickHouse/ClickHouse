@@ -120,15 +120,13 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
     Data::NodeToSourceMapping expression_sources;
 
     const auto & input_nodes = actions_dag_.getInputs();
-    if (input_nodes.size() != left_header.columns() + right_header.columns())
+    const size_t number_of_left_inputs = left_header.columns();
+    if (input_nodes.size() != number_of_left_inputs + right_header.columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Input nodes size mismatch in dag: {}, expected: [{}], [{}]",
                         actions_dag_.dumpDAG(), left_header.dumpNames(), right_header.dumpNames());
 
     auto left_column_names = std::ranges::to<std::unordered_set<std::string_view>>(left_header | std::views::transform(&ColumnWithTypeAndName::name));
     auto right_column_names = std::ranges::to<std::unordered_set<std::string_view>>(right_header | std::views::transform(&ColumnWithTypeAndName::name));
-
-    if (std::ranges::any_of(left_column_names, [&right_column_names](const auto & name) { return right_column_names.contains(name); }))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Left and right columns have same names: [{}], [{}]", left_header.dumpNames(), right_header.dumpNames());
 
     for (size_t i = 0; i < input_nodes.size(); ++i)
     {
@@ -137,9 +135,22 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node {} is not INPUT in dag: {}",
                             i, actions_dag_.dumpDAG());
         const auto & column_name = input_nodes[i]->result_name;
-        if (left_column_names.contains(column_name))
+        const bool in_left = left_column_names.contains(column_name);
+        const bool in_right = right_column_names.contains(column_name);
+        if (in_left && in_right)
+            /// A column name can legitimately appear in BOTH headers: the `__join_result_dummy`
+            /// marker is emitted independently by every child join that has no required output
+            /// columns, so a parent join (e.g. count() over a CROSS join of two such child joins)
+            /// receives it on both inputs. Name alone cannot tell which side a duplicate-named
+            /// input belongs to, so fall back to position: input nodes are ordered as
+            /// [left header columns..., right header columns...] (see JoinStepLogical, which reads
+            /// the first right input as getInputs().at(number_of_left_inputs)). Without this, a
+            /// distributed-plan worker deserializing such a join threw "Left and right columns
+            /// have same names".
+            rels.set(i < number_of_left_inputs ? 0 : 1);
+        else if (in_left)
             rels.set(0);
-        else if (right_column_names.contains(column_name))
+        else if (in_right)
             rels.set(1);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node {} from is not in headers: [{}] [{}], dag: {}",
