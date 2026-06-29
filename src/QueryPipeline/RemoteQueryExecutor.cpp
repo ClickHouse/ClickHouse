@@ -793,7 +793,17 @@ void RemoteQueryExecutor::finish()
           * then you do not need to read anything.
           */
         if (!isQueryPending() || hasThrownException() || was_cancelled)
+        {
+            /// If the query was never sent there is nothing to drain, but we must still mark the
+            /// executor as finished. Otherwise a RemoteSource whose output is closed before it sends
+            /// its query (e.g. an empty-build ANY INNER JOIN that short-circuits the probe side) keeps
+            /// re-entering its drain path via prepare()/work() and spins forever, because isFinished()
+            /// never becomes true. On Linux the async startup path always sends the query before this
+            /// point, so only the synchronous (non-Linux) send path is affected.
+            if (!sent_query)
+                finished = true;
             return;
+        }
 
         /** If you have not read all the data yet, but they are no longer needed.
           * This may be due to the fact that the data is sufficient (for example, when using LIMIT).

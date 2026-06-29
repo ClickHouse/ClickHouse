@@ -66,7 +66,7 @@ private:
     /// pipeline thread. `std::atomic` provides the synchronization edge required by TSan.
     std::atomic_bool manually_add_rows_before_limit_counter = false;
     std::atomic_bool preprocessed_packet = false;
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     EventFD startup_event_fd;
 #endif
 };
