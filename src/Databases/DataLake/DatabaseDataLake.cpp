@@ -785,7 +785,8 @@ void DatabaseDataLake::createTable(
             partition_by = create->storage->partition_by->ptr();
     }
 
-    const auto & columns = storage_object->getInMemoryMetadataPtr(context_, /* bypass_metadata_cache */ false)->getColumns();
+    const auto metadata = storage_object->getInMemoryMetadataPtr(context_, /* bypass_metadata_cache */ false);
+    const auto & columns = metadata->getColumns();
 
     /// Always pass `if_not_exists=true` here: in the in-database create flow,
     /// `StorageObjectStorage::ctor` -> `configuration->create()` may have
