@@ -2,6 +2,7 @@
 -- Since 323299fe, KeyCondition folds `x = NaN` to ALWAYS_FALSE and `x <> NaN` to ALWAYS_TRUE,
 -- so `= NaN` queries short-circuit before partition/statistics pruning (no Indexes in EXPLAIN),
 -- while `<> NaN` queries proceed through the normal pruning pipeline.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_stats_nan;
 
