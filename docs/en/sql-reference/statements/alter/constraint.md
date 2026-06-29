@@ -10,12 +10,14 @@ doc_type: 'reference'
 Constraints could be added, modified or deleted using following syntax:
 
 ```sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
-ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name {CHECK|ASSUME} expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constraint_name {CHECK|ASSUME} expression;
 ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
 ```
 
-`MODIFY CONSTRAINT` replaces the expression of an existing constraint, keeping its position in the table definition. It is equivalent to dropping the constraint and adding it again with the new expression. If the constraint does not exist, the query throws an error, unless `IF EXISTS` is specified.
+As with table creation, a constraint can be declared either as `CHECK` (enforced on `INSERT`) or as `ASSUME` (trusted by the optimizer without being checked). See [constraints](../../../sql-reference/statements/create/table.md#constraints) for the difference between the two.
+
+`MODIFY CONSTRAINT` replaces the declaration of an existing constraint, keeping its position in the table definition. It can also change the constraint kind (for example, from `CHECK` to `ASSUME`). It is equivalent to dropping the constraint and adding it again with the new declaration. If the constraint does not exist, the query throws an error, unless `IF EXISTS` is specified.
 
 See more on [constraints](../../../sql-reference/statements/create/table.md#constraints).
 
