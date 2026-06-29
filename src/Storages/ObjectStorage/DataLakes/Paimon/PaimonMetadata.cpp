@@ -84,10 +84,16 @@ String buildPaimonCacheKeyPrefix(
     Int64 schema0_time_millis)
 {
     const String link_identity = configuration->getDataSourceDescription();
-    const String identity_material
-        = fmt::format("{}|{}|{}", link_identity, table_name, schema0_time_millis);
-    const auto key_prefix_hash = sipHash64(identity_material);
-    return fmt::format("{:016x}", key_prefix_hash);
+    /// Feed each component into SipHash with its length prefix to avoid
+    /// ambiguity when a component itself contains the delimiter character.
+    /// For example, link="a|b" + table="c" must differ from link="a" + table="b|c".
+    SipHash hash;
+    hash.update(link_identity.size());
+    hash.update(link_identity);
+    hash.update(table_name.size());
+    hash.update(table_name);
+    hash.update(schema0_time_millis);
+    return fmt::format("{:016x}", hash.get64());
 }
 }
 
