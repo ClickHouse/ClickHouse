@@ -43,7 +43,14 @@ set -euo pipefail
 #                         given, all three are selected.
 #   --worktree-base PATH  Base path for worker worktrees; worker i lives at
 #                         "<PATH>-<i>". Default: "<main-repo>-prworker".
-#   --timeout SECONDS     Per-PR timeout for `/continue-pr` (default: 3600).
+#   --timeout SECONDS     Total time budget per PR, shared across all
+#                         continuation turns (default: 3600).
+#   --max-continue N      Max `claude` turns per PR. The worker runs once and is
+#                         then resumed (same session) until it signals it is done
+#                         or this cap is hit (default: 4). The worker is told not
+#                         to run anything in the background and to push before
+#                         ending each turn, so prepared changes don't get stranded
+#                         unpushed.
 #   --once                Process every open PR once and exit, instead of
 #                         looping forever in rounds.
 #   --skip-submodules     Create worker worktrees without hardlinking submodules
@@ -81,6 +88,7 @@ RESET=$'\033[0m'
 WORKERS=1
 WORKTREE_BASE=""
 TIMEOUT=3600
+MAX_CONTINUE=4
 ONCE=0
 SKIP_SUBMODULES=0
 COLOR_WHEN="auto"
@@ -104,6 +112,7 @@ while [[ $# -gt 0 ]]; do
         --workers)        WORKERS="$2"; shift 2 ;;
         --worktree-base)  WORKTREE_BASE="$2"; shift 2 ;;
         --timeout)        TIMEOUT="$2"; shift 2 ;;
+        --max-continue)   MAX_CONTINUE="$2"; shift 2 ;;
         --once)           ONCE=1; shift ;;
         --skip-submodules) SKIP_SUBMODULES=1; shift ;;
         --color)          COLOR_WHEN="$2"; shift 2 ;;
@@ -373,6 +382,65 @@ cleanup()
 trap cleanup EXIT
 trap 'echo; banner "Interrupted, stopping..."; exit 130' INT TERM
 
+# Marker the worker prints (on its own line) when it considers the PR finished.
+DONE_MARKER='<<<CONTINUE-PR-DONE>>>'
+
+# Appended to the system prompt of every turn. Forbids backgrounding work (the
+# root cause of merges that were prepared but never pushed: the worker started a
+# build in the background and ended its turn waiting for a notification that
+# never comes in single-shot `--print` mode).
+STEER_PROMPT="You are running in a non-interactive, single-shot batch session. Do NOT run any commands in the background and do NOT defer work expecting to be notified later - there is no later notification, and any background process is killed when your turn ends. Run builds, tests, and every long-running command synchronously in the foreground so they finish within your turn, and complete ALL work - including pushing your commits with 'git push' - before you end your turn. When, and only when, the PR is fully handled (changes pushed, or you have determined that no change is needed or that it needs a human decision), end your final message with a line containing exactly: ${DONE_MARKER}"
+
+# Sent on each resume to nudge the worker to finish.
+NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not use background tasks - run everything synchronously and push your commits before finishing. Any build started in a previous turn was killed when that turn ended; re-run it in the foreground if you still need to verify. When the PR is fully handled, end your final message with a line containing exactly: ${DONE_MARKER}"
+
+# Run /continue-pr in a worktree, resuming the same session until the worker
+# signals completion (DONE_MARKER), the per-PR time budget (TIMEOUT, shared
+# across all turns) is exhausted, or the continuation cap (MAX_CONTINUE) is hit.
+# Writes the full transcript to $log and the final turn to $log.last. Returns
+# the exit code of the last turn (124 if the time budget was exhausted).
+run_continue_pr()
+{
+    local wt="$1" number="$2" log="$3"
+    local url="https://github.com/$REPO/pull/$number"
+    local sid deadline iter ec now remaining
+    sid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null \
+        || uuidgen 2>/dev/null \
+        || python3 -c 'import uuid; print(uuid.uuid4())')
+    deadline=$(( $(date +%s) + TIMEOUT ))
+    : > "$log"
+    iter=0
+    ec=0
+
+    while :; do
+        iter=$(( iter + 1 ))
+        now=$(date +%s)
+        remaining=$(( deadline - now ))
+        (( remaining > 0 )) || { ec=124; break; }
+        (( iter > MAX_CONTINUE )) && break
+
+        echo "===== turn $iter (session $sid, ${remaining}s budget left) =====" >> "$log"
+        ec=0
+        if (( iter == 1 )); then
+            ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
+                --session-id "$sid" --append-system-prompt "$STEER_PROMPT" \
+                "/continue-pr $url" </dev/null ) > "$log.last" 2>&1 || ec=$?
+        else
+            ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
+                --resume "$sid" --append-system-prompt "$STEER_PROMPT" \
+                "$NUDGE_PROMPT" </dev/null ) > "$log.last" 2>&1 || ec=$?
+        fi
+        cat "$log.last" >> "$log"
+
+        # Done when the worker emits the marker on its own line; also stop on any
+        # hard failure or timeout of a turn.
+        grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last" && break
+        (( ec != 0 )) && break
+    done
+
+    return "$ec"
+}
+
 process_pr()
 {
     local i="$1" wt="$2" number="$3" title="$4"
@@ -399,9 +467,7 @@ process_pr()
 
         log="$LOGDIR/pr-$number.log"
         ec=0
-        ( cd "$wt" && timeout "$TIMEOUT" claude --dangerously-skip-permissions --print \
-            "/continue-pr https://github.com/$REPO/pull/$number" </dev/null ) \
-            > "$log" 2>&1 || ec=$?
+        run_continue_pr "$wt" "$number" "$log" || ec=$?
 
         # Detach HEAD so the PR branch isn't held by this worktree, letting a
         # different worker check it out in a later round.
@@ -432,7 +498,7 @@ process_pr()
         fi
 
         status="$outcome; state=$pr_state mergeable=$pr_mergeable review=$pr_review"
-        summary=$(summarize_log "$log")
+        summary=$(summarize_log "$log.last")
     fi
 
     ts=$(date +%H:%M:%S)
