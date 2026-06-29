@@ -246,7 +246,7 @@ namespace
             if (!table_function_node_ptr)
                 return;
 
-            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.count)
+            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.hasSecrets())
             {
                 auto & argument_nodes = table_function_node_ptr->getArguments().getNodes();
 
@@ -264,6 +264,24 @@ namespace
                     {
                         constant_node = argument_nodes[n]->as<ConstantNode>();
                     }
+
+                    if (constant_node)
+                        constant_node->setMaskId();
+                }
+
+                /// Named secret arguments tracked separately (e.g. the SSE-C key) are always `key = value`.
+                for (size_t n : secret_arguments.extra_named_secret_arguments)
+                {
+                    if (n >= argument_nodes.size())
+                        continue;
+
+                    ConstantNode * constant_node = nullptr;
+                    if (auto * function_node = argument_nodes[n]->as<FunctionNode>();
+                        function_node && function_node->getArguments().getNodes().size() >= 2)
+                        constant_node = function_node->getArguments().getNodes().at(1)->as<ConstantNode>();
+
+                    if (!constant_node)
+                        constant_node = argument_nodes[n]->as<ConstantNode>();
 
                     if (constant_node)
                         constant_node->setMaskId();

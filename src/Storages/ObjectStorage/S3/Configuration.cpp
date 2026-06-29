@@ -55,6 +55,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString secret_access_key;
     extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
     extern const S3AuthSettingsBool use_environment_credentials;
 
     extern const S3AuthSettingsString role_arn;
@@ -95,6 +96,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "access_key_id",
     "secret_access_key",
     "session_token",
+    "server_side_encryption_customer_key_base64", /// SSE-C customer-provided key (base64-encoded)
     "filename",
     "use_environment_credentials",
     "max_single_read_retries",
@@ -230,6 +232,10 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::expiration_window_seconds]
         = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
     s3_settings->auth_settings[S3AuthSetting::session_token] = collection.getOrDefault<String>("session_token", "");
+
+    if (collection.has("server_side_encryption_customer_key_base64"))
+        s3_settings->auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64]
+            = collection.get<String>("server_side_encryption_customer_key_base64");
 
     if (collection.has("partition_strategy"))
     {
@@ -727,6 +733,16 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         session_token_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::session_token] = session_token_value.value();
+    }
+
+    /// SSE-C customer-provided key. Key-value only (no positional slot): required by S3-compatible
+    /// stores such as Linode Object Storage. The base64 key is expanded into the
+    /// `x-amz-server-side-encryption-customer-*` headers by the S3 client.
+    if (auto sse_c_key_value = getFromPositionOrKeyValue<String>(
+            "server_side_encryption_customer_key_base64", args, engine_args_to_idx, key_value_args);
+        sse_c_key_value.has_value())
+    {
+        s3_settings->auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64] = sse_c_key_value.value();
     }
 
     if (no_sign_request)

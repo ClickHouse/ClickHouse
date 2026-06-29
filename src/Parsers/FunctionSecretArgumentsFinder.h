@@ -60,9 +60,16 @@ public:
         /// Whether to wrap a result using full argument replacement in quotes.
         bool quote_replacement = true;
 
+        /// Indices of named secret arguments (`key = '[HIDDEN]'`) that are masked on their own, separately
+        /// from the [start, start+count) range. This is needed when secret arguments are not consecutive,
+        /// e.g. a positional `secret_access_key` together with a named
+        /// `server_side_encryption_customer_key_base64` (SSE-C): widening a single range to cover both would
+        /// also hide the unrelated arguments (such as the format) sitting in between.
+        std::vector<size_t> extra_named_secret_arguments;
+
         bool hasSecrets() const
         {
-            return count != 0 || !nested_maps.empty();
+            return count != 0 || !nested_maps.empty() || !extra_named_secret_arguments.empty();
         }
     };
 
@@ -93,6 +100,17 @@ protected:
         result.count = end - result.start;
         if (!argument_is_named)
             result.are_named = false;
+    }
+
+    /// Marks a named argument (`key = value`) as secret on its own, recording its index in
+    /// `extra_named_secret_arguments` instead of merging it into the [start, count) range. Use this for a
+    /// secret that may be separated from the other secret arguments by non-secret ones (e.g. the SSE-C key),
+    /// so that masking does not widen the range over the unrelated arguments in between.
+    void markExtraNamedSecretArgument(std::string_view key, size_t start = 0)
+    {
+        ssize_t arg_idx = findNamedArgument(nullptr, key, start);
+        if (arg_idx >= 0)
+            result.extra_named_secret_arguments.push_back(static_cast<size_t>(arg_idx));
     }
 
     void findOrdinaryFunctionSecretArguments()
@@ -353,6 +371,11 @@ protected:
     {
         /// s3Cluster('cluster_name', 'url', ...) has 'url' as its second argument.
         size_t url_arg_idx = is_cluster_function ? 1 : 0;
+
+        /// The SSE-C customer key is always a named argument and may be supplied independently of the
+        /// access/secret credentials (or NOSIGN), so mask it separately. Doing this first ensures it is
+        /// hidden for every signature, including the early-return cases below.
+        markExtraNamedSecretArgument("server_side_encryption_customer_key_base64", url_arg_idx);
 
         if (!is_cluster_function && isNamedCollectionName(0))
         {

@@ -839,6 +839,18 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     continue;
                 }
 
+                /// A separately-tracked named secret argument, e.g. `server_side_encryption_customer_key_base64 = '[HIDDEN]'`.
+                if (std::count(secret_arguments.extra_named_secret_arguments.begin(),
+                               secret_arguments.extra_named_secret_arguments.end(), i) != 0)
+                {
+                    if (const auto * func_ast = typeid_cast<const ASTFunction *>(argument.get()))
+                        func_ast->arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
+                    else
+                        argument->format(ostr, settings, state, nested_dont_need_parens);
+                    ostr << " = '[HIDDEN]'";
+                    continue;
+                }
+
                 const ASTFunction * function = argument->as<ASTFunction>();
                 if (function && function->arguments && std::count(secret_arguments.nested_maps.begin(), secret_arguments.nested_maps.end(), function->name) != 0)
                 {
