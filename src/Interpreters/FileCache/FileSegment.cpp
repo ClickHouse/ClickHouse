@@ -140,7 +140,6 @@ String FileSegment::tryGetPath() const
 
 FileSegmentGuard::Lock FileSegment::lock() const
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentLockMicroseconds);
     return segment_guard.lock();
 }
 

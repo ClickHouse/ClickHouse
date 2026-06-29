@@ -1,5 +1,6 @@
 #pragma once
 
+#include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/Guards.h>
@@ -294,7 +295,7 @@ private:
     std::weak_ptr<KeyMetadata> key_metadata;
     mutable Priority::IteratorPtr queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
     FileCache * cache;
-    std::condition_variable cv;
+    std::condition_variable_any cv;
     std::mutex increase_priority_mutex;
 
     LoggerPtr log;

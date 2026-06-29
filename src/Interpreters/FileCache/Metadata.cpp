@@ -120,7 +120,6 @@ LockedKeyPtr KeyMetadata::tryLock()
 
 LockedKeyPtr KeyMetadata::lockNoStateCheck()
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
     return std::make_unique<LockedKey>(shared_from_this());
 }
 
@@ -221,7 +220,6 @@ String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) con
 
 CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockMetadataMicroseconds);
     return guard.lock();
 }
 
