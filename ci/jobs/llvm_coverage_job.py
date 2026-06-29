@@ -685,6 +685,7 @@ if __name__ == "__main__":
             _nc_info = ""
             _nc_url = ""
             _nc_top_files: list[dict] = []
+            _stable_override_applied = False
             if (
                 _tests_changed
                 and _binary_unchanged
@@ -712,6 +713,7 @@ if __name__ == "__main__":
                     c_function_cov  = nc_res.ext["stable_c_func_cov"]
                     b_branch_cov    = nc_res.ext.get("stable_b_branch_cov", b_branch_cov)
                     c_branch_cov    = nc_res.ext.get("stable_c_branch_cov", c_branch_cov)
+                    _stable_override_applied = True
                     b_line_hit      = nc_res.ext["stable_b_line_hit"]
                     b_line_total    = nc_res.ext["stable_b_line_tot"]
                     c_line_hit      = nc_res.ext["stable_c_line_hit"]
@@ -753,10 +755,11 @@ if __name__ == "__main__":
             if not _has_coverage_data:
                 print("No coverage-relevant changes detected (no C/C++ source, no runnable-test changes, no LBC) — skipping coverage comment.")
             else:
-                # When _diff_ran is False (LBC-only or tests-only PR), fetch the global
-                # percentages from the .info files that were downloaded during the diff
-                # script run.
-                if not _diff_ran and _global_stats_available:
+                # When _diff_ran is False (tests-only PR), fetch the global
+                # percentages from the .info files. Skip if the stable-union override
+                # already applied accurate values — the raw lcov --summary is single-run
+                # and noisy, and would overwrite the stable values with wrong numbers.
+                if not _diff_ran and _global_stats_available and not _stable_override_applied:
                     try:
                         (b_line_cov, b_line_hit, b_line_total), \
                         (b_function_cov, b_func_hit, b_func_total), \
