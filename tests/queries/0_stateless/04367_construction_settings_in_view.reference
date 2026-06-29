@@ -1,5 +1,6 @@
 -- construction settings in a VIEW definition are rejected
 -- construction settings in a MATERIALIZED VIEW definition are rejected
+-- a POPULATE materialized view is rejected too (not silently accepted via the immediate-insert wrapping)
 -- a plain view works; the reader applies construction settings to its own SELECT
 0
 1

@@ -22,8 +22,11 @@ SELECT '-- limit/offset in a subquery SETTINGS cap the subquery result';
 SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 5);
 SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 5, offset = 3);
 
-SELECT '-- per-UNION-arm limit is applied per arm, not collapsed onto the whole union (1 + 2 = 3)';
-SELECT count() FROM ((SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL (SELECT number FROM numbers(100) SETTINGS limit = 2));
+SELECT '-- an arm-local setting on a non-last arm plus SETTINGS on the last arm is ambiguous and rejected';
+SELECT count() FROM ((SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL (SELECT number FROM numbers(100) SETTINGS limit = 2)); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- nesting per-arm settings in subqueries applies them per arm unambiguously (1 + 2 = 3)';
+SELECT count() FROM (SELECT * FROM (SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL SELECT * FROM (SELECT number FROM numbers(100) SETTINGS limit = 2));
 
 SELECT '-- a trailing query-level SETTINGS limit still caps the whole union (3, not 5 + 3)';
 SELECT count() FROM (SELECT number FROM numbers(5) UNION ALL SELECT number FROM numbers(5) SETTINGS limit = 3);

@@ -4,7 +4,8 @@
 -- limit/offset in a subquery SETTINGS cap the subquery result
 5
 5
--- per-UNION-arm limit is applied per arm, not collapsed onto the whole union (1 + 2 = 3)
+-- an arm-local setting on a non-last arm plus SETTINGS on the last arm is ambiguous and rejected
+-- nesting per-arm settings in subqueries applies them per arm unambiguously (1 + 2 = 3)
 3
 -- a trailing query-level SETTINGS limit still caps the whole union (3, not 5 + 3)
 3

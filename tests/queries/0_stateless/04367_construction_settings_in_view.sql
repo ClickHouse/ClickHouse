@@ -21,6 +21,9 @@ CREATE VIEW v_bad AS SELECT x FROM t_src SETTINGS select = 'x'; -- { serverError
 SELECT '-- construction settings in a MATERIALIZED VIEW definition are rejected';
 CREATE MATERIALIZED VIEW mv_bad TO t_dst AS SELECT x FROM t_src SETTINGS limit = 1; -- { serverError NOT_IMPLEMENTED }
 
+SELECT '-- a POPULATE materialized view is rejected too (not silently accepted via the immediate-insert wrapping)';
+CREATE MATERIALIZED VIEW mv_pop ENGINE = MergeTree ORDER BY x POPULATE AS SELECT x FROM t_src SETTINGS limit = 1; -- { serverError NOT_IMPLEMENTED }
+
 SELECT '-- a plain view works; the reader applies construction settings to its own SELECT';
 CREATE VIEW v_ok AS SELECT x FROM t_src;
 SELECT x FROM v_ok ORDER BY x SETTINGS limit = 3;

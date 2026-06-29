@@ -1497,10 +1497,13 @@ void wrapNestedConstructionSettings(
     }
     if (auto * create_query = ast->as<ASTCreateQuery>())
     {
-        /// An ordinary view / non-`POPULATE` materialized or window view stores its `SELECT` and runs it
-        /// on read, so its construction settings stay in the stored definition and are materialized at
-        /// read time (in the `StorageView` constructor). Only the immediate-insert kind is wrapped here.
-        if (create_query->select && create_query->isCreateQueryWithImmediateInsertSelect())
+        /// A view definition (ordinary / materialized / window, including a `POPULATE` materialized view)
+        /// cannot carry construction settings — that is rejected in `InterpreterCreateQuery`. Do NOT wrap
+        /// a view's source `SELECT` here: a `POPULATE` materialized view is an immediate-insert `CREATE`,
+        /// so without the `!isView()` guard its `SETTINGS` would be materialized and removed here, and the
+        /// rejection (which checks the stored `SELECT`) would no longer fire. Only a non-view
+        /// immediate-insert `CREATE` (`CREATE TABLE … AS SELECT`) is wrapped.
+        if (create_query->select && create_query->isCreateQueryWithImmediateInsertSelect() && !create_query->isView())
         {
             ASTPtr select_ptr = create_query->select->ptr();
             wrapNestedConstructionSettings(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
@@ -1568,7 +1571,9 @@ static void wrapPerArmConstructionSettings(
     }
     if (auto * create_query = ast->as<ASTCreateQuery>())
     {
-        if (create_query->select && create_query->isCreateQueryWithImmediateInsertSelect())
+        /// As in `wrapNestedConstructionSettings`: skip a view definition (construction settings in one
+        /// are rejected in `InterpreterCreateQuery`); only a non-view immediate-insert `CREATE` is wrapped.
+        if (create_query->select && create_query->isCreateQueryWithImmediateInsertSelect() && !create_query->isView())
         {
             ASTPtr select_ptr = create_query->select->ptr();
             wrapPerArmConstructionSettings(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
@@ -1611,6 +1616,20 @@ static void wrapPerArmConstructionSettings(
             per_arm = true;
     if (!per_arm)
         return;
+
+    /// Once per-arm mode is on, the LAST arm's own `SETTINGS` is ambiguous: for an unparenthesized union
+    /// the parser carries the trailing *query-level* `SETTINGS` on the last arm, which is indistinguishable
+    /// in the AST from a parenthesized arm-local `SETTINGS`. Treating it as arm-local would silently
+    /// re-scope a whole-union cap — e.g. `(… SETTINGS limit = 1) UNION ALL … SETTINGS limit = 3` would cap
+    /// each arm (1 + 3) instead of the whole union (3). Reject the mixed form rather than guess. Per-arm
+    /// settings on a union whose last arm has no settings, or nesting each arm's settings in a subquery
+    /// (`… FROM (SELECT … SETTINGS …)`), remain available and unambiguous.
+    if (arm_construction_settings(arms.back()->as<ASTSelectQuery>()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Ambiguous query-construction `SETTINGS` in a UNION: a non-last arm carries an arm-local "
+            "construction setting while the last arm also carries `SETTINGS`, whose scope (per-arm vs "
+            "whole-union) cannot be determined from the query. Nest each arm's settings in a subquery, "
+            "or apply a whole-union cap via an outer query, to make the scope explicit.");
 
     for (auto & arm : arms)
     {
