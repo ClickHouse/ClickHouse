@@ -28,6 +28,7 @@
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -253,7 +254,23 @@ namespace
         DriverCreateResult result;
         if (!(query.is_attach && config_exists))
         {
-            result.previous_working_dir = DriverUtils::readDriverWorkingDirectory(current_context, function_name);
+            /// The previous working directory is only read so it can be cleaned up after a successful
+            /// replace below. Reading it must be best-effort: a missing or invalid (corrupted) `.workdir`
+            /// sidecar must not abort the create. This is exactly the corrupted-state case that startup
+            /// recovery (`reloadDriverBasedFunctions`) relies on this path to repair - the fresh
+            /// config/workdir/sidecar written below overwrites the broken state, so an unreadable previous
+            /// sidecar is treated as "no previous working directory to clean up".
+            try
+            {
+                result.previous_working_dir = DriverUtils::readDriverWorkingDirectory(current_context, function_name);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    "InterpreterCreateFunctionQuery",
+                    "Cannot read the previous working directory of driver-based function " + backQuote(function_name)
+                        + "; it will be recreated");
+            }
             result.working_dir = createDriverWorkingDirectory(current_context);
 
             String generated_config;
