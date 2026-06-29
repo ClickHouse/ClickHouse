@@ -37,6 +37,26 @@ SettingFieldOptionalBool::SettingFieldOptionalBool(const Field & field)
         return;
     }
 
+    if (field.getType() == Field::Types::Int64)
+    {
+        value = field.safeGet<Int64>() != 0;
+        return;
+    }
+
+    /// Accept string forms ('true'/'false'/'1'/'0', case-insensitive) for consistency with
+    /// regular boolean settings (`SettingFieldBool`). An empty string is treated as "unset".
+    if (field.getType() == Field::Types::String)
+    {
+        const auto & str = field.safeGet<String>();
+        if (str.empty())
+        {
+            value = std::nullopt;
+            return;
+        }
+        value = stringToBool(str);
+        return;
+    }
+
     throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Cannot get bool from {}", field);
 }
 
