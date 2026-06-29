@@ -390,12 +390,16 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
     /// A custom serialization attached to the storage type (e.g. the quantized companion stream of a column with a
     /// `Quantize` codec) is a property of the logical column that the part's plain columns list (columns.txt) cannot
     /// represent: it would round-trip to the bare type name and be lost. When the storage type carries one, honor it
-    /// instead of rebuilding a default serialization from the part's type.
-    if (required_column.getTypeInStorage()->getCustomSerialization())
+    /// directly. We must NOT rebuild it from the part's `SerializationInfo`: `IDataType::getSerialization(info)` would
+    /// re-wrap the custom serialization with the recorded kind stack (e.g. Default/Sparse), which discards the custom
+    /// companion streams - reading the subcolumn would then fall back to recomputing it and fail. A Quantize column is
+    /// always dense, so the kind stack does not apply; take the (unwrapped) custom serialization as-is.
+    if (const auto & type_in_storage = required_column.getTypeInStorage(); type_in_storage->getCustomSerialization())
     {
-        if (auto it = infos.find(required_column.getNameInStorage()); it != infos.end())
-            return IDataType::getSerialization(required_column, *it->second);
-        return IDataType::getSerialization(required_column, infos.getSettings());
+        auto serialization = type_in_storage->getDefaultSerialization();
+        if (required_column.isSubcolumn())
+            return type_in_storage->getSubcolumnSerialization(required_column.getSubcolumnName(), serialization);
+        return serialization;
     }
 
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
