@@ -3373,7 +3373,7 @@ TEST(CoordinationChunkedSnapshotTest, InspectBytes)
     // Front-header layout: CKFS magic is at the front (first 4 bytes), version at byte 4,
     // and chunk_count at bytes 5-12.
     EXPECT_EQ(memcmp(data, "CKFS", 4), 0) << "CKFS magic must be at the front (header)";
-    EXPECT_EQ(static_cast<uint8_t>(data[4]), 8u) << "Header version byte must be 8";
+    EXPECT_EQ(static_cast<uint8_t>(data[4]), DB::KEEPER_CHUNKED_SNAPSHOT_VERSION) << "Header version byte must be KEEPER_CHUNKED_SNAPSHOT_VERSION";
     {
         uint64_t hdr_count = 0;
         memcpy(&hdr_count, data + 5, 8);
@@ -3515,7 +3515,7 @@ TEST(CoordinationChunkedSnapshotTest, RoundTripBasic)
     ASSERT_GE(buf->size(), static_cast<size_t>(chunkedSnapshotHeaderSize()));
     const char * data_ptr = reinterpret_cast<const char *>(buf->data_begin());
     EXPECT_EQ(memcmp(data_ptr, "CKFS", 4), 0) << "Chunked snapshot must start with CKFS magic (front-header layout)";
-    EXPECT_EQ(static_cast<uint8_t>(data_ptr[4]), 8u) << "Front header version byte must be 8";
+    EXPECT_EQ(static_cast<uint8_t>(data_ptr[4]), DB::KEEPER_CHUNKED_SNAPSHOT_VERSION) << "Front header version byte must be KEEPER_CHUNKED_SNAPSHOT_VERSION";
     EXPECT_NE(memcmp(data_ptr + buf->size() - 4, "CKFS", 4), 0)
         << "Chunked snapshot must NOT end with CKFS (no trailer in front-header layout)";
 
@@ -3720,8 +3720,8 @@ TEST(CoordinationChunkedSnapshotTest, WrongHeaderVersionRejected)
     // The version byte is at offset 4 from the start of the buffer (front header: magic[4]+version[1]).
     auto * raw_mut = reinterpret_cast<char *>(buf->data_begin());
     const size_t ver_idx = 4; // front header version field
-    ASSERT_EQ(static_cast<uint8_t>(raw_mut[ver_idx]), 8u) << "Expected front header version byte 8";
-    raw_mut[ver_idx] = 9; // simulate an unknown future version
+    ASSERT_EQ(static_cast<uint8_t>(raw_mut[ver_idx]), DB::KEEPER_CHUNKED_SNAPSHOT_VERSION) << "Expected front header version byte KEEPER_CHUNKED_SNAPSHOT_VERSION";
+    raw_mut[ver_idx] = DB::KEEPER_CHUNKED_SNAPSHOT_VERSION + 1; // simulate an unknown future version
 
     // isChunkedSnapshot passes version-independently (structural sniff succeeds, version not checked)
     // so both public APIs route to the parser, which throws UNKNOWN_FORMAT_VERSION.
@@ -4481,7 +4481,7 @@ TEST(CoordinationChunkedSnapshotTest, ApplyChunkedSnapshotReplacesCommittedState
     ASSERT_GE(chunked_buf->size(), static_cast<size_t>(chunkedSnapshotHeaderSize()));
     const char * cdata = reinterpret_cast<const char *>(chunked_buf->data_begin());
     EXPECT_EQ(std::memcmp(cdata, "CKFS", 4), 0) << "Serialized buffer must start with chunked snapshot magic 'CKFS' (front-header layout)";
-    EXPECT_EQ(static_cast<uint8_t>(cdata[4]), 8u) << "Front header version byte must be 8";
+    EXPECT_EQ(static_cast<uint8_t>(cdata[4]), DB::KEEPER_CHUNKED_SNAPSHOT_VERSION) << "Front header version byte must be KEEPER_CHUNKED_SNAPSHOT_VERSION";
     EXPECT_NE(std::memcmp(cdata + chunked_buf->size() - 4, "CKFS", 4), 0)
         << "Serialized buffer must NOT end with CKFS (no trailer in front-header layout)";
 
@@ -4608,10 +4608,10 @@ TEST(CoordinationChunkedSnapshotTest, ChunkedDetectedViaFrontMagic)
     const char * data = reinterpret_cast<const char *>(buf->data_begin());
     const size_t size = buf->size();
 
-    // First 4 bytes must be CKFS (front header magic); version byte at [4] must be 8.
+    // First 4 bytes must be CKFS (front header magic); version byte at [4] must be KEEPER_CHUNKED_SNAPSHOT_VERSION.
     ASSERT_GE(size, static_cast<size_t>(chunkedSnapshotHeaderSize()));
     EXPECT_EQ(memcmp(data, "CKFS", 4), 0) << "CKFS magic must be at front (header)";
-    EXPECT_EQ(static_cast<uint8_t>(data[4]), 8u) << "Front header version byte must be 8";
+    EXPECT_EQ(static_cast<uint8_t>(data[4]), DB::KEEPER_CHUNKED_SNAPSHOT_VERSION) << "Front header version byte must be KEEPER_CHUNKED_SNAPSHOT_VERSION";
     // Last 4 bytes must NOT be CKFS (no trailer in front-header layout).
     EXPECT_NE(memcmp(data + size - 4, "CKFS", 4), 0) << "Last bytes must NOT be CKFS (no trailer)";
 
@@ -4700,8 +4700,8 @@ TEST(CoordinationChunkedSnapshotTest, FrontMagicWithBadStructureNotChunked)
     }
 }
 
-/// UnsupportedVersionRoutedToParser: a structurally valid front-header buffer with version=9
-/// is detected (version-independent sniff) and routed to the parser which throws UNKNOWN_FORMAT_VERSION.
+/// UnsupportedVersionRoutedToParser: a structurally valid front-header buffer with an unknown
+/// future version is detected (version-independent sniff) and routed to the parser which throws UNKNOWN_FORMAT_VERSION.
 TEST(CoordinationChunkedSnapshotTest, UnsupportedVersionRoutedToParser)
 {
     ChangelogDirTest snap_dir("./chunked_det_v9router");
@@ -4709,17 +4709,17 @@ TEST(CoordinationChunkedSnapshotTest, UnsupportedVersionRoutedToParser)
     auto keeper_context = makeKeeperContext(snap_dir.path);
     DB::KeeperSnapshotManager mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
 
-    // Build a structurally valid front-header buffer, then flip only the version byte to 9.
+    // Build a structurally valid front-header buffer, then flip the version byte to an unknown future version.
     std::vector<SnapshotChunkDescriptor> frames = {
         {SnapshotChunkType::METADATA, 13, 10},
         {SnapshotChunkType::NODES, 23, 10},
     };
     auto raw = buildChunkedBufferFromDescriptors(frames);
-    raw[4] = 9; // unsupported version; magic + footer structure intact
+    raw[4] = static_cast<char>(DB::KEEPER_CHUNKED_SNAPSHOT_VERSION + 1); // unsupported future version; magic + footer structure intact
 
     // isChunkedSnapshot is version-independent → structural sniff passes.
     DB::ReadBufferFromString in10(raw);
-    EXPECT_TRUE(isChunkedSnapshot(in10)) << "Version-9 buffer with valid structure must return true from isChunkedSnapshot";
+    EXPECT_TRUE(isChunkedSnapshot(in10)) << "Buffer with unknown future version and valid structure must return true from isChunkedSnapshot";
 
     // Wrap in nuraft buffer.
     DB::WriteBufferFromNuraftBuffer buf_out;
@@ -4933,20 +4933,22 @@ TEST(CoordinationChunkedSnapshotTest, LegacyNonZstdSnapshotStillLoads)
 
 /// A legacy-framed stream with inner version byte 8 is rejected with UNKNOWN_FORMAT_VERSION
 /// by both public APIs.
-TEST(CoordinationChunkedSnapshotTest, LegacyInnerVersion8RejectedByLegacyReader)
+TEST(CoordinationChunkedSnapshotTest, LegacyInnerUnsupportedVersionRejectedByLegacyReader)
 {
     ChangelogDirTest snap_dir("./chunked_det_leg_v8guard");
 
     auto keeper_context = makeKeeperContext(snap_dir.path);
 
-    // Build a legacy CompressedWriteBuffer-framed stream whose decompressed first byte is 8.
-    // This simulates a corrupt/crafted stream that happens to decompress to version byte 8
-    // but was NOT detected as a chunked snapshot (front bytes != CKFS or structural sniff fails).
+    // Build a legacy CompressedWriteBuffer-framed stream whose decompressed first byte is
+    // MAX_SUPPORTED_SNAPSHOT_VERSION + 1 (an unknown future version).
+    // This simulates a corrupt/crafted stream that was NOT detected as a chunked snapshot
+    // (front bytes != CKFS or structural sniff fails) but carries an unsupported version byte.
+    const uint8_t unsupported_version = static_cast<uint8_t>(DB::MAX_SUPPORTED_SNAPSHOT_VERSION) + 1;
     auto writer = std::make_unique<DB::WriteBufferFromNuraftBuffer>();
     auto * raw_ptr = writer.get();
     {
         DB::CompressedWriteBuffer compressed(*writer); // legacy framing; front = CityHash checksum
-        DB::writeBinary(static_cast<uint8_t>(8), compressed); // inner version byte = 8
+        DB::writeBinary(unsupported_version, compressed); // inner version byte beyond max supported
         DB::writeBinary(static_cast<uint64_t>(0), compressed); // a little extra body
         compressed.finalize();
     }
@@ -4965,7 +4967,7 @@ TEST(CoordinationChunkedSnapshotTest, LegacyInnerVersion8RejectedByLegacyReader)
         try
         {
             fn();
-            FAIL() << what << " must throw UNKNOWN_FORMAT_VERSION for inner version 8 in legacy reader";
+            FAIL() << what << " must throw UNKNOWN_FORMAT_VERSION for unsupported inner version in legacy reader";
         }
         catch (const DB::Exception & e)
         {

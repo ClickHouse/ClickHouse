@@ -20,7 +20,7 @@ class WriteBuffer;
 /// Footer is placed at buf_size - 25*chunk_count; the last chunk ends exactly there.
 
 static constexpr std::string_view KEEPER_CHUNKED_SNAPSHOT_MAGIC{"CKFS", 4};
-static constexpr uint8_t KEEPER_CHUNKED_SNAPSHOT_VERSION = 8;
+static constexpr uint8_t KEEPER_CHUNKED_SNAPSHOT_VERSION = 9;
 static constexpr uint64_t KEEPER_CHUNKED_SNAPSHOT_MIN_CHUNK_COUNT = 2; ///< METADATA + ≥1 NODES
 static constexpr size_t KEEPER_CHUNKED_SNAPSHOT_DESCRIPTOR_SIZE = 25;
 

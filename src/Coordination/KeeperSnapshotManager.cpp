@@ -629,9 +629,9 @@ namespace
             SnapshotChunkType::METADATA,
             [&](WriteBuffer & out) -> uint64_t
             {
-                writeBinary(static_cast<uint8_t>(SnapshotVersion::V8), out);
+                writeBinary(static_cast<uint8_t>(snapshot.version), out);
                 serializeSnapshotMetadata(snapshot.snapshot_meta, out);
-                serializeStorageMetaFields(snapshot, out, SnapshotVersion::V8, keeper_context);
+                serializeStorageMetaFields(snapshot, out, snapshot.version, keeper_context);
                 serializeSessionsAndConfig(snapshot, out);
                 return 0;
             });
@@ -1344,10 +1344,10 @@ KeeperSnapshotManager::deserializeChunkedSnapshotFromBuffer(ReadBufferFromNuraft
 
     uint8_t version_byte = 0;
     readBinary(version_byte, metadata_rbuf);
-    if (version_byte != static_cast<uint8_t>(SnapshotVersion::V8))
+    if (version_byte < static_cast<uint8_t>(SnapshotVersion::V9))
         throw Exception(
             ErrorCodes::UNKNOWN_FORMAT_VERSION,
-            "Chunked snapshot: unexpected version byte {} in METADATA chunk (expected 8)",
+            "Chunked snapshot: unexpected version byte {} in METADATA chunk",
             version_byte);
     const SnapshotVersion chunked_version = static_cast<SnapshotVersion>(version_byte);
 
@@ -1552,10 +1552,10 @@ static SnapshotMetadataPtr deserializeChunkedSnapshotMetadataFromBuffer(ReadBuff
     ReadBuffer & rbuf = *zbuf_meta;
     uint8_t version_byte = 0;
     readBinary(version_byte, rbuf);
-    if (version_byte != static_cast<uint8_t>(SnapshotVersion::V8))
+    if (version_byte < static_cast<uint8_t>(SnapshotVersion::V9))
         throw Exception(
             ErrorCodes::UNKNOWN_FORMAT_VERSION,
-            "Chunked snapshot: unexpected version byte {} in METADATA chunk (expected 8)",
+            "Chunked snapshot: unexpected version byte {} in METADATA chunk",
             version_byte);
 
     return deserializeSnapshotMetadata(rbuf);
