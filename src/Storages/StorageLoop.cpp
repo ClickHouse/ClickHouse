@@ -15,7 +15,8 @@ namespace DB
             , inner_storage(std::move(inner_storage_))
             , inner_table_function_ast(std::move(inner_table_function_ast_))
     {
-        setInMemoryMetadata(*inner_storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false));
+        auto metadata_snapshot = inner_storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        setInMemoryMetadata(*metadata_snapshot);
     }
 
     QueryProcessingStage::Enum StorageLoop::getQueryProcessingStage(

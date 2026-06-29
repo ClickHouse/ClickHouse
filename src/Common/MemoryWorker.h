@@ -90,6 +90,7 @@ struct MemoryWorkerConfig
     bool correct_tracker = false;
     uint64_t decay_adjustment_period_ms = 0;
     bool use_cgroup = true;
+    double rss_speculative_reserve_ratio = 0.0;
     double dynamic_hard_limit_ratio = 0.0;
 };
 
@@ -156,6 +157,7 @@ private:
     double purge_dirty_pages_threshold_ratio;
     uint64_t page_size = 0;
     std::chrono::milliseconds decay_adjustment_period_ms{0};
+    double rss_speculative_reserve_ratio = 0.0;
 
     /// Scaling factor the dynamic adjustment applies to `resident + available` to compute
     /// the new hard limit. Mirrors `max_server_memory_usage_to_ram_ratio` and is refreshed

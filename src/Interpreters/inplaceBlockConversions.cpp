@@ -495,10 +495,17 @@ void fillMissingColumns(
             Names tuple_elements;
             SerializationPtr serialization = IDataType::getSerialization(*requested_column);
 
-            /// For Nested columns collect names of tuple elements and skip them while getting the base type of array.
-            IDataType::forEachSubcolumn([&](const auto & path, const auto &, const auto &)
+            /// Collect names of tuple elements on the path to the requested subcolumn, so they are skipped while
+            /// getting the base type of array. Elements below the requested subcolumn belong to its own value type
+            /// and must be kept, otherwise the Tuple wrapper is lost.
+            const auto & requested_subcolumn_name = requested_column->getSubcolumnName();
+            IDataType::forEachSubcolumn([&](const auto & path, const auto & subcolumn_name, const auto &)
             {
-                if (path.back().type == ISerialization::Substream::TupleElement)
+                if (path.back().type != ISerialization::Substream::TupleElement)
+                    return;
+
+                if (subcolumn_name == requested_subcolumn_name
+                    || requested_subcolumn_name.starts_with(subcolumn_name + "."))
                     tuple_elements.push_back(path.back().name_of_substream);
             }, ISerialization::SubstreamData(serialization));
 

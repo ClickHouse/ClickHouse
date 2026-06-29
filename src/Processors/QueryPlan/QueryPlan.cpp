@@ -2,22 +2,33 @@
 #include <memory>
 #include <stack>
 
+#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
+#include <Common/logger_useful.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 
+#include <Processors/ConcatProcessor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/GatherSendStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
+#include <Processors/Sources/DelayedSource.h>
+#include <Processors/Sources/ReadFromDistributedPlanSource.h>
 
+#include <QueryPipeline/DistributedPlanExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>
 
@@ -32,6 +43,33 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+/// A stage fragment is shipped to workers by serializing its query plan, so every step must support
+/// serialization. Check up front (without serializing) so an unsupported plan fails early with a clear
+/// message instead of late, mid-execution, with a generic error.
+void assertFragmentSerializable(const QueryPlan & fragment, const String & stage_name)
+{
+    std::vector<const QueryPlan::Node *> stack;
+    if (fragment.getRootNode())
+        stack.push_back(fragment.getRootNode());
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (node->step && !node->step->isSerializable())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan cannot distribute this query: step '{}' in stage '{}' is not "
+                "serializable for remote execution", node->step->getName(), stage_name);
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+}
+
 }
 
 SettingsChanges ExplainPlanOptions::toSettingsChanges() const
@@ -185,6 +223,9 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     checkInitialized();
     if (do_optimize)
         optimize(optimization_settings);
+
+    if (optimization_settings.make_distributed_plan)
+        convertToDistributed(optimization_settings);
 
     struct Frame
     {
@@ -570,7 +611,7 @@ void QueryPlan::explainPlan(
     };
 
     auto skip_expressions = [&](Node * node) -> Node * {
-        while (settings.compact && node->step->getName() == "Expression" && !node->children.empty())
+        while (options.actions && settings.compact && node->step->getName() == "Expression" && !node->children.empty())
             node = node->children[0];
         return node;
     };
@@ -741,6 +782,157 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
     if (optimization_settings.materialize_ctes)
         QueryPlanOptimizations::resolveMaterializingCTEs(optimization_settings, *this, *root, nodes);
+}
+
+namespace QueryPlanOptimizations
+{
+
+DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
+
+}
+
+void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
+{
+    SharedHeader result_header = root->step->getOutputHeader();
+
+    QueryPlan::Nodes old_nodes = std::move(nodes);
+    QueryPlan::Node * old_root = root;
+    root = nullptr;
+    auto distributed_plan = QueryPlanOptimizations::makeDistributedPlan(std::move(old_nodes), old_root, optimization_settings);
+
+    for (const auto & stage : distributed_plan.stages)
+    {
+        auto it = distributed_plan.stage_depends_on.find(stage.first);
+        const auto & dependencies = it != distributed_plan.stage_depends_on.end() ? it->second : std::unordered_map<String, String>{};
+        LOG_TRACE(getLogger("optimize"), "Distributed stage: '{}' depends on: [{}] plan:\n{}",
+            stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
+    }
+
+    if (distributed_plan.stages.size() == 1)
+    {
+        /// For now just replace the plan with the first and only fragment, but preserve
+        /// table locks and storage holders accumulated during planning.
+        QueryPlanResourceHolder preserved_resources = std::move(resources);
+        *this = std::move(distributed_plan.stages.begin()->second.query_plan_fragment);
+        /// QueryPlanResourceHolder's move-assignment appends rhs into lhs without dropping existing entries.
+        resources = std::move(preserved_resources);
+
+        QueryPlanOptimizationSettings local_settings = optimization_settings;
+        local_settings.make_distributed_plan = false;
+        QueryPlanOptimizations::optimizeTreeSecondPass(local_settings, *root, nodes, *this);
+    }
+    else
+    {
+        ExchangeDescription final_result_exchange
+        {
+            .name = "final_result",
+            .kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming,
+            .source_bucket_count = 1,
+            .destination_bucket_count = 1
+        };
+        auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
+
+        /// Add a step that writes the result of the main stage to the file
+        auto & main_stage = distributed_plan.stages["main"];
+        if (!main_stage.query_plan_fragment.isCompleted())
+        {
+            main_stage.query_plan_fragment.addStep(std::make_unique<GatherSendStep>(result_header, final_result_exchange.name));
+            main_stage.tasks.front().output_exchange_streams.emplace_back(result_stream_id);
+            distributed_plan.exchange_descriptions[final_result_exchange.name] = final_result_exchange;
+            distributed_plan.final_result_stream_name = result_stream_id.toString();
+        }
+
+        /// Fail early (before execution) if any fragment contains a step that cannot be serialized
+        /// for remote execution, instead of throwing late from serializeQueryPlan.
+        for (const auto & [stage_name, stage] : distributed_plan.stages)
+            assertFragmentSerializable(stage.query_plan_fragment, stage_name);
+
+        /// Collect the list of all temporary files
+        Strings all_temporary_files_for_cleanup;
+        for (const auto & stage : distributed_plan.stages)
+        {
+            for (const auto & task : stage.second.tasks)
+            {
+                for (const auto & stream_id : task.output_exchange_streams)
+                {
+                    if (distributed_plan.exchange_descriptions.at(stream_id.exchange_id).kind == ExchangeDescription::Kind::Persisted)
+                        all_temporary_files_for_cleanup.push_back(stream_id.toString());
+                }
+            }
+        }
+
+        auto context = CurrentThread::tryGetQueryContext();
+        chassert(context);
+        /// Local execution runs every task in-process and needs no worker hosts; constructing
+        /// TaskToHostMap would require a configured worker cluster and fail on a plain single server.
+        TaskToHostMapPtr task_to_host_map = optimization_settings.distributed_plan_execute_locally
+            ? nullptr
+            : std::make_shared<TaskToHostMap>(distributed_plan, context);
+
+        /// Generate random unique id for the query
+        /// We cannot use query_id from the context because user can put any string there and it might be not unique
+        UUID unique_query_id = UUIDHelpers::generateV4();
+
+        /// Make plan stub that reads from the executor that executes the distributed plan
+        Pipe run_distributed_plan(std::make_shared<ReadFromDistributedPlanSource>(result_header, unique_query_id, std::move(distributed_plan), task_to_host_map));
+        Pipes pipes;
+        pipes.emplace_back(std::move(run_distributed_plan));
+
+        auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(toString(unique_query_id), context);
+
+        /// TODO: do this only if final_result_exchange is persisted
+        auto temporary_files = createTemporaryFilesLookup(
+            object_storage, object_storage_path, {result_stream_id.toString()}, {});
+
+        ExchangeDescriptions exchange_descriptions;
+        exchange_descriptions[final_result_exchange.name] = final_result_exchange;
+        auto exchange_lookup = createExchangeLookup(
+            toString(unique_query_id),
+            exchange_descriptions,
+            task_to_host_map ? ExchangeStreamSources{task_to_host_map->getExchangeStreamSourceHosts()} : ExchangeStreamSources{},
+            temporary_files,
+            context);
+
+        auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
+        {
+            Pipe read_result_from(exchange_lookup->createSource(result_header, result_stream_id));
+            QueryPipelineBuilder builder;
+            builder.init(std::move(read_result_from));
+            return builder;
+        };
+        pipes.emplace_back(createDelayedPipe(result_header, lazily_create_result_reader, false, false));
+
+        Pipe inputs = Pipe::unitePipes(std::move(pipes));
+        /// For streaming exchange we start both inputs in parallel to let the main task send back the result to the initiator.
+        /// In case of persisted exchange use ConcatProcessor to first execute the whole distributed plan and after that read the result from the file.
+        if (final_result_exchange.kind == ExchangeDescription::Kind::Persisted)
+            inputs.addTransform(std::make_shared<ConcatProcessor>(inputs.getSharedHeader(), inputs.numOutputPorts()));
+
+        /// Plan stub that will be used if distributed plan is enabled
+        QueryPlan read_from_distributed;
+
+        read_from_distributed.addStep(std::make_unique<ReadFromPreparedSource>(std::move(inputs)));
+
+        /// Preserve original table locks and storage holders across the move-assign
+        /// so the final pipeline keeps the tables referenced by serialized fragments alive.
+        QueryPlanResourceHolder preserved_resources = std::move(resources);
+        *this = std::move(read_from_distributed);
+        resources = std::move(preserved_resources);
+
+        /// In-memory exchanges (execute_locally) must outlive the executor: the result reader drains
+        /// final_result after the driver has finished. Remove them when the pipeline resources go away.
+        resources.custom_resources.emplace_back(makeInMemoryExchangesCleaner(toString(unique_query_id)));
+
+        /// Add temporary files cleaner to the resources so that all temporary files are removed after the pipeline is executed
+        if (final_result_exchange.kind == ExchangeDescription::Kind::Persisted)
+            all_temporary_files_for_cleanup.push_back(result_stream_id.toString());
+
+        if (object_storage)
+        {
+            auto temporary_files_cleaner = makeTemporaryFilesCleaner(object_storage, object_storage_path, all_temporary_files_for_cleanup);
+            resources.custom_resources.emplace_back(std::move(temporary_files_cleaner));
+        }
+    }
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns) const

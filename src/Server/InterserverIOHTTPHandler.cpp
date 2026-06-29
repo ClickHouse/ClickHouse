@@ -10,6 +10,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/logger_useful.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/setThreadName.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -56,7 +57,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 {
     HTMLForm params(server.context()->getSettingsRef(), request);
 
-    LOG_TRACE(log, "Request URI: {}", request.getURI());
+    LOG_TRACE(log, "Request URI: {}", maskSensitiveQueryParametersInURI(request.getURI()));
 
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
@@ -104,7 +105,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         }
         else
         {
-            LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
+            LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", maskSensitiveQueryParametersInURI(request.getURI()));
             output->cancelWithException(request, ErrorCodes::REQUIRED_PASSWORD, message, nullptr);
         }
     }
