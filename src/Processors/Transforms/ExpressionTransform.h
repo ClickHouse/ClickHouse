@@ -30,6 +30,8 @@ public:
     static Block transformHeader(const Block & header, const ActionsDAG & expression);
 
 protected:
+    void onCancel() noexcept override;
+
     void transform(Chunk & chunk) override;
 
 private:

@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
-class FunctionBitSlice : public IFunction
+class FunctionBitSlice final : public IFunction
 {
     const UInt8 word_size = 8;
 
@@ -166,16 +166,16 @@ public:
 
         for (size_t i = 0; i < size - 1; i++)
         {
-            out[i] = (input[i] << shift_bit) | (input[i + 1] >> (word_size - shift_bit));
+            out[i] = static_cast<UInt8>((input[i] << shift_bit) | (input[i + 1] >> (word_size - shift_bit)));
         }
         if (abandon_last_byte)
         {
-            out[size - 1] = (input[size - 1] << shift_bit) | (input[size] >> (word_size - shift_bit));
+            out[size - 1] = static_cast<UInt8>((input[size - 1] << shift_bit) | (input[size] >> (word_size - shift_bit)));
             out[size - 1] = out[size - 1] & (0xFF << (abandon_last_bit + shift_bit - word_size));
         }
         else
         {
-            out[size - 1] = (input[size - 1] << shift_bit) & (0xFF << (abandon_last_bit + shift_bit));
+            out[size - 1] = static_cast<UInt8>((input[size - 1] << shift_bit) & (0xFF << (abandon_last_bit + shift_bit)));
         }
 
 
@@ -230,7 +230,7 @@ public:
             if (start != 0)
             {
                 typename std::decay_t<Source>::Slice slice;
-                size_t shift_bit;
+                size_t shift_bit = 0;
 
                 if (start > 0)
                 {
@@ -354,9 +354,9 @@ public:
                 size_t offset = left_offset ? static_cast<size_t>(start - 1) : -static_cast<size_t>(start);
                 size_t size = src.getElementSize();
 
-                size_t offset_byte;
-                size_t offset_bit;
-                size_t shift_bit;
+                size_t offset_byte = 0;
+                size_t offset_bit = 0;
+                size_t shift_bit = 0;
                 if (left_offset)
                 {
                     offset_byte = offset / word_size;
@@ -375,8 +375,8 @@ public:
 
                 ssize_t remain_byte = left_offset ? size - offset_byte : offset_byte;
 
-                size_t length_byte;
-                size_t over_bit;
+                size_t length_byte = 0;
+                size_t over_bit = 0;
                 if (length > 0)
                 {
                     length_byte = (length + offset_bit) / word_size;

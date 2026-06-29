@@ -8,6 +8,7 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
@@ -23,6 +24,7 @@
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/config_version.h>
@@ -87,7 +89,7 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
-    assert(expr.ok());
+    chassert(expr.ok());
     return re2::RE2::FullMatch(query, expr);
 }
 
@@ -459,7 +461,7 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     const auto session_context = session->sessionContext();
     String database = session_context->getCurrentDatabase();
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
-    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
+    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(
@@ -532,7 +534,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);
         socket().setSendTimeout(settings[Setting::send_timeout]);
 
-        CurrentThread::QueryScope query_scope{query_context};
+        QueryScope query_scope = QueryScope::create(query_context);
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
@@ -589,7 +591,7 @@ void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
 
 void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 {
-    uint32_t statement_id;
+    uint32_t statement_id = 0;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
     auto statement_opt = getPreparedStatement(statement_id);
@@ -601,7 +603,7 @@ void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 
 void MySQLHandler::comStmtClose(ReadBuffer & payload)
 {
-    uint32_t statement_id;
+    uint32_t statement_id = 0;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
     // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_close.html

@@ -17,6 +17,8 @@ struct BlockWithPartition
     BlockWithPartition(BlockWithPartition && block_) = default;
 
     BlockWithPartition(std::shared_ptr<Block> block_, Row partition_);
+
+    BlockWithPartition & operator=(BlockWithPartition && other) = default;
 };
 
 }

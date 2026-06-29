@@ -5,7 +5,6 @@
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/WeakHash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -72,9 +71,9 @@ void ColumnLazy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get is not supported for {}", getName());
 }
 
-DataTypePtr ColumnLazy::getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const
+void ColumnLazy::getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getValueNameAndType is not supported for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getValueName is not supported for {}", getName());
 }
 
 bool ColumnLazy::isDefaultAt(size_t) const
@@ -167,9 +166,9 @@ void ColumnLazy::updateHashWithValue(size_t, SipHash &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateHashWithValue is not supported for {}", getName());
 }
 
-WeakHash32 ColumnLazy::getWeakHash32() const
+void ColumnLazy::computeHashInto(size_t, size_t, UInt32 *, bool) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getWeakHash32 is not supported for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method computeHashInto is not supported for {}", getName());
 }
 
 void ColumnLazy::updateHashFast(SipHash &) const
@@ -271,7 +270,7 @@ ColumnPtr ColumnLazy::replicate(const Offsets &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method replicate is not supported for {}", getName());
 }
 
-MutableColumns ColumnLazy::scatter(size_t, const Selector &) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnLazy::scatter(size_t, const Selector &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for {}", getName());
 }
@@ -373,7 +372,7 @@ void ColumnLazy::protect()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method protect is not supported for {}", getName());
 }
 
-void ColumnLazy::getExtremes(Field &, Field &) const
+void ColumnLazy::getExtremes(Field &, Field &, size_t, size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getExtremes is not supported for {}", getName());
 }

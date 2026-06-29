@@ -4,7 +4,6 @@
 --- These tests verify the caching of a deserialized text index posting lists in the consecutive executions.
 
 SET enable_analyzer = 1;
-SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_postings_cache = 1;
@@ -31,7 +30,7 @@ CREATE VIEW text_index_cache_stats AS (
   SELECT
     concat('cache_hits = ', ProfileEvents['TextIndexPostingsCacheHits'], ', cache_misses = ', ProfileEvents['TextIndexPostingsCacheMisses'])
   FROM system.query_log
-  WHERE query_kind ='Select'
+  WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_kind ='Select'
       AND current_database = currentDatabase()
       AND endsWith(trimRight(query), concat('hasAnyTokens(message, \'', {filter:String}, '\');'))
       AND type='QueryFinish'
@@ -65,7 +64,7 @@ SELECT * FROM text_index_cache_stats(filter = 'text_pl_2');
 
 SELECT 'Clear text index postings cache';
 
-SYSTEM DROP TEXT INDEX POSTINGS CACHE;
+SYSTEM CLEAR TEXT INDEX POSTINGS CACHE;
 
 SELECT '--- cache miss on the first token.';
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_pl_1');
@@ -79,6 +78,6 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_pl_1');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_pl_1');
 
-SYSTEM DROP TEXT INDEX POSTINGS CACHE;
+SYSTEM CLEAR TEXT INDEX POSTINGS CACHE;
 DROP VIEW text_index_cache_stats;
 DROP TABLE tab;

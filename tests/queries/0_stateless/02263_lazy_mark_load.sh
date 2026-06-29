@@ -29,7 +29,7 @@ EOF
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP MERGES lazy_mark_test"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO lazy_mark_test select number, number % 3, number % 5, number % 10, number % 13, number % 15, number % 17, number % 18, number % 22, number % 25 from numbers(1000000)"
-${CLICKHOUSE_CLIENT} -q "SYSTEM DROP MARK CACHE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM CLEAR MARK CACHE"
 # max_threads=1 is needed because otherwise OpenedFileCache makes ProfileEvents['FileOpen'] nondeterministic
 # (usually all threads access the file at overlapping times, and the file is opened just once;
 #  but sometimes a thread is much slower than others and ends opening the same file a second time)
@@ -37,4 +37,4 @@ ${CLICKHOUSE_CLIENT} --log_queries=1 --query_id "${QUERY_ID}" -q "SELECT * FROM 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 # Expect 2 open files: n3 marks and n3 data.
-${CLICKHOUSE_CLIENT} -q "select ProfileEvents['FileOpen'] from system.query_log where query_id = '${QUERY_ID}' and type = 'QueryFinish' and current_database = currentDatabase()"
+${CLICKHOUSE_CLIENT} -q "select ProfileEvents['FileOpen'] from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID}' and type = 'QueryFinish' and current_database = currentDatabase()"

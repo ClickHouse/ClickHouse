@@ -1,11 +1,8 @@
-#include <cassert>
 
 #include <Compression/CompressedReadBufferFromFile.h>
 
 #include <Common/logger_useful.h>
-#include <Compression/LZ4_decompress_faster.h>
 #include <IO/WriteHelpers.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
 
 
 namespace DB
@@ -31,7 +28,7 @@ bool CompressedReadBufferFromFile::nextImpl()
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
         /// This is for clang static analyzer.
-        assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+        chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
 
         memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
         working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
@@ -149,11 +146,18 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
                 bytes += offset();
 
                 /// This is for clang static analyzer.
-                assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+                chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
                 memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
                 working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
                 /// Synchronous mode must be set since we need read partial data immediately from working buffer to target buffer.
                 decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
+
+                if (nextimpl_working_buffer_offset > working_buffer.size())
+                    throw Exception(
+                        ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
+                        "Required to move position beyond the decompressed block (pos: {}, block size: {})",
+                        nextimpl_working_buffer_offset,
+                        toString(working_buffer.size()));
 
                 /// Read partial data from first block. Won't run here at second block.
                 /// Avoid to call nextImpl and unnecessary memcpy in read when the second block fits entirely to output buffer.
@@ -168,7 +172,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
                 bytes += offset();
 
                 /// This is for clang static analyzer.
-                assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+                chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
                 memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
                 working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
                 // Asynchronous mode can be set here because working_buffer wouldn't be overwritten any more since this is the last block.

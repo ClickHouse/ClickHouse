@@ -4,6 +4,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <IO/OpenedFile.h>
 
 

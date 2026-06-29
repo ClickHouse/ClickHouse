@@ -18,6 +18,7 @@
 #include <Common/LibSSHLogger.h>
 #include <Server/SSH/SSHBind.h>
 #include <Server/SSH/SSHSession.h>
+#include <Common/config_version.h>
 
 namespace Poco
 {
@@ -56,6 +57,10 @@ public:
     {
         LOG_INFO(log, "Initializing sshbind");
         ssh_bind.disableDefaultConfig();
+        /// Identify ourselves to ssh clients, similar to how OpenSSH prepends its
+        /// own name to the "SSH-2.0-" prefix (e.g. "SSH-2.0-OpenSSH_8.9p1"). Use
+        /// underscore because RFC 4253 forbids spaces and '-' in this field.
+        ssh_bind.setBanner(std::string("ClickHouse_") + VERSION_STRING);
 
         String prefix = "ssh_server.";
         auto rsa_key = config.getString(prefix + "host_rsa_key", "");
@@ -76,7 +81,7 @@ public:
             LOG_WARNING(log, "Client options propagation is enabled. This is considered unsafe and shouldn't be used in production.");
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &) override
+    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer &) override
     {
         LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
         ::ssh::libsshLogger::initialize();

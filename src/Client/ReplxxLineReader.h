@@ -12,7 +12,6 @@ namespace DB
 class ReplxxLineReader : public LineReader
 {
 public:
-
     struct Options
     {
         Suggest & suggest;

@@ -98,6 +98,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         }
 
         assignment = topic_partitions;
+        waited_for_assignment = 0;
         num_rebalance_assignments++;
     });
 
@@ -119,7 +120,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         // so the best we can now it to
         // 1) repeat last commit in sync mode (async could be still in queue, we need to be sure is is properly committed before rebalance)
         // 2) stop / brake the current reading:
-        //     * clean buffered non-commited messages
+        //     * clean buffered non-committed messages
         //     * set flag / flush
 
         cleanUnprocessed();
@@ -127,7 +128,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         stalled_status = REBALANCE_HAPPENED;
         last_rebalance_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
-        assert(!assignment.has_value() || topic_partitions.size() == assignment->size());
+        chassert(!assignment.has_value() || topic_partitions.size() == assignment->size());
         cleanAssignment();
         waited_for_assignment = 0;
 
@@ -398,7 +399,7 @@ void KafkaConsumer::resetToLastCommitted(const char * msg)
 
 void KafkaConsumer::doPoll()
 {
-    assert(current == messages.end());
+    chassert(current == messages.end());
 
     while (true)
     {

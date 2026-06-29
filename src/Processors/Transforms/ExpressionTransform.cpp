@@ -1,6 +1,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Core/Block.h>
+#include <Functions/IFunction.h>
 #include <memory>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -27,12 +28,23 @@ void ExpressionTransform::transform(Chunk & chunk)
     size_t num_rows = chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    expression->execute(block, num_rows);
+    expression->execute(block, num_rows, false, false, [this]() { return isCancelled(); });
 
     chunk.setColumns(block.getColumns(), num_rows);
 
     if (updater)
         updater->recordOutputChunk(chunk, block);
+}
+
+void ExpressionTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+    const auto & nodes = expression->getNodes();
+    for (const auto & node : nodes)
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+            node.function->cancelExecution();
+    }
 }
 
 ConvertingTransform::ConvertingTransform(SharedHeader header_, ExpressionActionsPtr expression_)
@@ -46,7 +58,7 @@ void ConvertingTransform::onConsume(Chunk chunk)
     size_t num_rows = chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    expression->execute(block, num_rows);
+    expression->execute(block, num_rows, false, false, [this]() { return isCancelled(); });
 
     chunk.setColumns(block.getColumns(), num_rows);
     cur_chunk = std::move(chunk);

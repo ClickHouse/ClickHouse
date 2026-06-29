@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
@@ -6,6 +7,9 @@
 #include <Common/SharedMutex.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+#include <algorithm>
+#include <vector>
 
 namespace ProfileEvents
 {
@@ -37,8 +41,8 @@ void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
     ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsPassed, rows_passed);
 
     /// Skip next 30 blocks if too few rows got filtered out
-    if (rows_passed > pass_ratio_threshold_for_disabling * rows_checked)
-        rows_to_skip = rows_checked * blocks_to_skip_before_reenabling;
+    if (static_cast<double>(rows_passed) > pass_ratio_threshold_for_disabling * static_cast<double>(rows_checked))
+        rows_to_skip += rows_checked * blocks_to_skip_before_reenabling;
 }
 
 bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
@@ -66,10 +70,20 @@ bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
     return false;
 }
 
+void IRuntimeFilter::finishInsert()
+{
+    if (filters_to_merge != 0)
+        return;
+
+    inserts_are_finished = true;
+
+    finishInsertImpl();
+}
+
 ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
     if (!inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before builiding it was finished");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before building it was finished");
 
     const size_t rows_in_block = values.column->size();
     if (shouldSkip(rows_in_block))
@@ -93,6 +107,92 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 }
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
+static constexpr size_t HASH_BATCH_SIZE = 1024;
+
+namespace
+{
+void hashFixedSizeColumn(
+    const char * raw_data,
+    size_t value_size,
+    size_t row_count,
+    UInt64 seed,
+    BloomFilterHashPair * out_hashes)
+{
+    const char * position = raw_data;
+    for (size_t row = 0; row < row_count; ++row)
+    {
+        out_hashes[row] = BloomFilter::computeHashPair(position, value_size, seed);
+        position += value_size;
+    }
+}
+
+template <typename ProcessBatch>
+void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch && process_batch)
+{
+    const size_t row_count = column.size();
+    if (row_count == 0)
+        return;
+
+    std::vector<BloomFilterHashPair> hash_pairs(std::min(HASH_BATCH_SIZE, row_count));
+
+    if (!isColumnConst(column) && column.isFixedAndContiguous())
+    {
+        const size_t value_size = column.sizeOfValueIfFixed();
+        const std::string_view raw_data = column.getRawData();
+
+        chassert(value_size == 0 || raw_data.size() / value_size >= row_count);
+
+        size_t start_row = 0;
+        while (start_row < row_count)
+        {
+            const size_t batch_size = std::min(hash_pairs.size(), row_count - start_row);
+            const char * batch_data = raw_data.data() + start_row * value_size;
+            hashFixedSizeColumn(batch_data, value_size, batch_size, seed, hash_pairs.data());
+            process_batch(hash_pairs.data(), batch_size, start_row);
+            start_row += batch_size;
+        }
+        return;
+    }
+
+    size_t start_row = 0;
+    while (start_row < row_count)
+    {
+        const size_t batch_size = std::min(hash_pairs.size(), row_count - start_row);
+        for (size_t index = 0; index < batch_size; ++index)
+        {
+            const auto value = column.getDataAt(start_row + index);
+            hash_pairs[index] = BloomFilter::computeHashPair(value.data(), value.size(), seed);
+        }
+        process_batch(hash_pairs.data(), batch_size, start_row);
+        start_row += batch_size;
+    }
+}
+}
+
+void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
+{
+    if (inserts_are_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after it was marked as finished");
+
+    const auto * source_typed = typeid_cast<const ExactContainsRuntimeFilter *>(source);
+    if (!source_typed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
+
+    insert(source_typed->getValuesColumn());
+    --filters_to_merge;
+}
+
+void ExactContainsRuntimeFilter::finishInsertImpl()
+{
+    Base::finishInsertImpl();
+
+    if (isFull())
+    {
+        /// Some keys were dropped so we cannot filter by partial set of keys
+        setFullyDisabled();
+        releaseExactValues();
+    }
+}
 
 void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 {
@@ -105,6 +205,12 @@ void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 
     insert(source_typed->getValuesColumn());
     --filters_to_merge;
+}
+
+bool ApproximateRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
+{
+    /// Runtime BloomFilter hashing uses byte representation from either fixed contiguous column storage or getDataAt().
+    return data_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
 }
 
 ApproximateRuntimeFilter::ApproximateRuntimeFilter(
@@ -143,20 +249,15 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
     }
 }
 
-void ApproximateRuntimeFilter::finishInsert()
+void ApproximateRuntimeFilter::finishInsertImpl()
 {
-    if (filters_to_merge != 0)
-        return;
-
-    inserts_are_finished = true;
-
     if (bloom_filter)
     {
         checkBloomFilterWorthiness();
         return;
     }
 
-    Base::finishInsert();
+    Base::finishInsertImpl();
 }
 
 /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
@@ -210,8 +311,9 @@ ColumnPtr RuntimeFilterBase<negate>::findImpl(const ColumnWithTypeAndName & valu
             return DataTypeUInt8().createColumnConst(values.column->size(), negate);
         case ValuesCount::ONE:
         {
-            /// If only 1 element in the set then use "value == const" instead of set lookup
-            auto const_column = filter_column_target_type->createColumnConst(values.column->size(), *single_element_in_set);
+            /// If only 1 element in the set then use "value == const" instead of set lookup.
+            /// Use the column directly from Set to avoid lossy Field roundtrip.
+            ColumnPtr const_column = ColumnConst::create(single_element_column, values.column->size());
             ColumnsWithTypeAndName arguments = {
                 values,
                 ColumnWithTypeAndName(const_column, filter_column_target_type, String())
@@ -242,14 +344,11 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
         dst_data.resize(values.column->size());
 
         size_t found_count = 0;
-        for (size_t row = 0; row < values.column->size(); ++row)
-        {
-            /// TODO: optimize: consider replacing hash calculation with vectorized version
-            const auto & value = values.column->getDataAt(row);
-            const bool found = bloom_filter->find(value.data(), value.size());
-            found_count += found ? 1 : 0;
-            dst_data[row] = found;
-        }
+        forEachColumnHashBatch(*values.column, bloom_filter->getSeed(),
+            [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
+            {
+                found_count += bloom_filter->findHashPairs(hash_pairs, count, dst_data.data() + start_row);
+            });
         updateStats(values.column->size(), found_count);
 
         return dst;
@@ -262,13 +361,11 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
 
 void ApproximateRuntimeFilter::insertIntoBloomFilter(ColumnPtr values)
 {
-    const size_t num_rows = values->size();
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        /// TODO: make this efficient: compute hashes in vectorized manner
-        auto value = values->getDataAt(row);
-        bloom_filter->add(value.data(), value.size());
-    }
+    forEachColumnHashBatch(*values, bloom_filter->getSeed(),
+        [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t /* start_row */)
+        {
+            bloom_filter->addHashPairs(hash_pairs, count);
+        });
 }
 
 void ApproximateRuntimeFilter::switchToBloomFilter()
@@ -290,27 +387,62 @@ void ApproximateRuntimeFilter::checkBloomFilterWorthiness()
     for (auto word : raw_filter_words)
         set_bits += std::popcount(word);
     /// If too many bits are set then it is likely that the filter will not filter out much
-    if (set_bits > max_ratio_of_set_bits_in_bloom_filter * total_bits)
+    if (static_cast<double>(set_bits) > max_ratio_of_set_bits_in_bloom_filter * static_cast<double>(total_bits))
         setFullyDisabled();
+}
+
+SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
+    const DataTypePtr & filter_column_target_type_,
+    Float64 pass_ratio_threshold_for_disabling_,
+    UInt64 blocks_to_skip_before_reenabling_,
+    ProbeFn probe_fn_)
+    : IRuntimeFilter(
+        /*filters_to_merge_=*/0,
+        filter_column_target_type_,
+        pass_ratio_threshold_for_disabling_,
+        blocks_to_skip_before_reenabling_)
+    , probe_fn(std::move(probe_fn_))
+{
+    /// Build was already done elsewhere; nothing left to insert.
+    inserts_are_finished = true;
+}
+
+ColumnPtr SharedFixedHashTableRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
+{
+    chassert(inserts_are_finished);
+    auto result = probe_fn(values);
+    updateStats(values.column->size(), countPassedStats(result));
+    return result;
 }
 
 class RuntimeFilterLookup : public IRuntimeFilterLookup
 {
 public:
-    void add(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
+    void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) override
     {
         std::lock_guard g(rw_lock);
-        auto & filter = filters_by_name[name];
+        auto & filter = filters_by_name[key];
         if (!filter)
         {
             ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
             filter.reset(runtime_filter.release());   /// Save new filter
+            /// Record the readable structural name once (the map is keyed by the opaque rendezvous key).
+            display_names.emplace(key, display_name);
         }
         else
         {
             filter->merge(runtime_filter.get());    /// Add all new keys to a existing filter
         }
         filter->finishInsert();
+    }
+
+    void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
+    {
+        std::lock_guard g(rw_lock);
+        auto & filter = filters_by_name[name];
+        if (!filter)
+            ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
+        filter.reset(runtime_filter.release());
     }
 
     RuntimeFilterConstPtr find(const String & name) const override
@@ -326,18 +458,24 @@ public:
     void logStats() const override
     {
         SharedLockGuard g(rw_lock);
-        for (const auto & [filter_name, filter] : filters_by_name)
+        for (const auto & [filter_key, filter] : filters_by_name)
         {
             const auto & stats = filter->getStats();
+            /// `filter_key` is the opaque random rendezvous key; prefer the readable structural name.
+            auto name_it = display_names.find(filter_key);
+            const String & name = (name_it != display_names.end() && !name_it->second.empty()) ? name_it->second : filter_key;
             LOG_TRACE(getLogger("RuntimeFilter"),
                 "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
-                filter_name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load(), stats.blocks_skipped.load(), stats.blocks_processed.load());
+                name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load(), stats.blocks_skipped.load(), stats.blocks_processed.load());
         }
     }
 
 private:
     mutable SharedMutex rw_lock;
     std::unordered_map<String, SharedRuntimeFilterPtr> filters_by_name TSA_GUARDED_BY(rw_lock);
+    /// Readable structural name per rendezvous key, for logging. Kept under the same lock and
+    /// preserved across `replace` (the replacement keeps the original registration's name).
+    std::unordered_map<String, String> display_names TSA_GUARDED_BY(rw_lock);
 };
 
 RuntimeFilterLookupPtr createRuntimeFilterLookup()

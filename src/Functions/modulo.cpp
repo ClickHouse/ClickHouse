@@ -56,50 +56,99 @@ struct ModuloByConstantImpl
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
         /// Modulo with too small divisor.
-        if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
+        if (b == 1) [[unlikely]]
         {
             for (size_t i = 0; i < size; ++i)
                 dst[i] = 0;
             return;
         }
+        else
+        {
+            if constexpr (std::is_signed_v<B>)
+            {
+                if (b == -1) [[unlikely]]
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        dst[i] = 0;
+                    return;
+                }
+            }
+        }
 
         /// Modulo with too large divisor.
-        if (unlikely(b > std::numeric_limits<A>::max()
-            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
+        if (b > std::numeric_limits<A>::max()) [[unlikely]]
         {
             for (size_t i = 0; i < size; ++i)
                 dst[i] = static_cast<ResultType>(src[i]);
             return;
         }
+        else
+        {
+            if constexpr (std::is_signed_v<A> && std::is_signed_v<B>)
+            {
+                if (b < std::numeric_limits<A>::lowest()) [[unlikely]]
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        dst[i] = static_cast<ResultType>(src[i]);
+                    return;
+                }
+            }
+        }
 
-        if (unlikely(static_cast<A>(b) == 0))
+        if (static_cast<A>(b) == 0) [[unlikely]]
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
         /// Division by min negative value.
-        if (std::is_signed_v<B> && b == std::numeric_limits<B>::lowest())
-            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
+        if constexpr (std::is_signed_v<B>)
+        {
+            if (b == std::numeric_limits<B>::lowest()) [[unlikely]]
+                throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
+        }
 
         /// Modulo of division by negative number is the same as the positive number.
         if (b < 0)
-            b = -b;
-
-        /// Here we failed to make the SSE variant from libdivide give an advantage.
+            b = static_cast<B>(-b);
 
         if (b & (b - 1))
         {
-            libdivide::divider<A> divider(static_cast<A>(b));
-            for (size_t i = 0; i < size; ++i)
+            /// BRANCHFULL: the per-iteration algorithm-type branch is
+            /// perfectly predicted (loop-invariant) and lets most divisors
+            /// take the fast `mullhi >> shift` path (2 ops vs BRANCHFREE's
+            /// unconditional 5 ops).  The compiler auto-vectorizes each
+            /// path independently (via vpmuludq on x86, NEON on ARM).
+            /// For 64-bit types, suppress auto-vectorization: there is no
+            /// vpmuludq for 64-bit, so the compiler emits scalar
+            /// extract/insert sequences that are slower than the scalar loop.
+            libdivide::divider<A, libdivide::BRANCHFULL> divider(static_cast<A>(b));
+            if constexpr (sizeof(A) >= 8)
             {
-                /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
-                dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * b);
+#pragma clang loop vectorize(disable)
+                for (size_t i = 0; i < size; ++i)
+                    dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * b);
+            }
+            else
+            {
+                for (size_t i = 0; i < size; ++i)
+                    dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * b);
             }
         }
         else
         {
-            // gcc libdivide doesn't work well for pow2 division
+            /// Power-of-two: a single AND is cheaper than libdivide's multiply-shift
             auto mask = b - 1;
             for (size_t i = 0; i < size; ++i)
-                dst[i] = static_cast<ResultType>(src[i] & mask);
+            {
+                A a = src[i];
+                ResultType r = static_cast<ResultType>(a & mask);
+                if constexpr (std::is_signed_v<A> && std::is_signed_v<ResultType>)
+                {
+                    /// Sign-extend the result to match the behavior of %, to make the const and non-const
+                    /// versions of the modulo function behave the same way.
+                    ResultType sign_ext = static_cast<ResultType>(-static_cast<ResultType>((a < 0) & (r != 0)));
+                    r |= sign_ext & ~static_cast<ResultType>(mask);
+                }
+                dst[i] = r;
+            }
         }
     }
 
@@ -174,8 +223,8 @@ REGISTER_FUNCTION(Modulo)
     FunctionDocumentation::Example example1 = {"Usage example", "SELECT modulo(5, 2)", "1"};
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionModulo>(documentation);
     factory.registerAlias("mod", "modulo", FunctionFactory::Case::Insensitive);
 }
@@ -185,7 +234,21 @@ using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, 
 
 REGISTER_FUNCTION(ModuloLegacy)
 {
-    factory.registerFunction<FunctionModuloLegacy>();
+    FunctionDocumentation::Description description = R"(
+Calculates the remainder of a division. This is the legacy modulo implementation that uses the C++ `%` operator, which may produce negative results for negative arguments. This function exists for backward compatibility with old table partitioning logic. Use `modulo` or `positiveModulo` for standard behavior.
+    )";
+    FunctionDocumentation::Syntax syntax = "moduloLegacy(a, b)";
+    FunctionDocumentation::Arguments arguments = {
+        {"a", "The dividend.", {"(U)Int*", "Float*"}},
+        {"b", "The divisor.", {"(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the remainder of the division.", {"(U)Int*", "Float*"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT moduloLegacy(10, 3)", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionModuloLegacy>(documentation);
 }
 
 struct NamePositiveModulo
@@ -211,8 +274,8 @@ Returns the difference between `x` and the nearest integer not greater than
     )"};
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT positiveModulo(-1, 10)", "9"}};
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
     factory.registerFunction<FunctionPositiveModulo>(documentation,
         FunctionFactory::Case::Insensitive);

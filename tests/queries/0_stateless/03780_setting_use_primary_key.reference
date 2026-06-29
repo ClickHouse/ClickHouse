@@ -6,7 +6,7 @@ CREATE TABLE tab (
 )
 ENGINE = MergeTree()
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 INSERT INTO tab
 SELECT number
 FROM numbers(100);

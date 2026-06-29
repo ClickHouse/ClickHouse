@@ -1,0 +1,45 @@
+case 1 new planner
+1	a
+2	b
+3	c
+case 1 legacy planner
+1	a
+2	b
+3	c
+case 2 legacy planner
+1	a
+2	b
+3	c
+case 3 legacy planner
+1	a
+2	b
+3	c
+case 4 legacy planner (matching types, direct join still picked)
+1	a
+2	b
+3	c
+case 4 explain shows DirectKeyValueJoin
+Algorithm: DirectKeyValueJoin
+case 5 LEFT JOIN legacy planner
+1	a
+2	b
+3	c
+4	
+case 6 LEFT ANY JOIN legacy planner
+1	a
+2	b
+3	c
+4	
+case 7 LEFT SEMI JOIN legacy planner
+1
+2
+3
+case 8 LEFT ANTI JOIN legacy planner
+4
+case 9 LEFT JOIN legacy planner (matching types, direct join still picked)
+1	a
+2	b
+3	c
+4	
+case 9 explain shows DirectKeyValueJoin
+Algorithm: DirectKeyValueJoin

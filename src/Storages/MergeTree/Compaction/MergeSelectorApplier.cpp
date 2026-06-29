@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/IMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TrivialMergeSelector.h>
@@ -41,6 +42,7 @@ struct ChooseContext
     const PartitionsStatistics & partitions_stats;
     const IMergePredicate & predicate;
     const IMergeSelector::RangeFilter & range_filter;
+    const StorageID & storage_id;
     const MergeConstraints & merge_constraints;
     const StorageInMemoryMetadata & metadata_snapshot;
     const MergeTreeSettings & merge_tree_settings;
@@ -75,7 +77,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     {
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space.
         std::vector<MergeConstraint> ttl_constraints(ctx.merge_constraints.size(), {std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()});
-        TTLPartDropMergeSelector drop_ttl_selector(ctx.current_time);
+        TTLPartDropMergeSelector drop_ttl_selector(ctx.current_time, ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once]);
 
         if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, ttl_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDrop);
@@ -109,7 +111,7 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
     simple_merge_settings.window_size = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_window_size];
     simple_merge_settings.max_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once];
     simple_merge_settings.enable_heuristic_to_remove_small_parts_at_right = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_enable_heuristic_to_remove_small_parts_at_right];
-    simple_merge_settings.base = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_base];
+    simple_merge_settings.base = static_cast<double>(ctx.merge_tree_settings[MergeTreeSetting::merge_selector_base]);
     simple_merge_settings.min_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::min_parts_to_merge_at_once];
 
     simple_merge_settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once];
@@ -154,6 +156,9 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
         case MergeSelectorAlgorithm::TRIVIAL:
             selector = std::make_shared<TrivialMergeSelector>();
             break;
+        case MergeSelectorAlgorithm::MANUAL:
+            selector = std::make_shared<ManualMergeSelector>(ctx.storage_id);
+            break;
     }
 
     chassert(selector != nullptr);
@@ -167,11 +172,13 @@ MergeSelectorApplier::MergeSelectorApplier(
     std::vector<MergeConstraint> && merge_constraints_,
     bool merge_with_ttl_allowed_,
     bool aggressive_,
-    IMergeSelector::RangeFilter range_filter_)
+    IMergeSelector::RangeFilter range_filter_,
+    StorageID storage_id_)
     : merge_constraints(std::move(merge_constraints_))
     , merge_with_ttl_allowed(merge_with_ttl_allowed_)
     , aggressive(aggressive_)
     , range_filter(std::move(range_filter_))
+    , storage_id(std::move(storage_id_))
 {
     chassert(!merge_constraints.empty(), "At least one merge constraint should be passed");
 
@@ -197,6 +204,7 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .partitions_stats = partitions_stats,
         .predicate = predicate,
         .range_filter = range_filter,
+        .storage_id = storage_id,
         .merge_constraints = merge_constraints,
         .metadata_snapshot = *metadata_snapshot,
         .merge_tree_settings = *merge_tree_settings,

@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <iostream>
 #include <ostream>
+#include <Examples/clickhouse_examples.h>
 
 /** This program tests merge-selecting algorithm.
  * Usage:
@@ -19,7 +20,7 @@ clickhouse-client --query="
     WHERE table = 'visits' AND active AND partition = '201610'" | ./merge_selector2
   */
 
-int main(int, char **)
+int mainEntryExampleMergeSelector2(int, char **)
 {
     using namespace DB;
 
@@ -36,8 +37,8 @@ int main(int, char **)
 
     while (!in.eof())
     {
-        size_t size;
-        time_t age;
+        size_t size = {};
+        time_t age = {};
         std::string name;
 
         in >> name >> "\t" >> size >> "\t" >> age >> "\n";
@@ -152,8 +153,8 @@ int main(int, char **)
         total_size_merged += sum_merged_size;
         ++num_merges;
 
-        double time_to_merge = sum_merged_size / (1048576 * 10.0);
-        age_passed = static_cast<size_t>(age_passed + time_to_merge);
+        double time_to_merge = static_cast<double>(sum_merged_size) / (1048576 * 10.0);
+        age_passed = static_cast<size_t>(static_cast<double>(age_passed) + time_to_merge);
 
         {
             next_range.clear();
@@ -179,7 +180,7 @@ int main(int, char **)
 
     std::cout << "\n";
     std::cout << std::fixed << std::setprecision(2)
-        << "Write amplification: " << static_cast<double>(sum_size_written) / sum_parts_size << "\n"
+        << "Write amplification: " << static_cast<double>(sum_size_written) / static_cast<double>(sum_parts_size) << "\n"
         << "Num parts: " << num_parts << "\n"
         << "Num merges: " << num_merges << "\n";
 

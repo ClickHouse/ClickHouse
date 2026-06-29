@@ -5,8 +5,6 @@
 #include <Functions/FunctionTokens.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/Regexps.h>
-#include <Common/StringUtils.h>
-#include <Common/assert_cast.h>
 
 #include <ranges>
 
@@ -34,12 +32,12 @@ private:
     Regexps::RegexpPtr re;
     OptimizedRegularExpression::MatchVec matches;
 
-    Pos pos;
-    Pos end;
+    Pos pos{};
+    Pos end{};
 
     std::optional<size_t> max_splits;
-    size_t splits;
-    bool max_substrings_includes_remaining_string;
+    size_t splits{};
+    bool max_substrings_includes_remaining_string{};
 
 public:
     static constexpr auto name = "splitByRegexp";
@@ -152,15 +150,17 @@ public:
 using FunctionSplitByRegexp = FunctionTokens<SplitByRegexpImpl>;
 
 /// Fallback splitByRegexp to splitByChar when its 1st argument is a trivial char for better performance
-class SplitByRegexpOverloadResolver : public IFunctionOverloadResolver
+class SplitByRegexpOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "splitByRegexp";
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<SplitByRegexpOverloadResolver>(context); }
 
     explicit SplitByRegexpOverloadResolver(ContextPtr context_)
-        : context(context_)
-        , split_by_regexp(FunctionSplitByRegexp::create(context)) {}
+        : split_by_char(FunctionFactory::instance().getImpl("splitByChar", context_))
+        , split_by_regexp(FunctionSplitByRegexp::create(context_))
+    {
+    }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return SplitByRegexpImpl::getNumberOfArguments(); }
@@ -170,7 +170,7 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (patternIsTrivialChar(arguments))
-            return FunctionFactory::instance().getImpl("splitByChar", context)->build(arguments);
+            return split_by_char->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             split_by_regexp,
             DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
@@ -197,15 +197,15 @@ private:
             OptimizedRegularExpression re = Regexps::createRegexp<false, false, false>(pattern);
 
             std::string required_substring;
-            bool is_trivial;
-            bool required_substring_is_prefix;
+            bool is_trivial = false;
+            bool required_substring_is_prefix = false;
             re.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
             return is_trivial && required_substring == pattern;
         }
         return false;
     }
 
-    ContextPtr context;
+    FunctionOverloadResolverPtr split_by_char;
     FunctionPtr split_by_regexp;
 };
 }

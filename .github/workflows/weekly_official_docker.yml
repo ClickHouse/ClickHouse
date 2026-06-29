@@ -6,9 +6,11 @@ env:
 
 "on":
   schedule:
+    # On changing the time, please describe the reason in the comments below.
     # Thursdays 15:55 UTC
     # autorelease are done at the moment, and we'll have the whole Friday to fix any issues
-    - cron: '55 15 * * 4'
+    # Update: Changed to Fridays at 11:55 UTC to cover often new releases done on Thursdays
+    - cron: '55 11 * * 5'
   workflow_dispatch:
     inputs:
       dry-run:

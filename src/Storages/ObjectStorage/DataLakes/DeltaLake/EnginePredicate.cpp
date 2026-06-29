@@ -5,8 +5,15 @@
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 
+#include <Columns/ColumnConst.h>
+#include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionsComparison.h>
+#include <Functions/ComparisonNames.h>
+#include <IO/WriteHelpers.h>
 #include <Functions/FunctionsLogical.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -116,7 +123,7 @@ class  EngineIterator : public ffi::EngineIterator
 public:
     static constexpr uint64_t VISITOR_FAILED_OR_UNSUPPORTED = ~0;
 
-    explicit EngineIterator(EngineIteratorData & data_)
+    explicit EngineIterator(EngineIteratorData & data_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
         data = &data_;
         get_next = &getNext;
@@ -205,7 +212,7 @@ static uintptr_t visitLiteralValue(
         case DB::TypeIndex::Int8:
         {
             auto result = value.safeGet<Int8>();
-            return ffi::visit_expression_literal_byte(state, result); /// Accepts int8
+            return ffi::visit_expression_literal_byte(state, static_cast<int8_t>(result));
         }
         case DB::TypeIndex::UInt8:
         {
@@ -217,23 +224,23 @@ static uintptr_t visitLiteralValue(
             else
             {
                 auto result = value.safeGet<Int16>();
-                return ffi::visit_expression_literal_short(state, result); /// Accepts int16
+                return ffi::visit_expression_literal_short(state, static_cast<int16_t>(result));
             }
         }
         case DB::TypeIndex::Int16:
         {
             auto result = value.safeGet<Int16>();
-            return ffi::visit_expression_literal_short(state, result); /// Accepts int16
+            return ffi::visit_expression_literal_short(state, static_cast<int16_t>(result));
         }
         case DB::TypeIndex::UInt16:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_int(state, result); /// Accepts int32
+            return ffi::visit_expression_literal_int(state, static_cast<int32_t>(result));
         }
         case DB::TypeIndex::Int32:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_int(state, result); /// Accepts int32
+            return ffi::visit_expression_literal_int(state, static_cast<int32_t>(result));
         }
         case DB::TypeIndex::UInt32:
         {
@@ -248,12 +255,12 @@ static uintptr_t visitLiteralValue(
         case DB::TypeIndex::Date:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_date(state, result); /// Accepts int32
+            return ffi::visit_expression_literal_date(state, static_cast<int32_t>(result));
         }
         case DB::TypeIndex::Date32:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_date(state, result); /// Accepts int32
+            return ffi::visit_expression_literal_date(state, static_cast<int32_t>(result));
         }
         default:
         {
@@ -369,15 +376,14 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                     /// cast it to column's type.
                     if (!column_node->result_type->equals(*literal_node->result_type))
                     {
-                        DB::ColumnWithTypeAndName column;
-                        column.name = column_node->result_type->getName();
-                        column.column = DB::DataTypeString().createColumnConst(0, column.name);
-                        column.type = std::make_shared<DB::DataTypeString>();
+                        auto column_name = column_node->result_type->getName();
+                        auto column_type = std::make_shared<DB::DataTypeString>();
+                        auto column = assert_cast<const DB::ColumnConst &>(*column_type->createColumnConst(0, column_name)).getPtr();
 
                         /// TODO: get rid of const_cast.
                         DB::ActionsDAG & dag = const_cast<DB::ActionsDAG &>(iterator_data.predicate.getFilterDAG());
 
-                        const auto * right_arg = &dag.addColumn(std::move(column));
+                        const auto * right_arg = &dag.addColumn(std::move(column), std::move(column_type), std::move(column_name));
                         const auto * left_arg = literal_node;
 
                         DB::CastDiagnostic diagnostic = {literal_node->result_name, column_node->result_name};
@@ -403,8 +409,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                     const auto comparison_type_index = getTypeIndex(column_node);
 
-                    DB::Field value;
-                    literal_node->column->get(0, value);
+                    DB::Field value = literal_node->column->getField();
 
                     uintptr_t constant = visitLiteralValue(
                         value,

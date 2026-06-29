@@ -1,4 +1,11 @@
-from helpers.kafka.common_direct import *
+import logging
+import time
+
+from kafka import KafkaProducer
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 from helpers.config_cluster import kafka_sasl_user, kafka_sasl_pass
 
@@ -59,6 +66,7 @@ def test_kafka_sasl(kafka_cluster):
                      kafka_sasl_mechanism = 'PLAIN',
                      kafka_sasl_username = '{kafka_sasl_user}',
                      kafka_sasl_password = '{kafka_sasl_pass}',
+                     kafka_flush_interval_ms = 1000,
                      kafka_topic_list = 'topic1',
                      kafka_group_name = 'group1',
                      kafka_format = 'JSONEachRow';
@@ -73,8 +81,15 @@ def test_kafka_sasl(kafka_cluster):
     producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
     producer.send(topic="topic1", value='{"key":1, "value":"test123"}')
     producer.flush()
+    producer.close()
 
-    assert_eq_with_retry(instance, "SELECT value FROM test.messages", "test123")
+    assert_eq_with_retry(
+        instance,
+        "SELECT value FROM test.messages",
+        "test123",
+        retry_count=120,
+        sleep_time=0.5,
+    )
 
 
 def test_kafka_sasl_settings_precedence(kafka_cluster):

@@ -1,0 +1,14 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <enable_s3_requests_logging>1</enable_s3_requests_logging>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>

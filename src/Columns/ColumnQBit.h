@@ -3,7 +3,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -15,11 +14,12 @@ namespace DB
   * rather than by vector element. For example, with Float32 vectors, there are 32 groups (one for each bit),
   * and each group contains the corresponding bit from all vector elements.
   *
-  * This column is designed to store the output of the transposeBits() function calls, which convert one float within
+  * This column is designed to store the output of the transposeBits() function calls, which convert one element within
   * a regular array into this bit-transposed format. Currently supported numeric types include:
   * - Float64 (64 bit groups)
   * - Float32 (32 bit groups)
   * - BFloat16 (16 bit groups)
+  * - Int8 (8 bit groups)
   *
   * Internal structure:
   * - For a Float32 array, the underlying storage is a tuple of 32 FixedString columns
@@ -83,7 +83,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
 
     std::string_view getDataAt(size_t n) const override { return tuple->getDataAt(n); }
     void insertData(const char * pos, size_t length) override { tuple->insertData(pos, length); }
@@ -102,12 +102,13 @@ public:
 #endif
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t, size_t, const IColumn &, int) const override
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #else
-    int doCompareAt(size_t, size_t, const IColumn &, int) const override
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #endif
     {
-        return 0;
+        const auto & rhs = assert_cast<const ColumnQBit &>(rhs_);
+        return tuple->compareAt(n, m, rhs.getTupleColumn(), nan_direction_hint);
     }
 
     void insertDefault() override { tuple->insertDefault(); }
@@ -127,7 +128,10 @@ public:
     void skipSerializedInArena(ReadBuffer & in) const override { tuple->skipSerializedInArena(in); }
     void updateHashWithValue(size_t n, SipHash & hash) const override { tuple->updateHashWithValue(n, hash); }
     void updateHashFast(SipHash & hash) const override { tuple->updateHashFast(hash); }
-    WeakHash32 getWeakHash32() const override { return tuple->getWeakHash32(); }
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
+    {
+        tuple->computeHashInto(row_begin, row_end, hash_out, initial);
+    }
 
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -137,7 +141,7 @@ public:
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr compress(bool force_compression) const override;
 
-    void getExtremes(Field & min, Field & max) const override { tuple->getExtremes(min, max); }
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override { tuple->getExtremes(min, max, start, end); }
     void getPermutation(
         PermutationSortDirection direction,
         PermutationSortStability stability,
@@ -160,7 +164,7 @@ public:
     }
 
     void reserve(size_t n) override { tuple->reserve(n); }
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
     void shrinkToFit() override { tuple->shrinkToFit(); }
     void ensureOwnership() override { tuple->ensureOwnership(); }
     void protect() override { tuple->protect(); }
@@ -179,7 +183,12 @@ public:
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     void finalize() override { tuple->finalize(); }
 
-    bool structureEquals(const IColumn & rhs) const override { return tuple->structureEquals(rhs); }
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (const auto * rhs_qbit = typeid_cast<const ColumnQBit *>(&rhs))
+            return dimension == rhs_qbit->dimension && tuple->structureEquals(*rhs_qbit->tuple);
+        return false;
+    }
     bool isFinalized() const override { return tuple->isFinalized(); }
 
     /// Efficient access to the underlying tuple

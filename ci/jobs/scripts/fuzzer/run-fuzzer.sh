@@ -3,8 +3,6 @@
 
 set -x
 
-# core.COMM.PID-TID
-sysctl kernel.core_pattern='core.%e.%p-%P'
 dmesg --clear ||:
 
 set -e
@@ -21,6 +19,36 @@ export PATH="$repo_dir/ci/tmp/:$PATH"
 export PYTHONPATH=$repo_dir:$repo_dir/ci
 
 cd /workspace
+
+# Direct sanitizer reports to files instead of the server's stderr to avoid 
+# losing the report when the server aborts. The runtime appends ".<pid>"
+# to `log_path`; reports are merged back in by collect_sanitizer_reports.
+# Existing options from the environment/image are preserved.
+SANITIZER_LOG_BASE="/workspace/sanitizer.log"
+for _san in ASAN TSAN MSAN UBSAN LSAN; do
+    _var="${_san}_OPTIONS"
+    export "$_var"="${!_var:+${!_var} }log_path=${SANITIZER_LOG_BASE}"
+done
+unset _san _var
+
+function collect_sanitizer_reports
+{
+    # Merge sanitizer reports captured via log_path into stderr.log (for the
+    # failure parser) and server.log (for context and the OOM grep). Run from an
+    # EXIT trap so early `set -e` aborts are covered too; `|| true` keeps the
+    # exit code intact.
+    local report
+    for report in "${SANITIZER_LOG_BASE}".*; do
+        [ -e "$report" ] || continue
+        echo "Found sanitizer report: $report"
+        {
+            echo "=== sanitizer report from ${report} ==="
+            cat "$report"
+            echo
+        } | tee -a stderr.log >> server.log || true
+    done
+}
+trap collect_sanitizer_reports EXIT
 
 function configure
 {
@@ -46,20 +74,8 @@ function configure
 </clickhouse>
 EOL
 
-    cat > $CONFIG_DIR/config.d/core.xml <<EOL
-<clickhouse>
-    <core_dump>
-        <!-- 100GiB -->
-        <size_limit>107374182400</size_limit>
-    </core_dump>
-    <!-- NOTE: no need to configure core_path,
-         since clickhouse is not started as daemon (via clickhouse start)
-    -->
-    <core_path>$PWD</core_path>
-</clickhouse>
-EOL
 
-    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || { echo "Failed to create log export config"; exit 1; }
+    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
 }
 
 function filter_exists_and_template
@@ -109,15 +125,17 @@ function fuzz
 
     # server.log -> All server logs, including sanitizer
     # stderr.log -> Process logs (sanitizer) only
-    clickhouse-server \
-        --config-file $CONFIG_DIR/config.xml \
-        --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
-        --  --path $CONFIG_DIR \
-            --logger.console=0 \
-            --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1 &
+    ( clickhouse-server \
+          --config-file $CONFIG_DIR/config.xml \
+          --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
+          --  --path $CONFIG_DIR \
+              --logger.console=0 \
+              --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1
+      exit "${PIPESTATUS[0]}" ) &
+    server_bg_pid=$!
     for _ in {1..30}
     do
-        if clickhouse-client --query "select 1"
+        if clickhouse-client --receive_timeout=5 --query "select 1"
         then
             break
         fi
@@ -172,7 +190,7 @@ function fuzz
         # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
         for _ in {1..180}
         do
-            if clickhouse-client --query "select 1"
+            if clickhouse-client --receive_timeout=5 --query "select 1"
             then
                 break
             fi
@@ -183,15 +201,28 @@ function fuzz
 
     echo 'Server started and responded.'
 
-    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_start) || { echo "Failed to start log exports"; exit 1; }
+    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_start) || echo "Failed to start log exports"
 
     # Setup arguments for the fuzzer
     FUZZER_OUTPUT_SQL_FILE=''
 
     if [[ "$FUZZER_TO_RUN" = "AST Fuzzer" ]];
     then
-        QUERIES_FILE=$(find /repo/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
-        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
+        if [[ -n "${TARGETED_QUERIES_FILE:-}" ]] && [[ -f "${TARGETED_QUERIES_FILE}" ]];
+        then
+            QUERIES_FILE="$(cat "${TARGETED_QUERIES_FILE}")"
+            echo "Using targeted AST fuzzer corpus from ${TARGETED_QUERIES_FILE}"
+        else
+            QUERIES_FILE=$(find /repo/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
+        fi
+        if [[ -n "${FUZZER_COMPATIBILITY:-}" ]];
+        then
+            COMPAT_ARG="--compatibility=${FUZZER_COMPATIBILITY}"
+            echo "Using AST fuzzer compatibility setting: ${FUZZER_COMPATIBILITY}"
+        else
+            COMPAT_ARG=""
+        fi
+        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 $COMPAT_ARG --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
     elif [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
     then
         FUZZER_ARGS="--buzz-house-config=fuzz.json"
@@ -203,7 +234,7 @@ function fuzz
     # Allow the fuzzer to run for some time, giving it a grace period of 5m to finish once the time
     # out triggers. After that, it'll send a SIGKILL to the fuzzer to make sure it finishes within
     # a reasonable time.
-    timeout --verbose --signal TERM --kill-after=5m --preserve-status 30m clickhouse-client \
+    timeout --verbose --signal TERM --kill-after=5m --preserve-status "${FUZZ_TIME_LIMIT:-30m}" clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
@@ -253,9 +284,23 @@ function fuzz
     # the process is still present while the server is terminating and not
     # accepting the connections anymore.
 
+    # Default: the loop leaves this unset if it exhausts all retries via the
+    # "alive but busy" branches (TOO_MANY_SIMULTANEOUS_QUERIES /
+    # MEMORY_LIMIT_EXCEEDED / probe timeout); a dead server sets server_died=1
+    # and breaks. A receive/socket timeout means the server is alive but slow to
+    # answer (common right after a 30m ASAN fuzz run), not dead -- a dead server
+    # returns "Connection refused"/EOF instead -- so count repeated timeouts and
+    # only declare a hang once they persist, otherwise a single transient timeout
+    # turns a clean (exit 143) run into a bogus "server died" FAIL.
+    # BEGIN: server-liveness probe loop (exercised verbatim by
+    # ci/tests/test_fuzzer_liveness_loop.py)
+    server_died=0
+    timeouts=0
+    timeouts_max=12
+
     for _ in {1..100}
     do
-        if clickhouse-client --query "SELECT 1" 2> err
+        if clickhouse-client --receive_timeout=5 --query "SELECT 1" 2> err
         then
             server_died=0
             break
@@ -264,8 +309,31 @@ function fuzz
             # SELECT * FROM remote('127.0.0.{1..255}', system, one)
             if grep -F 'TOO_MANY_SIMULTANEOUS_QUERIES' err
             then
-                # Give it some time to cool down
-                clickhouse-client --query "SHOW PROCESSLIST"
+                # Give it some time to cool down. The SHOW PROCESSLIST is only a
+                # diagnostic and runs under `set -e`; if the same overload rejects
+                # it, do not abort the script (that would skip the status.tsv
+                # write below and surface as a missing-status job ERROR).
+                clickhouse-client --query "SHOW PROCESSLIST" ||:
+                timeouts=0
+                sleep 1
+            elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
+            then
+                # Server is alive but at memory limit, give it time to reclaim
+                timeouts=0
+                sleep 1
+            elif grep -F 'Timeout exceeded while' err
+            then
+                # Alive but slow to answer: retry, and only treat it as a real
+                # hang once the timeouts persist (a dead server hits the branch
+                # below with "Connection refused"/EOF, not a timeout).
+                timeouts=$((timeouts + 1))
+                if [[ "$timeouts" -ge "$timeouts_max" ]]
+                then
+                    echo "Server live check: probe timed out $timeouts times, treating server as hung"
+                    cat err
+                    server_died=1
+                    break
+                fi
                 sleep 1
             else
                 echo "Server live check returns $?"
@@ -275,13 +343,17 @@ function fuzz
             fi
         fi
     done
+    # END: server-liveness probe loop
 
-    # wait in background to call wait in foreground and ensure that the
-    # process is alive, since w/o job control this is the only way to obtain
-    # the exit code
+    # Stop the server in background so we can wait for the subshell to
+    # finish in the foreground. We wait on server_bg_pid (the subshell running
+    # the server pipeline) rather than server_pid (from the PID file), because
+    # the PID file contains the forked server process which is not a direct
+    # child of this shell, so wait would fail with "not a child of this shell".
+    # The subshell exits with clickhouse-server's exit code via PIPESTATUS.
     stop_server &
     server_exit_code=0
-    wait $server_pid || server_exit_code=$?
+    wait $server_bg_pid || server_exit_code=$?
     echo "Server exit code is $server_exit_code"
 
     echo -e "$server_died\t$server_exit_code\t$fuzzer_exit_code" > status.tsv

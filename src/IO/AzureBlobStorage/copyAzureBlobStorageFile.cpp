@@ -2,6 +2,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -91,16 +92,16 @@ namespace
 
         struct UploadPartTask
         {
-            size_t part_offset;
-            size_t part_size;
-            std::vector<std::string> block_ids;
+            size_t part_offset{};
+            size_t part_size{};
+            Strings block_ids;
             bool is_finished = false;
         };
 
         size_t normal_part_size;
-        std::vector<std::string> block_ids;
+        Strings block_ids;
 
-        std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
+        ListWithMemoryTracking<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
         int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         std::exception_ptr bg_exception TSA_GUARDED_BY(bg_tasks_mutex);
@@ -164,7 +165,53 @@ namespace
     public:
         void performCopy()
         {
-            performMultipartUpload();
+            if (total_size < max_single_part_upload_size)
+            {
+                performSinglepartUpload();
+            }
+            else
+            {
+                performMultipartUpload();
+            }
+        }
+
+        void performSinglepartUpload()
+        {
+            auto block_blob_client = client->GetBlockBlobClient(dest_blob);
+            auto read_buffer = create_read_buffer();
+
+            PODArray<char> memory;
+            {
+                memory.resize(total_size);
+                WriteBufferFromVector<PODArray<char>> wb(memory);
+                copyData(*read_buffer, wb, total_size);
+            }
+
+            Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), total_size);
+
+            Stopwatch watch;
+            Int32 error_code = 0;
+            String error_message;
+            try
+            {
+                block_blob_client.Upload(stream);
+            }
+            catch (const Azure::Core::RequestFailedException & e)
+            {
+                error_code = static_cast<Int32>(e.StatusCode);
+                error_message = e.Message;
+                if (blob_storage_log)
+                    blob_storage_log->addEvent(
+                        BlobStorageLogElement::EventType::Upload,
+                        /* bucket */ dest_container_for_logging,
+                        /* remote_path */ dest_blob,
+                        /* local_path */ {},
+                        /* data_size */ total_size,
+                        watch.elapsedMicroseconds(),
+                        error_code,
+                        error_message);
+                throw;
+            }
         }
 
         void completeMultipartUpload()

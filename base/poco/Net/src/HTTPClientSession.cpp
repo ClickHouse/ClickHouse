@@ -300,6 +300,9 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request, uint64_t * co
 		{
 			HTTPHeaderOutputStream hos(*this);
 			request.write(hos);
+			/// flush header to make sure that it is sent before the body
+			/// if flash is delayed until d-tor of HTTPHeaderOutputStream, then possible exception is muted and lost
+			hos.flush();
 			_pRequestStream = new HTTPChunkedOutputStream(*this);
 		}
 		else if (request.hasContentLength())

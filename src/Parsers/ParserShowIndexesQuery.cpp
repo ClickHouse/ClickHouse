@@ -19,7 +19,7 @@ bool ParserShowIndexesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     String from2_str;
 
-    auto query = std::make_shared<ASTShowIndexesQuery>();
+    auto query = make_intrusive<ASTShowIndexesQuery>();
 
     if (!ParserKeyword(Keyword::SHOW).ignore(pos, expected))
         return false;

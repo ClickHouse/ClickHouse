@@ -86,6 +86,8 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Requires bloom filter index granule.");
     }
 
+    std::string getDescription() const override { return ""; }
+
 private:
     const Block & header;
     const size_t hash_functions;
@@ -139,6 +141,7 @@ class MergeTreeIndexBloomFilter final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexBloomFilter(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         size_t bits_per_row_,
         size_t hash_functions_);

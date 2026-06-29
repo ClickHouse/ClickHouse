@@ -1,6 +1,5 @@
 #pragma once
 
-#include "config.h"
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
@@ -15,11 +14,12 @@ namespace DB
 
 struct LocalObjectStorageSettings
 {
-    LocalObjectStorageSettings(String key_prefix_, bool read_only_)
-        : key_prefix(key_prefix_), read_only(read_only_)
+    LocalObjectStorageSettings(String disk_name_, String key_prefix_, bool read_only_)
+        : disk_name(disk_name_), key_prefix(key_prefix_), read_only(read_only_)
     {
     }
 
+    String disk_name;
     String key_prefix;
     bool read_only = false;
 };
@@ -30,7 +30,9 @@ class LocalObjectStorage : public IObjectStorage
 public:
     explicit LocalObjectStorage(LocalObjectStorageSettings settings_);
 
-    std::string getName() const override { return "LocalObjectStorage"; }
+    std::string getName() const override { return "Local"; }
+
+    std::string getDiskName() const override { return settings.disk_name; }
 
     ObjectStorageType getType() const override { return ObjectStorageType::Local; }
 
@@ -45,7 +47,9 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const override;
+        std::optional<size_t> read_hint = {},
+        bool use_external_buffer = false,
+        bool restrict_seek = false) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT

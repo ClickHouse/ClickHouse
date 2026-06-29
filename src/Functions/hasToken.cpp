@@ -27,7 +27,7 @@ REGISTER_FUNCTION(HasToken)
     FunctionDocumentation::Description description = R"(
 Checks if the given token is present in the haystack.
 
-A token is defined as the longest possible sub-sequence of consecutive characters `[0-9A-Za-z_]`, i.e. numbers, ASCII letters and underscore.
+Uses [splitByNonAlpha](/sql-reference/functions/splitting-merging-functions.md/#splitByNonAlpha) as tokenizer, i.e. a token is defined as the longest possible sub-sequence of consecutive characters `[0-9A-Za-z_]` (numbers, ASCII characters and underscore).
     )";
     FunctionDocumentation::Syntax syntax = "hasToken(haystack, token)";
     FunctionDocumentation::Arguments arguments = {

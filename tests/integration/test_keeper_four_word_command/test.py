@@ -146,8 +146,6 @@ def test_cmd_mntr(started_cluster):
         )
 
         data = keeper_utils.send_4lw_cmd(cluster, leader, cmd="mntr")
-
-        # print(data.decode())
         reader = csv.reader(data.split("\n"), delimiter="\t")
         result = {}
 
@@ -181,8 +179,10 @@ def test_cmd_mntr(started_cluster):
         assert int(result["zk_open_file_descriptor_count"]) > 0
         assert int(result["zk_max_file_descriptor_count"]) > 0
 
-        assert int(result["zk_followers"]) == 2
-        assert int(result["zk_synced_followers"]) == 2
+        assert int(result["zk_learners"]) == 2
+        assert int(result["zk_followers"]) == 1
+        assert int(result["zk_synced_followers"]) == 1
+        assert int(result["zk_synced_non_voting_followers"]) == 1
 
         # contains 31 user request response and some responses for server startup
         assert int(result["zk_packets_sent"]) >= 31

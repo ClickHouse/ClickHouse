@@ -1,12 +1,9 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/SystemLog.h>
-#include <Interpreters/TransactionVersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
@@ -35,7 +32,6 @@ struct FilesystemCacheLogElement
     size_t file_segment_size = 0;
     bool read_from_cache_attempted;
     String read_buffer_id{};
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters = nullptr;
     String user_id{};
 
     static std::string name() { return "FilesystemCacheLog"; }

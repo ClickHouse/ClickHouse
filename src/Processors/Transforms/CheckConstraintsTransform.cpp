@@ -1,11 +1,9 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Processors/Transforms/CheckConstraintsTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
@@ -108,7 +106,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                 for (const auto & name : related_columns)
                 {
                     const IColumn & column = *chunk.getColumns()[getInputPort().getHeader().getPositionByName(name)];
-                    assert(row_idx < column.size());
+                    chassert(row_idx < column.size());
 
                     if (!first)
                         column_values_msg.append(", ");

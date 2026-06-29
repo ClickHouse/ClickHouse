@@ -21,7 +21,7 @@ WITH splitByChar('_', part_name) AS name_parts,
     name_parts[2]::UInt64 AS min_block,
     name_parts[3]::UInt64 AS max_block
 SELECT min_block, max_block, event_type, merge_algorithm, part_type FROM system.part_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     database = currentDatabase() AND
     table = 't_compact_vertical_merge' AND
     min_block = 1 AND max_block = 2
@@ -36,7 +36,7 @@ WITH splitByChar('_', part_name) AS name_parts,
     name_parts[2]::UInt64 AS min_block,
     name_parts[3]::UInt64 AS max_block
 SELECT min_block, max_block, event_type, merge_algorithm, part_type FROM system.part_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     database = currentDatabase() AND
     table = 't_compact_vertical_merge' AND
     min_block = 1 AND max_block = 3

@@ -1,0 +1,5 @@
+both_on	1	1
+through_join_off	2	2
+spilling_on	2	2
+result_both_on	10	999	990
+result_through_join_off	10	999	990

@@ -381,6 +381,31 @@ class NoTrashChecker:
             assert False
 
 
+# Waits until every BACKUP process from a previous test has finished, so its residual errors
+# and ZooKeeper cleanup don't land inside the next test's NoTrashChecker window. Tests run in
+# random order in CI, so any test may precede another.
+def wait_for_backups_to_finish():
+    for _ in range(30):
+        if not any(
+            int(node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")) > 0
+            for node in nodes
+        ):
+            break
+        time.sleep(1)
+
+    backup_process_counts = {
+        get_node_name(node): int(
+            node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")
+        )
+        for node in nodes
+    }
+    total_backup_processes = sum(backup_process_counts.values())
+    assert total_backup_processes == 0, (
+        "Backup queries still running after pre-test wait: "
+        + ", ".join(f"{name}={count}" for name, count in backup_process_counts.items())
+    )
+
+
 __backup_id_of_successful_backup = None
 
 
@@ -534,7 +559,20 @@ def test_cancel_restore():
 
 # Test that shutdown cancels a running backup and doesn't wait until it finishes.
 def test_shutdown_cancels_backup():
+    wait_for_backups_to_finish()
+
     with NoTrashChecker() as no_trash_checker:
+        # Restarting a node mid-backup makes the surviving node briefly lose its connection
+        # to the restarting peer and to Keeper, so transient network/Keeper errors are expected.
+        no_trash_checker.allow_errors = [
+            "KEEPER_EXCEPTION",
+            "SOCKET_TIMEOUT",
+            "CANNOT_READ_ALL_DATA",
+            "NETWORK_ERROR",
+            "TABLE_IS_READ_ONLY",
+            "NO_REPLICA_HAS_PART",
+        ]
+
         create_and_fill_table(random_node())
 
         initiator = random_node()
@@ -598,25 +636,17 @@ def test_error_leaves_no_trash():
 
 # A backup must be stopped if Zookeeper is disconnected longer than `failure_after_host_disconnected_for_seconds`.
 def test_long_disconnection_stops_backup():
+    wait_for_backups_to_finish()
+
     create_and_fill_table(random_node(), num_parts=100)
 
     with NoTrashChecker() as no_trash_checker, ConfigManager() as config_manager:
-        # Config "faster_zk_disconnect_detect.xml" is used in this test to decrease number of retries when reconnecting to ZooKeeper.
-        # Without this config this test can take several minutes (instead of seconds) to run.
-        config_manager.add_main_config(nodes, "configs/faster_zk_disconnect_detect.xml")
-
-        initiator = random_node()
-        print(f"Using {get_node_name(initiator)} as initiator")
-
         backup_id = random_id()
-        initiator.query(
-            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {get_backup_name(backup_id)} SETTINGS id='{backup_id}' ASYNC",
-            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 3},
-        )
 
-        assert get_status(initiator, backup_id=backup_id) == "CREATING_BACKUP"
-        assert get_num_system_processes(initiator, backup_id=backup_id) >= 1
-
+        # Set the relaxations before any statement that can raise, so __exit__ doesn't mask
+        # a real body failure with a spurious "unexpected error" assertion: this test
+        # deliberately disconnects ZooKeeper, so transient ZK/network errors are expected and
+        # the backup is left unfinished.
         no_trash_checker.allow_unfinished_backups = [backup_id]
         no_trash_checker.allow_errors = [
             "FAILED_TO_SYNC_BACKUP_OR_RESTORE",
@@ -628,6 +658,21 @@ def test_long_disconnection_stops_backup():
             "NO_REPLICA_HAS_PART",
         ]
         no_trash_checker.check_zookeeper = False
+
+        # Config "faster_zk_disconnect_detect.xml" is used in this test to decrease number of retries when reconnecting to ZooKeeper.
+        # Without this config this test can take several minutes (instead of seconds) to run.
+        config_manager.add_main_config(nodes, "configs/faster_zk_disconnect_detect.xml")
+
+        initiator = random_node()
+        print(f"Using {get_node_name(initiator)} as initiator")
+
+        initiator.query(
+            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {get_backup_name(backup_id)} SETTINGS id='{backup_id}' ASYNC",
+            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 3},
+        )
+
+        assert get_status(initiator, backup_id=backup_id) == "CREATING_BACKUP"
+        assert get_num_system_processes(initiator, backup_id=backup_id) >= 1
 
         with PartitionManager() as pm:
             random_sleep(3)
@@ -656,6 +701,8 @@ def test_long_disconnection_stops_backup():
 
 # A backup must NOT be stopped if Zookeeper is disconnected shorter than `failure_after_host_disconnected_for_seconds`.
 def test_short_disconnection_doesnt_stop_backup():
+    wait_for_backups_to_finish()
+
     create_and_fill_table(random_node())
 
     with NoTrashChecker() as no_trash_checker, ConfigManager() as config_manager:
@@ -672,13 +719,16 @@ def test_short_disconnection_doesnt_stop_backup():
         backup_id = random_id()
         initiator.query(
             f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {get_backup_name(backup_id)} SETTINGS id='{backup_id}' ASYNC",
-            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 10},
+            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 30},
         )
 
         assert get_status(initiator, backup_id=backup_id) == "CREATING_BACKUP"
         assert get_num_system_processes(initiator, backup_id=backup_id) >= 1
 
         # Dropping connection for less than `failure_after_host_disconnected_for_seconds`
+        # When using faster_zk_disconnect_detect.xml (session_timeout_ms=5000),
+        # the drop duration must be short enough to avoid ZK session expiry.
+        max_drop_seconds = 1 if use_faster_zk_disconnect_detect else 4
         with PartitionManager() as pm:
             random_sleep(4)
             node_to_drop_zk_connection = random_node()
@@ -686,7 +736,7 @@ def test_short_disconnection_doesnt_stop_backup():
                 f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
-            random_sleep(4)
+            random_sleep(max_drop_seconds)
             print(
                 f"Restoring connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
@@ -708,6 +758,8 @@ def test_short_disconnection_doesnt_stop_backup():
 
 # A restore must NOT be stopped if Zookeeper is disconnected shorter than `failure_after_host_disconnected_for_seconds`.
 def test_short_disconnection_doesnt_stop_restore():
+    wait_for_backups_to_finish()
+
     # Make a backup.
     backup_id = get_backup_id_of_successful_backup()
 
@@ -726,13 +778,16 @@ def test_short_disconnection_doesnt_stop_restore():
         restore_id = random_id()
         initiator.query(
             f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {get_backup_name(backup_id)} SETTINGS id='{restore_id}' ASYNC",
-            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 10},
+            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 30},
         )
 
         assert get_status(initiator, restore_id=restore_id) == "RESTORING"
         assert get_num_system_processes(initiator, restore_id=restore_id) >= 1
 
         # Dropping connection for less than `failure_after_host_disconnected_for_seconds`
+        # When using faster_zk_disconnect_detect.xml (session_timeout_ms=5000),
+        # the drop duration must be short enough to avoid ZK session expiry.
+        max_drop_seconds = 1 if use_faster_zk_disconnect_detect else 3
         with PartitionManager() as pm:
             random_sleep(3)
             node_to_drop_zk_connection = random_node()
@@ -740,7 +795,7 @@ def test_short_disconnection_doesnt_stop_restore():
                 f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
-            random_sleep(3)
+            random_sleep(max_drop_seconds)
             print(
                 f"Restoring connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )

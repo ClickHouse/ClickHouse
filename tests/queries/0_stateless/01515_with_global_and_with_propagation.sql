@@ -1,6 +1,4 @@
--- Tags: global
-
-SET enable_global_with_statement = 1;
+SET enable_analyzer = 1;
 
 with 1 as x select x;
 with 1 as x select * from (select x);

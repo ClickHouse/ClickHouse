@@ -105,10 +105,11 @@ void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool wi
     initializeFromParsedArguments(parsed_arguments);
     paths = {path};
 }
-void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+void StorageLocalConfiguration::fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure)
 {
+    disk_name = disk_name_;
     LocalStorageParsedArguments parsed_arguments;
-    auto disk = context->getDisk(disk_name);
+    auto disk = context->getDisk(disk_name_);
     parsed_arguments.fromDisk(disk, args, context, with_structure);
     fs::path root = disk->getPath();
     fs::path suffix = parsed_arguments.path_suffix;

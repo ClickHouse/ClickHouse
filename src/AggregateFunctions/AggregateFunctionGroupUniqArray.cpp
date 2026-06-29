@@ -6,11 +6,9 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <IO/ReadHelpersArena.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnArray.h>
 
@@ -80,7 +78,7 @@ public:
         this->data(place).value.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         if (!limit_num_elems)
             this->data(place).value.merge(this->data(rhs).value);
@@ -189,7 +187,7 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         auto & set = this->data(place).value;
-        size_t size;
+        size_t size = 0;
         readVarUInt(size, buf);
 
         for (size_t i = 0; i < size; ++i)
@@ -202,19 +200,19 @@ public:
         if (limit_num_elems && set.size() >= max_elems)
             return;
 
-        bool inserted;
-        State::Set::LookupResult it;
+        bool inserted = false;
+        State::Set::LookupResult it = nullptr;
         auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
         set.emplace(key_holder, it, inserted);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_set = this->data(place).value;
         auto & rhs_set = this->data(rhs).value;
 
-        bool inserted;
-        State::Set::LookupResult it;
+        bool inserted = false;
+        State::Set::LookupResult it = nullptr;
         for (auto & rhs_elem : rhs_set)
         {
             if (limit_num_elems && cur_set.size() >= max_elems)
@@ -338,6 +336,7 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(
 
 }
 
+void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -388,7 +387,7 @@ SELECT groupUniqArray(2)(x) FROM t;
 
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupUniqArray", { createAggregateFunctionGroupUniqArray, properties, documentation });
+    factory.registerFunction("groupUniqArray", { createAggregateFunctionGroupUniqArray, documentation, properties });
 }
 
 }

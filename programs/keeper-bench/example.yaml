@@ -1,8 +1,8 @@
 concurrency: 20
 iterations: 10000
-delay: 4
+report_delay: 4
 timelimit: 300
-continue_on_errors: true
+continue_on_error: true
 
 connections:
   operation_timeout_ms: 3000
@@ -40,8 +40,10 @@ setup:
             max_value: 20
     node:
       repeat: 2
+      tag: "inner"
       node:
         repeat: 2
+        tag: "leaves"
         name:
           random_string:
             size: 12
@@ -84,32 +86,41 @@ generator:
           random_string:
             size: 10
     get:
-      path: 
+      path:
         - "/test3"
         - "/test4"
       path:
         children_of: "/test"
+      watch_probability: 0.5
 
     multi:
       weight: 10
       get:
-        path: 
+        path:
           - "/test3"
           - "/test4"
         path:
           children_of: "/test"
       list:
-        path: 
+        path:
           - "/test3"
         path:
           children_of: "/test"
 
     list:
-      path: 
+      path:
         - "/test3"
         - "/test4"
       path:
         children_of: "/test"
+      watch_probability: 1.0
+
+    set:
+      path:
+        tagged: "leaves"
+      data:
+        random_string:
+          size: 10
 
 output:
   file: 

@@ -1,13 +1,8 @@
 import io
-import json
 import logging
 import random
 import string
-import time
-import uuid
-from multiprocessing.dummy import Pool
-import pytest
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from minio.deleteobjects import DeleteObject
 from helpers.config_cluster import minio_secret_key
 
 DEFAULT_AUTH = ["'minio'", f"'{minio_secret_key}'"]
@@ -115,6 +110,12 @@ def recreate_minio_bucket(started_cluster, bucket_name):
     minio_client = started_cluster.minio_client
     if minio_client.bucket_exists(bucket_name):
         logging.debug(f"minio bucket '{bucket_name}' exists, removing to recreate")
+        objects = minio_client.list_objects(bucket_name, recursive=True)
+        errors = list(minio_client.remove_objects(
+            bucket_name,
+            [DeleteObject(obj.object_name) for obj in objects],
+        ))
+        assert not errors, f"failed to clear bucket '{bucket_name}': {errors}"
         minio_client.remove_bucket(bucket_name)
     minio_client.make_bucket(bucket_name)
 
@@ -148,9 +149,13 @@ def create_table(
     no_settings=False,
     hive_partitioning_path="",
     hive_partitioning_columns="",
+    partitioning_mode="",
+    partition_regex="",
+    partition_component="",
     after_processing="keep",
     move_to_prefix=None,
     move_to_bucket=None,
+    preserve_move_path=False,
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -167,6 +172,9 @@ def create_table(
 
     if after_processing == "move":
         assert move_to_prefix or move_to_bucket
+
+        if preserve_move_path:
+            settings["after_processing_move_preserve_path"] = True
 
         if move_to_prefix:
             settings["after_processing_move_prefix"] = move_to_prefix
@@ -186,8 +194,17 @@ def create_table(
 
     if hive_partitioning_columns:
         hive_partitioning_columns = f", {hive_partitioning_columns}"
-        settings["use_hive_partitioning"] = True
+        if not partitioning_mode:  # Backward compatibility
+            settings["use_hive_partitioning"] = True
         settings["allow_experimental_object_storage_queue_hive_partitioning"] = True
+
+    # Add regex partitioning settings
+    if partitioning_mode:
+        settings["partitioning_mode"] = partitioning_mode
+    if partition_regex:
+        settings["partition_regex"] = partition_regex
+    if partition_component:
+        settings["partition_component"] = partition_component
 
     engine_def = None
     if engine_name == "S3Queue":

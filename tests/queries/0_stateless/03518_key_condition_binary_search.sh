@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 readonly query_prefix=$CLICKHOUSE_DATABASE
 
 # Does additional index analysis round and affects profile events
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --automatic_parallel_replicas_mode 0"
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --automatic_parallel_replicas_mode 0 --enable_parallel_replicas 0 --use_statistics_for_part_pruning=0"
 
 $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS t;
@@ -71,6 +71,6 @@ $CLICKHOUSE_CLIENT -n -q "SELECT count() FROM t3 WHERE CAST(a, 'Int256') = '4' F
 $CLICKHOUSE_CLIENT -n -q "SYSTEM FLUSH LOGS query_log;"
 
 $CLICKHOUSE_CLIENT -n -q "SELECT sum(ProfileEvents['IndexBinarySearchAlgorithm']), sum(ProfileEvents['IndexGenericExclusionSearchAlgorithm']) FROM system.query_log
-    WHERE type > 1 AND event_date >= yesterday() AND query_id ILIKE '${query_prefix}_binary%' AND current_database = currentDatabase()"
+    WHERE type > 1 AND event_date >= yesterday() AND event_time >= now() - 600 AND query_id ILIKE '${query_prefix}_binary%' AND current_database = currentDatabase()"
 $CLICKHOUSE_CLIENT -n -q "SELECT sum(ProfileEvents['IndexBinarySearchAlgorithm']), sum(ProfileEvents['IndexGenericExclusionSearchAlgorithm']) FROM system.query_log
     WHERE type > 1 AND event_date >= yesterday() AND query_id ILIKE '${query_prefix}_generic%' AND current_database = currentDatabase()"

@@ -6,16 +6,19 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnQBit.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Common/assert_cast.h>
-#include <memory>
 
+#include <memory>
 
 namespace DB
 {
@@ -23,17 +26,42 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
 
+ColumnPtr mergeNullMaps(const ColumnPtr & left, const ColumnPtr & right)
+{
+    if (!left)
+        return right;
+
+    if (!right)
+        return left;
+
+    const auto & left_data = assert_cast<const ColumnUInt8 &>(*left).getData();
+    const auto & right_data = assert_cast<const ColumnUInt8 &>(*right).getData();
+
+    if (left_data.size() != right_data.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Null maps have different sizes");
+
+    auto merged_column = ColumnUInt8::create(left_data.size());
+    auto & merged_data = merged_column->getData();
+
+    for (size_t i = 0; i < merged_data.size(); ++i)
+        merged_data[i] = left_data[i] || right_data[i];
+
+    return merged_column;
+}
+
 /** Extract element of tuple by constant index or name. The operation is essentially free.
   * Also the function looks through Arrays: you can get Array of tuple elements from Array of Tuples.
   * The logic of qbitElement is integrated into this function because AST makes any dot syntax (vec.i) a tupleElement(vec, i) call.
   */
-class FunctionTupleElement : public IFunction
+class FunctionTupleElement final : public IFunction
 {
 public:
     static constexpr auto name = "tupleElement";
@@ -65,16 +93,39 @@ public:
             ++count_arrays;
         }
 
+        /// Need later to decide whether to wrap result_type with Nullable
+        bool is_input_type_nullable = false;
+        if (const DataTypeNullable * nullable_type = checkAndGetDataType<DataTypeNullable>(input_type))
+        {
+            is_input_type_nullable = true;
+            input_type = nullable_type->getNestedType().get();
+        }
+
         if (const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(input_type))
         {
             std::optional<size_t> index = getTupleElementIndex(arguments[1].column, *tuple, number_of_arguments);
             if (index.has_value())
-                return wrapInArrays(tuple->getElements()[index.value()], count_arrays);
+            {
+                DataTypePtr element_type = tuple->getElements()[index.value()];
 
+                if (is_input_type_nullable && canExtractedSubcolumnsBeInsideNullable(element_type))
+                    element_type = std::make_shared<DataTypeNullable>(element_type);
+
+                return wrapInArrays(std::move(element_type), count_arrays);
+            }
             return arguments[2].type;
         }
         else if (const DataTypeQBit * qbit = checkAndGetDataType<DataTypeQBit>(input_type))
         {
+            if (is_input_type_nullable)
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} cannot be Nullable(QBit). Actual {}",
+                    getName(),
+                    arguments[0].type->getName());
+            }
+
             std::optional<size_t> index = getQBitElementIndex(arguments[1].column, *qbit, number_of_arguments);
             if (index.has_value())
                 return wrapInArrays(qbit->getNestedTupleElementType(), count_arrays);
@@ -83,6 +134,15 @@ public:
         }
         else if (const DataTypeObject * object = checkAndGetDataType<DataTypeObject>(input_type))
         {
+            if (is_input_type_nullable)
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} cannot be Nullable(JSON). Actual {}",
+                    getName(),
+                    arguments[0].type->getName());
+            }
+
             if (number_of_arguments != 2)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} with {} first argument doesn't match: passed {}, should be 2",
@@ -93,12 +153,14 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of {} with {} first argument must be a constant String", getName(), input_type->getName());
 
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
-            return wrapInArrays(object->getSubcolumnType(subcolumn_name), count_arrays);
+            /// Use combined `@` subcolumn that merges literal value and sub-object.
+            auto combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + subcolumn_name + "`";
+            return wrapInArrays(object->getSubcolumnType(combined_name), count_arrays);
         }
 
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function {} must be Tuple, QBit, JSON or array of Tuple, QBit, JSON. Actual {}",
+            "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON or array of these. Actual {}",
             getName(),
             arguments[0].type->getName());
     }
@@ -126,6 +188,19 @@ public:
             array_offsets.push_back(array_col->getOffsetsPtr());
         }
 
+        /// Handle Nullable(Tuple)
+        ColumnPtr null_map_column = nullptr;
+        if (const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(input_col))
+        {
+            null_map_column = nullable_col->getNullMapColumnPtr();
+            input_col = &nullable_col->getNestedColumn();
+
+            if (const DataTypeNullable * nullable_type = checkAndGetDataType<DataTypeNullable>(input_type))
+            {
+                input_type = nullable_type->getNestedType().get();
+            }
+        }
+
         ColumnPtr res;
         if (const DataTypeTuple * input_type_as_tuple = checkAndGetDataType<DataTypeTuple>(input_type))
         {
@@ -136,9 +211,52 @@ public:
                 return arguments[2].column;
 
             res = input_col_as_tuple.getColumnPtr(index.value());
+
+            if (null_map_column)
+            {
+                DataTypePtr element_type = input_type_as_tuple->getElements()[index.value()];
+
+                if (const auto * res_nullable = typeid_cast<const ColumnNullable *>(res.get()))
+                {
+                    ColumnPtr merged_null_map = mergeNullMaps(null_map_column, res_nullable->getNullMapColumnPtr());
+                    res = ColumnNullable::create(res_nullable->getNestedColumnPtr(), merged_null_map);
+                }
+                else if (canExtractedSubcolumnsBeInsideNullable(element_type))
+                {
+                    res = ColumnNullable::create(res, null_map_column);
+                }
+                else
+                {
+                    const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
+
+                    auto result_column = element_type->createColumn();
+                    result_column->reserve(res->size());
+
+                    Field default_field = element_type->getDefault();
+
+                    for (size_t i = 0; i < res->size(); ++i)
+                    {
+                        if (null_map[i])
+                            result_column->insert(default_field);
+                        else
+                            result_column->insertFrom(*res, i);
+                    }
+
+                    res = std::move(result_column);
+                }
+            }
         }
         else if (const DataTypeQBit * input_type_as_qbit = checkAndGetDataType<DataTypeQBit>(input_type))
         {
+            if (null_map_column)
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} cannot be Nullable(QBit). Actual {}",
+                    getName(),
+                    input_arg.type->getName());
+            }
+
             const ColumnQBit & input_col_as_qbit = checkAndGetColumn<ColumnQBit>(*input_col);
             std::optional<size_t> index = getQBitElementIndex(arguments[1].column, *input_type_as_qbit, arguments.size());
 
@@ -149,18 +267,31 @@ public:
         }
         else if (const DataTypeObject * input_type_as_object = checkAndGetDataType<DataTypeObject>(input_type))
         {
+            if (null_map_column)
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} cannot be Nullable(JSON). Actual {}",
+                    getName(),
+                    input_arg.type->getName());
+            }
+
             const auto * subcolumn_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
             if (!subcolumn_name_col)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of {} with {} first argument must be a constant String", getName(), input_type->getName());
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument of {} with {} first argument must be a constant String",
+                    getName(),
+                    input_type->getName());
 
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
-            res = input_type_as_object->getSubcolumn(subcolumn_name, arguments[0].column);
+            res = getObjectElement(*input_type_as_object, input_col->getPtr(), subcolumn_name);
         }
         else
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be Tuple, QBit, JSON or array of Tuple, QBit, JSON. Actual {}",
+                "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON or array of these. Actual {}",
                 getName(),
                 input_arg.type->getName());
         }
@@ -187,7 +318,7 @@ private:
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
 
@@ -204,7 +335,7 @@ private:
                 return {index + size};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
 
@@ -217,7 +348,7 @@ private:
 
             if (argument_size == 2)
                 throw Exception(
-                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
+                    ErrorCodes::BAD_ARGUMENTS, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
             return std::nullopt;
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant Int, UInt or String", getName());
@@ -234,7 +365,7 @@ private:
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "QBit doesn't have an element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "QBit doesn't have an element with index '{}'", index);
 
             return std::nullopt;
         }
@@ -247,6 +378,15 @@ private:
             nested_type = std::make_shared<DataTypeArray>(nested_type);
 
         return nested_type;
+    }
+
+    ColumnPtr getObjectElement(const DataTypeObject & object_type, const ColumnPtr & object_column, const String & element_name) const
+    {
+        /// Use combined `@` subcolumn that merges literal value and sub-object.
+        /// For rows with a literal at requested path we return the literal, for rows with a nested object
+        /// we return the nested object as JSON column, so nested `tupleElement` calls can be applied to it.
+        auto combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + element_name + "`";
+        return object_type.getSubcolumn(combined_name, object_column);
     }
 };
 

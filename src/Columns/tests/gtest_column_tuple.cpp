@@ -1,8 +1,15 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnFixedString.h>
 
 #include <gtest/gtest.h>
+#include <base/types.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
+#include <Common/assert_cast.h>
+#include <Common/scope_guard_safe.h>
 
 using namespace DB;
 
@@ -47,11 +54,11 @@ TEST(ColumnTuple, EmptyTupleExpand)
     ColumnPtr tuple_col = ColumnTuple::create(5);
 
     IColumn::Filter mask;
-    mask.push_back(1);
-    mask.push_back(0);
-    mask.push_back(1);
-    mask.push_back(0);
-    mask.push_back(1);
+    mask.push_back(true);
+    mask.push_back(false);
+    mask.push_back(true);
+    mask.push_back(false);
+    mask.push_back(true);
 
     ColumnPtr filtered = tuple_col->filter(mask, -1);
     ASSERT_EQ(filtered->size(), 3);
@@ -62,11 +69,11 @@ TEST(ColumnTuple, EmptyTupleExpand)
     ASSERT_EQ(expanded->size(), mask.size());
 
     IColumn::Filter inverted_mask;
-    inverted_mask.push_back(0);
-    inverted_mask.push_back(1);
-    inverted_mask.push_back(0);
-    inverted_mask.push_back(1);
-    inverted_mask.push_back(0);
+    inverted_mask.push_back(false);
+    inverted_mask.push_back(true);
+    inverted_mask.push_back(false);
+    inverted_mask.push_back(true);
+    inverted_mask.push_back(false);
 
     ColumnPtr filtered_inv = tuple_col->filter(inverted_mask, -1);
     ASSERT_EQ(filtered_inv->size(), 2);
@@ -75,6 +82,38 @@ TEST(ColumnTuple, EmptyTupleExpand)
     expanded_inv->expand(mask, true);
 
     ASSERT_EQ(expanded_inv->size(), mask.size());
+}
+
+TEST(ColumnTuple, InsertDefaultIsExceptionSafe)
+{
+    /// First element is plain: its insertDefault succeeds.
+    /// Second element is a wide FixedString: its insertDefault triggers a large allocation
+    /// that overshoots a clamped memory limit and throws MEMORY_LIMIT_EXCEEDED - the same
+    /// way a real query hits a memory limit in the middle of a default insert.
+    static constexpr size_t huge = 64 * 1024 * 1024;
+
+    auto first = ColumnFloat64::create();
+    first->reserve(1);
+    MutableColumns elements;
+    elements.push_back(std::move(first));
+    elements.push_back(ColumnFixedString::create(huge));
+    auto tuple = ColumnTuple::create(std::move(elements));
+
+    {
+        ThreadStatus thread_status;
+        const Int64 prev_hard_limit = total_memory_tracker.getHardLimit();
+        SCOPE_EXIT_SAFE(total_memory_tracker.setHardLimit(prev_hard_limit));
+        total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);
+
+        ASSERT_THROW(tuple->insertDefault(), Exception);
+    }
+
+    /// The first element must have been rolled back so that all nested columns stay in sync,
+    /// otherwise a later popBack would over-pop the shorter element.
+    const auto & tuple_concrete = assert_cast<const ColumnTuple &>(*tuple);
+    ASSERT_EQ(tuple_concrete.getColumn(0).size(), 0);
+    ASSERT_EQ(tuple_concrete.getColumn(1).size(), 0);
+    ASSERT_EQ(tuple->size(), 0);
 }
 
 TEST(ColumnTuple, EmptyTuplePermute)

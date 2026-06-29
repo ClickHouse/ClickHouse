@@ -28,7 +28,7 @@ public:
         bool use_const_size_tasks_for_remote_reading = false;
 
         // Not the same as the similar field in `ParallelReadingExtension`. Accounts for `max_parallel_replicas`.
-        const size_t total_query_nodes;
+        const size_t total_query_nodes{};
     };
 
     MergeTreeReadPoolBase(
@@ -62,11 +62,11 @@ public:
 
 protected:
     /// Initialized in constructor
+    const StorageSnapshotPtr storage_snapshot;
     const RangesInDataParts parts_ranges;
     const MutationsSnapshotPtr mutations_snapshot;
     const VirtualFields shared_virtual_fields;
     const IndexReadTasks index_read_tasks;
-    const StorageSnapshotPtr storage_snapshot;
     const FilterDAGInfoPtr row_level_filter;
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;

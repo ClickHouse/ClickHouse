@@ -5,10 +5,8 @@
 #include <memory>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Exception.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Poco/Util/Application.h>
 
 
 namespace fs = std::filesystem;

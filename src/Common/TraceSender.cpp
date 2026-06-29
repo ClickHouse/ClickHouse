@@ -2,11 +2,14 @@
 #include <IO/WriteHelpers.h>
 #include <Common/CPUID.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/StackTrace.h>
 #include <Common/TraceSender.h>
 #include <Common/setThreadName.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include <string_view>
 
@@ -19,7 +22,7 @@ namespace
     /// The performance test query ids can be surprisingly long like
     /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
     /// so make some allowance for them as well.
-    constexpr size_t QUERY_ID_MAX_LEN = 100;
+    constexpr size_t QUERY_ID_MAX_LEN = 95;
     static_assert(QUERY_ID_MAX_LEN <= std::numeric_limits<uint8_t>::max());
 }
 
@@ -27,6 +30,8 @@ namespace DB
 {
 
 LazyPipeFDs TraceSender::pipe;
+std::atomic<bool> TraceSender::shutdown{false};
+std::atomic<int> TraceSender::in_flight{0};
 
 static thread_local bool inside_send = false;
 void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras)
@@ -40,7 +45,16 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     if (unlikely(inside_send))
         return;
     inside_send = true;
+    SCOPE_EXIT({ inside_send = false; });
     DENY_ALLOCATIONS_IN_SCOPE;
+
+    /// Drain bookkeeping for `~TraceCollector`: bump the in-flight counter
+    /// before checking `shutdown`, so the closer either sees us in-flight
+    /// (and waits) or we observe `shutdown` and bail out.
+    in_flight.fetch_add(1);
+    SCOPE_EXIT(in_flight.fetch_sub(1));
+    if (shutdown.load())
+        return;
 
     constexpr size_t buf_size = sizeof(char) /// TraceCollector stop flag
         + sizeof(UInt8)                      /// String size
@@ -48,6 +62,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         + sizeof(UInt8)                      /// Number of stack frames
         + sizeof(FramePointers)              /// Collected stack trace, maximum capacity
         + sizeof(TraceType)                  /// trace type
+        + sizeof(UInt64)                     /// cpu_id
         + sizeof(UInt64)                     /// thread_id
         + sizeof(ThreadName)                 /// thread name enum
         + sizeof(Int64)                      /// size
@@ -67,7 +82,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 
     std::string_view query_id;
     UInt64 cpu_id = CPU::get_cpuid();
-    UInt64 thread_id;
+    UInt64 thread_id = 0;
 
     if (CurrentThread::isInitialized())
     {
@@ -114,7 +129,8 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     out.next();
     out.finalize();
 
-    inside_send = false;
+    /// Multiple threads are calling this function concurrently, so writes to pipe should be atomic (single flush).
+    chassert(out.getFlushCount() == 1);
 }
 
 }

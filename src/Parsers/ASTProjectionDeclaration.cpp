@@ -9,7 +9,7 @@ namespace DB
 
 ASTPtr ASTProjectionDeclaration::clone() const
 {
-    auto res = std::make_shared<ASTProjectionDeclaration>();
+    auto res = make_intrusive<ASTProjectionDeclaration>();
     res->name = name;
     if (query)
         res->set(res->query, query->clone());
@@ -33,7 +33,6 @@ void ASTProjectionDeclaration::formatImpl(
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         ostr << settings.nl_or_ws << indent_str << "(" << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
-        frame_nested.need_parens = false;
         ++frame_nested.indent;
         query->format(ostr, settings, state, frame_nested);
         ostr << nl_or_nothing << indent_str << ")";

@@ -68,7 +68,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings[Setting::enable_software_prefetch_in_aggregation],
         /*only_merge=*/false,
         settings[Setting::optimize_group_by_constant_keys],
-        settings[Setting::min_chunk_bytes_for_parallel_parsing],
+        static_cast<float>(settings[Setting::min_chunk_bytes_for_parallel_parsing]),
         /*stats_collecting_params_=*/{},
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte]);
@@ -216,10 +216,13 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 {
     if (!aggregation_result.empty())
     {
-        auto aggregated_res = aggregator->convertToBlocks(aggregation_result, true);
+        auto aggregated_res = aggregator->convertToChunks(aggregation_result, true);
+        auto res_header = aggregator->getParams().getHeader(header, true);
 
-        for (auto & agg_block : aggregated_res)
+        for (auto & agg_chunk : aggregated_res)
         {
+            auto agg_block = res_header.cloneWithColumns(agg_chunk.chunk.detachColumns());
+
             for (const auto & it : description.set_parts)
             {
                 it.expression->execute(agg_block);
