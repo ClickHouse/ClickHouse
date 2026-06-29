@@ -241,7 +241,8 @@ std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::initializeAndLo
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheRocksDBIndexElements, entries.size());
 
-    LOG_INFO(log, "Loaded {} entries from RocksDB metadata index", entries.size());
+    /// The number of loaded entries is logged by the caller (`FileCache::loadMetadata`)
+    /// together with the load duration, so it is not logged here to avoid a duplicate message.
     return entries;
 }
 
