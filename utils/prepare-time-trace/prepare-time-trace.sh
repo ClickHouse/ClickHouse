@@ -81,7 +81,9 @@ ENGINE = MergeTree
 ORDER BY (date, file, pull_request_number, commit_sha, check_name);
 ///
 
-find "$INPUT_DIR" -type f -executable -or -name '*.o' -or -name '*.a' | grep -v cargo | xargs wc -c | grep -v 'total' > "${OUTPUT_DIR}/binary_sizes.txt"
+# xargs -r: with no matching objects (cross-arch/non-Linux builds) emit no row at
+# all, instead of GNU xargs running 'wc -c' once with no args and writing '0'.
+find "$INPUT_DIR" -type f -executable -or -name '*.o' -or -name '*.a' | grep -v cargo | xargs -r wc -c | grep -v 'total' > "${OUTPUT_DIR}/binary_sizes.txt"
 
 # Additionally, collect information about the symbols inside translation units
 true<<///
@@ -110,7 +112,7 @@ ORDER BY (date, file, symbol, pull_request_number, commit_sha, check_name);
 ///
 
 # nm does not work with LTO
-if ! grep -q -- '-flto' compile_commands.json
+if ! grep -q -- '-flto' "$INPUT_DIR/compile_commands.json"
 then
     # Find the best alternative of nm
     for name in llvm-nm-{30..18} llvm-nm nm
@@ -119,9 +121,10 @@ then
         [[ -n "${NM}" ]] && break
     done
 
-    find "$INPUT_DIR" -type f -name '*.o' | grep -v cargo | find . -name '*.o' | xargs -P $(nproc) -I {} bash -c "
+    find "$INPUT_DIR" -type f -name '*.o' | grep -v cargo | xargs -P $(nproc) -I {} bash -c "
       ${NM} --demangle --defined-only --print-size '{}' | grep -v -P '[0-9a-zA-Z] r ' | sed 's@^@{} @' > '{}.symbols'
     "
 
-    find "$INPUT_DIR" -type f -name '*.o.symbols' | xargs cat > "${OUTPUT_DIR}/binary_symbols.txt"
+    # xargs -r: with no '*.o.symbols' files emit nothing rather than running cat once.
+    find "$INPUT_DIR" -type f -name '*.o.symbols' | xargs -r cat > "${OUTPUT_DIR}/binary_symbols.txt"
 fi

@@ -9,7 +9,7 @@ SELECT
     ProfileEvents['FunctionExecute'],
     ProfileEvents['TableFunctionExecute']
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
         type = 'QueryFinish' AND
         query like '%ALTER TABLE mv_source%' AND
         current_database = currentDatabase() AND

@@ -1,0 +1,93 @@
+(Union)
+Concat × 2 2 → 1
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+(Union)
+Concat × 2 2 → 1
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+(Union)
+Concat × 2 2 → 1
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+(Union)
+Concat × 3 2 → 1
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+(Union)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+15
+15
+(Union)
+Concat 4 → 1
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemOne)
+3
+6

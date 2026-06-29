@@ -19,7 +19,12 @@ create table dist_01247 as data_01247 engine=Distributed(test_cluster_two_shards
 select * from dist_01247 format Null;
 EOL
 
-# NOTE: it is possible to got NETWORK_ERROR even with no-parallel, at least due to system.*_log_sender to the cloud
+# Silence the CI system.*_log_sender background pool so its NETWORK_ERRORs
+# (when the cloud destination is unreachable) don't contaminate system.errors.
+# This only blocks the async insert sender; SELECT from dist_01247 is unaffected.
+$CLICKHOUSE_CLIENT -q "SYSTEM STOP DISTRIBUTED SENDS"
+trap '$CLICKHOUSE_CLIENT -q "SYSTEM START DISTRIBUTED SENDS"' EXIT
+
 for ((i = 0; i < 100; ++i)); do
     network_errors_before=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")
 

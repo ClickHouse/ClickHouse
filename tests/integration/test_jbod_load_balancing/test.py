@@ -12,9 +12,9 @@ node = cluster.add_instance(
         "configs/config.d/storage_configuration.xml",
     ],
     tmpfs=[
-        "/jbod1:size=100M",
-        "/jbod2:size=200M",
-        "/jbod3:size=300M",
+        "/test_jbod_load_balancing_jbod1:size=100M",
+        "/test_jbod_load_balancing_jbod2:size=200M",
+        "/test_jbod_load_balancing_jbod3:size=300M",
     ],
 )
 
@@ -163,7 +163,7 @@ def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster)
             """
         )
 
-        node.exec_in_container(["fallocate", "-l200M", "/jbod3/.test"])
+        node.exec_in_container(["fallocate", "-l200M", "/test_jbod_load_balancing_jbod3/.test"])
         node.query(
             """
             INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
@@ -177,7 +177,7 @@ def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster)
             ["4", "jbod2"],
         ]
 
-        node.exec_in_container(["rm", "/jbod3/.test"])
+        node.exec_in_container(["rm", "/test_jbod_load_balancing_jbod3/.test"])
         node.query(
             """
             INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
@@ -194,7 +194,7 @@ def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster)
             ["4", "jbod3"],
         ]
     finally:
-        node.exec_in_container(["rm", "-f", "/jbod3/.test"])
+        node.exec_in_container(["rm", "-f", "/test_jbod_load_balancing_jbod3/.test"])
         node.query(
             "DROP TABLE IF EXISTS data_least_used_detect_background_changes SYNC"
         )

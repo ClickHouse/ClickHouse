@@ -19,7 +19,9 @@ class Docker:
         platforms: List[str]
 
     @classmethod
-    def build(cls, config: "Docker.Config", digests, amd_only, arm_only):
+    def build(
+        cls, config: "Docker.Config", digests, amd_only, arm_only, disable_push=False
+    ):
         from .result import Result
 
         sw = Utils.Stopwatch()
@@ -57,7 +59,7 @@ class Docker:
                     continue
                 platforms.append(platform)
 
-            command = f"docker buildx build --builder default {tags_substr} {from_tag} --platform {','.join(platforms)} --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} --push"
+            command = f"docker buildx build {tags_substr} {from_tag} --platform {','.join(platforms)} --provenance=mode=max --sbom=true {config.path} {'' if disable_push else ' --push'}"
 
             return Result.from_commands_run(
                 name=name,
@@ -92,19 +94,20 @@ class Docker:
             else:
                 assert f"Not supported platform [{platform}]"
 
+        # Use imagetools create instead of manifest create/push: when images are
+        # built with --sbom=true --provenance=mode=max, buildx produces OCI image
+        # indices (not plain manifests), which docker manifest create cannot handle.
+        # imagetools create works correctly with both plain manifests and indices,
+        # preserving attestation manifests in the merged result.
+        src_refs = " ".join(f"{config.name}:{t}" for t in tags[1:])
         commands = [
-            "docker manifest create --amend "
-            + " ".join(f"{config.name}:{t}" for t in tags)
+            f"docker buildx imagetools create --tag {config.name}:{digests[config.name]} {src_refs}"
         ]
-        commands.append(f"docker manifest push {config.name}:{digests[config.name]}")
 
         if add_latest:
-            tags[0] = "latest"
-            commands += [
-                "docker manifest create --amend "
-                + " ".join(f"{config.name}:{t}" for t in tags)
-            ]
-            commands.append(f"docker manifest push {config.name}:latest")
+            commands.append(
+                f"docker buildx imagetools create --tag {config.name}:latest {src_refs}"
+            )
 
         return Result.from_commands_run(
             name=f"merge: {config.name}:{digests[config.name]} (latest={add_latest})",

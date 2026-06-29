@@ -33,6 +33,7 @@ struct ConnectionParameters
     std::shared_ptr<JWTProvider> jwt_provider;
 #endif
     Protocol::Secure security = Protocol::Secure::Disable;
+    std::string tls_sni_override;
     std::string bind_host;
     Protocol::Compression compression = Protocol::Compression::Enable;
     ConnectionTimeouts timeouts;

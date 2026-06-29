@@ -46,6 +46,7 @@ struct WriteOptions
     bool write_page_statistics = true;
     bool write_page_index = true;
     bool write_bloom_filter = true;
+    bool write_checksums = true;
 
     size_t max_statistics_size = 4096;
 
@@ -75,6 +76,9 @@ struct ColumnChunkIndexes
 {
     parq::ColumnIndex column_index; // if write_page_index
     parq::OffsetIndex offset_index; // if write_page_index
+    /// Set to false when a non-null page has stats dropped (e.g. value exceeded max_statistics_size).
+    /// When false, the column index must not be written because it would contain invalid bounds.
+    bool column_index_valid = true;
     parq::BloomFilterHeader bloom_filter_header;
     PODArray<UInt32> bloom_filter_data; // if write_bloom_filter, and not flushed yet
 };
@@ -88,7 +92,7 @@ struct ColumnChunkWriteState
 
     ColumnPtr primitive_column;
     DataTypePtr type;
-    CompressionMethod compression; // must match what's inside column_chunk
+    CompressionMethod compression{}; // must match what's inside column_chunk
     int compression_level = 3;
     Int64 datetime_multiplier = 1; // for converting e.g. seconds to milliseconds
     bool is_bool = false; // bool vs UInt8 have the same column type but are encoded differently

@@ -1,6 +1,9 @@
 #include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 
 #if USE_ORC
+
+#include <Common/checkStackSize.h>
+#include <Core/Defines.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
@@ -9,8 +12,8 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -35,9 +38,12 @@
 #include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <orc/Vector.hh>
+#include <Common/DateLUTImpl.h>
+#include <Common/setThreadName.h>
 #include <Common/Allocator.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/memory.h>
 #include <Common/AllocationInterceptors.h>
 
@@ -55,14 +61,18 @@ extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 extern const int THERE_IS_NO_COLUMN;
 extern const int INCORRECT_DATA;
 extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int TOO_DEEP_RECURSION;
 }
 
 
 ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_, bool use_prefetch)
-    : in(in_), file_size(file_size_), supports_read_at(use_prefetch && in_.supportsReadAt())
+    : in(in_)
+    , file_size(file_size_)
+    , use_offset_based_read(in_.supportsReadAt())
+    , use_async_prefetch(use_prefetch && use_offset_based_read)
 {
-    if (supports_read_at)
-        async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ORCFile");
+    if (use_async_prefetch)
+        async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), ThreadName::ORC_FILE);
 }
 
 UInt64 ORCInputStream::getLength() const
@@ -77,13 +87,21 @@ UInt64 ORCInputStream::getNaturalReadSize() const
 
 void ORCInputStream::read(void * buf, UInt64 length, UInt64 offset)
 {
-    if (supports_read_at)
+    if (use_offset_based_read)
     {
         size_t bytes_read = 0;
         while (bytes_read < length)
         {
             size_t bytes_to_read = length - bytes_read;
             size_t n = in.readBigAt(reinterpret_cast<char *>(buf) + bytes_read, bytes_to_read, offset + bytes_read, nullptr);
+            if (n == 0)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Truncated or corrupted ORC input: readBigAt returned 0 bytes at offset {} ({} bytes remaining of {} requested from base offset {})",
+                    offset + bytes_read,
+                    bytes_to_read,
+                    length,
+                    offset);
             bytes_read += n;
         }
     }
@@ -97,7 +115,7 @@ void ORCInputStream::read(void * buf, UInt64 length, UInt64 offset)
 
 std::future<void> ORCInputStream::readAsync(void * buf, uint64_t length, uint64_t offset)
 {
-    if (supports_read_at)
+    if (use_async_prefetch)
     {
         return async_runner(
             [this, buf, length, offset]
@@ -176,9 +194,24 @@ static DataTypePtr parseORCType(
     bool skip_columns_with_unsupported_types,
     bool dictionary_as_low_cardinality,
     const orc::StripeInformation * stripe_info,
-    bool & skipped)
+    bool & skipped,
+    size_t max_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH,
+    size_t depth = 0)
 {
-    assert(orc_type != nullptr);
+    chassert(orc_type != nullptr);
+
+    /// ORC LIST/MAP/STRUCT types can be nested arbitrarily deep and the ORC library does not bound
+    /// the nesting, so reject deep nesting early (before building the type) with an explicit limit.
+    /// This keeps schema inference cheap and interruptible instead of recursing over (and later
+    /// walking) a pathologically deep type. checkStackSize is a last-resort backstop.
+    /// max_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (max_depth != 0 && depth > max_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Too deep recursion while parsing the ORC schema: the nesting depth exceeds the limit ({}). "
+            "It can be raised with the setting 'max_parser_depth', but a very deep schema is rarely intentional",
+            max_depth);
+    checkStackSize();
 
     const int subtype_count = static_cast<int>(orc_type->getSubtypeCount());
     switch (orc_type->getKind())
@@ -234,7 +267,7 @@ static DataTypePtr parseORCType(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc List type {}", orc_type->toString());
 
             DataTypePtr nested_type = parseORCType(
-                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
             if (skipped)
                 return {};
 
@@ -245,12 +278,12 @@ static DataTypePtr parseORCType(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc Map type {}", orc_type->toString());
 
             DataTypePtr key_type = parseORCType(
-                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+                orc_type->getSubtype(0), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
             if (skipped)
                 return {};
 
             DataTypePtr value_type = parseORCType(
-                orc_type->getSubtype(1), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+                orc_type->getSubtype(1), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
             if (skipped)
                 return {};
 
@@ -265,7 +298,7 @@ static DataTypePtr parseORCType(
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
             {
                 auto parsed_type = parseORCType(
-                    orc_type->getSubtype(i), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped);
+                    orc_type->getSubtype(i), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
                 if (skipped)
                     return {};
 
@@ -359,7 +392,7 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
             }
             case orc::FLOAT:
             case orc::DOUBLE: {
-                Float64 val;
+                Float64 val = 0;
                 if (field.tryGet(val))
                     return orc::Literal(val);
                 break;
@@ -373,7 +406,7 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
                 break;
             }
             case orc::DATE: {
-                Int64 val;
+                Int64 val = 0;
                 if (field.tryGet(val))
                     return orc::Literal(orc::PredicateDataType::DATE, val);
                 break;
@@ -549,7 +582,7 @@ static void buildORCSearchArgumentImpl(
                 }
             }
 
-            String column_name = getColumnNameFromKeyCondition(key_condition, curr.key_column);
+            String column_name = getColumnNameFromKeyCondition(key_condition, curr.getKeyColumn());
             const auto * orc_type = getORCTypeByName(schema, column_name, format_settings.orc.case_insensitive_column_matching);
             if (!orc_type)
             {
@@ -567,7 +600,7 @@ static void buildORCSearchArgumentImpl(
             ///     For queries with where condition like "a > 10", if a column contains negative values such as "-1", pushing or not pushing
             ///     down filters would result in different outputs.
             bool skipped = false;
-            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped), format_settings);
+            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped, format_settings.max_parser_depth), format_settings);
             const ColumnWithTypeAndName * column = header.findByName(column_name, format_settings.orc.case_insensitive_column_matching);
             if (!expect_type || !column)
             {
@@ -785,7 +818,12 @@ static void getFileReader(
         return;
 
     orc::ReaderOptions options;
-    options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = min_bytes_for_seek, .rangeSizeLimit = 10 * 1024 * 1024UL});
+    /// ORC library requires rangeSizeLimit > holeSizeLimit.
+    static constexpr uint64_t default_range_size_limit = 10 * 1024 * 1024UL;
+    /// Clamp to avoid overflow when computing holeSizeLimit + 1.
+    uint64_t hole_size_limit = std::min<uint64_t>(min_bytes_for_seek, std::numeric_limits<uint64_t>::max() - 1);
+    uint64_t range_size_limit = std::max(default_range_size_limit, hole_size_limit + 1);
+    options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = hole_size_limit, .rangeSizeLimit = range_size_limit});
 
     auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
     file_reader = orc::createReader(std::move(input_stream), options);
@@ -794,6 +832,11 @@ static void getFileReader(
 static const orc::Type *
 traverseDownORCTypeByName(const std::string & target, const orc::Type * orc_type, DataTypePtr & type, bool ignore_case)
 {
+    /// Recurses the file-controlled ORC type tree. The matching CH type (and the requested column
+    /// name) bound the depth in practice, but keep a stack backstop here too, since this runs in
+    /// prepareFileReader before the readColumnFromORCColumn guard is reached.
+    checkStackSize();
+
     if (target.empty())
         return orc_type;
 
@@ -848,6 +891,11 @@ traverseDownORCTypeByName(const std::string & target, const orc::Type * orc_type
 static void
 updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_case, std::unordered_set<UInt64> & include_typeids)
 {
+    /// Recurses the file-controlled ORC type tree in lockstep with the (parser-bounded) CH type.
+    /// Keep a stack backstop here too: this runs in prepareFileReader, before the
+    /// readColumnFromORCColumn guard is reached, also for explicit-schema reads.
+    checkStackSize();
+
     /// For primitive types, directly append column id into result
     if (orc_type->getSubtypeCount() == 0)
     {
@@ -949,7 +997,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
         return;
 
     if (format_filter_info)
-        format_filter_info->initOnce([&] { format_filter_info->initKeyCondition(getPort().getHeader()); });
+        format_filter_info->initKeyConditionOnce(getPort().getHeader());
 
     std::unique_ptr<orc::StripeInformation> stripe_info;
     if (file_reader->getNumberOfStripes())
@@ -1029,7 +1077,7 @@ std::vector<int> NativeORCBlockInputFormat::calculateSelectedStripes(int num_str
 
 bool NativeORCBlockInputFormat::prepareStripeReader()
 {
-    assert(file_reader);
+    chassert(file_reader);
 
     if (read_iterator >= selected_stripes.size())
         return false;
@@ -1161,7 +1209,8 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
             format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
             format_settings.orc.dictionary_as_low_cardinality,
             stripe_info.get(),
-            skipped);
+            skipped,
+            format_settings.max_parser_depth);
         if (!skipped)
             header.insert(ColumnWithTypeAndName{type, name});
     }
@@ -1219,7 +1268,7 @@ void ORCColumnToCHColumn::orcTableToCHChunk(
 static ColumnPtr readByteMapFromORCColumn(const orc::ColumnVectorBatch * orc_column)
 {
     if (!orc_column->hasNulls)
-        return ColumnUInt8::create(orc_column->numElements, 0);
+        return ColumnUInt8::create(orc_column->numElements, static_cast<UInt8>(0));
 
     auto nullmap_column = ColumnUInt8::create();
     PaddedPODArray<UInt8> & bytemap_data = assert_cast<ColumnVector<UInt8> &>(*nullmap_column).getData();
@@ -1263,7 +1312,7 @@ readColumnWithBooleanData(const orc::ColumnVectorBatch * orc_column, const Strin
         if (!orc_bool_column->hasNulls || orc_bool_column->notNull[i])
             column_data.push_back(static_cast<UInt8>(orc_bool_column->data[i]));
         else
-            column_data.push_back(0);
+            column_data.push_back(static_cast<UInt8>(0));
     }
 
     return {std::move(internal_column), internal_type, column_name};
@@ -1311,7 +1360,11 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     size_t rows = orc_str_column.numElements;
     const auto & orc_dict = *orc_str_column.dictionary;
     if (orc_dict.dictionaryOffset.size() <= 1)
-        return {internal_type->createColumn(), internal_type, column_name};
+    {
+        auto result_column = internal_type->createColumn();
+        result_column->insertManyDefaults(rows);
+        return {std::move(result_column), internal_type, column_name};
+    }
 
     size_t dict_size = orc_dict.dictionaryOffset.size() - 1;
     auto holder_column = holder_type->createColumn();
@@ -1327,7 +1380,16 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
         {
             const auto * buf = orc_dict.dictionaryBlob.data() + orc_dict.dictionaryOffset[i];
             size_t buf_size = orc_dict.dictionaryOffset[i + 1] - orc_dict.dictionaryOffset[i];
+            if (buf_size > n)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "ORC dictionary entry {} has size {} that exceeds the declared FixedString length {}",
+                    i, buf_size, n);
             memcpy(&column_chars[curr_offset], buf, buf_size);
+            /// resize_exact does not zero-initialize, so pad shorter entries to keep FixedString values
+            /// deterministic and to avoid leaking uninitialized heap memory.
+            if (buf_size < n)
+                memset(&column_chars[curr_offset + buf_size], 0, n - buf_size);
             curr_offset += n;
         }
     }
@@ -1356,6 +1418,16 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     auto index_column
         = dynamic_cast<IColumnUnique *>(dictionary_column.get())->uniqueInsertRangeFrom(*holder_column, 0, holder_column->size());
 
+    auto check_index = [&](Int64 orc_index, size_t row) -> Int64
+    {
+        if (orc_index < 0 || static_cast<size_t>(orc_index) >= dict_size)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "ORC dictionary index {} at row {} is out of range [0, {})",
+                orc_index, row, dict_size);
+        return orc_index;
+    };
+
     /// Fill index_column and wrap it with LowCardinality
     auto call_by_type = [&](auto index_type) -> MutableColumnPtr
     {
@@ -1373,7 +1445,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
             for (size_t i = 0; i < rows; ++i)
             {
                 /// First map row index to ORC dictionary index, then map ORC dictionary index to CH dictionary index
-                new_index_data[i] = index_data[orc_str_column.index[i]];
+                new_index_data[i] = index_data[check_index(orc_str_column.index[i], i)];
             }
         }
         else
@@ -1382,7 +1454,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
             {
                 /// Set index 0 if we meet null value. If dictionary_column is nullable, 0 represents null value.
                 /// Otherwise 0 represents default string value, it is reasonable because null values are converted to default values when casting nullable column to non-nullable.
-                new_index_data[i] = orc_str_column.notNull[i] ? index_data[orc_str_column.index[i]] : 0;
+                new_index_data[i] = orc_str_column.notNull[i] ? index_data[check_index(orc_str_column.index[i], i)] : 0;
             }
         }
 
@@ -1463,7 +1535,19 @@ readColumnWithFixedStringData(const orc::ColumnVectorBatch * orc_column, const o
     for (size_t i = 0; i < orc_str_column->numElements; ++i)
     {
         if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
-            column_chars.insert_assume_reserved(orc_str_column->data[i], orc_str_column->data[i] + orc_str_column->length[i]);
+        {
+            const Int64 length = orc_str_column->length[i];
+            if (length < 0 || static_cast<size_t>(length) > fixed_len)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "ORC string value at row {} has size {} that doesn't fit into FixedString({})",
+                    i, length, fixed_len);
+
+            column_chars.insert_assume_reserved(orc_str_column->data[i], orc_str_column->data[i] + length);
+            /// Zero-pad shorter values to the fixed width to keep the FixedString layout consistent.
+            if (static_cast<size_t>(length) < fixed_len)
+                column_chars.resize_fill(column_chars.size() + (fixed_len - static_cast<size_t>(length)));
+        }
         else
             column_chars.resize_fill(column_chars.size() + fixed_len);
     }
@@ -1488,7 +1572,7 @@ static ColumnWithTypeAndName readColumnWithDecimalDataCast(
     {
         if (!orc_decimal_column->hasNulls || orc_decimal_column->notNull[i])
         {
-            DecimalType decimal_value;
+            DecimalType decimal_value{};
             if constexpr (std::is_same_v<BatchType, orc::Decimal128VectorBatch>)
             {
                 Int128 int128_value;
@@ -1593,11 +1677,21 @@ static ColumnWithTypeAndName readColumnWithDateData(
     const orc::ColumnVectorBatch * orc_column, const String & column_name, const DataTypePtr & type_hint)
 {
     DataTypePtr internal_type;
+    bool check_date32_range = false;
     bool check_date_range = false;
+
     /// Make result type Date32 when requested type is actually Date32 or when we use schema inference
-    if (!type_hint || (type_hint && isDate32(*type_hint)))
+    if (!type_hint || isDate32(*type_hint))
     {
         internal_type = std::make_shared<DataTypeDate32>();
+        check_date32_range = true;
+    }
+    else if (isDate(*type_hint))
+    {
+        /// Date type is not supported in ORC format according to the docs
+        /// ORC date type is INT32, which can represent dates outside the Date
+        /// type range [0, 65535]. Validate the range and throw an error
+        internal_type = std::make_shared<DataTypeInt32>();
         check_date_range = true;
     }
     else
@@ -1615,12 +1709,22 @@ static ColumnWithTypeAndName readColumnWithDateData(
         if (!orc_int_column->hasNulls || orc_int_column->notNull[i])
         {
             Int32 days_num = static_cast<Int32>(orc_int_column->data[i]);
-            if (check_date_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH))
+            if (check_date32_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH))
                 throw Exception(
                     ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Input value {} of a column \"{}\" exceeds the range of type Date32",
+                    "Input value {} of a column \"{}\" exceeds the range of type Date32, which is [{}, {}]",
                     days_num,
-                    column_name);
+                    column_name,
+                    -DAYNUM_OFFSET_EPOCH,
+                    DATE_LUT_MAX_EXTEND_DAY_NUM);
+
+            if (check_date_range && (days_num > DATE_LUT_MAX_DAY_NUM || days_num < 0))
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "Input value {} of a column \"{}\" exceeds the range of type Date, which is [0, {}]",
+                    days_num,
+                    column_name,
+                    DATE_LUT_MAX_DAY_NUM);
 
             column_data.push_back(days_num);
         }
@@ -1648,8 +1752,24 @@ readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const Str
     {
         if (!orc_ts_column->hasNulls || orc_ts_column->notNull[i])
         {
+            Int64 timestamp_value = 0;
+            Int64 seconds = orc_ts_column->data[i];
+            Int64 nanoseconds = orc_ts_column->nanoseconds[i];
+
+            /// Check for overflow when converting timestamp to DateTime64(9)
+            bool overflow = common::mulOverflow(seconds, multiplier, timestamp_value);
+            overflow |= common::addOverflow(timestamp_value, nanoseconds, timestamp_value);
+
+            if (overflow)
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "Timestamp value in column \"{}\" is out of range for DateTime64: seconds={}, nanoseconds={}",
+                    column_name,
+                    seconds,
+                    nanoseconds);
+
             Decimal64 decimal64;
-            decimal64.value = orc_ts_column->data[i] * multiplier + orc_ts_column->nanoseconds[i];
+            decimal64.value = timestamp_value;
             column_data.emplace_back(std::move(decimal64));
         }
         else
@@ -1665,10 +1785,14 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     bool inside_nullable,
     DataTypePtr type_hint) const
 {
+    /// Reading a nested LIST/MAP/STRUCT recurses through this function over the ORC type tree, whose
+    /// depth is attacker-controlled, so guard the native stack on the data-read path as well.
+    checkStackSize();
+
     bool skipped = false;
 
-    if (!inside_nullable && (orc_column->hasNulls || (type_hint && type_hint->isNullable())) && !orc_column->isEncoded
-        && (orc_type->getKind() != orc::LIST && orc_type->getKind() != orc::MAP && orc_type->getKind() != orc::STRUCT))
+    if (!inside_nullable && (orc_column->hasNulls || (type_hint && isNullableOrLowCardinalityNullable(type_hint))) && !orc_column->isEncoded
+        && (orc_type->getKind() != orc::LIST && orc_type->getKind() != orc::MAP))
     {
         DataTypePtr nested_type_hint;
         if (type_hint)
@@ -1840,19 +1964,27 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             auto nested_column = readColumnFromORCColumn(orc_nested_column, orc_nested_type, column_name, false, nested_type_hint);
 
             auto offsets_column = readOffsetsFromORCListColumn(orc_list_column);
-            auto array_column = ColumnArray::create(nested_column.column, offsets_column);
             DataTypePtr array_type;
-            /// If type hint is Nested, we should return Nested type,
-            /// because we differentiate Nested and simple Array(Tuple)
-            if (type_hint && isNested(type_hint))
+            ColumnPtr array_data_column = nested_column.column;
+            /// If type hint is Nested and the element is a named Tuple, return the Nested type
+            /// so that `Nested::flatten` can decompose it into separate arrays.
+            /// When the element is Nullable(Tuple(...)), unwrap it and propagate the struct null
+            /// map to each element via `unwrapNullableTuple`.
+            const auto * tuple_type = type_hint && isNested(type_hint)
+                ? typeid_cast<const DataTypeTuple *>(removeNullable(nested_column.type).get())
+                : nullptr;
+            if (tuple_type)
             {
-                const auto & tuple_type = assert_cast<const DataTypeTuple &>(*nested_column.type);
-                array_type = createNested(tuple_type.getElements(), tuple_type.getElementNames());
+                auto unwrapped = Nested::unwrapNullableTuple({array_data_column, nested_column.type, column_name});
+                array_data_column = unwrapped.column;
+                const auto & result_tuple = assert_cast<const DataTypeTuple &>(*unwrapped.type);
+                array_type = createNested(result_tuple.getElements(), result_tuple.getElementNames());
             }
             else
             {
                 array_type = std::make_shared<DataTypeArray>(nested_column.type);
             }
+            auto array_column = ColumnArray::create(array_data_column, offsets_column);
             return {array_column, array_type, column_name};
         }
         case orc::STRUCT:

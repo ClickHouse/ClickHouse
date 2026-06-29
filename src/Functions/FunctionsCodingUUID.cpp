@@ -16,6 +16,7 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <span>
+#include <Core/UUID.h>
 
 
 namespace DB::ErrorCodes
@@ -146,7 +147,7 @@ namespace DB
 constexpr size_t uuid_bytes_length = 16;
 constexpr size_t uuid_text_length = 36;
 
-class FunctionUUIDNumToString : public IFunction
+class FunctionUUIDNumToString final : public IFunction
 {
 public:
     static constexpr auto name = "UUIDNumToString";
@@ -222,7 +223,7 @@ public:
 };
 
 
-class FunctionUUIDStringToNum : public IFunction
+class FunctionUUIDStringToNum final : public IFunction
 {
 public:
     static constexpr auto name = "UUIDStringToNum";
@@ -328,7 +329,7 @@ public:
 };
 
 
-class FunctionUUIDToNum : public IFunction
+class FunctionUUIDToNum final : public IFunction
 {
 public:
     static constexpr auto name = "UUIDToNum";
@@ -402,7 +403,7 @@ public:
     }
 };
 
-class FunctionUUIDv7ToDateTime : public IFunction
+class FunctionUUIDv7ToDateTime final : public IFunction
 {
 public:
     static constexpr auto name = "UUIDv7ToDateTime";
@@ -517,7 +518,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_UUIDNumToString = {1, 1};
     FunctionDocumentation::Category category_UUIDNumToString = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_UUIDNumToString = {description_UUIDNumToString, syntax_UUIDNumToString, arguments_UUIDNumToString, returned_value_UUIDNumToString, examples_UUIDNumToString, introduced_in_UUIDNumToString, category_UUIDNumToString};
+    FunctionDocumentation documentation_UUIDNumToString = {description_UUIDNumToString, syntax_UUIDNumToString, arguments_UUIDNumToString, {}, returned_value_UUIDNumToString, examples_UUIDNumToString, introduced_in_UUIDNumToString, category_UUIDNumToString};
 
     factory.registerFunction<FunctionUUIDNumToString>(documentation_UUIDNumToString);
 
@@ -561,7 +562,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_UUIDStringToNum = {1, 1};
     FunctionDocumentation::Category category_UUIDStringToNum = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_UUIDStringToNum = {description_UUIDStringToNum, syntax_UUIDStringToNum, arguments_UUIDStringToNum, returned_value_UUIDStringToNum, examples_UUIDStringToNum, introduced_in_UUIDStringToNum, category_UUIDStringToNum};
+    FunctionDocumentation documentation_UUIDStringToNum = {description_UUIDStringToNum, syntax_UUIDStringToNum, arguments_UUIDStringToNum, {}, returned_value_UUIDStringToNum, examples_UUIDStringToNum, introduced_in_UUIDStringToNum, category_UUIDStringToNum};
 
     factory.registerFunction<FunctionUUIDStringToNum>(documentation_UUIDStringToNum);
 
@@ -606,7 +607,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_UUIDToNum = {24, 5};
     FunctionDocumentation::Category category_UUIDToNum = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_UUIDToNum = {description_UUIDToNum, syntax_UUIDToNum, arguments_UUIDToNum, returned_value_UUIDToNum, examples_UUIDToNum, introduced_in_UUIDToNum, category_UUIDToNum};
+    FunctionDocumentation documentation_UUIDToNum = {description_UUIDToNum, syntax_UUIDToNum, arguments_UUIDToNum, {}, returned_value_UUIDToNum, examples_UUIDToNum, introduced_in_UUIDToNum, category_UUIDToNum};
 
     factory.registerFunction<FunctionUUIDToNum>(documentation_UUIDToNum);
 
@@ -646,7 +647,7 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
     };
     FunctionDocumentation::IntroducedIn introduced_in_UUIDv7ToDateTime = {24, 5};
     FunctionDocumentation::Category category_UUIDv7ToDateTime = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_UUIDv7ToDateTime = {description_UUIDv7ToDateTime, syntax_UUIDv7ToDateTime, arguments_UUIDv7ToDateTime, returned_value_UUIDv7ToDateTime, examples_UUIDv7ToDateTime, introduced_in_UUIDv7ToDateTime, category_UUIDv7ToDateTime};
+    FunctionDocumentation documentation_UUIDv7ToDateTime = {description_UUIDv7ToDateTime, syntax_UUIDv7ToDateTime, arguments_UUIDv7ToDateTime, {}, returned_value_UUIDv7ToDateTime, examples_UUIDv7ToDateTime, introduced_in_UUIDv7ToDateTime, category_UUIDv7ToDateTime};
 
     factory.registerFunction<FunctionUUIDv7ToDateTime>(documentation_UUIDv7ToDateTime);
 }

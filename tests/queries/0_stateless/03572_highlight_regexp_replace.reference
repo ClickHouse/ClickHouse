@@ -6,7 +6,7 @@
 [0;1mFROM[0m [0;22;33murl[0;38;5;123m([0;22;32m'https://clickhouse-public-datasets-eu-west-1.s3.amazonaws.com/hits_1t/0002.parquet'[0;38;5;123m)[0m
 [0;1mWHERE[0m [0;22;36mReferer[0m != [0;22;32m''[0m
 [0;1mGROUP BY[0m [0;22;36mk[0m
-[0;1mHAVING[0m [0;22;33mCOUNT[0;38;5;141m([0m*[0;38;5;141m)[0m > [0;38;5;40m100000[0m
+[0;1mHAVING[0m [0;22;33mCOUNT[0;38;5;141m([0m*[0;38;5;141m)[0m > [0;38;5;40m10[0;38;5;40;4m0[0;38;5;40m000[0m
 [0;1mORDER BY[0m [0;22;36ml[0m [0;1mDESC[0m
 [0;1mLIMIT[0m [0;38;5;40m25[0m
 [0;1mSELECT[0m
@@ -17,6 +17,6 @@
 [0;1mFROM[0m [0;22;33murl[0;38;5;123m([0;22;32m'https://clickhouse-public-datasets-eu-west-1.s3.amazonaws.com/hits_1t/0002.parquet'[0;38;5;123m)[0m
 [0;1mWHERE[0m [0;22;36mReferer[0m != [0;22;32m''[0m
 [0;1mGROUP BY[0m [0;22;36mk[0m
-[0;1mHAVING[0m [0;22;33mCOUNT[0;38;5;141m([0m*[0;38;5;141m)[0m > [0;38;5;40m100000[0m
+[0;1mHAVING[0m [0;22;33mCOUNT[0;38;5;141m([0m*[0;38;5;141m)[0m > [0;38;5;40m10[0;38;5;40;4m0[0;38;5;40m000[0m
 [0;1mORDER BY[0m [0;22;36ml[0m [0;1mDESC[0m
 [0;1mLIMIT[0m [0;38;5;40m25[0m

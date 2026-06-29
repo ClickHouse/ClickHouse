@@ -1,0 +1,12 @@
+  CREATE    DATABASE test_ddl_commands;
+  USE   test_ddl_commands;
+CREATE TABLE test_table (id Int32, name String) ENGINE = Memory;
+  CREATE   TEMPORARY    TABLE test_temp (temp_id Int32);
+ALTER    TABLE test_table ADD COLUMN age Int32;
+  INSERT   INTO test_table VALUES (1, 'Alice', 25), (2, 'Bob', 30), (3, 'Charlie', 35);
+  SELECT * FROM test_table ORDER BY id;
+SET max_threads = 4;
+  TRUNCATE   TABLE test_table;
+DROP   TABLE   test_temp;
+  DROP TABLE test_table;
+DROP    DATABASE   test_ddl_commands;

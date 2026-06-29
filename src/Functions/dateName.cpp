@@ -53,7 +53,7 @@ template <> struct DataTypeToTimeTypeMap<DataTypeDateTime64>
 template <typename DataType>
 using DateTypeToTimeType = typename DataTypeToTimeTypeMap<DataType>::TimeType;
 
-class FunctionDateNameImpl : public IFunction
+class FunctionDateNameImpl final : public IFunction
 {
 public:
     static constexpr auto name = "dateName";
@@ -148,7 +148,7 @@ public:
 
         String date_part = date_part_column->getValue<String>();
 
-        const DateLUTImpl * time_zone_tmp;
+        const DateLUTImpl * time_zone_tmp = nullptr;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 1);
         else
@@ -397,7 +397,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDateNameImpl>(documentation, FunctionFactory::Case::Insensitive);
 }

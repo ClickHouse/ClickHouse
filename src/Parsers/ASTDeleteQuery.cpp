@@ -11,7 +11,7 @@ String ASTDeleteQuery::getID(char delim) const
 
 ASTPtr ASTDeleteQuery::clone() const
 {
-    auto res = std::make_shared<ASTDeleteQuery>(*this);
+    auto res = make_intrusive<ASTDeleteQuery>(*this);
     res->children.clear();
 
     if (partition)

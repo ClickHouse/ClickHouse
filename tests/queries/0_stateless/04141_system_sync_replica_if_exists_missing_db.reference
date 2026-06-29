@@ -1,0 +1,6 @@
+case1
+case2
+case3
+done
+check_no_if_exists_missing_table
+check_no_if_exists_missing_db

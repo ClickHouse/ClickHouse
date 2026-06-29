@@ -27,4 +27,12 @@
         </named_collection_5>
         <named_collection_6/>
     </named_collections>
+
+    <query_masking_rules>
+        <rule>
+            <name>Query masking rule</name>
+            <regexp>sensetive_data</regexp>
+            <replace>replaced_data</replace>
+        </rule>
+    </query_masking_rules>
 </clickhouse>

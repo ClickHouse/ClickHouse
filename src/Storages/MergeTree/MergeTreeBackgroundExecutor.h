@@ -1,9 +1,6 @@
 #pragma once
 
-#include <deque>
-#include <functional>
 #include <mutex>
-#include <future>
 #include <condition_variable>
 #include <variant>
 #include <utility>
@@ -14,15 +11,25 @@
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <base/defines.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadPool_fwd.h>
 
 namespace DB
 {
 
 struct TaskRuntimeData;
+struct TaskProfileEvents
+{
+    ProfileEvents::Event execute_ms = ProfileEvents::end();
+    ProfileEvents::Event cancel_ms = ProfileEvents::end();
+    ProfileEvents::Event reset_ms = ProfileEvents::end();
+    ProfileEvents::Event wait_ms = ProfileEvents::end();
+};
 using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
+enum class ThreadName : uint8_t;
 
 /**
  * Has RAII class to determine how many tasks are waiting for the execution and executing at the moment.
@@ -30,9 +37,11 @@ using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
  */
 struct TaskRuntimeData
 {
-    TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_)
-        : task(std::move(task_))
+    TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_, TaskProfileEvents events_)
+        : storage_id(task_->getStorageID())
+        , task(std::move(task_))
         , metric(metric_)
+        , events(events_)
     {
         /// Increment and decrement a metric with sequentially consistent memory order
         /// This is needed, because in unit test this metric is read from another thread
@@ -46,8 +55,38 @@ struct TaskRuntimeData
         CurrentMetrics::values[metric].fetch_sub(1);
     }
 
+    void cancel() const
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(events.cancel_ms);
+        if (task)
+            task->cancel();
+    }
+
+    void wait()
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(events.wait_ms);
+        is_done.wait();
+    }
+
+    bool executeStep() const
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(events.execute_ms);
+        return task->executeStep();
+    }
+
+    void resetTask()
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(events.reset_ms);
+        if (task)
+            task.reset();
+    }
+
+    /// Stored separately so that removeTasksCorrespondingToStorage can identify the task
+    /// even after resetTask() has nullified the task pointer.
+    StorageID storage_id;
     ExecutableTaskPtr task;
     CurrentMetrics::Metric metric;
+    TaskProfileEvents events;
     /// Guarded by MergeTreeBackgroundExecutor<>::mutex
     bool is_currently_deleting{false};
     /// Actually autoreset=false is needed only for unit test
@@ -85,12 +124,12 @@ public:
         std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : queue)
         {
-            if (item->task->getStorageID() == id)
+            if (item->storage_id == id)
                 res.push_back(item);
         }
 
         auto it = std::remove_if(queue.begin(), queue.end(),
-            [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
+            [&] (auto && item) -> bool { return item->storage_id == id; });
         queue.erase(it, queue.end());
         return res;
     }
@@ -130,11 +169,11 @@ public:
         std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : buffer)
         {
-            if (item->task->getStorageID() == id)
+            if (item->storage_id == id)
                 res.push_back(item);
         }
 
-        std::erase_if(buffer, [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
+        std::erase_if(buffer, [&] (auto && item) -> bool { return item->storage_id == id; });
         std::make_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
         return res;
     }
@@ -214,7 +253,7 @@ private:
     }
 
     std::variant<Policies...> impl;
-    size_t capacity;
+    size_t capacity{};
 };
 
 // Avoid typedef and alias to facilitate forward declaration
@@ -258,7 +297,19 @@ class MergeTreeBackgroundExecutor final : boost::noncopyable
 {
 public:
     MergeTreeBackgroundExecutor(
-        String name_,
+        ThreadName name_,
+        size_t threads_count_,
+        size_t max_tasks_count_,
+        CurrentMetrics::Metric metric_,
+        CurrentMetrics::Metric max_tasks_metric_,
+        ProfileEvents::Event execute_profile_event_,
+        ProfileEvents::Event cancel_profile_event_,
+        ProfileEvents::Event reset_profile_event_,
+        ProfileEvents::Event wait_profile_event_,
+        std::string_view policy = {});
+
+    MergeTreeBackgroundExecutor(
+        ThreadName name_,
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
@@ -291,7 +342,7 @@ public:
     }
 
 private:
-    String name;
+    ThreadName name;
     size_t threads_count TSA_GUARDED_BY(mutex) = 0;
     std::atomic<size_t> max_tasks_count = 0;
     CurrentMetrics::Metric metric;
@@ -310,6 +361,7 @@ private:
     bool shutdown TSA_GUARDED_BY(mutex) = false;
     std::unique_ptr<ThreadPool> pool;
     LoggerPtr log = getLogger("MergeTreeBackgroundExecutor");
+    TaskProfileEvents task_events;
 };
 
 extern template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;

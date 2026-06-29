@@ -1,0 +1,18 @@
+1
+1
+[1]
+[1]
+2
+1
+-- CTE leak, no subcolumn (default fails) --
+-- CTE leak, no subcolumn (compat) --
+1	1	1	1
+-- inline subquery, no subcolumn (default fails) --
+-- inline subquery, no subcolumn (compat) --
+1	1	1	1
+-- CTE leak with subcolumn (default fails) --
+-- CTE leak with subcolumn (compat) --
+1	(2)	1	(2)	1	(2)	1	(2)
+-- inline subquery aliased b, with subcolumn (default fails) --
+-- inline subquery aliased b, with subcolumn (compat) --
+1	(2)	1	(2)	1	(2)

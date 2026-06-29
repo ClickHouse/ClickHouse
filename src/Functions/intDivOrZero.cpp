@@ -11,6 +11,8 @@ struct DivideIntegralOrZeroImpl
     using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    /// See the comment in DivideIntegralImpl.
+    static constexpr bool no_vectorize = true;
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)
@@ -48,8 +50,8 @@ minimal negative number by minus one.
         {"Dividing a minimal negative number by minus 1", "SELECT intDivOrZero(0.05, -1)", "0"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIntDivOrZero>(documentation);
 }

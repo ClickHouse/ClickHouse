@@ -1,0 +1,4 @@
+<clickhouse>
+    <disable_internal_dns_cache>1</disable_internal_dns_cache>
+    <dns_allow_resolve_names_to_ipv6>0</dns_allow_resolve_names_to_ipv6>
+</clickhouse>

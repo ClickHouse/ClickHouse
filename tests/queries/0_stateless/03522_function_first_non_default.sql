@@ -1,4 +1,4 @@
-SELECT firstNonDefault(NULL, 0, 42, 256) AS result;
+SELECT firstNonDefault(NULL, 0, 43, 256) AS result;
 SELECT firstNonDefault(NULL :: Nullable(UInt8), 0 :: Nullable(UInt8), 42 :: UInt8) AS result;
 SELECT firstNonDefault('', '0', 'hello') AS result;
 SELECT firstNonDefault(NULL::Nullable(UInt8), 0::UInt8) AS result;

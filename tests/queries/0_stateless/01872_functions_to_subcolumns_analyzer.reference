@@ -112,7 +112,7 @@ SELECT count(__table1.id) AS `count(id)`
 FROM default.t_func_to_subcolumns AS __table1
 1	0	0
 2	1	0
-3	0	0
+3	1	0
 QUERY id: 0
   PROJECTION COLUMNS
     id UInt64
@@ -125,48 +125,51 @@ QUERY id: 0
           LIST id: 3, nodes: 2
             COLUMN id: 4, column_name: id, result_type: UInt64, source_id: 5
             COLUMN id: 6, column_name: id, result_type: UInt64, source_id: 7
-      COLUMN id: 8, column_name: n.null, result_type: UInt8, source_id: 5
-      CONSTANT id: 9, constant_value: UInt64_0, constant_value_type: UInt8
+      FUNCTION id: 8, function_name: isNull, function_type: ordinary, result_type: UInt8
+        ARGUMENTS
+          LIST id: 9, nodes: 1
+            COLUMN id: 10, column_name: n, result_type: Nullable(String), source_id: 5
+      CONSTANT id: 11, constant_value: UInt64_0, constant_value_type: UInt8
         EXPRESSION
-          FUNCTION id: 10, function_name: isNull, function_type: ordinary, result_type: UInt8
+          FUNCTION id: 12, function_name: isNull, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 11, nodes: 1
-                COLUMN id: 12, column_name: n, result_type: String, source_id: 7
+              LIST id: 13, nodes: 1
+                COLUMN id: 14, column_name: n, result_type: String, source_id: 7
   JOIN TREE
-    JOIN id: 13, strictness: ALL, kind: FULL
+    JOIN id: 15, strictness: ALL, kind: FULL
       LEFT TABLE EXPRESSION
         TABLE id: 5, alias: __table1, table_name: default.t_func_to_subcolumns
       RIGHT TABLE EXPRESSION
         UNION id: 7, alias: __table2, is_subquery: 1, union_mode: UNION_ALL
           QUERIES
-            LIST id: 14, nodes: 2
-              QUERY id: 15, alias: __table3
+            LIST id: 16, nodes: 2
+              QUERY id: 17, alias: __table3
                 PROJECTION COLUMNS
                   id UInt8
                 PROJECTION
-                  LIST id: 16, nodes: 1
-                    CONSTANT id: 17, constant_value: UInt64_1, constant_value_type: UInt8
+                  LIST id: 18, nodes: 1
+                    CONSTANT id: 19, constant_value: UInt64_1, constant_value_type: UInt8
                 JOIN TREE
-                  TABLE id: 18, alias: __table4, table_name: system.one
-              QUERY id: 19, alias: __table5
+                  TABLE id: 20, alias: __table4, table_name: system.one
+              QUERY id: 21, alias: __table5
                 PROJECTION COLUMNS
                   id UInt8
                 PROJECTION
-                  LIST id: 20, nodes: 1
-                    CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                  LIST id: 22, nodes: 1
+                    CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
                 JOIN TREE
-                  TABLE id: 22, alias: __table6, table_name: system.one
+                  TABLE id: 24, alias: __table6, table_name: system.one
       JOIN EXPRESSION
-        LIST id: 23, nodes: 1
-          COLUMN id: 24, column_name: id, result_type: UInt64, source_id: 13
+        LIST id: 25, nodes: 1
+          COLUMN id: 26, column_name: id, result_type: UInt64, source_id: 15
             EXPRESSION
-              LIST id: 25, nodes: 2
-                COLUMN id: 26, column_name: id, result_type: UInt64, source_id: 5
-                COLUMN id: 27, column_name: id, result_type: UInt8, source_id: 7
+              LIST id: 27, nodes: 2
+                COLUMN id: 28, column_name: id, result_type: UInt64, source_id: 5
+                COLUMN id: 29, column_name: id, result_type: UInt8, source_id: 7
 
 SELECT
     firstNonDefault(__table1.id, __table2.id) AS id,
-    __table1.`n.null` AS `isNull(n)`,
+    __table1.n IS NULL AS `isNull(n)`,
     _CAST(0, \'UInt8\') AS `isNull(right.n)`
 FROM default.t_func_to_subcolumns AS __table1
 ALL FULL OUTER JOIN

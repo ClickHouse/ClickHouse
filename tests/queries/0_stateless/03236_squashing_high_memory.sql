@@ -2,6 +2,7 @@
 -- reason: test requires too many rows to read
 
 SET max_rows_to_read = '501G';
+SET enable_lazy_columns_replication = 0;
 
 DROP TABLE IF EXISTS id_values;
 

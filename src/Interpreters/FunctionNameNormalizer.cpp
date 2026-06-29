@@ -32,8 +32,8 @@ void FunctionNameNormalizer::visit(IAST * ast)
     // have the same name as function, e.g. Date.
     if (auto * node_decl = ast->as<ASTColumnDeclaration>())
     {
-        visit(node_decl->default_expression.get());
-        visit(node_decl->ttl.get());
+        visit(node_decl->getDefaultExpression().get());
+        visit(node_decl->getTTL().get());
         return;
     }
 

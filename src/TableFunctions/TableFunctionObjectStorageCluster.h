@@ -5,7 +5,6 @@
 #include <TableFunctions/ITableFunctionCluster.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
-#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -17,6 +16,8 @@ class StorageS3Settings;
 class StorageAzureBlobSettings;
 class StorageS3Configuration;
 class StorageAzureConfiguration;
+
+ContextPtr getQueryOrGlobalContext();
 
 /**
 * Class implementing s3/hdfs/azureBlobStorageCluster(...) table functions,
@@ -49,13 +50,6 @@ protected:
     bool hasStaticStructure() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure != "auto"; }
     bool needStructureHint() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure == "auto"; }
     void setStructureHint(const ColumnsDescription & structure_hint_) override { Base::structure_hint = structure_hint_; }
-private:
-    static ContextPtr getQueryOrGlobalContext()
-    {
-        if (auto query_context = CurrentThread::getQueryContext(); query_context != nullptr)
-            return query_context;
-        return Context::getGlobalContextInstance();
-    }
 };
 
 #if USE_AWS_S3
@@ -68,6 +62,10 @@ using TableFunctionAzureBlobCluster = TableFunctionObjectStorageCluster<AzureClu
 
 #if USE_HDFS
 using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDefinition, StorageHDFSConfiguration>;
+#endif
+
+#if USE_AVRO
+using TableFunctionIcebergLocalCluster = TableFunctionObjectStorageCluster<IcebergLocalClusterDefinition, StorageLocalIcebergConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AWS_S3
@@ -83,12 +81,26 @@ using TableFunctionIcebergAzureCluster = TableFunctionObjectStorageCluster<Icebe
 using TableFunctionIcebergHDFSCluster = TableFunctionObjectStorageCluster<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration, true>;
 #endif
 
+#if USE_AVRO && USE_AWS_S3
+using TableFunctionPaimonS3Cluster = TableFunctionObjectStorageCluster<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration, true>;
+using TableFunctionPaimonCluster = TableFunctionObjectStorageCluster<PaimonClusterDefinition, StorageS3PaimonConfiguration, true>;
+#endif
+
+#if USE_AVRO && USE_AZURE_BLOB_STORAGE
+using TableFunctionPaimonAzureCluster = TableFunctionObjectStorageCluster<PaimonAzureClusterDefinition, StorageAzurePaimonConfiguration, true>;
+#endif
+
+#if USE_AVRO && USE_HDFS
+using TableFunctionPaimonHDFSCluster = TableFunctionObjectStorageCluster<PaimonHDFSClusterDefinition, StorageHDFSPaimonConfiguration, true>;
+#endif
+
+
 #if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
 using TableFunctionDeltaLakeCluster = TableFunctionObjectStorageCluster<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
 using TableFunctionDeltaLakeS3Cluster = TableFunctionObjectStorageCluster<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
 #endif
 
-#if USE_PARQUET && USE_AZURE_BLOB_STORAGE
+#if USE_PARQUET && USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
 using TableFunctionDeltaLakeAzureCluster = TableFunctionObjectStorageCluster<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
 #endif
 

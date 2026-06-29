@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
@@ -18,8 +19,12 @@ struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization
 
 class SerializationString final : public ISerialization
 {
+private:
+    explicit SerializationString(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
+
 public:
-    explicit SerializationString(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::DEFAULT);
+    static UInt128 getHash(MergeTreeStringSerializationVersion version_);
+    static SerializationPtr create(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;

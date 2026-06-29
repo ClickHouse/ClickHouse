@@ -4,7 +4,19 @@
 #include <Common/StackTrace.h>
 
 
-namespace Poco { namespace Util { class LayeredConfiguration; }}
+namespace Poco
+{
+
+namespace Util
+{
+class LayeredConfiguration;
+};
+
+class Logger;
+
+}
+
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 
 /// Sends crash reports and LOGICAL_ERRORs (if "send_logical_errors" is enabled)
@@ -17,7 +29,7 @@ namespace Poco { namespace Util { class LayeredConfiguration; }}
 class CrashWriter
 {
 public:
-    using FramePointers = StackTrace::FramePointers;
+    using FramePointers = FramePointers;
 
     static void initialize(Poco::Util::LayeredConfiguration & config);
     static bool initialized();
@@ -38,12 +50,14 @@ public:
         size_t size);
 
 private:
-    explicit CrashWriter(Poco::Util::LayeredConfiguration & config);
+    explicit CrashWriter(std::string endpoint_, std::string server_data_path_);
 
     static std::unique_ptr<CrashWriter> instance;
 
     std::string endpoint;
     std::string server_data_path;
+
+    LoggerPtr logger;
 
     enum Type
     {

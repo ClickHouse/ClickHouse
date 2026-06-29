@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -6,7 +7,27 @@
 namespace DB
 {
 
+/// Prefix used by every per-substream skip-index file name on disk: "skp_idx_<name>...".
+inline constexpr std::string_view SKIP_INDEX_FILE_PREFIX = "skp_idx_";
+
+/// Reserved name for the per-part archive that aggregates packed skip-index substreams.
+/// Cannot collide with a per-file skip-index entry: those start with SKIP_INDEX_FILE_PREFIX
+/// (underscore-suffixed), while the archive uses "skp_idx." (dot-suffixed).
+inline constexpr std::string_view SKIP_INDICES_PACKED_FILENAME = "skp_idx.packed";
+
+/// True iff @name looks like a per-substream skip-index file name (and so could be a virtual
+/// file inside skp_idx.packed). The archive itself uses SKIP_INDICES_PACKED_FILENAME
+/// ("skp_idx.packed", dot-suffixed) so this check never matches the archive — callers can use
+/// it as a cheap pre-filter before consulting the archive overlay without risking recursion.
+inline bool looksLikePackedSkipIndexFile(std::string_view name)
+{
+    return name.starts_with(SKIP_INDEX_FILE_PREFIX);
+}
+
 class IMergeTreeIndexCondition;
+class IMergeTreeDataPart;
+struct IMergeTreeIndex;
+struct MarkRanges;
 
 /// Represents a substream of a merge tree index.
 /// By default skip indexes have one substream (skp_idx_<name>.idx),
@@ -19,6 +40,7 @@ struct MergeTreeIndexSubstream
         Regular,
         TextIndexDictionary,
         TextIndexPostings,
+        TextIndexPositions,
     };
 
     Type type;
@@ -26,6 +48,13 @@ struct MergeTreeIndexSubstream
     String suffix;
     /// Extension of the index substream's file with data. Encodes the serialization version (".idx", "idx2", etc.)
     String extension;
+
+    static bool isCompressed(Type type)
+    {
+        /// Text index postings and positions are not compressed by write buffer,
+        /// because the compression is implicitly applied during building them.
+        return type != Type::TextIndexPostings && type != Type::TextIndexPositions;
+    }
 };
 
 using MergeTreeIndexSubstreams = std::vector<MergeTreeIndexSubstream>;
@@ -39,7 +68,7 @@ struct MergeTreeIndexFormat
     explicit operator bool() const { return version != 0; }
 };
 
-using MergeTreeIndexWriterStream = MergeTreeWriterStream<false>;
+using MergeTreeIndexWriterStream = MergeTreeWriterStream;
 using MergeTreeIndexOutputStreams = std::map<MergeTreeIndexSubstream::Type, MergeTreeIndexWriterStream *>;
 
 using MergeTreeIndexReaderStream = MergeTreeReaderStream;
@@ -49,6 +78,9 @@ struct MergeTreeIndexDeserializationState
 {
     MergeTreeIndexVersion version;
     const IMergeTreeIndexCondition * condition;
+    const IMergeTreeDataPart & part;
+    const IMergeTreeIndex & index;
+    const MarkRanges * readable_ranges;
 };
 
 }
