@@ -20,3 +20,10 @@ Tuple(a UInt8, s String)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hi\'
 Tuple(a UInt8, b UInt8)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), 42)
 1	(0,42)
 -- alter errors
+-- nullable tuple
+Nullable(Tuple(a UInt8, s String))	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hi\')
+1	(0,'Hi')
+-- lambda parameter shadowing an element name
+Tuple(x UInt8, y Array(UInt8))	tuple(defaultValueOfTypeName(\'UInt8\'), arrayMap(x -> (x + 1), [1, 2, 3]))
+(0,[2,3,4])
+-- lambda body free identifier colliding with an element name

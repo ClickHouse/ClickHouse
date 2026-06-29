@@ -57,16 +57,49 @@ ASTPtr makeTupleDefault(const ASTs & element_types, const ASTs & element_default
 }
 
 /// Collect the names of identifiers referenced by an expression (for the ambiguity check below).
-void collectReferencedIdentifiers(const IAST & ast, NameSet & names)
+/// Lambda parameters (e.g. `x` in `arrayMap(x -> x + 1, arr)`) are scoped local variables, not
+/// references to columns or tuple elements, so they are skipped while free identifiers from the
+/// lambda body are still collected. `bound` holds the names currently bound by enclosing lambdas.
+void collectReferencedIdentifiers(const IAST & ast, NameSet & names, NameSet & bound)
 {
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda"
+        && function->arguments && function->arguments->children.size() == 2)
+    {
+        /// The first argument of a lambda is always a `tuple(...)` of parameter identifiers; only
+        /// its second argument (the body) can reference outer names.
+        Names added;
+        if (const auto * params = function->arguments->children[0]->as<ASTFunction>();
+            params && params->name == "tuple" && params->arguments)
+        {
+            for (const auto & param : params->arguments->children)
+                if (const auto * identifier = param->as<ASTIdentifier>())
+                    if (bound.insert(identifier->name()).second)
+                        added.push_back(identifier->name());
+        }
+
+        collectReferencedIdentifiers(*function->arguments->children[1], names, bound);
+
+        for (const auto & name : added)
+            bound.erase(name);
+        return;
+    }
+
     if (const auto * identifier = ast.as<ASTIdentifier>())
     {
-        names.insert(identifier->name());
-        if (!identifier->name_parts.empty())
-            names.insert(identifier->name_parts.front());
+        /// The root of a compound identifier (`x` in `x.y`) determines what it refers to: if it is a
+        /// bound lambda parameter, the whole reference is local and must not be collected.
+        const String & root = identifier->name_parts.empty() ? identifier->name() : identifier->name_parts.front();
+        if (!bound.contains(root))
+        {
+            names.insert(identifier->name());
+            if (!identifier->name_parts.empty())
+                names.insert(identifier->name_parts.front());
+        }
+        return;
     }
+
     for (const auto & child : ast.children)
-        collectReferencedIdentifiers(*child, names);
+        collectReferencedIdentifiers(*child, names, bound);
 }
 
 /// Strip the DEFAULT expression from a name-type pair (turning it back into a plain element).
@@ -194,7 +227,18 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, NameSet & element_names, ASTs & e
         return nullptr;
     }
 
-    /// Any other composite type (Array, Map, Nullable, LowCardinality, ...): a DEFAULT inside is not
+    /// Nullable is a transparent wrapper: a DEFAULT inside Nullable(Tuple(...)) (enabled by the
+    /// enable_nullable_tuple_type setting) is representable as the same column-level tuple(...)
+    /// default, which is then cast to the nullable tuple type. If the setting is off, the
+    /// Nullable(Tuple) type itself is rejected later during type validation.
+    if (data_type->name == "Nullable")
+    {
+        if (!arguments || arguments->children.size() != 1)
+            return nullptr;
+        return buildAndStripTupleDefaults(*arguments->children[0], element_names, explicit_defaults);
+    }
+
+    /// Any other composite type (Array, Map, LowCardinality, ...): a DEFAULT inside is not
     /// representable as a static column default.
     if (arguments)
     {
@@ -234,7 +278,10 @@ void pullUpTupleElementDefaults(ASTColumnDeclaration & col_decl)
     /// tuple/nested. If a referenced name collides with an element name it is ambiguous, so reject.
     NameSet referenced;
     for (const auto & expression : explicit_defaults)
-        collectReferencedIdentifiers(*expression, referenced);
+    {
+        NameSet bound;
+        collectReferencedIdentifiers(*expression, referenced, bound);
+    }
     for (const auto & name : referenced)
         if (element_names.contains(name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

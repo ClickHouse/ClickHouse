@@ -105,9 +105,47 @@ ALTER TABLE t_alter_add ADD COLUMN n Nested(x String, y UInt8 DEFAULT 5); -- { s
 -- DEFAULT inside Array is not supported on ALTER either.
 ALTER TABLE t_alter_add MODIFY COLUMN c Array(Tuple(x UInt8 DEFAULT 5)); -- { serverError NOT_IMPLEMENTED }
 
+SELECT '-- nullable tuple';
+-- Nullable is a transparent wrapper around a Tuple, so a DEFAULT inside Nullable(Tuple(...)) is
+-- pulled up as the same column-level tuple(...) default and cast to the nullable tuple type.
+SET enable_nullable_tuple_type = 1;
+CREATE TABLE t_nullable
+(
+    id UInt8,
+    c Nullable(Tuple(a UInt8, s String DEFAULT 'Hi'))
+)
+ENGINE = MergeTree ORDER BY id;
+SELECT type, default_kind, default_expression
+FROM system.columns
+WHERE database = currentDatabase() AND table = 't_nullable' AND name = 'c';
+INSERT INTO t_nullable (id) VALUES (1);
+SELECT id, c FROM t_nullable;
+
+SELECT '-- lambda parameter shadowing an element name';
+-- A lambda parameter is a scoped local variable, not a reference to a tuple element or a column, so
+-- a parameter named like an element does not make the default ambiguous.
+CREATE TABLE t_lambda
+(
+    x UInt8,
+    c Tuple(x UInt8, y Array(UInt8) DEFAULT arrayMap(x -> x + 1, [1, 2, 3]))
+)
+ENGINE = MergeTree ORDER BY x;
+SELECT type, default_expression
+FROM system.columns
+WHERE database = currentDatabase() AND table = 't_lambda' AND name = 'c';
+INSERT INTO t_lambda (x) VALUES (7);
+SELECT c FROM t_lambda;
+
+SELECT '-- lambda body free identifier colliding with an element name';
+-- A free identifier in a lambda body (not bound by the lambda) that collides with an element name is
+-- still rejected as ambiguous.
+CREATE TABLE t_lambda_free (c Tuple(a UInt8, y Array(UInt8) DEFAULT arrayMap(z -> z + a, [1]))) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
+
 DROP TABLE t_default_in_tuple;
 DROP TABLE t_nested_tuple;
 DROP TABLE t_ref;
 DROP TABLE t_expr;
 DROP TABLE t_alter_add;
 DROP TABLE t_alter_modify;
+DROP TABLE t_nullable;
+DROP TABLE t_lambda;

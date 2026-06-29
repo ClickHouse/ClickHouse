@@ -128,7 +128,7 @@ WHERE table = 't' AND name = 'c';
 └──────┴──────────────────────────┴──────────────┴───────────────────────────────────────────────────┘
 ```
 
-A `DEFAULT` expression may reference other columns of the table, but not other elements of the same tuple; a reference that collides with an element name is rejected as ambiguous. Nested tuples are supported, and the defaults are pulled up recursively.
+A `DEFAULT` expression may reference other columns of the table, but not other elements of the same tuple; a reference that collides with an element name is rejected as ambiguous. A locally-scoped lambda parameter (for example `x` in `arrayMap(x -> x + 1, ...)`) is not such a reference, so it may share a name with an element. Nested tuples are supported, and the defaults are pulled up recursively. A `DEFAULT` inside a `Nullable(Tuple(...))` (enabled by the `enable_nullable_tuple_type` setting) is also supported: it is pulled up as the same column-level `tuple(...)` default and cast to the nullable tuple type.
 
 `DEFAULT` inside a `Nested` type (which is `Array(Tuple(...))`) or inside an `Array` is not supported: a scalar element default cannot be represented as a static array column default, so it is rejected with a `NOT_IMPLEMENTED` error. Building an actual data type while a `DEFAULT` is set (for example via `CAST` or `defaultValueOfTypeName`) is also rejected, because `DEFAULT` is only meaningful in a column declaration.
 
