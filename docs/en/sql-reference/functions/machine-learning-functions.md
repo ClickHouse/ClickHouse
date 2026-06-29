@@ -20,7 +20,7 @@ The [stochasticLogisticRegression](/sql-reference/aggregate-functions/reference/
 
 ## naiveBayesClassifier {#naivebayesclassifier}
 
-`naiveBayesClassifier` and its companion functions classify text with a [Naive Bayes](https://en.wikipedia.org/wiki/Naive_Bayes_classifier) model stored in a dictionary with the [`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) layout. The dictionary compiles a table of pre-aggregated, per-class n-gram counts into a model at load time; these functions then classify input text, returning the predicted class id or class probabilities.
+`naiveBayesClassifier` and its companion functions classify text with a multinomial [Naive Bayes](https://en.wikipedia.org/wiki/Naive_Bayes_classifier) model stored in a dictionary with the [`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) layout. The dictionary compiles a table of pre-aggregated, per-class n-gram counts into a model at load time; these functions then classify input text, returning the predicted class id or class probabilities.
 
 For the model, the dictionary structure, and all configuration — tokenization modes, priors, boundary tokens, and runnable examples — see the [`NAIVE_BAYES` dictionary layout](/sql-reference/statements/create/dictionary/layouts/naive-bayes). This section documents the functions that query such a dictionary.
 

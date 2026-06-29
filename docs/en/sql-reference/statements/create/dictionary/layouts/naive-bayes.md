@@ -7,7 +7,7 @@ description: 'Configure NAIVE_BAYES dictionaries for text classification.'
 doc_type: 'reference'
 ---
 
-The `naive_bayes` (`NAIVE_BAYES`) dictionary classifies text with a [Naive Bayes](https://en.wikipedia.org/wiki/Naive_Bayes_classifier) model. It is backed by a table of pre-aggregated, per-class **n-gram counts**; it compiles that table into a model once, at load time, and then classifies any input text into one of the classes.
+The `naive_bayes` (`NAIVE_BAYES`) dictionary classifies text with a multinomial [Naive Bayes](https://en.wikipedia.org/wiki/Naive_Bayes_classifier) model (the standard event model for text, scoring each class by how often the input's n-grams occur in it). It is backed by a table of pre-aggregated, per-class **n-gram counts**; it compiles that table into a model once, at load time, and then classifies any input text into one of the classes.
 
 It is suited to fast, lightweight text classification such as sentiment analysis, topic or spam labelling, and language or script detection.
 
@@ -17,11 +17,11 @@ You query the dictionary with the [`naiveBayesClassifier`](/sql-reference/functi
 
 **Training (at load time).** Each source row is a `(n-gram, class, count)` observation. When the dictionary loads, the rows are compiled once into the model. Duplicate `(n-gram, class)` rows are summed, and rows with `count = 0` are ignored.
 
-**Classifying (at query time).** To classify a string, the model splits it into n-grams according to `mode` and `n` (see [Tokenization modes](#tokenization-modes)), then scores each class by combining the class prior with how often the input's n-grams were seen in that class. The `alpha` smoothing factor keeps an n-gram that was never seen in a class from ruling that class out. The class with the highest score is the prediction; the probability functions turn the scores into probabilities that sum to `1.0`.
+**Classifying (at query time).** To classify a string, the model splits it into n-grams according to `mode` and `n` (see [Tokenization modes](#tokenization-modes)), then scores each class by combining the class prior with how often the input's n-grams were seen in that class. The `alpha` smoothing factor keeps an n-gram that was seen in training but not in a given class from ruling that class out. An n-gram that was not seen in training at all is ignored — it is not part of the model's vocabulary, so it contributes to no class (as in standard multinomial Naive Bayes). The class with the highest score is the prediction; the probability functions turn the scores into probabilities that sum to `1.0`. These are normalized model posteriors and, like most Naive Bayes probabilities, may be poorly calibrated.
 
 For example, in the [quickstart](#quickstart) below `'good great love'` is classified as `0` because each of those words was seen far more often in class `0`'s counts than in class `1`'s, so class `0` scores much higher.
 
-The algorithm follows [Jurafsky & Martin, Chapter 4](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
+The algorithm follows the multinomial Naive Bayes model for text classification; see [Manning, Raghavan & Schütze, *Introduction to Information Retrieval*, ch. 13 (*Text Classification and Naive Bayes*)](https://nlp.stanford.edu/IR-book/html/htmledition/text-classification-and-naive-bayes-1.html).
 
 ## Quickstart {#quickstart}
 
@@ -158,7 +158,7 @@ FROM (SELECT class_id, count() / sum(count()) OVER () AS frac FROM docs GROUP BY
 | `class_attribute` | Name of the attribute that holds the class label; the other attribute is the count. | `'class_id'` | *Required* |
 | `n` | N-gram size: `1` = unigrams, `2` = bigrams, `3` = trigrams, … (1–1024). | `2` | *Required* |
 | `mode` | Tokenization method: `byte`, `codepoint`, or `token`. See [Tokenization modes](#tokenization-modes). | `'token'` | *Required* |
-| `alpha` | Laplace smoothing factor for unseen n-grams (must be finite and `> 0`). | `0.5` | `1.0` |
+| `alpha` | Additive (Lidstone) smoothing for n-gram likelihoods; `alpha = 1` is Laplace smoothing (must be finite and `> 0`). | `0.5` | `1.0` |
 | `priors_mode` | How class priors are determined: `uniform`, `proportional`, or `explicit`. See [Prior modes](#prior-modes). | `'uniform'` | `'proportional'` |
 | `priors` | Explicit per-class priors; required only when `priors_mode` is `explicit`. Must sum to `1.0`. | `'0=0.6,1=0.4'` | — |
 | `store_source` | Retain the source rows so `SELECT * FROM dictionary` works. Roughly doubles memory. | `1` | `0` |
@@ -179,7 +179,7 @@ The dictionary can be defined with `CREATE DICTIONARY ... LAYOUT(NAIVE_BAYES(...
 
 The prior is the model's belief about each class *before* it looks at the text. `priors_mode` chooses how it is set.
 
-- `proportional` (default) — each class's prior is proportional to its total n-gram count in the training data, so classes seen more often are more likely a priori. **Choose it** when the training class frequencies match the frequencies you expect at query time. **Nothing to supply** — it is derived from the source counts.
+- `proportional` (default) — each class's prior is proportional to its total n-gram count in the training data, so classes seen more often are more likely a priori. **Choose it** when the training class proportions (by total n-gram count) match the frequencies you expect at query time. **Nothing to supply** — it is derived from the source counts.
 
   ```sql
   LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'proportional'))
