@@ -23,6 +23,8 @@
 
 #include <boost/algorithm/string.hpp>
 
+#include <base/types.h>
+
 namespace DB
 {
 
@@ -108,6 +110,10 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     initializeFeatureFlags(config);
     initializeDisks(config);
 
+    s3_experimental_changelog = config.getBool("keeper_server.coordination_settings.s3_experimental_changelog", false);
+    s3_flush_interval = config.getUInt64("keeper_server.coordination_settings.s3_flush_interval", 500);
+    s3_log_disk_name = config.getString("keeper_server.coordination_settings.s3_log_disk", "");
+
     if (config.has("keeper_server.precommit_sleep_ms_for_testing"))
         precommit_sleep_ms_for_testing = config.getInt64("keeper_server.precommit_sleep_ms_for_testing");
 
@@ -115,6 +121,25 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
         precommit_sleep_probability_for_testing = config.getDouble("keeper_server.precommit_sleep_probability_for_testing");
 
     block_acl = config.getBool("keeper_server.cleanup_old_and_ignore_new_acl", false);
+}
+
+bool KeeperContext::isS3ExperimentalChangelog() const
+{
+    return s3_experimental_changelog;
+}
+
+Int64 KeeperContext::getS3FlushInterval() const
+{
+    return s3_flush_interval;
+}
+
+DiskPtr KeeperContext::getS3LogDisk() const
+{
+    if (s3_log_disk_name.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "S3 experimental changelog is enabled but `keeper_server.coordination_settings.s3_log_disk` is not configured");
+    return disk_selector->get(s3_log_disk_name);
 }
 
 namespace

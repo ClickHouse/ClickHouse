@@ -40,6 +40,9 @@ namespace ErrorCodes
     DECLARE(Milliseconds, sleep_before_leader_change_ms, 8000, "How much time we will wait before removing leader (so as leader could commit accepted but non-committed commands and they won't be lost -- leader removal is not synchronized with committing)", 0) \
     DECLARE(LogsLevel, raft_logs_level, LogsLevel::information, "Log internal RAFT logs into main server log level. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'", 0) \
     DECLARE(NonZeroUInt64, rotate_log_storage_interval, 100000, "How many records will be stored in one log storage file", 0) \
+    DECLARE(Bool, s3_experimental_changelog, false, "S3 changelog experiment", 0) \
+    DECLARE(UInt64, s3_flush_interval, 500, "Interval of flushing writing buffer to S3 in microseconds", 0) \
+    DECLARE(String, s3_log_disk, "", "Name of the disk from `<storage_configuration>` used to store the Keeper changelog when `s3_experimental_changelog` is enabled.", 0) \
     DECLARE(UInt64, snapshots_to_keep, 3, "How many compressed snapshots to keep on disk", 0) \
     DECLARE(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     DECLARE(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
