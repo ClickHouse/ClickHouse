@@ -435,7 +435,7 @@ bool generatedInSetIsSafeToInject(
         if (max_bytes != 0 && set.getTotalByteCount() > max_bytes)
             return false;
     }
-    catch (...)
+    catch (...) // Ok: building the probe set hit a limit (e.g. memory); skip injection and fall back to a plain scan instead of failing the recursive query.
     {
         return false;
     }
