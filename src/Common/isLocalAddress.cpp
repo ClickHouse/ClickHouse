@@ -1,8 +1,10 @@
 #include <Common/isLocalAddress.h>
 
 #include <ifaddrs.h>
+#include <algorithm>
 #include <cstring>
 #include <optional>
+#include <ranges>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 #include <Common/Exception.h>
@@ -134,6 +136,20 @@ size_t getHostNamePrefixDistance(const std::string & local_hostname, const std::
 size_t getHostNameLevenshteinDistance(const std::string & local_hostname, const std::string & host)
 {
     return levenshteinDistanceCaseInsensitive(local_hostname, host);
+}
+
+size_t getHostNameLongestCommonPrefix(const std::string & local_hostname, const std::string & host)
+{
+    /// Case-sensitive comparison, matching `getHostNamePrefixDistance` (`nearest_hostname`).
+    const auto [it, _] = std::ranges::mismatch(local_hostname, host);
+    return static_cast<size_t>(it - local_hostname.begin());
+}
+
+size_t getHostNameLongestCommonSuffix(const std::string & local_hostname, const std::string & host)
+{
+    /// Case-sensitive comparison, matching `getHostNamePrefixDistance` (`nearest_hostname`).
+    const auto [it, _] = std::ranges::mismatch(local_hostname | std::views::reverse, host | std::views::reverse);
+    return static_cast<size_t>(it - local_hostname.rbegin());
 }
 
 }

@@ -14,7 +14,6 @@ from helpers.s3_tools import (
     prepare_s3_bucket,
 )
 from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
-from helpers.test_tools import TSV
 
 from helpers.iceberg_utils import (
     default_upload_directory,
@@ -261,6 +260,45 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type, with
             f"SELECT * FROM icebergS3(path = '{storage_path}',  SETTINGS disk = '{disk_name}')"
         )
 
+
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_iceberg_trivial_count_optimization(started_cluster, storage_type):
+    # Regression guard for `StorageObjectStorage::supportsTrivialCountOptimization`. Iceberg's
+    # `IcebergMetadata::supportsTotalRows` is true, so `StorageObjectStorage::totalRows` serves the
+    # row count from manifest metadata and the planner short-circuits `SELECT count()` with a
+    # `ReadFromPreparedSource (Optimized trivial count)` step. That override was nearly lost the
+    # same way `supportsOptimizationToSubcolumns` was dropped in the storage unification (#59767,
+    # fixed in #106443). Removing it makes the marker disappear and this test fail.
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = f"test_iceberg_trivial_count_{get_uuid_str()}"
+
+    write_iceberg_from_df(spark, generate_data(spark, 0, 100), TABLE_NAME)
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    storage_path = (
+        f"{TABLE_NAME}"
+        if storage_type != "azure"
+        else f"var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    )
+    ch_table = f"{TABLE_NAME}_{storage_type}_count"
+    instance.query(
+        f"CREATE TABLE {ch_table} ENGINE=Iceberg('{storage_path}', 'Parquet') SETTINGS disk = 'disk_{storage_type}_common'"
+    )
+
+    explain = instance.query(
+        f"EXPLAIN SELECT count() FROM {ch_table} SETTINGS optimize_trivial_count_query = 1"
+    )
+    assert "ReadFromPreparedSource (Optimized trivial count)" in explain, explain
+
+    assert instance.query(f"SELECT count() FROM {ch_table}").strip() == "100"
+
+
 @pytest.mark.parametrize("format_version", ["2"])
 @pytest.mark.parametrize("storage_type", ["local", "s3", "azure"])
 @pytest.mark.parametrize("with_cache", [False, True])
@@ -348,7 +386,7 @@ def test_cluster_table_function(started_cluster, storage_type, with_cache):
     logging.info(f"Setup complete. files: {files}")
     assert len(files) == 5 + 4 * (len(started_cluster.instances) - 1)
 
-    clusters = instance.query(f"SELECT * FROM system.clusters")
+    clusters = instance.query("SELECT * FROM system.clusters")
     logging.info(f"Clusters setup: {clusters}")
 
     # Regular Query only node1
