@@ -71,6 +71,29 @@ static MutableColumnPtr cloneEmptyFromFirstConvertedColumn(const VectorWithMemor
     return nullptr;
 }
 
+/// Under `accurateCastOrNull` the per-variant conversions to the same target type can DISAGREE on
+/// nullability: a conversion that can never fail (e.g. UInt16 -> Float32) returns a plain column,
+/// while one that can fail (e.g. DateTime -> Float32) returns a Nullable column to mark failures.
+/// The result is assembled by `insertFrom`-ing each converted column into a single result column,
+/// which requires every source to have the exact same column type. So if any converted column is
+/// Nullable, wrap every other converted column in Nullable too, making the whole set homogeneous.
+static void unifyConvertedColumnsNullability(std::initializer_list<VectorWithMemoryTracking<ColumnPtr> *> cast_column_groups)
+{
+    bool any_nullable = false;
+    for (const auto * group : cast_column_groups)
+        for (const auto & column : *group)
+            if (column && isColumnNullable(*column))
+                any_nullable = true;
+
+    if (!any_nullable)
+        return;
+
+    for (auto * group : cast_column_groups)
+        for (auto & column : *group)
+            if (column && !isColumnNullable(*column))
+                column = makeNullable(column);
+}
+
 /// Row-wise source null map (ColumnUInt8, 1 = source value is NULL), or nullptr when the column
 /// cannot hold NULLs. Dynamic/Variant encode NULLs via NULL_DISCRIMINATOR rather than a separate
 /// null map, so reconstruct it via createNullMap() (the same way FunctionConvert does).
@@ -180,7 +203,10 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
         }
     }
 
-    /// Construct result column from all cast variants.
+    /// Construct result column from all cast variants. Different variants may have converted to the
+    /// same target type but with different nullability under accurateCastOrNull; unify them so the
+    /// result column type matches every column we insert from.
+    unifyConvertedColumnsNullability({&cast_variant_columns, &cast_shared_variant_columns});
     auto res = cloneEmptyFromFirstConvertedColumn(cast_variant_columns);
     if (!res)
         res = cloneEmptyFromFirstConvertedColumn(cast_shared_variant_columns);
@@ -337,6 +363,9 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
         }
     }
 
+    /// Different variants may have converted to the same target type but with different nullability
+    /// under accurateCastOrNull; unify them so the result column type matches every column we insert from.
+    unifyConvertedColumnsNullability({&cast_variant_columns});
     auto res = cloneEmptyFromFirstConvertedColumn(cast_variant_columns);
     if (!res)
         res = result_type->createColumn();
@@ -1639,6 +1668,9 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
         }
 
         /// Second, construct resulting column from cast variant columns according to discriminators.
+        /// Different variants may have converted to the same target type but with different nullability
+        /// under accurateCastOrNull; unify them so the result column type matches every column we insert from.
+        unifyConvertedColumnsNullability({&cast_variant_columns});
         const auto & local_discriminators = column_variant.getLocalDiscriminators();
         auto res = cloneEmptyFromFirstConvertedColumn(cast_variant_columns);
         if (!res)

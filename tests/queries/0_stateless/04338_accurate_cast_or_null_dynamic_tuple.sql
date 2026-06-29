@@ -63,3 +63,22 @@ ORDER BY id;
 
 -- Non-Nullable target, multi-element: a source NULL in a non-Nullable Dynamic element nulls the whole Tuple.
 SELECT accurateCastOrNull(CAST((NULL, 9), 'Tuple(Dynamic, Int32)'), 'Tuple(Float32, Int32)') AS r, toTypeName(r);
+
+-- A Variant/Dynamic element whose per-variant conversions to the SAME target type disagree on
+-- nullability (e.g. UInt16 -> Float32 never fails so it stays plain, while DateTime -> Float32 can
+-- fail so it becomes Nullable) must assemble cleanly. The converted columns are unified to Nullable
+-- before assembly so the result column type matches every column inserted from.
+SET allow_suspicious_variant_types = 1;
+-- Pin the timezone so the DateTime -> Float32 epoch value below is deterministic under randomization.
+SET session_timezone = 'UTC';
+SELECT accurateCastOrNull(CAST(tuple(CAST('42', 'Variant(DateTime, UInt16, UInt32)')), 'Tuple(Dynamic)'), 'Tuple(Float32)');
+SELECT accurateCastOrNull(CAST(tuple(CAST('42', 'Variant(DateTime, UInt16)')), 'Tuple(Dynamic)'), 'Tuple(UInt8)');
+SELECT accurateCastOrNull(tuple(CAST('42', 'Variant(DateTime, UInt16)')), 'Tuple(Float32)');
+-- per-row, both the numeric variant (row 1) and the temporal variant (row 2) populated in one block,
+-- so the assembly inserts from both the plain and the Nullable converted column (Dynamic source).
+SELECT id, accurateCastOrNull(t, 'Tuple(Float32)') AS r
+FROM (SELECT 1 AS id, tuple(CAST(CAST('42', 'Variant(DateTime, UInt16)'), 'Dynamic')) AS t
+      UNION ALL SELECT 2 AS id, tuple(CAST(CAST('2020-01-01 00:00:00', 'Variant(DateTime, UInt16)'), 'Dynamic')) AS t)
+ORDER BY id;
+-- Variant source (not via Dynamic) exercises the same heterogeneous-nullability assembly.
+SELECT accurateCastOrNull(tuple(CAST('2020-01-01 00:00:00', 'Variant(DateTime, UInt16)')), 'Tuple(Float32)');
