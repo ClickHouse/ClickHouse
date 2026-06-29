@@ -2359,10 +2359,11 @@ def test_structure_only_restores_access_entities_and_udfs():
 
     instance.query("DROP DATABASE test")
 
-    # Phase 2: structure_only + restore_access_entities + restore_functions
+    # Phase 2: structure_only + restore_access_entities + restore_functions.
+    # Quoted string values ('true'/'1') also exercise string parsing of the settings.
     instance.query(
         f"RESTORE ALL FROM {backup_name}"
-        f" SETTINGS structure_only=true, restore_access_entities=true, restore_functions=true"
+        f" SETTINGS structure_only=true, restore_access_entities='true', restore_functions='1'"
     )
 
     # Table exists but has no data
