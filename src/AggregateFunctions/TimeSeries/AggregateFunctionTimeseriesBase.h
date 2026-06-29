@@ -303,7 +303,7 @@ protected:
     /// grid advances, buckets entering the window are fed to `Aggregator::add` (which preaggregates them into a
     /// `Summary` where needed), buckets leaving are dropped by `removeBefore`, and `getResult` reads off the window's
     /// value. The aggregator keeps only the window's worth of data, so there is no materialization of all buckets and
-    /// no global sort.
+    /// no global sort in the dense case.
     void doInsertResultInto(AggregateDataPtr __restrict place, IColumn & to) const
     {
         ColumnArray & arr_to = typeid_cast<ColumnArray &>(to);
@@ -330,20 +330,45 @@ protected:
         const auto & buckets = data(place)->buckets;
         auto aggregator = derived().createAggregator(buckets.size());
 
-        /// Visit the populated buckets in ascending index order, feeding each into the sliding window once its grid
-        /// point's window reaches it: scan the bucket-index range of each window and look each index up in the hash map.
-        size_t next_bucket = 0;
-        for (size_t grid_index = 0; grid_index < grid_size; ++grid_index)
+        /// Visit the populated buckets in ascending index order, feeding each into the sliding window when its
+        /// grid point's window reaches it. When most bucket slots are populated (`use_range_scan`) looking each
+        /// index up in the hash map is cheaper than sorting; otherwise collect the populated buckets and sort them once.
+        const bool use_range_scan = (buckets.size() != 0)
+            && (static_cast<double>(buckets.size()) >= static_cast<double>(bucket_count) * BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN);
+        if (use_range_scan)
         {
-            const size_t window_end = bucketRangeInWindow(grid_index).second;
-            for (; next_bucket < window_end; ++next_bucket)
+            size_t next_bucket = 0;
+            for (size_t grid_index = 0; grid_index < grid_size; ++grid_index)
             {
-                const auto it = buckets.find(next_bucket);
-                if (it != buckets.end())
-                    aggregator.add(it->second, bucketEndTimestamp(next_bucket));
+                const size_t window_end = bucketRangeInWindow(grid_index).second;
+                for (; next_bucket < window_end; ++next_bucket)
+                {
+                    const auto it = buckets.find(next_bucket);
+                    if (it != buckets.end())
+                        aggregator.add(it->second, bucketEndTimestamp(next_bucket));
+                }
+                removeOutOfWindow(aggregator, grid_index);
+                storeGridResult(grid_index, aggregator.getResult(timestampAtIndex(grid_index)), values, nulls);
             }
-            removeOutOfWindow(aggregator, grid_index);
-            storeGridResult(grid_index, aggregator.getResult(timestampAtIndex(grid_index)), values, nulls);
+        }
+        else
+        {
+            VectorWithMemoryTracking<std::pair<size_t, const Bucket *>> ordered_buckets;
+            ordered_buckets.reserve(buckets.size());
+            for (const auto & [bucket_index, bucket] : buckets)
+                ordered_buckets.emplace_back(bucket_index, &bucket);
+            std::sort(ordered_buckets.begin(), ordered_buckets.end(),
+                [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+            size_t pos = 0;
+            for (size_t grid_index = 0; grid_index < grid_size; ++grid_index)
+            {
+                const size_t window_end = bucketRangeInWindow(grid_index).second;
+                for (; pos < ordered_buckets.size() && ordered_buckets[pos].first < window_end; ++pos)
+                    aggregator.add(*ordered_buckets[pos].second, bucketEndTimestamp(ordered_buckets[pos].first));
+                removeOutOfWindow(aggregator, grid_index);
+                storeGridResult(grid_index, aggregator.getResult(timestampAtIndex(grid_index)), values, nulls);
+            }
         }
     }
 
@@ -390,6 +415,15 @@ private:
     /// `MAX_ARRAY_SIZE` used by other aggregate functions (`AggregateFunctionGroupArray`,
     /// `AggregateFunctionIntervalLengthSum`, etc.).
     static constexpr size_t MAX_GRID_SIZE = 0xFFFFFF;
+
+    /// `doInsertResultInto` visits the populated buckets in index order. When the fraction of populated bucket
+    /// slots (`populated / bucket_count`) is at least this, scanning the whole index range and looking each up in
+    /// the hash map is cheaper than collecting and sorting the populated buckets; below it (sparse data) the
+    /// collect-and-sort wins. The `timeseries_to_grid_range_scan_vs_std_sort` example measures the crossover density at
+    /// ~0.4; it depends on the bucket map's memory layout (~0.45 when buckets sit in index order, ~0.37 when
+    /// scattered as after a merge, so 0.4 is the middle). That example also shows `std::sort` beats a radix sort
+    /// here, so the sparse path uses `std::sort`.
+    static constexpr double BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN = 0.4;
 
     static constexpr UInt16 FORMAT_VERSION = FunctionImpl::FORMAT_VERSION;
 
