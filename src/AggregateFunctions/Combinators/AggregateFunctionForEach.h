@@ -270,6 +270,13 @@ public:
         const AggregateFunctionForEachData & rhs_state = data(rhs);
         AggregateFunctionForEachData & state = ensureAggregateData(place, rhs_state.dynamic_array_size, *arena);
 
+        /// Zero-sized nested state (aggregate over Nothing): every element aliases the same
+        /// zero-byte arena slot (alignedAlloc(0) does not advance), so nested_state ==
+        /// rhs_nested_state. There is nothing to merge, and merge() with aliasing
+        /// source/destination is undefined.
+        if (nested_size_of_data == 0)
+            return;
+
         const char * rhs_nested_state = rhs_state.array_of_aggregate_datas;
         char * nested_state = state.array_of_aggregate_datas;
 
