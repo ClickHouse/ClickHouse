@@ -35,7 +35,7 @@ namespace
 // | c1 | c2 |
 // | 10 | 20 |
 // | 20 | 0  |
-class FunctionNeighbor : public IFunction
+class FunctionNeighbor final : public IFunction
 {
 public:
     static constexpr auto name = "neighbor";

@@ -8,8 +8,6 @@ title: 'values'
 doc_type: 'reference'
 ---
 
-# Values Table Function {#values-table-function}
-
 The `Values` table function allows you to create temporary storage which fills 
 columns with values. It is useful for quick testing or generating sample data.
 
@@ -159,7 +157,7 @@ FROM VALUES(
     └──────────┴───────────┘
 ```   
 
-```sql
+```sql title="Query"
 -- single values
 SELECT *
 FROM VALUES(

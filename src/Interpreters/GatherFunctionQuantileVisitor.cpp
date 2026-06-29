@@ -12,12 +12,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Mapping from quantile functions for single value to plural
+/// Mapping from quantile functions for single value to plural.
+/// Every quantile function that has a singular and plural variant sharing the same internal
+/// aggregate state must be listed here. Otherwise `haveSameStateRepresentationImpl` (in
+/// `AggregateFunctionQuantile.h`) treats the singular and plural variants as incompatible
+/// states, so `quantileXxxState` and `quantilesXxxMerge` (or vice versa) refuse to interoperate
+/// with `ILLEGAL_TYPE_OF_ARGUMENT`, and the function fusion optimization is also disabled.
 static const std::unordered_map<String, String> quantile_fuse_name_mapping =
 {
     {"quantile", "quantiles"},
     {"quantileBFloat16", "quantilesBFloat16"},
     {"quantileBFloat16Weighted", "quantilesBFloat16Weighted"},
+    {"quantileDD", "quantilesDD"},
     {"quantileDeterministic", "quantilesDeterministic"},
     {"quantileExact", "quantilesExact"},
     {"quantileExactExclusive", "quantilesExactExclusive"},
@@ -25,7 +31,9 @@ static const std::unordered_map<String, String> quantile_fuse_name_mapping =
     {"quantileExactInclusive", "quantilesExactInclusive"},
     {"quantileExactLow", "quantilesExactLow"},
     {"quantileExactWeighted", "quantilesExactWeighted"},
+    {"quantileExactWeightedInterpolated", "quantilesExactWeightedInterpolated"},
     {"quantileInterpolatedWeighted", "quantilesInterpolatedWeighted"},
+    {"quantilePrometheusHistogram", "quantilesPrometheusHistogram"},
     {"quantileTDigest", "quantilesTDigest"},
     {"quantileTDigestWeighted", "quantilesTDigestWeighted"},
     {"quantileTiming", "quantilesTiming"},
@@ -65,8 +73,9 @@ void GatherFunctionQuantileData::FuseQuantileAggregatesData::addFuncNode(ASTPtr 
 
 
     bool need_two_args = func->name == "quantileDeterministic" || func->name == "quantileExactWeighted"
-        || func->name == "quantileInterpolatedWeighted" || func->name == "quantileTimingWeighted"
-        || func->name == "quantileTDigestWeighted" || func->name == "quantileBFloat16Weighted";
+        || func->name == "quantileExactWeightedInterpolated" || func->name == "quantileInterpolatedWeighted"
+        || func->name == "quantileTimingWeighted" || func->name == "quantileTDigestWeighted"
+        || func->name == "quantileBFloat16Weighted" || func->name == "quantilePrometheusHistogram";
 
     if (arguments.size() != (need_two_args ? 2 : 1))
         return;

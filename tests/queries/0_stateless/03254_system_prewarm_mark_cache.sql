@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET parallel_replicas_local_plan = 1;
+
 DROP TABLE IF EXISTS t_prewarm_cache;
 
 CREATE TABLE t_prewarm_cache (a UInt64, b UInt64, c UInt64)

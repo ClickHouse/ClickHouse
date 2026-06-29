@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class SerializationNothing : public SimpleTextSerialization
+class SerializationNothing final : public SimpleTextSerialization
 {
 private:
     [[noreturn]] static void throwNoSerialization();

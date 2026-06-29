@@ -32,7 +32,7 @@ SELECT toDaysInMonth(toDate('2023-02-01')), toDaysInMonth(toDate('2024-02-01')),
 └─────────────────────────────────────┴─────────────────────────────────────┴─────────────────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

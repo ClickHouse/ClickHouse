@@ -56,7 +56,7 @@ public:
     struct PartNameAndChecksum
     {
         String part_name;
-        UInt128 checksum;
+        UInt128 checksum{};
     };
 
     /// Adds part names which a specified replica of a replicated table is going to put to the backup.

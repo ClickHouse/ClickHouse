@@ -3,7 +3,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -15,11 +14,12 @@ namespace DB
   * rather than by vector element. For example, with Float32 vectors, there are 32 groups (one for each bit),
   * and each group contains the corresponding bit from all vector elements.
   *
-  * This column is designed to store the output of the transposeBits() function calls, which convert one float within
+  * This column is designed to store the output of the transposeBits() function calls, which convert one element within
   * a regular array into this bit-transposed format. Currently supported numeric types include:
   * - Float64 (64 bit groups)
   * - Float32 (32 bit groups)
   * - BFloat16 (16 bit groups)
+  * - Int8 (8 bit groups)
   *
   * Internal structure:
   * - For a Float32 array, the underlying storage is a tuple of 32 FixedString columns
@@ -128,7 +128,10 @@ public:
     void skipSerializedInArena(ReadBuffer & in) const override { tuple->skipSerializedInArena(in); }
     void updateHashWithValue(size_t n, SipHash & hash) const override { tuple->updateHashWithValue(n, hash); }
     void updateHashFast(SipHash & hash) const override { tuple->updateHashFast(hash); }
-    WeakHash32 getWeakHash32() const override { return tuple->getWeakHash32(); }
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
+    {
+        tuple->computeHashInto(row_begin, row_end, hash_out, initial);
+    }
 
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -180,7 +183,12 @@ public:
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     void finalize() override { tuple->finalize(); }
 
-    bool structureEquals(const IColumn & rhs) const override { return tuple->structureEquals(rhs); }
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (const auto * rhs_qbit = typeid_cast<const ColumnQBit *>(&rhs))
+            return dimension == rhs_qbit->dimension && tuple->structureEquals(*rhs_qbit->tuple);
+        return false;
+    }
     bool isFinalized() const override { return tuple->isFinalized(); }
 
     /// Efficient access to the underlying tuple

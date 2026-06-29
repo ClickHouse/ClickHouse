@@ -32,21 +32,8 @@ namespace ErrorCodes
     DECLARE_WITH_ALIAS(Milliseconds, background_insert_max_sleep_time_ms, 0, "Default - distributed_background_insert_max_sleep_time_ms", 0, monitor_max_sleep_time_ms) \
     DECLARE(Bool, flush_on_detach, true, "Flush data to remote nodes on DETACH/DROP/server shutdown", 0) \
 
-DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS)
-
-struct DistributedSettingsImpl : public BaseSettings<DistributedSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) DistributedSettings##TYPE NAME = &DistributedSettingsImpl ::NAME;
-
-namespace DistributedSetting
-{
-LIST_OF_DISTRIBUTED_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DISTRIBUTED_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DistributedSettings, DistributedSetting)
 
 DistributedSettings::DistributedSettings() : impl(std::make_unique<DistributedSettingsImpl>())
 {
@@ -57,10 +44,7 @@ DistributedSettings::DistributedSettings(const DistributedSettings & settings)
 {
 }
 
-DistributedSettings::DistributedSettings(DistributedSettings && settings) noexcept
-    : impl(std::make_unique<DistributedSettingsImpl>(std::move(*settings.impl)))
-{
-}
+DistributedSettings::DistributedSettings(DistributedSettings && settings) noexcept = default;
 
 DistributedSettings::~DistributedSettings() = default;
 

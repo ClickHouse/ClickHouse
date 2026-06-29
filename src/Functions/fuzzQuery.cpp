@@ -31,7 +31,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionFuzzQuery : public IFunction
+class FunctionFuzzQuery final : public IFunction
 {
 public:
     static constexpr auto name = "fuzzQuery";

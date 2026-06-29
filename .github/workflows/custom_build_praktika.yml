@@ -49,7 +49,4 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build Praktika' --workflow "Build Praktika for PyPI" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build Praktika' --workflow "Build Praktika for PyPI" --ci --timestamp

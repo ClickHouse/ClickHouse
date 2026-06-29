@@ -27,7 +27,7 @@ struct DatabaseMetadataDiskSettings
 
     DATABASE_METADATA_SETTINGS_SUPPORTED_TYPES(DatabaseMetadataDiskSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
 
 private:
     std::unique_ptr<DatabaseMetadataDiskSettingsImpl> impl;

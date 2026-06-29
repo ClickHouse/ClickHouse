@@ -240,7 +240,8 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         }
 
         if (query_settings.skip_empty_files && current_object_info->getObjectMetadata()
-            && current_object_info->getObjectMetadata()->size_bytes == 0)
+            && current_object_info->getObjectMetadata()->size_bytes == 0
+            && current_object_info->getObjectMetadata()->is_size_known)
             continue;
 
         /// In union mode, check cached columns only for current key.
@@ -255,7 +256,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         }
 
         std::unique_ptr<ReadBuffer> read_buf;
-        CompressionMethod compression_method;
+        CompressionMethod compression_method = {};
         using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
         if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
         {

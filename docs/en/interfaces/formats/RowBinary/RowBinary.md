@@ -34,7 +34,7 @@ Because data is in the binary format the delimiter after `FORMAT RowBinary` is s
 This format is less efficient than the [Native](../Native.md) format since it is row-based.
 :::
 
-### Data types wire format {#data-types-wire-format}
+## Data types wire format {#data-types-wire-format}
 
 :::tip
 Most of the queries provided in the examples can be executed with curl with a file output.
@@ -1216,7 +1216,7 @@ More complex functions like `uniq`, `quantile`, or `groupArray` use implementati
 
 ### QBit {#qbit}
 
-`QBit` is a vector type for efficient lookup with different levels of precision. Internally it’s stored in a transposed format. On the wire, QBit is simply an `Array` of the underlying element type (`Float32`, `Float64`, or `BFloat16`). The bit-transpose optimization for storage happens server-side, not in the RowBinary protocol.
+`QBit` is a vector type for efficient lookup with different levels of precision. Internally it’s stored in a transposed format. On the wire, QBit is simply an `Array` of the underlying element type (`Int8`, `Float32`, `Float64`, or `BFloat16`). The bit-transpose optimization for storage happens server-side, not in the RowBinary protocol.
 
 Syntax:
 
@@ -1224,7 +1224,7 @@ Syntax:
 QBit(element_type, dimension)
 ```
 
-Where `element_type` is `Float32`, `Float64`, or `BFloat16`, and `dimension` is the fixed vector dimension.
+Where `element_type` is `Int8`, `Float32`, `Float64`, or `BFloat16`, and `dimension` is the fixed vector dimension.
 
 Wire format: identical to `Array(element_type)`:
 
