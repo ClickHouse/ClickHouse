@@ -2002,7 +2002,7 @@ Allows you to use more sources than the number of threads - to more evenly distr
 Ask more streams when reading from Merge table. Streams will be spread across tables that Merge table will use. This allows more even distribution of work across threads and is especially helpful when merged tables differ in size.
 )", 0) \
     \
-    DECLARE(String, network_compression_method, "LZ4", R"(
+    DECLARE(String, network_compression_method, "ZSTD", R"(
 The codec for compressing the client/server and server/server communication.
 
 Possible values:
@@ -2017,7 +2017,7 @@ Possible values:
 - [network_zstd_compression_level](#network_zstd_compression_level)
 )", 0) \
     \
-    DECLARE(Int64, network_zstd_compression_level, 1, R"(
+    DECLARE(Int64, network_zstd_compression_level, 3, R"(
 Adjusts the level of ZSTD compression. Used only when [network_compression_method](#network_compression_method) is set to `ZSTD`.
 
 Possible values:

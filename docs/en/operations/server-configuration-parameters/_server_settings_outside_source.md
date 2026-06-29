@@ -189,7 +189,7 @@ You can configure multiple `<case>` sections.
 - If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
 
 :::note
-If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
+If no conditions are met for a data part, ClickHouse uses the default `ZSTD(3)` compression.
 :::
 
 **Example**

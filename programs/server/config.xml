@@ -1633,7 +1633,7 @@
       -->
     <!--
     <compression>
-        <!- - Set of variants. Checked in order. Last matching case wins. If nothing matches, lz4 will be used. - ->
+        <!- - Set of variants. Checked in order. Last matching case wins. If nothing matches, the default codec ZSTD(3) will be used. - ->
         <case>
 
             <!- - Conditions. All must be satisfied. Some conditions may be omitted. - ->
