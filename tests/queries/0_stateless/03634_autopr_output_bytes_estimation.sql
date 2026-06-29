@@ -42,9 +42,12 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Just checking that the estimation is not too far off
+-- Just checking that the estimation is not too far off.
+-- query_12's expected output size (3rd value) is calibrated for the `ZSTD(3)` default codec: its
+-- output (aggregation state) is serialized with `getDefaultCodec`, so under `ZSTD(3)` it compresses
+-- to ~3.6M instead of the ~11.2M produced under the previous `LZ4` default.
 WITH
-    [96, 500000, 11189312, 2359808, 64, 29920, 82456, 20000, 31064320, 275251200, 48271331/*, 641835*/] AS expected_bytes,
+    [96, 500000, 3620000, 2359808, 64, 29920, 82456, 20000, 31064320, 275251200, 48271331/*, 641835*/] AS expected_bytes,
     arrayJoin(arrayMap(x -> (untuple(x.1), x.2), arrayZip(res, expected_bytes))) AS res
 SELECT format('{} {} {}', res.1, res.2, res.3)
 FROM
