@@ -132,4 +132,20 @@ SELECT DISTINCT count(*) OVER () FROM (SELECT if(ignore(s IN (SELECT toString(nu
 -- analyze-only header keeps the constant just like the real replica projection, so the query runs.
 SELECT DISTINCT count(*) OVER () FROM (SELECT ignore(s IN (SELECT toString(number) FROM numbers(2))) AND (s IN (SELECT toString(number) FROM numbers(2))) FROM t_window_const);
 
+-- A higher-order function over a constant array with a constant-output lambda body is itself a
+-- ColumnConst on the replicas (arrayMap(x -> ignore(s IN (...)), [1]) returns a constant Array), so the
+-- analyze-only header must keep the constant even though the lambda body holds an IN operator that
+-- cannot be evaluated while building it. The lambda argument carries a DataTypeFunction result type, so
+-- the header must be derived through the real planning path rather than by materializing a placeholder
+-- column for it. This holds for an IN tuple, an IN subquery, a mixed const+source list, and arrayFilter.
+SELECT DISTINCT count(*) OVER () FROM (SELECT arrayMap(x -> ignore(s IN ('1', '2')), [1]) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT arrayMap(x -> ignore(s IN (SELECT toString(number) FROM numbers(3))), [1]) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT arrayMap(x -> ignore(s IN ('1', '2')), [1]) AS c, s FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT arrayFilter(x -> ignore(s IN ('1', '2')), [1]) FROM t_window_const);
+
+-- A higher-order function whose lambda body is genuinely non-constant stays a plain column (not falsely
+-- kept constant), so it takes the plain-column header path and reports CLUSTER_DOESNT_EXIST against a
+-- missing cluster after the header is built.
+SELECT DISTINCT count(*) OVER () FROM (SELECT arrayMap(x -> toUInt8(s IN ('1', '2')), [1]) FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
+
 DROP TABLE t_window_const;

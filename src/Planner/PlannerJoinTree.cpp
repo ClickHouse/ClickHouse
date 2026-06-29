@@ -80,7 +80,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/misc.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/Planner.h>
@@ -155,141 +154,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// A projection that contains an IN/GLOBAL IN operator or a subquery node cannot be evaluated
-/// at header build time: the prepared set behind the IN operator is not registered in the
-/// only_analyze table-expression context, and a non-correlated subquery node is not a valid
-/// action node. Building an ActionsDAG for such a projection raises a LOGICAL_ERROR (which aborts
-/// in debug and sanitizer builds). These projections are never constant columns anyway, so detect
-/// them and keep them on the plain-column header path.
-bool projectionCanBeEvaluatedForConstHeader(const QueryTreeNodePtr & node)
-{
-    if (const auto * function_node = node->as<FunctionNode>())
-    {
-        if (functionIsInOrGlobalInOperator(function_node->getFunctionName()))
-            return false;
-    }
-    else
-    {
-        const auto node_type = node->getNodeType();
-        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-            return false;
-    }
-
-    for (const auto & child : node->getChildren())
-    {
-        if (child && !projectionCanBeEvaluatedForConstHeader(child))
-            return false;
-    }
-
-    return true;
-}
-
-/// Try to fold a projection to its constant column without building an ActionsDAG over the whole
-/// subtree. Returns the constant column (sized for one row) or nullptr if the projection is not a
-/// constant. Used as a fallback for projections that projectionCanBeEvaluatedForConstHeader() rejects
-/// because they hold an IN operator or subquery: a function whose result is constant regardless of its
-/// arguments (for example ignore(s IN (...)) or __applyFilter('', s IN (...))) still produces a
-/// ColumnConst on the replicas, so the analyze-only header must keep it constant to avoid a
-/// parallel-replicas header divergence. Only constant nodes and functions evaluated from constant or
-/// placeholder arguments are touched, so the unevaluable IN/subquery argument subtree is never visited
-/// nor passed to a function that would inspect its (absent) prepared set.
-///
-/// This mirrors how real planning derives the header in ActionsDAG::evaluatePartialResult: a function
-/// node is executed with the constant columns of the arguments that fold, and a placeholder (non-const,
-/// default-valued) column for the arguments that do not. The result is kept only if it is a ColumnConst.
-/// A function that genuinely depends on a non-constant argument then yields a non-const column and is
-/// left on the plain-column header path, while a function that is constant by its own semantics
-/// (ignore, indexHint, identity over a constant, __applyFilter with an empty id, ...) yields a
-/// ColumnConst. Evaluating against placeholders is safe because the partial evaluation runs with
-/// input_rows_count == 0, exactly like header computation, so no per-row work is performed.
-ColumnPtr tryEvaluateConstantProjectionColumn(const QueryTreeNodePtr & node)
-{
-    if (const auto * constant_node = node->as<ConstantNode>())
-        return constant_node->getResultType()->createColumnConst(1, constant_node->getValue());
-
-    const auto * function_node = node->as<FunctionNode>();
-    if (!function_node || !function_node->isResolved())
-        return nullptr;
-
-    auto function_base = function_node->getFunction();
-    if (!function_base)
-        return nullptr;
-
-    /// in/globalIn is the very reason this fallback exists (its prepared set is not registered in the
-    /// only_analyze context). It is never a constant column, and executing it requires a ColumnSet that
-    /// we do not have here, so never evaluate it: keep it on the plain-column header path.
-    if (functionIsInOrGlobalInOperator(function_node->getFunctionName()))
-        return nullptr;
-
-    auto result_type = function_node->getResultType();
-
-    /// Fold each argument. Some may not fold to a constant (for example a genuinely non-constant
-    /// s IN (...) subtree). The recursion only visits arguments and never descends into an
-    /// unevaluable IN/subquery: such a subtree does not fold and yields a placeholder column here.
-    ColumnsWithTypeAndName argument_columns;
-    const auto & arguments = function_node->getArguments().getNodes();
-    argument_columns.reserve(arguments.size());
-    bool all_arguments_constant = true;
-    for (const auto & argument : arguments)
-    {
-        auto argument_column = tryEvaluateConstantProjectionColumn(argument);
-        if (!argument_column)
-        {
-            all_arguments_constant = false;
-            /// A non-folding argument becomes a placeholder column built from its result type below.
-            /// getResultType() is only valid for argument node types that carry a scalar result type:
-            /// the set side of an IN operator is a subquery/table node, for which getResultType() throws
-            /// (QueryNode supports it only for a correlated subquery). Bail to the plain-column header
-            /// path instead of throwing for those.
-            const auto argument_node_type = argument->getNodeType();
-            if (argument_node_type != QueryTreeNodeType::CONSTANT
-                && argument_node_type != QueryTreeNodeType::FUNCTION
-                && argument_node_type != QueryTreeNodeType::COLUMN
-                && argument_node_type != QueryTreeNodeType::LAMBDA)
-                return nullptr;
-            /// Placeholder for a non-constant argument: a default-valued, non-const column of the
-            /// argument's type (the same stand-in ActionsDAG::evaluatePartialResult uses for unknown
-            /// inputs). It lets a constant-by-semantics function still produce its ColumnConst while a
-            /// function that actually depends on the argument yields a non-const column.
-            argument_column = argument->getResultType()->createColumn();
-        }
-        argument_columns.emplace_back(std::move(argument_column), argument->getResultType(), "");
-    }
-
-    /// Execute the function with input_rows_count == 0 (header-evaluation mode, no per-row work). When
-    /// all arguments are constant this covers ordinary foldable functions like toString(ignore(s IN (...)))
-    /// and transparent wrappers like identity(ignore(s IN (...))). When some arguments are placeholders
-    /// it covers functions whose result is constant regardless of those arguments: ignore/indexHint
-    /// (always constant), __applyFilter('', ...) (constant when the filter id is empty), and any other
-    /// non-foldable function that emits a ColumnConst on the replicas. The result is kept only if it is a
-    /// ColumnConst, so a function that depends on the placeholder argument correctly stays non-constant.
-    {
-        auto column = function_base->prepare(argument_columns)->execute(argument_columns, result_type, 0, /* dry_run = */ true);
-        if (column && isColumnConst(*column))
-            return column->cloneResized(1);
-    }
-
-    /// A foldable function may still derive a constant from only a subset of constant arguments via its
-    /// partial-constant hook: if(const false, non-const, const) yields the const else branch,
-    /// and(..., const false) yields false, or(..., const true) yields true. The real projection plan
-    /// derives this same constant via getConstantResultForNonConstArguments (passing a null column for
-    /// each non-constant argument) in ActionsDAG::addFunctionImpl / evaluatePartialResult, so mirror it
-    /// here. Only meaningful when not every argument folded.
-    if (!all_arguments_constant && function_base->isSuitableForConstantFolding())
-    {
-        for (auto & argument_column : argument_columns)
-        {
-            /// getConstantResultForNonConstArguments expects a null column for non-constant arguments.
-            if (argument_column.column && !isColumnConst(*argument_column.column))
-                argument_column.column = nullptr;
-        }
-        auto column = function_base->getConstantResultForNonConstArguments(argument_columns, result_type);
-        if (column && isColumnConst(*column))
-            return column->cloneResized(1);
-    }
-    return nullptr;
-}
 
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
@@ -1634,15 +1498,24 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
             /// Keep constant projections as ColumnConst so this analyze-only header matches real
             /// execution (which emits a ColumnConst). Otherwise the header may diverge for an unused
-            /// constant column and break parallel-replicas reading.
+            /// constant column and break parallel-replicas reading: the coordinator prunes the unused
+            /// plain column while a replica keeps the ColumnConst flowing, so the RemoteSource is built
+            /// with too few columns and the chunk pushed by the replica does not match the output port
+            /// ("Invalid number of columns in chunk pushed to OutputPort").
             ///
             /// A projection is constant not only when it is a folded ConstantNode but also when it
-            /// evaluates to a constant column at runtime, even while referencing a source column.
-            /// Two cases that stay FunctionNodes yet always produce a ColumnConst: identity(0)
-            /// (returns its constant argument unchanged) and ignore(s) (always returns 0). Evaluate
-            /// each projection through the same updateHeader path real planning uses, feeding it a
-            /// header of the expression's own input columns, and keep the result only if it is a
-            /// ColumnConst.
+            /// evaluates to a constant column at runtime, even while referencing a source column
+            /// (identity(0) returns its constant argument unchanged; ignore(s) always returns 0). Derive
+            /// each projection header through the same ActionsDAG::updateHeader path real planning uses,
+            /// feeding it a header of the expression's own input columns, and keep the result only when
+            /// it is a ColumnConst. This handles every constant-producing shape uniformly (literal
+            /// constants, constant-by-semantics functions, transparent wrappers, partial-constant
+            /// functions, and higher-order functions over constant arguments) without enumerating them.
+            ///
+            /// A projection may hold an IN operator or a subquery whose prepared set is not registered in
+            /// this only_analyze context yet; collectSets registers it first, exactly as real planning
+            /// does, so buildActionsDAGFromExpressionNode does not raise "No set is registered". The set
+            /// is only registered, not executed, so this stays an analyze-only step.
             const QueryTreeNodes * projection_nodes = nullptr;
             if (query_node)
                 projection_nodes = &query_node->getProjection().getNodes();
@@ -1652,9 +1525,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             {
                 const auto & projection_column = projection_columns[i];
                 ColumnPtr column;
-                if (projection_nodes && i < projection_nodes->size()
-                    && projectionCanBeEvaluatedForConstHeader((*projection_nodes)[i]))
+                if (projection_nodes && i < projection_nodes->size())
                 {
+                    collectSets((*projection_nodes)[i], *planner_context);
                     ColumnNodePtrWithHashSet empty_correlated_columns_set;
                     auto [projection_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
                         (*projection_nodes)[i], {}, planner_context, empty_correlated_columns_set);
@@ -1669,15 +1542,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         if (evaluated && isColumnConst(*evaluated))
                             column = projection_column.type->createColumnConst(0, (*evaluated)[0]);
                     }
-                }
-                else if (projection_nodes && i < projection_nodes->size())
-                {
-                    /// The projection holds an IN operator or subquery, so it cannot go through the
-                    /// ActionsDAG path above. It is still constant when an always-constant function
-                    /// (ignore/indexHint) sits on the path to the result, e.g. ignore(s IN (...)).
-                    auto evaluated = tryEvaluateConstantProjectionColumn((*projection_nodes)[i]);
-                    if (evaluated && isColumnConst(*evaluated))
-                        column = projection_column.type->createColumnConst(0, (*evaluated)[0]);
                 }
 
                 if (column)
