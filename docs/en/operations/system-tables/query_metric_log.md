@@ -112,7 +112,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times parquet metadata has not been found in the cache and had to be read from disk.
 - `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/sql-reference/data-types/int-uint)) — Approximate number of bytes evicted from the parquet metadata cache.
 - `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent on synchronous initialization of iceberg data iterators.
-- `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent on synchronous initialization of iceberg data iterators.
+- `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent updating iceberg storage metadata from state (buildStorageMetadataFromState).
 - `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/sql-reference/data-types/int-uint)) — Total number of returned object infos from iceberg iterator.
 - `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/sql-reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
 - `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/sql-reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
@@ -533,8 +533,6 @@ by default). The data is also collected when the query finishes if the query tak
   9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas.
   The server successfully detected this situation and will download merged part from the replica to force the byte-identical result.
 - `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times data after mutation is not byte-identical to the data on other replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.
-- `ProfileEvent_PolygonsAddedToPool` ([UInt64](/sql-reference/data-types/int-uint)) — A polygon has been added to the cache (pool) for the 'pointInPolygon' function.
-- `ProfileEvent_PolygonsInPoolAllocatedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — The number of bytes for polygons added to the cache (pool) for the 'pointInPolygon' function.
 - `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/sql-reference/data-types/int-uint)) — Number of Naive Bayes Classifier models loaded.
 - `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — Number of bytes allocated for Naive Bayes Classifier models.
 - `ProfileEvent_USearchAddCount` ([UInt64](/sql-reference/data-types/int-uint)) — Number of vectors added to usearch indexes.
