@@ -252,8 +252,12 @@
     M(KeeperCommitWaitElapsedMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
+    M(KeeperBatchMaxReadCount) \
+    M(KeeperBatchMaxReadTotalSize) \
     M(KeeperReadBatchCount) \
     M(KeeperReadBatchTotalRequests) \
+    M(KeeperWriteBatchCount) \
+    M(KeeperWriteBatchTotalRequests) \
     M(KeeperCommits) \
     M(KeeperCommitsFailed) \
     M(KeeperSnapshotCreations) \
@@ -263,6 +267,7 @@
     M(KeeperReadSnapshot) \
     M(KeeperReadSnapshotObject) \
     M(KeeperReadSnapshotFailed) \
+    M(KeeperReadSnapshotDeferred) \
     M(KeeperSaveSnapshotObject) \
     M(KeeperSaveSnapshotFailed) \
     M(KeeperSaveSnapshot) \
@@ -280,6 +285,11 @@
     M(KeeperCheckWatchRequest) \
     M(KeeperAddWatchRequest) \
     M(KeeperRemoveWatchRequest) \
+    M(KeeperWatchesTriggered) \
+    M(KeeperWatchTriggeredNodeCreated) \
+    M(KeeperWatchTriggeredNodeDeleted) \
+    M(KeeperWatchTriggeredNodeDataChanged) \
+    M(KeeperWatchTriggeredNodeChildrenChanged) \
     M(KeeperChangelogWrittenBytes) \
     M(KeeperChangelogFileSyncMicroseconds) \
     M(KeeperSnapshotWrittenBytes) \
@@ -397,6 +407,7 @@ extern const std::vector<Event> keeper_profile_events
     M(S3Requests) \
     M(KeeperAliveConnections) \
     M(KeeperOutstandingRequests) \
+    M(KeeperTTLNodes) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \

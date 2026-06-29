@@ -26,7 +26,7 @@ Contains information about tasks in background schedule pools. Background schedu
 - `query_id` ([String](/sql-reference/data-types/string)) — Query ID (if executing now). Note: this is not a real query, but a randomly generated ID for matching logs in `system.text_log`.
 - `elapsed_ms` ([UInt64](/sql-reference/data-types/int-uint)) — Task execution time (if executing now).
 - `log_name` ([String](/sql-reference/data-types/string)) — Log name for the task.
-- `deactivated` ([UInt8](/sql-reference/data-types/int-uint)) — Whether the task is deactivated (always false, since deactivated tasks removed from the pool).
+- `deactivated` ([UInt8](/sql-reference/data-types/int-uint)) — Whether the task is deactivated (always false, since deactivated tasks are removed from the pool).
 - `scheduled` ([UInt8](/sql-reference/data-types/int-uint)) — Whether the task is scheduled for execution.
 - `delayed` ([UInt8](/sql-reference/data-types/int-uint)) — Whether the task is scheduled with delay.
 - `executing` ([UInt8](/sql-reference/data-types/int-uint)) — Whether the task is currently executing.

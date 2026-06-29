@@ -25,7 +25,7 @@ struct RefreshSchedule
 
     std::chrono::sys_seconds advance(std::chrono::sys_seconds last_completed_timeslot) const;
 
-    std::chrono::system_clock::time_point addRandomSpread(std::chrono::sys_seconds timeslot, Int64 randomness) const;
+    std::chrono::system_clock::time_point addRandomSpread(std::chrono::system_clock::time_point when, Int64 randomness) const;
 };
 
 }

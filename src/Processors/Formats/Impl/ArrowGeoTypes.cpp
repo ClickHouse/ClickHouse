@@ -58,7 +58,7 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
         Poco::JSON::Object::Ptr column_obj = column_entry.second.extract<Poco::JSON::Object::Ptr>();
 
         String encoding_name = column_obj->getValue<std::string>("encoding");
-        GeoEncoding geo_encoding;
+        GeoEncoding geo_encoding = {};
 
         if (encoding_name == "WKB")
             geo_encoding = GeoEncoding::WKB;
@@ -72,7 +72,7 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
         /// Per the GeoParquet spec, a missing or empty geometry_types array means the geometry
         /// types are unknown (any type is valid). Multiple entries mean the column has mixed types.
         /// In both cases, use GeoType::Mixed which maps to the Geometry (Variant) type.
-        GeoType result_type;
+        GeoType result_type = {};
         if (!types || types->size() == 0)
         {
             result_type = GeoType::Mixed;
@@ -107,9 +107,9 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
 
 inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer)
 {
-    Float64 x;
-    Float64 y;
-    char ch;
+    Float64 x = 0;
+    Float64 y = 0;
+    char ch = 0;
     while (true)
     {
         if (!in_buffer.peek(ch))
@@ -128,7 +128,7 @@ inline void readOpenBracket(ReadBuffer & in_buffer)
 {
     while (true)
     {
-        char ch;
+        char ch = 0;
         readBinary(ch, in_buffer);
         if (ch == '(')
             break;
@@ -137,7 +137,7 @@ inline void readOpenBracket(ReadBuffer & in_buffer)
 
 inline bool readItemEnding(ReadBuffer & in_buffer)
 {
-    char ch;
+    char ch = 0;
     while (true)
     {
         readBinary(ch, in_buffer);
@@ -198,6 +198,19 @@ inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
     return poly;
 }
 
+inline MultiLineString<CartesianPoint> parseWKTMultiLineString(ReadBuffer & in_buffer)
+{
+    MultiLineString<CartesianPoint> result;
+    readOpenBracket(in_buffer);
+    while (true)
+    {
+        result.push_back(parseWKTLine(in_buffer));
+        if (readItemEnding(in_buffer))
+            break;
+    }
+    return result;
+}
+
 inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer)
 {
     MultiPolygon<CartesianPoint> poly;
@@ -216,7 +229,7 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
     std::string type;
     while (true)
     {
-        char current_symbol;
+        char current_symbol = 0;
         if (!in_buffer.peek(current_symbol))
             break;
         if (current_symbol == '(')
@@ -225,7 +238,7 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
         in_buffer.ignore();
     }
 
-    while (type.back() == ' ')
+    while (!type.empty() && type.back() == ' ')
         type.pop_back();
 
     if (type == "POINT")
@@ -238,7 +251,7 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
     if (type == "POLYGON")
         return parseWKTPolygon(in_buffer);
     if (type == "MULTILINESTRING")
-        return parseWKTPolygon(in_buffer);
+        return parseWKTMultiLineString(in_buffer);
     if (type == "MULTIPOLYGON")
         return parseWKTMultiPolygon(in_buffer);
 
@@ -352,7 +365,7 @@ void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColu
         case GeoType::Mixed:
         {
             auto & variant_col = assert_cast<ColumnVariant &>(col);
-            ColumnVariant::Discriminator global_discr;
+            ColumnVariant::Discriminator global_discr = 0;
 
             if (std::holds_alternative<CartesianPoint>(object))
                 global_discr = kPointDiscriminator;

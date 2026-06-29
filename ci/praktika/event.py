@@ -36,7 +36,7 @@ class Event:
     timestamp: int  # Unix timestamp when event occurred
     sha: str  # Git commit SHA
     result: dict  # Top-level workflow result
-    ci_status: str  # Overall CI status (success/failure/pending)
+    ci_status: str  # Overall CI status (Result.Status value)
     ext: dict  # Additional extensible metadata (includes: branch, pr_number, pr_status, pr_title)
     linked_events: List["Event"] = dataclasses.field(default_factory=list)
 
@@ -81,11 +81,11 @@ class EventFeed:
         running_cutoff_timestamp = int(time.time()) - (12 * 60 * 60)
 
         def sanitize_event(e: Event) -> None:
-            if e.timestamp < running_cutoff_timestamp and e.ci_status in (
-                "running",
-                "pending",
+            if e.timestamp < running_cutoff_timestamp and (e.ci_status or "").upper() in (
+                "RUNNING",
+                "PENDING",
             ):
-                e.ci_status = "failure"
+                e.ci_status = "FAIL"
                 if not isinstance(e.ext, dict):
                     e.ext = {}
                 e.ext["is_cancelled"] = True

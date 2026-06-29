@@ -134,15 +134,14 @@ if (!document.getElementById('url').value) {
 }
 
 if (!document.getElementById('user').value) {
-    let user = 'default';
-
     const current_url = new URL(window.location);
-    /// Substitute user name if it's specified in the query string
+    /// Substitute user name if it's specified in the query string.
+    /// Otherwise leave the input empty so the placeholder hints at it and
+    /// the server falls back to its configured default user.
     const user_from_url = current_url.searchParams.get('user');
     if (user_from_url) {
-        user = user_from_url;
+        document.getElementById('user').value = user_from_url;
     }
-    document.getElementById('user').value = user;
 }
 
 

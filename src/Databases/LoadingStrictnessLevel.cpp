@@ -1,5 +1,6 @@
 #include <Databases/LoadingStrictnessLevel.h>
-#include <cassert>
+
+#include <base/defines.h>
 
 namespace DB
 {
@@ -8,14 +9,14 @@ LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach,
 {
     if (force_restore)
     {
-        assert(attach);
-        assert(force_attach);
+        chassert(attach);
+        chassert(force_attach);
         return LoadingStrictnessLevel::FORCE_RESTORE;
     }
 
     if (force_attach)
     {
-        assert(attach);
+        chassert(attach);
         return LoadingStrictnessLevel::FORCE_ATTACH;
     }
 

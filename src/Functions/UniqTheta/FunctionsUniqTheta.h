@@ -51,7 +51,7 @@ namespace DB
     };
 
     template <typename Impl, typename Name>
-    class FunctionUniqTheta : public IFunction
+    class FunctionUniqTheta final : public IFunction
     {
     public:
         static constexpr auto name = Name::name;

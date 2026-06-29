@@ -39,7 +39,7 @@ getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Co
     request_for_session.session_id = session_id;
     request_for_session.zxid = zxid;
     request_for_session.request = request;
-    auto buffer = DB::IKeeperStateMachine::getZooKeeperLogEntry(request_for_session);
+    auto buffer = DB::KeeperStateMachine::getZooKeeperLogEntry(request_for_session);
     return nuraft::cs_new<nuraft::log_entry>(term, buffer);
 }
 

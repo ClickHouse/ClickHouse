@@ -1,5 +1,7 @@
 #pragma once
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/StorageFactory.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -62,6 +64,10 @@ struct ParseFromDiskResult
 };
 
 ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context, const fs::path & prefix);
+
+void expandPaimonKeeperMacrosIfNeeded(
+    const StorageFactory::Arguments & args,
+    const DataLakeStorageSettingsPtr & storage_settings);
 
 
 }

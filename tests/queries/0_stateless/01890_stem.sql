@@ -1,8 +1,6 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: depends on libstemmer_c
 
-SET allow_experimental_nlp_functions = 1;
-
 SELECT '- Scalar inputs.';
 
 SELECT '-- String input.';
@@ -166,8 +164,3 @@ SELECT stem([toNullable(1)], 'en'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '-- Array(Array(String)) as first argument raises ILLEGAL_TYPE_OF_ARGUMENT.';
 SELECT stem([['hello', 'world']], 'en'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-
-SELECT '-- Calling without the experimental setting raises SUPPORT_IS_DISABLED.';
-SET allow_experimental_nlp_functions = 0;
-SELECT stem('blessing', 'en'); -- { serverError SUPPORT_IS_DISABLED }
