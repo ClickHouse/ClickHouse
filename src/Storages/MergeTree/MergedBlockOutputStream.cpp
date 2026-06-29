@@ -191,9 +191,10 @@ void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,
     const GatheredData & gathered_data,
     bool sync,
-    const NamesAndTypesList * total_columns_list)
+    const NamesAndTypesList * total_columns_list,
+    const std::map<String, String> * column_compression_codecs_override)
 {
-    finalizePartAsync(new_part, gathered_data, sync, total_columns_list).finish();
+    finalizePartAsync(new_part, gathered_data, sync, total_columns_list, column_compression_codecs_override).finish();
 }
 
 void MergedBlockOutputStream::finalizeIndexGranularity()
@@ -205,7 +206,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     const MergeTreeMutableDataPartPtr & new_part,
     const GatheredData & gathered_data,
     bool sync,
-    const NamesAndTypesList * total_columns_list)
+    const NamesAndTypesList * total_columns_list,
+    const std::map<String, String> * column_compression_codecs_override)
 {
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums = gathered_data.checksums;
@@ -241,7 +243,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     }
 
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
-    written_files = finalizePartOnDisk(new_part, checksums, gathered_data);
+    written_files = finalizePartOnDisk(new_part, checksums, gathered_data, column_compression_codecs_override);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
@@ -286,7 +288,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDisk(
     const MergeTreeMutableDataPartPtr & new_part,
     MergeTreeData::DataPart::Checksums & checksums,
-    const GatheredData & gathered_data)
+    const GatheredData & gathered_data,
+    const std::map<String, String> * column_compression_codecs_override)
 {
     /// NOTE: You do not need to call fsync here, since it will be called later for the all written_files.
     WrittenFiles written_files;
@@ -437,7 +440,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Compression codec have to be specified for part on disk, empty for {}", new_part->name);
     }
 
-    const auto & column_compression_codecs = writer->getColumnCompressionCodecs();
+    const auto & column_compression_codecs = column_compression_codecs_override ? *column_compression_codecs_override : writer->getColumnCompressionCodecs();
     if (!column_compression_codecs.empty())
     {
         write_plain_file(IMergeTreeDataPart::COLUMN_COMPRESSION_CODECS_FILE_NAME, [&](auto & buffer)

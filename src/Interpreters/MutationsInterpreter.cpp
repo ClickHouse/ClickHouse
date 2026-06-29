@@ -675,6 +675,13 @@ void MutationsInterpreter::prepare(bool dry_run)
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
 
     NameSet updated_columns;
+    columns_changed_by_mutation.clear();
+    auto mark_all_columns_changed = [&]
+    {
+        for (const auto & column : all_columns)
+            columns_changed_by_mutation.insert(column.name);
+    };
+
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
@@ -690,6 +697,9 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (command.type == MutationCommand::REWRITE_PARTS)
             has_rewrite_parts = true;
 
+        if (command.affectsAllColumns())
+            mark_all_columns_changed();
+
         auto alter = command.ast();
         if (alter && alter->update_assignments)
         {
@@ -703,6 +713,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 updated_columns.insert(name);
+                columns_changed_by_mutation.insert(name);
             }
         }
     }
@@ -965,6 +976,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                         stages.back().column_to_updated.emplace(
                             column.name,
                             materialized_column);
+                        columns_changed_by_mutation.insert(column.name);
                     }
                 }
             }
@@ -997,6 +1009,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 "_CAST", column.default_desc.expression->clone(), make_intrusive<ASTLiteral>(column.type->getName()));
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
+            columns_changed_by_mutation.insert(column.name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
@@ -1168,6 +1181,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             read_columns.emplace_back(command.column_name);
+            if (!command.read_for_internal_compact_mutation)
+                columns_changed_by_mutation.insert(command.column_name);
             materialized_statistics.insert(command.column_name);
 
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
@@ -1333,7 +1348,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             stages.emplace_back(context);
             for (const auto & column : changed_columns)
+            {
                 stages.back().column_to_updated.emplace(column, make_intrusive<ASTIdentifier>(column));
+                columns_changed_by_mutation.insert(column);
+            }
         }
 
         if (!unchanged_columns.empty())
@@ -1411,6 +1429,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 stages.back().column_to_updated.emplace(
                     column.name,
                     materialized_column);
+                columns_changed_by_mutation.insert(column.name);
             }
         }
     }

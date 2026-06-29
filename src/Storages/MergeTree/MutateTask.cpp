@@ -367,6 +367,7 @@ static void splitAndModifyMutationCommands(
                 {
                     .type = MutationCommand::Type::READ_COLUMN,
                     .column_name = rename_to,
+                    .read_for_internal_compact_mutation = true,
                 });
 
                 /// Not needed for compact parts (not executed), added here only to produce correct
@@ -478,7 +479,7 @@ static void splitAndModifyMutationCommands(
                 }
 
                 for_interpreter.emplace_back(
-                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
+                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type, .read_for_internal_compact_mutation = true});
             }
             else if (dropped_columns.contains(column.name))
             {
@@ -509,6 +510,7 @@ static void splitAndModifyMutationCommands(
                     .type = MutationCommand::Type::READ_COLUMN,
                     .column_name = column_name,
                     .data_type = std::move(data_type),
+                    .read_for_internal_compact_mutation = true,
                 }
             );
         }
@@ -1474,7 +1476,7 @@ static void finalizeMutatedPart(
     new_data_part->default_codec = codec;
 }
 
-static std::map<String, String> readColumnCompressionCodecsFromPart(const MergeTreeDataPartPtr & part)
+static std::map<String, String> readColumnCompressionCodecsFromPartMetadata(const MergeTreeDataPartPtr & part)
 {
     std::map<String, String> column_compression_codecs;
 
@@ -1500,36 +1502,39 @@ static std::map<String, String> readColumnCompressionCodecsFromPart(const MergeT
         }
     }
 
-    for (const auto & column : part->getColumns())
-    {
-        const auto column_name = column.getNameInStorage();
-        if (!column_compression_codecs.contains(column_name))
-            column_compression_codecs.emplace(column_name, part->getColumnCompressionCodec(column)->getFullCodecDesc()->formatWithSecretsOneLine());
-    }
-
     return column_compression_codecs;
 }
 
 static std::map<String, String> collectColumnCompressionCodecsForMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     const MergeTreeData::MutableDataPartPtr & new_data_part,
-    const std::map<String, String> & changed_column_compression_codecs)
+    const std::map<String, String> & changed_column_compression_codecs,
+    const NameSet & changed_columns,
+    const MutationCommands & commands_for_renames)
 {
-    const auto source_column_compression_codecs = readColumnCompressionCodecsFromPart(source_part);
+    const auto source_column_compression_codecs = readColumnCompressionCodecsFromPartMetadata(source_part);
     std::map<String, String> column_compression_codecs;
+
+    auto get_source_column_name = [&](const String & column_name) -> const String &
+    {
+        for (const auto & command : commands_for_renames)
+        {
+            if (command.type == MutationCommand::Type::RENAME_COLUMN && command.rename_to == column_name)
+                return command.column_name;
+        }
+        return column_name;
+    };
 
     for (const auto & column : new_data_part->getColumns())
     {
         const auto column_name = column.getNameInStorage();
-        if (auto source_it = source_column_compression_codecs.find(column_name); source_it != source_column_compression_codecs.end())
+        if (auto source_it = source_column_compression_codecs.find(get_source_column_name(column_name)); source_it != source_column_compression_codecs.end())
             column_compression_codecs.emplace(column_name, source_it->second);
-        else
-            column_compression_codecs.emplace(column_name, new_data_part->getColumnCompressionCodec(column)->getFullCodecDesc()->formatWithSecretsOneLine());
     }
 
     for (const auto & [column_name, compression_codec] : changed_column_compression_codecs)
     {
-        if (new_data_part->getColumns().contains(column_name))
+        if (changed_columns.contains(column_name) && new_data_part->getColumns().contains(column_name))
             column_compression_codecs[column_name] = compression_codec;
     }
 
@@ -2430,7 +2435,15 @@ private:
 
         auto out_mut = static_pointer_cast<MergedBlockOutputStream>(ctx->out);
         out_mut->finalizeIndexGranularity();
-        out_mut->finalizePart(ctx->new_data_part, ctx->all_gathered_data, ctx->need_sync, nullptr);
+        const auto changed_column_compression_codecs = out_mut->getColumnCompressionCodecs();
+        const auto & changed_columns = ctx->interpreter->getColumnsChangedByMutation();
+        const auto column_compression_codecs = MutationHelpers::collectColumnCompressionCodecsForMutatedPart(
+            ctx->source_part,
+            ctx->new_data_part,
+            changed_column_compression_codecs,
+            changed_columns,
+            ctx->for_file_renames);
+        out_mut->finalizePart(ctx->new_data_part, ctx->all_gathered_data, ctx->need_sync, nullptr, &column_compression_codecs);
         ctx->out.reset();
     }
 
@@ -2783,6 +2796,7 @@ private:
     void finalize()
     {
         std::map<String, String> changed_column_compression_codecs;
+        NameSet changed_columns;
         if (ctx->mutating_executor)
         {
             ctx->mutating_executor.reset();
@@ -2790,6 +2804,7 @@ private:
 
             auto out_mut = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
             changed_column_compression_codecs = out_mut->getColumnCompressionCodecs();
+            changed_columns = ctx->interpreter->getColumnsChangedByMutation();
             out_mut->finalizeIndexGranularity();
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
@@ -2836,7 +2851,9 @@ private:
         const auto column_compression_codecs = MutationHelpers::collectColumnCompressionCodecsForMutatedPart(
             ctx->source_part,
             ctx->new_data_part,
-            changed_column_compression_codecs);
+            changed_column_compression_codecs,
+            changed_columns,
+            ctx->for_file_renames);
 
         MutationHelpers::finalizeMutatedPart(
             ctx->source_part,

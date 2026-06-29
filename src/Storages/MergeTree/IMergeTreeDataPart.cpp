@@ -1809,6 +1809,14 @@ CompressionCodecPtr IMergeTreeDataPart::getColumnCompressionCodec(const NameAndT
     return default_codec;
 }
 
+String IMergeTreeDataPart::getColumnCompressionCodecDescription(const NameAndTypePair & column) const
+{
+    if (auto codec = tryGetColumnCompressionCodecFromFile(column))
+        return (*codec)->getCodecDesc()->formatForLogging();
+
+    return {};
+}
+
 void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
 {
     auto metadata_snaphost = getMetadataSnapshot();

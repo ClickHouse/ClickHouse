@@ -123,6 +123,8 @@ public:
 
     const ColumnDependencies & getColumnDependencies() const;
 
+    const NameSet & getColumnsChangedByMutation() const { return columns_changed_by_mutation; }
+
     /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
 
@@ -298,6 +300,7 @@ private:
 
     /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
     ColumnDependencies dependencies;
+    NameSet columns_changed_by_mutation;
 };
 
 }
