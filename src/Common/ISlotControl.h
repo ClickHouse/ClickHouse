@@ -20,7 +20,7 @@ namespace DB
 //
 // Allocated slots can be in one of the following states:
 //  * granted: allocated, but not yet acquired.
-//  * acquired: a granted slot becomes acquired by using IAcquiredSlot.
+//  * acquired: a granted slot becomes acquired (e.g. by using IAcquiredSlot).
 //
 // Example for CPU (see ConcurrencyControl.h). Every slot represents one CPU in the system.
 // Slot allocation is a request to allocate specific number of CPUs for a specific query.
@@ -28,7 +28,6 @@ namespace DB
 // total number of threads in the system to be limited and the distribution process to be controlled.
 //
 // TODO:
-// - for preemption - ability to return granted slot back and reacquire it later.
 // - for memory allocations - variable size of slots (in bytes).
 
 /// Number of slots
@@ -41,10 +40,39 @@ constexpr SlotCount UnlimitedSlots = std::numeric_limits<SlotCount>::max();
 class IAcquiredSlot : public std::enable_shared_from_this<IAcquiredSlot>, boost::noncopyable
 {
 public:
+    const size_t slot_id; /// Unique identifier of a slot within specific ISlotAllocation.
+
+    explicit IAcquiredSlot(size_t slot_id_)
+        : slot_id(slot_id_)
+    {}
+
     virtual ~IAcquiredSlot() = default;
 };
 
 using AcquiredSlotPtr = std::shared_ptr<IAcquiredSlot>;
+
+/// Lease provides a slot for a limited time duration.
+/// Specialization of IAcquiredSlot that supports preemption.
+class ISlotLease : public IAcquiredSlot
+{
+public:
+    explicit ISlotLease(size_t slot_id_)
+        : IAcquiredSlot(slot_id_)
+    {}
+
+    /// This method is for CPU consumption only.
+    /// It should be called from a thread that started using the slot.
+    /// Required for obtaining CPU time for the thread, because ctor is called in another thread.
+    virtual void startConsumption() = 0;
+
+    /// Renew the slot. This method should be called periodically.
+    /// Call may block while waiting for the slot to be reacquired in case of preemption.
+    /// Returns true if the slot is still acquired (possibly after a preemption period).
+    /// Returns false if the slot is released and holder should stop using it (e.g. thread should be stopped).
+    virtual bool renew() = 0;
+};
+
+using SlotLeasePtr = std::shared_ptr<ISlotLease>;
 
 /// Request for allocation of slots from ISlotControl.
 /// Allows for more slots to be acquired and the whole request to be canceled.
@@ -53,11 +81,36 @@ class ISlotAllocation : public std::enable_shared_from_this<ISlotAllocation>, bo
 public:
     virtual ~ISlotAllocation() = default;
 
+    /// Free the allocated slots, cancel slot requests and wake up preempted threads.
+    virtual void free() {}
+
     /// Take one already granted slot if available.
     [[nodiscard]] virtual AcquiredSlotPtr tryAcquire() = 0;
 
     /// Take one granted slot or wait until it is available.
     [[nodiscard]] virtual AcquiredSlotPtr acquire() = 0;
+
+    /// Adjust the maximum number of slots the allocation wants.
+    ///
+    /// The allocation's `max` (set initially by allocate(min, max)) becomes mutable: the
+    /// consumer can raise or lower it to express "I want up to N slots" at runtime.
+    ///
+    /// Contract for implementations:
+    ///  - `new_max` MUST be > 0. Implementations may chassert this. A request for zero slots
+    ///    has no sensible behavior here (use allocation destruction to release the work).
+    ///  - Growing `max`: if the allocation was previously saturated (had received its full
+    ///    max and was no longer a waiter), it MUST be re-added to the scheduler's waiter
+    ///    list so it may receive further grants.
+    ///  - Shrinking `max`: does NOT reclaim already-granted slots; the scheduler simply
+    ///    stops issuing new grants beyond `new_max`. Already-acquired slots remain valid.
+    ///  - Idempotent: setMax(current) is a no-op.
+    ///  - Must NOT be called while holding the implementation's internal scheduler lock —
+    ///    implementations may take that lock internally.
+    /// Default implementation is a no-op (for allocations that don't need dynamic sizing).
+    virtual void setMax(SlotCount /*new_max*/) {}
+
+    /// For tests. Returns true iff resource request is currently enqueued into the scheduler.
+    virtual bool isRequesting() const { return false; }
 };
 
 using SlotAllocationPtr = std::shared_ptr<ISlotAllocation>;
@@ -77,7 +130,8 @@ class GrantedAllocation : public ISlotAllocation
 {
 public:
     explicit GrantedAllocation(SlotCount granted_)
-        : granted(granted_)
+        : total(granted_)
+        , granted(granted_)
     {}
 
     [[nodiscard]] AcquiredSlotPtr tryAcquire() override
@@ -86,7 +140,7 @@ public:
         while (value)
         {
             if (granted.compare_exchange_strong(value, value - 1))
-                return std::make_shared<IAcquiredSlot>();
+                return std::make_shared<IAcquiredSlot>(total - value);
         }
         return {};
     }
@@ -99,6 +153,7 @@ public:
     }
 
 private:
+    const SlotCount total; // thread-safe constant total number of slots
     std::atomic<SlotCount> granted; // allocated, but not yet acquired
 };
 

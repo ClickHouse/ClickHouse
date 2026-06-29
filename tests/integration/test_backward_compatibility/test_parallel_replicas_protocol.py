@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 cluster_name = "parallel_replicas"
@@ -8,20 +8,25 @@ nodes = [
     cluster.add_instance(
         f"node{num}",
         main_configs=["configs/clusters.xml"],
-        with_zookeeper=False,
+        with_zookeeper=True,
         image="clickhouse/clickhouse-server",
-        tag="23.11",  # earlier versions lead to "Not found column sum(a) in block." exception 🤷
+        tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
         stay_alive=True,
-        use_old_analyzer=True,
+        use_old_analyzer=False,
         with_installed_binary=True,
     )
     for num in range(2)
 ] + [
     cluster.add_instance(
         "node2",
-        main_configs=["configs/clusters.xml"],
-        with_zookeeper=False,
-        use_old_analyzer=True,
+        # node2 runs the new build; pin compatible_double_hashes so its inserts still write the
+        # legacy per-part hash and deduplicate against the old (24.3) replicas of this shared
+        # ReplicatedMergeTree. With the default new_unified_hash the new node would write only the
+        # unified hash, fail to cross-deduplicate with the old replicas, and the table would end up
+        # with a second copy of the data (mixed-version migration uses compatible_double_hashes).
+        main_configs=["configs/clusters.xml", "configs/dedup_compatible.xml"],
+        with_zookeeper=True,
+        use_old_analyzer=False,
     )
 ]
 
@@ -37,9 +42,18 @@ def start_cluster():
 
 
 def test_backward_compatability(start_cluster):
-    for node in nodes:
-        node.query("create table t (a UInt64) engine = MergeTree order by tuple()")
-        node.query("insert into t select number % 100000 from numbers_mt(1000000)")
+    for num in range(len(nodes)):
+        node = nodes[num]
+        node.query("drop table if exists t sync")
+        node.query(
+            f"""
+            create table if not exists t(a UInt64)
+            engine = ReplicatedMergeTree('/test_backward_compatability/test_parallel_replicas_protocol/shard0/t', '{num}')
+            order by (a)
+        """
+        )
+        node.query("insert into t select number % 100000 from numbers_mt(1000000) ORDER BY ALL")
+        node.query("optimize table t final")
 
     # all we want is the query to run without errors
     for node in nodes:
@@ -54,10 +68,13 @@ def test_backward_compatability(start_cluster):
                     "max_parallel_replicas": 3,
                     "allow_experimental_parallel_reading_from_replicas": 1,
                     "parallel_replicas_for_non_replicated_merge_tree": 1,
+                    "merge_tree_min_rows_for_concurrent_read": 0,
+                    "merge_tree_min_bytes_for_concurrent_read": 0,
+                    "merge_tree_min_read_task_size": 1,
                 },
             )
             == "49999500000\n"
         )
 
     for node in nodes:
-        node.query("drop table t")
+        node.query("drop table t sync")

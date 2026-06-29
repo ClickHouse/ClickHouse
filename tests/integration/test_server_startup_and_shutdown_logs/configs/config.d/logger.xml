@@ -1,0 +1,9 @@
+ <clickhouse>
+    <logger>
+        <level>none</level>
+        <startup_level>trace</startup_level>
+        <shutdown_level>trace</shutdown_level>
+        <startup_console_log_level>trace</startup_console_log_level>
+        <shutdown_console_log_level>trace</shutdown_console_log_level>
+    </logger>
+</clickhouse>

@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -22,7 +23,7 @@ namespace
 {
 
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
-class FunctionIcebergTruncate : public IFunction
+class FunctionIcebergTruncate final : public IFunction
 {
 
 public:
@@ -95,7 +96,7 @@ public:
             }
             else
             {
-                auto decimal_scaled = arguments[1]->createColumnConst(1, arguments[1]->getDefault());
+                ColumnPtr decimal_scaled = arguments[1]->createColumnConst(1, arguments[1]->getDefault());
                 ColumnWithTypeAndName decimal_scaled_with_type(decimal_scaled, arguments[1], "");
                 modulo_arguments = {get_column_const(arguments[1]), decimal_scaled_with_type};
             }
@@ -147,7 +148,7 @@ public:
             {
                 ColumnPtr decimal_scaled;
                 if (const auto * decimal_type = checkDecimal<Decimal32>(*arguments[1].type))
-                    decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal32>(value, decimal_type->getScale()));
+                    decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal32>(static_cast<Int32>(value), decimal_type->getScale()));
                 if (const auto * decimal_type = checkDecimal<Decimal64>(*arguments[1].type))
                     decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal64>(value, decimal_type->getScale()));
 
@@ -188,13 +189,13 @@ REGISTER_FUNCTION(IcebergTruncate)
 {
     FunctionDocumentation::Description description = R"(Implements logic of iceberg truncate transform: https://iceberg.apache.org/spec/#truncate-transform-details.)";
     FunctionDocumentation::Syntax syntax = "icebergTruncate(N, value)";
-    FunctionDocumentation::Arguments arguments = {{"value", "String, integer or Decimal value."}};
-    FunctionDocumentation::ReturnedValue returned_value = "The same type as argument";
+    FunctionDocumentation::Arguments arguments = {{"value", "The value to transform.", {"String", "(U)Int*", "Decimal"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"The same type as the argument"};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergTruncate(3, 'iceberg')", "ice"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
 
-    factory.registerFunction<FunctionIcebergTruncate>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionIcebergTruncate>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
 }
 
 }

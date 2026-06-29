@@ -1,7 +1,5 @@
 #pragma once
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
@@ -97,7 +95,7 @@ struct ExtractParamImpl
         size_t /*input_rows_count*/)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
         if (start_pos != nullptr)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' doesn't support start_pos argument", name);
@@ -125,8 +123,8 @@ struct ExtractParamImpl
             }
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + haystack_offsets[i])
-                res[i] = ParamExtractor::extract(pos + needle.size(), begin + haystack_offsets[i] - 1);  /// don't include terminating zero
+            if (pos + needle.size() <= begin + haystack_offsets[i])
+                res[i] = ParamExtractor::extract(pos + needle.size(), begin + haystack_offsets[i]);
             else
                 res[i] = 0;
 
@@ -194,25 +192,22 @@ struct ExtractParamToStringImpl
             /// Determine which index it belongs to.
             while (begin + haystack_offsets[i] <= pos)
             {
-                res_data.push_back(0);
                 res_offsets[i] = res_data.size();
                 ++i;
             }
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + haystack_offsets[i])
+            if (pos + needle.size() <= begin + haystack_offsets[i])
                 ParamExtractor::extract(pos + needle.size(), begin + haystack_offsets[i], res_data);
 
             pos = begin + haystack_offsets[i];
 
-            res_data.push_back(0);
             res_offsets[i] = res_data.size();
             ++i;
         }
 
         while (i < res_offsets.size())
         {
-            res_data.push_back(0);
             res_offsets[i] = res_data.size();
             ++i;
         }

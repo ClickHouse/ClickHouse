@@ -3,6 +3,7 @@ description: 'Documentation for ClickHouse SQL Reference'
 keywords: ['clickhouse', 'docs', 'sql reference', 'sql statements', 'sql', 'syntax']
 slug: /sql-reference
 title: 'SQL Reference'
+doc_type: 'reference'
 ---
 
 import { TwoColumnList } from '/src/components/two_column_list'

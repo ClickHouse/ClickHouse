@@ -32,7 +32,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     ParserKeyword s_if_exists(Keyword::IF_EXISTS);
     ParserKeyword s_if_empty(Keyword::IF_EMPTY);
     ParserIdentifier name_p(true);
-    ParserStringLiteral like_p;
+    ParserStringLiteral like_p(Highlight::string_like);
     ParserKeyword s_permanently(Keyword::PERMANENTLY);
     ParserKeyword s_no_delay(Keyword::NO_DELAY);
     ParserKeyword s_sync(Keyword::SYNC);
@@ -107,12 +107,13 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     }
     else
     {
+        if (s_temporary.ignore(pos, expected))
+            temporary = true;
+
         if (s_view.ignore(pos, expected))
             is_view = true;
         else if (s_dictionary.ignore(pos, expected))
             is_dictionary = true;
-        else if (s_temporary.ignore(pos, expected))
-            temporary = true;
 
         /// for TRUNCATE queries TABLE keyword is assumed as default and can be skipped
         if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && kind != ASTDropQuery::Kind::Truncate))
@@ -147,7 +148,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
         sync = true;
 
-    auto query = std::make_shared<ASTDropQuery>();
+    auto query = make_intrusive<ASTDropQuery>();
     node = query;
 
     query->kind = kind;
@@ -155,7 +156,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->if_empty = if_empty;
     query->has_tables = has_tables;
     query->has_all = has_all;
-    query->temporary = temporary;
+    query->setIsTemporary(temporary);
     query->is_dictionary = is_dictionary;
     query->is_view = is_view;
     query->sync = sync;
@@ -177,7 +178,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->cluster = cluster_str;
 
     if (database_and_tables && database_and_tables->as<ASTExpressionList &>().children.size() == 1)
-        node = query->getRewrittenASTsOfSingleTable()[0];
+        node = query->getRewrittenASTsOfSingleTable(query)[0];
 
     return true;
 }

@@ -1,14 +1,18 @@
-#include <IO/ReadHelpers.h>
+#include <algorithm>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
-#include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
-#include <Formats/JSONUtils.h>
-#include <Formats/EscapingRuleUtils.h>
-#include <Formats/SchemaInferenceUtils.h>
-#include <Formats/FormatFactory.h>
+#include <Core/CaseAwareBlockNameMap.h>
+
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/JSONUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
+#include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -27,7 +31,8 @@ namespace
 enum
 {
     UNKNOWN_FIELD = size_t(-1),
-    NESTED_FIELD = size_t(-2)
+    NESTED_FIELD = size_t(-2),
+    NOT_INITIALIZED = size_t(-3)
 };
 
 }
@@ -35,27 +40,28 @@ enum
 
 JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     ReadBuffer & in_,
-    const Block & header_,
+    SharedHeader header_,
     Params params_,
     const FormatSettings & format_settings_,
     bool yield_strings_)
     : IRowInputFormat(header_, in_, std::move(params_))
-    , prev_positions(header_.columns())
+    , name_map(format_settings_.input_format_column_matching_case_sensitivity)
+    , prev_positions(header_->columns(), {std::string_view{}, NOT_INITIALIZED})
     , yield_strings(yield_strings_)
     , format_settings(format_settings_)
 {
+    name_map.initFromBlock(getPort().getHeader());
     const auto & header = getPort().getHeader();
-    name_map = getNamesToIndexesMap(header);
     if (format_settings_.import_nested_json)
     {
         for (size_t i = 0; i != header.columns(); ++i)
         {
-            const StringRef column_name = header.getByPosition(i).name;
-            const auto split = Nested::splitName(column_name.toView());
+            const std::string_view column_name = header.getByPosition(i).name;
+            const auto split = Nested::splitName(column_name);
             if (!split.second.empty())
             {
-                const StringRef table_name(column_name.data, split.first.size());
-                name_map[table_name] = NESTED_FIELD;
+                const std::string_view table_name = column_name.substr(0, split.first.size());
+                name_map.add(table_name, NESTED_FIELD);
             }
         }
     }
@@ -66,34 +72,32 @@ const String & JSONEachRowRowInputFormat::columnName(size_t i) const
     return getPort().getHeader().getByPosition(i).name;
 }
 
-inline size_t JSONEachRowRowInputFormat::columnIndex(StringRef name, size_t key_index)
+inline size_t JSONEachRowRowInputFormat::columnIndex(std::string_view name, size_t key_index)
 {
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
-
-    if (prev_positions.size() > key_index
-        && prev_positions[key_index] != BlockNameMap::const_iterator{}
-        && name == prev_positions[key_index]->first)
+    if (prev_positions.size() > key_index && prev_positions[key_index].second != NOT_INITIALIZED
+        && name_map.equal(name, prev_positions[key_index].first))
     {
-        return prev_positions[key_index]->second;
+        return prev_positions[key_index].second;
     }
 
-    const auto it = name_map.find(name);
-    if (it != name_map.end())
+    auto position = name_map.get(name);
+    if (position != CaseAwareBlockNameMap::NOT_FOUND)
     {
-        if (key_index < prev_positions.size())
-            prev_positions[key_index] = it;
+        if (key_index < prev_positions.size() && position < getPort().getHeader().columns())
+            prev_positions[key_index] = {getPort().getHeader().getByPosition(position).name, position};
 
-        return it->second;
+        return position;
     }
     return UNKNOWN_FIELD;
 }
 
 /** Read the field name and convert it to column name
   *  (taking into account the current nested name prefix)
-  * Resulting StringRef is valid only before next read from buf.
+  * Resulting std::string_view is valid only before next read from buf.
   */
-StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
+std::string_view JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
 {
     // This is just an optimization: try to avoid copying the name into current_column_name
 
@@ -105,7 +109,7 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
         {
             /// The most likely option is that there is no escape sequence in the key name, and the entire name is placed in the buffer.
             assertChar('"', buf);
-            StringRef res(buf.position(), next_pos - buf.position());
+            std::string_view res(buf.position(), next_pos - buf.position());
             buf.position() = next_pos + 1;
             return res;
         }
@@ -116,12 +120,12 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
     return current_column_name;
 }
 
-void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
+void JSONEachRowRowInputFormat::skipUnknownField(std::string_view name_ref)
 {
     if (!format_settings.skip_unknown_fields)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref.toString());
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref);
 
-    skipJSONField(*in, std::string_view(name_ref.data, name_ref.size), format_settings.json);
+    skipJSONField(*in, name_ref, format_settings.json);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -159,7 +163,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
 
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
-        StringRef name_ref = readColumnName(*in);
+        std::string_view name_ref = readColumnName(*in);
         if (seen_columns_count >= total_columns && format_settings.json.ignore_unnecessary_fields)
         {
             // Keep parsing the remaining fields in case of the json is invalid.
@@ -176,15 +180,15 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             /// and input buffer may be filled with new data on next read
             /// If we want to use name_ref after another reads from buffer, we must copy it to temporary string.
 
-            current_column_name.assign(name_ref.data, name_ref.size);
-            name_ref = StringRef(current_column_name);
+            current_column_name.assign(name_ref.data(), name_ref.size());
+            name_ref = std::string_view(current_column_name);
 
             JSONUtils::skipColon(*in);
 
             if (column_index == UNKNOWN_FIELD)
                 skipUnknownField(name_ref);
             else if (column_index == NESTED_FIELD)
-                readNestedData(name_ref.toString(), columns);
+                readNestedData(std::string{name_ref}, columns);
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal value of column_index");
         }
@@ -390,6 +394,7 @@ void JSONEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
     transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
 }
 
+void registerInputFormatJSONEachRow(FormatFactory & factory);
 void registerInputFormatJSONEachRow(FormatFactory & factory)
 {
     auto register_format = [&](const String & format_name, bool json_strings)
@@ -400,12 +405,13 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
-            return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, json_strings);
+            return std::make_shared<JSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings, json_strings);
         });
     };
 
     register_format("JSONEachRow", false);
     register_format("JSONLines", false);
+    register_format("JSONL", false);
     register_format("NDJSON", false);
 
     factory.registerFileExtension("ndjson", "JSONEachRow");
@@ -416,25 +422,276 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("JSONEachRow");
     factory.markFormatSupportsSubsetOfColumns("JSONLines");
     factory.markFormatSupportsSubsetOfColumns("NDJSON");
+    factory.markFormatSupportsSubsetOfColumns("JSONL");
     factory.markFormatSupportsSubsetOfColumns("JSONStringsEachRow");
+
+    factory.setDocumentation("JSONEachRow", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias                          |
+|-------|--------|--------------------------------|
+| ✔     | ✔      | `JSONLines`, `NDJSON`, `JSONL` |
+
+## Description {#description}
+
+In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object.
+
+## Example usage {#example-usage}
+
+### Inserting data {#inserting-data}
+
+Using a JSON file with the following data, named as `football.json`:
+
+```json
+{"date":"2022-04-30","season":2021,"home_team":"Sutton United","away_team":"Bradford City","home_team_goals":1,"away_team_goals":4}
+{"date":"2022-04-30","season":2021,"home_team":"Swindon Town","away_team":"Barrow","home_team_goals":2,"away_team_goals":1}
+{"date":"2022-04-30","season":2021,"home_team":"Tranmere Rovers","away_team":"Oldham Athletic","home_team_goals":2,"away_team_goals":0}
+{"date":"2022-05-02","season":2021,"home_team":"Port Vale","away_team":"Newport County","home_team_goals":1,"away_team_goals":2}
+{"date":"2022-05-02","season":2021,"home_team":"Salford City","away_team":"Mansfield Town","home_team_goals":2,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Barrow","away_team":"Northampton Town","home_team_goals":1,"away_team_goals":3}
+{"date":"2022-05-07","season":2021,"home_team":"Bradford City","away_team":"Carlisle United","home_team_goals":2,"away_team_goals":0}
+{"date":"2022-05-07","season":2021,"home_team":"Bristol Rovers","away_team":"Scunthorpe United","home_team_goals":7,"away_team_goals":0}
+{"date":"2022-05-07","season":2021,"home_team":"Exeter City","away_team":"Port Vale","home_team_goals":0,"away_team_goals":1}
+{"date":"2022-05-07","season":2021,"home_team":"Harrogate Town A.F.C.","away_team":"Sutton United","home_team_goals":0,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Hartlepool United","away_team":"Colchester United","home_team_goals":0,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Leyton Orient","away_team":"Tranmere Rovers","home_team_goals":0,"away_team_goals":1}
+{"date":"2022-05-07","season":2021,"home_team":"Mansfield Town","away_team":"Forest Green Rovers","home_team_goals":2,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Newport County","away_team":"Rochdale","home_team_goals":0,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Oldham Athletic","away_team":"Crawley Town","home_team_goals":3,"away_team_goals":3}
+{"date":"2022-05-07","season":2021,"home_team":"Stevenage Borough","away_team":"Salford City","home_team_goals":4,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Walsall","away_team":"Swindon Town","home_team_goals":0,"away_team_goals":3}
+```
+
+Insert the data:
+
+```sql
+INSERT INTO football FROM INFILE 'football.json' FORMAT JSONEachRow;
+```
+
+### Reading data {#reading-data}
+
+Read data using the `JSONEachRow` format:
+
+```sql
+SELECT *
+FROM football
+FORMAT JSONEachRow
+```
+
+The output will be in JSON format:
+
+```json
+{"date":"2022-04-30","season":2021,"home_team":"Sutton United","away_team":"Bradford City","home_team_goals":1,"away_team_goals":4}
+{"date":"2022-04-30","season":2021,"home_team":"Swindon Town","away_team":"Barrow","home_team_goals":2,"away_team_goals":1}
+{"date":"2022-04-30","season":2021,"home_team":"Tranmere Rovers","away_team":"Oldham Athletic","home_team_goals":2,"away_team_goals":0}
+{"date":"2022-05-02","season":2021,"home_team":"Port Vale","away_team":"Newport County","home_team_goals":1,"away_team_goals":2}
+{"date":"2022-05-02","season":2021,"home_team":"Salford City","away_team":"Mansfield Town","home_team_goals":2,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Barrow","away_team":"Northampton Town","home_team_goals":1,"away_team_goals":3}
+{"date":"2022-05-07","season":2021,"home_team":"Bradford City","away_team":"Carlisle United","home_team_goals":2,"away_team_goals":0}
+{"date":"2022-05-07","season":2021,"home_team":"Bristol Rovers","away_team":"Scunthorpe United","home_team_goals":7,"away_team_goals":0}
+{"date":"2022-05-07","season":2021,"home_team":"Exeter City","away_team":"Port Vale","home_team_goals":0,"away_team_goals":1}
+{"date":"2022-05-07","season":2021,"home_team":"Harrogate Town A.F.C.","away_team":"Sutton United","home_team_goals":0,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Hartlepool United","away_team":"Colchester United","home_team_goals":0,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Leyton Orient","away_team":"Tranmere Rovers","home_team_goals":0,"away_team_goals":1}
+{"date":"2022-05-07","season":2021,"home_team":"Mansfield Town","away_team":"Forest Green Rovers","home_team_goals":2,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Newport County","away_team":"Rochdale","home_team_goals":0,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Oldham Athletic","away_team":"Crawley Town","home_team_goals":3,"away_team_goals":3}
+{"date":"2022-05-07","season":2021,"home_team":"Stevenage Borough","away_team":"Salford City","home_team_goals":4,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Walsall","away_team":"Swindon Town","home_team_goals":0,"away_team_goals":3}
+```
+
+Importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
+
+## Format settings {#format-settings}
+)DOCS_MD"});
+
+    factory.setDocumentation("JSONL", Documentation{
+        .description = "An alias for the `JSONEachRow` format. See the `JSONEachRow` entry for the full documentation.",
+        .related = {"JSONEachRow"}});
+
+    factory.setDocumentation("JSONLines", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias                                      |
+|-------|--------|--------------------------------------------|
+| ✔     | ✔      | `JSONEachRow`, `JSONLines`, `NDJSON`, `JSONL` |
+
+## Description {#description}
+
+In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object.
+
+This format is also known as `JSONEachRow`, `JSONLines`, `NDJSON` (Newline Delimited JSON), or `JSONL`. These names are aliases for the same format and can be used interchangeably for both input and output.
+
+## Example usage {#example-usage}
+
+### Inserting data {#inserting-data}
+
+Using a JSON file with the following data, named as `football.json`:
+
+```json
+{"date":"2022-04-30","season":2021,"home_team":"Sutton United","away_team":"Bradford City","home_team_goals":1,"away_team_goals":4}
+{"date":"2022-04-30","season":2021,"home_team":"Swindon Town","away_team":"Barrow","home_team_goals":2,"away_team_goals":1}
+{"date":"2022-04-30","season":2021,"home_team":"Tranmere Rovers","away_team":"Oldham Athletic","home_team_goals":2,"away_team_goals":0}
+{"date":"2022-05-02","season":2021,"home_team":"Port Vale","away_team":"Newport County","home_team_goals":1,"away_team_goals":2}
+{"date":"2022-05-02","season":2021,"home_team":"Salford City","away_team":"Mansfield Town","home_team_goals":2,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Barrow","away_team":"Northampton Town","home_team_goals":1,"away_team_goals":3}
+{"date":"2022-05-07","season":2021,"home_team":"Bradford City","away_team":"Carlisle United","home_team_goals":2,"away_team_goals":0}
+{"date":"2022-05-07","season":2021,"home_team":"Bristol Rovers","away_team":"Scunthorpe United","home_team_goals":7,"away_team_goals":0}
+{"date":"2022-05-07","season":2021,"home_team":"Exeter City","away_team":"Port Vale","home_team_goals":0,"away_team_goals":1}
+{"date":"2022-05-07","season":2021,"home_team":"Harrogate Town A.F.C.","away_team":"Sutton United","home_team_goals":0,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Hartlepool United","away_team":"Colchester United","home_team_goals":0,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Leyton Orient","away_team":"Tranmere Rovers","home_team_goals":0,"away_team_goals":1}
+{"date":"2022-05-07","season":2021,"home_team":"Mansfield Town","away_team":"Forest Green Rovers","home_team_goals":2,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Newport County","away_team":"Rochdale","home_team_goals":0,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Oldham Athletic","away_team":"Crawley Town","home_team_goals":3,"away_team_goals":3}
+{"date":"2022-05-07","season":2021,"home_team":"Stevenage Borough","away_team":"Salford City","home_team_goals":4,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Walsall","away_team":"Swindon Town","home_team_goals":0,"away_team_goals":3}
+```
+
+Insert the data:
+
+```sql
+INSERT INTO football FROM INFILE 'football.json' FORMAT JSONLines;
+```
+
+### Reading data {#reading-data}
+
+Read data using the `JSONLines` format:
+
+```sql
+SELECT *
+FROM football
+FORMAT JSONLines
+```
+
+The output will be in JSON format:
+
+```json
+{"date":"2022-04-30","season":2021,"home_team":"Sutton United","away_team":"Bradford City","home_team_goals":1,"away_team_goals":4}
+{"date":"2022-04-30","season":2021,"home_team":"Swindon Town","away_team":"Barrow","home_team_goals":2,"away_team_goals":1}
+{"date":"2022-04-30","season":2021,"home_team":"Tranmere Rovers","away_team":"Oldham Athletic","home_team_goals":2,"away_team_goals":0}
+{"date":"2022-05-02","season":2021,"home_team":"Port Vale","away_team":"Newport County","home_team_goals":1,"away_team_goals":2}
+{"date":"2022-05-02","season":2021,"home_team":"Salford City","away_team":"Mansfield Town","home_team_goals":2,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Barrow","away_team":"Northampton Town","home_team_goals":1,"away_team_goals":3}
+{"date":"2022-05-07","season":2021,"home_team":"Bradford City","away_team":"Carlisle United","home_team_goals":2,"away_team_goals":0}
+{"date":"2022-05-07","season":2021,"home_team":"Bristol Rovers","away_team":"Scunthorpe United","home_team_goals":7,"away_team_goals":0}
+{"date":"2022-05-07","season":2021,"home_team":"Exeter City","away_team":"Port Vale","home_team_goals":0,"away_team_goals":1}
+{"date":"2022-05-07","season":2021,"home_team":"Harrogate Town A.F.C.","away_team":"Sutton United","home_team_goals":0,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Hartlepool United","away_team":"Colchester United","home_team_goals":0,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Leyton Orient","away_team":"Tranmere Rovers","home_team_goals":0,"away_team_goals":1}
+{"date":"2022-05-07","season":2021,"home_team":"Mansfield Town","away_team":"Forest Green Rovers","home_team_goals":2,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Newport County","away_team":"Rochdale","home_team_goals":0,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Oldham Athletic","away_team":"Crawley Town","home_team_goals":3,"away_team_goals":3}
+{"date":"2022-05-07","season":2021,"home_team":"Stevenage Borough","away_team":"Salford City","home_team_goals":4,"away_team_goals":2}
+{"date":"2022-05-07","season":2021,"home_team":"Walsall","away_team":"Swindon Town","home_team_goals":0,"away_team_goals":3}
+```
+
+Importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
+
+## Format settings {#format-settings}
+)DOCS_MD"});
+
+    factory.setDocumentation("JSONStringsEachRow", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+Differs from the [`JSONEachRow`](./JSONEachRow.md) only in that data fields are output in strings, not in typed JSON values.
+
+## Example usage {#example-usage}
+
+### Inserting data {#inserting-data}
+
+Using a JSON file with the following data, named as `football.json`:
+
+```json
+{"date":"2022-04-30","season":"2021","home_team":"Sutton United","away_team":"Bradford City","home_team_goals":"1","away_team_goals":"4"}
+{"date":"2022-04-30","season":"2021","home_team":"Swindon Town","away_team":"Barrow","home_team_goals":"2","away_team_goals":"1"}
+{"date":"2022-04-30","season":"2021","home_team":"Tranmere Rovers","away_team":"Oldham Athletic","home_team_goals":"2","away_team_goals":"0"}
+{"date":"2022-05-02","season":"2021","home_team":"Port Vale","away_team":"Newport County","home_team_goals":"1","away_team_goals":"2"}
+{"date":"2022-05-02","season":"2021","home_team":"Salford City","away_team":"Mansfield Town","home_team_goals":"2","away_team_goals":"2"}
+{"date":"2022-05-07","season":"2021","home_team":"Barrow","away_team":"Northampton Town","home_team_goals":"1","away_team_goals":"3"}
+{"date":"2022-05-07","season":"2021","home_team":"Bradford City","away_team":"Carlisle United","home_team_goals":"2","away_team_goals":"0"}
+{"date":"2022-05-07","season":"2021","home_team":"Bristol Rovers","away_team":"Scunthorpe United","home_team_goals":"7","away_team_goals":"0"}
+{"date":"2022-05-07","season":"2021","home_team":"Exeter City","away_team":"Port Vale","home_team_goals":"0","away_team_goals":"1"}
+{"date":"2022-05-07","season":"2021","home_team":"Harrogate Town A.F.C.","away_team":"Sutton United","home_team_goals":"0","away_team_goals":"2"}
+{"date":"2022-05-07","season":"2021","home_team":"Hartlepool United","away_team":"Colchester United","home_team_goals":"0","away_team_goals":"2"}
+{"date":"2022-05-07","season":"2021","home_team":"Leyton Orient","away_team":"Tranmere Rovers","home_team_goals":"0","away_team_goals":"1"}
+{"date":"2022-05-07","season":"2021","home_team":"Mansfield Town","away_team":"Forest Green Rovers","home_team_goals":"2","away_team_goals":"2"}
+{"date":"2022-05-07","season":"2021","home_team":"Newport County","away_team":"Rochdale","home_team_goals":"0","away_team_goals":"2"}
+{"date":"2022-05-07","season":"2021","home_team":"Oldham Athletic","away_team":"Crawley Town","home_team_goals":"3","away_team_goals":"3"}
+{"date":"2022-05-07","season":"2021","home_team":"Stevenage Borough","away_team":"Salford City","home_team_goals":"4","away_team_goals":"2"}
+{"date":"2022-05-07","season":"2021","home_team":"Walsall","away_team":"Swindon Town","home_team_goals":"0","away_team_goals":"3"}   
+```
+
+Insert the data:
+
+```sql
+INSERT INTO football FROM INFILE 'football.json' FORMAT JSONStringsEachRow;
+```
+
+### Reading data {#reading-data}
+
+Read data using the `JSONStringsEachRow` format:
+
+```sql
+SELECT *
+FROM football
+FORMAT JSONStringsEachRow
+```
+
+The output will be in JSON format:
+
+```json
+{"date":"2022-04-30","season":"2021","home_team":"Sutton United","away_team":"Bradford City","home_team_goals":"1","away_team_goals":"4"}
+{"date":"2022-04-30","season":"2021","home_team":"Swindon Town","away_team":"Barrow","home_team_goals":"2","away_team_goals":"1"}
+{"date":"2022-04-30","season":"2021","home_team":"Tranmere Rovers","away_team":"Oldham Athletic","home_team_goals":"2","away_team_goals":"0"}
+{"date":"2022-05-02","season":"2021","home_team":"Port Vale","away_team":"Newport County","home_team_goals":"1","away_team_goals":"2"}
+{"date":"2022-05-02","season":"2021","home_team":"Salford City","away_team":"Mansfield Town","home_team_goals":"2","away_team_goals":"2"}
+{"date":"2022-05-07","season":"2021","home_team":"Barrow","away_team":"Northampton Town","home_team_goals":"1","away_team_goals":"3"}
+{"date":"2022-05-07","season":"2021","home_team":"Bradford City","away_team":"Carlisle United","home_team_goals":"2","away_team_goals":"0"}
+{"date":"2022-05-07","season":"2021","home_team":"Bristol Rovers","away_team":"Scunthorpe United","home_team_goals":"7","away_team_goals":"0"}
+{"date":"2022-05-07","season":"2021","home_team":"Exeter City","away_team":"Port Vale","home_team_goals":"0","away_team_goals":"1"}
+{"date":"2022-05-07","season":"2021","home_team":"Harrogate Town A.F.C.","away_team":"Sutton United","home_team_goals":"0","away_team_goals":"2"}
+{"date":"2022-05-07","season":"2021","home_team":"Hartlepool United","away_team":"Colchester United","home_team_goals":"0","away_team_goals":"2"}
+{"date":"2022-05-07","season":"2021","home_team":"Leyton Orient","away_team":"Tranmere Rovers","home_team_goals":"0","away_team_goals":"1"}
+{"date":"2022-05-07","season":"2021","home_team":"Mansfield Town","away_team":"Forest Green Rovers","home_team_goals":"2","away_team_goals":"2"}
+{"date":"2022-05-07","season":"2021","home_team":"Newport County","away_team":"Rochdale","home_team_goals":"0","away_team_goals":"2"}
+{"date":"2022-05-07","season":"2021","home_team":"Oldham Athletic","away_team":"Crawley Town","home_team_goals":"3","away_team_goals":"3"}
+{"date":"2022-05-07","season":"2021","home_team":"Stevenage Borough","away_team":"Salford City","home_team_goals":"4","away_team_goals":"2"}
+{"date":"2022-05-07","season":"2021","home_team":"Walsall","away_team":"Swindon Town","home_team_goals":"0","away_team_goals":"3"}   
+```
+
+## Format settings {#format-settings}
+)DOCS_MD"});
+
+    factory.setDocumentation("NDJSON", Documentation{
+        .description = "An alias for the `JSONEachRow` format. See the `JSONEachRow` entry for the full documentation.",
+        .related = {"JSONEachRow"}});
 }
 
+void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("JSONEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
     factory.registerFileSegmentationEngine("JSONStringsEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
     factory.registerFileSegmentationEngine("JSONLines", &JSONUtils::fileSegmentationEngineJSONEachRow);
     factory.registerFileSegmentationEngine("NDJSON", &JSONUtils::fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONL", &JSONUtils::fileSegmentationEngineJSONEachRow);
 }
 
+void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory)
 {
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONEachRow", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONStringsEachRow", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONLines", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
     factory.registerNonTrivialPrefixAndSuffixChecker("NDJSON", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONL", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
+void registerJSONEachRowSchemaReader(FormatFactory & factory);
 void registerJSONEachRowSchemaReader(FormatFactory & factory)
 {
     auto register_schema_reader = [&](const String & format_name)
@@ -452,6 +709,7 @@ void registerJSONEachRowSchemaReader(FormatFactory & factory)
     register_schema_reader("JSONEachRow");
     register_schema_reader("JSONLines");
     register_schema_reader("NDJSON");
+    register_schema_reader("JSONL");
     register_schema_reader("JSONStringsEachRow");
 }
 

@@ -6,7 +6,7 @@
 
 #include <pqxx/pqxx>
 #include <Core/Types.h>
-#include "Connection.h"
+#include <Core/PostgreSQL/Connection.h>
 
 namespace pqxx
 {

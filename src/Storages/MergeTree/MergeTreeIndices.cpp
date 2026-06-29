@@ -1,10 +1,12 @@
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
 
 #include <Columns/IColumn.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Common/escapeForFileName.h>
+#include <Common/SipHash.h>
 
 #include <numeric>
 
@@ -17,24 +19,80 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
+bool indexFileExistsInChecksums(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & path_prefix,
+    const std::string & extension,
+    const IDataPartStorage * storage)
+{
+    if (checksums.files.contains(path_prefix + extension))
+        return true;
+
+    /// Also check for hashed version of the filename
+    auto hash = sipHash128String(path_prefix);
+    if (checksums.files.contains(hash + extension))
+        return true;
+
+    /// Packed substreams: not listed in checksums.txt as individual entries, but the
+    /// storage overlay reports their existence via the skp_idx.packed index.
+    if (storage && checksums.files.contains(String(SKIP_INDICES_PACKED_FILENAME)))
+    {
+        if (storage->existsFile(path_prefix + extension))
+            return true;
+        if (storage->existsFile(hash + extension))
+            return true;
+    }
+
+    return false;
+}
+
+String getIndexFileName(const String & index_name, bool escape_filename)
+{
+    if (escape_filename)
+        return escapeForFileName(String(SKIP_INDEX_FILE_PREFIX) + index_name);
+    return String(SKIP_INDEX_FILE_PREFIX) + index_name;
+}
+
+String IMergeTreeIndex::getFileName() const
+{
+    return getIndexFileName(index.name, index.escape_filenames);
+}
+
 Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
 {
     return index.expression->getRequiredColumns();
 }
 
-MergeTreeIndexFormat
-IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & relative_path_prefix,
+    const IDataPartStorage * storage) const
 {
-    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
-        return {1, ".idx"};
-    return {0 /*unknown*/, ""};
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
+        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
+
+    return {0 /*unknown*/, {}};
 }
 
-void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
+void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
+{
+    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
+    serializeBinary(stream->compressed_hashing);
+}
+
+void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator, Documentation documentation)
 {
     if (!creators.emplace(index_type, std::move(creator)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index creator name '{}' is not unique",
                         index_type);
+    documentations.emplace(index_type, std::move(documentation));
+}
+
+Documentation MergeTreeIndexFactory::getDocumentation(const std::string & index_type) const
+{
+    if (auto it = documentations.find(index_type); it != documentations.end())
+        return it->second;
+    return {};
 }
 void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Validator validator)
 {
@@ -42,9 +100,23 @@ void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Va
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index validator name '{}' is not unique", index_type);
 }
 
+std::vector<String> MergeTreeIndexFactory::getAllRegisteredNames() const
+{
+    std::vector<String> result;
+    result.reserve(creators.size());
+    for (const auto & pair : creators)
+        result.push_back(pair.first);
+    return result;
+}
+
+void IMergeTreeIndexGranule::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
+{
+    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
+    deserializeBinary(*stream->getDataBuffer(), state.version);
+}
 
 MergeTreeIndexPtr MergeTreeIndexFactory::get(
-    const IndexDescription & index) const
+    StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings) const
 {
     auto it = creators.find(index.type);
     if (it == creators.end())
@@ -61,19 +133,18 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
                 );
     }
 
-    return it->second(index);
+    return it->second(std::move(metadata_snapshot), index, settings);
 }
 
-
-MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<IndexDescription> & indices) const
+MergeTreeIndices MergeTreeIndexFactory::getMany(StorageMetadataPtr metadata_snapshot, const std::vector<IndexDescription> & indices, const MergeTreeSettings & settings) const
 {
     MergeTreeIndices result;
     for (const auto & index : indices)
-        result.emplace_back(get(index));
+        result.emplace_back(get(metadata_snapshot, index, settings));
     return result;
 }
 
-void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach) const
+void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings) const
 {
     /// Do not allow constant and non-deterministic expressions.
     /// Do not throw on attach for compatibility.
@@ -115,50 +186,69 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
             );
     }
 
-    it->second(index, attach);
+    it->second(index, attach, settings);
 }
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()
 {
-    registerCreator("minmax", minmaxIndexCreator);
+    registerCreator("minmax", minmaxIndexCreator, Documentation{
+        .description = "Stores the minimum and maximum values of the index expression for each granule, allowing granules to be skipped when a query's range condition cannot match.",
+        .syntax = "INDEX name expr TYPE minmax GRANULARITY n",
+        .related = {"set"}});
     registerValidator("minmax", minmaxIndexValidator);
 
-    registerCreator("set", setIndexCreator);
+    registerCreator("set", setIndexCreator, Documentation{
+        .description = "Stores up to `max_rows` distinct values of the index expression per granule (0 means unlimited), allowing granules to be skipped for equality and IN conditions.",
+        .syntax = "INDEX name expr TYPE set(max_rows) GRANULARITY n",
+        .related = {"bloom_filter", "minmax"}});
     registerValidator("set", setIndexValidator);
 
-    registerCreator("ngrambf_v1", bloomFilterIndexTextCreator);
+    registerCreator("ngrambf_v1", bloomFilterIndexTextCreator, Documentation{
+        .description = "A Bloom filter over all n-grams of the index expression's string values, for speeding up LIKE, IN, equality and similar searches on substrings.",
+        .syntax = "INDEX name expr TYPE ngrambf_v1(n, size_in_bytes, num_hash_functions, seed) GRANULARITY g",
+        .related = {"tokenbf_v1", "bloom_filter", "text"}});
     registerValidator("ngrambf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("tokenbf_v1", bloomFilterIndexTextCreator);
+    registerCreator("tokenbf_v1", bloomFilterIndexTextCreator, Documentation{
+        .description = "A Bloom filter over the tokens (words) of the index expression's string values, for speeding up searches of whole tokens.",
+        .syntax = "INDEX name expr TYPE tokenbf_v1(size_in_bytes, num_hash_functions, seed) GRANULARITY g",
+        .related = {"ngrambf_v1", "text"}});
     registerValidator("tokenbf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("bloom_filter", bloomFilterIndexCreator);
+    registerCreator("sparse_grams", bloomFilterIndexTextCreator, Documentation{
+        .description = "A Bloom filter over the sparse n-grams of the index expression's string values, for speeding up substring searches.",
+        .syntax = "INDEX name expr TYPE sparse_grams(min_ngram_length, max_ngram_length[, min_cutoff_length], size_in_bytes, num_hash_functions, seed) GRANULARITY g",
+        .related = {"ngrambf_v1", "tokenbf_v1"}});
+    registerValidator("sparse_grams", bloomFilterIndexTextValidator);
+
+    registerCreator("bloom_filter", bloomFilterIndexCreator, Documentation{
+        .description = "A Bloom filter over the values of the index expression, for speeding up equality and IN conditions on columns, including Array and Map elements.",
+        .syntax = "INDEX name expr TYPE bloom_filter([false_positive_rate]) GRANULARITY g",
+        .related = {"set", "tokenbf_v1"}});
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
-    registerCreator("hypothesis", hypothesisIndexCreator);
-
-    registerValidator("hypothesis", hypothesisIndexValidator);
-
 #if USE_USEARCH
-    registerCreator("vector_similarity", vectorSimilarityIndexCreator);
+    registerCreator("vector_similarity", vectorSimilarityIndexCreator, Documentation{
+        .description = "An approximate nearest-neighbour index over a vector column (built using HNSW), for speeding up `ORDER BY <distance_function>(vector, reference) LIMIT n` queries.",
+        .syntax = "INDEX name vector TYPE vector_similarity('hnsw', 'distance_function', dimensions[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) GRANULARITY g",
+        .related = {}});
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
 
-    registerCreator("gin", ginIndexCreator);
-    registerValidator("gin", ginIndexValidator);
+    registerCreator("text", textIndexCreator, Documentation{
+        .description = "A full-text (inverted) index over the tokens of a string column, for speeding up text search functions such as `hasToken`, `hasAnyTokens`, `hasAllTokens`, and `hasPhrase`.",
+        .syntax = "INDEX name expr TYPE text(tokenizer = splitByNonAlpha) GRANULARITY g",
+        .related = {"tokenbf_v1"}});
+    registerValidator("text", textIndexValidator);
 
-    /// ------
-    /// Index type 'inverted' was renamed to 'full_text' in May 2024.
-    /// Index type 'full_text' was renamed to 'gin' in April 2025.
-    ///
-    /// To support loading tables with old indexes during a transition period, register GIN indexes under their old names.
-    ///
-    /// TODO: remove this block one year after GIN indexes became GA.
-    registerCreator("full_text", ginIndexCreator);
-    registerValidator("full_text", ginIndexValidator);
-    registerCreator("inverted", ginIndexCreator);
-    registerValidator("inverted", ginIndexValidator);
-    /// ------
+    /// Index type 'hypothesis' is no longer supported.
+    /// To allow loading tables with old indexes, register a dummy index which allows attach but
+    /// throws an exception when the user attempts to create or use it.
+    registerCreator("hypothesis", legacyHypothesisIndexCreator, Documentation{
+        .description = "Deprecated and no longer supported. It is retained only so that tables which still reference it can be attached.",
+        .syntax = "INDEX name expr TYPE hypothesis GRANULARITY g",
+        .related = {}});
+    registerValidator("hypothesis", legacyHypothesisIndexValidator);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

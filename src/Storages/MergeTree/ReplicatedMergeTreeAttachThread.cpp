@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/Context.h>
 #include <Core/BackgroundSchedulePool.h>
 
@@ -30,7 +31,7 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeAttachThread)")
     , log(getLogger(log_name))
 {
-    task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
+    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this] { run(); });
     const auto storage_settings = storage.getSettings();
     retry_period = (*storage_settings)[MergeTreeSetting::initialization_retry_period].totalSeconds();
 }
@@ -57,6 +58,7 @@ void ReplicatedMergeTreeAttachThread::shutdown()
 void ReplicatedMergeTreeAttachThread::run()
 {
     bool needs_retry{false};
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeAttachThread");
     try
     {
         // we delay the first reconnect if the storage failed to connect to ZK initially
@@ -137,6 +139,21 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     auto zookeeper = storage.getZooKeeper();
     const auto & zookeeper_path = storage.zookeeper_path;
     bool metadata_exists = zookeeper->exists(zookeeper_path + "/metadata");
+    if (!metadata_exists && skip_sanity_checks)
+    {
+        LOG_INFO(log, "Missing metadata in keeper. Force restoring it");
+        try
+        {
+            storage.restoreMetadataInZooKeeper({}, true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            return;
+        }
+        metadata_exists = zookeeper->exists(zookeeper_path + "/metadata");
+    }
+
     if (!metadata_exists)
     {
         LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will stay in readonly mode.", zookeeper_path);
@@ -144,7 +161,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
         return;
     }
 
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
 
     const auto & replica_path = storage.replica_path;
     /// May it be ZK lost not the whole root, so the upper check passed, but only the /replicas/replica

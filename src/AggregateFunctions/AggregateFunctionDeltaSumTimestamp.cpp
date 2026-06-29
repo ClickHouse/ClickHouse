@@ -5,7 +5,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -25,8 +24,10 @@ namespace
 /** Due to a lack of proper code review, this code was contributed with a multiplication of template instantiations
   * over all pairs of data types, and we deeply regret that.
   *
-  * We cannot remove all combinations, because the binary representation of serialized data has to remain the same,
-  * but we can partially heal the wound by treating unsigned and signed data types in the same way.
+  * We cannot remove these combinations, because the binary representation of the serialized data has to remain the same.
+  * Note that signed integers must not be unified with unsigned ones: although their binary representation is identical,
+  * the arithmetic (the `<` comparison and the subtraction in `add` and `merge`) differs once the values cross zero,
+  * which produces wrong results. Only `Date` and `DateTime` are mapped to their unsigned integer equivalents.
   */
 
 template <typename ValueType, typename TimestampType>
@@ -102,7 +103,7 @@ public:
         return false;
     }
 
-    void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void NO_SANITIZE_UNDEFINED mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & place_data = this->data(place);
         auto & rhs_data = this->data(rhs);
@@ -191,8 +192,8 @@ IAggregateFunction * createWithTwoTypesSecond(const IDataType & second_type, TAr
 
     if (which.idx == TypeIndex::UInt32) return new AggregateFunctionTemplate<FirstType, UInt32>(args...);
     if (which.idx == TypeIndex::UInt64) return new AggregateFunctionTemplate<FirstType, UInt64>(args...);
-    if (which.idx == TypeIndex::Int32) return new AggregateFunctionTemplate<FirstType, UInt32>(args...);
-    if (which.idx == TypeIndex::Int64) return new AggregateFunctionTemplate<FirstType, UInt64>(args...);
+    if (which.idx == TypeIndex::Int32) return new AggregateFunctionTemplate<FirstType, Int32>(args...);
+    if (which.idx == TypeIndex::Int64) return new AggregateFunctionTemplate<FirstType, Int64>(args...);
     if (which.idx == TypeIndex::Float32) return new AggregateFunctionTemplate<FirstType, Float32>(args...);
     if (which.idx == TypeIndex::Float64) return new AggregateFunctionTemplate<FirstType, Float64>(args...);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<FirstType, UInt16>(args...);
@@ -210,10 +211,10 @@ IAggregateFunction * createWithTwoTypes(const IDataType & first_type, const IDat
     if (which.idx == TypeIndex::UInt16) return createWithTwoTypesSecond<UInt16, AggregateFunctionTemplate>(second_type, args...);
     if (which.idx == TypeIndex::UInt32) return createWithTwoTypesSecond<UInt32, AggregateFunctionTemplate>(second_type, args...);
     if (which.idx == TypeIndex::UInt64) return createWithTwoTypesSecond<UInt64, AggregateFunctionTemplate>(second_type, args...);
-    if (which.idx == TypeIndex::Int8) return createWithTwoTypesSecond<UInt8, AggregateFunctionTemplate>(second_type, args...);
-    if (which.idx == TypeIndex::Int16) return createWithTwoTypesSecond<UInt16, AggregateFunctionTemplate>(second_type, args...);
-    if (which.idx == TypeIndex::Int32) return createWithTwoTypesSecond<UInt32, AggregateFunctionTemplate>(second_type, args...);
-    if (which.idx == TypeIndex::Int64) return createWithTwoTypesSecond<UInt64, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Int8) return createWithTwoTypesSecond<Int8, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Int16) return createWithTwoTypesSecond<Int16, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Int32) return createWithTwoTypesSecond<Int32, AggregateFunctionTemplate>(second_type, args...);
+    if (which.idx == TypeIndex::Int64) return createWithTwoTypesSecond<Int64, AggregateFunctionTemplate>(second_type, args...);
     if (which.idx == TypeIndex::Float32) return createWithTwoTypesSecond<Float32, AggregateFunctionTemplate>(second_type, args...);
     if (which.idx == TypeIndex::Float64) return createWithTwoTypesSecond<Float64, AggregateFunctionTemplate>(second_type, args...);
 
@@ -248,11 +249,46 @@ AggregateFunctionPtr createAggregateFunctionDeltaSumTimestamp(
 }
 }
 
+void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Adds the difference between consecutive rows.
+If the difference is negative, it is ignored.
+
+This function is primarily for [materialized views](/sql-reference/statements/create/view#materialized-view) that store data ordered by some time bucket-aligned timestamp, for example, a `toStartOfMinute` bucket.
+Because the rows in such a materialized view will all have the same timestamp, it is impossible for them to be merged in the correct order, without storing the original, unrounded timestamp value.
+The `deltaSumTimestamp` function keeps track of the original `timestamp` of the values it's seen, so the values (states) of the function are correctly computed during merging of parts.
+
+To calculate the delta sum across an ordered collection you can simply use the [`deltaSum`](/sql-reference/aggregate-functions/reference/deltasum) function.
+    )";
+    FunctionDocumentation::Syntax syntax = "deltaSumTimestamp(value, timestamp)";
+    FunctionDocumentation::Arguments arguments = {
+        {"value", "Input values.", {"(U)Int*", "Float*", "Date", "DateTime"}},
+        {"timestamp", "The parameter for order values.", {"(U)Int*", "Float*", "Date", "DateTime"}}
+    };
+    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns accumulated differences between consecutive values, ordered by the `timestamp` parameter.", {"(U)Int*", "Float*", "Date", "DateTime"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic usage with timestamp ordering",
+        R"(
+SELECT deltaSumTimestamp(value, timestamp)
+FROM (SELECT number AS timestamp, [0, 4, 8, 3, 0, 0, 0, 1, 3, 5][number] AS value FROM numbers(1, 10))
+        )",
+        R"(
+┌─deltaSumTimestamp(value, timestamp)─┐
+│                                  13 │
+└─────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 6};
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
 
-    factory.registerFunction("deltaSumTimestamp", { createAggregateFunctionDeltaSumTimestamp, properties });
+    factory.registerFunction("deltaSumTimestamp", { createAggregateFunctionDeltaSumTimestamp, documentation, properties });
 }
 
 }

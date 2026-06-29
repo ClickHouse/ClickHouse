@@ -6,7 +6,7 @@
 
 #include <IO/S3Settings.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <base/types.h>
 #include <functional>
 #include <memory>
@@ -31,7 +31,7 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 ///
 /// read_settings - is used for throttling in case of native copy is not possible
 void copyS3File(
-    const std::shared_ptr<const S3::Client> & src_s3_client,
+    std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,
@@ -44,7 +44,7 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer& fallback_file_reader,
-    const std::optional<std::map<String, String>> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
 
 /// Copies data from any seekable source to S3.
 /// The same functionality can be done by using the function copyData() and the class WriteBufferFromS3
@@ -61,7 +61,7 @@ void copyDataToS3File(
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<std::map<String, String>> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
 
 }
 

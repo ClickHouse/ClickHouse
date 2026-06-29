@@ -23,3 +23,5 @@ The first 3 neighbours returned by vector index dont pass the attr2 >= 1008 filt
 11
 12
 -- Negative parameter values throw an exception
+-- Zero parameter values throw an exception
+-- Too large parameter values throw an exception

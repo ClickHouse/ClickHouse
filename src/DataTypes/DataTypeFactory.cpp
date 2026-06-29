@@ -1,9 +1,13 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/UserDefinedTypeFactory.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTEnumDataType.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
@@ -27,11 +31,83 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+template <typename FieldType>
+static typename DataTypeEnum<FieldType>::Values checkAndBuildEnumValues(
+    const std::vector<std::pair<String, Int64>> & values, const char * type_name)
+{
+    typename DataTypeEnum<FieldType>::Values enum_values;
+    enum_values.reserve(values.size());
+    for (const auto & [name, value] : values)
+    {
+        if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value {} for element '{}' exceeds range of {}",
+                value, name, type_name);
+        enum_values.emplace_back(name, static_cast<FieldType>(value));
+    }
+    return enum_values;
+}
+
+/// Helper to create Enum data type from ASTEnumDataType values
+static DataTypePtr createEnumFromValues(const String & type_name, const std::vector<std::pair<String, Int64>> & values)
+{
+    String type_name_upper = Poco::toUpper(type_name);
+    bool use_enum16 = (type_name_upper == "ENUM16");
+
+    if (!use_enum16 && type_name_upper == "ENUM")
+    {
+        /// Auto-detect Enum8 vs Enum16 based on values
+        for (const auto & [_, value] : values)
+        {
+            if (value < std::numeric_limits<Int8>::min() || value > std::numeric_limits<Int8>::max())
+            {
+                use_enum16 = true;
+                break;
+            }
+        }
+    }
+
+    if (use_enum16)
+        return std::make_shared<DataTypeEnum16>(checkAndBuildEnumValues<Int16>(values, "Enum16"));
+    return std::make_shared<DataTypeEnum8>(checkAndBuildEnumValues<Int8>(values, "Enum8"));
+}
+
+/// Helper to create Tuple data type from ASTTupleDataType
+static DataTypePtr createTupleFromAST(const ASTTupleDataType * tuple_ast)
+{
+    const auto arguments = tuple_ast->getArguments();
+    if (!arguments || arguments->children.empty())
+        return std::make_shared<DataTypeTuple>(DataTypes{});
+
+    DataTypes nested_types;
+    nested_types.reserve(arguments->children.size());
+
+    for (const auto & child : arguments->children)
+        nested_types.emplace_back(DataTypeFactory::instance().get(child));
+
+    /// If element_names is empty, it's an unnamed tuple
+    if (tuple_ast->element_names.empty())
+        return std::make_shared<DataTypeTuple>(nested_types);
+
+    /// Named tuple - validate all elements have names (no mixed named/unnamed)
+    for (const auto & elem_name : tuple_ast->element_names)
+    {
+        if (elem_name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
+    }
+
+    if (tuple_ast->element_names.size() != nested_types.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
+
+    return std::make_shared<DataTypeTuple>(nested_types, tuple_ast->element_names);
 }
 
 DataTypePtr DataTypeFactory::get(const String & full_name) const
@@ -90,9 +166,49 @@ DataTypePtr DataTypeFactory::tryGet(const ASTPtr & ast) const
 template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 {
+    /// These specialized branches construct the type directly, bypassing the registered-creator
+    /// try/catch below, so they must honor nullptr_on_error themselves: tryGet promises nullptr
+    /// (not an exception) on invalid type text, e.g. an out-of-range enum value.
+
+    /// Handle specialized ASTEnumDataType directly
+    if (const auto * enum_type = ast->as<ASTEnumDataType>())
+    {
+        if constexpr (nullptr_on_error)
+        {
+            try
+            {
+                return createEnumFromValues(enum_type->name, enum_type->values);
+            }
+            catch (...) // Ok: tryGet is a try-pattern
+            {
+                return nullptr;
+            }
+        }
+        else
+            return createEnumFromValues(enum_type->name, enum_type->values);
+    }
+
+    /// Handle specialized ASTTupleDataType directly
+    if (const auto * tuple_type = ast->as<ASTTupleDataType>())
+    {
+        if constexpr (nullptr_on_error)
+        {
+            try
+            {
+                return createTupleFromAST(tuple_type);
+            }
+            catch (...) // Ok: tryGet is a try-pattern
+            {
+                return nullptr;
+            }
+        }
+        else
+            return createTupleFromAST(tuple_type);
+    }
+
     if (const auto * type = ast->as<ASTDataType>())
     {
-        return getImpl<nullptr_on_error>(type->name, type->arguments);
+        return getImpl<nullptr_on_error>(type->name, type->getArguments());
     }
 
     if (const auto * ident = ast->as<ASTIdentifier>())
@@ -176,7 +292,7 @@ template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const ASTPtr & parameters) const
 {
     String family_name = getAliasToOrName(family_name_param);
-    auto query_context = CurrentThread::getQueryContext();
+    auto query_context = CurrentThread::tryGetQueryContext();
 
     if (query_context && UserDefinedTypeFactory::instance().isTypeRegistered(family_name, query_context))
     {
@@ -239,14 +355,14 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
         {
             data_type = (*creator)(parameters);
         }
-        catch (...)
+        catch (...) // Ok: tryGetDataType is a try-pattern
         {
             return nullptr;
         }
     }
     else
     {
-        assert(creator);
+        chassert(creator);
         data_type = (*creator)(parameters);
     }
 
@@ -275,7 +391,7 @@ DataTypePtr DataTypeFactory::getCustom(const String & base_name, DataTypeCustomD
     return type;
 }
 
-void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness)
+void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness, Documentation documentation)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family {} has been provided  a null constructor", family_name);
@@ -292,9 +408,11 @@ void DataTypeFactory::registerDataType(const String & family_name, Value creator
     if (case_sensitiveness == Case::Insensitive
         && !case_insensitive_data_types.emplace(family_name_lowercase, creator).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the case insensitive data type family name '{}' is not unique", family_name);
+
+    data_type_documentations.emplace(family_name, std::move(documentation));
 }
 
-void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness)
+void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness, Documentation documentation)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor",
@@ -305,10 +423,10 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
         if (ast)
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
         return creator();
-    }, case_sensitiveness);
+    }, case_sensitiveness, std::move(documentation));
 }
 
-void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness)
+void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness, Documentation documentation)
 {
     registerDataType(family_name, [creator](const ASTPtr & ast)
     {
@@ -316,17 +434,24 @@ void DataTypeFactory::registerDataTypeCustom(const String & family_name, Creator
         res.first->setCustomization(std::move(res.second));
 
         return res.first;
-    }, case_sensitiveness);
+    }, case_sensitiveness, std::move(documentation));
 }
 
-void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness)
+void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness, Documentation documentation)
 {
     registerDataTypeCustom(name, [name, creator](const ASTPtr & ast)
     {
         if (ast)
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
         return creator();
-    }, case_sensitiveness);
+    }, case_sensitiveness, std::move(documentation));
+}
+
+Documentation DataTypeFactory::getDocumentation(const String & family_name) const
+{
+    if (auto it = data_type_documentations.find(family_name); it != data_type_documentations.end())
+        return it->second;
+    return {};
 }
 
 template <bool nullptr_on_error>
@@ -376,6 +501,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeEnum(*this);
     registerDataTypeArray(*this);
     registerDataTypeTuple(*this);
+    registerDataTypeQBit(*this);
     registerDataTypeNullable(*this);
     registerDataTypeNothing(*this);
     registerDataTypeUUID(*this);
@@ -388,7 +514,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
-    registerDataTypeObjectDeprecated(*this);
     registerDataTypeVariant(*this);
     registerDataTypeDynamic(*this);
     registerDataTypeJSON(*this);

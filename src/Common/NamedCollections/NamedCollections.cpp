@@ -1,4 +1,4 @@
-#include "NamedCollections.h"
+#include <Common/NamedCollections/NamedCollections.h>
 
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
@@ -85,7 +85,7 @@ public:
     {
         Configuration::removeConfigValue(*config, key);
         [[maybe_unused]] auto removed = keys.erase(key);
-        assert(removed);
+        chassert(removed);
     }
 
     Keys getKeys(ssize_t depth, const std::string & prefix) const
@@ -142,10 +142,10 @@ public:
         ///     key3:
         ///        key4: value3"
         WriteBufferFromOwnString wb;
-        Strings prev_key_parts;
+        std::vector<std::string_view> prev_key_parts;
         for (const auto & key : keys)
         {
-            Strings key_parts;
+            std::vector<std::string_view> key_parts;
             splitInto<'.'>(key_parts, key);
             size_t tab_cnt = 0;
 

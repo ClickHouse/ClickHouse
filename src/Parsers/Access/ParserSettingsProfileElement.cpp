@@ -169,9 +169,9 @@ namespace
                                       Expected & expected,
                                       bool id_mode,
                                       bool use_inherit_keyword,
-                                      std::vector<std::shared_ptr<ASTSettingsProfileElement>> & res)
+                                      std::vector<boost::intrusive_ptr<ASTSettingsProfileElement>> & res)
     {
-        std::vector<std::shared_ptr<ASTSettingsProfileElement>> elements;
+        std::vector<boost::intrusive_ptr<ASTSettingsProfileElement>> elements;
         bool found_none = false;
 
         bool expect_profiles = false;
@@ -218,7 +218,7 @@ namespace
                 std::optional<SettingConstraintWritability> writability;
                 if (parseSettingNameWithValueOrConstraints(pos, expected, setting_name, value, min_value, max_value, writability))
                 {
-                    auto element = std::make_shared<ASTSettingsProfileElement>();
+                    auto element = make_intrusive<ASTSettingsProfileElement>();
                     element->setting_name = std::move(setting_name);
                     element->value = std::move(value);
                     element->min_value = std::move(min_value);
@@ -236,7 +236,7 @@ namespace
                 String profile_name;
                 if (parseProfileNameOrID(pos, expected, id_mode, profile_name))
                 {
-                    auto element = std::make_shared<ASTSettingsProfileElement>();
+                    auto element = make_intrusive<ASTSettingsProfileElement>();
                     element->parent_profile = std::move(profile_name);
                     element->id_mode = id_mode;
                     element->use_inherit_keyword = use_inherit_keyword;
@@ -263,7 +263,7 @@ namespace
 
 bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    std::vector<std::shared_ptr<ASTSettingsProfileElement>> elements;
+    std::vector<boost::intrusive_ptr<ASTSettingsProfileElement>> elements;
     if (!parseSettingsProfileElements(pos, expected, id_mode, use_inherit_keyword, elements))
         return false;
 
@@ -277,11 +277,11 @@ bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected 
 
 bool ParserSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    std::vector<std::shared_ptr<ASTSettingsProfileElement>> elements;
+    std::vector<boost::intrusive_ptr<ASTSettingsProfileElement>> elements;
     if (!parseSettingsProfileElements(pos, expected, id_mode, use_inherit_keyword, elements))
         return false;
 
-    auto result = std::make_shared<ASTSettingsProfileElements>();
+    auto result = make_intrusive<ASTSettingsProfileElements>();
     result->elements = std::move(elements);
     node = result;
     return true;
@@ -290,13 +290,13 @@ bool ParserSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Expected
 
 bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    std::vector<std::shared_ptr<ASTSettingsProfileElement>> add_settings;
-    std::vector<std::shared_ptr<ASTSettingsProfileElement>> modify_settings;
-    std::vector<std::shared_ptr<ASTSettingsProfileElement>> drop_settings;
+    std::vector<boost::intrusive_ptr<ASTSettingsProfileElement>> add_settings;
+    std::vector<boost::intrusive_ptr<ASTSettingsProfileElement>> modify_settings;
+    std::vector<boost::intrusive_ptr<ASTSettingsProfileElement>> drop_settings;
     bool drop_all_settings = false;
     bool drop_all_profiles = false;
 
-    std::vector<std::shared_ptr<ASTSettingsProfileElement>> old_style_settings;
+    std::vector<boost::intrusive_ptr<ASTSettingsProfileElement>> old_style_settings;
     if (parseSettingsProfileElements(pos, expected, /* id_mode= */ false, use_inherit_keyword, old_style_settings))
     {
         /// old style: "SETTINGS ..." replaces all the settings ad profiles.
@@ -348,7 +348,7 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
 
             if (target == "PROFILES")
             {
-                auto element = std::make_shared<ASTSettingsProfileElement>();
+                auto element = make_intrusive<ASTSettingsProfileElement>();
                 if (!parseProfileNameOrID(pos, expected, /* id_mode= */ false, element->parent_profile))
                     return false;
                 if (action == "ADD")
@@ -366,7 +366,7 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
 
             if (target == "SETTINGS")
             {
-                auto element = std::make_shared<ASTSettingsProfileElement>();
+                auto element = make_intrusive<ASTSettingsProfileElement>();
                 if (action == "ADD" || action == "MODIFY")
                 {
                     if (!parseSettingNameWithValueOrConstraints(pos, expected, element->setting_name, element->value, element->min_value, element->max_value, element->writability))
@@ -411,20 +411,20 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
     if (add_settings.empty() && modify_settings.empty() && drop_settings.empty() && !drop_all_settings && !drop_all_profiles)
         return false;
 
-    auto result = std::make_shared<ASTAlterSettingsProfileElements>();
+    auto result = make_intrusive<ASTAlterSettingsProfileElements>();
     if (!add_settings.empty())
     {
-        result->add_settings = std::make_shared<ASTSettingsProfileElements>();
+        result->add_settings = make_intrusive<ASTSettingsProfileElements>();
         result->add_settings->elements = std::move(add_settings);
     }
     if (!modify_settings.empty())
     {
-        result->modify_settings = std::make_shared<ASTSettingsProfileElements>();
+        result->modify_settings = make_intrusive<ASTSettingsProfileElements>();
         result->modify_settings->elements = std::move(modify_settings);
     }
     if (!drop_settings.empty())
     {
-        result->drop_settings = std::make_shared<ASTSettingsProfileElements>();
+        result->drop_settings = make_intrusive<ASTSettingsProfileElements>();
         result->drop_settings->elements = std::move(drop_settings);
     }
     result->drop_all_settings = drop_all_settings;

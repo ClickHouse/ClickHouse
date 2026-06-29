@@ -32,9 +32,9 @@ struct FactorialImpl
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The maximum value for the input argument of function factorial is 20");
 
             if constexpr (is_unsigned_v<A>)
-                return factorials[a];
+                return factorials[static_cast<size_t>(a)];
             else if constexpr (is_signed_v<A>)
-                return a >= 0 ? factorials[a] : 1;
+                return a >= 0 ? factorials[static_cast<size_t>(a)] : 1;
         }
     }
 
@@ -97,16 +97,24 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameFactorial>
 
 REGISTER_FUNCTION(Factorial)
 {
-    factory.registerFunction<FunctionFactorial>(FunctionDocumentation
-        {
-            .description=R"(
-Computes the factorial of an integer value. It works with any native integer type including UInt(8|16|32|64) and Int(8|16|32|64). The return type is UInt64.
+    FunctionDocumentation::Description description = R"(
+Computes the factorial of an integer value.
+The factorial of 0 is 1. Likewise, the `factorial()` function returns `1` for any negative value.
+The maximum positive value for the input argument is `20`, a value of `21` or greater will cause an exception.
+    )";
+    FunctionDocumentation::Syntax syntax = "factorial(n)";
+    FunctionDocumentation::Arguments arguments = {
+        {"n", "Integer value for which to calculate the factorial. Maximum value is 20.", {"(U)Int8/16/32/64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the factorial of the input as UInt64. Returns 1 for input 0 or any negative value.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "factorial(10)", "3628800"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any negative value. The maximum positive value for the input argument is 20, a value of 21 or greater will cause exception throw.
-)",
-            .examples{{"factorial", "SELECT factorial(10)", ""}},
-            .category = FunctionDocumentation::Category::Mathematical},
-        FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionFactorial>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

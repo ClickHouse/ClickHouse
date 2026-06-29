@@ -53,7 +53,7 @@ template <> struct DataTypeToTimeTypeMap<DataTypeDateTime64>
 template <typename DataType>
 using DateTypeToTimeType = typename DataTypeToTimeTypeMap<DataType>::TimeType;
 
-class FunctionDateNameImpl : public IFunction
+class FunctionDateNameImpl final : public IFunction
 {
 public:
     static constexpr auto name = "dateName";
@@ -148,7 +148,7 @@ public:
 
         String date_part = date_part_column->getValue<String>();
 
-        const DateLUTImpl * time_zone_tmp;
+        const DateLUTImpl * time_zone_tmp = nullptr;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 1);
         else
@@ -167,8 +167,8 @@ public:
         auto & result_column_data = result_column->getChars();
         auto & result_column_offsets = result_column->getOffsets();
 
-        /* longest possible word 'Wednesday' with zero terminator */
-        static constexpr size_t longest_word_length = 9 + 1;
+        /* longest possible word, 'Wednesday' */
+        static constexpr size_t longest_word_length = 9;
 
         result_column_data.resize_fill(times_data.size() * longest_word_length);
         result_column_offsets.resize(times_data.size());
@@ -192,8 +192,6 @@ public:
                     writer.write(buffer, times_data[i], time_zone);
                 }
 
-                /// Null terminator
-                ++buffer.position();
                 result_column_offsets[i] = buffer.position() - begin;
             }
         });
@@ -359,7 +357,49 @@ private:
 
 REGISTER_FUNCTION(DateName)
 {
-    factory.registerFunction<FunctionDateNameImpl>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the specified part of the date.
+
+Possible values:
+- 'year'
+- 'quarter'
+- 'month'
+- 'week'
+- 'dayofyear'
+- 'day'
+- 'weekday'
+- 'hour'
+- 'minute'
+- 'second'
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+dateName(date_part, date[, timezone])
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"date_part", "The part of the date that you want to extract.", {"String"}},
+        {"datetime", "A date or date with time value.", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the specified part of date.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Extract different date parts", R"(
+WITH toDateTime('2021-04-14 11:22:33') AS date_value
+SELECT
+    dateName('year', date_value),
+    dateName('month', date_value),
+    dateName('day', date_value)
+        )",
+        R"(
+┌─dateName('year', date_value)─┬─dateName('month', date_value)─┬─dateName('day', date_value)─┐
+│ 2021                         │ April                         │ 14                          │
+└──────────────────────────────┴───────────────────────────────┴─────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDateNameImpl>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -1,9 +1,12 @@
 #include <Storages/System/StorageSystemZeros.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/SelectQueryInfo.h>
 
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 
@@ -27,7 +30,7 @@ using ZerosStatePtr = std::shared_ptr<ZerosState>;
 /// Source which generates zeros.
 /// Uses state to share the number of generated rows between threads.
 /// If state is nullptr, then limit is ignored.
-class ZerosSource : public ISource
+class ZerosSource final : public ISource
 {
 public:
     ZerosSource(UInt64 block_size, UInt64 limit_, ZerosStatePtr state_)
@@ -71,9 +74,9 @@ private:
     ZerosStatePtr state;
     ColumnPtr column;
 
-    static Block createHeader()
+    static SharedHeader createHeader()
     {
-        return { ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "zero") };
+        return std::make_shared<const Block>(Block{ ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "zero") });
     }
 
     static ColumnPtr createColumn(size_t size)
@@ -89,12 +92,20 @@ private:
 }
 
 StorageSystemZeros::StorageSystemZeros(const StorageID & table_id_, bool multithreaded_, std::optional<UInt64> limit_)
-    : IStorage(table_id_), multithreaded(multithreaded_), limit(limit_)
+    : StorageWithCommonVirtualColumns(table_id_), multithreaded(multithreaded_), limit(limit_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription({{"zero", std::make_shared<DataTypeUInt8>(), "dummy"}}));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
 
+VirtualColumnsDescription StorageSystemZeros::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 Pipe StorageSystemZeros::read(
@@ -134,3 +145,6 @@ Pipe StorageSystemZeros::read(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZeros) }

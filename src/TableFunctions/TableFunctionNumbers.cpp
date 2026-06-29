@@ -9,8 +9,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
-#include "base/types.h"
-#include "registerTableFunctions.h"
+#include <base/types.h>
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -45,7 +45,11 @@ private:
         const std::string & table_name,
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
-    const char * getStorageTypeName() const override { return "SystemNumbers"; }
+    const char * getStorageEngineName() const override
+    {
+        /// Technically it's SystemNumbers but it doesn't register itself
+        return "";
+    }
 
     UInt64 evaluateArgument(ContextPtr context, ASTPtr & argument) const;
 
@@ -84,7 +88,7 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} requires step to be a positive number", getName());
 
             auto res = std::make_shared<StorageSystemNumbers>(
-                StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"}, length, offset, step);
+                StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"}, UInt128(length), offset, step);
             res->startup();
             return res;
         }
@@ -118,8 +122,46 @@ UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(ContextPtr context,
 
 void registerTableFunctionNumbers(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNumbers<true>>({.documentation = {}, .allow_readonly = true});
-    factory.registerFunction<TableFunctionNumbers<false>>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionNumbers<true>>(
+        {
+            .description = R"(The same as `numbers`, but generates the values using multiple threads (according to the `max_threads` setting), so the order of the rows is not deterministic. Returns a table with a single `number` column of type `UInt64`. When called with no arguments, it produces an unbounded stream of integers starting from 0.)",
+            .syntax = "numbers_mt() | numbers_mt(N) | numbers_mt(N, M) | numbers_mt(N, M, S)",
+            .arguments = {
+                {"N", "When used as `numbers_mt(N)`: the number of integers to return (`0` to `N - 1`). When used as `numbers_mt(N, M[, S])`: the starting value (offset).", {"UInt64"}},
+                {"M", "The width of the value range `[N, N + M)`. Values are emitted from this range starting at `N` and stepping by `S`, so `numbers_mt(N, M)` returns `N` to `N + M - 1` and `numbers_mt(N, M, S)` returns fewer values when `S > 1` (only for `numbers_mt(N, M)` and `numbers_mt(N, M, S)`).", {"UInt64"}},
+                {"S", "The step between successive values (`S >= 1`), only for `numbers_mt(N, M, S)`.", {"UInt64"}},
+            },
+            .returned_value = {"A table with a single `number` column of type `UInt64`.", {"UInt64"}},
+            .examples = {
+                {"The integers from 0 to 9, in an unspecified order", "SELECT * FROM numbers_mt(10) ORDER BY number;", ""},
+                {"Count rows using multiple threads", "SELECT count() FROM numbers_mt(1000000000);", ""},
+                {"Limit an infinite stream", "SELECT * FROM numbers_mt() LIMIT 10;", ""},
+            },
+            .introduced_in = {1, 1},
+            .category = FunctionDocumentation::Category::TableFunction,
+        },
+        {.allow_readonly = true});
+
+    factory.registerFunction<TableFunctionNumbers<false>>(
+        {
+            .description = R"(Returns a table with a single `number` column of type `UInt64` that contains a sequence of integers, starting from 0. Similar to the `system.numbers` table. Useful for testing and for generating successive values. When called with no arguments, it produces an unbounded stream of integers starting from 0.)",
+            .syntax = "numbers() | numbers(N) | numbers(N, M) | numbers(N, M, S)",
+            .arguments = {
+                {"N", "When used as `numbers(N)`: the number of integers to return (`0` to `N - 1`). When used as `numbers(N, M[, S])`: the starting value (offset).", {"UInt64"}},
+                {"M", "The width of the value range `[N, N + M)`. Values are emitted from this range starting at `N` and stepping by `S`, so `numbers(N, M)` returns `N` to `N + M - 1` and `numbers(N, M, S)` returns fewer values when `S > 1` (only for `numbers(N, M)` and `numbers(N, M, S)`).", {"UInt64"}},
+                {"S", "The step between successive values (`S >= 1`), only for `numbers(N, M, S)`.", {"UInt64"}},
+            },
+            .returned_value = {"A table with a single `number` column of type `UInt64`.", {"UInt64"}},
+            .examples = {
+                {"The integers from 0 to 9", "SELECT * FROM numbers(10);", ""},
+                {"The integers from 10 to 19", "SELECT * FROM numbers(10, 10);", ""},
+                {"Even numbers from 0 to 18", "SELECT * FROM numbers(0, 20, 2);", ""},
+                {"Limit an infinite stream", "SELECT * FROM numbers() LIMIT 10;", ""},
+            },
+            .introduced_in = {1, 1},
+            .category = FunctionDocumentation::Category::TableFunction,
+        },
+        {.allow_readonly = true});
 }
 
 }

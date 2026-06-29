@@ -22,11 +22,49 @@
                 <subject_alt_name>URI:spiffe://bar.com/foo/*/far</subject_alt_name>
             </ssl_certificates>
         </stewie>
+        <wildcard_dns>
+            <ssl_certificates>
+                <subject_alt_name>DNS:*.corp.example.com</subject_alt_name>
+            </ssl_certificates>
+        </wildcard_dns>
+        <wildcard_cn>
+            <ssl_certificates>
+                <common_name>*.corp.example.com</common_name>
+            </ssl_certificates>
+        </wildcard_cn>
+        <wildcard_san_unprefixed>
+            <ssl_certificates>
+                <!-- A SAN wildcard with no "DNS:"/"URI:" prefix must not widen URI matching:
+                     it must not newly match a "URI:" certificate that the slash separator rejects. -->
+                <subject_alt_name>*</subject_alt_name>
+            </ssl_certificates>
+        </wildcard_san_unprefixed>
+        <wildcard_san_unprefixed_dns>
+            <ssl_certificates>
+                <!-- A SAN wildcard with no "DNS:"/"URI:" prefix must match nothing: certificate SAN
+                     subjects are always stored prefixed ("DNS:"/"URI:"), so '*' must not absorb the
+                     prefix and span DNS labels (e.g. match the "DNS:" candidate evil.deep.corp.example.com). -->
+                <subject_alt_name>*.corp.example.com</subject_alt_name>
+            </ssl_certificates>
+        </wildcard_san_unprefixed_dns>
         <peter>
             <no_password/>
         </peter>
         <jane>
             <password>qwe123</password>
         </jane>
+        <trurl>
+            <auth_methods>
+                <cert>
+                    <ssl_certificates>
+                        <subject_alt_name>URI:spiffe://foo.com/bar</subject_alt_name>
+                    </ssl_certificates>
+                </cert>
+                <pw>
+                    <!-- Hash of "mixed_sha_pass" -->
+                    <password_sha256_hex>944495bf3c516d8dd9d318a047cac2d15db940cd836f95bc8bbb3e83fe3f15ad</password_sha256_hex>
+                </pw>
+            </auth_methods>
+        </trurl>
     </users>
 </clickhouse>

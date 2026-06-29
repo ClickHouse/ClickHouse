@@ -10,6 +10,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/logger_useful.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/setThreadName.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -56,12 +57,10 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 {
     HTMLForm params(server.context()->getSettingsRef(), request);
 
-    LOG_TRACE(log, "Request URI: {}", request.getURI());
+    LOG_TRACE(log, "Request URI: {}", maskSensitiveQueryParametersInURI(request.getURI()));
 
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
-
-    auto & body = request.getStream();
 
     auto endpoint = server.context()->getInterserverIOHandler().getEndpoint(endpoint_name);
     /// Locked for read while query processing
@@ -72,19 +71,21 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     if (compress)
     {
         CompressedWriteBuffer compressed_out(*output);
-        endpoint->processQuery(params, body, compressed_out, response);
+        endpoint->processQuery(params, request.getStream(), compressed_out, response);
         compressed_out.finalize();
     }
     else
     {
-        endpoint->processQuery(params, body, *output, response);
+        endpoint->processQuery(params, request.getStream(), *output, response);
     }
+    /// Make sure that request stream is not used after this function.
+    chassert(request.getStream().use_count() == 2);
 }
 
 
 void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
-    setThreadName("IntersrvHandler");
+    DB::setThreadName(ThreadName::INTERSERVER_HANDLER);
 
     /// In order to work keep-alive.
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
@@ -104,7 +105,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         }
         else
         {
-            LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
+            LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", maskSensitiveQueryParametersInURI(request.getURI()));
             output->cancelWithException(request, ErrorCodes::REQUIRED_PASSWORD, message, nullptr);
         }
     }

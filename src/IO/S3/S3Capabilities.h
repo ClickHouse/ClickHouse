@@ -5,7 +5,8 @@
 #include <mutex>
 #include <optional>
 #include <string>
-
+#include <IO/WriteBuffer.h>
+#include <IO/ReadBuffer.h>
 
 namespace DB
 {
@@ -34,6 +35,9 @@ public:
 
     /// Y.Cloud S3 implementation support proxy for connection
     const bool support_proxy{false};
+
+    void serialize(WriteBuffer & out) const;
+    static S3Capabilities deserialize(ReadBuffer & in);
 
 private:
     /// `support_batch_delete` is guarded by mutex because function deleteFilesFromS3() can update this field from another thread.

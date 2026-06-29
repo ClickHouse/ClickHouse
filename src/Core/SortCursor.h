@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cassert>
 #include <vector>
 #include <algorithm>
 
@@ -9,25 +8,10 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
-#include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
-#include <Core/callOnTypeIndex.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeTime64.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeIPv4andIPv6.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include "config.h"
 
@@ -61,7 +45,7 @@ struct SortCursorImpl
       */
     size_t order = 0;
 
-    using NeedCollationFlags = std::vector<UInt8>;
+    using NeedCollationFlags = VectorWithMemoryTracking<UInt8>;
 
     /** Should we use Collator to sort a column? */
     NeedCollationFlags need_collation;
@@ -75,7 +59,7 @@ struct SortCursorImpl
     IColumnPermutation * permutation = nullptr;
 
 #if USE_EMBEDDED_COMPILER
-    std::vector<ColumnData> raw_sort_columns_data;
+    VectorWithMemoryTracking<ColumnData> raw_sort_columns_data;
 #endif
 
     SortCursorImpl() = default;
@@ -115,6 +99,7 @@ struct SortCursorImpl
 
     /// We need a possibility to change pos (see MergeJoin).
     size_t & getPosRef() { return pos; }
+    size_t getPos() const { return pos; }
 
     bool isFirst() const { return pos == 0; }
     bool isLast() const { return pos + 1 >= rows; }
@@ -132,7 +117,7 @@ private:
     size_t pos = 0;
 };
 
-using SortCursorImpls = std::vector<SortCursorImpl>;
+using SortCursorImpls = VectorWithMemoryTracking<SortCursorImpl>;
 
 
 /// For easy copying.
@@ -195,10 +180,14 @@ struct SortCursor : SortCursorHelper<SortCursor>
 #if USE_EMBEDDED_COMPILER
         if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description)
         {
-            assert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
+            chassert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
 
             auto sort_description_func_typed = reinterpret_cast<JITSortDescriptionFunc>(impl->desc.compiled_sort_description);
-            int res = sort_description_func_typed(lhs_pos, rhs_pos, impl->raw_sort_columns_data.data(), rhs.impl->raw_sort_columns_data.data()); /// NOLINT
+            /// JIT-compiled functions lack the type metadata prologue that UBSan's
+            /// -fsanitize=function expects before every indirect call. When the JIT
+            /// code sits at a page boundary the pre-call read hits unmapped memory.
+            /// NOLINTNEXTLINE(bugprone-signed-char-misuse,cert-str34-c) -- JIT comparator returns -1/0/1, sign is meaningful
+            int res = callJITFunction(sort_description_func_typed, lhs_pos, rhs_pos, impl->raw_sort_columns_data.data(), rhs.impl->raw_sort_columns_data.data());
 
             if (res > 0)
                 return true;
@@ -246,10 +235,10 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
 #if USE_EMBEDDED_COMPILER
         if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description)
         {
-            assert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
+            chassert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
 
             auto sort_description_func_typed = reinterpret_cast<JITSortDescriptionFunc>(impl->desc.compiled_sort_description);
-            res = sort_description_func_typed(lhs_pos, rhs_pos, impl->raw_sort_columns_data.data(), rhs.impl->raw_sort_columns_data.data()); /// NOLINT
+            res = callJITFunction(sort_description_func_typed, lhs_pos, rhs_pos, impl->raw_sort_columns_data.data(), rhs.impl->raw_sort_columns_data.data()); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
         }
         else
 #endif
@@ -280,8 +269,8 @@ struct SpecializedSingleColumnSortCursor : SortCursorHelper<SpecializedSingleCol
         auto & lhs_columns = this_impl->sort_columns;
         auto & rhs_columns = rhs.impl->sort_columns;
 
-        assert(lhs_columns.size() == 1);
-        assert(rhs_columns.size() == 1);
+        chassert(lhs_columns.size() == 1);
+        chassert(rhs_columns.size() == 1);
 
         const auto & lhs_column = assert_cast<const ColumnType &>(*lhs_columns[0]);
         const auto & rhs_column = assert_cast<const ColumnType &>(*rhs_columns[0]);
@@ -310,8 +299,8 @@ struct SpecializedSingleNullableColumnSortCursor : SortCursorHelper<SpecializedS
         auto & lhs_columns = this_impl->sort_columns;
         auto & rhs_columns = rhs.impl->sort_columns;
 
-        assert(lhs_columns.size() == 1);
-        assert(rhs_columns.size() == 1);
+        chassert(lhs_columns.size() == 1);
+        chassert(rhs_columns.size() == 1);
 
         const auto & lhs_column = assert_cast<const ColumnNullable &>(*lhs_columns[0]);
         const auto & rhs_column = assert_cast<const ColumnNullable &>(*rhs_columns[0]);
@@ -360,7 +349,7 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
             const auto & desc = impl->desc[i];
             int direction = desc.direction;
             int nulls_direction = desc.nulls_direction;
-            int res;
+            int res = 0;
             if (impl->need_collation[i])
                 res = impl->sort_columns[i]->compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction, *impl->desc[i].collator);
             else
@@ -433,7 +422,7 @@ public:
 
     void ALWAYS_INLINE next() requires (strategy == SortingQueueStrategy::Default)
     {
-        assert(isValid());
+        chassert(isValid());
 
         if (!queue.front()->isLast())
         {
@@ -448,9 +437,9 @@ public:
 
     void ALWAYS_INLINE next(size_t batch_size_value) requires (strategy == SortingQueueStrategy::Batch)
     {
-        assert(isValid());
-        assert(batch_size_value <= batch_size);
-        assert(batch_size_value > 0);
+        chassert(isValid());
+        chassert(batch_size_value <= batch_size);
+        chassert(batch_size_value > 0);
 
         batch_size -= batch_size_value;
         if (batch_size > 0)
@@ -502,7 +491,7 @@ public:
     }
 
 private:
-    using Container = std::vector<Cursor>;
+    using Container = VectorWithMemoryTracking<Cursor>;
     Container queue;
 
     /// Cache comparison between first and second child if the order in queue has not been changed.
@@ -581,7 +570,7 @@ private:
     /// Update batch size of elements that client can extract from current cursor
     void updateBatchSize()
     {
-        assert(!queue.empty());
+        chassert(!queue.empty());
 
         auto & begin_cursor = *queue.begin();
         size_t min_cursor_size = begin_cursor->getSize();
@@ -646,66 +635,7 @@ class SortQueueVariants
 public:
     SortQueueVariants() = default;
 
-    SortQueueVariants(const DataTypes & sort_description_types, const SortDescription & sort_description)
-    {
-        bool has_collation = false;
-        for (const auto & column_description : sort_description)
-        {
-            if (column_description.collator)
-            {
-                has_collation = true;
-                break;
-            }
-        }
-
-        if (has_collation)
-        {
-            initializeQueues<SortCursorWithCollation>();
-            return;
-        }
-        if (sort_description.size() == 1)
-        {
-            bool result = false;
-            if (!sort_description_types[0]->isNullable())
-            {
-                TypeIndex column_type_index = sort_description_types[0]->getTypeId();
-                result = callOnIndexAndDataType<void>(
-                    column_type_index,
-                    [&](const auto & types)
-                    {
-                        using Types = std::decay_t<decltype(types)>;
-                        using ColumnDataType = typename Types::LeftType;
-                        using ColumnType = typename ColumnDataType::ColumnType;
-
-                        initializeQueues<SpecializedSingleColumnSortCursor<ColumnType>>();
-                        return true;
-                    });
-            }
-            else
-            {
-                DataTypePtr denull_type = removeNullable(sort_description_types[0]);
-                TypeIndex column_type_index = denull_type->getTypeId();
-                result = callOnIndexAndDataType<void>(
-                    column_type_index,
-                    [&](const auto & types)
-                    {
-                        using Types = std::decay_t<decltype(types)>;
-                        using ColumnDataType = typename Types::LeftType;
-                        using ColumnType = typename ColumnDataType::ColumnType;
-
-                        initializeQueues<SpecializedSingleNullableColumnSortCursor<ColumnType>>();
-                        return true;
-                    });
-            }
-
-            if (!result)
-                initializeQueues<SimpleSortCursor>();
-        }
-        else
-        {
-            initializeQueues<SortCursor>();
-        }
-    }
+    SortQueueVariants(const DataTypes & sort_description_types, const SortDescription & sort_description);
 
     SortQueueVariants(const Block & header, const SortDescription & sort_description)
         : SortQueueVariants(extractSortDescriptionTypesFromHeader(header, sort_description), sort_description)
@@ -833,4 +763,54 @@ bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t 
     return false;
 }
 
+namespace detail
+{
+/// column(i)` is the i-th key column and `hint(i)` its nan_direction_hint. Stops
+/// early once the run is a single row.
+template <typename GetColumn, typename GetHint>
+size_t equalRangeEndAcrossColumns(size_t count, size_t begin, size_t end, GetColumn && column, GetHint && hint)
+{
+    size_t run_end = end;
+    for (size_t i = 0; i < count; ++i)
+    {
+        run_end = column(i)->getEqualRangeEndAssumeSorted(begin, run_end, hint(i));
+        if (run_end <= begin + 1)
+            break; /// single-row run: cannot shrink further
+    }
+    return run_end;
+}
+}
+
+/** Multi-column overloads of IColumn::getEqualRangeEndAssumeSorted: find the end (exclusive) of the run
+  * of rows that share an equal key across ALL the given key columns, starting at `begin`, within the
+  * SORTED range [begin, end). Narrows sequentially - each key column shrinks the candidate end via the
+  * per-column method (within column k-1's equal range, column k is itself sorted).
+  */
+template <typename TColumns>
+size_t getEqualRangeEndAssumeSorted(const TColumns & columns, size_t begin, size_t end, int nan_direction_hint)
+{
+    return detail::equalRangeEndAcrossColumns(
+        columns.size(), begin, end, [&](size_t i) -> decltype(auto) { return columns[i]; }, [&](size_t) { return nan_direction_hint; });
+}
+
+/** Same as above, but the key columns are selected from `columns` by `positions` (`columns[positions[k]]` is
+  * the k-th key column).
+  */
+template <typename TColumns>
+size_t getEqualRangeEndAssumeSorted(
+    const TColumns & columns, const std::vector<size_t> & positions, size_t begin, size_t end, int nan_direction_hint)
+{
+    return detail::equalRangeEndAcrossColumns(
+        positions.size(), begin, end, [&](size_t i) -> decltype(auto) { return columns[positions[i]]; }, [&](size_t) { return nan_direction_hint; });
+}
+
+/** Same as above, but sort description aware.
+  */
+template <typename TColumns, typename TSortDescription>
+requires requires (const TSortDescription & d) { d.size(); d[0].nulls_direction; }
+size_t getEqualRangeEndAssumeSorted(const TColumns & columns, const TSortDescription & descr, size_t begin, size_t end)
+{
+    return detail::equalRangeEndAcrossColumns(
+        descr.size(), begin, end, [&](size_t i) -> decltype(auto) { return columns[i]; }, [&](size_t i) { return descr[i].nulls_direction; });
+}
 }

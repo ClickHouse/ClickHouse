@@ -1,0 +1,28 @@
+--- int, single part
+1
+2
+\N
+
+1
+2
+--- int, multi part
+1
+2
+\N
+
+1
+2
+--- float, single part
+1
+2
+nan
+
+1
+2
+--- float, multi part
+1
+2
+nan
+
+1
+2

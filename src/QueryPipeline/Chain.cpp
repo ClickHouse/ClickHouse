@@ -1,6 +1,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/Chain.h>
+#include <Core/Block.h>
 
 namespace DB
 {
@@ -42,7 +43,7 @@ static void checkTransform(const IProcessor & transform)
     checkSingleOutput(transform);
 }
 
-static void checkInitialized(const std::list<ProcessorPtr> & processors)
+static void checkInitialized(const Processors & processors)
 {
     if (processors.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chain is not initialized");
@@ -54,7 +55,7 @@ Chain::Chain(ProcessorPtr processor)
     processors.emplace_back(std::move(processor));
 }
 
-Chain::Chain(std::list<ProcessorPtr> processors_) : processors(std::move(processors_))
+Chain::Chain(Processors processors_) : processors(std::move(processors_))
 {
     if (processors.empty())
         return;
@@ -153,9 +154,19 @@ const Block & Chain::getInputHeader() const
     return getInputPort().getHeader();
 }
 
+const SharedHeader & Chain::getInputSharedHeader() const
+{
+    return getInputPort().getSharedHeader();
+}
+
 const Block & Chain::getOutputHeader() const
 {
     return getOutputPort().getHeader();
+}
+
+const SharedHeader & Chain::getOutputSharedHeader() const
+{
+    return getOutputPort().getSharedHeader();
 }
 
 void Chain::reset()

@@ -1,6 +1,7 @@
 -- Tags: shard
 
 set optimize_skip_unused_shards=1;
+set optimize_skip_unused_shards_rewrite_in=1;
 set force_optimize_skip_unused_shards=2;
 
 create temporary table data (id UInt64) engine=Memory() as with [

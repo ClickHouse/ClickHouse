@@ -22,6 +22,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryTreePassManager.h>
 #include <Planner/Utils.h>
 
 using namespace DB;
@@ -204,7 +205,7 @@ static void check(
         checkOld(state, table_num, query, expected);
     }
     {
-        SCOPED_TRACE("New analyzer");
+        SCOPED_TRACE("Analyzer");
         checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new);
     }
 }
@@ -238,6 +239,9 @@ TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
     check(state, 1, {"field", "value"},
           "SELECT field, value FROM test.table WHERE (field, value) IN (('foo', 'bar'))",
           R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar')))");
+    check(state, 1, {"field", "value"},
+          "SELECT field, value FROM test.table WHERE (field, value) IN (('foo', 'bar'), ('qux', 'baz'))",
+          R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar'), ('qux', 'baz')))");
 }
 
 TEST(TransformQueryForExternalDatabase, InWithTable)
@@ -416,6 +420,7 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
 
     check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo"},
         "SELECT * EXCEPT (is_value) FROM table WHERE (column) IN (1)",
+        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE ("column") IN (1))",
         R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE "column" IN (1))");
 
     check(state, 1, {"is_value"},

@@ -33,7 +33,6 @@ def test_system_logs_recreate():
         "trace_log",
         "metric_log",
         "error_log",
-        "latency_log",
     ]
 
     try:
@@ -42,7 +41,7 @@ def test_system_logs_recreate():
             assert "ENGINE = MergeTree" in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
-            assert "ENGINE = Null" not in node.query(
+            assert "ENGINE = `Null`" not in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
             assert (
@@ -79,7 +78,7 @@ def test_system_logs_recreate():
             assert "ENGINE = MergeTree" not in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
-            assert "ENGINE = Null" in node.query(f"SHOW CREATE TABLE system.{table}")
+            assert "ENGINE = `Null`" in node.query(f"SHOW CREATE TABLE system.{table}")
             assert (
                 len(
                     node.query(f"SHOW TABLES FROM system LIKE '{table}%'")
@@ -119,7 +118,7 @@ def test_system_logs_recreate():
                 create_table_sql,
             )
             assert "ENGINE = MergeTree" in create_table_sql
-            assert "ENGINE = Null" not in create_table_sql
+            assert "ENGINE = `Null`" not in create_table_sql
             assert "SETTINGS storage_policy = 'system_tables'" in create_table_sql
             assert (
                 len(
@@ -141,7 +140,7 @@ def test_system_logs_recreate():
             assert "ENGINE = MergeTree" in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
-            assert "ENGINE = Null" not in node.query(
+            assert "ENGINE = `Null`" not in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
             assert (
@@ -176,7 +175,7 @@ def test_drop_system_log():
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <query_log>
                 <flush_interval_milliseconds replace=\\"replace\\">1000000</flush_interval_milliseconds>
@@ -206,6 +205,6 @@ def test_drop_system_log():
     )  # we check that query_log just exists
 
     node.exec_in_container(
-        ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
+        ["rm", "/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
     node.restart_clickhouse()

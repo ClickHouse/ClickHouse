@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Access/Common/AccessFlags.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -9,7 +10,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageLoop.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 namespace DB
 {
@@ -28,7 +29,7 @@ namespace DB
             std::string getName() const override { return name; }
         private:
             StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-            const char * getStorageTypeName() const override { return "Loop"; }
+            const char * getStorageEngineName() const override { return "Loop"; }
             ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
             void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -95,9 +96,29 @@ namespace DB
         }
     }
 
-    ColumnsDescription TableFunctionLoop::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
+    ColumnsDescription TableFunctionLoop::getActualTableStructure(ContextPtr context, bool is_insert_query) const
     {
-        return ColumnsDescription();
+        if (inner_table_function_ast)
+        {
+            auto inner_table_function = TableFunctionFactory::instance().get(inner_table_function_ast, context);
+            /// Enforce the inner function's source access (as execute() does), not the raw structure.
+            return inner_table_function->getActualTableStructureWithAccess(context, is_insert_query);
+        }
+
+        String database_name = loop_database_name;
+        if (database_name.empty())
+            database_name = context->getCurrentDatabase();
+
+        /// Reading the schema requires SHOW COLUMNS, same as a direct DESCRIBE of the table.
+        context->checkAccess(AccessType::SHOW_COLUMNS, database_name, loop_table_name);
+
+        auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        auto storage = database->tryGetTable(loop_table_name, context);
+        if (!storage)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
+
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        return metadata_snapshot->getColumns();
     }
 
     StoragePtr TableFunctionLoop::executeImpl(
@@ -118,6 +139,7 @@ namespace DB
             storage = database->tryGetTable(loop_table_name, context);
             if (!storage)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
+            context->checkAccess(AccessType::SELECT, database_name, loop_table_name);
         }
         else
         {
@@ -132,7 +154,8 @@ namespace DB
         }
         auto res = std::make_shared<StorageLoop>(
                 StorageID(getDatabaseName(), table_name),
-                storage
+                storage,
+                inner_table_function_ast ? inner_table_function_ast->clone() : nullptr
         );
         res->startup();
         return res;
@@ -141,17 +164,17 @@ namespace DB
     void registerTableFunctionLoop(TableFunctionFactory & factory)
     {
         factory.registerFunction<TableFunctionLoop>(
-                {.documentation
-                = {.description=R"(The table function can be used to continuously output query results in an infinite loop.)",
-                                .examples{{"loop", "SELECT * FROM loop((numbers(3)) LIMIT 7", "0"
-                                                                                              "1"
-                                                                                              "2"
-                                                                                              "0"
-                                                                                              "1"
-                                                                                              "2"
-                                                                                              "0"}},
-                 .category = FunctionDocumentation::Category::TableFunction
-                        }});
+                {
+                    .description=R"(The table function can be used to continuously output query results in an infinite loop.)",
+                    .examples{{"loop", "SELECT * FROM loop((numbers(3)) LIMIT 7", "0"
+                                "1"
+                                "2"
+                                "0"
+                                "1"
+                                "2"
+                                "0"}},
+                    .category = FunctionDocumentation::Category::TableFunction
+                });
     }
 
 }

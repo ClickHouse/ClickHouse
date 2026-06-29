@@ -1,4 +1,4 @@
-#include "WriteBuffer.h"
+#include <IO/WriteBuffer.h>
 
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -46,7 +46,7 @@ void WriteBuffer::write(const char * from, size_t n)
     size_t bytes_copied = 0;
 
     /// Produces endless loop
-    assert(!working_buffer.empty());
+    chassert(!working_buffer.empty());
 
     while (bytes_copied < n)
     {

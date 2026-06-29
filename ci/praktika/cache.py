@@ -20,6 +20,7 @@ class Cache:
         sha: str
         pr_number: int
         branch: str
+        workflow: str = ""
 
         def dump(self, path):
             with open(path, "w", encoding="utf8") as f:
@@ -39,17 +40,20 @@ class Cache:
         self.success = {}  # type Dict[str, Any]
 
     @classmethod
-    def push_success_record(cls, job_name, job_digest, sha, if_not_exist):
+    def push_success_record(
+        cls, job_name, job_digest, sha, workflow_name, if_not_exist
+    ):
         type_ = Cache.CacheRecord.Type.SUCCESS
         record = Cache.CacheRecord(
             type=type_,
             sha=sha,
             pr_number=_Environment.get().PR_NUMBER,
             branch=_Environment.get().BRANCH,
+            workflow=workflow_name,
         )
         assert (
             Settings.CACHE_S3_PATH
-        ), f"Setting CACHE_S3_PATH must be defined with enabled CI Cache"
+        ), "Setting CACHE_S3_PATH must be defined with enabled CI Cache"
         record_path = f"{Settings.CACHE_S3_PATH}/v{Settings.CACHE_VERSION}/{Utils.normalize_string(job_name)}/{job_digest}/{type_}"
         record_file = Path(Settings.TEMP_DIR) / type_
         record.dump(record_file)
@@ -65,7 +69,7 @@ class Cache:
         type_ = Cache.CacheRecord.Type.SUCCESS
         assert (
             Settings.CACHE_S3_PATH
-        ), f"Setting CACHE_S3_PATH must be defined with enabled CI Cache"
+        ), "Setting CACHE_S3_PATH must be defined with enabled CI Cache"
         record_path = f"{Settings.CACHE_S3_PATH}/v{Settings.CACHE_VERSION}/{Utils.normalize_string(job_name)}/{job_digest}/{type_}"
         record_file_local_dir = (
             f"{Settings.CACHE_LOCAL_PATH}/{Utils.normalize_string(job_name)}/"
