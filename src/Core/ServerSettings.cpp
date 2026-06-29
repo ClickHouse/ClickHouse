@@ -2234,17 +2234,38 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "hdfs",
     };
 
-    /// Collect top-level config sections that are referenced from elsewhere in the config.
-    /// These are user-defined section names that must not be rejected by this check:
-    ///   (a) handler section names referenced by `<protocols><X><handlers>NAME</handlers></X></protocols>`
-    ///       (see `handlers_config_key` in `Server.cpp`);
-    ///   (b) the top-level key referenced via `config://<key>` in a static handler's
-    ///       `response_content` (see `StaticRequestHandler`).
-    std::unordered_set<String> referenced_keys;
+    /// Normalize a config path to its top-level component: strip at the first `.` or `[` so
+    /// `custom.handlers` -> `custom` and `my_payload[1].field` -> `my_payload`. The final
+    /// validation below sees only top-level section names, so every exemption must be reduced
+    /// to the top-level component it actually shields.
+    auto top_level_component = [](const String & path) -> String
+    {
+        auto sep_pos = path.find_first_of(".[");
+        return sep_pos == String::npos ? path : path.substr(0, sep_pos);
+    };
+
+    /// Two distinct concepts, kept in separate sets so they cannot cross-contaminate:
+    ///
+    ///  - `handler_group_paths`: full config prefixes whose rules we scan for `config://`
+    ///    references. A handler group is a *prefix*, not necessarily a top-level section:
+    ///    `<protocols><X><handlers>custom.handlers</handlers></X></protocols>` points
+    ///    `createHandlerFactory` at the prefix `custom.handlers` (rules live under
+    ///    `<custom><handlers>...</handlers></custom>`), whose top-level section is `custom`.
+    ///
+    ///  - `referenced_top_level_keys`: the actual top-level section names to exempt from the
+    ///    final unknown-key check (always normalized via `top_level_component`).
+    ///
+    /// Mixing the two (as a single `referenced_keys` set once did) lets a `config://` payload
+    /// section that merely happens to contain handler-shaped children be re-scanned as if it
+    /// were a handler group, whitelisting a second unrelated top-level key — a false negative.
+    std::unordered_set<String> handler_group_paths;
+    std::unordered_set<String> referenced_top_level_keys;
 
     /// (a) Handler sections referenced by `<protocols>...<handlers>NAME</handlers>...</protocols>`.
-    /// Only HTTP protocol endpoints actually consult `handlers` (see `create_factory` in `Server.cpp`),
-    /// so gate the allowlist on `type == "http"` to keep typos in non-HTTP protocols rejected.
+    /// Only HTTP protocol endpoints actually consult `handlers` (see `buildProtocolStackFromConfig`
+    /// in `Server.cpp`), so gate the allowlist on `type == "http"` to keep typos in non-HTTP
+    /// protocols rejected. The referenced value is a config *prefix*: scan it in full, but exempt
+    /// only its top-level component.
     if (config.has("protocols"))
     {
         Poco::Util::AbstractConfiguration::Keys protocols;
@@ -2259,28 +2280,39 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             {
                 String handler_section = config.getString(handlers_key);
                 if (!handler_section.empty())
-                    referenced_keys.insert(handler_section);
+                {
+                    handler_group_paths.insert(handler_section);
+                    referenced_top_level_keys.insert(top_level_component(handler_section));
+                }
             }
         }
     }
 
+    /// Also scan the legacy `http_handlers*` top-level sections for `config://` references.
+    /// These are already exempt as top-level keys (via `known_complex_sections`/`known_prefixes`),
+    /// so they only need to enter `handler_group_paths` for the scan below.
+    {
+        Poco::Util::AbstractConfiguration::Keys top_groups;
+        config.keys("", top_groups);
+        for (const auto & group : top_groups)
+            if (group.starts_with("http_handlers"))
+                handler_group_paths.insert(group);
+    }
+
     /// (b) Top-level keys referenced by `config://` inside HTTP handler sections.
-    /// Scan both the legacy `http_handlers*` sections and any custom handler section
-    /// referenced via `<protocols>...<handlers>NAME</handlers>...</protocols>`.
     /// Only a handler of `type == "static"` consumes a `config://` reference, and it reads
     /// it exclusively from `handler.response_content` (see `createStaticHandlerFactory` and
     /// `StaticRequestHandler`). Exempting any other field, or `response_content` on a
     /// non-static handler (e.g. `redirect`, which ignores it), would whitelist a top-level
     /// key that no server code reads — a false negative that lets a genuinely unknown
     /// section pass validation. So gate the scan on the handler type and the single
-    /// consumed field.
+    /// consumed field. We iterate only the known handler-group prefixes, never the growing
+    /// exemption set, so a discovered payload key can never be mistaken for a handler group.
     {
         static const String config_prefix = "config://";
-        Poco::Util::AbstractConfiguration::Keys handler_groups;
-        config.keys("", handler_groups);
-        for (const auto & group : handler_groups)
+        for (const auto & group : handler_group_paths)
         {
-            if (!group.starts_with("http_handlers") && !referenced_keys.contains(group))
+            if (!config.has(group))
                 continue;
             Poco::Util::AbstractConfiguration::Keys rules;
             config.keys(group, rules);
@@ -2295,15 +2327,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 String value = config.getString(path);
                 if (value.starts_with(config_prefix))
                 {
-                    String ref = value.substr(config_prefix.size());
-                    /// Normalize by stripping at the first `.` or `[` so the inserted
-                    /// key matches the normalization applied to `top_level_keys` below
-                    /// (e.g. `config://my_payload[1].field` -> `my_payload`).
-                    auto sep_pos = ref.find_first_of(".[");
-                    if (sep_pos != String::npos)
-                        ref.resize(sep_pos);
+                    String ref = top_level_component(value.substr(config_prefix.size()));
                     if (!ref.empty())
-                        referenced_keys.insert(ref);
+                        referenced_top_level_keys.insert(ref);
                 }
             }
         }
@@ -2467,7 +2493,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     for (auto * child = root->firstChild(); child; child = child->nextSibling())
                     {
                         if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
-                            referenced_keys.insert(child->nodeName());
+                            referenced_top_level_keys.insert(child->nodeName());
                     }
                 }
             }
@@ -2481,30 +2507,58 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// A `GraphiteMergeTree` rollup configuration section can have an *arbitrary* top-level name:
     /// the name is taken from the table definition `GraphiteMergeTree('<section>')` (see
     /// `setGraphitePatternsFromConfig`), not from a fixed allowlist, so such sections cannot be
-    /// matched by name or by prefix. They have a fixed *shape* instead — one or more `<pattern>`
-    /// elements and/or a `<default>` element, each carrying rollup-specific children (`<regexp>`,
-    /// `<function>`, `<retention>`). Recognize that shape so a deployment that names its rollup
-    /// section e.g. `<retention_5m>` (valid before this check existed) keeps starting, while a typo
-    /// (which lacks this shape) is still rejected. We require at least one pattern/default that
-    /// actually carries a rollup child, so an unrelated section with a stray `<pattern>`/`<default>`
-    /// scalar is not exempted.
+    /// matched by name or by prefix. They have a fixed *shape* instead. We recognize that shape so a
+    /// deployment that names its rollup section e.g. `<retention_5m>` (valid before this check
+    /// existed) keeps starting, while a typo is still rejected.
+    ///
+    /// The shape mirrors exactly what `setGraphitePatternsFromConfig` accepts: every child must be
+    /// either a `<pattern>` / `<default>` rollup rule or one of the four column-name overrides
+    /// (`path_column_name`, `time_column_name`, `value_column_name`, `version_column_name`) — that
+    /// parser throws `UNKNOWN_ELEMENT_IN_CONFIG` on any other child. A section that *only* overrides
+    /// column names (no patterns) is still a valid `GraphiteMergeTree` config (`selectPatternForPath`
+    /// just yields no rollup rule), so it must be accepted too. To keep a typo'd top-level section
+    /// from sneaking through, we additionally require a positive signal: at least one pattern/default
+    /// that actually carries a rollup child (`<regexp>`/`<function>`/`<retention>`), or at least one
+    /// column-name override with no foreign child present.
     auto looks_like_graphite_rollup = [&config](const String & section) -> bool
     {
         Poco::Util::AbstractConfiguration::Keys children;
         config.keys(section, children);
+
+        bool has_rollup_rule = false;
+        bool has_column_override = false;
+        bool all_children_recognized = !children.empty();
         for (const auto & child : children)
         {
             const bool is_pattern = child.starts_with("pattern");
             const bool is_default = child == "default" || child.starts_with("default[");
-            if (!is_pattern && !is_default)
-                continue;
-            const String child_path = section + "." + child;
-            if (config.has(child_path + ".regexp")
-                || config.has(child_path + ".function")
-                || config.has(child_path + ".retention"))
-                return true;
+            const bool is_column = child == "path_column_name" || child == "time_column_name"
+                || child == "value_column_name" || child == "version_column_name";
+
+            if (is_column)
+            {
+                has_column_override = true;
+            }
+            else if (is_pattern || is_default)
+            {
+                const String child_path = section + "." + child;
+                if (config.has(child_path + ".regexp")
+                    || config.has(child_path + ".function")
+                    || config.has(child_path + ".retention"))
+                    has_rollup_rule = true;
+            }
+            else
+            {
+                all_children_recognized = false;
+            }
         }
-        return false;
+
+        /// A genuine rollup section (at least one rule) is accepted regardless of other children,
+        /// as before. A column-name-only section is accepted only when *every* child is a recognized
+        /// `GraphiteMergeTree` key, so a typo'd top-level section with an unrelated child is rejected.
+        if (has_rollup_rule)
+            return true;
+        return has_column_override && all_children_recognized;
     };
 
     Poco::Util::AbstractConfiguration::Keys top_level_keys;
@@ -2517,7 +2571,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         if (bracket_pos != String::npos)
             key.resize(bracket_pos);
 
-        if (known_keys.contains(key) || known_complex_sections.contains(key) || referenced_keys.contains(key))
+        if (known_keys.contains(key) || known_complex_sections.contains(key) || referenced_top_level_keys.contains(key))
             continue;
 
         bool matches_prefix = false;

@@ -12,6 +12,8 @@
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Util/LayeredConfiguration.h>
+#include <Poco/AutoPtr.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
 #include <Common/ErrorCodes.h>
@@ -27,6 +29,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
 #include <base/Numa.h>
+#include <base/argsToConfig.h>
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
@@ -2405,6 +2408,22 @@ try
         dns_cache_updater->start();
     }
 
+    /// Whether `--skip_check_for_incorrect_settings=1` was passed on the *command line*, captured
+    /// independently of any config file layer. Reusing the layered `config()` here would conflate
+    /// the command-line value with whatever the *previously loaded* file set: a config that once
+    /// contained `<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>` would
+    /// leave that flag live in `config()`, so a reload that *removes* the flag while adding an
+    /// unknown key would still be skipped — diverging from a fresh startup with the same file,
+    /// which would reject it. Re-parsing `argv()` with `argsToConfig` (exactly as `BaseDaemon`
+    /// populates the command-line layer) reproduces the command-line-only view; the priority is
+    /// irrelevant because the throwaway config has a single layer.
+    bool command_line_skip_check = false;
+    {
+        Poco::AutoPtr<Poco::Util::LayeredConfiguration> command_line_config(new Poco::Util::LayeredConfiguration);
+        argsToConfig(argv(), *command_line_config, PRIO_DEFAULT);
+        command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
+    }
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
@@ -2415,18 +2434,17 @@ try
         {
             /// Validate the new config BEFORE installing it into the global layered config, so a
             /// failed reload does not leave `config()` partially mutated with unvalidated changes.
-            /// `*loaded_config` is the file-only config and does not carry command-line options, so
-            /// gate this pre-existing top-level user-setting check on the escape hatch resolved from
-            /// the layered `config()` (which retains `--skip_check_for_incorrect_settings=1` across
-            /// reloads); otherwise the command-line escape hatch would stop working on reload.
-            if (!config().getBool("skip_check_for_incorrect_settings", false))
+            /// The escape hatch is honored when it is either passed on the command line (persisted
+            /// across reloads) or present in the *new* file being validated — never inherited from
+            /// the previously loaded file layer (see `command_line_skip_check` above). This matches
+            /// startup: validating the same file fresh must reach the same accept/reject decision.
+            const bool skip_check
+                = command_line_skip_check || loaded_config->getBool("skip_check_for_incorrect_settings", false);
+            if (!skip_check)
                 Settings::checkNoSettingNamesAtTopLevel(*loaded_config, config_path);
             /// Same as on initial load: validate the reloaded XML config rather than the layered
             /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
-            /// The escape hatch is resolved from the layered `config()` (which retains command-line
-            /// options across reloads), so `--skip_check_for_incorrect_settings=1` keeps working.
-            ServerSettings::checkUnknownSettings(
-                *loaded_config, config_path, config().getBool("skip_check_for_incorrect_settings", false));
+            ServerSettings::checkUnknownSettings(*loaded_config, config_path, skip_check);
 
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 

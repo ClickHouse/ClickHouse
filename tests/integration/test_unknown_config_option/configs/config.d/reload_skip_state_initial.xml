@@ -1,0 +1,10 @@
+<clickhouse>
+    <!--
+        Initial config for the stale-skip-state reload test. It enables the escape hatch via the
+        config *file* (NOT the command line). A later reload that REMOVES this flag while adding an
+        unknown top-level key must be rejected: the previously loaded file's `skip` value must not
+        leak into the reload decision. Only a command-line `--skip_check_for_incorrect_settings=1`
+        or the flag present in the *new* file being validated may suppress the check.
+    -->
+    <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+</clickhouse>

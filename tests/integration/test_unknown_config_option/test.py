@@ -139,6 +139,56 @@ node_static_wrong_field = cluster_static_wrong_field.add_instance(
 )
 caught_static_wrong_field_exception = ""
 
+# Positive case: an HTTP protocol endpoint whose `<handlers>` value is a *nested* config prefix
+# (`custom_nested.handlers`), not a top-level section. The validator must exempt the top-level
+# component (`custom_nested`) AND scan the full nested prefix for `config://` references so the
+# referenced top-level key (`nested_payload`) is exempted too.
+cluster_protocols_nested = ClickHouseCluster(__file__, name="protocols_nested")
+node_protocols_nested = cluster_protocols_nested.add_instance(
+    "node_protocols_nested",
+    main_configs=["configs/config.d/protocols_nested_handlers.xml"],
+)
+
+# Compatibility case: a `GraphiteMergeTree` rollup section may override only the column names and
+# define no `<pattern>`/`<default>` rollup rules. `setGraphitePatternsFromConfig` accepts that, so
+# the validator must too (recognizing the section by its column-name overrides).
+cluster_graphite_columns = ClickHouseCluster(__file__, name="graphite_columns")
+node_graphite_columns = cluster_graphite_columns.add_instance(
+    "node_graphite_columns",
+    main_configs=["configs/config.d/graphite_columns_only.xml"],
+)
+
+# Negative case: a `config://` payload section that happens to contain handler-shaped children must
+# NOT be re-scanned as a handler group. The unrelated top-level key referenced from those nested
+# children (`secret_unknown_section`) must still be rejected.
+cluster_payload_handler_shape = ClickHouseCluster(__file__, name="payload_handler_shape")
+node_payload_handler_shape = cluster_payload_handler_shape.add_instance(
+    "node_payload_handler_shape",
+    main_configs=["configs/config.d/config_payload_handler_shape.xml"],
+)
+caught_payload_handler_shape_exception = ""
+
+# Invariant case: a *failed* reload must leave the live layered config unchanged. The node starts
+# serving a known `config://` HTTP response; a bad reload (which changes that response AND adds an
+# unknown key) must be rejected, and the original response must still be served afterwards.
+cluster_reload_invariant = ClickHouseCluster(__file__, name="reload_invariant")
+node_reload_invariant = cluster_reload_invariant.add_instance(
+    "node_reload_invariant",
+    main_configs=["configs/config.d/reload_invariant_initial.xml"],
+    stay_alive=True,
+)
+
+# Reload regression: a `<skip_check_for_incorrect_settings>` flag supplied by a *previously loaded*
+# config file must not leak into a later reload decision. Starting with the flag set in a file, a
+# reload that removes the flag while adding an unknown top-level key must be rejected (matching a
+# fresh startup with the same file).
+cluster_reload_skip_state = ClickHouseCluster(__file__, name="reload_skip_state")
+node_reload_skip_state = cluster_reload_skip_state.add_instance(
+    "node_reload_skip_state",
+    main_configs=["configs/config.d/reload_skip_state_initial.xml"],
+    stay_alive=True,
+)
+
 
 @pytest.fixture(scope="module")
 def start_bad_cluster():
@@ -265,6 +315,51 @@ def start_static_wrong_field_cluster():
                 caught_static_wrong_field_exception += "\n" + f.read()
     yield
     cluster_static_wrong_field.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_protocols_nested_cluster():
+    cluster_protocols_nested.start()
+    yield
+    cluster_protocols_nested.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_graphite_columns_cluster():
+    cluster_graphite_columns.start()
+    yield
+    cluster_graphite_columns.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_payload_handler_shape_cluster():
+    global caught_payload_handler_shape_exception
+    try:
+        cluster_payload_handler_shape.start()
+    except Exception as e:
+        caught_payload_handler_shape_exception = str(e)
+        err_log = os.path.join(
+            node_payload_handler_shape.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_payload_handler_shape_exception += "\n" + f.read()
+    yield
+    cluster_payload_handler_shape.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_reload_invariant_cluster():
+    cluster_reload_invariant.start()
+    yield
+    cluster_reload_invariant.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_reload_skip_state_cluster():
+    cluster_reload_skip_state.start()
+    yield
+    cluster_reload_skip_state.shutdown()
 
 
 def test_unknown_config_option_rejected(start_bad_cluster):
@@ -511,3 +606,123 @@ def test_external_include_from_source_does_not_exempt_unknown_key(
         node_include_from_external.exec_in_container(
             ["bash", "-c", f"rm -f {bad_config_path} {external_source_path}"]
         )
+
+
+def test_protocols_nested_handler_prefix_accepted(start_protocols_nested_cluster):
+    # The endpoint references the *nested* handler prefix `custom_nested.handlers`. The validator
+    # must exempt the top-level component `custom_nested` (otherwise the node rejects `<custom_nested>`)
+    # and must scan the full nested prefix for `config://` references (otherwise the node rejects the
+    # `<nested_payload>` referenced from the nested static handler). If either failed, the node would
+    # not have started.
+    assert node_protocols_nested.query("SELECT 1").strip() == "1"
+
+
+def test_graphite_columns_only_section_accepted(start_graphite_columns_cluster):
+    # A `GraphiteMergeTree` rollup section that only overrides column names (no `<pattern>`/`<default>`)
+    # is a valid config accepted by `setGraphitePatternsFromConfig`. If the validator rejected
+    # `<retention_columns_only>` for lacking a rollup rule, the node would have failed to start.
+    assert node_graphite_columns.query("SELECT 1").strip() == "1"
+
+
+def test_payload_with_handler_shape_does_not_exempt_unknown_key(
+    start_payload_handler_shape_cluster,
+):
+    # `<config_payload>` is exempt because `<http_handlers>` references it via `config://`, but it is
+    # only a static-response payload, not a handler group. The validator must not re-scan it as a
+    # handler group, so the unrelated top-level `<secret_unknown_section>` referenced from its nested
+    # children must still be rejected. The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_payload_handler_shape_exception
+    assert "secret_unknown_section" in caught_payload_handler_shape_exception
+
+
+def test_failed_reload_leaves_live_config_unchanged(start_reload_invariant_cluster):
+    # A failed reload must be rejected BEFORE the new config is installed, so the live config is
+    # left untouched. The node serves a known `config://` response; a bad reload changes that
+    # response and adds an unknown key. After the rejected reload, the ORIGINAL response must still
+    # be served (proving the failed reload did not mutate the live layered config).
+    response = node_reload_invariant.http_request("reload_invariant", method="GET")
+    assert response.status_code == 200
+    assert response.text == "original payload"
+
+    initial_config_path = (
+        "/etc/clickhouse-server/config.d/reload_invariant_initial.xml"
+    )
+    original_config = (
+        "<clickhouse>"
+        "<reload_invariant_payload>original payload</reload_invariant_payload>"
+        "<http_handlers>"
+        "<rule>"
+        "<methods>GET</methods>"
+        "<url>/reload_invariant</url>"
+        "<handler>"
+        "<type>static</type>"
+        "<response_content>config://reload_invariant_payload</response_content>"
+        "</handler>"
+        "</rule>"
+        "<defaults/>"
+        "</http_handlers>"
+        "</clickhouse>"
+    )
+    # The bad reload changes the served payload AND adds an unknown top-level key, so the reload
+    # must be rejected; the changed payload must NOT take effect.
+    bad_config = (
+        "<clickhouse>"
+        "<reload_invariant_payload>changed payload</reload_invariant_payload>"
+        "<reload_invariant_unknown_option>1</reload_invariant_unknown_option>"
+        "<http_handlers>"
+        "<rule>"
+        "<methods>GET</methods>"
+        "<url>/reload_invariant</url>"
+        "<handler>"
+        "<type>static</type>"
+        "<response_content>config://reload_invariant_payload</response_content>"
+        "</handler>"
+        "</rule>"
+        "<defaults/>"
+        "</http_handlers>"
+        "</clickhouse>"
+    )
+    try:
+        node_reload_invariant.replace_config(initial_config_path, bad_config)
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in node_reload_invariant.query_and_get_error(
+            "SYSTEM RELOAD CONFIG"
+        )
+        # The live config must be unchanged: the original response is still served.
+        response = node_reload_invariant.http_request("reload_invariant", method="GET")
+        assert response.status_code == 200
+        assert response.text == "original payload"
+    finally:
+        node_reload_invariant.replace_config(initial_config_path, original_config)
+        node_reload_invariant.query("SYSTEM RELOAD CONFIG")
+
+
+def test_reload_does_not_inherit_stale_skip_flag(start_reload_skip_state_cluster):
+    # The node starts with `<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>`
+    # supplied by a config file (not the command line). A reload that REMOVES that flag while adding
+    # an unknown top-level key must be rejected: the previously loaded file's `skip` value must not
+    # leak into the reload decision. Before the fix, the reload read the stale layered `skip=1` and
+    # wrongly accepted the invalid config.
+    assert node_reload_skip_state.query("SELECT 1").strip() == "1"
+
+    initial_config_path = (
+        "/etc/clickhouse-server/config.d/reload_skip_state_initial.xml"
+    )
+    original_config = (
+        "<clickhouse>"
+        "<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
+        "</clickhouse>"
+    )
+    # The flag is gone and an unknown key is present, so the reload must be rejected.
+    bad_config = (
+        "<clickhouse>"
+        "<stale_skip_unknown_option>1</stale_skip_unknown_option>"
+        "</clickhouse>"
+    )
+    try:
+        node_reload_skip_state.replace_config(initial_config_path, bad_config)
+        error = node_reload_skip_state.query_and_get_error("SYSTEM RELOAD CONFIG")
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in error
+        assert "stale_skip_unknown_option" in error
+    finally:
+        node_reload_skip_state.replace_config(initial_config_path, original_config)
+        node_reload_skip_state.query("SYSTEM RELOAD CONFIG")
