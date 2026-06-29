@@ -298,7 +298,21 @@ static SZ3::ALGO getSZ3Algorithm(const String & algorithm)
 
 static SZ3::EB getSZ3ErrorBoundMode(const String & error_bound_mode)
 {
-    return SZ3::EB_MAP.at(error_bound_mode);
+    /// Restrict to the documented error bound modes and reject anything else with a user-facing error
+    /// (a raw `EB_MAP.at` would throw `std::out_of_range`, surfacing as a logical error).
+    if (error_bound_mode == "ABS")
+        return SZ3::EB_ABS;
+    if (error_bound_mode == "REL")
+        return SZ3::EB_REL;
+    if (error_bound_mode == "PSNR")
+        return SZ3::EB_PSNR;
+    if (error_bound_mode == "ABS_AND_REL")
+        return SZ3::EB_ABS_AND_REL;
+    throw Exception(
+        ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+        "Unsupported error bound mode '{}' for codec 'SZ3'. Supported modes are "
+        "'ABS', 'REL', 'PSNR' and 'ABS_AND_REL'",
+        error_bound_mode);
 }
 
 void registerCodecSZ3(CompressionCodecFactory & factory)

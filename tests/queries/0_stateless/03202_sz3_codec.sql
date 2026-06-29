@@ -1,5 +1,8 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings
 -- no-fasttest: needs sz3 library
+-- no-random-settings, no-random-merge-tree-settings: SZ3 is lossy and its output depends on how the data
+-- is split into compressed blocks (part type, block sizes), so the error-magnitude assertions below are
+-- only stable with fixed settings.
 
 SET allow_experimental_codecs = 1;
 SET cross_to_inner_join_rewrite = 1;
@@ -39,6 +42,9 @@ CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_INTERP', 'REL', 'not_a_f64'
 -- Only ALGO_LORENZO_REG, ALGO_INTERP_LORENZO and ALGO_INTERP are supported
 CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_BIOMD', 'REL', 0.01))) Engine = Memory; -- { serverError ILLEGAL_CODEC_PARAMETER }
 CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_LOSSLESS', 'REL', 0.01))) Engine = Memory; -- { serverError ILLEGAL_CODEC_PARAMETER }
+
+-- Only ABS, REL, PSNR and ABS_AND_REL error bound modes are supported
+CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_INTERP', 'NOT_A_MODE', 0.01))) Engine = Memory; -- { serverError ILLEGAL_CODEC_PARAMETER }
 
 SELECT 'Test wide/compact format';
 -- Very basic test to make sure nothing breaks
