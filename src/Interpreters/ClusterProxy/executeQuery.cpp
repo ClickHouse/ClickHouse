@@ -68,6 +68,7 @@ namespace Setting
     extern const SettingsDouble offset;
     extern const SettingsDouble page;
     extern const SettingsString format;
+    extern const SettingsString input_format;
     extern const SettingsString output_format;
     extern const SettingsString default_format;
     extern const SettingsString compression;
@@ -185,6 +186,11 @@ void stripInitiatorOnlySettings(Settings & settings)
     {
         settings[Setting::format] = "";
         settings[Setting::format].changed = false;
+    }
+    if (settings[Setting::input_format].changed || !settings[Setting::input_format].value.empty())
+    {
+        settings[Setting::input_format] = "";
+        settings[Setting::input_format].changed = false;
     }
     if (settings[Setting::output_format].changed || !settings[Setting::output_format].value.empty())
     {
