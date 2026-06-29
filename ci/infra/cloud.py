@@ -1,7 +1,6 @@
 from praktika import CloudInfrastructure
 from praktika.infrastructure.dedicated_host import DedicatedHost
 from praktika.infrastructure.ec2_instance import EC2Instance
-from praktika.infrastructure.iam_instance_profile import IAMInstanceProfile
 
 from ci.defs.defs import RunnerLabels
 
@@ -45,7 +44,7 @@ CLOUD = CloudInfrastructure.Config(
             ],
             instance_type="mac2-m2pro.metal",
             auto_placement="on",
-            quantity_per_az=3,
+            quantity_per_az=6,
             praktika_resource_tag="mac_m2_pro",
         ),
     ],
@@ -83,7 +82,7 @@ CLOUD = CloudInfrastructure.Config(
             tenancy="host",
             praktika_resource_tag="mac_m2_pro",
             runner_labels=MACOS_ARM_SMALL_RUNNER_LABELS,
-            quantity=4,
+            quantity=6,
         ),
     ]
 )
