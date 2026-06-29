@@ -51,6 +51,9 @@ protected:
     /// We mark it as experimental for now.
     bool isLossyCompression() const override { return true; }
     bool isExperimental() const override { return true; }
+    /// SZ3 must be applied to raw floating-point data, so it can not follow another (e.g. delta) codec;
+    /// this flag makes the codec-stack validation reject such combinations (like ALP/Gorilla/FPC).
+    bool isFloatingPointTimeSeriesCodec() const override { return true; }
     bool needsVectorDimensionUpfront() const override { return true; }
     String getDescription() const override { return "SZ3 is a lossy compressor for floating-point data with error bounds."; }
 

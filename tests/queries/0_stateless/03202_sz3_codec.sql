@@ -46,6 +46,9 @@ CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_LOSSLESS', 'REL', 0.01))) E
 -- Only ABS, REL, PSNR and ABS_AND_REL error bound modes are supported
 CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_INTERP', 'NOT_A_MODE', 0.01))) Engine = Memory; -- { serverError ILLEGAL_CODEC_PARAMETER }
 
+-- SZ3 must be applied to raw float data, so it can not follow another codec
+CREATE TABLE tab (compressed Float64 CODEC(Delta, SZ3)) Engine = Memory; -- { serverError BAD_ARGUMENTS }
+
 SELECT 'Test wide/compact format';
 -- Very basic test to make sure nothing breaks
 
