@@ -101,6 +101,37 @@ SELECT a.2 FROM named_tuples; -- by index
 └────────────────────┘
 ```
 
+## DEFAULT expressions for Tuple elements {#default-expressions-for-tuple-elements}
+
+A named element of a `Tuple` may carry a `DEFAULT` expression in a column declaration:
+
+```sql
+CREATE TABLE t
+(
+    id UInt8,
+    c Tuple(a UInt8, s String DEFAULT 'Hello')
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+Such a `DEFAULT` exists only at the syntax level. When the table is created, all defaults inside the type are pulled up to the column level, so the stored type carries no `DEFAULT`. The column above is stored as type `Tuple(a UInt8, s String)` with a column-level default `tuple(defaultValueOfTypeName('UInt8'), 'Hello')`. Elements without an explicit `DEFAULT` are filled with the default value of their type:
+
+```sql
+SELECT name, type, default_kind, default_expression
+FROM system.columns
+WHERE table = 't' AND name = 'c';
+```
+
+```text
+┌─name─┬─type─────────────────────┬─default_kind─┬─default_expression───────────────────────────────┐
+│ c    │ Tuple(a UInt8, s String) │ DEFAULT      │ tuple(defaultValueOfTypeName('UInt8'), 'Hello')  │
+└──────┴──────────────────────────┴──────────────┴───────────────────────────────────────────────────┘
+```
+
+A `DEFAULT` expression may reference other columns of the table, but not other elements of the same tuple; a reference that collides with an element name is rejected as ambiguous. Nested tuples are supported, and the defaults are pulled up recursively.
+
+`DEFAULT` inside a `Nested` type (which is `Array(Tuple(...))`) or inside an `Array` is not supported: a scalar element default cannot be represented as a static array column default, so it is rejected with a `NOT_IMPLEMENTED` error. Building an actual data type while a `DEFAULT` is set (for example via `CAST` or `defaultValueOfTypeName`) is also rejected, because `DEFAULT` is only meaningful in a column declaration.
+
 ## Comparison operations with Tuple {#comparison-operations-with-tuple}
 
 Two tuples are compared by sequentially comparing their elements from the left to the right. If first tuples element is greater (smaller) than the second tuples corresponding element, then the first tuple is greater (smaller) than the second, otherwise (both elements are equal), the next element is compared.
