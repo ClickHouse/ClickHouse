@@ -4,6 +4,8 @@
 
 SET read_in_order_use_virtual_row = 1;
 SET use_query_condition_cache = 0;
+SET use_skip_indexes_for_top_k = 0;
+SET use_top_k_dynamic_filtering = 0;
 
 DROP TABLE IF EXISTS t;
 
@@ -52,7 +54,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 AND log_comment = 'preliminary merge, no filter'
 AND type = 'QueryFinish'
 ORDER BY query_start_time DESC
@@ -76,7 +78,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 AND log_comment = 'preliminary merge with filter'
 AND type = 'QueryFinish'
 ORDER BY query_start_time DESC
@@ -99,7 +101,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 AND log_comment = 'no preliminary merge, no filter'
 AND type = 'QueryFinish'
 ORDER BY query_start_time DESC
@@ -123,7 +125,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 AND log_comment = 'no preliminary merge, with filter'
 AND type = 'QueryFinish'
 ORDER BY query_start_time DESC

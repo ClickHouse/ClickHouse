@@ -1,5 +1,8 @@
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolBinary.h>
 #include <Core/MySQL/PacketsProtocolText.h>
@@ -17,6 +20,11 @@ using namespace MySQLProtocol;
 using namespace MySQLProtocol::Generic;
 using namespace MySQLProtocol::ProtocolText;
 using namespace MySQLProtocol::ProtocolBinary;
+
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
 
 MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
@@ -68,10 +76,18 @@ void MySQLOutputFormat::writePrefix()
 
 void MySQLOutputFormat::consume(Chunk chunk)
 {
+    LOG_TEST(getLogger("MySQLOutputFormat"), "Consume a chunk");
+
+    if (isCancelled())
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
     if (!use_binary_result_set)
     {
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
+            if (isCancelled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
             ProtocolText::ResultSetRow row_packet(serializations, data_types, chunk.getColumns(), row);
             packet_endpoint->sendPacket(row_packet, false);
         }
@@ -80,6 +96,9 @@ void MySQLOutputFormat::consume(Chunk chunk)
     {
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
+            if (isCancelled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
             ProtocolBinary::ResultSetRow row_packet(serializations, data_types, chunk.getColumns(), row);
             packet_endpoint->sendPacket(row_packet, false);
         }
@@ -105,8 +124,8 @@ void MySQLOutputFormat::finalizeImpl()
                 info.read_rows,
                 ReadableSize(info.read_bytes),
                 elapsed_seconds,
-                static_cast<size_t>(info.read_rows / elapsed_seconds),
-                ReadableSize(info.read_bytes / elapsed_seconds));
+                static_cast<size_t>(static_cast<double>(info.read_rows) / elapsed_seconds),
+                ReadableSize(static_cast<double>(info.read_bytes) / elapsed_seconds));
         }
 
         const auto & header = getPort(PortKind::Main).getHeader();
@@ -138,6 +157,7 @@ void MySQLOutputFormat::flushImpl()
     packet_endpoint->out->next();
 }
 
+void registerOutputFormatMySQLWire(FormatFactory & factory);
 void registerOutputFormatMySQLWire(FormatFactory & factory)
 {
     factory.registerOutputFormat(
@@ -148,6 +168,15 @@ void registerOutputFormatMySQLWire(FormatFactory & factory)
            FormatFilterInfoPtr /*format_filter_info*/) { return std::make_shared<MySQLOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markOutputFormatNotTTYFriendly("MySQLWire");
     factory.setContentType("MySQLWire", "application/octet-stream");
+
+    factory.setDocumentation("MySQLWire", Documentation{
+        .description = R"DOCS_MD(
+## Description {#description}
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
 }

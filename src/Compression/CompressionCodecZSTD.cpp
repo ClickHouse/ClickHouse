@@ -1,6 +1,7 @@
 #include <Compression/CompressionCodecZSTD.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/registerCompressionCodecs.h>
 #include <zstd.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -35,6 +36,8 @@ UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) 
 UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     ZSTD_CCtx * cctx = ZSTD_createCCtx();
+    if (!cctx)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: failed to create compression context");
     ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
     if (enable_long_range)
     {
@@ -65,8 +68,10 @@ CompressionCodecZSTD::CompressionCodecZSTD(int level_, int window_log_)
     , enable_long_range(true)
     , window_log(window_log_)
 {
-    setCodecDescription(
-        "ZSTD", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level)), std::make_shared<ASTLiteral>(static_cast<UInt64>(window_log))});
+    ASTs arguments;
+    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(level)));
+    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(window_log)));
+    setCodecDescription("ZSTD", arguments);
 }
 
 CompressionCodecZSTD::CompressionCodecZSTD(int level_)
@@ -74,7 +79,9 @@ CompressionCodecZSTD::CompressionCodecZSTD(int level_)
     , enable_long_range(false)
     , window_log(0)
 {
-    setCodecDescription("ZSTD", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
+    ASTs arguments;
+    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(level)));
+    setCodecDescription("ZSTD", arguments);
 }
 
 void registerCodecZSTD(CompressionCodecFactory & factory)

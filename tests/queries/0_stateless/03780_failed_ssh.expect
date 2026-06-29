@@ -46,7 +46,7 @@ spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \
 
 expect "Enter your SSH private key passphrase (leave empty for no passphrase): "
 send "\r"
-expect "Connecting to * as user user_03780_*."
+expect -re "Connecting to .+ as user user_03780_\\S+\\."
 expect "Code: 516. *"
 expect eof
 

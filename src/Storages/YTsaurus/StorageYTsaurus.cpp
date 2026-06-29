@@ -2,6 +2,8 @@
 
 #if USE_YTSAURUS
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/StorageFactory.h>
@@ -44,7 +46,7 @@ StorageYTsaurus::StorageYTsaurus(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment)
-    : IStorage{table_id_}
+    : StorageWithCommonVirtualColumns{table_id_}
     , cypress_path(std::move(configuration_.cypress_path))
     , settings(configuration_.settings)
     , client_connection_info{
@@ -59,7 +61,16 @@ StorageYTsaurus::StorageYTsaurus(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageYTsaurus::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 Pipe StorageYTsaurus::read(
@@ -69,7 +80,7 @@ Pipe StorageYTsaurus::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t /*num_streams*/)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
 
@@ -82,9 +93,7 @@ Pipe StorageYTsaurus::read(
     }
 
     YTsaurusClientPtr client(new YTsaurusClient(context, client_connection_info));
-    auto ptr = YTsaurusSourceFactory::createSource(client, {.cypress_path = cypress_path, .settings = settings}, sample_block, max_block_size);
-
-    return Pipe(ptr);
+    return YTsaurusSourceFactory::createPipe(client, cypress_path, {.settings = settings}, sample_block, max_block_size, num_streams);
 }
 
 YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
@@ -119,9 +128,9 @@ YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
     return configuration;
 }
 
-YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context)
+YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context, const StorageID * table_id)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
         return StorageYTsaurus::processNamedCollectionResult(*named_collection, settings);
     }
@@ -142,6 +151,7 @@ YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args,
     return configuration;
 }
 
+void registerStorageYTsaurus(StorageFactory & factory);
 void registerStorageYTsaurus(StorageFactory & factory)
 {
     factory.registerStorage("YTsaurus", [](const StorageFactory::Arguments & args)
@@ -151,7 +161,7 @@ void registerStorageYTsaurus(StorageFactory & factory)
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
-            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext()),
+            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id),
             args.columns,
             args.constraints,
             args.comment);
@@ -160,6 +170,129 @@ void registerStorageYTsaurus(StorageFactory & factory)
         .supports_settings = true,
         .source_access_type = AccessTypeObjects::Source::YTSAURUS,
         .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin
+    },
+    Documentation{
+        .description = R"DOCS_MD(
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+
+# YTsaurus table engine
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+The YTsaurus table engine allows you to import data from a YTsaurus cluster.
+
+## Creating a table {#creating-a-table}
+
+```sql
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name
+    (
+        name1 [type1],
+        name2 [type2], ...
+    ) ENGINE = YTsaurus('http_proxy_url', 'cypress_path', 'oauth_token')
+```
+
+:::info
+This is an experimental feature that may change in backwards-incompatible ways in future releases.
+Enable usage of the YTsaurus table engine
+using setting [`allow_experimental_ytsaurus_table_engine`](/operations/settings/settings#allow_experimental_ytsaurus_table_engine).
+
+You can do so using:
+
+`SET allow_experimental_ytsaurus_table_engine = 1`.
+:::
+
+**Engine parameters**
+
+- `http_proxy_url` — URL to the YTsaurus http proxy.
+- `cypress_path` — Cypress path to the data source.
+- `oauth_token` — OAuth token.
+
+## Usage example {#usage-example}
+
+Shows a query creating the YTsaurus table:
+
+```sql title="Query"
+SHOW CREATE TABLE yt_saurus;
+```
+
+```sql title="Response"
+CREATE TABLE yt_saurus
+(
+    `a` UInt32,
+    `b` String
+)
+ENGINE = YTsaurus('http://localhost:8000', '//tmp/table', 'password')
+```
+
+To return the data from the table, run:
+
+```sql title="Query"
+SELECT * FROM yt_saurus;
+```
+
+```response title="Response"
+┌──a─┬─b──┐
+│ 10 │ 20 │
+└────┴────┘
+```
+
+## Data types {#data-types}
+
+### Primitive data types {#primitive-data-types}
+
+| YTsaurus data type | Clickhouse data type    |
+| ------------------ | ----------------------- |
+| `int8`             | `Int8`                  |
+| `int16`            | `Int16`                 |
+| `int32`            | `Int32`                 |
+| `int64`            | `Int64`                 |
+| `uint8`            | `UInt8`                 |
+| `uint16`           | `UInt16`                |
+| `uint32`           | `UInt32`                |
+| `uint64`           | `UInt64`                |
+| `float`            | `Float32`               |
+| `double`           | `Float64`               |
+| `boolean`          | `Bool`                  |
+| `string`           | `String`                |
+| `utf8`             | `String`                |
+| `json`             | `JSON`                  |
+| `yson(type_v3)`    | `JSON`                  |
+| `uuid`             | `UUID`                  |
+| `date32`           | `Date`(Not supported yet)|
+| `datetime64`       | `Int64`                 |
+| `timestamp64`      | `Int64`                 |
+| `interval64`       | `Int64`                 |
+| `date`             | `Date`(Not supported yet)|
+| `datetime`         | `DateTime`              |
+| `timestamp`        | `DateTime64(6)`         |
+| `interval`         | `UInt64`                |
+| `any`              | `String`                |
+| `null`             | `Nothing`               |
+| `void`             | `Nothing`               |
+| `T` with `required = False`| `Nullable(T)`   |
+
+### Composite types {#composite-data-types}
+
+| YTsaurus data type | Clickhouse data type |
+| ------------------ | -------------------- |
+| `decimal`          | `Decimal`            |
+| `optional`         | `Nullable`           |
+| `list`             | `Array`              |
+| `struct`           | `NamedTuple`         |
+| `tuple`            | `Tuple`              |
+| `variant`          | `Variant`            |
+| `dict`             | `Array(Tuple(...))   |
+| `tagged`           | `T`                  |
+
+**See Also**
+
+- [ytsaurus](../../../sql-reference/table-functions/ytsaurus.md) table function
+- [ytsaurus data schema](https://ytsaurus.tech/docs/en/user-guide/storage/static-schema)
+- [ytsaurus data types](https://ytsaurus.tech/docs/en/user-guide/storage/data-types)
+)DOCS_MD",
+        .syntax = "ENGINE = YTsaurus('http_proxy_url', 'cypress_path', 'oauth_token')",
     });
 }
 

@@ -1,0 +1,126 @@
+-- Direct subcolumn access
+SELECT id FROM tab WHERE data.key1 = 'the quick brown fox' ORDER BY id
+0
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["brown", "fox", "quick", "the"])
+Parts: 1/4
+Granules: 1/4
+SELECT id FROM tab WHERE data.num = 42 ORDER BY id
+2
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["42"])
+Parts: 1/4
+Granules: 1/4
+SELECT id FROM tab WHERE data.key1 LIKE '%quick%' ORDER BY id
+0
+2
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: [])
+Parts: 2/4
+Granules: 2/4
+SELECT id FROM tab WHERE startsWith(data.key1, 'lazy') ORDER BY id
+1
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: [])
+Parts: 4/4
+Granules: 4/4
+SELECT id FROM tab WHERE endsWith(data.key1, 'fox') ORDER BY id
+0
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: [])
+Parts: 4/4
+Granules: 4/4
+SELECT id FROM tab WHERE hasToken(data.key1, 'quick') ORDER BY id
+0
+2
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["quick"])
+Parts: 2/4
+Granules: 2/4
+-- CAST with ::String
+SELECT id FROM tab WHERE hasAllTokens(data.key1::String, 'the quick brown fox') ORDER BY id
+0
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["brown", "fox", "quick", "the"])
+Parts: 1/4
+Granules: 1/4
+SELECT id FROM tab WHERE data.key1::String = 'the quick brown fox' ORDER BY id
+0
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["brown", "fox", "quick", "the"])
+Parts: 1/4
+Granules: 1/4
+SELECT id FROM tab WHERE data.key1::String LIKE '%quick%' ORDER BY id
+0
+2
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: [])
+Parts: 2/4
+Granules: 2/4
+SELECT id FROM tab WHERE startsWith(data.key1::String, 'lazy') ORDER BY id
+1
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: [])
+Parts: 4/4
+Granules: 4/4
+SELECT id FROM tab WHERE hasToken(data.key1::String, 'quick') ORDER BY id
+0
+2
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["quick"])
+Parts: 2/4
+Granules: 2/4
+SELECT id FROM tab WHERE hasAnyTokens(data.key1::String, ['quick', 'lazy']) ORDER BY id
+0
+1
+2
+Description: text GRANULARITY 100000000
+Condition: (mode: Any; tokens: ["lazy", "quick"])
+Parts: 3/4
+Granules: 3/4
+SELECT id FROM tab WHERE hasAllTokens(data.key1::String, ['the', 'quick']) ORDER BY id
+0
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["quick", "the"])
+Parts: 1/4
+Granules: 1/4
+-- IN operator
+SELECT id FROM tab WHERE data.key1::String IN ('the quick brown fox', 'lazy dog jumps') ORDER BY id
+0
+1
+Description: text GRANULARITY 100000000
+Condition: (mode: Any; tokens: ["brown", "dog", "fox", "jumps", "lazy", "quick", "the"])
+Parts: 2/4
+Granules: 2/4
+-- JSON values that are arrays
+SELECT id FROM tab WHERE data.tags = ['foo', 'bar'] ORDER BY id
+0
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["bar", "foo"])
+Parts: 1/3
+Granules: 1/3
+SELECT id FROM tab WHERE data.tags = 'not_an_array' ORDER BY id
+2
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["an", "array", "not"])
+Parts: 1/3
+Granules: 1/3
+SELECT id FROM tab WHERE hasAllTokens(data.tags::String, 'foo') ORDER BY id
+0
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["foo"])
+Parts: 1/3
+Granules: 1/3
+SELECT id FROM tab WHERE hasAllTokens(data.tags::String, 'not array') ORDER BY id
+2
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["array", "not"])
+Parts: 1/3
+Granules: 1/3
+-- Nested JSON subcolumns
+SELECT id FROM tab WHERE data.a.b = 'deep value one' ORDER BY id
+0
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["deep", "one", "value"])
+Parts: 1/3
+Granules: 1/3

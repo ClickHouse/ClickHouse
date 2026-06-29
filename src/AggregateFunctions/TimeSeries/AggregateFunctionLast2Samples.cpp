@@ -112,6 +112,7 @@ AggregateFunctionPtr createAggregateFunctionLast2Samples(const std::string & nam
 
 }
 
+void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory);
 void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory)
 {
     /// timeSeriesLastTwoSamples documentation
@@ -273,7 +274,7 @@ GROUP BY metric_id;
     FunctionDocumentation::Category category_timeSeriesLastTwoSamples = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_timeSeriesLastTwoSamples = {description_timeSeriesLastTwoSamples, syntax_timeSeriesLastTwoSamples, arguments_timeSeriesLastTwoSamples, {}, returned_value_timeSeriesLastTwoSamples, examples_timeSeriesLastTwoSamples, introduced_in_timeSeriesLastTwoSamples, category_timeSeriesLastTwoSamples};
 
-    factory.registerFunction("timeSeriesLastTwoSamples", {createAggregateFunctionLast2Samples, {}, documentation_timeSeriesLastTwoSamples});
+    factory.registerFunction("timeSeriesLastTwoSamples", {createAggregateFunctionLast2Samples, documentation_timeSeriesLastTwoSamples});
 }
 
 }

@@ -2,6 +2,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadPipeline.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
@@ -49,7 +50,11 @@ SmallObjectDataWithMetadata IObjectStorage::readSmallObjectAndGetObjectMetadata(
     return result;
 }
 
-ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix, size_t max_keys, bool) const
+ObjectStorageIteratorPtr IObjectStorage::iterate(
+    const std::string & path_prefix,
+    size_t max_keys,
+    bool,
+    const std::optional<std::string> &) const
 {
     RelativePathsWithMetadata files;
     listObjects(path_prefix, files, max_keys);
@@ -96,6 +101,16 @@ ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) c
 WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
     return write_settings;
+}
+
+void IObjectStorage::prepareRead(
+    ObjectStoragePtr storage,
+    const StoredObjects & objects,
+    const ReadSettings & read_settings,
+    std::optional<size_t> read_hint,
+    ReadPipeline & pipeline) const
+{
+    pipeline.setSource(std::move(storage), objects, read_settings, read_hint);
 }
 
 }

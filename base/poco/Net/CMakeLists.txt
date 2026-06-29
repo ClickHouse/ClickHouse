@@ -38,6 +38,7 @@ target_compile_options (_poco_net
         -Wno-unused-parameter
         -Wno-zero-as-null-pointer-constant
         -Wno-implicit-int-conversion
+        -Wno-implicit-int-float-conversion
 )
 
 target_include_directories (_poco_net SYSTEM PUBLIC "include")

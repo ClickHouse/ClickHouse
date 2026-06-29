@@ -12,7 +12,7 @@ class IKeeperClientCommand
 public:
     static const String name;
 
-    virtual bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const = 0;
+    virtual bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const = 0;
 
     virtual void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const = 0;
 
@@ -37,18 +37,34 @@ class LSCommand : public IKeeperClientCommand
 {
     String getName() const override { return "ls"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
-    String getHelpMessage() const override { return "{} [path] -- Lists the nodes for the given path (default: cwd)"; }
+    String getHelpMessage() const override { return "{} [path] [watch_id] -- Lists the nodes for the given path (default: cwd). Optionally sets a watch"; }
+};
+
+static constexpr uint32_t LSR_DEFAULT_LIMIT = 1000000;
+
+class LSRCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "lsr"; }
+
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return fmt::format("{{}} [path] [limit] -- Recursively lists descendant paths. Default path: cwd, default limit: {}", LSR_DEFAULT_LIMIT);
+    }
 };
 
 class CDCommand : public IKeeperClientCommand
 {
     String getName() const override { return "cd"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -59,7 +75,7 @@ class SetCommand : public IKeeperClientCommand
 {
     String getName() const override { return "set"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -73,7 +89,7 @@ class CreateCommand : public IKeeperClientCommand
 {
     String getName() const override { return "create"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -84,7 +100,7 @@ class TouchCommand : public IKeeperClientCommand
 {
     String getName() const override { return "touch"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -95,29 +111,29 @@ class GetCommand : public IKeeperClientCommand
 {
     String getName() const override { return "get"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
-    String getHelpMessage() const override { return "{} <path> -- Returns the node's value"; }
+    String getHelpMessage() const override { return "{} <path> [watch_id] -- Returns the node's value. Optionally sets a watch"; }
 };
 
 class ExistsCommand : public IKeeperClientCommand
 {
     String getName() const override { return "exists"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
-    String getHelpMessage() const override { return "{} <path> -- Returns `1` if node exists, `0` otherwise"; }
+    String getHelpMessage() const override { return "{} <path> [watch_id] -- Returns `1` if node exists, `0` otherwise. Optionally sets a watch"; }
 };
 
 class GetStatCommand : public IKeeperClientCommand
 {
     String getName() const override { return "get_stat"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -128,7 +144,7 @@ class FindSuperNodes : public IKeeperClientCommand
 {
     String getName() const override { return "find_super_nodes"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -142,7 +158,7 @@ class DeleteStaleBackups : public IKeeperClientCommand
 {
     String getName() const override { return "delete_stale_backups"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -156,7 +172,7 @@ class FindBigFamily : public IKeeperClientCommand
 {
     String getName() const override { return "find_big_family"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -170,7 +186,7 @@ class RMCommand : public IKeeperClientCommand
 {
     String getName() const override { return "rm"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -181,7 +197,7 @@ class RMRCommand : public IKeeperClientCommand
 {
     String getName() const override { return "rmr"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -199,7 +215,7 @@ class ReconfigCommand : public IKeeperClientCommand
 
     String getName() const override { return "reconfig"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -210,7 +226,7 @@ class SyncCommand: public IKeeperClientCommand
 {
     String getName() const override { return "sync"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -221,7 +237,7 @@ class HelpCommand : public IKeeperClientCommand
 {
     String getName() const override { return "help"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -232,7 +248,7 @@ class FourLetterWordCommand : public IKeeperClientCommand
 {
     String getName() const override { return "flwc"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -243,7 +259,7 @@ class GetDirectChildrenNumberCommand : public IKeeperClientCommand
 {
     String getName() const override { return "get_direct_children_number"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -257,7 +273,7 @@ class GetAllChildrenNumberCommand : public IKeeperClientCommand
 {
     String getName() const override { return "get_all_children_number"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -271,7 +287,7 @@ class CPCommand : public IKeeperClientCommand
 {
     String getName() const override { return "cp"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -285,7 +301,7 @@ class CPRCommand : public IKeeperClientCommand
 {
     String getName() const override { return "cpr"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -299,7 +315,7 @@ class MVCommand : public IKeeperClientCommand
 {
     String getName() const override { return "mv"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -313,7 +329,7 @@ class MVRCommand : public IKeeperClientCommand
 {
     String getName() const override { return "mvr"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
@@ -323,11 +339,22 @@ class MVRCommand : public IKeeperClientCommand
     }
 };
 
+class WaitWatchCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "watch"; }
+
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
+
+    String getHelpMessage() const override { return "{} <watch_id> [timeout_seconds] -- Waits for watch event and prints the response"; }
+};
+
 class GetAclCommand : public IKeeperClientCommand
 {
     String getName() const override { return "get_acl"; }
 
-    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 

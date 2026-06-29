@@ -23,7 +23,7 @@ struct ProcessorProfileInfo
     void update(const Chunk & block);
 };
 
-class LimitsCheckingTransform : public ISimpleTransform
+class LimitsCheckingTransform final : public ISimpleTransform
 {
 public:
 

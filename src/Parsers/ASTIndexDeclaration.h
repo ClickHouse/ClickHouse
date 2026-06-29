@@ -19,7 +19,7 @@ public:
     ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const String & name_);
 
     String name;
-    UInt64 granularity;
+    UInt64 granularity = DEFAULT_INDEX_GRANULARITY;
     bool part_of_create_index_query = false;
 
     /** Get the text that identifies this element. */
@@ -28,7 +28,7 @@ public:
     ASTPtr clone() const override;
 
     ASTPtr getExpression() const;
-    std::shared_ptr<ASTFunction> getType() const;
+    boost::intrusive_ptr<ASTFunction> getType() const;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
@@ -39,6 +39,6 @@ private:
 };
 
 class ASTFunction;
-UInt64 getSecondaryIndexGranularity(const std::shared_ptr<ASTFunction> & type, const ASTPtr & granularity);
+UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity);
 
 }

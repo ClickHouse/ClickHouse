@@ -21,6 +21,7 @@ public:
         , actions_dag(other.actions_dag.clone())
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
+        , prevent_input_removal(other.prevent_input_removal)
         , condition(other.condition)
     {}
 
@@ -50,8 +51,11 @@ public:
     void decorrelateActions() { actions_dag.decorrelate(); }
 
     bool canRemoveUnusedColumns() const override;
-    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
+
+    void setPreventInputRemoval() { prevent_input_removal = true; }
+    bool isInputRemovalPrevented() const { return prevent_input_removal; }
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
@@ -61,6 +65,7 @@ private:
     ActionsDAG actions_dag;
     String filter_column_name;
     bool remove_filter_column;
+    bool prevent_input_removal = false;
 
     std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
 };

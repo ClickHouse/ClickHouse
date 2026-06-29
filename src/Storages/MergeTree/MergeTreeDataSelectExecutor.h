@@ -1,5 +1,6 @@
 #pragma once
 
+#include <expected>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -10,6 +11,8 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 #include <boost/dynamic_bitset.hpp>
+
+struct PreformattedMessage;
 
 namespace DB
 {
@@ -95,17 +98,6 @@ public:
         PartialDisjunctionResult & partial_disjunction_result,
         LoggerPtr log);
 
-    static MarkRanges filterMarksUsingMergedIndex(
-        MergeTreeIndices indices,
-        MergeTreeIndexMergedConditionPtr condition,
-        MergeTreeData::DataPartPtr part,
-        const MarkRanges & ranges,
-        const MergeTreeReaderSettings & reader_settings,
-        MarkCache * mark_cache,
-        UncompressedCache * uncompressed_cache,
-        VectorSimilarityIndexCache * vector_similarity_index_cache,
-        LoggerPtr log);
-
     static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
         MergeTreeData::DataPartPtr part,
         MergeTreeIndexPtr skip_index_minmax,
@@ -160,19 +152,6 @@ private:
         PartFilterCounters & counters,
         QueryStatusPtr query_status);
 
-    /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
-    static RangesInDataParts selectPartsToReadWithUUIDFilter(
-        const RangesInDataParts & parts,
-        const std::optional<std::unordered_set<String>> & part_values,
-        MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
-        const std::optional<KeyCondition> & minmax_idx_condition,
-        const DataTypes & minmax_columns_types,
-        const std::optional<PartitionPruner> & partition_pruner,
-        const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        ContextPtr query_context,
-        PartFilterCounters & counters,
-        LoggerPtr log);
-
 public:
     /// For given number rows and bytes, get the number of marks to read.
     /// It is a minimal number of marks which contain so many rows and bytes.
@@ -214,6 +193,17 @@ public:
         const MergeTreeData & data,
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
+    /// Filter parts using column statistics.
+    /// Returns filtered parts and updates index_stats with statistics pruning info.
+    static RangesInDataParts filterPartsByStatistics(
+        const RangesInDataParts & parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context,
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
@@ -277,6 +267,14 @@ public:
         const PartialDisjunctionResult & partial_eval_results,
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
+
+    /// Check if a skip index can be used when there are lightweight updates.
+    /// Returns an error message if the index depends on a column that will be updated on the fly.
+    static std::expected<void, PreformattedMessage> canUseIndex(
+        const MergeTreeIndexPtr & index,
+        const StorageMetadataPtr & metadata_snapshot,
+        const NameSet & all_updated_columns);
+
 
 };
 

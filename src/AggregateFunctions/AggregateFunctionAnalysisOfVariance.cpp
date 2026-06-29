@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
 
@@ -55,7 +56,7 @@ public:
         data(place).add(columns[0]->getFloat64(row_num), columns[1]->getUInt(row_num));
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
     }
@@ -111,6 +112,7 @@ AggregateFunctionPtr createAggregateFunctionAnalysisOfVariance(const std::string
 
 }
 
+void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory & factory)
 {
         FunctionDocumentation::Description description_analysisOfVariance = R"(
@@ -147,7 +149,7 @@ SELECT analysisOfVariance(number, number % 2) FROM numbers(1048575);
     FunctionDocumentation documentation_analysisOfVariance = {description_analysisOfVariance, syntax_analysisOfVariance, arguments_analysisOfVariance, {}, returned_value_analysisOfVariance, examples_analysisOfVariance, introduced_in_analysisOfVariance, category_analysisOfVariance};
 
     AggregateFunctionProperties properties = { .is_order_dependent = false };
-    factory.registerFunction("analysisOfVariance", {createAggregateFunctionAnalysisOfVariance, properties, documentation_analysisOfVariance}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("analysisOfVariance", {createAggregateFunctionAnalysisOfVariance, documentation_analysisOfVariance, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     /// This is widely used term
     factory.registerAlias("anova", "analysisOfVariance", AggregateFunctionFactory::Case::Insensitive);

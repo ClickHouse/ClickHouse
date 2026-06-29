@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 
 namespace DB
 {
@@ -32,6 +33,40 @@ public:
 
 private:
     BackgroundSchedulePoolTaskInfoPtr task_info;
+};
+
+/// RAII guard that pauses parts check and reactivates it on destruction.
+/// Safe to destroy from any thread.
+class BackgroundSchedulePoolPausableTask
+{
+public:
+    struct PauseHolder
+    {
+        explicit PauseHolder(BackgroundSchedulePoolPausableTask & task_);
+        ~PauseHolder();
+
+    private:
+        BackgroundSchedulePoolPausableTask & task;
+    };
+
+    using PauseHolderPtr = std::unique_ptr<PauseHolder>;
+    explicit BackgroundSchedulePoolPausableTask(BackgroundSchedulePoolTaskHolder task_);
+
+    BackgroundSchedulePoolPausableTask(const BackgroundSchedulePoolPausableTask &) = delete;
+    BackgroundSchedulePoolPausableTask & operator=(const BackgroundSchedulePoolPausableTask &) = delete;
+    BackgroundSchedulePoolPausableTask(BackgroundSchedulePoolPausableTask &&) = delete;
+    BackgroundSchedulePoolPausableTask & operator=(BackgroundSchedulePoolPausableTask &&) = delete;
+
+    BackgroundSchedulePoolTaskHolder & getTask();
+
+    [[nodiscard]] PauseHolderPtr pause();
+private:
+    void pauseImpl();
+    void resumeImpl();
+
+    std::mutex pause_mutex;
+    size_t pause_count = 0;
+    BackgroundSchedulePoolTaskHolder task;
 };
 
 }

@@ -1,7 +1,5 @@
 -- Tests that text indexes can be created and used on subcolumns
 
-SET enable_full_text_index = 1;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab (data JSON(a String)) ENGINE = MergeTree ORDER BY tuple();

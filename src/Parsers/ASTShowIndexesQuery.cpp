@@ -8,7 +8,7 @@ namespace DB
 
 ASTPtr ASTShowIndexesQuery::clone() const
 {
-    auto res = std::make_shared<ASTShowIndexesQuery>(*this);
+    auto res = make_intrusive<ASTShowIndexesQuery>(*this);
     res->children.clear();
     cloneOutputOptions(*res);
     return res;

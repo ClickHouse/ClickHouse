@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-}
-
 class IServer;
 class AsynchronousMetrics;
 
@@ -43,30 +38,15 @@ public:
         };
     }
 
+    void addFilters(std::vector<Filter> filters)
+    {
+        for (auto & cur_filter : filters)
+            addFilter(std::move(cur_filter));
+    }
+
     void addFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
     {
-        Poco::Util::AbstractConfiguration::Keys filters_type;
-        config.keys(prefix, filters_type);
-
-        for (const auto & filter_type : filters_type)
-        {
-            if (filter_type == "handler")
-                continue;
-            /// URI (path and query string)
-            if (filter_type == "url")
-                addFilter(urlFilter(config, prefix + ".url"));
-            /// URL (schema, host:port, path and query string)
-            else if (filter_type == "full_url")
-                addFilter(fullUrlFilter(config, prefix + ".full_url"));
-            else if (filter_type == "empty_query_string")
-                addFilter(emptyQueryStringFilter());
-            else if (filter_type == "headers")
-                addFilter(headersFilter(config, prefix + ".headers"));
-            else if (filter_type == "methods")
-                addFilter(methodsFilter(config, prefix + ".methods"));
-            else
-                throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}.{}", prefix, filter_type);
-        }
+        addFilters(extractHTTPRequestFiltersFromConfig(config, prefix));
     }
 
     void attachStrictPath(const String & strict_path)
@@ -127,7 +107,8 @@ public:
 
     std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override
     {
-        return filter(request) ? creator() : nullptr;
+        /// A rule with no filters (a config rule with only `handler` and no match conditions) matches every request.
+        return (!filter || filter(request)) ? creator() : nullptr;
     }
 
 private:
@@ -158,9 +139,11 @@ HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server
 /// @param server - used in handlers to check IServer::isCancelled()
 /// @param config - not the same as server.config(), since it can be newer
 /// @param async_metrics - used for prometheus (in case of prometheus.asynchronous_metrics=true)
+/// @param http_handlers_key - config key for custom http_handlers (default: "http_handlers")
 HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics,
-    const std::string & name);
+    const std::string & name,
+    const std::string & http_handlers_key = {});
 
 }

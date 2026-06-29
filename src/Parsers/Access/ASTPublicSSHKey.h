@@ -18,7 +18,7 @@ public:
         , type(type_)
     {}
     String getID(char) const override { return "PublicSSHKey"; }
-    ASTPtr clone() const override { return std::make_shared<ASTPublicSSHKey>(*this); }
+    ASTPtr clone() const override { return make_intrusive<ASTPublicSSHKey>(*this); }
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const override;

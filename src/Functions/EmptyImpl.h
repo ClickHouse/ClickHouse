@@ -4,6 +4,9 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <DataTypes/IDataType.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -20,6 +23,38 @@ struct EmptyImpl
 {
     /// If the function will return constant value for FixedString data type.
     static constexpr auto is_fixed_to_constant = false;
+
+    static constexpr bool has_information_about_monotonicity = true;
+
+    /// For String type, the empty string '' is the minimum value in lexicographic order.
+    /// empty(s) = 1 iff s == ''. The function is constant (and thus monotone) on any
+    /// range that does not include '', i.e. where the left boundary is non-empty, or on
+    /// the degenerate range ['', ''].
+    static IFunction::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right)
+    {
+        if (!isString(type))
+            return {};
+
+        if (!left.isNull() && left.getType() == Field::Types::String)
+        {
+            const String & left_str = left.safeGet<String>();
+            if (!left_str.empty())
+            {
+                /// All values in [left, right] are non-empty strings.
+                /// empty(s) = 0 everywhere, notEmpty(s) = 1 everywhere → constant.
+                return {.is_monotonic = true, .is_positive = true};
+            }
+
+            /// left == ''
+            if (!right.isNull() && right.getType() == Field::Types::String && right.safeGet<String>().empty())
+            {
+                /// Range is exactly ['', ''] → empty(s) = 1 everywhere, constant.
+                return {.is_monotonic = true, .is_positive = true};
+            }
+        }
+
+        return {};
+    }
 
     static void vector(const ColumnString::Chars & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res, size_t input_rows_count)
     {

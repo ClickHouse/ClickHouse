@@ -105,6 +105,7 @@ HTTPHeaderInputStream::HTTPHeaderInputStream(HTTPSession& session):
 	HTTPHeaderIOS(session, std::ios::in),
 	std::istream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 
@@ -120,6 +121,7 @@ HTTPHeaderOutputStream::HTTPHeaderOutputStream(HTTPSession& session):
 	HTTPHeaderIOS(session, std::ios::out),
 	std::ostream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 

@@ -10,6 +10,20 @@
 namespace DB
 {
 
+/// Postpone reasons for parts that cannot be merged or mutated
+namespace PostponeReasons
+{
+    inline constexpr auto QUORUM_NOT_REACHED = "Quorum not reached yet";
+    inline constexpr auto REACH_MEMORY_LIMIT = "Reach memory limit";
+    inline constexpr auto EXCEED_MAX_QUEUED_MERGES = "Exceed max queued merges";
+    inline constexpr auto NO_FREE_THREADS = "No free threads in pool";
+    inline constexpr auto EXCEED_MAX_PART_SIZE = "Exceed max source part size";
+    inline constexpr auto HIT_MUTATION_BACKOFF = "Hit mutation backoff policy";
+    inline constexpr auto VERSION_NOT_VISIBLE = "Not visible by transaction version";
+
+    /// Special key in parts_postpone_reasons map indicating the reason applies to all parts
+    inline constexpr auto ALL_PARTS_KEY = "all_parts";
+}
 
 struct MergeTreeMutationStatus
 {
@@ -24,6 +38,9 @@ struct MergeTreeMutationStatus
 
     /// Parts that should be mutated/merged or otherwise moved to Obsolete state for this mutation to complete.
     Names parts_to_do_names = {};
+
+    /// Map of part names to reasons why they are postponed
+    std::map<String, String> parts_postpone_reasons = {};
 
     /// If the mutation is done. Note that in case of ReplicatedMergeTree parts_to_do == 0 doesn't imply is_done == true.
     bool is_done = false;

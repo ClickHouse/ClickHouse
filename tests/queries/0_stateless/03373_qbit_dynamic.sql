@@ -1,4 +1,3 @@
-SET enable_qbit_type = 1;
 SET allow_experimental_dynamic_type = 1;
 
 DROP TABLE IF EXISTS qbit_dynamic_test;

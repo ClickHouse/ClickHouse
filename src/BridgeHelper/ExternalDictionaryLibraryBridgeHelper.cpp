@@ -1,22 +1,23 @@
 #include <BridgeHelper/ExternalDictionaryLibraryBridgeHelper.h>
 
 #include <Core/Block.h>
-#include <Formats/formatBlock.h>
+#include <Core/Field.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/Formats/IInputFormat.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/formatBlock.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Formats/FormatFactory.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <QueryPipeline/Pipe.h>
+#include <base/range.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
-#include <Common/logger_useful.h>
-#include <base/range.h>
-#include <Core/Field.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -97,7 +98,7 @@ bool ExternalDictionaryLibraryBridgeHelper::bridgeHandShake()
                         "Unexpected message from library bridge: {}. "
                         "Check that bridge and server have the same version.", result);
 
-    UInt8 dictionary_id_exists;
+    UInt8 dictionary_id_exists = 0;
     auto parsed = tryParse<UInt8>(dictionary_id_exists, result);
     if (!parsed || (dictionary_id_exists != 0 && dictionary_id_exists != 1))
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -216,7 +217,7 @@ QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadAll()
 }
 
 
-static String getDictIdsString(const std::vector<UInt64> & ids)
+static String getDictIdsString(const VectorWithMemoryTracking<UInt64> & ids)
 {
     WriteBufferFromOwnString out;
     writeVectorBinary(ids, out);
@@ -224,7 +225,7 @@ static String getDictIdsString(const std::vector<UInt64> & ids)
 }
 
 
-QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
+QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadIds(const VectorWithMemoryTracking<uint64_t> & ids)
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_LOAD_IDS_METHOD);
@@ -260,7 +261,7 @@ bool ExternalDictionaryLibraryBridgeHelper::executeRequest(const Poco::URI & uri
                    .withOutCallback(std::move(out_stream_callback))
                    .create(credentials);
 
-    bool res;
+    bool res = false;
     readBoolText(res, *buf);
     return res;
 }

@@ -83,26 +83,25 @@ class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransac
 public:
     explicit MetadataStorageFromPlainObjectStorageTransaction(MetadataStorageFromPlainObjectStorage & metadata_storage_, ObjectStoragePtr object_storage_);
 
-    const IMetadataStorage & getStorageForNonTransactionalReads() const override;
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
+    void commit(const TransactionCommitOptionsVariant & options) override;
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
 
     void createMetadataFile(const std::string & /*path*/, const StoredObjects & /* objects */) override {}
     void createDirectory(const std::string & /*path*/) override {}
     void createDirectoryRecursive(const std::string & /*path*/) override {}
-    void commit(const TransactionCommitOptionsVariant & /*options*/) override {}
     bool supportsChmod() const override { return false; }
 
-    void unlinkFile(const std::string & path) override;
-    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
-
+    void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects) override;
     void removeDirectory(const std::string & path) override;
-    void removeRecursive(const std::string &) override;
+    void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects) override;
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
+    StoredObjects getSubmittedForRemovalBlobs() override;
 
 private:
     MetadataStorageFromPlainObjectStorage & metadata_storage;
     ObjectStoragePtr object_storage;
+    StoredObjects objects_to_remove;
 };
 
 }

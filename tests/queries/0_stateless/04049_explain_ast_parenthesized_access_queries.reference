@@ -1,0 +1,2 @@
+EXPLAIN AST graph = 1, optimize = 0\n(ALTER ROW POLICY p1 ON d0.t57 RENAME TO p7)\nSETTINGS schema_inference_use_cache_for_s3 = 0
+EXPLAIN AST graph = 1, optimize = 0\n(ALTER ROW POLICY p1 ON d0.t57 RENAME TO p7)\nSETTINGS schema_inference_use_cache_for_s3 = 0

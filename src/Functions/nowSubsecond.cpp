@@ -1,4 +1,5 @@
 #include <Common/intExp10.h>
+#include <Common/ErrnoException.h>
 #include <Core/DecimalFunctions.h>
 #include <Functions/nowSubsecond.h>
 

@@ -1,46 +1,22 @@
-include (CheckCXXCompilerFlag)
-include (CheckCCompilerFlag)
+# Append -W${flag} to the compile flags.
+#
+# Historically these macros invoked `check_cxx_compiler_flag` to probe the compiler at configure
+# time. We have removed all such build-time checks: the project requires Clang of a known minimum
+# version (see `cmake/tools.cmake`), so the set of supported warning flags is fixed and known
+# statically. The right place to gate version-specific warnings is `cmake/warnings.cmake`,
+# behind an explicit `CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL N` guard.
 
-# Try to add -Wflag if compiler supports it
 macro (add_warning flag)
-    string (REPLACE "-" "_" underscored_flag ${flag})
-    string (REPLACE "+" "x" underscored_flag ${underscored_flag})
-
-    check_cxx_compiler_flag("-W${flag}" SUPPORTS_CXXFLAG_${underscored_flag})
-    check_c_compiler_flag("-W${flag}" SUPPORTS_CFLAG_${underscored_flag})
-
-    if (SUPPORTS_CXXFLAG_${underscored_flag})
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -W${flag}")
-    else ()
-        message (STATUS "Flag -W${flag} is unsupported")
-    endif ()
-
-    if (SUPPORTS_CFLAG_${underscored_flag})
-        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -W${flag}")
-    else ()
-        message (STATUS "Flag -W${flag} is unsupported")
-    endif ()
-
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -W${flag}")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -W${flag}")
 endmacro ()
 
-# Try to add -Wno flag if compiler supports it
 macro (no_warning flag)
     add_warning(no-${flag})
 endmacro ()
 
-
-# The same but only for specified target.
 macro (target_add_warning target flag)
-    string (REPLACE "-" "_" underscored_flag ${flag})
-    string (REPLACE "+" "x" underscored_flag ${underscored_flag})
-
-    check_cxx_compiler_flag("-W${flag}" SUPPORTS_CXXFLAG_${underscored_flag})
-
-    if (SUPPORTS_CXXFLAG_${underscored_flag})
-        target_compile_options (${target} PRIVATE "-W${flag}")
-    else ()
-        message (STATUS "Flag -W${flag} is unsupported")
-    endif ()
+    target_compile_options (${target} PRIVATE "-W${flag}")
 endmacro ()
 
 macro (target_no_warning target flag)

@@ -1,7 +1,4 @@
 <test>
-    <settings>
-        <enable_qbit_type>1</enable_qbit_type>
-    </settings>
     <substitutions>
         <substitution>
             <name>vector_size</name>

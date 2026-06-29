@@ -4,6 +4,7 @@ CREATE TABLE 02898_parallel_replicas_final (x String, y Int32) ENGINE = Replacin
 
 INSERT INTO 02898_parallel_replicas_final SELECT toString(number), number % 3 FROM numbers(1000);
 
+SET automatic_parallel_replicas_mode = 0;
 SELECT y, count()
 FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), 02898_parallel_replicas_final) FINAL
 GROUP BY y
