@@ -36,7 +36,7 @@ SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functio
     };
     FunctionDocumentation::IntroducedIn introduced_in_pathFull = {1, 1};
     FunctionDocumentation::Category category_pathFull = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_pathFull = {description_pathFull, syntax_pathFull, arguments_pathFull, returned_value_pathFull, examples_pathFull, introduced_in_pathFull, category_pathFull};
+    FunctionDocumentation documentation_pathFull = {description_pathFull, syntax_pathFull, arguments_pathFull, {}, returned_value_pathFull, examples_pathFull, introduced_in_pathFull, category_pathFull};
 
     factory.registerFunction<FunctionPathFull>(documentation_pathFull);
 }

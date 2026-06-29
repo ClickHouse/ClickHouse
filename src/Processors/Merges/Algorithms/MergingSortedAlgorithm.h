@@ -20,6 +20,7 @@ public:
         const SortDescription & description_,
         size_t max_block_size_,
         size_t max_block_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_,
         SortingQueueStrategy sorting_queue_strategy_,
         UInt64 limit_ = 0,
         WriteBuffer * out_row_sources_buf_ = nullptr,
@@ -74,6 +75,9 @@ private:
     void insertRow(const SortCursorImpl & current);
     void insertRows(const SortCursorImpl & current, size_t num_rows);
     void insertChunk(size_t source_num);
+
+    /// Per-input pending virtual-row boundary (empty when none), used for debug checks to ensure virtual rows are placed correctly.
+    std::vector<Columns> virtual_row_boundary;
 };
 
 }

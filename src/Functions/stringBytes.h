@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Common/BitHelpers.h>
@@ -19,7 +18,7 @@ extern const int ILLEGAL_COLUMN;
 }
 
 template <typename Impl, typename Name>
-class FunctionStringBytes : public IFunction
+class FunctionStringBytes final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

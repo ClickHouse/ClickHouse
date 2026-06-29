@@ -47,7 +47,7 @@ SELECT
 FROM system.query_log
 WHERE query like '-- INSERT 1%INSERT INTO table_a%'
   AND current_database = currentDatabase()
-  AND event_date >= yesterday()
+  AND event_date >= yesterday() AND event_time >= now() - 600
 FORMAT Vertical;
 
 SELECT
@@ -72,7 +72,7 @@ WHERE initial_query_id =
           FROM system.query_log
           WHERE query like '-- INSERT 1%INSERT INTO table_a%'
             AND current_database = currentDatabase()
-            AND event_date >= yesterday()
+            AND event_date >= yesterday() AND event_time >= now() - 600
           LIMIT 1
       )
 ORDER BY view_name
@@ -95,7 +95,7 @@ SELECT
 FROM system.query_log
 WHERE query like '-- INSERT 2%INSERT INTO table_d%'
   AND current_database = currentDatabase()
-  AND event_date >= yesterday()
+  AND event_date >= yesterday() AND event_time >= now() - 600
 FORMAT Vertical;
 
 SELECT
@@ -120,7 +120,7 @@ WHERE initial_query_id =
           FROM system.query_log
           WHERE query like '-- INSERT 2%INSERT INTO table_d%'
             AND current_database = currentDatabase()
-            AND event_date >= yesterday()
+            AND event_date >= yesterday() AND event_time >= now() - 600
           LIMIT 1
       )
 ORDER BY view_name

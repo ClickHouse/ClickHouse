@@ -49,7 +49,7 @@ private:
 
     const char * getStorageEngineName() const override { return "View"; }
 
-    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -63,7 +63,7 @@ private:
 };
 
 
-std::vector<size_t> TableFunctionViewIfPermitted::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
+VectorWithMemoryTracking<size_t> TableFunctionViewIfPermitted::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
 {
     return {0};
 }
@@ -156,7 +156,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionViewIfPermitted>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionViewIfPermitted>({}, {.allow_readonly = true});
 }
 
 }

@@ -1,5 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
@@ -10,7 +11,7 @@ namespace
 
 /** ignore(...) is a function that takes any arguments, and always returns 0.
   */
-class FunctionIgnore : public IFunction
+class FunctionIgnore final : public IFunction
 {
 public:
     static constexpr auto name = "ignore";
@@ -81,7 +82,7 @@ SELECT ignore(0, 'ClickHouse', NULL)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIgnore>(documentation);
 }

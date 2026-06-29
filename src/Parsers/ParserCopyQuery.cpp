@@ -47,7 +47,7 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserSubquery s_subquery;
 
-    auto copy_element = std::make_shared<ASTCopyQuery>();
+    auto copy_element = make_intrusive<ASTCopyQuery>();
     node = copy_element;
 
     if (!s_copy.ignore(pos, expected))
@@ -119,7 +119,7 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return parseOptions(pos, copy_element, expected);
 }
 
-bool ParserCopyQuery::parseOptions(Pos & pos, std::shared_ptr<ASTCopyQuery> node, Expected & expected)
+bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery> node, Expected & expected)
 {
     ParserIdentifier s_output_identifier;
     ASTPtr output_name;

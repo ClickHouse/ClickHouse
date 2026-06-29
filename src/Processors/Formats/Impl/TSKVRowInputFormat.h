@@ -45,7 +45,7 @@ private:
     String name_buf;
 
     /// Hash table matching `field name -> position in the block`. NOTE You can use perfect hash map.
-    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
+    using NameMap = HashMap<std::string_view, size_t, StringViewHash>;
     NameMap name_map;
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
@@ -56,7 +56,7 @@ private:
     /// for row like ..., non-nullable column name=\N, ...
 };
 
-class TSKVSchemaReader : public IRowWithNamesSchemaReader
+class TSKVSchemaReader final : public IRowWithNamesSchemaReader
 {
 public:
     TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

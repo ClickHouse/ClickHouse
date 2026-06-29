@@ -20,6 +20,8 @@
 namespace DB
 {
 
+class ThreadGroup;
+
 struct CPULeaseSettings
 {
     static constexpr ResourceCost default_quantum_ns = 10'000'000;
@@ -149,11 +151,16 @@ private:
     };
 
 public:
+    /// `initial_max_slots_` is the soft ceiling on the number of slots to request from the
+    /// scheduler at startup. It must be <= `max_threads_`. Pass 0 (default) for the eager
+    /// behaviour where all `max_threads_` slots are requested up front. Lazy callers pass
+    /// the master thread count (typically 1) and grow the ceiling later via `setMax`.
     CPULeaseAllocation(
         SlotCount max_threads_,
         ResourceLink master_link_,
         ResourceLink worker_link_,
-        CPULeaseSettings settings = {});
+        CPULeaseSettings settings = {},
+        SlotCount initial_max_slots_ = 0);
     ~CPULeaseAllocation() override;
 
     /// Free all resources held by this allocation.
@@ -166,6 +173,12 @@ public:
     /// It either (a) takes already granted slot or (b) burrows slot (which we expect later to be granted).
     /// It never blocks or waits for slots. Should be used to acquire the master thread for a query.
     [[nodiscard]] AcquiredSlotPtr acquire() override;
+
+    /// Raise (or lower) the soft ceiling on the number of slots to request from the scheduler.
+    /// Growing the ceiling kicks off scheduling for the additional capacity (one request at a
+    /// time, the natural grant chain fills the rest). Shrinking does not reclaim already-
+    /// granted slots — it only caps the next round of scheduling. Hard-capped by `max_threads`.
+    void setMax(SlotCount new_max) override;
 
     // For tests only. Returns true iff resource request is enqueued in the scheduler
     bool isRequesting() const override;
@@ -181,7 +194,9 @@ private:
     size_t upscale();
 
     /// Unregisters specified thread from leased set
-    void downscale(size_t thread_num);
+    /// If shutdown is true, ConcurrencyControlDownscales profile event is not incremented
+    /// (shutdown-induced termination is normal, not resource contention)
+    void downscale(size_t thread_num, bool shutdown = false);
 
     /// Preempted thread set management
     void setPreempted(size_t thread_num);
@@ -261,6 +276,12 @@ private:
     ResourceCost consumed_ns = 0; /// Real consumption accumulated from renew() calls
     ResourceCost requested_ns = 0; /// Consumption requested from the scheduler (requested <= consumed + quantum)
 
+    /// Soft ceiling on the number of slots to request from the scheduler. Initialised
+    /// from the constructor's `initial_max_slots_` argument (or `max_threads` for the
+    /// eager default). Raised/lowered at runtime by `setMax`. `schedule()` stops issuing
+    /// new requests once `allocated >= current_max_slots`.
+    SlotCount current_max_slots = 0;
+
     /// Scheduling control (for interaction with resource scheduler)
     /// A size-limited cyclic buffer of requests that are sent to the scheduler.
     /// It may contain:
@@ -314,6 +335,13 @@ private:
     /// Introspection
     CurrentMetrics::Increment acquired_increment;
     CurrentMetrics::Increment scheduled_increment;
+    /// Stable counters for wait_timer. We cannot use CurrentThread::getProfileEvents() in
+    /// schedule() because it returns the calling thread's counters, which may be destroyed
+    /// before the timer is flushed — storing a Timer with a dangling Counters& causes UAF.
+    /// The ThreadGroupPtr keeps the ThreadGroup (and its performance_counters) alive.
+    /// Declared before wait_timer so the owner outlives the timer during member destruction.
+    std::shared_ptr<ThreadGroup> wait_thread_group;
+    ProfileEvents::Counters * wait_counters = &ProfileEvents::global_counters;
     std::optional<ProfileEvents::Timer> wait_timer;
     const size_t lease_id; /// Unique identifier for this lease allocation, used for tracing
     static std::atomic<size_t> lease_counter;

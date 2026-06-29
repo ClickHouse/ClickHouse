@@ -1,9 +1,10 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
 
 SET enable_analyzer = 1;
+SET materialize_statistics_on_insert = 1;
 
 CREATE TABLE sales (
     id Int32,
@@ -20,8 +21,9 @@ INSERT INTO products SELECT number, 'product ' || toString(number) FROM numbers(
 
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_limit = 2;
-SET allow_statistics_optimize=1;
-SET allow_experimental_statistics=1;
+SET use_statistics=1;
+SET allow_statistics=1;
+SET enable_join_runtime_filters=0;
 
 SELECT * FROM products, sales
 WHERE sales.product_id = products.id AND date = '2024-05-07'
@@ -42,7 +44,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND query like '%products, sales%'
 AND log_comment = '03279_join_choose_build_table_stats'
 ORDER BY event_time DESC
@@ -54,7 +56,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND query like '%sales, products%'
 AND log_comment = '03279_join_choose_build_table_stats'
 ORDER BY event_time DESC

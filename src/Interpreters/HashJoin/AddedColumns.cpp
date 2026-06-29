@@ -5,10 +5,14 @@ namespace DB
 {
 
 JoinOnKeyColumns::JoinOnKeyColumns(
-    const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
+    const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
+    bool keep_lowcardinality)
     : key_names(key_names_)
     /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
-    , materialized_keys_holder(JoinCommon::materializeColumns(block.getSourceBlock(), key_names))
+    /// Exception: single-LowCardinality-column joins keep the dictionary so the key getter can use it.
+    , materialized_keys_holder(keep_lowcardinality
+          ? JoinCommon::materializeColumnsKeepLowCardinality(block.getSourceBlock(), key_names)
+          : JoinCommon::materializeColumns(block.getSourceBlock(), key_names))
     , key_columns(JoinCommon::getRawPointers(materialized_keys_holder))
     , null_map(nullptr)
     , null_map_holder(extractNestedColumnsAndNullMap(key_columns, null_map))
@@ -38,7 +42,7 @@ size_t LazyOutput::buildOutput(
             if (bytes_limit)
             {
                 for (const auto & col : left_block)
-                    col.column->collectSerializedValueSizes(left_sizes, nullptr);
+                    col.column->collectSerializedValueSizes(left_sizes, nullptr, nullptr);
             }
             return buildOutputFromBlocksLimitAndOffset(
                 columns, row_refs_begin, row_refs_end,
@@ -102,8 +106,10 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
 {
     if (columns.empty())
         return rows_limit;
-    std::vector<const ColumnsInfo *> many_columns;
-    std::vector<UInt32> row_nums;
+
+    ColumnsWithRowNumbers columns_with_row_numbers;
+    auto & many_columns = columns_with_row_numbers.columns;
+    auto & row_nums = columns_with_row_numbers.row_numbers;
     many_columns.reserve(rows_limit);
     row_nums.reserve(rows_limit);
 
@@ -163,7 +169,7 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], many_columns, row_nums);
+        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], columns_with_row_numbers);
     }
     return row_nums.size();
 }
@@ -174,8 +180,10 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
 {
     if (columns.empty())
         return;
-    std::vector<const ColumnsInfo *> many_columns;
-    std::vector<UInt32> row_nums;
+
+    ColumnsWithRowNumbers columns_with_row_numbers;
+    auto & many_columns = columns_with_row_numbers.columns;
+    auto & row_nums = columns_with_row_numbers.row_numbers;
     many_columns.reserve(size_to_reserve);
     row_nums.reserve(size_to_reserve);
     for (const UInt64 * row_ref_i = row_refs_begin; row_ref_i != row_refs_end; ++row_ref_i)
@@ -206,7 +214,7 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
     }
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], many_columns, row_nums);
+        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], columns_with_row_numbers);
     }
 }
 
@@ -251,7 +259,7 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
         for (size_t j = 0; j < right_indexes_size; ++j)
         {
             const auto [column_from_block, row_num] = getBlockColumnAndRow(row_ref, lazy_output.right_indexes[j]);
-            columns[j]->insertFrom(*column_from_block, row_ref->row_num);
+            columns[j]->insertFrom(*column_from_block, row_num);
         }
     }
 }

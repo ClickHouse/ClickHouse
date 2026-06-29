@@ -49,6 +49,7 @@ class BackgroundWorker:
             raise Exception("Background thread is already running")
 
         self.stop_event.clear()
+        self.pause_event.set()
         self.thread = threading.Thread(target=self.worker_task, daemon=True)
         self.thread.start()
         self.logger.info("Background worker ready to take tasks")

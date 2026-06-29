@@ -227,7 +227,9 @@ To restore data from a backup, do the following:
 
 Restoring from a backup does not require stopping the server.
 
-For more information about backups and restoring data, see the [Data Backup](/operations/backup.md) section.
+The query processes parts in parallel, the number of threads is regulated by the `max_threads` setting.
+
+For more information about backups and restoring data, see section ["Backup and Restore in ClickHouse"](/operations/backup/overview) section.
 
 ## UNFREEZE PARTITION {#unfreeze-partition}
 

@@ -1,3 +1,7 @@
+SET explain_query_plan_default = 'legacy';
+SET use_skip_indexes_for_top_k = 0;
+SET use_top_k_dynamic_filtering = 0;
+
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
 (

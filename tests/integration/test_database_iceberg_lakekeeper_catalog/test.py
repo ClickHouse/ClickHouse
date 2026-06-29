@@ -1,9 +1,6 @@
-import json
-import random
 import requests
 import time
 import uuid
-from datetime import datetime
 
 import pandas as pd
 import pyarrow as pa
@@ -16,20 +13,24 @@ from pyiceberg.types import (
     StringType,
 )
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.test_tools import TSV, csv_compare
 
-BASE_URL_LOCAL = "http://localhost:8181/catalog"
 BASE_URL = "http://lakekeeper:8181/catalog"
 CATALOG_NAME = "demo"
 WAREHOUSE_NAME = "demo"
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\n(\n    `id` Nullable(Float64),\n    `data` Nullable(String)\n)\nENGINE = Iceberg('http://minio:9000/warehouse-rest/data/', 'minio', '[HIDDEN]')\n"
+
+def get_lakekeeper_local_url(cluster):
+    return f"http://localhost:{cluster.iceberg_rest_catalog_port}"
+
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\n(\n    `id` Nullable(Float64),\n    `data` Nullable(String)\n)\nENGINE = Iceberg('http://minio1:9001/warehouse-rest/data/', 'minio', '[HIDDEN]')\n"
 
 
-def create_warehouse(minio_ip):
-    minio_endpoint = f"http://{minio_ip}:9000"
+def create_warehouse(cluster, minio_ip, minio_port):
+    minio_endpoint = f"http://{minio_ip}:{minio_port}"
 
     warehouse_data = {
         "warehouse-name": "demo",
@@ -55,7 +56,7 @@ def create_warehouse(minio_ip):
 
     try:
         response = requests.post(
-            "http://localhost:8181/management/v1/warehouse",
+            f"{get_lakekeeper_local_url(cluster)}/management/v1/warehouse",
             headers={"Content-Type": "application/json"},
             json=warehouse_data,
             timeout=30
@@ -68,18 +69,19 @@ def create_warehouse(minio_ip):
         else:
             response.raise_for_status()
 
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException:
         raise
 
 
 def load_catalog_impl(started_cluster):
-    minio_ip = started_cluster.get_instance_ip('minio')
-    s3_endpoint = f"http://{minio_ip}:9000"
+    minio_ip = started_cluster.minio_ip
+    minio_port = started_cluster.minio_port
+    s3_endpoint = f"http://{minio_ip}:{minio_port}"
 
     return RestCatalog(
         name="my_catalog",
         warehouse=WAREHOUSE_NAME,
-        uri=BASE_URL_LOCAL,
+        uri=f"{get_lakekeeper_local_url(started_cluster)}/catalog",
         token="dummy",
         **{
             "s3.endpoint": s3_endpoint,
@@ -108,8 +110,9 @@ def started_cluster():
 
         time.sleep(15)
 
-        minio_ip = cluster.get_instance_ip('minio')
-        create_warehouse(minio_ip)
+        minio_ip = cluster.minio_ip
+        minio_port = cluster.minio_port
+        create_warehouse(cluster, minio_ip, minio_port)
 
         yield cluster
 
@@ -195,7 +198,7 @@ def test_select(started_cluster):
 
         if test_table_identifier in existing_tables:
             catalog.drop_table(test_table_identifier)
-    except Exception as e:
+    except Exception:
         pass
 
     simple_schema = Schema(
@@ -226,9 +229,9 @@ def test_select(started_cluster):
     assert list(scan_result["id"]) == [1.0, 2.0, 3.0, 4.0, 5.0]
     assert list(scan_result["data"]) == ["hello", "world", "from", "lakekeeper", "test"]
 
-    namespaces = catalog.list_namespaces()
+    catalog.list_namespaces()
 
-    tables = catalog.list_tables(namespace=test_namespace)
+    catalog.list_tables(namespace=test_namespace)
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
@@ -253,7 +256,7 @@ def create_clickhouse_iceberg_database(
     settings = {
         "catalog_type": "rest",
         "warehouse": "demo",
-        "storage_endpoint": "http://minio:9000/warehouse-rest",
+        "storage_endpoint": "http://minio1:9001/warehouse-rest",
     }
 
     settings.update(additional_settings)
@@ -295,25 +298,37 @@ def test_hide_sensitive_info(started_cluster):
         properties={"write.metadata.compression-codec": "none"},
     )
 
-    create_clickhouse_iceberg_database(
-        started_cluster,
-        node,
-        CATALOG_NAME,
-        additional_settings={"catalog_credential": "SECRET_1"},
-    )
-    show_result = node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
-    assert "SECRET_1" not in show_result
-    assert minio_secret_key not in show_result
+    def check_secret_hidden(secret, additional_settings):
+        settings = {
+            "catalog_type": "rest",
+            "warehouse": "demo",
+            "storage_endpoint": "http://minio1:9001/warehouse-rest",
+        }
+        settings.update(additional_settings)
 
-    create_clickhouse_iceberg_database(
-        started_cluster,
-        node,
-        CATALOG_NAME,
-        additional_settings={"auth_header": "SECRET_2"},
-    )
-    show_result = node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
-    assert "SECRET_2" not in show_result
-    assert minio_secret_key not in show_result
+        node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+        try:
+            node.query(
+                f"""SET allow_experimental_database_iceberg=true;
+CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
+SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}"""
+            )
+        except QueryRuntimeException as e:
+            message = str(e).split("\n(query:")[0]
+            assert secret not in message, (
+                f"Secret {secret!r} leaked into CREATE DATABASE error message"
+            )
+            assert minio_secret_key not in message, (
+                "minio secret key leaked into CREATE DATABASE error message"
+            )
+            return
+
+        show_result = node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+        assert secret not in show_result
+        assert minio_secret_key not in show_result
+
+    check_secret_hidden("SECRET_1", {"catalog_credential": "id:SECRET_1"})
+    check_secret_hidden("SECRET_2", {"auth_header": "Authorization: SECRET_2"})
 
 def test_tables_with_same_location(started_cluster):
 
@@ -364,4 +379,23 @@ def test_tables_with_same_location(started_cluster):
     assert 'bbb\nbbb\nbbb' == node.query(
         f"SELECT symbol FROM {CATALOG_NAME}.`{namespace[0]}.{table_name_2}`"
     ).strip()
+
+
+def test_invalid_auth_header_format(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
+    with pytest.raises(Exception) as err:
+        node.query(
+            f"""
+            SET allow_experimental_database_iceberg = 1;
+            CREATE DATABASE {CATALOG_NAME}
+            ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'dummy')
+            SETTINGS
+                catalog_type = 'rest',
+                warehouse = 'demo',
+                auth_header = 'wrong.header'
+            """
+        )
+    assert "Invalid auth header format" in str(err.value)
 

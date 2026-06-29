@@ -99,6 +99,7 @@ add_subdirectory (checksum-for-compressed-block)
 add_subdirectory (client)
 add_subdirectory (compressor)
 add_subdirectory (disks)
+add_subdirectory (docker-init)
 add_subdirectory (extract-from-config)
 add_subdirectory (format)
 add_subdirectory (git-import)
@@ -108,6 +109,7 @@ add_subdirectory (keeper-data-dumper)
 add_subdirectory (keeper-utils)
 add_subdirectory (local)
 add_subdirectory (obfuscator)
+add_subdirectory (oom-canary)
 add_subdirectory (server)
 add_subdirectory (static-files-disk-uploader)
 add_subdirectory (su)
@@ -177,11 +179,13 @@ clickhouse_program_install(clickhouse-checksum-for-compressed-block checksum-for
 clickhouse_program_install(clickhouse-client client chc)
 clickhouse_program_install(clickhouse-compressor compressor)
 clickhouse_program_install(clickhouse-disks disks)
+clickhouse_program_install(clickhouse-docker-init docker-init)
 clickhouse_program_install(clickhouse-extract-from-config extract-from-config)
 clickhouse_program_install(clickhouse-format format)
 clickhouse_program_install(clickhouse-git-import git-import)
 clickhouse_program_install(clickhouse-local local chl ch)
 clickhouse_program_install(clickhouse-obfuscator obfuscator)
+clickhouse_program_install(clickhouse-oom-canary oom-canary)
 clickhouse_program_install(clickhouse-server server)
 clickhouse_program_install(clickhouse-static-files-disk-uploader static-files-disk-uploader)
 clickhouse_program_install(clickhouse-su su)
@@ -223,7 +227,30 @@ endif ()
 add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 
 if (USE_BINARY_HASH)
-    add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .clickhouse.hash=hash clickhouse COMMENT "Adding section '.clickhouse.hash' to clickhouse binary" VERBATIM)
+    add_dependencies(clickhouse hash-binary)
+
+    # When cross-compiling, use the native-built hash-binary; otherwise use the regular build output
+    if (CMAKE_CROSSCOMPILING)
+        set(HASH_BINARY_PATH "${PROJECT_BINARY_DIR}/native/utils/hash-binary/hash-binary")
+    else()
+        set(HASH_BINARY_PATH "$<TARGET_FILE:hash-binary>")
+    endif()
+
+    add_custom_command(TARGET clickhouse POST_BUILD
+        COMMAND ${HASH_BINARY_PATH} clickhouse > hash 2> /dev/null
+        COMMENT "Computing hash of clickhouse binary" VERBATIM)
+
+    if (NOT CMAKE_CROSSCOMPILING)
+        add_custom_command(TARGET clickhouse POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "Verifying hash-binary utility matches clickhouse hash-binary..."
+            COMMAND sh -c "./clickhouse hash-binary > hash.verify && diff -u hash hash.verify || (echo 'ERROR: hash-binary utility output does not match clickhouse hash-binary' && exit 1)"
+            COMMAND ${CMAKE_COMMAND} -E rm hash.verify
+            COMMENT "Verifying hash-binary output matches clickhouse hash-binary" VERBATIM)
+    endif()
+
+    add_custom_command(TARGET clickhouse POST_BUILD
+        COMMAND ${OBJCOPY_PATH} --add-section .clickhouse.hash=hash clickhouse
+        COMMENT "Adding section '.clickhouse.hash' to clickhouse binary" VERBATIM)
 endif()
 
 if (CHECK_LARGE_OBJECT_SIZES)

@@ -1,0 +1,18 @@
+parts before dry run
+all_1_1_0	2
+all_2_2_0	2
+all_3_3_0	2
+projection parts before dry run
+all_1_1_0	p_sum	1
+all_2_2_0	p_sum	2
+all_3_3_0	p_sum	2
+parts after dry run with projections
+all_1_1_0	2
+all_2_2_0	2
+all_3_3_0	2
+projection parts after dry run
+all_1_1_0	p_sum	1
+all_2_2_0	p_sum	2
+all_3_3_0	p_sum	2
+profile events projections
+OPTIMIZE TABLE t_dry_run_proj DRY RUN PARTS \'all_1_1_0\', \'all_2_2_0\', \'all_3_3_0\';	Optimize	2	11	6	10

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-random-settings, no-object-storage, no-replicated-database, no-shared-merge-tree
 # Tag no-random-settings: enable after root causing flakiness
+# Tag no-replicated-database: plain rewritable should not be shared between replicas
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

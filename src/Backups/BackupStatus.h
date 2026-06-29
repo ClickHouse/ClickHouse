@@ -32,4 +32,12 @@ std::string_view toString(BackupStatus backup_status);
 /// which is used to create DataTypeEnum8 to store those statuses.
 const std::vector<std::pair<String, Int8>> & getBackupStatusEnumValues();
 
+enum class SnapshotLockStatus : uint8_t
+{
+    SNAPSHOT_LOCKED,
+    SNAPSHOT_UNLOCKING,
+};
+
+const std::vector<std::pair<String, Int8>> & getSnapshotLockStatusEnumValues();
+
 }

@@ -3,17 +3,11 @@ description: 'Optional prepared data structure for usage in JOIN operations.'
 sidebar_label: 'Join'
 sidebar_position: 70
 slug: /engines/table-engines/special/join
-title: 'Join Table Engine'
+title: 'Join table engine'
 doc_type: 'reference'
 ---
 
-# `Join` table engine
-
 Optional prepared data structure for usage in [JOIN](/sql-reference/statements/select/join) operations.
-
-:::note
-This is not an article about the [JOIN clause](/sql-reference/statements/select/join) itself.
-:::
 
 :::note
 In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
@@ -24,8 +18,8 @@ In ClickHouse Cloud, if your service was created with a version earlier than 25.
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
 ) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
 ```
 
@@ -119,7 +113,7 @@ CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
 ```
 
 ```sql
-INSERT INTO id_val VALUES (1,11)(2,12)(3,13);
+INSERT INTO id_val VALUES (1,11), (2,12), (3,13);
 ```
 
 Creating the right-side `Join` table:
@@ -129,7 +123,7 @@ CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
 ```
 
 ```sql
-INSERT INTO id_val_join VALUES (1,21)(1,22)(3,23);
+INSERT INTO id_val_join VALUES (1,21), (1,22), (3,23);
 ```
 
 Joining the tables:

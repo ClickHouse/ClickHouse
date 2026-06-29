@@ -1,0 +1,40 @@
+=== Correctness ===
+652	6520	y
+782	7820	y
+648	6480	y
+886	8860	y
+598	5980	y
+652	6520	y
+782	7820	y
+648	6480	y
+886	8860	y
+598	5980	y
+=== Plan structure ===
+2
+1
+=== Full EXPLAIN ===
+Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
+  Expression
+    JoinLazyColumnsStep
+      Limit (preliminary LIMIT)
+        Sorting (Sorting for ORDER BY)
+          Expression
+            Filter
+              Union
+                InputSelector
+                  LazyFinalKeyAnalysis
+                    CreatingSet
+                      Expression
+                        Expression
+                          ReadFromMergeTree (default.t_lazy_both)
+                  JoinLazyColumnsStep
+                    LazyReadReplacingFinal
+                      Expression
+                        Aggregating
+                          Expression
+                            Expression
+                              ReadFromMergeTree (default.t_lazy_both)
+                    LazilyReadFromMergeTree
+                  ReadFromMergeTree (default.t_lazy_both)
+                ReadFromMergeTree (default.t_lazy_both)
+      LazilyReadFromMergeTree

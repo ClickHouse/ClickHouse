@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
@@ -18,7 +19,7 @@ namespace Setting
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
 {
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->virtual_columns->getSampleBlock();
+    auto virtual_header = storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
 
     return {non_virtual_header, virtual_header};
 }
@@ -155,19 +156,19 @@ Chunk NATSSource::generate()
         {
             auto subject = consumer->getSubject();
             virtual_columns[0]->insertMany(subject, new_rows);
+            virtual_columns[1]->insertMany(storage.getStorageID().getTableName(), new_rows);
             if (handle_error_mode == StreamingHandleErrorMode::STREAM)
             {
                 if (exception_message)
                 {
                     const auto & current_message = consumer->getCurrentMessage();
-                    virtual_columns[1]->insertData(current_message.data(), current_message.size());
-                    virtual_columns[2]->insertData(exception_message->data(), exception_message->size());
-
+                    virtual_columns[2]->insertData(current_message);
+                    virtual_columns[3]->insertData(*exception_message);
                 }
                 else
                 {
-                    virtual_columns[1]->insertDefault();
                     virtual_columns[2]->insertDefault();
+                    virtual_columns[3]->insertDefault();
                 }
             }
 

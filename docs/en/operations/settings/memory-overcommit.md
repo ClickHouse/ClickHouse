@@ -6,8 +6,6 @@ title: 'Memory overcommit'
 doc_type: 'reference'
 ---
 
-# Memory overcommit
-
 Memory overcommit is an experimental technique intended to allow to set more flexible memory limits for queries.
 
 The idea of this technique is to introduce settings which can represent guaranteed amount of memory a query can use.

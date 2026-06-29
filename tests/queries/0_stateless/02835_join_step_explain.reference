@@ -22,7 +22,7 @@ Positions: 4 0 1 2
            INPUT :: 2 -> __table2.id UInt64 : 2
            INPUT :: 3 -> __table2.value_1 String : 3
   Positions: 0 1 2 3
-    Join
+    Join (JOIN FillRightFirst)
     Header: __table1.id UInt64
             __table1.value_1 String
             __table2.id UInt64
@@ -96,14 +96,14 @@ Positions: 4 0 1 2
            INPUT :: 2 -> __table2.id UInt64 : 2
            INPUT :: 3 -> __table2.value_1 String : 3
   Positions: 0 1 2 3
-    Join
+    Join (JOIN FillRightFirst)
     Header: __table1.id UInt64
             __table1.value_1 String
             __table2.id UInt64
             __table2.value_1 String
     Type: INNER
     Strictness: ASOF
-    Algorithm: HashJoin
+    Algorithm: ConcurrentHashJoin
     ASOF inequality: LESS
     Clauses: [(__table1.id, __table1.value_2) = (__table2.id, __table2.value_2)]
       Expression (Left Pre Join Actions)

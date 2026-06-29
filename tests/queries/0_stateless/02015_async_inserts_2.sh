@@ -23,6 +23,8 @@ ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO async_inserts FORMAT CSV
 4,"c"
 3,"d"' &
 
+sleep 2
+${CLICKHOUSE_CURL} -sS "$url" -d 'SYSTEM FLUSH ASYNC INSERT QUEUE async_inserts;'
 wait
 
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM async_inserts ORDER BY id"

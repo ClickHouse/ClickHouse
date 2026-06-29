@@ -62,20 +62,24 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             # Select sacrifice instance to test CONNECTION_LOSS and server fail on it
             sacrifice = self.instances["ch4"]
             self.pm_random_drops = PartitionManager()
-            self.pm_random_drops._add_rule(
+            self.pm_random_drops.add_rule(
                 {
+                    "instance": sacrifice,
                     "probability": 0.01,
                     "destination": sacrifice.ip_address,
                     "source_port": 2181,
                     "action": "REJECT --reject-with tcp-reset",
+                    "protocol": "tcp",
                 }
             )
-            self.pm_random_drops._add_rule(
+            self.pm_random_drops.add_rule(
                 {
+                    "instance": sacrifice,
                     "probability": 0.01,
                     "source": sacrifice.ip_address,
                     "destination_port": 2181,
                     "action": "REJECT --reject-with tcp-reset",
+                    "protocol": "tcp",
                 }
             )
 
@@ -92,7 +96,10 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             )
 
             self.ddl_check_query(
-                instance, "CREATE DATABASE IF NOT EXISTS test ON CLUSTER 'cluster'"
+                instance, "DROP DATABASE IF EXISTS test ON CLUSTER 'cluster' SYNC"
+            )
+            self.ddl_check_query(
+                instance, "CREATE DATABASE test ON CLUSTER 'cluster'"
             )
 
         except Exception as e:
@@ -110,7 +117,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
         M = TSV.toMat(tsv_content)
         hosts = [(l[0], l[1]) for l in M]  # (host, port)
         codes = [l[2] for l in M]
-        messages = [l[3] for l in M]
+        [l[3] for l in M]
 
         assert len(hosts) == num_hosts and len(set(hosts)) == num_hosts, (
             "\n" + tsv_content

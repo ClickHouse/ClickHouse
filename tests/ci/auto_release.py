@@ -6,8 +6,7 @@ import sys
 from typing import List
 
 from ci_buddy import CIBuddy
-from ci_config import CI
-from ci_utils import Shell
+from ci_utils import GH, Shell
 from env_helper import GITHUB_REPOSITORY
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
@@ -151,20 +150,25 @@ def _prepare(token):
             )
             commit_num -= 1
 
-            is_completed = CI.GH.check_wf_completed(token=token, commit_sha=commit)
+            is_completed = GH.check_wf_completed(token=token, commit_sha=commit)
             if not is_completed:
                 print(f"CI is in progress for [{commit}] - check previous commit")
                 commits_to_branch_head += 1
                 continue
 
-            commit_sha = commit
-            failed_jobs = CI.GH.get_failed_statuses(token=token, commit_sha=commit_sha)
+            failed_jobs = GH.get_failed_statuses(token=token, commit_sha=commit)
             if not failed_jobs:
+                commit_sha = commit
                 commit_ci_status = SUCCESS
+                break
             else:
-                # add failed jobs from most recent ready commit to the release info description to post it in alert
-                description = f"Failed jobs: {failed_jobs}"
-            break
+                print(
+                    f"CI failed for [{commit}]: {failed_jobs} - check previous commit"
+                )
+                # Save the description from the most recent failed commit
+                if not description:
+                    description = f"Failed jobs: {failed_jobs}"
+                commits_to_branch_head += 1
 
         ready = False
         if commit_ci_status == SUCCESS and commit_sha:

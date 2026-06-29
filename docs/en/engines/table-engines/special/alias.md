@@ -3,11 +3,11 @@ description: 'The Alias table engine creates a transparent proxy to another tabl
 sidebar_label: 'Alias'
 sidebar_position: 5
 slug: /engines/table-engines/special/alias
-title: 'Alias Table Engine'
+title: 'Alias table engine'
 doc_type: 'reference'
 ---
 
-# Alias Table Engine
+# Alias table engine
 
 The `Alias` engine creates a proxy to another table. All read and write operations are forwarded to the target table, while the alias itself stores no data and only maintains a reference to the target table.
 
@@ -33,6 +33,10 @@ The `Alias` table does not support explicit column definitions. Columns are auto
 
 - **`target_db (optional)`** — Name of the database containing the target table.
 - **`target_table`** — Name of the target table.
+
+:::note
+When `target_db` is omitted and `target_table` is not fully qualified (e.g., `Alias('my_table')`), the target is resolved to the same database as the alias itself, not the session's current database.
+:::
 
 ## Supported Operations {#supported-operations}
 

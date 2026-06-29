@@ -7,14 +7,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 disk_name="s3_cache_02944_lru"
 
-$CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
+$CLICKHOUSE_CLIENT --query "SYSTEM CLEAR FILESYSTEM CACHE"
 $CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"
 
 $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a String) engine=MergeTree() ORDER BY tuple() SETTINGS disk = '$disk_name', serialization_info_version = 'basic';
 INSERT INTO test SELECT randomString(100);
-SYSTEM DROP FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE;
 "
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE state = 'DOWNLOADED' and cache_name = '${disk_name}'"

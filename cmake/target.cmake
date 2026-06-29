@@ -71,6 +71,9 @@ if (CMAKE_CROSSCOMPILING)
             set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
             set (ENABLE_DWARF_PARSER OFF CACHE INTERNAL "")
             set (ENABLE_BLAKE3 OFF CACHE INTERNAL "")
+        elseif (ARCH_E2K)
+            # added for future use
+            # for now, we're compiling it natively.
         endif ()
     elseif (OS_FREEBSD)
         # FIXME: broken dependencies

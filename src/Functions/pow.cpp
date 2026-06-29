@@ -25,7 +25,7 @@ Returns x raised to the power of y.
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT pow(2, 3);", "8"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionPow>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("power", "pow", FunctionFactory::Case::Insensitive);

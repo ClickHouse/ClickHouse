@@ -1,0 +1,20 @@
+Fully materialized
+Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_aec84632c5c510ddd2ec7f581b35e985 UInt8 : 0
+20000
+20000
+20000
+20000
+20000
+20000
+20000
+20000
+Partially materialized
+Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_aec84632c5c510ddd2ec7f581b35e985 UInt8 : 0
+20000
+20000
+20000
+20000
+20000
+20000
+20000
+20000
