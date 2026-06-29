@@ -495,7 +495,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
 int RemoteQueryExecutor::sendQueryAsync()
 {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     LockAndBlocker lock(was_cancelled_mutex);
     if (was_cancelled)
         return -1;
@@ -578,7 +578,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     if (!read_context)
     {
         LockAndBlocker lock(was_cancelled_mutex);
@@ -792,7 +792,17 @@ void RemoteQueryExecutor::finish()
       * then you do not need to read anything.
       */
     if (!isQueryPending() || hasThrownException() || was_cancelled)
+    {
+        /// If the query was never sent there is nothing to drain, but we must still mark the
+        /// executor as finished. Otherwise a RemoteSource whose output is closed before it sends
+        /// its query (e.g. an empty-build ANY INNER JOIN that short-circuits the probe side) keeps
+        /// re-entering its drain path via prepare()/work() and spins forever, because isFinished()
+        /// never becomes true. On Linux the async startup path always sends the query before this
+        /// point, so only the synchronous (non-Linux) send path is affected.
+        if (!sent_query)
+            finished = true;
         return;
+    }
 
     /// To make sure finish is only called once
     SCOPE_EXIT({ finished = true; });
@@ -1020,7 +1030,7 @@ bool RemoteQueryExecutor::needToSkipUnavailableShard()
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
     if (!read_context->readPacketTypeSeparately())
         return false;
