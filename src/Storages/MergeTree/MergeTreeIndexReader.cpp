@@ -38,6 +38,14 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
 
     marks_loader->startAsyncLoad();
 
+    /// For packed skip indices the per-virtual-file entry is not in checksums.txt (the archive
+    /// itself is the checksummed unit). Fall back to the storage layer, whose overlay knows the
+    /// virtual file's size from the archive index.
+    const String data_file_name = stream_name + extension;
+    size_t data_file_size = part->getFileSizeOrZero(data_file_name);
+    if (data_file_size == 0 && part->getDataPartStorage().existsFile(data_file_name))
+        data_file_size = part->getDataPartStorage().getFileSize(data_file_name);
+
     return std::make_unique<MergeTreeReaderStreamSingleColumn>(
         part->getDataPartStoragePtr(),
         stream_name,
@@ -46,7 +54,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         all_mark_ranges,
         std::move(settings),
         uncompressed_cache,
-        part->getFileSizeOrZero(stream_name + extension),
+        data_file_size,
         std::move(marks_loader),
         ReadBufferFromFileBase::ProfileCallback{},
         CLOCK_MONOTONIC_COARSE);
@@ -79,7 +87,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     if (!streams.empty())
         return;
 
-    auto index_format = index->getDeserializedFormat(part->checksums, index->getFileName());
+    auto index_format = index->getDeserializedFormat(part->checksums, index->getFileName(), &part->getDataPartStorage());
     auto index_name = index->getFileName();
     auto last_mark = getLastMark(all_mark_ranges);
 
@@ -113,9 +121,9 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     version = index_format.version;
 }
 
-void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule)
+void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges)
 {
-    auto load_func = [this, mark, condition](auto & res)
+    auto load_func = [this, mark, condition, readable_ranges](auto & res)
     {
         initStreamIfNeeded();
 
@@ -134,6 +142,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .condition = condition,
             .part = *part,
             .index = *index,
+            .readable_ranges = readable_ranges,
         };
 
         res->deserializeBinaryWithMultipleStreams(streams, state);

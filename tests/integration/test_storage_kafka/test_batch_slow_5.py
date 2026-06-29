@@ -1,6 +1,10 @@
 """Long running tests, longer than 30 seconds"""
 
-from helpers.kafka.common_direct import *
+
+from kafka import KafkaAdminClient
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)
@@ -37,29 +41,7 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
-    admin_client = k.get_admin_client(cluster)
-
-    def get_topics_to_delete():
-        return [t for t in admin_client.list_topics() if not t.startswith("_")]
-
-    topics = get_topics_to_delete()
-    logging.debug(f"Deleting topics: {topics}")
-    result = admin_client.delete_topics(topics)
-    for topic, error in result.topic_error_codes:
-        if error != 0:
-            logging.warning(f"Received error {error} while deleting topic {topic}")
-        else:
-            logging.info(f"Deleted topic {topic}")
-
-    retries = 0
-    topics = get_topics_to_delete()
-    while len(topics) != 0:
-        logging.info(f"Existing topics: {topics}")
-        if retries >= 5:
-            raise Exception(f"Failed to delete topics {topics}")
-        retries += 1
-        time.sleep(0.5)
+    k.clean_test_database_and_topics(instance, cluster)
     yield  # run test
 
 
@@ -128,6 +110,8 @@ def test_formats_errors(kafka_cluster):
                             kafka_group_name = '{format_name}',
                             kafka_format = '{format_name}',
                             kafka_max_rows_per_message = 5,
+                            kafka_flush_interval_ms = 500,
+                            kafka_poll_timeout_ms = 200,
                             format_template_row='template_row.format',
                             format_regexp='id: (.+?)',
                             input_format_with_names_use_header=0,

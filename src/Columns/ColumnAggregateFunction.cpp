@@ -17,7 +17,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -453,23 +452,19 @@ void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) cons
     hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
-WeakHash32 ColumnAggregateFunction::getWeakHash32() const
+void ColumnAggregateFunction::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    auto s = data.size();
-    WeakHash32 hash(s);
-    auto & hash_data = hash.getData();
-
     VectorWithMemoryTracking<UInt8> v;
-    for (size_t i = 0; i < s; ++i)
+    for (size_t i = row_begin; i < row_end; ++i)
     {
         {
             WriteBufferFromVector<VectorWithMemoryTracking<UInt8>> wbuf(v);
             func->serialize(data[i], wbuf, version);
         }
-        hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
+        const UInt32 value = ::updateWeakHash32(v.data(), v.size(), WEAK_HASH32_INITIAL_VALUE);
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? value : combineWeakHash32(value, out);
     }
-
-    return hash;
 }
 
 void ColumnAggregateFunction::updateHashFast(SipHash & hash) const

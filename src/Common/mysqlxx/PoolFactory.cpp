@@ -9,7 +9,8 @@ namespace mysqlxx
 
 struct PoolFactory::Impl
 {
-    /// Cache of shared pools keyed by connection parameters (host, port, user, db, compression).
+    /// Cache of shared pools keyed by connection parameters (host, port, user, db, compression)
+    /// and pool settings (connection_pool_size, connection_wait_timeout).
     std::map<std::string, std::shared_ptr<PoolWithFailover>> pools;
 
     std::mutex mutex;
@@ -22,7 +23,7 @@ PoolWithFailover PoolFactory::get(const std::string & config_name, unsigned defa
 }
 
 static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_name)
+        const std::string & config_name, unsigned default_max_connections)
 {
     bool shared = config.getBool(config_name + ".share_connection", false);
 
@@ -66,6 +67,17 @@ static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & co
         std::string compression_value = parent_compression ? "1" : "0";
         entry_name = user + "@" + host + ":" + port + "/" + db + "?compression=" + compression_value;
     }
+
+    /// `connection_pool_size` and `connection_wait_timeout` describe the shared pool itself (a single
+    /// physical pool cannot have two different sizes or wait semantics). They are read at the parent
+    /// config level by PoolWithFailover's config constructor, so include them in the cache key:
+    /// dictionaries pointing at the same endpoint but requesting different pool settings must get
+    /// separate pools instead of silently inheriting the settings of whichever dictionary created the
+    /// cached pool first.
+    const unsigned pool_size = config.getUInt(config_name + ".connection_pool_size", default_max_connections);
+    const auto wait_timeout = config.getUInt64(config_name + ".connection_wait_timeout", MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT);
+    entry_name += "&pool_size=" + std::to_string(pool_size) + "&wait_timeout=" + std::to_string(wait_timeout);
+
     return entry_name;
 }
 
@@ -74,7 +86,7 @@ PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & conf
 {
     std::lock_guard lock(impl->mutex);
 
-    std::string entry_name = getPoolEntryName(config, config_name);
+    std::string entry_name = getPoolEntryName(config, config_name, max_connections);
 
     /// For shared pools (share_connection=true), entry_name encodes the actual connection
     /// parameters (host, port, user, db, compression). Use it as the cache key instead of

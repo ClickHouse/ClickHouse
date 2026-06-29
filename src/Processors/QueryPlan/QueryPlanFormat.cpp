@@ -227,10 +227,11 @@ namespace QueryPlanFormat
 
         String getRuntimeFilterId(const ActionsDAG::Node * node)
         {
-            const ActionsDAG::Node * first_child = node->children[0];
-            if (const auto * col = checkAndGetColumnConst<ColumnString>(first_child->column.get()))
-                return col->getValue<String>();
-            return first_child->result_name;
+            /// The first `__applyFilter` argument is a const whose DAG result NAME is the stable
+            /// structural id (`_runtime_filter_<hash>`), under which `runtime_filter_names` is keyed
+            /// (`BuildRuntimeFilterStep::getFilterName`). Its VALUE is the volatile per-plan-build
+            /// rendezvous key, which must never surface in EXPLAIN — so key on the result name.
+            return node->children[0]->result_name;
         }
 
         String formatSetPretty(

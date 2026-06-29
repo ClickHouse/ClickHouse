@@ -230,22 +230,25 @@ void StatementGenerator::generateDerivedTable(
 
 void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunctionUsage usage, const SQLTable & t, TableFunction * tfunc)
 {
+    ObjectStoreFunc * ofunc = nullptr;
+    MySQLFunc * myfunc = nullptr;
+
     if ((usage == TableFunctionUsage::EngineReplace && t.isMySQLEngine()) || (usage == TableFunctionUsage::PeerTable && t.hasMySQLPeer()))
     {
         const ServerCredentials & sc = fc.mysql_server.value();
-        MySQLFunc * mfunc = tfunc->mutable_mysql();
 
-        mfunc->set_rdatabase(sc.database);
-        mfunc->set_rtable(t.getBaseName());
+        myfunc = tfunc->mutable_mysql();
+        myfunc->set_rdatabase(sc.database);
+        myfunc->set_rtable(t.getBaseName());
         if (!sc.named_collection.empty())
         {
-            mfunc->set_named_collection(sc.named_collection);
+            myfunc->set_named_collection(sc.named_collection);
         }
         else
         {
-            mfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
-            mfunc->set_user(sc.user);
-            mfunc->set_password(sc.password);
+            myfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
+            myfunc->set_user(sc.user);
+            myfunc->set_password(sc.password);
         }
     }
     else if (
@@ -280,7 +283,6 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     else if (usage == TableFunctionUsage::EngineReplace && t.isEngineReplaceable())
     {
         Expr * structure = nullptr;
-        ObjectStoreFunc * ofunc = nullptr;
         const std::optional<String> & cluster = t.getCluster();
 
         if (t.isOnS3() || t.isOnAzure() || t.isOnLocal())
@@ -306,33 +308,18 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                                             : ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeS3;
                         break;
                     case TableEngineValues::AzureBlobStorage:
-                    case TableEngineValues::AzureQueue:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_azureBlobStorage;
-                        break;
-                    case TableEngineValues::IcebergAzure:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergAzure;
-                        break;
-                    case TableEngineValues::DeltaLakeAzure:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeAzure;
-                        break;
-                    case TableEngineValues::IcebergLocal:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergLocal;
-                        break;
-                    case TableEngineValues::DeltaLakeLocal:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeLocal;
-                        break;
+                    case TableEngineValues::AzureQueue: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_azureBlobStorage; break;
+                    case TableEngineValues::IcebergAzure: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergAzure; break;
+                    case TableEngineValues::DeltaLakeAzure: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeAzure; break;
+                    case TableEngineValues::IcebergLocal: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergLocal; break;
+                    case TableEngineValues::DeltaLakeLocal: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeLocal; break;
                     case TableEngineValues::PaimonS3:
                         val = rg.nextBool() ? ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimon
                                             : ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonS3;
                         break;
-                    case TableEngineValues::PaimonAzure:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonAzure;
-                        break;
-                    case TableEngineValues::PaimonLocal:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonLocal;
-                        break;
-                    default:
-                        UNREACHABLE();
+                    case TableEngineValues::PaimonAzure: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonAzure; break;
+                    case TableEngineValues::PaimonLocal: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonLocal; break;
+                    default: UNREACHABLE();
                 }
             }
             else
@@ -409,7 +396,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             structure = rg.nextMediumNumber() < 96 ? ufunc->mutable_structure() : nullptr;
             if (structure)
             {
-                addRandomHTTPHeaders(rg, ufunc);
+                addRandomHTTPHeaders(rg, tfunc);
             }
         }
         else if (t.isRedisEngine())
@@ -494,15 +481,8 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         }
         if (ofunc)
         {
-            const auto & engineSettings = allTableSettings.at(
-                t.isS3QueueEngine() ? TableEngineValues::S3 : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.teng));
-
             setObjectStoreParams<SQLTable, ObjectStoreFunc>(rg, t, ofunc);
-            addRandomHTTPHeaders(rg, ofunc);
-            if (!engineSettings.empty() && rg.nextSmallNumber() < 8)
-            {
-                generateSettingValues(rg, engineSettings, ofunc->mutable_setting_values());
-            }
+            addRandomHTTPHeaders(rg, tfunc);
         }
     }
     else if (usage == TableFunctionUsage::ClusterCall)
@@ -557,6 +537,19 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     else
     {
         UNREACHABLE();
+    }
+    if (ofunc || myfunc)
+    {
+        static const std::unordered_map<String, CHSetting> mySQLTFSettings = {{"enable_compression", trueOrFalseSetting}};
+        const auto & engineSettings = myfunc
+            ? mySQLTFSettings
+            : allTableSettings.at(
+                  t.isS3QueueEngine() ? TableEngineValues::S3 : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.teng));
+
+        if (!engineSettings.empty() && rg.nextSmallNumber() < 8)
+        {
+            generateSettingValues(rg, engineSettings, tfunc->mutable_setting_values());
+        }
     }
 }
 
@@ -1120,7 +1113,8 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             String url;
             String buf;
             bool first = true;
-            URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
+            TableFunction * tf = tof->mutable_tfunc();
+            URLFunc * ufunc = tf->mutable_url();
             const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
             const std::optional<String> & cluster = tt.getCluster();
             const OutFormat outf = rg.nextBool()
@@ -1161,7 +1155,7 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
                 ufunc->set_outformat(outf);
             }
             ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
-            addRandomHTTPHeaders(rg, ufunc);
+            addRandomHTTPHeaders(rg, tf);
             addTableRelation(rg, rg.nextMediumNumber() < 4, rel_name, tt);
         }
         break;

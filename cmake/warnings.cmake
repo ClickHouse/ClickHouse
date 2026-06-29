@@ -49,6 +49,11 @@ no_warning(missing-noreturn) # too aggressive with no clear benefit, see https:/
 if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
     no_warning(lifetime-safety-intra-tu-suggestions)
     no_warning(lifetime-safety-cross-tu-suggestions)
+    # Too many false positives: it treats mutation of a container captured by
+    # reference in a lambda (e.g. `push_back`, `clear`, `+=`) as invalidating the
+    # captured reference to the container variable itself, while in reality only
+    # references to the container's elements would be invalidated.
+    no_warning(lifetime-safety-invalidation)
 endif ()
 if (ARCH_E2K)
     # disable "use of GNU statement expression extension from macro expansion" warning

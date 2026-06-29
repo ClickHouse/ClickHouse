@@ -16,6 +16,14 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -223,6 +231,13 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     if (!has_vector_similarity_index)
         return no_layers_updated;
 
+    /// The `_distance` column is an internal virtual column populated by the vector search optimization.
+    /// It must not be referenced directly in queries.
+    if (read_from_mergetree_step->isVectorColumnReplaced())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
+            "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
+
     /// All set for 2nd pass
     auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, additional_filters_present, true);
     read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
@@ -308,6 +323,13 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     auto vector_search_parameters = read_from_mergetree_step->getVectorSearchParameters();
     if (!vector_search_parameters.has_value())
         return false;
+
+    /// The `_distance` column is an internal virtual column populated by the vector search optimization.
+    /// It must not be referenced directly in queries.
+    if (read_from_mergetree_step->isVectorColumnReplaced())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
+            "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
 
     /// The optimization is only possible if the index-analyis and query execution
     /// are both executed on the same node.

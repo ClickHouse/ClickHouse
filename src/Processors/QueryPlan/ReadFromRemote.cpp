@@ -588,11 +588,17 @@ void ReadFromRemote::addLazyPipe(
         context->setSetting("cluster_for_parallel_replicas", cluster_name);
     }
 
-    const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
-    const StoragePtr storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
-    if (!storage)
+    /// The storage is only consumed by the stale-replica branch below, which applies solely to
+    /// replicated tables. Table functions have an empty main table and reach this path only when the
+    /// use_delayed_remote_source failpoint forces a lazy read, and that branch is skipped for them, so
+    /// resolving the empty StorageID would needlessly throw. This mirrors the guard in addPipe.
+    StoragePtr storage;
+    if (!table_func_ptr)
     {
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
+        const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
+        storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+        if (!storage)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
     }
 
     auto lazily_create_stream = [
@@ -647,7 +653,9 @@ void ReadFromRemote::addLazyPipe(
             use_delayed_remote_source = true;
         });
 
-        if (!use_delayed_remote_source)
+        // The stale-local-replica logic below applies only to real replicated tables. A table function
+        // has no local storage and reaches a lazy shard only via the failpoint, so it always reads remotely.
+        if (!use_delayed_remote_source && !my_table_func_ptr)
         {
             const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
             if (!replicated_storage)
