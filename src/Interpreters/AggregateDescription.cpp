@@ -197,14 +197,14 @@ void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, Wr
 
 void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in)
 {
-    UInt64 num_aggregates;
+    UInt64 num_aggregates = 0;
     readVarUInt(num_aggregates, in);
     aggregates.resize(num_aggregates);
     for (auto & aggregate : aggregates)
     {
         readStringBinary(aggregate.column_name, in);
 
-        UInt64 num_args;
+        UInt64 num_args = 0;
         readVarUInt(num_args, in);
         aggregate.argument_names.resize(num_args);
 
@@ -220,7 +220,7 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
         String function_name;
         readStringBinary(function_name, in);
 
-        UInt64 num_params;
+        UInt64 num_params = 0;
         readVarUInt(num_params, in);
         aggregate.parameters.resize(num_params);
         for (auto & param : aggregate.parameters)

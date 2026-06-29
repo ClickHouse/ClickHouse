@@ -1,0 +1,28 @@
+Queries from issue #105294
+(['y'],[6])
+{'y':6}
+NaN first then a real value
+{'y':6}
+(['y'],[6])
+A real value first then NaN
+{'y':6}
+(['y'],[6])
+{'y':6}
+(['y'],[6])
+All NaN values keep NaN
+{'y':nan}
+(['y'],[nan])
+{'y':nan}
+(['y'],[nan])
+NaN sandwiched between real values
+(['y'],[6])
+(['y'],[3])
+Float32 too
+(['y'],[6])
+(['y'],[6])
+Integer types are unaffected
+(['y'],[6])
+(['y'],[3])
+Merging across groups (forces serialize/deserialize path)
+(['y'],[6])
+(['y'],[6])

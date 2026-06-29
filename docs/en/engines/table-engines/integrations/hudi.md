@@ -8,8 +8,6 @@ title: 'Hudi table engine'
 doc_type: 'reference'
 ---
 
-# Hudi table engine
-
 This engine provides a read-only integration with existing Apache [Hudi](https://hudi.apache.org/) tables in Amazon S3.
 
 ## Create table {#create-table}
@@ -42,7 +40,7 @@ Using named collections:
     <named_collections>
         <hudi_conf>
             <url>http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/</url>
-            <access_key_id>ABC123<access_key_id>
+            <access_key_id>ABC123</access_key_id>
             <secret_access_key>Abc+123</secret_access_key>
         </hudi_conf>
     </named_collections>

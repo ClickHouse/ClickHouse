@@ -1,7 +1,9 @@
+import concurrent.futures
 import logging
 import os
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 import boto3
@@ -11,6 +13,8 @@ from pyiceberg.catalog import load_catalog
 from helpers.catalog_manager import CatalogManager, arrow_to_iceberg_schema
 
 log = logging.getLogger(__name__)
+
+NAMESPACE_PREFIX = "ch_e2e_glue_"
 
 
 @dataclass
@@ -32,6 +36,10 @@ class AwsGlueConfig:
 
 
 class AwsGlueCatalogManager(CatalogManager):
+    # Only clean up databases older than this to avoid racing with other
+    # concurrently running test sessions.
+    _STALE_GRACE_SECONDS: int = 43200  # 12 hours
+
     def __init__(self, config: AwsGlueConfig):
         self.config = config
         os.environ["AWS_DEFAULT_REGION"] = config.region
@@ -46,6 +54,13 @@ class AwsGlueCatalogManager(CatalogManager):
         )
         self._namespaces_created: List[str] = []
         self._tables_created: List[Tuple[str, str]] = []
+        self._glue = boto3.client(
+            "glue",
+            region_name=config.region,
+            aws_access_key_id=config.access_key_id,
+            aws_secret_access_key=config.secret_access_key,
+            aws_session_token=config.session_token or None,
+        )
         self._s3 = boto3.client(
             "s3",
             region_name=config.region,
@@ -53,6 +68,78 @@ class AwsGlueCatalogManager(CatalogManager):
             aws_secret_access_key=config.secret_access_key,
             aws_session_token=config.session_token or None,
         )
+
+        self._cleanup_stale_databases()
+
+    def _cleanup_stale_databases(self) -> None:
+        """Remove `ch_e2e_glue_*` Glue databases older than `_STALE_GRACE_SECONDS`.
+
+        Leftovers accumulate in Glue whenever a test run crashes (the
+        per-session `cleanup_all` only knows about namespaces created in
+        *this* run). With many leftovers, ClickHouse's catalog refresh
+        path -- which iterates every Glue database in the account on each
+        query -- balloons to minutes per query. Trim aggressively at
+        session start, skipping anything younger than the grace window so
+        we don't race a concurrent session.
+        """
+        try:
+            now = datetime.now(timezone.utc)
+            stale: List[str] = []
+            for page in self._glue.get_paginator("get_databases").paginate():
+                for db in page.get("DatabaseList", []):
+                    name = db["Name"]
+                    if not name.startswith(NAMESPACE_PREFIX):
+                        continue
+                    create_time = db.get("CreateTime")
+                    if create_time is None:
+                        continue
+                    age = (now - create_time).total_seconds()
+                    if age >= self._STALE_GRACE_SECONDS:
+                        stale.append(name)
+            if not stale:
+                return
+            log.info(
+                "Cleaning up %d stale Glue databases (older than %ds)",
+                len(stale), self._STALE_GRACE_SECONDS,
+            )
+            with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+                list(pool.map(self._delete_glue_database, stale))
+        except Exception as exc:
+            log.warning("Stale Glue database cleanup failed: %s", exc)
+
+    def _delete_glue_database(self, db: str) -> None:
+        """Drop all tables in `db`, the database itself, and its S3 prefix."""
+        try:
+            for page in self._glue.get_paginator("get_tables").paginate(DatabaseName=db):
+                for t in page.get("TableList", []):
+                    try:
+                        self._glue.delete_table(DatabaseName=db, Name=t["Name"])
+                    except Exception as exc:
+                        log.debug("delete_table(%s.%s) failed: %s", db, t["Name"], exc)
+            try:
+                self._glue.delete_database(Name=db)
+            except Exception as exc:
+                log.debug("delete_database(%s) failed: %s", db, exc)
+            self._delete_s3_prefix_dir(db)
+        except Exception as exc:
+            log.warning("Cleanup of stale Glue database '%s' failed: %s", db, exc)
+
+    def _delete_s3_prefix_dir(self, namespace: str) -> None:
+        prefix = f"{self.config.prefix}/{namespace}/"
+        try:
+            keys: List[Dict[str, str]] = []
+            for page in self._s3.get_paginator("list_objects_v2").paginate(
+                Bucket=self.config.bucket, Prefix=prefix
+            ):
+                for obj in page.get("Contents", []):
+                    keys.append({"Key": obj["Key"]})
+            for i in range(0, len(keys), 1000):
+                self._s3.delete_objects(
+                    Bucket=self.config.bucket,
+                    Delete={"Objects": keys[i:i + 1000]},
+                )
+        except Exception as exc:
+            log.debug("S3 cleanup of '%s' failed: %s", namespace, exc)
 
     @classmethod
     def from_env(cls) -> "AwsGlueCatalogManager":
@@ -106,7 +193,7 @@ class AwsGlueCatalogManager(CatalogManager):
     def create_table(
         self, data: pa.Table, table_name: Optional[str] = None
     ) -> str:
-        namespace = f"ch_e2e_glue_{uuid.uuid4().hex[:10]}"
+        namespace = f"{NAMESPACE_PREFIX}{uuid.uuid4().hex[:10]}"
         if table_name is None:
             table_name = f"tbl_{uuid.uuid4().hex[:8]}"
 

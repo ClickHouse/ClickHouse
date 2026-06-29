@@ -15,6 +15,7 @@
 #include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
+#include <Client/sanitizeUntrustedServerString.h>
 #include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
@@ -43,6 +44,7 @@
 #include <Core/Types.h>
 #include "config.h"
 
+#include <base/scope_guard.h>
 #include <fmt/ranges.h>
 
 #if USE_SSL
@@ -86,6 +88,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 Connection::~Connection()
@@ -575,16 +578,23 @@ void Connection::receiveHello()
     readVarUInt(packet_type, *in);
     if (packet_type == Protocol::Server::Hello)
     {
-        readStringBinary(server_name, *in);
+        readStringBinary(server_name, *in, DBMS_MAX_HELLO_STRING_SIZE);
+        sanitizeUntrustedServerString(server_name);
         readVarUInt(server_version_major, *in);
         readVarUInt(server_version_minor, *in);
         readVarUInt(server_revision, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
             readVarUInt(server_parallel_replicas_protocol_version, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
-            readStringBinary(server_timezone, *in);
+        {
+            readStringBinary(server_timezone, *in, DBMS_MAX_HELLO_STRING_SIZE);
+            sanitizeUntrustedServerString(server_timezone);
+        }
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
-            readStringBinary(server_display_name, *in);
+        {
+            readStringBinary(server_display_name, *in, DBMS_MAX_HELLO_STRING_SIZE);
+            sanitizeUntrustedServerString(server_display_name);
+        }
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
             readVarUInt(server_version_patch, *in);
         else
@@ -592,22 +602,33 @@ void Connection::receiveHello()
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
         {
-            readStringBinary(proto_send_chunked_srv, *in);
-            readStringBinary(proto_recv_chunked_srv, *in);
+            /// These are tiny protocol tokens ("chunked" / "notchunked") compared in
+            /// `is_chunked`; cap them so a hostile server cannot force a large allocation.
+            readStringBinary(proto_send_chunked_srv, *in, DBMS_MAX_HELLO_STRING_SIZE);
+            readStringBinary(proto_recv_chunked_srv, *in, DBMS_MAX_HELLO_STRING_SIZE);
         }
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
         {
-            UInt64 rules_size;
+            UInt64 rules_size = 0;
             readVarUInt(rules_size, *in);
+            /// `rules_size` is server-controlled and feeds a `reserve`; reject absurd
+            /// values so a hostile server cannot force a huge allocation. The server
+            /// enforces the same cap at construction time (see TCPHandler::sendHello).
+            if (rules_size > DBMS_MAX_PASSWORD_COMPLEXITY_RULES)
+                throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+                    "Server declared {} password-complexity rules, maximum allowed is {}",
+                    rules_size, DBMS_MAX_PASSWORD_COMPLEXITY_RULES);
             password_complexity_rules.reserve(rules_size);
 
             for (size_t i = 0; i < rules_size; ++i)
             {
                 String original_pattern;
                 String exception_message;
-                readStringBinary(original_pattern, *in);
-                readStringBinary(exception_message, *in);
+                readStringBinary(original_pattern, *in, DBMS_MAX_HELLO_STRING_SIZE);
+                readStringBinary(exception_message, *in, DBMS_MAX_HELLO_STRING_SIZE);
+                sanitizeUntrustedServerString(original_pattern);
+                sanitizeUntrustedServerString(exception_message);
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
             }
         }
@@ -615,7 +636,7 @@ void Connection::receiveHello()
         {
             chassert(!nonce.has_value());
 
-            UInt64 read_nonce;
+            UInt64 read_nonce = 0;
             readIntBinary(read_nonce, *in);
             nonce.emplace(read_nonce);
         }
@@ -1096,15 +1117,6 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->throttle(out->count() - prev_bytes);
 }
 
-void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
-    writeVectorBinary(uuids, *out);
-    out->finishChunk();
-    out->next();
-}
-
-
 void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
@@ -1310,12 +1322,15 @@ std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
 
 bool Connection::poll(size_t timeout_microseconds)
 {
+    ensureConnected();
     return in->poll(timeout_microseconds);
 }
 
 
 bool Connection::hasReadPendingData() const
 {
+    if (!in)
+        return false;
     return last_input_packet_type.has_value() || in->hasBufferedData();
 }
 
@@ -1327,7 +1342,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 
     if (hasReadPendingData() || poll(timeout_microseconds))
     {
-        UInt64 packet_type;
+        UInt64 packet_type = 0;
         readVarUInt(packet_type, *in);
 
         last_input_packet_type.emplace(packet_type);
@@ -1344,20 +1359,26 @@ UInt64 Connection::receivePacketType()
     if (last_input_packet_type)
         return *last_input_packet_type;
 
-    UInt64 type;
+    ensureConnected();
+
+    UInt64 type = 0;
     readVarUInt(type, *in);
     return last_input_packet_type.emplace(type);
 }
 
+void Connection::ensureConnected() const
+{
+    /// We are trying to send something to already disconnected connection,
+    /// this means that we continue using Connection after exception.
+    if (!in)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection to {} is terminated", getDescription());
+}
 
 Packet Connection::receivePacket()
 {
     try
     {
-        /// We are trying to send something to already disconnected connection,
-        /// this means that we continue using Connection after exception.
-        if (!in)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection to {} is terminated", getDescription());
+        ensureConnected();
 
         Packet res;
 
@@ -1404,9 +1425,17 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::PartUUIDs:
-                readVectorBinary(res.part_uuids, *in);
+            {
+                // allow_experimental_query_deduplication is no longer supported, but an old server
+                // may still send this packet. Skip the obsolete, peer-controlled payload without
+                // materializing it (do not resize a vector to a peer-chosen size).
+                UInt64 num_part_uuids = 0;
+                readVarUInt(num_part_uuids, *in);
+                if (num_part_uuids > DEFAULT_MAX_STRING_SIZE)
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+                in->ignore(num_part_uuids * sizeof(UUID));
                 return res;
-
+            }
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
@@ -1423,7 +1452,10 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::TimezoneUpdate:
-                readStringBinary(server_timezone, *in);
+                /// Same cap + control-char sanitization as the handshake read; the field
+                /// reaches the client's terminal via the time-zone warning path.
+                readStringBinary(server_timezone, *in, DBMS_MAX_HELLO_STRING_SIZE);
+                sanitizeUntrustedServerString(server_timezone);
                 res.server_timezone = server_timezone;
                 return res;
 

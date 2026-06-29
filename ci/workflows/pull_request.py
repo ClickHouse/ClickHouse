@@ -49,6 +49,7 @@ workflow = Workflow.Config(
         JobConfigs.style_check,
         JobConfigs.code_review,
         JobConfigs.docs_job,
+        JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
         JobConfigs.ci_tests,
         *JobConfigs.darwin_fast_test_jobs,
@@ -63,11 +64,14 @@ workflow = Workflow.Config(
             for job in JobConfigs.release_build_jobs
         ],
         *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            (
+                job.set_provides([ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS])
+                if "fuzzers" in job.name
+                else job
+            ).set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
-        JobConfigs.smoke_tests_macos,
         # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,
         *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
@@ -76,8 +80,13 @@ workflow = Workflow.Config(
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
-        JobConfigs.bugfix_validation_ft_pr_job,
-        JobConfigs.bugfix_validation_it_job,
+        # Per-arch Bugfix Validation Checks (functional + integration tests on
+        # both amd64 and aarch64). Each per-arch variant has
+        # `allow_failure=True` so an individual FAIL doesn't block PR merge -
+        # the aggregate decision (validate iff at least one arch passed) lives
+        # in the `new_tests_check.py` workflow post-hook below.
+        *JobConfigs.bugfix_validation_ft_pr_jobs,
+        *JobConfigs.bugfix_validation_it_jobs,
         *[
             j.set_run_after(
                 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
@@ -142,18 +151,15 @@ workflow = Workflow.Config(
         JobConfigs.sqllogic_test_master_job.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
+        JobConfigs.sqlstorm_test_job.set_run_after(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
         # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
         JobConfigs.keeper_stress_job
             .set_name("Keeper Stress Tests (PR)")
             .set_timeout(3 * 3600),
         *JobConfigs.toolchain_build_jobs,
-        # TODO: uncomment when praktika supports depends-on-all-jobs;
-        # currently set_run_after requires an explicit list, but CI Results Review
-        # should only run after every other job has finished.
-        # JobConfigs.ci_results_review.set_run_after(
-        #     FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-        # ),
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -204,6 +210,7 @@ workflow = Workflow.Config(
         "build_debug": "Build (amd_debug)",
         "build": "Build (amd_binary)",
     },
+    runs_on_label_prefix="pr-",
 )
 
 WORKFLOWS = [

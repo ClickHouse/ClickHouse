@@ -4,6 +4,7 @@
 # pylint: disable=redefined-outer-name
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -60,9 +61,25 @@ def test_aggregate_states(start_cluster):
     aggregate_functions = list(aggregate_functions)
     logging.info("Got %s aggregate functions", len(aggregate_functions))
 
-    skipped = 0
-    failed = 0
-    passed = 0
+    allowed_errors = [
+        "ILLEGAL_TYPE_OF_ARGUMENT",
+        # sequenceNextNode() and friends
+        "UNKNOWN_AGGREGATE_FUNCTION",
+        # Function X takes exactly one parameter:
+        "NUMBER_OF_ARGUMENTS_DOESNT_MATCH",
+        # Function X takes at least one argument
+        "TOO_FEW_ARGUMENTS_FOR_FUNCTION",
+        # Function X accepts at most 3 arguments, Y given
+        "TOO_MANY_ARGUMENTS_FOR_FUNCTION",
+        # The function 'X' can only be used as a window function
+        "BAD_ARGUMENTS",
+        # aggThrow
+        "AGGREGATE_FUNCTION_THROW",
+        # Numerically-stable variants (stddevPopStable, varSampStable, ...) reject a String argument
+        "NOT_IMPLEMENTED",
+        # Introspection aggregates (flameGraph) are disabled by default
+        "FUNCTION_NOT_ALLOWED",
+    ]
 
     def get_aggregate_state_hex(node, function_name):
         return node.query(
@@ -74,35 +91,18 @@ def test_aggregate_states(start_cluster):
             f"select finalizeAggregation(unhex('{value}')::AggregateFunction({function_name}, String))"
         ).strip()
 
-    for aggregate_function in aggregate_functions:
+    def check_aggregate(aggregate_function):
         logging.info("Checking %s", aggregate_function)
 
         try:
             backward_state = get_aggregate_state_hex(backward, aggregate_function)
         except QueryRuntimeException as e:
             error_message = str(e)
-            allowed_errors = [
-                "ILLEGAL_TYPE_OF_ARGUMENT",
-                # sequenceNextNode() and friends
-                "UNKNOWN_AGGREGATE_FUNCTION",
-                # Function X takes exactly one parameter:
-                "NUMBER_OF_ARGUMENTS_DOESNT_MATCH",
-                # Function X takes at least one argument
-                "TOO_FEW_ARGUMENTS_FOR_FUNCTION",
-                # Function X accepts at most 3 arguments, Y given
-                "TOO_MANY_ARGUMENTS_FOR_FUNCTION",
-                # The function 'X' can only be used as a window function
-                "BAD_ARGUMENTS",
-                # aggThrow
-                "AGGREGATE_FUNCTION_THROW",
-            ]
             if any(map(lambda x: x in error_message, allowed_errors)):
                 logging.info("Skipping %s", aggregate_function)
-                skipped += 1
-                continue
+                return "skipped"
             logging.exception("Failed %s", aggregate_function)
-            failed += 1
-            continue
+            return "failed"
 
         upstream_state = get_aggregate_state_hex(upstream, aggregate_function)
         if upstream_state != backward_state:
@@ -120,28 +120,34 @@ def test_aggregate_states(start_cluster):
                     logging.info(
                         "OK %s (but different intermediate states)", aggregate_function
                     )
-                    passed += 1
-                else:
-                    logging.error(
-                        "Failed %s, Intermediate: %s (backward) != %s (upstream). Final from intermediate: %s (backward from upstream state) != %s (upstream from backward state)",
-                        aggregate_function,
-                        backward_state,
-                        upstream_state,
-                        backward_final_from_upstream,
-                        upstream_final_from_backward,
-                    )
-                    failed += 1
-            else:
+                    return "passed"
                 logging.error(
-                    "Failed %s, %s (backward) != %s (upstream)",
+                    "Failed %s, Intermediate: %s (backward) != %s (upstream). Final from intermediate: %s (backward from upstream state) != %s (upstream from backward state)",
                     aggregate_function,
                     backward_state,
                     upstream_state,
+                    backward_final_from_upstream,
+                    upstream_final_from_backward,
                 )
-                failed += 1
-        else:
-            logging.info("OK %s", aggregate_function)
-            passed += 1
+                return "failed"
+            logging.error(
+                "Failed %s, %s (backward) != %s (upstream)",
+                aggregate_function,
+                backward_state,
+                upstream_state,
+            )
+            return "failed"
+        logging.info("OK %s", aggregate_function)
+        return "passed"
+
+    # The work is dominated by per-query round-trip latency rather than server
+    # CPU, so run the independent per-function checks concurrently.
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        outcomes = list(executor.map(check_aggregate, aggregate_functions))
+
+    skipped = outcomes.count("skipped")
+    failed = outcomes.count("failed")
+    passed = outcomes.count("passed")
 
     logging.info(
         "Aggregate functions: %s, Failed: %s, skipped: %s, passed: %s",
@@ -181,11 +187,27 @@ def test_string_functions(start_cluster):
         "randCanonical",
         "generateUUIDv4",
         "generateULID",
+        "generateUUIDv7",
+        "generateSnowflakeID",
+        # Needs a Keeper connection and is non-deterministic anyway.
+        "generateSerialID",
         # Syntax error otherwise
         "position",
         "substring",
         "CAST",
         "getTypeSerializationStreams",
+        # The argument is a query / structure declaration, so 'foo' is a syntax error.
+        "formatQuery",
+        "formatQuerySingleLine",
+        "structureToProtobufSchema",
+        "structureToCapnProtoSchema",
+        # The argument is effectively a server port name (and we don't have one named foo).
+        "getServerPort",
+        # The argument must be a human-readable size / a datetime.
+        "parseReadableSize",
+        "parseDateTime64",
+        # Newer versions require an even number of arguments; older versions accepted a single one.
+        "caseWithExpression",
         # NOTE: no need to ignore now()/now64() since they will fail because they don't accept any argument
         # 22.8 Backward Incompatible Change: Extended range of Date32
         "toDate32OrZero",
@@ -220,66 +242,64 @@ def test_string_functions(start_cluster):
     functions = list(functions)
     logging.info("Got %s functions", len(functions))
 
-    skipped = 0
-    failed = 0
-    passed = 0
+    v = "foo"
+
+    allowed_errors = [
+        # Messages
+        "Cannot load time zone ",
+        "No macro ",
+        "Should start with ",  # POINT/POLYGON/...
+        "Cannot read input: expected a digit but got something else:",
+        # ErrorCodes
+        "ILLEGAL_TYPE_OF_ARGUMENT",
+        "DICTIONARIES_WAS_NOT_LOADED",
+        "CANNOT_PARSE_UUID",
+        "CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING",
+        "ILLEGAL_COLUMN",
+        "TYPE_MISMATCH",
+        "SUPPORT_IS_DISABLED",
+        "CANNOT_PARSE_DATE",
+        "UNKNOWN_SETTING",
+        "CANNOT_PARSE_BOOL",
+        "FILE_DOESNT_EXIST",
+        "NOT_IMPLEMENTED",
+        "BAD_GET",
+        "UNKNOWN_TYPE",
+        # addressToSymbol
+        "FUNCTION_NOT_ALLOWED",
+        # Date functions
+        "CANNOT_PARSE_TEXT",
+        "CANNOT_PARSE_DATETIME",
+        # Function X takes exactly one parameter:
+        "NUMBER_OF_ARGUMENTS_DOESNT_MATCH",
+        # Function X takes at least one argument
+        "TOO_FEW_ARGUMENTS_FOR_FUNCTION",
+        # Function X accepts at most 3 arguments, Y given
+        "TOO_MANY_ARGUMENTS_FOR_FUNCTION",
+        # The function 'X' can only be used as a window function
+        "BAD_ARGUMENTS",
+        # String foo is obviously not a valid IP address.
+        "CANNOT_PARSE_IPV4",
+        "CANNOT_PARSE_IPV6",
+        # neighbor / runningDifference / runningAccumulate are deprecated and disabled by default.
+        "DEPRECATED_FUNCTION",
+    ]
 
     def get_function_value(node, function_name, value):
         return node.query(f"select {function_name}('{value}')").strip()
 
-    v = "foo"
-    for function in functions:
+    def check_function(function):
         logging.info("Checking %s('%s')", function, v)
 
         try:
             backward_value = get_function_value(backward, function, v)
         except QueryRuntimeException as e:
             error_message = str(e)
-            allowed_errors = [
-                # Messages
-                "Cannot load time zone ",
-                "No macro ",
-                "Should start with ",  # POINT/POLYGON/...
-                "Cannot read input: expected a digit but got something else:",
-                # ErrorCodes
-                "ILLEGAL_TYPE_OF_ARGUMENT",
-                "DICTIONARIES_WAS_NOT_LOADED",
-                "CANNOT_PARSE_UUID",
-                "CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING",
-                "ILLEGAL_COLUMN",
-                "TYPE_MISMATCH",
-                "SUPPORT_IS_DISABLED",
-                "CANNOT_PARSE_DATE",
-                "UNKNOWN_SETTING",
-                "CANNOT_PARSE_BOOL",
-                "FILE_DOESNT_EXIST",
-                "NOT_IMPLEMENTED",
-                "BAD_GET",
-                "UNKNOWN_TYPE",
-                # addressToSymbol
-                "FUNCTION_NOT_ALLOWED",
-                # Date functions
-                "CANNOT_PARSE_TEXT",
-                "CANNOT_PARSE_DATETIME",
-                # Function X takes exactly one parameter:
-                "NUMBER_OF_ARGUMENTS_DOESNT_MATCH",
-                # Function X takes at least one argument
-                "TOO_FEW_ARGUMENTS_FOR_FUNCTION",
-                # Function X accepts at most 3 arguments, Y given
-                "TOO_MANY_ARGUMENTS_FOR_FUNCTION",
-                # The function 'X' can only be used as a window function
-                "BAD_ARGUMENTS",
-                # String foo is obviously not a valid IP address.
-                "CANNOT_PARSE_IPV4",
-                "CANNOT_PARSE_IPV6",
-            ]
             if any(map(lambda x: x in error_message, allowed_errors)):
                 logging.info("Skipping %s", function)
-                skipped += 1
-                continue
+                return "skipped"
             logging.exception("Failed %s", function)
-            failed += 1
-            continue
+            return "failed"
 
         upstream_value = get_function_value(upstream, function, v)
         if upstream_value != backward_value:
@@ -290,10 +310,18 @@ def test_string_functions(start_cluster):
                 backward_value,
                 upstream_value,
             )
-            failed += 1
-        else:
-            logging.info("OK %s", function)
-            passed += 1
+            return "failed"
+        logging.info("OK %s", function)
+        return "passed"
+
+    # The work is dominated by per-query round-trip latency rather than server
+    # CPU, so run the independent per-function checks concurrently.
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        outcomes = list(executor.map(check_function, functions))
+
+    skipped = outcomes.count("skipped")
+    failed = outcomes.count("failed")
+    passed = outcomes.count("passed")
 
     logging.info(
         "Functions: %s, failed: %s, skipped: %s, passed: %s",
