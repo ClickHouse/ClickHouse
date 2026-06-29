@@ -3,13 +3,18 @@ Tests for `ci.jobs.functional_tests.invert_bugfix_validation_status`.
 
 The bugfix-validation inverter flips per-test `FAIL`/`OK` so that a regression
 test for a bug, which is expected to `FAIL` on master HEAD, is reported as
-"bug reproduced". When the run itself failed catastrophically (status
-`ERROR`, e.g. runner killed mid-flight or server crashed without a
-synthetic `Server died` leaf reaching `test_result.results`), the inverter
-must preserve `ERROR` rather than overwrite it with the misleading
-"Failed to reproduce the bug" `FAIL`.
+"bug reproduced". When the test instead passes on master HEAD, the bug did
+not reproduce on this arch (no-repro): the inverter reports `SKIPPED` and
+returns True, so the caller propagates `SKIPPED` to the top-level result and
+the per-arch job exits 0 without being counted as a validation - another
+arch can still validate the bug (the per-arch contract, PR #103541).
 
-See ClickHouse/ClickHouse#105789.
+When the run itself failed catastrophically (status `ERROR`, e.g. runner
+killed mid-flight or server crashed without a synthetic `Server died` leaf
+reaching `test_result.results`), the inverter must preserve `ERROR` rather
+than overwrite it with a validation verdict.
+
+See ClickHouse/ClickHouse#105789 and #103541.
 """
 
 import os
@@ -63,16 +68,21 @@ def test_single_fail_is_flipped_to_ok_and_outer_becomes_success():
     assert outer.status == Result.Status.OK
 
 
-def test_single_ok_is_flipped_to_fail_and_outer_becomes_failed_to_reproduce():
-    """Regression test PASSed on master -> bug not reproduced -> overall FAIL."""
+def test_single_ok_is_no_repro_and_outer_becomes_skipped():
+    """Regression test PASSed on master -> bug did not reproduce on this arch
+    -> overall SKIPPED (not FAIL), and the inverter signals no-repro so the
+    caller propagates SKIPPED to the top-level result. This is the per-arch
+    contract: another arch can still validate the bug.
+    """
     leaf = _make_leaf("01234_regression_test", Result.Status.OK)
     outer = _make_outer(Result.Status.OK, [leaf])
 
-    invert_bugfix_validation_status(outer)
+    no_repro = invert_bugfix_validation_status(outer)
 
+    assert no_repro is True
     assert leaf.status == Result.Status.FAIL
-    assert outer.status == Result.Status.FAIL
-    assert "Failed to reproduce the bug" in outer.info
+    assert outer.status == Result.Status.SKIPPED
+    assert "bugfix validation N/A" in outer.info
 
 
 def test_mixed_fail_and_ok_treats_any_fail_as_bug_reproduced():
@@ -172,17 +182,18 @@ def test_xfail_label_is_applied_to_each_leaf_on_inversion():
         )
 
 
-def test_empty_results_with_ok_outer_still_reports_failed_to_reproduce():
-    """If the outer status is OK and there are no per-test results, the
-    existing semantics still apply: no bug was reproduced. (Realistic
-    scenario: the bug-fix PR runs but no test was selected.)
+def test_empty_results_with_ok_outer_is_no_repro_skipped():
+    """If the outer status is OK and there are no per-test results, no bug was
+    reproduced on this arch -> SKIPPED + no-repro signal. (Realistic scenario:
+    the bug-fix PR runs but the test passes on master HEAD on this arch.)
     """
     outer = _make_outer(Result.Status.OK, results=[], info="")
 
-    invert_bugfix_validation_status(outer)
+    no_repro = invert_bugfix_validation_status(outer)
 
-    assert outer.status == Result.Status.FAIL
-    assert "Failed to reproduce the bug" in outer.info
+    assert no_repro is True
+    assert outer.status == Result.Status.SKIPPED
+    assert "bugfix validation N/A" in outer.info
 
 
 def test_clean_log_checks_are_not_flipped_to_failures():
@@ -206,8 +217,10 @@ def test_clean_log_checks_are_not_flipped_to_failures():
     for leaf in log_checks:
         assert leaf.status == Result.Status.OK
         assert Result.Label.XFAIL not in _labels(leaf)
-    assert outer.status == Result.Status.FAIL
-    assert "Failed to reproduce the bug" in outer.info
+    # Per-arch contract: no test row reproduced the bug here, so the outer
+    # status is SKIPPED (not FAIL); another arch can still validate.
+    assert outer.status == Result.Status.SKIPPED
+    assert "bugfix validation N/A" in outer.info
 
 
 def test_clean_log_checks_do_not_mask_a_reproduced_bug():

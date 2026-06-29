@@ -38,10 +38,12 @@ public:
 
     using OnBatchFinishedHandler = std::function<void()>;
 
-    /// Subscribes for the end of a notification batch: the handler is called once after sendNotifications()
-    /// has dispatched all the per-entity notifications queued so far. Lets subscribers coalesce expensive
-    /// per-entity recomputations into a single one per batch (e.g. a full refresh delivers one notification
-    /// per entity, but the derived state only needs to be rebuilt once).
+    /// Subscribes for the end of a notification batch: the handler is called once per sendNotifications()
+    /// after all the per-entity notifications queued so far have been dispatched. Lets subscribers coalesce
+    /// expensive per-entity recomputations into a single one per batch (e.g. a full refresh delivers one
+    /// notification per entity, but the derived state only needs to be rebuilt once). The handler is also
+    /// called when the batch was empty, so a recomputation that threw (and left its work pending) is retried
+    /// on the next call without waiting for a fresh access change; it must therefore be cheap when idle.
     scope_guard subscribeForBatchFinished(const OnBatchFinishedHandler & handler);
 
     /// Called by access storages after a new access entity has been added.

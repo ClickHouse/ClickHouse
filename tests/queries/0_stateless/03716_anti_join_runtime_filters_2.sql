@@ -1,4 +1,5 @@
 -- Tags: no-random-merge-tree-settings
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;

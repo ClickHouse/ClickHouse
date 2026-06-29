@@ -2,6 +2,7 @@
 
 #include <Common/VersionNumber.h>
 #include <base/types.h>
+#include <source_location>
 #include <vector>
 
 
@@ -32,6 +33,11 @@ namespace DB
   *
   * Documentation does not support multiple languages.
   * The only available language is English.
+  *
+  * Every documentation object captures the path of the source file where it is defined (the `source` field).
+  * It is initialized by default to the location of the (aggregate) initialization of the object, which is the
+  * registration site of the corresponding component, so it points to the source code that documents it. The path
+  * is as produced by the compiler; `system.documentation` exposes it normalized to be relative to the repository root.
   */
 struct Documentation
 {
@@ -56,6 +62,14 @@ struct Documentation
     Examples examples {};                          ///
     IntroducedIn introduced_in {VERSION_UNKNOWN};  /// E.g. {25, 5}
     Related related {};                            /// E.g. {"ReplicatedMergeTree"}
+
+    /// The source file where this documentation is defined. Captured automatically at the construction site;
+    /// do not set it explicitly. See the note in the class comment above.
+    /// NOTE: this only works when the object is initialized at its construction site, i.e. with aggregate/designated
+    /// initialization (`Documentation doc{...}`) or value-initialization (`Documentation doc{}`). A default-initialized
+    /// object (`Documentation doc;`, without braces) records this header instead, so always use braces when building
+    /// the documentation field by field afterwards (or set `source` explicitly).
+    const char * source = std::source_location::current().file_name();
 
     String syntaxAsString() const;
     String examplesAsString() const;
