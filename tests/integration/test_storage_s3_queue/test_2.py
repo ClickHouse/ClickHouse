@@ -566,10 +566,13 @@ def _setup_slow_ordered_bucket_lock_test(started_cluster, table_name, extra_sett
             f"CREATE TABLE {dst_table_name} "
             f"(column1 UInt32, column2 UInt32, column3 UInt32) ENGINE = MergeTree ORDER BY column1"
         )
-        # `sleepEachRow` keeps the bucket lock held while the batch is being processed.
+        # `sleepEachRow` keeps the bucket lock held while the batch is being processed. The delay
+        # is sized so that a single bucket's batch (the files are split across more than one bucket)
+        # stays uncommitted for well over `persistent_processing_node_ttl_seconds`, so a live lock
+        # reliably ages past the TTL instead of committing (and refreshing its mtime) first.
         node.query(
             f"CREATE MATERIALIZED VIEW {table_name}_mv TO {dst_table_name} AS "
-            f"SELECT column1, column2, column3 FROM {table_name} WHERE NOT sleepEachRow(0.1)"
+            f"SELECT column1, column2, column3 FROM {table_name} WHERE NOT sleepEachRow(0.3)"
         )
     return node1, node2, keeper_path, dst_table_name
 

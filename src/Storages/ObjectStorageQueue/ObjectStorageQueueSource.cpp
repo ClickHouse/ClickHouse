@@ -717,7 +717,14 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
         {
             auto zk_client = metadata->getZooKeeper();
-            chassert(current_bucket_holder->checkBucketOwnership(zk_client));
+            /// Ownership of a still-held bucket can be lost if its persistent lock node was removed
+            /// by the TTL cleanup and re-acquired by another processor. This is expected and handled
+            /// on the commit path (see `prepareBucketOwnershipCheckRequests` / `stillOwnsBucket`),
+            /// so it must not assert here.
+            if (!current_bucket_holder->checkBucketOwnership(zk_client))
+                LOG_TEST(
+                    log, "Lost ownership of acquired bucket {} (its lock was likely cleaned by the TTL cleanup)",
+                    current_bucket_holder->getBucket());
         });
     }
 #endif

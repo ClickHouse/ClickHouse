@@ -524,9 +524,10 @@ def test_alter_deduplication_v2_guard(started_cluster):
         additional_settings={"keeper_path": keeper_path},
     )
 
-    # Sanity check: the table did not set `deduplication_v2`, so it carries the default value.
+    # Sanity check: the table did not set `deduplication_v2`, so it carries the default value
+    # (rendered as `true` for a Bool setting).
     assert (
-        "1"
+        "true"
         == node1.query(
             f"SELECT value FROM system.s3_queue_settings "
             f"WHERE name = 'deduplication_v2' AND table = '{table_name}'"
@@ -541,7 +542,7 @@ def test_alter_deduplication_v2_guard(started_cluster):
 
     # The value must be unchanged after the rejected ALTER.
     assert (
-        "1"
+        "true"
         == node1.query(
             f"SELECT value FROM system.s3_queue_settings "
             f"WHERE name = 'deduplication_v2' AND table = '{table_name}'"
@@ -554,7 +555,7 @@ def test_alter_deduplication_v2_guard(started_cluster):
         settings={"s3queue_allow_unsafe_alter": 1},
     )
     assert (
-        "0"
+        "false"
         == node1.query(
             f"SELECT value FROM system.s3_queue_settings "
             f"WHERE name = 'deduplication_v2' AND table = '{table_name}'"

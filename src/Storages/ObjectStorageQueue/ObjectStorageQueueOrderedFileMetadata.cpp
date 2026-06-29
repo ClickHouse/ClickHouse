@@ -263,22 +263,18 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
     zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, bucket_info->zookeeper_name);
-        if (zk_retry.isRetry())
+        /// Never remove a lock node we no longer own. This covers two cases:
+        /// - a retry after a possible "fail after operation": a previous attempt removed the node
+        ///   and another processor recreated it, so removing again would drop the new owner's lock;
+        /// - the lock was removed by the TTL cleanup (a persistent lock node can be cleaned while
+        ///   still held) and possibly re-acquired by another processor. This is an expected,
+        ///   recoverable condition for ordered bucket processing (handled on the commit path via
+        ///   `prepareBucketOwnershipCheckRequests` / `stillOwnsBucket`), not a logical error.
+        if (!checkBucketOwnership(zk_client))
         {
-            /// It is possible that we fail "after operation",
-            /// e.g. we successfully removed the node, but did not get confirmation,
-            /// but then if we retry - we can remove a newly recreated node,
-            /// therefore avoid this with this check.
-            if (!checkBucketOwnership(zk_client))
-            {
-                LOG_TEST(log, "Will not remove bucket lock node, ownership changed");
-                code = Coordination::Error::ZOK;
-                return;
-            }
-        }
-        else
-        {
-            chassert(checkBucketOwnership(zk_client));
+            LOG_TEST(log, "Will not remove bucket lock node, ownership changed or node is gone");
+            code = Coordination::Error::ZOK;
+            return;
         }
         code = zk_client->tryRemove(bucket_info->bucket_lock_path);
     });
