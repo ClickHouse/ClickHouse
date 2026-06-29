@@ -184,6 +184,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     size_t max_redirects_,
     bool enable_url_encoding_,
     OutStreamCallback out_stream_callback_,
+    CheckCancelled cancellation_check_,
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
     HTTPHeaderEntries http_header_entries_,
@@ -208,6 +209,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , http_header_entries {std::move(http_header_entries_)}
     , file_info(file_info_)
     , log(getLogger("ReadWriteBufferFromHTTP"))
+    , cancellation_check(std::move(cancellation_check_))
 {
     current_uri = initial_uri;
 
@@ -308,6 +310,12 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
     for (size_t attempt = 1; attempt <= read_settings.http_settings.max_tries; ++attempt)
     {
+        /// Check cancellation since the second attempt to let the original HTTP errors propagate correctly on the first attempt.
+        if (attempt > 1 && cancellation_check && cancellation_check())
+            /// Don't throw exception, use break instead. Later in calling code (for example in StorageURLSource)
+            /// we make cancellation checks to know that doWithRetries was exited by break on cancellation.
+            break;
+
         [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_settings.max_tries;
 
         String error_message;
@@ -412,7 +420,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                     getOffset(), read_range.end ? toString(*read_range.end) : "-",
                     toString(response.getStatus()), response.getReason());
 
-                /// it is retriable error
+                /// it is retria[[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_max_tries;ble error
                 throw HTTPException(
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
                     current_uri.toString(),
@@ -568,7 +576,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
             bytes_copied = 0;
         });
 
-    chassert(total_bytes_copied == initial_n || is_canceled);
+    chassert(total_bytes_copied == initial_n || is_canceled || cancellation_check && cancellation_check());
     return total_bytes_copied;
 }
 
@@ -818,6 +826,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
         max_redirects,
         enable_url_encoding,
         out_stream_callback,
+        cancellation_check,
         use_external_buffer,
         http_skip_not_found_url,
         http_header_entries,

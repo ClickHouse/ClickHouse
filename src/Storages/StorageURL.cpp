@@ -385,16 +385,34 @@ StorageURLSource::StorageURLSource(
                 credentials,
                 headers,
                 glob_url,
-                current_uri_options.size() == 1);
+                current_uri_options.size() == 1,
+                [this]() { return isCancelled(); });
+
+            /// getFirstAvailableURIAndReadBuffer makes HTTP request in ReadWriteBufferFromHTTP.
+            /// In case of cancellation we should immediately return with false.
+            if (isCancelled())
+                return false;
 
             /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
         }
         while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
+        /// Check for cancellation because eof() makes HTTP request in buffer.
+        if (isCancelled())
+            return false;
 
         curr_uri = uri_and_buf.first;
         current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
+        /// Check for cancellation because tryGetLastModificationTime makes HTTP request in buffer.
+        if (isCancelled())
+            return false;
+
         read_buf = std::move(uri_and_buf.second);
         current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
+        /// Check for cancellation because tryGetFileSizeFromReadBuffer makes HTTP request in buffer.
+        if (isCancelled())
+            return false;
+
+        /// TODO: both tryGetLastModificationTime() and tryGetFileSizeFromReadBuffer() issue a HEAD request — use one getFileInfo() call instead.
 
         if (auto file_progress_callback = getContext()->getFileProgressCallback())
             file_progress_callback(FileProgress(0, current_file_size.value_or(0)));
@@ -534,7 +552,7 @@ Chunk StorageURLSource::generate()
         }
 
         if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter()))
+            && (!format_filter_info || !format_filter_info->hasFilter()) && !isCancelled())
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
         (*pipeline).reset();
@@ -560,7 +578,8 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     Poco::Net::HTTPBasicCredentials & credentials,
     const HTTPHeaderEntries & headers,
     bool glob_url,
-    bool delay_initialization)
+    bool delay_initialization,
+    ReadWriteBufferFromHTTP::CheckCancelled check_cancelled)
 {
     String first_exception_message;
     ReadSettings read_settings = context_->getReadSettings();
@@ -594,6 +613,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                            .withSkipNotFound(skip_url_not_found_error)
                            .withHeaders(headers)
                            .withDelayInit(delay_initialization)
+                           .withCancellationCheck(check_cancelled)
                            .create(credentials);
 
             if (context_->getSettingsRef()[Setting::engine_url_skip_empty_files] && res->eof() && option != std::prev(end))
