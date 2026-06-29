@@ -40,10 +40,7 @@ settings
   auto_statistics_types='',
   --- map serialization version is fixed in serializations.json, but we have different setting for zero level parts, so set it explicitly so we have fixed version in all parts
   map_serialization_version_for_zero_level_parts='basic',
-  map_serialization_version='basic',
-  -- allow_experimental_adaptive_codec_selection=0: rewrite parts is a mutation, so adaptive codec
-  -- selection would recompress and change hash_of_all_files; this test checks granularity rewrite, not compression.
-  allow_experimental_adaptive_codec_selection=0
+  map_serialization_version='basic'
 ;
 insert into test_materialize select number, repeat('a', number), [1 + number/10e3, 0 + number/10e3] from numbers(10e3) settings max_block_size=1e6;
 -- { echo }
