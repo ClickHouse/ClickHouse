@@ -2,6 +2,7 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/StreamingBackgroundControl.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 #include <atomic>
 
@@ -39,6 +40,8 @@ public:
     /// REFRESH: run exactly one out-of-order cycle now, even while blocked.
     void refreshBackgroundActivity() override
     {
+        if (DatabaseCatalog::instance().getDependentViews(getStorageID()).empty())
+            return;
         stream_control.requestRefreshOnce();
         scheduleStreamingTasks();
     }
