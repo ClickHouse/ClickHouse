@@ -271,8 +271,14 @@ public:
 
         auto start_time_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type).getScale();
         auto duration_scale = assert_cast<const DataTypeDecimal64 &>(*arguments[1].type).getScale();
+        auto result_scale = std::max(start_time_scale, duration_scale);
+        /// The optional Size argument also participates in value rescaling (executeImpl uses the
+        /// highest scale among all arguments), so its scale must be included in the declared return
+        /// scale; otherwise the result column holds values at a larger scale than its declared type.
+        if (arguments.size() == 3)
+            result_scale = std::max(result_scale, assert_cast<const DataTypeDecimal64 &>(*arguments[2].type).getScale());
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime64>(
-            std::max(start_time_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false)));
+            result_scale, extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false)));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

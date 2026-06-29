@@ -42,3 +42,18 @@ SELECT arrayConcat(timeSlots(toDateTime64('2012-01-01 12:20:00', 1), materialize
 
 SELECT 'timeSlots result column scale matches declared type';
 SELECT toTypeName(timeSlots(materialize(toDateTime64('2012-01-01 12:20:00', 1)), toDecimal64(600, 5)));
+
+-- The optional Size (3rd) argument also participates in value rescaling, so its scale must be
+-- included in the declared return scale. getReturnTypeImpl used to declare only
+-- max(start_scale, duration_scale), so when the Size scale was the largest the values were
+-- computed at the larger scale but the column declared the smaller one, returning wrong
+-- timestamps (and reaching writeSlice through a structure-sensitive consumer).
+
+SELECT 'timeSlots size scale largest: value at scale 4';
+SELECT timeSlots(toDateTime64('1970-01-01 00:00:01.0', 1, 'UTC'), toDecimal64(1, 1), toDecimal64(0.5, 4));
+
+SELECT 'timeSlots size scale largest: type is Array(DateTime64(4))';
+SELECT toTypeName(timeSlots(toDateTime64('1970-01-01 00:00:01.0', 1, 'UTC'), toDecimal64(1, 1), toDecimal64(0.5, 4)));
+
+SELECT 'timeSlots size scale largest into arrayConcat';
+SELECT arrayConcat(timeSlots(materialize(toDateTime64('1970-01-01 00:00:01.0', 1, 'UTC')), toDecimal64(1, 1), toDecimal64(0.5, 4)), [toDateTime64('2000-01-01 00:00:00', 4, 'UTC')]);

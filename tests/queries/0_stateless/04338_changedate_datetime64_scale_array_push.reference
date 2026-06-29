@@ -18,3 +18,9 @@ timeSlots constant start, duration scale 4 column into arrayConcat
 ['2012-01-01 12:00:00.0000','2012-01-01 12:30:00.0000','2000-01-01 00:00:00.0000']
 timeSlots result column scale matches declared type
 Array(DateTime64(5))
+timeSlots size scale largest: value at scale 4
+['1970-01-01 00:00:01.0000','1970-01-01 00:00:01.5000','1970-01-01 00:00:02.0000']
+timeSlots size scale largest: type is Array(DateTime64(4))
+Array(DateTime64(4, \'UTC\'))
+timeSlots size scale largest into arrayConcat
+['1970-01-01 00:00:01.0000','1970-01-01 00:00:01.5000','1970-01-01 00:00:02.0000','2000-01-01 00:00:00.0000']
