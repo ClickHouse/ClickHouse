@@ -145,6 +145,9 @@ public:
         {
             const size_t begin = r == 0 ? 0 : outer_offsets[r - 1];
             const size_t num_samples = outer_offsets[r] - begin;
+            /// An empty sample set would otherwise "train" an all-zero codebook and look successful; surface it instead.
+            if (num_samples == 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires a non-empty set of sample vectors to train a codebook", name);
             flat.resize(num_samples * dimensions);
             for (size_t j = 0; j < num_samples; ++j)
             {

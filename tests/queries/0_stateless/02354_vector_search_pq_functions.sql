@@ -33,3 +33,5 @@ DROP TABLE pq_fn;
 -- pqTrain validates its parameters (dimensions must be a multiple of m; nbits in [1, 16]).
 SELECT pqTrain([[1., 2., 3., 4.]], 4, 3, 1); -- { serverError BAD_ARGUMENTS }
 SELECT pqTrain([[1., 2., 3., 4.]], 4, 2, 17); -- { serverError BAD_ARGUMENTS }
+-- An empty sample set is rejected rather than fabricating an all-zero codebook.
+SELECT pqTrain(CAST([] AS Array(Array(Float32))), 4, 2, 1); -- { serverError BAD_ARGUMENTS }

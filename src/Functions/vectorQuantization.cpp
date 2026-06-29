@@ -113,13 +113,12 @@ public:
         checkVectorArgument(arguments[0].type, name);
 
         const String method = getConstStringArgument(arguments[1], name, 1);
-        if (!VectorQuantization::isSupportedMethod(method))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown quantization method '{}'", method);
-
         const UInt64 dimensions = getConstUIntArgument(arguments[2], name, 2);
         const UInt64 bits = getConstUIntArgument(arguments[3], name, 3);
-        if (dimensions == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of dimensions must be greater than zero");
+        /// Full validation (method, dimension bounds and multiple-of-8, bits range) before any size arithmetic - the
+        /// bit-packed kernels would otherwise write out of bounds for invalid `(method, dimensions, bits)`.
+        if (const std::string err = VectorQuantization::validateParams(method, dimensions, bits); !err.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {}: {}", name, err);
 
         const size_t bytes = VectorQuantization::bytesPerVector(method, dimensions, bits);
         return std::make_shared<DataTypeFixedString>(bytes);
@@ -183,8 +182,10 @@ public:
         checkVectorArgument(arguments[1].type, name);
 
         const String method = getConstStringArgument(arguments[2], name, 2);
-        if (!VectorQuantization::isSupportedMethod(method))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown quantization method '{}'", method);
+        const UInt64 dimensions = getConstUIntArgument(arguments[3], name, 3);
+        const UInt64 bits = getConstUIntArgument(arguments[4], name, 4);
+        if (const std::string err = VectorQuantization::validateParams(method, dimensions, bits); !err.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {}: {}", name, err);
 
         return std::make_shared<DataTypeFloat32>();
     }

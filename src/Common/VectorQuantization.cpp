@@ -369,7 +369,10 @@ inline float raBitQDistanceFast(const RaBitQQuery & q, const char * code, bool u
     const float numerator = raBitQNumeratorFast(q, code, use_icelake);
     float inv_factor = NAN;
     std::memcpy(&inv_factor, code + q.code_bytes, sizeof(float));
-    return 1.0f - numerator * q.inv_qnorm * inv_factor;
+    /// Clamp the estimated cosine to a valid range; the unbiased RaBitQ estimator can fall outside [-1, 1] for some
+    /// vectors, which would otherwise make the public `cosineDistance` estimate negative or exceed 2.
+    const float cosine = std::clamp(numerator * q.inv_qnorm * inv_factor, -1.0f, 1.0f);
+    return 1.0f - cosine;
 }
 
 /// Each <., .> is a sum of a full-precision (bit-sliced) query against a +-1 sign code - the same popcount dot as RaBitQ.
@@ -462,7 +465,8 @@ inline float turboQuantDistanceFast(const TurboQuantQuery & q, const char * code
     const float qjl_dot = raBitQNumeratorFast(q.qjl, code + code_bytes, use_icelake);
     float gamma = NAN;
     std::memcpy(&gamma, code + 2 * code_bytes, sizeof(float));
-    const float cosine = q.c0 * mse_dot + q.k * gamma * qjl_dot;
+    /// Clamp the estimated cosine so the public `cosineDistance` stays in [0, 2] (the estimator can fall outside [-1, 1]).
+    const float cosine = std::clamp(q.c0 * mse_dot + q.k * gamma * qjl_dot, -1.0f, 1.0f);
     return 1.0f - cosine;
 }
 
@@ -878,6 +882,12 @@ std::string validateParams(std::string_view method, size_t dimensions, size_t bi
         return fmt::format("unknown quantization method '{}'", method);
     if (dimensions == 0)
         return "the number of dimensions must be greater than zero";
+    /// Bound dimensions before any derived-size arithmetic (`bytesPerVector`, the padded projection size): an absurd
+    /// value from a fuzzer or bad DDL would otherwise overflow size_t and drive unbounded allocations / loops. Cap well
+    /// above any real embedding (matches `ProductQuantization::validateParams`).
+    static constexpr size_t MAX_DIMENSIONS = 1u << 20; /// 1,048,576
+    if (dimensions > MAX_DIMENSIONS)
+        return fmt::format("the number of dimensions ({}) exceeds the maximum {}", dimensions, MAX_DIMENSIONS);
 
     const FlatQuantization codec = methodToCodec(method);
 
