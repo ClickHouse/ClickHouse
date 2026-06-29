@@ -7,6 +7,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -117,6 +118,8 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_replica_name;
     extern const KafkaSettingsString kafka_schema;
     extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
+    extern const KafkaSettingsString kafka_partition_shard_num;
+    extern const KafkaSettingsUInt64 kafka_shard_count;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
 }
@@ -127,6 +130,7 @@ namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 extern const int QUERY_NOT_ALLOWED;
 extern const int ABORTED;
 extern const int REPLICA_ALREADY_EXISTS;
@@ -155,7 +159,7 @@ StorageKafka2::StorageKafka2(
     , fs_keeper_path(keeper_path)
     , replica_path(keeper_path + "/replicas/" + (*kafka_settings_)[KafkaSetting::kafka_replica_name].value)
     , kafka_settings(std::move(kafka_settings_))
-    , macros_info{.table_id = table_id_}
+    , macros_info{.table_id = table_id_, .shard = getContext()->getMacros()->tryGetValue("shard")}
     , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
     , brokers(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info))
     , group(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_group_name].value, macros_info))
@@ -175,6 +179,8 @@ StorageKafka2::StorageKafka2(
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::StorageKafka2");
     kafka_settings->sanityCheck(getContext());
+    parsePartitionAffinitySettings();
+
     if ((*kafka_settings)[KafkaSetting::kafka_num_consumers] > 1 && !thread_per_consumer)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
@@ -572,7 +578,7 @@ void StorageKafka2::startup()
             try
             {
                 consumers[i] = std::make_shared<KeeperHandlingConsumer>(
-                    createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log);
+                    createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log, partition_num, shard_count);
                 ++num_created_consumers;
             }
             catch (const cppkafka::Exception &)
@@ -601,6 +607,33 @@ void StorageKafka2::shutdown(bool)
 void StorageKafka2::drop()
 {
     dropReplica();
+}
+
+void StorageKafka2::parsePartitionAffinitySettings()
+{
+    const auto & partition_num_str = getContext()->getMacros()->expand(
+        (*kafka_settings)[KafkaSetting::kafka_partition_shard_num].value, macros_info);
+    const auto shard_count_val = (*kafka_settings)[KafkaSetting::kafka_shard_count].value;
+
+    if (partition_num_str.empty() || shard_count_val == 0)
+        return;
+
+    UInt64 parsed_partition_num = 0;
+    try
+    {
+        parsed_partition_num = parse<UInt64>(partition_num_str);
+    }
+    catch (...)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'kafka_partition_shard_num' must be a valid non-negative integer after macro expansion, got '{}'",
+            partition_num_str);
+    }
+
+    partition_num = parsed_partition_num;
+    shard_count = shard_count_val;
+    LOG_INFO(log, "Partition affinity enabled: partition_num={}, shard_count={}", partition_num, shard_count);
 }
 
 KafkaConsumer2Ptr StorageKafka2::createKafkaConsumer(size_t consumer_number)

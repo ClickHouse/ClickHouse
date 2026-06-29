@@ -84,6 +84,8 @@ namespace KafkaSetting
     extern const KafkaSettingsUInt64 kafka_skip_broken_messages;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
+    extern const KafkaSettingsString kafka_partition_shard_num;
+    extern const KafkaSettingsUInt64 kafka_shard_count;
 }
 
 using namespace std::chrono_literals;
@@ -251,8 +253,18 @@ void registerStorageKafka(StorageFactory & factory)
         const auto has_replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].changed && !(*kafka_settings)[KafkaSetting::kafka_replica_name].value.empty();
 
         if (!has_keeper_path && !has_replica_name)
+        {
+            const auto & partition_num_str = (*kafka_settings)[KafkaSetting::kafka_partition_shard_num].value;
+            const auto shard_count_val = (*kafka_settings)[KafkaSetting::kafka_shard_count].value;
+            if (!partition_num_str.empty() || shard_count_val > 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "'kafka_partition_shard_num' and 'kafka_shard_count' are only supported with StorageKafka2 "
+                    "(requires 'kafka_keeper_path' and 'kafka_replica_name' to be set)");
+
             return std::make_shared<StorageKafka>(
                 args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
+        }
 
         if (!args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper] && !args.query.attach)
             throw Exception(
