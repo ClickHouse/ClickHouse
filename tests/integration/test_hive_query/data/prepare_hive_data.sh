@@ -1,5 +1,8 @@
 #!/bin/bash
-set -x
+# Fail (non-zero exit) if any hive command fails, so the caller can retry while the
+# Hive metastore is still starting up. All statements are idempotent, so re-running
+# the whole script is safe.
+set -ex
 
 hive -e "create database if not exists test"
 

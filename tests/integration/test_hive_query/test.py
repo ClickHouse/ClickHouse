@@ -32,9 +32,21 @@ def started_cluster():
             os.path.join(SCRIPT_DIR, "data", "prepare_hive_data.sh"),
             "/prepare_hive_data.sh",
         )
-        cluster.exec_in_container(
-            hive_container, ["bash", "-c", "bash /prepare_hive_data.sh"]
-        )
+        # The Hive metastore / HiveServer2 may still be starting up; retry the data
+        # preparation (the script is idempotent) until the hive CLI can talk to it.
+        last_error = None
+        for _ in range(20):
+            try:
+                cluster.exec_in_container(
+                    hive_container, ["bash", "-c", "bash /prepare_hive_data.sh"]
+                )
+                last_error = None
+                break
+            except Exception as e:  # noqa: BLE001
+                last_error = e
+                time.sleep(15)
+        if last_error is not None:
+            raise last_error
         yield cluster
     finally:
         cluster.shutdown()
