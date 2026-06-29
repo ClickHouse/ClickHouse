@@ -14,11 +14,14 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/TraceLog.h>
+#include <base/demangle.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/SymbolsHelper.h>
+#include <Common/AddressToLineCache.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SymbolIndex.h>
+
+#include <cstring>
 
 namespace DB
 {
@@ -171,16 +174,45 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     if (symbolize)
     {
-        auto [symbols, lines] = symbolizeTrace(
-            reinterpret_cast<const void * const *>(trace.data()), trace.size());
-        columns[i++]->insert(Array(symbols.begin(), symbols.end()));
-        columns[i++]->insert(Array(lines.begin(), lines.end()));
+        /// `system.trace_log` is a high-frequency table, so symbolize directly into the
+        /// output columns to avoid per-row temporaries. Note that `trace` stores integer
+        /// addresses, so we cast each element to a pointer individually rather than
+        /// reinterpreting the whole buffer (which would violate strict aliasing).
+        auto & column_symbols = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_symbols_inner = typeid_cast<ColumnLowCardinality &>(column_symbols.getData());
+
+        auto & column_lines = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_lines_inner = typeid_cast<ColumnLowCardinality &>(column_lines.getData());
+
+        const SymbolIndex & symbol_index = SymbolIndex::instance();
+        size_t num_frames = trace.size();
+        for (size_t frame = 0; frame < num_frames; ++frame)
+        {
+            if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
+            {
+                auto demangled = tryDemangle(symbol->name);
+                if (demangled)
+                    column_symbols_inner.insertData(demangled.get(), strlen(demangled.get()));
+                else
+                    column_symbols_inner.insertData(symbol->name, strlen(symbol->name));
+
+                column_lines_inner.insert(AddressToLineCache::get(trace[frame]));
+            }
+            else
+            {
+                column_symbols_inner.insertDefault();
+                column_lines_inner.insertDefault();
+            }
+        }
+
+        column_symbols.getOffsets().push_back(column_symbols.getOffsets().back() + num_frames);
+        column_lines.getOffsets().push_back(column_lines.getOffsets().back() + num_frames);
     }
     else
 #endif
     {
-        columns[i++]->insertDefault();
-        columns[i++]->insertDefault();
+        typeid_cast<ColumnArray &>(*columns[i++]).insertDefault();
+        typeid_cast<ColumnArray &>(*columns[i++]).insertDefault();
     }
 
     typeid_cast<ColumnNullable &>(*columns[i++])
