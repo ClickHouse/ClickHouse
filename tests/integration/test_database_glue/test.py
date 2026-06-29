@@ -1458,10 +1458,16 @@ def test_glue_catalog_user_attach_under_restriction_is_rejected(started_cluster)
     node.query(f"DETACH DATABASE {db_name}")
 
     # Re-attaching as a user query under the default restriction succeeds (lazy), but the database is
-    # fail-closed: the first access resolves the restricted server credentials and is refused.
+    # fail-closed: accessing a table goes through the catalog client (`getCatalog`), which resolves the
+    # restricted server credentials and is refused. (`SHOW TABLES` intentionally swallows catalog errors, so it
+    # is not a reliable probe.)
     node.query(f"ATTACH DATABASE {db_name}")
-    error = node.query_and_get_error(f"SHOW TABLES FROM {db_name}")
-    assert "ACCESS_DENIED" in error or "server-managed" in error, error
+    error = node.query_and_get_error(f"SELECT * FROM {db_name}.`unavailable.table`")
+    assert (
+        "ACCESS_DENIED" in error
+        or "server-managed" in error
+        or "s3_allow_server_credentials_in_user_queries" in error
+    ), error
 
     # With the opt-in the database is usable again, so it can be cleaned up.
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC", settings=allow)
