@@ -46,7 +46,7 @@ namespace ErrorCodes
     DECLARE(String, kafka_keeper_path, "", "The path to the table in ClickHouse Keeper", 0) \
     DECLARE(String, kafka_replica_name, "", "The replica name in ClickHouse Keeper", 0) \
     DECLARE(String, kafka_security_protocol, "", "Protocol used to communicate with brokers.", 0) \
-    DECLARE(String, kafka_sasl_mechanism, "", "SASL mechanism to use for authentication. Supported: GSSAPI, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER.", 0) \
+    DECLARE(String, kafka_sasl_mechanism, "", "SASL mechanism to use for authentication. Supported: GSSAPI, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM.", 0) \
     DECLARE(String, kafka_sasl_username, "", "SASL username for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
     DECLARE(String, kafka_sasl_password, "", "SASL password for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
     DECLARE(String, kafka_autodetect_client_rack, "", "Automatically sets client.rack to prefer the nearest Kafka replicas. Supported values: 'AWS_ZONE_ID', 'AWS_ZONE_NAME', 'GCP_ZONE', 'CLICKHOUSE', 'AWS_ZONE_NAME_THEN_GCP_ZONE'. Empty string disables the feature.", 0) \
@@ -55,6 +55,7 @@ namespace ErrorCodes
     DECLARE(UInt64, kafka_schema_registry_skip_bytes, 0, "Number of bytes to skip from the beginning of each Kafka message (e.g., 5 for Confluent Schema Registry, 19 for AWS Glue Schema Registry envelope header). Maximum: 255 bytes.", 0) \
     DECLARE(Milliseconds, kafka_consumer_acquire_timeout_ms, 30000, "Timeout in milliseconds for acquiring a Kafka consumer during direct SELECT queries. When multiple concurrent direct SELECTs run on the same Kafka2 table, each query must wait for consumers to become available. A timeout is needed to break potential deadlocks when queries hold different subsets of consumers.", 0) \
     DECLARE(Bool, kafka_map_virtual_columns_on_write, false, "If enabled, columns with special names (`_key`, `_timestamp`, `_headers.name`, `_headers.value`) in the Kafka table are mapped to the corresponding Kafka message metadata on INSERT and are excluded from the message payload.", 0) \
+    DECLARE(String, kafka_aws_region, "", "AWS region for MSK IAM authentication. Auto-detected from broker address if not specified. Required for PrivateLink or custom DNS.", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, kafka_row_delimiter, '\0') \
