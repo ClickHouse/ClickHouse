@@ -514,15 +514,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             ColumnDescription column_description(column_with_type_name.name, column_with_type_name.type);
             /// Carry over the parent column's DEFAULT so a column missing from a projection part written
             /// before the column was added reads the table default, not the column type's default.
-            /// Only stored kinds (DEFAULT/MATERIALIZED) may be inherited: an ALIAS/EPHEMERAL parent column
-            /// is materialized into an ordinary stored projection column, so it must not become non-stored here.
-            if (columns.has(column_with_type_name.name))
-            {
-                const auto & parent_default = columns.get(column_with_type_name.name).default_desc;
-                if (parent_default.expression
-                    && (parent_default.kind == ColumnDefaultKind::Default || parent_default.kind == ColumnDefaultKind::Materialized))
-                    column_description.default_desc = parent_default;
-            }
+            if (columns.has(column_with_type_name.name) && columns.get(column_with_type_name.name).default_desc.expression)
+                column_description.default_desc = columns.get(column_with_type_name.name).default_desc;
             metadata_columns.add(std::move(column_description));
         }
     }
