@@ -3,9 +3,7 @@
 #include <memory>
 #include <vector>
 
-#ifdef OS_LINUX
-#    include <unistd.h>
-#endif
+#include <base/getL2CacheSize.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -64,16 +62,8 @@ extern const int INVALID_JOIN_ON_EXPRESSION;
 size_t getMinBytesForPrefetchInJoin()
 {
     /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-    /// Threshold: 4 * max(L2 cache size, 256KB). Cached after first call.
-    static const size_t result = []
-    {
-        size_t l2_size = 0;
-#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
-        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
-            l2_size = ret;
-#endif
-        return 4 * std::max<size_t>(l2_size, 256 * 1024);
-    }();
+    /// Threshold: 4 * L2 cache size (`getL2CacheSize` defaults to 256 KiB). Cached after first call.
+    static const size_t result = 4 * getL2CacheSize();
     return result;
 }
 
@@ -157,6 +147,39 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
 }
 
 static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool use_two_level_maps);
+static std::optional<HashJoin::Type> tryGetLowCardinalityMethod(const ColumnPtr & column);
+
+/// A multi-disjunct (OR) join shares a single data->type across all disjuncts. When the disjuncts
+/// pick different packed fixed-key maps (e.g. keys32 for a (UInt16, UInt16) clause and keys64 for a
+/// (UInt32, UInt32) clause), use the widest packed map that can hold all of them instead of
+/// downgrading the whole join to the generic `hashed` map: a narrower packing always fits into a
+/// wider fixed-key map. Only genuinely different key kinds fall back to `hashed`.
+static HashJoin::Type mergeJoinMethods(HashJoin::Type lhs, HashJoin::Type rhs)
+{
+    using Type = HashJoin::Type;
+
+    /// Rank within a packing family (single-level and two-level are ranked separately); 0 = not a
+    /// packed fixed-key map. Within one join all disjuncts are the same level, so two packed types
+    /// being merged always belong to the same family.
+    auto packed_rank = [](Type type) -> int
+    {
+        switch (type)
+        {
+            case Type::keys32: case Type::two_level_keys32:   return 1;
+            case Type::keys64: case Type::two_level_keys64:   return 2;
+            case Type::keys128: case Type::two_level_keys128: return 3;
+            case Type::keys256: case Type::two_level_keys256: return 4;
+            default:                                          return 0;
+        }
+    };
+
+    const int lhs_rank = packed_rank(lhs);
+    const int rhs_rank = packed_rank(rhs);
+    if (lhs_rank != 0 && rhs_rank != 0)
+        return lhs_rank >= rhs_rank ? lhs : rhs;
+
+    return Type::hashed;
+}
 
 HashJoin::HashJoin(
     std::shared_ptr<TableJoin> table_join_,
@@ -164,7 +187,8 @@ HashJoin::HashJoin(
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    bool use_two_level_maps)
+    bool use_two_level_maps,
+    const StatsCollectingParams & stats_collecting_params_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -180,6 +204,7 @@ HashJoin::HashJoin(
     , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
     , enable_lazy_columns_replication(table_join->enableColumnsLazyReplication())
     , enable_prefetch(table_join->enableSoftwarePrefetchInJoin())
+    , stats_collecting_params(stats_collecting_params_)
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -233,6 +258,16 @@ HashJoin::HashJoin(
         sample_block_with_columns_to_add = right_table_keys = materializeBlock(right_sample_block);
     }
 
+    /// Detect a single non-nullable LowCardinality key before the keys are materialized below, so it
+    /// can use a dictionary-aware map. Restricted to a single disjunct and non-two-level maps for now.
+    std::optional<Type> low_cardinality_method;
+    if (table_join->oneDisjunct() && !use_two_level_maps && strictness != JoinStrictness::Asof)
+    {
+        const auto & only_clause_key_names = table_join->getOnlyClause().key_names_right;
+        if (only_clause_key_names.size() == 1)
+            low_cardinality_method = tryGetLowCardinalityMethod(right_table_keys.getByName(only_clause_key_names[0]).column);
+    }
+
     materializeBlockInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
     data->sample_block = prepareRightBlock(data->sample_block);
@@ -276,10 +311,15 @@ HashJoin::HashJoin(
         {
             /// Choose data structure to use for JOIN.
             auto current_join_method = chooseMethod(kind, key_columns, key_sizes.emplace_back(), use_two_level_maps);
+            if (low_cardinality_method)
+            {
+                current_join_method = *low_cardinality_method;
+                LOG_TRACE(log, "Using a dictionary-aware hash map for the single LowCardinality join key");
+            }
             if (data->type == Type::EMPTY)
                 data->type = current_join_method;
             else if (data->type != current_join_method)
-                data->type = Type::hashed;
+                data->type = mergeJoinMethods(data->type, current_join_method);
         }
     }
 
@@ -375,6 +415,10 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
+    if (all_fixed && keys_bytes <= 4)
+        return Type::keys32;
+    if (all_fixed && keys_bytes <= 8)
+        return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
     if (all_fixed && keys_bytes <= 32)
@@ -417,6 +461,10 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
             return Type::two_level_key32;
         case Type::key64:
             return Type::two_level_key64;
+        case Type::keys32:
+            return Type::two_level_keys32;
+        case Type::keys64:
+            return Type::two_level_keys64;
         case Type::keys128:
             return Type::two_level_keys128;
         case Type::keys256:
@@ -430,6 +478,35 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
         default:
             return type;
     }
+}
+
+/// If the column is a single non-nullable LowCardinality key, return the dictionary-aware map type
+/// to use for it. LowCardinality(Nullable(T)) and wide numeric dictionaries fall back to the regular
+/// (materialized) path. Mirrors the single-LowCardinality branch of AggregatedDataVariants::chooseMethod.
+static std::optional<HashJoin::Type> tryGetLowCardinalityMethod(const ColumnPtr & column)
+{
+    using Type = HashJoin::Type;
+
+    const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column.get());
+    if (!low_cardinality_column)
+        return {};
+
+    if (low_cardinality_column->getDictionary().nestedColumnIsNullable())
+        return {};
+
+    const auto * nested = low_cardinality_column->getDictionary().getNestedNotNullableColumn().get();
+
+    /// Numeric keys are intentionally not routed here. A materialized numeric key uses the key* maps,
+    /// which (with `enable_join_fixed_hash_table_conversion`) convert a dense small range to a
+    /// `range*_key*` FixedHashMap after build and can publish the shared fixed-hash-table runtime
+    /// filter; the dictionary-aware map skips both for no measurable gain. The benefit of the
+    /// dictionary-aware map is concentrated on variable-length string keys.
+    if (typeid_cast<const ColumnString *>(nested))
+        return Type::low_cardinality_key_string;
+    if (typeid_cast<const ColumnFixedString *>(nested))
+        return Type::low_cardinality_key_fixed_string;
+
+    return {};
 }
 
 template <typename KeyGetter, bool is_asof_join>
@@ -722,7 +799,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     for (const auto & column_name : right_key_names)
     {
         const auto & column = block.getByName(column_name).column;
-        all_key_columns[column_name] = removeSpecialRepresentations(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
+        auto prepared_key_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+        /// Keep the dictionary for the single-LowCardinality-column maps; their key getter needs it.
+        if (!isLowCardinalityType(data->type))
+            prepared_key_column = prepared_key_column->convertToFullColumnIfLowCardinality();
+        all_key_columns[column_name] = prepared_key_column;
     }
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
@@ -1357,6 +1438,21 @@ HashJoin::~HashJoin()
         LOG_TEST(log, "{}Join data has been already released", instance_log_id);
         return;
     }
+
+    try
+    {
+        if (build_phase_finished && stats_collecting_params.isCollectionAndUseEnabled())
+        {
+            if (const auto ht_size = getTotalRowCount())
+                getHashTablesStatistics<HashJoinEntry>().update(
+                    {.ht_size = ht_size, .source_rows = data->rows_to_join}, stats_collecting_params);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
     LOG_TEST(
         log,
         "{}Join data is being destroyed, {} bytes and {} rows in hash table",
@@ -1957,11 +2053,19 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
 
             auto & columns_info = columns_list.back().columns_info;
             size_t start_row = columns_info.columns.at(0)->size();
+
+            /// Detach all destination columns once (COW-safe: clones only if shared) and append through the
+            /// mutable handles, then move them back. This keeps the per-row append loop free of COW plumbing.
+            MutableColumns mutable_columns;
+            mutable_columns.reserve(columns_info.columns.size());
+            for (auto & column : columns_info.columns)
+                mutable_columns.push_back(IColumn::mutate(std::move(column)));
+
             for (; it.ok(); ++it)
             {
-                for (size_t i = 0; i < columns_info.columns.size(); ++i)
+                for (size_t i = 0; i < mutable_columns.size(); ++i)
                 {
-                    auto & col = columns_info.columns[i]->assumeMutableRef();
+                    auto & col = *mutable_columns[i];
                     /// Check if we insert into non replicated column from a replicated column.
                     if (!columns_info.replicated_columns[i] && it->columns_info->replicated_columns[i])
                     {
@@ -1974,6 +2078,10 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
                     }
                 }
             }
+
+            for (size_t i = 0; i < mutable_columns.size(); ++i)
+                columns_info.columns[i] = std::move(mutable_columns[i]);
+
             size_t new_rows = columns_info.columns.at(0)->size();
             if (new_rows > start_row)
             {
@@ -2344,7 +2452,7 @@ void HashJoin::publishSharedRuntimeFilters()
         return;
     shared_runtime_filters_publish_attempted = true;
 
-    if (!table_join->enableJoinRuntimeFilterSharedFixedHashTable())
+    if (!table_join->joinRuntimeFilterFromFixedHashTable())
         return;
 
     const auto & descriptors = table_join->getSharedRuntimeFilterDescriptors();
@@ -2581,6 +2689,8 @@ void HashJoin::onBuildPhaseFinish()
     }
     updateNonJoinedRowsStatus();
 
+    build_phase_finished = true;
+
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
 }
 
@@ -2591,7 +2701,7 @@ bool HashJoin::hasPostBuildPhase() const
     const bool needs_shared_filter_publish =
         data && data->rows_to_join && data->maps.size() == 1
         && (data->type == Type::key8 || data->type == Type::key16)
-        && table_join->enableJoinRuntimeFilterSharedFixedHashTable()
+        && table_join->joinRuntimeFilterFromFixedHashTable()
         && !table_join->getSharedRuntimeFilterDescriptors().empty();
 
     return rightTableCanBeReranged() || canConvertToFixedHashMap() || needs_shared_filter_publish;
