@@ -1,11 +1,12 @@
--- Regression test for a server abort (STID 4488-4e11) when full_sorting_merge was
+-- Regression test for a LOGICAL_ERROR (STID 4488-4e11) when full_sorting_merge was
 -- selected for a SEMI/ANTI join. full_sorting_merge is executed by MergeJoinAlgorithm,
 -- which only implements Any/All/Asof strictness. FullSortingMergeJoin::isSupported did
--- not reject the other strictnesses, so the join was wrongly built and then aborted at
--- pipeline build (LOGICAL_ERROR "Join is supported only for pipelines with one output
--- port") or at execution (NOT_IMPLEMENTED "MergeJoinAlgorithm is not implemented for
--- strictness Semi"). Now full_sorting_merge declines such joins, so the planner either
--- falls back to another enabled algorithm or reports it cleanly without crashing.
+-- not reject the other strictnesses, so the join was wrongly built and then raised an
+-- exception at pipeline build (LOGICAL_ERROR "Join is supported only for pipelines with
+-- one output port") or at execution (NOT_IMPLEMENTED "MergeJoinAlgorithm is not
+-- implemented for strictness Semi"). Now full_sorting_merge declines such joins, so the
+-- planner either falls back to another enabled algorithm or reports it cleanly as a
+-- query exception.
 
 SET enable_analyzer = 1;
 
@@ -20,7 +21,7 @@ EXPLAIN SELECT count() FROM (SELECT number AS x FROM numbers(10)) AS a
 ANTI LEFT JOIN (SELECT number AS x FROM numbers(5)) AS b ON a.x = b.x
 SETTINGS join_algorithm = 'full_sorting_merge'; -- { serverError NOT_IMPLEMENTED }
 
--- With another algorithm enabled, the planner falls back instead of crashing.
+-- With another algorithm enabled, the planner falls back instead of raising an exception.
 SELECT count() FROM (SELECT number AS x FROM numbers(10)) AS a
 SEMI LEFT JOIN (SELECT number AS x FROM numbers(5)) AS b ON a.x = b.x
 SETTINGS join_algorithm = 'full_sorting_merge,hash';
@@ -29,11 +30,11 @@ SELECT count() FROM (SELECT number AS x FROM numbers(10)) AS a
 ANTI LEFT JOIN (SELECT number AS x FROM numbers(5)) AS b ON a.x = b.x
 SETTINGS join_algorithm = 'full_sorting_merge,hash';
 
--- The original crash query: an EXISTS correlated subquery decorrelates into a SEMI join.
--- With another algorithm enabled it falls back and runs without crashing. The
+-- The original query exception: an EXISTS correlated subquery decorrelates into a SEMI join.
+-- With another algorithm enabled it falls back and runs without raising an exception. The
 -- full_sorting_merge-only variant is not asserted: its decorrelated plan either errors
--- cleanly or falls back depending on the plan, both non-crashing; the explicit SEMI/ANTI
--- cases above already cover the clean-error path deterministically.
+-- cleanly or falls back depending on the plan, neither raising an internal error; the
+-- explicit SEMI/ANTI cases above already cover the clean-error path deterministically.
 SELECT count() FROM (SELECT number AS x FROM numbers(10)) AS a
 WHERE EXISTS (SELECT 1 FROM (SELECT number AS y FROM numbers(5)) AS b WHERE b.y = a.x)
 SETTINGS allow_experimental_correlated_subqueries = 1, join_algorithm = 'full_sorting_merge,hash';
