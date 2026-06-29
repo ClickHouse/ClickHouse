@@ -197,6 +197,14 @@ public:
 
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false, bool ignore_explicit_metadata_file_path = false) const;
 
+    /// Resolves the metadata file using `settings`, allowing catalog-backed writes to plan from
+    /// the metadata location returned by the catalog.
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
+        const ContextPtr & context,
+        const DataLakeStorageSettings & settings,
+        bool force_fetch_latest_metadata,
+        bool ignore_explicit_metadata_file_path) const;
+
     const DB::Iceberg::PersistentTableComponents & getPersistentComponents() const
     {
         return persistent_components;
