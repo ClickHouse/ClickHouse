@@ -229,7 +229,7 @@ struct FormatSettings
         bool serialize_tuple_into_separate_columns = true;
         bool deserialize_separate_columns_into_tuple = true;
         bool empty_as_default = false;
-        bool empty_string_is_not_null = false;
+        bool missing_nullable_as_empty_string = false;
         bool crlf_end_of_line = false;
         bool allow_cr_end_of_line = false;
         bool enum_as_number = false;
