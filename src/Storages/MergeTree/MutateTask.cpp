@@ -1949,6 +1949,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             auto merge_task = std::make_unique<MergeTextIndexesTask>(
                 std::move(segments),
                 ctx->new_data_part,
+                (*ctx->mutate_entry)->rows_written,
                 index,
                 /*merged_part_offsets=*/ nullptr,
                 reader_settings,
@@ -2133,7 +2134,7 @@ private:
             if (ctx->indices_to_drop_names.contains(idx.name))
                 continue;
 
-            auto index_ptr = MergeTreeIndexFactory::instance().get(idx, *ctx->data->getSettings());
+            auto index_ptr = MergeTreeIndexFactory::instance().get(ctx->metadata_snapshot, idx, *ctx->data->getSettings());
 
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
@@ -2724,6 +2725,22 @@ private:
                     projection_part->checksums.getTotalChecksumUInt128());
             }
 
+            /// Remove orphan `<name>.proj` checksum entries inherited from the source part.
+            /// Such an entry points at a directory missing from the new part, so the projection
+            /// is marked broken on the next consistency-checking load (server startup or `ATTACH`).
+            /// An inherited entry is an orphan when both hold:
+            ///   1. the directory was not hardlinked into the new part, and
+            ///   2. the rebuild produced no projection part (zero-row rebuild, or drop/throw mode).
+            /// A projection that was rebuilt above is in `getProjectionParts()`, so this loop and the
+            /// one above operate on disjoint sets and never fight over the same checksum entry.
+            for (const auto & projection : ctx->metadata_snapshot->getProjections())
+            {
+                const auto projection_file = projection.getDirectoryName();
+                if (ctx->files_to_skip.contains(projection_file)
+                    && !ctx->new_data_part->getProjectionParts().contains(projection.name))
+                    ctx->new_data_part->checksums.files.erase(projection_file);
+            }
+
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {
@@ -3054,7 +3071,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     {
         if (ctx->indices_to_drop_names.contains(index.name))
         {
-            ctx->indices_to_drop.insert(index_factory.get(index, *ctx->data->getSettings()));
+            ctx->indices_to_drop.insert(index_factory.get(metadata_snapshot, index, *ctx->data->getSettings()));
             continue;
         }
 
@@ -3064,7 +3081,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         if (need_recalculate)
         {
             bool inserted = false;
-            auto index_ptr = index_factory.get(index, *ctx->data->getSettings());
+            auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
 
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
                 inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;
@@ -3171,7 +3188,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 if (already_in_recalc.contains(index.name))
                     continue;
 
-                auto index_ptr = index_factory.get(index, *ctx->data->getSettings());
+                auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
                 const String file_name = index_ptr->getFileName();
                 for (const auto & sub : index_ptr->getSubstreams())
                 {
