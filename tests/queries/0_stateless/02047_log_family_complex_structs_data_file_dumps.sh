@@ -11,7 +11,8 @@ do
     echo "$engine:"
 
     $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS tbl"
-    $CLICKHOUSE_CLIENT --query="CREATE TABLE tbl(x Array(Array(Int32)), y Nested(z String, w Float32)) ENGINE=$engine"
+    # Pin the codec to `LZ4` so the on-disk byte dumps do not depend on the server's default compression codec.
+    $CLICKHOUSE_CLIENT --query="CREATE TABLE tbl(x Array(Array(Int32)) CODEC(LZ4), y Nested(z String, w Float32) CODEC(LZ4)) ENGINE=$engine"
     data_dir=$($CLICKHOUSE_CLIENT --query="SELECT data_paths[1] FROM system.tables WHERE name='tbl' AND database=currentDatabase()")
 
     echo "empty:"
