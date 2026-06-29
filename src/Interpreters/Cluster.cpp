@@ -74,6 +74,24 @@ void concatInsertPath(std::string & insert_path, const std::string & dir_name)
         insert_path += "," + dir_name;
 }
 
+void appendShardWeight(std::vector<UInt64> & slot_to_shard, UInt32 weight, size_t shard_index)
+{
+    if (!weight)
+        return;
+
+    if (static_cast<size_t>(weight) > Cluster::MAX_TOTAL_SHARD_WEIGHT
+        || slot_to_shard.size() > Cluster::MAX_TOTAL_SHARD_WEIGHT - static_cast<size_t>(weight))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cluster total shard weight must not exceed {}, got at least {}",
+            Cluster::MAX_TOTAL_SHARD_WEIGHT,
+            slot_to_shard.size() + static_cast<size_t>(weight));
+    }
+
+    slot_to_shard.insert(std::end(slot_to_shard), weight, shard_index);
+}
+
 }
 
 /// Implementation of Cluster::Address class
@@ -334,14 +352,16 @@ Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
 Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix)
 {
     this->macros_ = macros;
-    updateClusters(config, settings, config_prefix);
+    mergeConfigClusters(config, settings, config_prefix);
 }
+
+/// No synchronisation: `other` is either an already-published (immutable) snapshot or a writer-owned builder
+/// on the same thread. See the class-level comment in `Cluster.h` for the invariant.
+Clusters::Clusters(const Clusters & other) = default;
 
 
 ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 {
-    std::lock_guard lock(mutex);
-
     std::string expanded_cluster_name;
     try
     {
@@ -357,14 +377,29 @@ ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 }
 
 
-void Clusters::setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
+bool Clusters::hasCluster(const std::string & cluster_name) const
 {
-    std::lock_guard lock(mutex);
-    impl[cluster_name] = cluster;
+    /// Intentionally reuses `getCluster` so macro expansion stays in a single source of truth; the only
+    /// observable difference is that callers get a `bool` without holding on to the `ClusterPtr`.
+    return getCluster(cluster_name) != nullptr;
 }
 
 
-void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config)
+void Clusters::addCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
+{
+    impl[cluster_name] = cluster;
+}
+
+void Clusters::removeClusterEntry(const String & cluster_name)
+{
+    impl.erase(cluster_name);
+}
+
+void Clusters::mergeConfigClusters(
+    const Poco::Util::AbstractConfiguration & new_config,
+    const Settings & settings,
+    const String & config_prefix,
+    const Poco::Util::AbstractConfiguration * old_config)
 {
     Poco::Util::AbstractConfiguration::Keys new_config_keys;
     new_config.keys(config_prefix, new_config_keys);
@@ -383,8 +418,6 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
         std::set_difference(
             old_config_keys.begin(), old_config_keys.end(), new_config_keys.begin(), new_config_keys.end(), std::back_inserter(deleted_keys));
     }
-
-    std::lock_guard lock(mutex);
 
     /// If old config is set, remove deleted clusters from impl, otherwise just clear it.
     if (old_config)
@@ -424,8 +457,8 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
 Clusters::Impl Clusters::getContainer() const
 {
-    std::lock_guard lock(mutex);
-    /// The following line copies container of shared_ptrs to return value under lock
+    /// Returns a copy of the container of `shared_ptr<Cluster>` — callers can safely mutate the map without
+    /// affecting the snapshot. The underlying `Cluster` objects are still shared.
     return impl;
 }
 
@@ -522,8 +555,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             info.per_replica_pools = {std::move(pool)};
             info.default_database = address.default_database;
 
-            if (weight)
-                slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
+            appendShardWeight(slot_to_shard, weight, shards_info.size());
 
             shards_info.emplace_back(std::move(info));
             addresses_with_failover.emplace_back(std::move(addresses));
@@ -638,6 +670,34 @@ Cluster::Cluster(
     initMisc();
 }
 
+Cluster::Cluster(
+    const Settings & settings,
+    const String & cluster_name_,
+    const String & cluster_secret_,
+    std::vector<ShardInitSpec> && shard_specs,
+    bool allow_distributed_ddl_queries_)
+    : slot_to_shard()
+    , secret(cluster_secret_)
+    , allow_distributed_ddl_queries(allow_distributed_ddl_queries_)
+    , name(cluster_name_)
+{
+    UInt32 current_shard_num = 1;
+    for (auto & spec : shard_specs)
+    {
+        addresses_with_failover.push_back(spec.addresses);
+        addShard(
+            settings,
+            std::move(spec.addresses),
+            /* treat_local_as_remote = */ false,
+            current_shard_num,
+            /* current_shard_name = */ "",
+            spec.weight,
+            spec.internal_replication);
+        ++current_shard_num;
+    }
+    initMisc();
+}
+
 void Cluster::addShard(
     const Settings & settings,
     Addresses addresses,
@@ -697,8 +757,7 @@ void Cluster::addShard(
         settings[Setting::distributed_replica_error_half_life].totalSeconds(),
         settings[Setting::distributed_replica_error_cap]);
 
-    if (weight)
-        slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
+    appendShardWeight(slot_to_shard, weight, shards_info.size());
 
     shards_info.emplace_back(
         std::move(insert_paths),
@@ -852,7 +911,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
                 addresses_with_failover.emplace_back(Addresses{address});
 
-                slot_to_shard.insert(std::end(slot_to_shard), info.weight, shards_info.size());
+                appendShardWeight(slot_to_shard, info.weight, shards_info.size());
                 shards_info.emplace_back(std::move(info));
             }
         };
@@ -884,8 +943,7 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
     {
         const auto & from_shard = from.shards_info.at(index);
 
-        if (from_shard.weight)
-            slot_to_shard.insert(std::end(slot_to_shard), from_shard.weight, shards_info.size());
+        appendShardWeight(slot_to_shard, from_shard.weight, shards_info.size());
         shards_info.emplace_back(from_shard);
 
         if (!from.addresses_with_failover.empty())

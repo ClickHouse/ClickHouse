@@ -368,7 +368,7 @@ NamedCollectionFromSQL::NamedCollectionFromSQL(const ASTCreateNamedCollectionQue
     pimpl = Impl::create(*config, collection_name, "", keys);
 }
 
-String NamedCollectionFromSQL::getCreateStatement(bool show_secrects)
+String NamedCollectionFromSQL::getCreateStatement(bool show_secrets)
 {
     auto & changes = create_query_ptr.changes;
     std::sort(
@@ -378,7 +378,7 @@ String NamedCollectionFromSQL::getCreateStatement(bool show_secrects)
     return create_query_ptr.formatWithPossiblyHidingSensitiveData(
         /*max_length=*/0,
         /*one_line=*/true,
-        /*show_secrets=*/show_secrects,
+        /*show_secrets=*/show_secrets,
         /*print_pretty_type_names=*/false,
         /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
         /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);

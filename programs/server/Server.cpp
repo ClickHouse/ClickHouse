@@ -56,6 +56,8 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Config/ConfigHelper.h>
+#include <Common/Clusters/ClusterFactory.h>
+#include <Common/Clusters/ClusterMetadataManager.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
@@ -1742,6 +1744,13 @@ try
     StatusFile status{path / "status", StatusFile::write_full_info};
 
     ServerUUID::load(path / "uuid", log);
+
+    /// Must run before components that may open a ZooKeeper session during startup
+    /// (for example `clusters_catalog_storage`), because `Context::getZooKeeper`
+    /// initializes the session with `ServerUUID::get`. SQL catalog clusters (`CREATE CLUSTER` /
+    /// `CREATE SHARD`) live under the configured `<clusters_catalog_storage.path>` on Keeper.
+    ClusterFactory::instance().initialize();
+    ClusterMetadataManager::instance().initialize();
 
     PlacementInfo::PlacementInfo::instance().initialize(config());
 

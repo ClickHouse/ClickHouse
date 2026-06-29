@@ -357,6 +357,7 @@
     M(ZooKeeperWatchTriggeredObjectStorageQueue, "Number of watch notifications dispatched to ObjectStorageQueue / S3Queue.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredClusterDiscovery, "Number of watch notifications dispatched to ClusterDiscovery.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredMaterializedViewRefresh, "Number of watch notifications dispatched to MaterializedView refresh coordination.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredClusterMetadata, "Number of watch notifications dispatched to SQL-managed cluster metadata replication.", ValueType::Number) \
     M(ZooKeeperUserExceptions, "Number of exceptions while working with ZooKeeper related to the data (no node, bad version or similar).", ValueType::Number) \
     M(ZooKeeperHardwareExceptions, "Number of exceptions while working with ZooKeeper related to network (connection loss or similar).", ValueType::Number) \
     M(ZooKeeperOtherExceptions, "Number of exceptions while working with ZooKeeper other than ZooKeeperUserExceptions and ZooKeeperHardwareExceptions.", ValueType::Number) \

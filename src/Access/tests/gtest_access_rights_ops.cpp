@@ -79,7 +79,7 @@ TEST(AccessRights, GrantWildcard)
     root = {};
     root.grant(AccessType::SELECT, "test");
     root.grantWildcard(AccessType::CREATE_TABLE, "test");
-    ASSERT_EQ(root.toString(), "GRANT CREATE TABLE ON test*.*, GRANT SELECT ON test.*");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON test.*, GRANT CREATE TABLE ON test*.*");
 
     root = {};
     root.grant(AccessType::SELECT, "test");
@@ -614,7 +614,7 @@ TEST(AccessRights, WildcardGrantEdgeCases)
     ASSERT_TRUE(root.isGranted(AccessType::SELECT, "testing"));
     ASSERT_TRUE(root.isGranted(AccessType::INSERT, "test"));
     ASSERT_FALSE(root.isGranted(AccessType::INSERT, "testing"));
-    ASSERT_EQ(root.toString(), "GRANT SELECT ON test*.*, GRANT INSERT ON test.*");
+    ASSERT_EQ(root.toString(), "GRANT INSERT ON test.*, GRANT SELECT ON test*.*");
 
     root = {};
     root.grantWildcard(AccessType::SELECT, "prod");

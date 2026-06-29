@@ -9,6 +9,13 @@
 #include <Parsers/ParserDropResourceQuery.h>
 #include <Parsers/ParserDropIndexQuery.h>
 #include <Parsers/ParserDropNamedCollectionQuery.h>
+#include <Parsers/ParserCreateEndpointQuery.h>
+#include <Parsers/ParserAlterEndpointQuery.h>
+#include <Parsers/ParserAlterShardQuery.h>
+#include <Parsers/ParserDropEndpointQuery.h>
+#include <Parsers/ParserCreateClusterCatalogQuery.h>
+#include <Parsers/ParserAlterClusterQuery.h>
+#include <Parsers/ParserDropClusterCatalogQuery.h>
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserParallelWithQuery.h>
@@ -67,6 +74,13 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDropWorkloadQuery drop_workload_p;
     ParserCreateResourceQuery create_resource_p;
     ParserDropResourceQuery drop_resource_p;
+    ParserCreateClusterCatalogQuery create_cluster_catalog_p;
+    ParserCreateEndpointQuery create_endpoint_p;
+    ParserAlterEndpointQuery alter_endpoint_p;
+    ParserAlterShardQuery alter_shard_p;
+    ParserAlterClusterQuery alter_cluster_p;
+    ParserDropClusterCatalogQuery drop_cluster_catalog_p;
+    ParserDropEndpointQuery drop_endpoint_p;
     ParserCreateNamedCollectionQuery create_named_collection_p;
     ParserDropNamedCollectionQuery drop_named_collection_p;
     ParserAlterNamedCollectionQuery alter_named_collection_p;
@@ -101,6 +115,13 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || drop_workload_p.parse(pos, node, expected)
         || create_resource_p.parse(pos, node, expected)
         || drop_resource_p.parse(pos, node, expected)
+        || create_cluster_catalog_p.parse(pos, node, expected)
+        || create_endpoint_p.parse(pos, node, expected)
+        || alter_endpoint_p.parse(pos, node, expected)
+        || alter_shard_p.parse(pos, node, expected)
+        || alter_cluster_p.parse(pos, node, expected)
+        || drop_cluster_catalog_p.parse(pos, node, expected)
+        || drop_endpoint_p.parse(pos, node, expected)
         || create_named_collection_p.parse(pos, node, expected)
         || drop_named_collection_p.parse(pos, node, expected)
         || alter_named_collection_p.parse(pos, node, expected)
