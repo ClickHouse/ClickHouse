@@ -127,8 +127,8 @@ namespace
         raw_builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
         raw_builder.select_list.back()->setAlias(ColumnNames::Group);
         raw_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
-        raw_builder.select_list.push_back(makeASTFunction("toFloat64", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp)));
-        raw_builder.select_list.back()->setAlias(ColumnNames::Value);
+        /// Keep the original sample value so the stale-marker bit pattern survives until the grid is built.
+        raw_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
         raw_builder.from_table_function = makeASTFunction(
             "timeSeriesSelector",
             make_intrusive<ASTLiteral>(context.time_series_storage_id.getDatabaseName()),
@@ -142,16 +142,50 @@ namespace
         SelectQueryBuilder grid_builder;
         grid_builder.from_table = context.subqueries.back().name;
         grid_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-        grid_builder.select_list.push_back(addParametersToAggregateFunction(
+
+        /// Builds a `timeSeriesLastToGrid` aggregate (last sample per grid point) over the given value expression.
+        auto make_last_grid = [&](ASTPtr value_expression)
+        {
+            return addParametersToAggregateFunction(
+                makeASTFunction("timeSeriesLastToGrid", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), std::move(value_expression)),
+                timeSeriesTimestampToAST(selector_range.start_time, context.timestamp_data_type),
+                timeSeriesTimestampToAST(selector_range.end_time, context.timestamp_data_type),
+                timeSeriesDurationToAST(selector_range.step, context.timestamp_data_type),
+                timeSeriesDurationToAST(selector_range.window, context.timestamp_data_type));
+        };
+
+        /// Grid of the last sample's value, kept only to detect empty positions and Prometheus stale markers.
+        ASTPtr last_value_grid = make_last_grid(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+        /// Grid of the last sample's timestamp - the value that `timestamp()` must return.
+        ASTPtr last_timestamp_grid = make_last_grid(makeASTFunction("toFloat64", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp)));
+
+        /// timestamp() returns the last sample's timestamp, but only when that sample is a real, non-stale sample.
+        /// Earlier the value was replaced with its timestamp before aggregation, which hid the stale-marker bit
+        /// pattern from the finalizer. Here we null out grid positions whose last sample is missing or stale, so
+        /// the normal vector-grid finalizer drops them (NULL positions) while keeping genuine timestamps.
+        /// 0x7ff0000000000002 is the Prometheus stale-marker NaN bit pattern.
+        ASTPtr values = makeASTFunction(
+            "arrayMap",
             makeASTFunction(
-                "timeSeriesLastToGrid",
-                make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
-                make_intrusive<ASTIdentifier>(ColumnNames::Value)),
-            timeSeriesTimestampToAST(selector_range.start_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(selector_range.end_time, context.timestamp_data_type),
-            timeSeriesDurationToAST(selector_range.step, context.timestamp_data_type),
-            timeSeriesDurationToAST(selector_range.window, context.timestamp_data_type)));
-        grid_builder.select_list.back()->setAlias(ColumnNames::Values);
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("last_value"), make_intrusive<ASTIdentifier>("last_timestamp")),
+                makeASTFunction(
+                    "if",
+                    makeASTFunction(
+                        "and",
+                        makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("last_value")),
+                        makeASTFunction(
+                            "notEquals",
+                            makeASTFunction(
+                                "reinterpretAsUInt64",
+                                makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("last_value"))),
+                            make_intrusive<ASTLiteral>(0x7ff0000000000002ULL))),
+                    make_intrusive<ASTIdentifier>("last_timestamp"),
+                    make_intrusive<ASTLiteral>(Field{} /* NULL */))),
+            std::move(last_value_grid),
+            std::move(last_timestamp_grid));
+        values->setAlias(ColumnNames::Values);
+        grid_builder.select_list.push_back(std::move(values));
         grid_builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
         SQLQueryPiece res{function_node, function_node->result_type, StoreMethod::VECTOR_GRID};
