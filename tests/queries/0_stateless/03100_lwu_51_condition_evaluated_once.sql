@@ -70,9 +70,10 @@ SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 
 INSERT INTO t_lwu_cond_once_nested VALUES (1, [1], ['x']);
 
-UPDATE t_lwu_cond_once_nested SET n.a = [10, 20] WHERE id = 1; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
-UPDATE t_lwu_cond_once_nested SET n.a = [10] WHERE id = 1;
+UPDATE t_lwu_cond_once_nested SET `n.a` = [10, 20] WHERE id = 1; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+UPDATE t_lwu_cond_once_nested SET `n.a` = [10] WHERE id = 1;
+UPDATE t_lwu_cond_once_nested SET `n.a` = arrayMap(x -> x - 1, `n.a`) WHERE id = 1;
 
-SELECT n.a, n.b FROM t_lwu_cond_once_nested;
+SELECT `n.a`, `n.b` FROM t_lwu_cond_once_nested;
 
 DROP TABLE t_lwu_cond_once_nested;

@@ -956,7 +956,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                         /// Use validation result as the condition to keep its side effect.
                         updated_column = makeASTFunction("if",
                             nested_validation,
-                            update_expr->clone(),
+                            makeASTFunction("_CAST",
+                                update_expr->clone(),
+                                type_literal),
                             make_intrusive<ASTIdentifier>(column_name));
                     }
                     else
