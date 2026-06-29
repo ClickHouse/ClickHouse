@@ -31,7 +31,7 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "Values"; }
+    const char * getStorageEngineName() const override { return "Values"; }
 
     String model_name;
     String table_name;

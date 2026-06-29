@@ -106,12 +106,11 @@ StoragePtr TableFunctionPredict::executeImpl(
 void registerTableFunctionPredict(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionPredict>(
-        {.documentation
-         = {.description = "Runs model's predictions on the input table",
-            .returned_value = "A table containing a single row - predicted target values of the model",
-            .category = FunctionDocumentation::Category::TableFunction
-         },
-         .allow_readonly = true});
+        FunctionDocumentation{
+            .description = "Runs model's predictions on the input table",
+            .returned_value = {"A table containing a single row - predicted target values of the model"},
+            .category = FunctionDocumentation::Category::TableFunction},
+        TableFunctionProperties{.allow_readonly = true});
 }
 
 }
