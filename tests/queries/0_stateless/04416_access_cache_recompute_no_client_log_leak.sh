@@ -27,12 +27,17 @@ QUOTA="quota_${CLICKHOUSE_DATABASE}"
 ROLE="role_${CLICKHOUSE_DATABASE}"
 POLICY="policy_${CLICKHOUSE_DATABASE}"
 PROFILE="profile_${CLICKHOUSE_DATABASE}"
+# Put the policy on this test's own private table, never the shared system.one: with
+# throw_on_unmatched_row_policies=on a policy on a shared table makes every other session's
+# reads of it fail with ACCESS_DENIED. The recompute (and its log line) fires either way.
+POLICY_TABLE="${CLICKHOUSE_DATABASE}.policy_target"
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"
 ${CLICKHOUSE_CLIENT} -q "DROP QUOTA IF EXISTS ${QUOTA}"
 ${CLICKHOUSE_CLIENT} -q "DROP ROLE IF EXISTS ${ROLE}"
-${CLICKHOUSE_CLIENT} -q "DROP ROW POLICY IF EXISTS ${POLICY} ON system.one"
+${CLICKHOUSE_CLIENT} -q "DROP ROW POLICY IF EXISTS ${POLICY} ON ${POLICY_TABLE}"
 ${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE IF EXISTS ${PROFILE}"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE IF NOT EXISTS ${POLICY_TABLE} (x UInt8) ENGINE = Memory"
 
 # Each statement triggers a batch-finished recompute of one or more caches. We request debug
 # logs at the connection level so any leaked recompute line would deterministically appear on
@@ -45,7 +50,7 @@ stderr=$(
         CREATE USER ${USER} IDENTIFIED WITH plaintext_password BY 'pass';
         GRANT ${ROLE} TO ${USER};
         CREATE QUOTA ${QUOTA} FOR INTERVAL 100 YEAR MAX FAILED SEQUENTIAL AUTHENTICATIONS = 1 TO ${USER};
-        CREATE ROW POLICY ${POLICY} ON system.one USING 1 TO ${USER};
+        CREATE ROW POLICY ${POLICY} ON ${POLICY_TABLE} USING 1 TO ${USER};
         ALTER QUOTA ${QUOTA} FOR INTERVAL 100 YEAR MAX FAILED SEQUENTIAL AUTHENTICATIONS = 4 TO ${USER};
     " 2>&1 1>/dev/null
 )
@@ -54,6 +59,7 @@ echo "$stderr" | grep -cE "QuotaCache: Re-chose quotas|RoleCache: Recalculated e
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"
 ${CLICKHOUSE_CLIENT} -q "DROP QUOTA IF EXISTS ${QUOTA}"
-${CLICKHOUSE_CLIENT} -q "DROP ROW POLICY IF EXISTS ${POLICY} ON system.one"
+${CLICKHOUSE_CLIENT} -q "DROP ROW POLICY IF EXISTS ${POLICY} ON ${POLICY_TABLE}"
 ${CLICKHOUSE_CLIENT} -q "DROP ROLE IF EXISTS ${ROLE}"
 ${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE IF EXISTS ${PROFILE}"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${POLICY_TABLE}"
