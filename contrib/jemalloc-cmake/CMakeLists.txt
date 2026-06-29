@@ -59,6 +59,12 @@ else()
     # JEMALLOC_BACKGROUND_THREAD and switching malloc_mutex_t to pthread_mutex_t (undef
     # JEMALLOC_OS_UNFAIR_LOCK), as on Linux and FreeBSD.
     #
+    # In the same Darwin headers we also undef JEMALLOC_HAVE_MACH_ABSOLUTE_TIME so that nstime_get() uses
+    # gettimeofday() (CLOCK_REALTIME). macOS cannot bind a pthread condition variable to a monotonic clock
+    # (no pthread_condattr_setclock), so the background thread waits on CLOCK_REALTIME; nstime must use the
+    # same clock, otherwise the pthread_cond_timedwait() deadline is always in the past and the thread
+    # busy-spins instead of sleeping for dirty_decay_ms.
+    #
     # Previously dirty_decay_ms was set to 0 here (immediate purging) to bound RSS, under the assumption
     # that background_thread was unavailable. That assumption was wrong, and immediate purging is very
     # expensive for allocation-churning workloads (e.g. recursive CTEs): every free issues a madvise()

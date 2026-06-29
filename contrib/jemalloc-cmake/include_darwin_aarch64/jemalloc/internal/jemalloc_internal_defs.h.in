@@ -112,8 +112,24 @@
 
 /*
  * Defined if mach_absolute_time() is available.
+ *
+ * ClickHouse: intentionally left undefined so that nstime_get() falls back to
+ * gettimeofday() (CLOCK_REALTIME). With this defined, nstime_get() uses
+ * mach_absolute_time(), a monotonic uptime clock. But the background thread's
+ * condition variable is created with the default clock (CLOCK_REALTIME): macOS
+ * provides no pthread_condattr_setclock to bind it to a monotonic clock, and
+ * jemalloc only attempts that when JEMALLOC_HAVE_CLOCK_MONOTONIC[_COARSE] is
+ * defined, which it is not here. background_thread_sleep() builds the
+ * pthread_cond_timedwait() deadline from the nstime (uptime) clock and passes
+ * it to a CLOCK_REALTIME wait; the uptime value is decades behind the realtime
+ * epoch, so the deadline is always in the past and the wait returns ETIMEDOUT
+ * immediately - the background thread busy-spins a CPU core instead of sleeping
+ * for dirty_decay_ms. Falling back to gettimeofday() makes nstime_get() use the
+ * same clock the condvar waits on (CLOCK_REALTIME), so the deadline is honoured.
+ * This is a prerequisite for JEMALLOC_BACKGROUND_THREAD to work correctly on
+ * macOS. See https://github.com/ClickHouse/ClickHouse/issues/108429
  */
-#define JEMALLOC_HAVE_MACH_ABSOLUTE_TIME
+/* #undef JEMALLOC_HAVE_MACH_ABSOLUTE_TIME */
 
 /*
  * Defined if clock_gettime(CLOCK_REALTIME, ...) is available.
