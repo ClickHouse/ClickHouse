@@ -86,6 +86,13 @@ std::string validateParams(size_t dimensions, size_t m, size_t nbits)
 {
     if (dimensions == 0)
         return "the number of dimensions must be greater than zero";
+    /// Bound the dimensions before any size arithmetic: `codebookFloats = 2^nbits * dimensions` and the per-vector code
+    /// size are derived from it, so an absurd value (e.g. a fuzzer passing 2^63) would overflow size_t and then trip a
+    /// std::length_error/bad_alloc deep inside a container. Cap well above any real embedding so the derived sizes stay
+    /// in range and the error is a clean exception here instead.
+    static constexpr size_t MAX_DIMENSIONS = 1u << 20; /// 1,048,576
+    if (dimensions > MAX_DIMENSIONS)
+        return fmt::format("the number of dimensions ({}) exceeds the maximum {}", dimensions, MAX_DIMENSIONS);
     if (m == 0)
         return "the number of subspaces (m) must be greater than zero";
     if (dimensions % m != 0)
