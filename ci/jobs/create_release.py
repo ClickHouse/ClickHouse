@@ -40,6 +40,7 @@ import dataclasses
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -1003,8 +1004,8 @@ class PackageDownloader:
         # leaves a truncated file, so a leftover from an earlier release or a
         # different commit on a reused runner must not be reused — always
         # re-download from S3 for this release commit.
-        Shell.check(f"rm -rf {self.LOCAL_DIR}", strict=True)
-        Shell.check(f"mkdir -p {self.LOCAL_DIR}", strict=True)
+        shutil.rmtree(self.LOCAL_DIR, ignore_errors=True)
+        os.makedirs(self.LOCAL_DIR, exist_ok=True)
         for package_file in self.deb_package_files + self.rpm_package_files + self.tgz_package_files:
             local_path = self.LOCAL_DIR + "/" + package_file
             print(f"Downloading: [{package_file}]")
