@@ -6,12 +6,12 @@
 using namespace DB;
 
 
-/// Regression test for the dot-escaping fix in `escapeForFileName`: dots must be
-/// kept verbatim rather than percent-encoded. Without the fix this asserts
-/// `a%2Eb`, so the test fails on the unfixed (merge-base) binary and passes on
-/// the fixed one — exactly what the unit-test bugfix validation job checks.
-TEST(BugfixProbe, DotsAreNotEscaped)
+/// Regression test for the synthetic sentinel fix in `escapeForFileName`. The merge-base
+/// (without the fix) escapes the sentinel to itself (all characters are word characters),
+/// so this assertion fails there and passes on the fixed binary — a clean runtime
+/// reproduction with zero blast radius (no real caller ever passes the sentinel). Used
+/// only to validate the unit-test bugfix validation job; not for merge.
+TEST(BugfixProbe, SentinelIsHandled)
 {
-    EXPECT_EQ(escapeForFileName("a.b"), "a.b");
-    EXPECT_EQ(unescapeForFileName(escapeForFileName("a.b")), "a.b");
+    EXPECT_EQ(escapeForFileName("__ch_bugfix_validation_probe__"), "bugfix-validation-ok");
 }
