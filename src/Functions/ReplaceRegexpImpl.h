@@ -364,8 +364,8 @@ struct ReplaceRegexpImpl
 
         Instructions instructions = createInstructions(replacement, num_captures);
 
-        /// `replace` builds RE2 with default options, so `.` does not match newline (dot_all = false).
-        RegexpJITMatcher matcher = getRegexpJITMatcher(needle, /* case_insensitive */ false, /* dot_all */ false, regexp_jit_min_count);
+        /// `replace` builds RE2 with `dot_nl` enabled (see `createRegexpOptions`), so `.` matches newline (dot_all = true).
+        RegexpJITMatcher matcher = getRegexpJITMatcher(needle, /* case_insensitive */ false, /* dot_all */ true, regexp_jit_min_count);
         /// Allocated once per call (not per row); reused by `processStringJIT` for every row.
         VectorWithMemoryTracking<const uint8_t *> capture_starts;
         VectorWithMemoryTracking<const uint8_t *> capture_ends;

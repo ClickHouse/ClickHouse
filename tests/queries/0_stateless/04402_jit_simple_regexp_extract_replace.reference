@@ -20,10 +20,12 @@ bbbbbb
 example.com/p
 x
 |abc|
--- dot vs newline: replaceRegexp uses RE2 defaults (. does not match newline), extractAll uses RE_DOT_NL (. matches newline)
-X\nX
+-- dot vs newline: extractAll and replaceRegexp* both build RE2 with RE_DOT_NL / dot_nl, so . matches newline
+XXX
 ['a','\n','b']
-X\nX\nX
+XXXXX
+X
+X
 -- vectorized over many rows, JIT path equals RE2 (one side compiled, the other forced onto RE2)
 1
 1

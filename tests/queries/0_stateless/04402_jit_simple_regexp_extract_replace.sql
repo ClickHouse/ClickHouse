@@ -30,10 +30,13 @@ SELECT replaceRegexpAll('https://www.example.com/p', '^https?://(?:www\\.)?', ''
 SELECT replaceRegexpAll('x', '', '-');
 SELECT replaceRegexpAll('abc', '^|$', '|');
 
-SELECT '-- dot vs newline: replaceRegexp uses RE2 defaults (. does not match newline), extractAll uses RE_DOT_NL (. matches newline)';
+SELECT '-- dot vs newline: extractAll and replaceRegexp* both build RE2 with RE_DOT_NL / dot_nl, so . matches newline';
 SELECT replaceRegexpAll('a\nb', '.', 'X');
 SELECT extractAll('a\nb', '.');
 SELECT replaceRegexpAll('a\nb\nc', '.', 'X');
+-- a quantified dot must also span newlines (the JIT matcher must agree with RE2's dot_nl mode)
+SELECT replaceRegexpOne('a\nb', '.+', 'X');
+SELECT replaceRegexpAll('a\nb\nc', '.+', 'X');
 
 SELECT '-- vectorized over many rows, JIT path equals RE2 (one side compiled, the other forced onto RE2)';
 SELECT
