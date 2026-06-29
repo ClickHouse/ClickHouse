@@ -16,6 +16,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/identity.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 
@@ -195,14 +197,17 @@ bool functionResultIsAlwaysConstant(const String & function_name)
     return function_name == "ignore" || function_name == "indexHint";
 }
 
-/// `identity` is a transparent wrapper: it is deliberately not suitable for constant folding, yet
-/// executeImpl returns its argument column unchanged. So when its argument folds to a ColumnConst the
-/// function emits that same ColumnConst on the replicas. Recognize it by name so the analyze-only
-/// header stays constant for shapes like identity(ignore(s IN (...))), matching the real projection
-/// plan even though the analyzer never folds it.
-bool functionIsTransparentConstantWrapper(const String & function_name)
+/// A transparent wrapper is a FunctionIdentityBase (identity, __scalarSubqueryResult, __actionName):
+/// it is deliberately not suitable for constant folding, yet executeImpl returns its argument column
+/// unchanged. So when its argument folds to a ColumnConst the function emits that same ColumnConst on
+/// the replicas. Recognize it by its function class (not by name) so the analyze-only header stays
+/// constant for shapes like identity(ignore(s IN (...))) or __scalarSubqueryResult(ignore(s IN (...))),
+/// matching the real projection plan even though the analyzer never folds it. A type-based check also
+/// covers every current and future FunctionIdentityBase subclass without enumerating names.
+bool functionIsTransparentConstantWrapper(const IFunctionBase & function_base)
 {
-    return function_name == "identity";
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function_base);
+    return adaptor && dynamic_cast<const FunctionIdentityBase *>(adaptor->getFunction().get()) != nullptr;
 }
 
 /// Try to fold a projection to its constant column without building an ActionsDAG over the whole
@@ -246,7 +251,7 @@ ColumnPtr tryEvaluateConstantProjectionColumn(const QueryTreeNodePtr & node)
     /// net: a wrapper over a non-constant argument never reaches here, because that argument fails to
     /// fold and we return nullptr first.
     if (!function_base->isSuitableForConstantFolding()
-        && !functionIsTransparentConstantWrapper(function_node->getFunctionName()))
+        && !functionIsTransparentConstantWrapper(*function_base))
         return nullptr;
 
     ColumnsWithTypeAndName argument_columns;

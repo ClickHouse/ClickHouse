@@ -64,9 +64,24 @@ SELECT DISTINCT count(*) OVER () FROM (SELECT identity(ignore(s IN (SELECT toStr
 SELECT DISTINCT count(*) OVER () FROM (SELECT identity(identity(ignore(s IN ('1', '2')))) FROM t_window_const);
 SELECT DISTINCT count(*) OVER () FROM (SELECT identity(ignore(s IN ('1', '2'))) AS c, s FROM t_window_const);
 
+-- The transparent wrapper recognition is class-based (FunctionIdentityBase), not by name, so the
+-- sibling internal wrapper __scalarSubqueryResult is covered too: it is not suitable for constant
+-- folding, yet it returns its argument column unchanged, so over a constant argument it emits a
+-- ColumnConst on the replicas. With an IN-holding always-constant argument, the analyze-only header
+-- must keep the constant, otherwise the unused column is pruned on the coordinator while the replica
+-- streams it (the same OutputPort divergence). This holds for an IN tuple, an IN subquery, and either
+-- nesting order with identity.
+SELECT DISTINCT count(*) OVER () FROM (SELECT __scalarSubqueryResult(ignore(s IN ('1', '2'))) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT __scalarSubqueryResult(ignore(s IN (SELECT toString(number) FROM numbers(3)))) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT __scalarSubqueryResult(identity(ignore(s IN ('1', '2')))) FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT identity(__scalarSubqueryResult(ignore(s IN ('1', '2')))) FROM t_window_const);
+
 -- identity over a non-constant IN argument stays a plain column (not falsely kept constant): it goes
 -- the same plain-column header path as a bare IN, so it cannot be evaluated here and deterministically
 -- reports CLUSTER_DOESNT_EXIST against a missing cluster after the header is built.
 SELECT DISTINCT count(*) OVER () FROM (SELECT identity(s IN ('1', '2')) FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
+-- A transparent wrapper over a genuinely non-constant argument also stays a plain column: its argument
+-- does not fold to a constant, so the wrapper is not falsely kept constant.
+SELECT DISTINCT count(*) OVER () FROM (SELECT __scalarSubqueryResult(toUInt8(s IN ('1', '2'))) FROM t_window_const) SETTINGS cluster_for_parallel_replicas = 'not_exists'; -- { serverError CLUSTER_DOESNT_EXIST }
 
 DROP TABLE t_window_const;
