@@ -234,16 +234,20 @@ public:
         const SelectQueryInfo & select_query_info,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ReadFromMergeTree::Indexes & indexes,
         const ContextPtr & context,
         LoggerPtr log);
 
-    /// Salt a WHERE/PREWHERE condition hash with the query's effective skip-index profile
-    /// (use_skip_indexes and the set of indexes disabled via ignore_data_skipping_indices).
-    /// Skip-index-derived query condition cache exclusions are stored under this profiled hash
-    /// so that a query with a different profile (e.g. use_skip_indexes = 0) never consults a
-    /// verdict produced by an index it did not run. Computed identically on the write side
-    /// (ReadFromMergeTree) and the read side (filterPartsByQueryConditionCache).
-    static UInt64 getSkipIndexProfiledConditionHash(UInt64 condition_hash, const Settings & settings);
+    /// Salt a WHERE/PREWHERE condition hash with the effective skip-index profile that index
+    /// analysis actually ran: the set of useful skip indexes (their names and types, after
+    /// use_skip_indexes / ignore_data_skipping_indices / metadata have been applied) and the
+    /// effective use_skip_indexes_for_disjunctions mode. Skip-index-derived query condition
+    /// cache exclusions are stored under this profiled hash so a query that ran a different
+    /// set of indexes (e.g. use_skip_indexes = 0, an index dropped/ignored, or a different
+    /// disjunction mode) never consults a verdict produced by an index it did not run.
+    /// Both the write side (ReadFromMergeTree) and the read side (filterPartsByQueryConditionCache)
+    /// pass the same Indexes, so the salt is identical on both.
+    static UInt64 getSkipIndexProfiledConditionHash(UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.

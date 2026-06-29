@@ -21,6 +21,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/IAST.h>
+#include <Parsers/IASTHash.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -83,7 +85,6 @@ namespace Setting
     extern const SettingsBool per_part_index_stats;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indices;
-    extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_rows_to_read;
@@ -97,7 +98,6 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsOverflowMode read_overflow_mode;
-    extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
@@ -1371,23 +1371,38 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
     return row_limits;
 }
 
-UInt64 MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(UInt64 condition_hash, const Settings & settings)
+UInt64 MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes)
 {
     SipHash hash;
     hash.update(condition_hash);
-    hash.update(static_cast<UInt64>(settings[Setting::use_skip_indexes].value));
+    hash.update(indexes.use_skip_indexes);
 
-    /// Different sets of ignored indexes can produce different skip-index exclusions for the same
-    /// predicate, so they must hash to different keys. parseIdentifiersOrStringLiteralsToSet matches
-    /// how buildIndexes interprets the setting; the names are sorted so the key is order-independent.
-    if (settings[Setting::ignore_data_skipping_indices].changed)
+    /// Salt with the identity of the skip indexes that index analysis actually used. This set is
+    /// already the effective one: buildIndexes removes indexes disabled via ignore_data_skipping_indices,
+    /// drops indexes no longer present in metadata, and leaves it empty when use_skip_indexes = 0. So
+    /// any change to the running set (a different ignore list, an index dropped/added/redefined, skip
+    /// indexes off) changes the key, and a query that did not run an index never reads a verdict
+    /// produced by it. Each index contributes the tree hash of its full definition AST (name, type,
+    /// expression, granularity, arguments), so a same-name/same-type index with a different definition
+    /// is also distinguished. Index names are unique within a table, so sorting by name is a
+    /// deterministic, order-independent ordering; each per-index contribution is fixed width (two
+    /// UInt64), so different sets cannot collide by concatenation.
+    std::vector<std::pair<String, IASTHash>> index_identities;
+    index_identities.reserve(indexes.skip_indexes.useful_indices.size());
+    for (const auto & useful_index : indexes.skip_indexes.useful_indices)
+        index_identities.emplace_back(useful_index.index->index.name, useful_index.index->index.definition_ast->getTreeHash(/*ignore_aliases=*/true));
+    std::sort(index_identities.begin(), index_identities.end(), [](const auto & l, const auto & r) { return l.first < r.first; });
+
+    hash.update(index_identities.size());
+    for (const auto & [name, definition_hash] : index_identities)
     {
-        auto ignored = parseIdentifiersOrStringLiteralsToSet(settings[Setting::ignore_data_skipping_indices].toString(), settings);
-        std::vector<String> sorted_ignored(ignored.begin(), ignored.end());
-        std::sort(sorted_ignored.begin(), sorted_ignored.end());
-        for (const auto & name : sorted_ignored)
-            hash.update(name);
+        hash.update(definition_hash.low64);
+        hash.update(definition_hash.high64);
     }
+
+    /// use_skip_indexes_for_disjunctions changes the exclusions produced by the same indexes for OR
+    /// predicates, so two queries with different effective modes must not share a key.
+    hash.update(indexes.use_skip_indexes_for_disjunctions);
 
     return hash.get64();
 }
@@ -1397,6 +1412,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ReadFromMergeTree::Indexes & indexes,
     const ContextPtr & context,
     LoggerPtr log)
 {
@@ -1414,16 +1430,17 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     /// Each condition is looked up under two keys (see the write sides):
     ///   * the bare condition hash, holding row-level exclusions (FilterTransform,
     ///     MergeTreeSelectProcessor, object storage) which are always sound; and
-    ///   * a hash salted with the query's effective skip-index profile
+    ///   * a hash salted with the effective skip-index profile that index analysis ran
     ///     (getSkipIndexProfiledConditionHash), holding the skip-index-analysis exclusions
     ///     written by ReadFromMergeTree.
     /// Skip-index exclusions can legitimately diverge from the row-level predicate (e.g. a text
     /// index with a preprocessor), so they must only be consulted by a query that ran the same set
-    /// of indexes; salting the key with the profile guarantees a query with a different profile
-    /// (e.g. use_skip_indexes = 0, or ignore_data_skipping_indices) never reads them. The two
-    /// verdicts are merged: a mark may be skipped iff either verdict says it does not match. This
-    /// keeps the pure-QCC case (use_skip_indexes = 0 still reusing row-level entries) working while
-    /// preventing the skip-index poisoning of issue #108519.
+    /// of indexes; salting the key with the running index set (and disjunction mode) guarantees a
+    /// query that ran a different set (use_skip_indexes = 0, an index dropped/ignored, or a
+    /// different disjunction mode) never reads them. The two verdicts are merged: a mark may be
+    /// skipped iff either verdict says it does not match. This keeps the pure-QCC case
+    /// (use_skip_indexes = 0 still reusing row-level entries) working while preventing the
+    /// skip-index poisoning of issue #108519.
 
     struct Stats
     {
@@ -1434,7 +1451,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     auto drop_mark_ranges = [&](const ActionsDAG::Node * dag)
     {
         UInt64 condition_hash = dag->getHash();
-        UInt64 profiled_condition_hash = getSkipIndexProfiledConditionHash(condition_hash, settings);
+        UInt64 profiled_condition_hash = getSkipIndexProfiledConditionHash(condition_hash, indexes);
         Stats stats;
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {

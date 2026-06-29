@@ -77,3 +77,74 @@ SELECT 'rowlevel_qcc_prunes', countIf(explain LIKE '%Granules: 1/125%') FROM (
 );
 
 DROP TABLE rl;
+
+-- Two indexes on different columns, each producing the same kind of false negative. Ignoring a
+-- different index name yields a different effective set, hence a different profiled key, so an entry
+-- written while ignoring 'idx_b' (i.e. running 'idx_a') is not served to a query ignoring 'idx_a'
+-- (running 'idx_b'). The names are folded into the key as fixed-width definition hashes, so distinct
+-- sets cannot collide. Both answers are the correct row-level 1.
+DROP TABLE IF EXISTS tab_two;
+CREATE TABLE tab_two
+(
+    a String,
+    b String,
+    INDEX idx_a a TYPE text(tokenizer = splitByNonAlpha, preprocessor = replaceAll(a, ' ', '')),
+    INDEX idx_b b TYPE text(tokenizer = splitByNonAlpha, preprocessor = replaceAll(b, ' ', ''))
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO tab_two VALUES ('zzz', 'zzz'), ('a b', 'a b');
+
+-- Run with idx_a active (idx_b ignored): idx_a drops the 'a b' granule for hasToken(a, 'a').
+SELECT 'two_idx_populate_a', count() FROM tab_two WHERE hasToken(a, 'a')
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0, ignore_data_skipping_indices = 'idx_b';
+
+-- Same predicate, but now idx_a is the ignored one (idx_b active): a different effective set, so the
+-- entry above must not be consulted. Correct row-level answer is 1.
+SELECT 'two_idx_ignore_a', count() FROM tab_two WHERE hasToken(a, 'a')
+SETTINGS use_query_condition_cache = 1, ignore_data_skipping_indices = 'idx_a';
+
+DROP TABLE tab_two;
+
+-- use_skip_indexes_for_disjunctions changes the exclusions the same indexes produce for OR
+-- predicates (the combined-index pruning only runs when it is on), so it is part of the effective
+-- profile. The divergence here is not visible as a different row count: the per-column text index
+-- still filters the 'a b' granule at data-read time regardless of the disjunction mode, so the count
+-- is the same either way. What must differ is the QCC consultation: an entry written under the
+-- disjunction-enabled profile must NOT be consulted by a query that disabled the optimization, while
+-- a query with the same profile must still reuse it (so the combined-index exclusions are not
+-- re-evaluated). Assert that via the QueryConditionCacheHits/Misses profile events.
+DROP TABLE IF EXISTS tab_disj;
+CREATE TABLE tab_disj
+(
+    s String,
+    n UInt64,
+    INDEX idx_s s TYPE text(tokenizer = splitByNonAlpha, preprocessor = replaceAll(s, ' ', '')),
+    INDEX idx_n n TYPE minmax
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO tab_disj VALUES ('zzz', 1), ('a b', 2);
+SYSTEM DROP QUERY CONDITION CACHE;
+
+-- Populate under the disjunction-enabled profile.
+SELECT count() FROM tab_disj WHERE hasToken(s, 'a') OR n = 999
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_for_disjunctions = 1, use_skip_indexes_on_data_read = 0, log_comment = '02346_qcc_disj_populate' FORMAT Null;
+
+-- Same predicate, disjunction optimization disabled: a different effective profile, so this must miss.
+SELECT count() FROM tab_disj WHERE hasToken(s, 'a') OR n = 999
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_for_disjunctions = 0, use_skip_indexes_on_data_read = 0, log_comment = '02346_qcc_disj_off' FORMAT Null;
+
+-- Same predicate, same (enabled) profile: must hit, so cached combined-index exclusions are reused.
+SELECT count() FROM tab_disj WHERE hasToken(s, 'a') OR n = 999
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_for_disjunctions = 1, use_skip_indexes_on_data_read = 0, log_comment = '02346_qcc_disj_same' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'disj_off_consults_entry', ProfileEvents['QueryConditionCacheHits']
+FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_qcc_disj_off'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+SELECT 'disj_same_reuses_entry', ProfileEvents['QueryConditionCacheHits']
+FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_qcc_disj_same'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+DROP TABLE tab_disj;
