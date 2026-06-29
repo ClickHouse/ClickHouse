@@ -474,7 +474,7 @@ BlockIO InterpreterCheckQuery::execute()
         }
     }
 
-    OutputPort * resize_outport;
+    OutputPort * resize_outport = nullptr;
     {
         chassert(!processors->empty() && !processors->back()->getOutputs().empty());
         auto header = processors->back()->getOutputs().front().getSharedHeader();
@@ -513,6 +513,7 @@ BlockIO InterpreterCheckQuery::execute()
     return res;
 }
 
+void registerInterpreterCheckQuery(InterpreterFactory & factory);
 void registerInterpreterCheckQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

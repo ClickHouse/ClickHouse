@@ -266,7 +266,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
         if (!is_restrictive)
         {
-            bool new_is_restrictive;
+            bool new_is_restrictive = false;
             if (parseAsRestrictiveOrPermissive(pos, expected, new_is_restrictive))
             {
                 is_restrictive = new_is_restrictive;

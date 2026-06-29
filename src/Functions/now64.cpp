@@ -1,4 +1,5 @@
 #include <Common/assert_cast.h>
+#include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>

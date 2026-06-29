@@ -93,7 +93,7 @@ struct ReplicatedMergeTreeLogEntryData
         Strings src_part_names; // as in from_table
         Strings new_part_names;
         Strings part_names_checksums;
-        int columns_version;
+        int columns_version{};
 
         void writeText(WriteBuffer & out) const;
         void readText(ReadBuffer & in);

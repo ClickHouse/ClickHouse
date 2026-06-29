@@ -123,6 +123,40 @@ In this example, `COLUMNS('a')` returns two columns: `aa` and `ab`. `COLUMNS('c'
 
 Columns that matched the `COLUMNS` expression can have different data types. If `COLUMNS` does not match any columns and is the only expression in `SELECT`, ClickHouse throws an exception.
 
+#### Select columns with `LIKE` or `ILIKE` {#select-columns-with-like-or-ilike}
+
+You can also select columns by matching their names against a pattern after `*`, using a case-sensitive `LIKE` or a case-insensitive `ILIKE`:
+
+```sql
+SELECT * ILIKE 'a%' FROM col_names
+```
+
+```text
+┌─aa─┬─ab─┐
+│  1 │  1 │
+└────┴────┘
+```
+
+The `LIKE` and `ILIKE` patterns follow `LIKE` semantics, not regular expression semantics. The `%` character matches any sequence of characters, the `_` character matches any single character, and `\` escapes `%`, `_`, and `\`. The only difference between the two is that `LIKE` matches column names case-sensitively, while `ILIKE` is case-insensitive. For example:
+
+```sql
+SELECT * ILIKE 'a_' FROM col_names
+```
+
+The query selects columns with two-character names that start with `a`, such as `aa` and `ab`.
+
+`* LIKE` and `* ILIKE` also support qualified asterisks and column transformers:
+
+```sql
+SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
+```
+
+```text
+┌─aa─┐
+│  1 │
+└────┘
+```
+
 ### Asterisk {#asterisk}
 
 You can put an asterisk in any part of a query instead of an expression. When the query is analyzed, the asterisk is expanded to a list of all table columns (excluding the `MATERIALIZED` and `ALIAS` columns). There are only a few cases when using an asterisk is justified:

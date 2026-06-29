@@ -12,7 +12,7 @@ Data type `Map(K, V)` stores key-value pairs.
 Unlike other databases, maps are not unique in ClickHouse, i.e. a map can contain two elements with the same key.
 (The reason for that is that maps are internally implemented as `Array(Tuple(K, V))`.)
 
-You can use use syntax `m[k]` to obtain the value for key `k` in map `m`.
+You can use syntax `m[k]` to obtain the value for key `k` in map `m`.
 Also, `m[k]` scans the map, i.e. the runtime of the operation is linear in the size of the map.
 
 **Parameters**

@@ -166,6 +166,28 @@ message SpecialVal {
         VAL_NULL_CHAR = 51;
         VAL_DEFAULT = 52;
         VAL_STAR = 53;
+        VAL_BAD_UTF8_OVERLONG = 54;
+        VAL_BAD_UTF8_CONTINUATION = 55;
+        VAL_BAD_UTF8_TRUNCATED = 56;
+        VAL_BAD_UTF8_SURROGATE = 57;
+        VAL_BAD_UTF8_BEYOND_RANGE = 58;
+        VAL_BAD_UTF8_INVALID_FE_FF = 59;
+        VAL_UTF8_BOM = 60;
+        VAL_BAD_UTF8_MIXED = 61;
+        VAL_CONTROL_CHARS = 62;
+        VAL_ANSI_ESCAPE = 63;
+        VAL_ZERO_WIDTH_SPACE = 64;
+        VAL_ZERO_WIDTH_JOINER = 65;
+        VAL_BIDI_OVERRIDE = 66;
+        VAL_MAX_CODEPOINT = 67;
+        VAL_ARRAY_NULL = 68;
+        VAL_TUPLE_NULL = 69;
+        VAL_NESTED_EMPTY_ARRAY = 70;
+        VAL_ARRAY_EMPTY_MAP = 71;
+        VAL_LEAP_DAY = 72;
+        VAL_NON_LEAP_DAY = 73;
+        VAL_BEYOND_INT256 = 74;
+        VAL_FLOAT64_MAX_SCIENTIFIC = 75;
     }
     required SpecialValEnum val = 1;
     optional bool paren = 2;
@@ -385,9 +407,16 @@ message ExprAny {
     required ExplainQuery sel = 4;
 }
 
-message ExprNullTests {
+message ExprTruthTests {
+    enum TruthValueTest {
+        IS_NULL = 0;
+        IS_TRUE = 1;
+        IS_FALSE = 2;
+        IS_UNKNOWN = 3;
+    }
     required Expr expr = 1;
     required bool not = 2;
+    optional TruthValueTest truth_value = 3;
 }
 
 message ExprCase {
@@ -631,7 +660,7 @@ message ComplicatedExpr {
         ExprBetween expr_between = 6;
         ExprIn expr_in = 7;
         ExprAny expr_any = 8;
-        ExprNullTests expr_null_tests = 9;
+        ExprTruthTests expr_truth_tests = 9;
         ExprCase expr_case = 10;
         ExprExists expr_exists = 11;
         ExprLike expr_like = 12;
@@ -729,16 +758,17 @@ enum InFormat {
     IN_RowBinaryWithDefaults = 52;
     IN_RowBinaryWithNames = 53;
     IN_RowBinaryWithNamesAndTypes = 54;
-    IN_TabSeparated = 55;
-    IN_TabSeparatedRaw = 56;
-    IN_TabSeparatedRawWithNames = 57;
-    IN_TabSeparatedRawWithNamesAndTypes = 58;
-    IN_TabSeparatedWithNames = 59;
-    IN_TabSeparatedWithNamesAndTypes = 60;
-    IN_Template = 61;
-    IN_TemplateIgnoreSpaces = 62;
-    IN_TSKV = 63;
-    IN_Values = 64;
+    IN_RowBinaryWithNamesAndTypesAndDefaults = 55;
+    IN_TabSeparated = 56;
+    IN_TabSeparatedRaw = 57;
+    IN_TabSeparatedRawWithNames = 58;
+    IN_TabSeparatedRawWithNamesAndTypes = 59;
+    IN_TabSeparatedWithNames = 60;
+    IN_TabSeparatedWithNamesAndTypes = 61;
+    IN_Template = 62;
+    IN_TemplateIgnoreSpaces = 63;
+    IN_TSKV = 64;
+    IN_Values = 65;
 }
 
 enum OutFormat {
@@ -1078,8 +1108,6 @@ message ObjectStoreFunc {
     optional Cluster cluster = 3;
     required string credential = 4;
     repeated KeyValuePair params = 5;
-    optional SettingValues setting_values = 6;
-    repeated HTTPHeader http_headers = 7;
 }
 
 message URLFunc {
@@ -1096,7 +1124,6 @@ message URLFunc {
         InOutFormat inoutformat = 6;
     }
     optional Expr structure = 7;
-    repeated HTTPHeader http_headers = 8;
 }
 
 message SQLTableFuncCall {
@@ -1186,6 +1213,8 @@ message TableFunction {
         MergeTreeAnalyzeIndexesFunc mtanindex = 23;
         SQLTableFuncCall func = 24;
     }
+    optional SettingValues setting_values = 25;
+    repeated HTTPHeader http_headers = 26;
 }
 
 message SampleClause {
@@ -1609,7 +1638,7 @@ enum ColumnStat {
     STAT_TDigest = 2;
     STAT_Uniq = 3;
     STAT_CountMin = 4;
-    STAT_NullCount = 5;
+    STAT_Basic = 5;
 }
 
 message ColumnStatistics {
@@ -2638,6 +2667,7 @@ message SystemCommand {
         string wait_blobs_cleanup = 105;
         ExprSchemaTable pause_view = 106;
         bool pause_views = 107;
+        string restart_disk = 108;
     }
 }
 

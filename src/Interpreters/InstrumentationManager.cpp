@@ -497,7 +497,7 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
     const auto & args = instrumented_point.arguments;
     validateSleepArguments(args);
 
-    Int64 duration_ms;
+    Int64 duration_ms = 0;
 
     if (args.size() == 1)
     {

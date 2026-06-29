@@ -25,11 +25,11 @@ DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimen
     , dimension(dimension_)
 {
     /// Prevents maliciously crafted byte streams from being deserialized into illegal types, which could be exploited to crash the server
-    if (element_type_->getTypeId() != TypeIndex::BFloat16 && element_type_->getTypeId() != TypeIndex::Float32
-        && element_type_->getTypeId() != TypeIndex::Float64)
+    if (element_type_->getTypeId() != TypeIndex::Int8 && element_type_->getTypeId() != TypeIndex::BFloat16
+        && element_type_->getTypeId() != TypeIndex::Float32 && element_type_->getTypeId() != TypeIndex::Float64)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "QBit data type only supports BFloat16, Float32, or Float64 as element type. Got: {}",
+            "QBit data type only supports Int8, BFloat16, Float32, or Float64 as element type. Got: {}",
             element_type_->getName());
 
     /// QBit stores data as a Tuple of binary FixedStrings. Setting custom_serialization
@@ -100,10 +100,11 @@ static DataTypePtr create(const ASTPtr & arguments)
     const DataTypePtr type = DataTypeFactory::instance().get(arguments->children[0]);
     const auto * argument = arguments->children[1]->as<ASTLiteral>();
 
-    if (type->getTypeId() != TypeIndex::BFloat16 && type->getTypeId() != TypeIndex::Float32 && type->getTypeId() != TypeIndex::Float64)
+    if (type->getTypeId() != TypeIndex::Int8 && type->getTypeId() != TypeIndex::BFloat16 && type->getTypeId() != TypeIndex::Float32
+        && type->getTypeId() != TypeIndex::Float64)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "QBit data type only supports BFloat16, Float32, or Float64 as element type. Got: {}",
+            "QBit data type only supports Int8, BFloat16, Float32, or Float64 as element type. Got: {}",
             type->getName());
 
     if (!argument || argument->value.getType() != Field::Types::UInt64 || argument->value.safeGet<UInt64>() == 0)
@@ -118,7 +119,73 @@ static DataTypePtr create(const ASTPtr & arguments)
 
 void registerDataTypeQBit(DataTypeFactory & factory)
 {
-    factory.registerDataType("QBit", create);
+    factory.registerDataType("QBit", create, DataTypeFactory::Case::Sensitive, Documentation{
+            .description = R"DOCS_MD(
+The `QBit` data type reorganizes vector storage for faster approximate searches. Instead of storing each vector's elements together, it groups the same binary digit positions across all vectors.
+This stores vectors at full precision while letting you choose the fine-grained quantization level at search time: read fewer bits for less I/O and faster calculations, or more bits for higher accuracy. You get the speed benefits of reduced data transfer and computation from quantization, but all the original data remains available when needed.
+
+To declare a column of `QBit` type, use the following syntax:
+
+```sql
+column_name QBit(element_type, dimension)
+```
+
+* `element_type` – the type of each vector element. The allowed types are `Int8`, `BFloat16`, `Float32` and `Float64`
+* `dimension` – the number of elements in each vector
+
+## Creating QBit {#creating-qbit}
+
+Using the `QBit` type in table column definition:
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]), (2, [9, 10, 11, 12, 13, 14, 15, 16]);
+SELECT vec FROM test ORDER BY id;
+```
+
+```text
+┌─vec──────────────────────┐
+│ [1,2,3,4,5,6,7,8]        │
+│ [9,10,11,12,13,14,15,16] │
+└──────────────────────────┘
+```
+
+## QBit subcolumns {#qbit-subcolumns}
+
+`QBit` implements a subcolumn access pattern that allows you to access individual bit planes of the stored vectors. Each bit position can be accessed using the `.N` syntax, where `N` is the bit position:
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [0, 0, 0, 0, 0, 0, 0, 0]);
+INSERT INTO test VALUES (1, [-0, -0, -0, -0, -0, -0, -0, -0]);
+SELECT bin(vec.1) FROM test;
+```
+
+```text
+┌─bin(tupleElement(vec, 1))─┐
+│ 00000000                  │
+│ 11111111                  │
+└───────────────────────────┘
+```
+
+The number of accessible subcolumns depends on the element type:
+
+* `Int8`: 8 subcolumns (1-8)
+* `BFloat16`: 16 subcolumns (1-16)
+* `Float32`: 32 subcolumns (1-32)
+* `Float64`: 64 subcolumns (1-64)
+
+## Vector search functions {#vector-search-functions}
+
+These are the distance functions for vector similarity search that use `QBit` data type:
+
+* [`L2DistanceTransposed`](../functions/distance-functions.md#L2DistanceTransposed)
+* [`cosineDistanceTransposed`](../functions/distance-functions.md#cosineDistanceTransposed)
+)DOCS_MD",
+            .syntax = "QBit(T, dim)",
+            .examples = {},
+            .related = {},
+        });
 }
 
 }

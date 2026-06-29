@@ -5,7 +5,6 @@ import platform
 import re
 import shutil
 import sys
-import threading
 import time
 import uuid
 import yaml
@@ -23,11 +22,10 @@ from keeper.framework.core.settings import (
     DEFAULT_WORKLOAD_CONFIG,
     keeper_node_names
 )
-from keeper.framework.core.util import sh, ts_ms, parse_bool, env_bool
+from keeper.framework.core.util import sh, parse_bool, env_bool
 from keeper.framework.io.probes import (
     count_leaders,
     dirs,
-    is_leader,
     lgif,
     mntr,
     prom_metrics,

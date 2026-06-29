@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -82,7 +83,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-std::optional<ASOFJoinInequality> operatorToAsofInequality(JoinConditionOperator op)
+static std::optional<ASOFJoinInequality> operatorToAsofInequality(JoinConditionOperator op)
 {
     switch (op)
     {
@@ -140,8 +141,8 @@ static void addToNullableIfNeeded(
     if (outputs.empty())
     {
         auto column_type = std::make_shared<DataTypeUInt8>();
-        ColumnWithTypeAndName column(column_type->createColumnConst(0, 0), column_type, String(join_dummy_result_name));
-        const auto * node = &actions_dag->addColumn(std::move(column));
+        auto column = column_type->createColumnConst(0, 0);
+        const auto * node = &actions_dag->addColumn(std::move(column), column_type, String(join_dummy_result_name));
         actions_after_join.push_back(node);
         outputs.push_back(node);
     }
@@ -228,7 +229,7 @@ void JoinStepLogical::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-String formatJoinCondition(const std::vector<JoinActionRef> & predicates)
+static String formatJoinCondition(const std::vector<JoinActionRef> & predicates)
 {
     return fmt::format("{}", fmt::join(predicates | std::views::transform([](const auto & x) { return x.getColumnName(); }), " AND "));
 }
@@ -277,7 +278,7 @@ std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness)
     return symbols[row][col];
 }
 
-std::string_view joinTypePretty(const JoinOperator & join_operator)
+static std::string_view joinTypePretty(const JoinOperator & join_operator)
 {
     return joinTypePretty(join_operator.kind, join_operator.strictness);
 }
@@ -436,8 +437,8 @@ JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(
     if (required_nodes.empty())
     {
         auto column_type = std::make_shared<DataTypeUInt8>();
-        ColumnWithTypeAndName column(column_type->createColumnConst(0, 0), column_type, String(join_dummy_result_name));
-        const auto * node = &actions_dag.addColumn(std::move(column));
+        auto column = column_type->createColumnConst(0, 0);
+        const auto * node = &actions_dag.addColumn(std::move(column), column_type, String(join_dummy_result_name));
         new_actions_after_join.push_back(node);
         required_nodes.push_back(node);
         actions_dag.getOutputs().push_back(node);
@@ -614,7 +615,7 @@ void JoinStepLogicalLookup::optimize(const QueryPlanOptimizationSettings & optim
 /// because the AND operator will implicitly convert them to booleans. The result will be either boolean or nullable.
 /// In some cases we need to split `a` and `b` into separate expressions, but we want to preserve the same
 /// boolean conversion behavior as if they were still part of the original AND expression.
-JoinActionRef toBoolIfNeeded(JoinActionRef condition)
+static JoinActionRef toBoolIfNeeded(JoinActionRef condition)
 {
     auto output_type = removeNullable(condition.getType());
     WhichDataType which_type(output_type);
@@ -624,7 +625,8 @@ JoinActionRef toBoolIfNeeded(JoinActionRef condition)
         {
             JoinActionRef::AddFunction function_and(JoinConditionOperator::And);
             DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
-            const auto & rhs_node = dag.addColumn(ColumnWithTypeAndName(uint8_ty->createColumnConst(1, 1), uint8_ty, "true"));
+            auto rhs_column = uint8_ty->createColumnConst(0, 1);
+            const auto & rhs_node = dag.addColumn(std::move(rhs_column), uint8_ty, "true");
             nodes.push_back(&rhs_node);
             return function_and(dag, nodes);
         });
@@ -633,7 +635,7 @@ JoinActionRef toBoolIfNeeded(JoinActionRef condition)
 }
 
 /// If side is not specified, check if filter can be executed after JOIN itself.
-bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTableSide> side = {})
+static bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTableSide> side = {})
 {
     switch (join_operator.strictness)
     {
@@ -678,10 +680,10 @@ using NameViewToNodeMapping = std::unordered_map<std::string_view, const Actions
 struct JoinPlanningContext
 {
     NameViewToNodeMapping actions_after_join_map;
-    bool is_storage_join;
+    bool is_storage_join{};
 };
 
-void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
+static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
 {
     const auto & left_type = left_node.getType();
     const auto & right_type = right_node.getType();
@@ -740,7 +742,7 @@ void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & ri
     }
 }
 
-bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
+static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
     std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
 {
     bool has_join_predicates = false;
@@ -800,14 +802,17 @@ static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
     ColumnsWithTypeAndName columns;
     columns.reserve(actions_dag.getOutputs().size());
     for (const auto & node : actions_dag.getOutputs())
-        columns.emplace_back(node->column ? node->column : node->result_type->createColumn(), node->result_type, node->result_name);
+    {
+        ColumnPtr column = node->column ? ColumnPtr(node->column) : ColumnPtr(node->result_type->createColumn());
+        columns.emplace_back(std::move(column), node->result_type, node->result_name);
+    }
     return std::make_shared<const Block>(Block{columns});
 }
 
 using QueryPlanNode = QueryPlan::Node;
 using QueryPlanNodePtr = QueryPlanNode *;
 
-JoinActionRef concatConditions(
+static JoinActionRef concatConditions(
     std::vector<JoinActionRef> & conditions,
     std::optional<JoinTableSide> side = {},
     const bool can_extract_everything = true
@@ -843,7 +848,7 @@ JoinActionRef concatConditions(
     return result;
 }
 
-bool tryAddDisjunctiveConditions(
+static bool tryAddDisjunctiveConditions(
     std::vector<JoinActionRef> & join_expressions,
     TableJoin::Clauses & table_join_clauses,
     std::vector<JoinActionRef> & used_expressions,
@@ -1108,12 +1113,12 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
         auto dt = std::make_shared<DataTypeUInt8>();
 
-        ColumnWithTypeAndName lhs_column(dt->createColumnConst(1, 1), dt, "__lhs_const");
-        JoinActionRef lhs(&actions_dag->addColumn(lhs_column), expression_actions);
+        auto lhs_column = dt->createColumnConst(0, 1);
+        JoinActionRef lhs(&actions_dag->addColumn(std::move(lhs_column), dt, "__lhs_const"), expression_actions);
         lhs.setSourceRelations(BitSet().set(0));
 
-        ColumnWithTypeAndName rhs_column(dt->createColumnConst(1, rhs_value), dt, "__rhs_const");
-        JoinActionRef rhs(&actions_dag->addColumn(rhs_column), expression_actions);
+        auto rhs_column = dt->createColumnConst(0, rhs_value);
+        JoinActionRef rhs(&actions_dag->addColumn(std::move(rhs_column), dt, "__rhs_const"), expression_actions);
         rhs.setSourceRelations(BitSet().set(1));
 
         join_expression.push_back(JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
@@ -1481,7 +1486,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
     return {};
 }
 
-void remapNodes(ActionsDAG::NodeRawConstPtrs & keys, const ActionsDAG::NodeMapping & node_map)
+static void remapNodes(ActionsDAG::NodeRawConstPtrs & keys, const ActionsDAG::NodeMapping & node_map)
 {
     for (const auto *& key : keys)
     {
@@ -1490,7 +1495,7 @@ void remapNodes(ActionsDAG::NodeRawConstPtrs & keys, const ActionsDAG::NodeMappi
     }
 }
 
-ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, ActionsDAG::NodeRawConstPtrs & keys)
+static ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, ActionsDAG::NodeRawConstPtrs & keys)
 {
     ActionsDAG dag(stream_header->getColumnsWithTypeAndName(), /* duplicate_const_columns */ false);
 
@@ -1625,7 +1630,7 @@ void JoinStepLogical::serialize(Serialization & ctx) const
 
 static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node)
 {
-    size_t num_nodes;
+    size_t num_nodes = 0;
     readVarUInt(num_nodes, in);
 
     size_t max_node_id = id_to_node.size();
@@ -1633,7 +1638,7 @@ static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const A
     ActionsDAG::NodeRawConstPtrs nodes(num_nodes);
     for (size_t i = 0; i < num_nodes; ++i)
     {
-        size_t node_id;
+        size_t node_id = 0;
         readVarUInt(node_id, in);
         if (node_id >= max_node_id)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Node id {} is out of range, must be less than {}", node_id, max_node_id);
@@ -1648,12 +1653,12 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     if (ctx.input_headers.size() != 2)
         throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical must have two input streams");
 
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
     ActionsDAG actions_dag;
     {
-        UInt64 num_dags;
+        UInt64 num_dags = 0;
         readVarUInt(num_dags, ctx.in);
 
         if (num_dags != 1)
@@ -1725,6 +1730,7 @@ void JoinStepLogical::addConditions(ActionsDAG actions_dag)
         join_operator.expression.emplace_back(node, expression_actions);
 }
 
+void registerJoinStep(QueryPlanStepRegistry & registry);
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Join", JoinStepLogical::deserialize);

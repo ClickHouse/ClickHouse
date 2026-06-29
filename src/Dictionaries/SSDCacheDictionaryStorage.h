@@ -11,6 +11,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <Common/ErrnoException.h>
+#include <Common/ProfileEvents.h>
 
 #    include <base/MemorySanitizer.h>
 #    include <Dictionaries/DictionaryHelpers.h>
@@ -528,7 +529,7 @@ public:
                 throw Exception(ErrorCodes::CANNOT_IO_SUBMIT, "Cannot submit request for asynchronous IO on file {}", file_path);
         }
 
-        io_event event;
+        io_event event{};
 
         while (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) < 0)
         {
@@ -814,7 +815,7 @@ private:
 
     static ssize_t eventResult(io_event & event)
     {
-        ssize_t  bytes_written;
+        ssize_t  bytes_written = 0;
 
         #if defined(OS_FREEBSD)
             bytes_written = aio_return(reinterpret_cast<struct aiocb *>(event.udata));
@@ -982,10 +983,10 @@ private:
             default_value
         };
 
-        time_t deadline;
+        time_t deadline{};
         SSDCacheIndex index;
-        size_t in_memory_partition_index;
-        CellState state;
+        size_t in_memory_partition_index{};
+        CellState state{};
 
         bool isInMemory() const { return state == in_memory; }
         bool isOnDisk() const { return state == on_disk; }

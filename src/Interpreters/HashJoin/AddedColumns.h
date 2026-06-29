@@ -32,7 +32,8 @@ struct JoinOnKeyColumns
     Sizes key_sizes;
 
     JoinOnKeyColumns(
-        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
+        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
+        bool keep_lowcardinality = false);
 
     bool isRowFiltered(size_t i) const
     {

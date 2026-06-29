@@ -97,7 +97,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 continue;
         }
 
-        bool exchange_tables;
+        bool exchange_tables = false;
         if (rename.exchange)
         {
             exchange_tables = true;
@@ -278,6 +278,7 @@ void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
     }
 }
 
+void registerInterpreterRenameQuery(InterpreterFactory & factory);
 void registerInterpreterRenameQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

@@ -67,10 +67,7 @@ DatabaseMetadataDiskSettings::DatabaseMetadataDiskSettings(const DatabaseMetadat
 {
 }
 
-DatabaseMetadataDiskSettings::DatabaseMetadataDiskSettings(DatabaseMetadataDiskSettings && settings) noexcept
-    : impl(std::make_unique<DatabaseMetadataDiskSettingsImpl>(std::move(*settings.impl)))
-{
-}
+DatabaseMetadataDiskSettings::DatabaseMetadataDiskSettings(DatabaseMetadataDiskSettings && settings) noexcept = default;
 
 DatabaseMetadataDiskSettings::~DatabaseMetadataDiskSettings() = default;
 

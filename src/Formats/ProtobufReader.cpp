@@ -224,7 +224,7 @@ bool ProtobufReader::readFieldNumber(int & field_number_)
 
 UInt64 ProtobufReader::readUInt()
 {
-    UInt64 value;
+    UInt64 value = 0;
     if (field_end == END_OF_VARINT)
     {
         value = readVarint();
@@ -317,7 +317,7 @@ void ProtobufReader::moveCursorBackward(UInt64 num_bytes)
 UInt64 ProtobufReader::continueReadingVarint(UInt64 first_byte)
 {
     UInt64 result = (first_byte & ~static_cast<UInt64>(0x80));
-    char c;
+    char c = 0;
 
 #    define PROTOBUF_READER_READ_VARINT_BYTE(byteNo) \
         do \
@@ -356,7 +356,7 @@ UInt64 ProtobufReader::continueReadingVarint(UInt64 first_byte)
 
 void ProtobufReader::ignoreVarint()
 {
-    char c;
+    char c = 0;
 
 #    define PROTOBUF_READER_IGNORE_VARINT_BYTE(byteNo) \
         do \
