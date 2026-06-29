@@ -35,12 +35,10 @@ bool INATSConsumer::isSubscribed() const
     return !subscriptions.empty();
 }
 
-void INATSConsumer::subscribe(bool auto_ack)
+void INATSConsumer::subscribe()
 {
     if (isSubscribed())
         return;
-
-    manual_ack = !auto_ack;
 
     if (received->isFinished())
         received = std::make_unique<ConcurrentBoundedQueue<MessageData>>(queue_size);

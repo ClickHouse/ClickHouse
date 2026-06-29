@@ -42,6 +42,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsMilliseconds rabbitmq_max_wait_ms;
     extern const SettingsMilliseconds stream_flush_interval_ms;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsString stream_like_engine_insert_queue;
@@ -406,6 +407,8 @@ void StorageNATS::read(
     {
         auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
         nats_source->setCommitOnSelect((*nats_settings)[NATSSetting::nats_commit_on_select]);
+        nats_source->setTimeLimit(modified_context->getSettingsRef()[Setting::rabbitmq_max_wait_ms]);
+        nats_source->setWaitForFlushInterval(true);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),

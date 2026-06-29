@@ -211,7 +211,7 @@ def test_refresh_runs_once_while_start_keeps_consuming(nats_cluster):
     # resumes continuous streaming. Core NATS has no backlog, so the single REFRESH cycle holds a
     # block open for nats_flush_interval_ms and consumes messages published into that window once;
     # afterwards the stream is stopped again (no active subscription), so later messages are dropped
-    # — whereas after START the stream keeps consuming "forever".
+    # - whereas after START the stream keeps consuming "forever".
     table = "nats_refreshonce"
     subject = "refreshonce_subject"
     instance.query(
@@ -247,7 +247,7 @@ def test_refresh_runs_once_while_start_keeps_consuming(nats_cluster):
     wait_dst_count_at_least(table, 5)
 
     # The single REFRESH cycle has ended and the stream is still stopped. With no active subscription
-    # (core NATS has no backlog) these messages are dropped — REFRESH did not resume the stream.
+    # (core NATS has no backlog) these messages are dropped - REFRESH did not resume the stream.
     time.sleep(3)  # let the one-shot cycle fully end and unsubscribe before publishing again
     nats_publish(nats_cluster, subject, 5, 5)
     assert_dst_count_stable(table, 5, seconds=10)
@@ -264,7 +264,7 @@ def test_jetstream_acks_after_insert(nats_cluster):
     # Unlike core NATS, JetStream is at-least-once: a message is acknowledged only after it is
     # inserted into the views (its durable boundary). So in steady state every message is consumed
     # exactly once (no redelivery duplicates, the consumer's ack-pending count returns to zero), and
-    # messages survive SYSTEM STOP — the stream retains them and redelivers on START.
+    # messages survive SYSTEM STOP - the stream retains them and redelivers on START.
     stream = "js_stream"
     subject = "js_subject"
     durable = "js_durable"
@@ -314,10 +314,84 @@ def test_jetstream_acks_after_insert(nats_cluster):
     wait_dst_count_at_least(table, 20)
 
 
+def test_jetstream_failed_insert_does_not_lose_messages(nats_cluster):
+    # A materialized-view insert that throws must not lose JetStream messages: they are acked only
+    # after a successful insert, so while it keeps failing they stay unacked (num_ack_pending == n)
+    # and dst stays empty. Swapping in a working view then ingests every key from broker redelivery,
+    # proving nothing was dropped (the old auto-ack-on-delivery would have acked and lost them).
+    stream = "js_failins_stream"
+    subject = "js_failins_subject"
+    durable = "js_failins_durable"
+    table = "nats_failins"
+    n = 10
+    # Short ack-wait so the broker keeps redelivering the unacked messages during the test.
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=3)
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_stream = '{stream}',
+                     nats_consumer_name = '{durable}',
+                     nats_format = 'JSONEachRow',
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}';
+
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+        """
+    )
+    # A view whose insert always throws (throwIf fires on every row), so each streaming cycle reads a
+    # block, the insert fails, and nothing is acked.
+    instance.query(
+        f"""
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, throwIf(value < 1000000000, 'insert boom') AS value FROM test.{table};
+        """
+    )
+    jetstream_publish(nats_cluster, subject, 0, n)
+
+    # The insert keeps failing: dst stays empty and every delivered message stays pending (unacked), so
+    # the broker will redeliver them -- they are not lost.
+    deadline = time.time() + 20
+    while time.time() < deadline:
+        assert int(instance.query(f"SELECT count() FROM test.{table}_dst")) == 0
+        if jetstream_ack_pending(nats_cluster, stream, durable) == n:
+            break
+        time.sleep(0.5)
+    assert int(instance.query(f"SELECT count() FROM test.{table}_dst")) == 0
+    assert jetstream_ack_pending(nats_cluster, stream, durable) == n, (
+        "a failing materialized-view insert must not ack JetStream messages"
+    )
+
+    # Replace the failing view with a working one; the still-unacked messages are redelivered and
+    # ingested, proving the failed inserts did not drop them.
+    instance.query(f"DROP TABLE test.{table}_mv SYNC")
+    instance.query(
+        f"""
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table};
+        """
+    )
+    wait_dst_count_at_least(table, n)
+    got = set(
+        int(x)
+        for x in instance.query(
+            f"SELECT DISTINCT key FROM test.{table}_dst ORDER BY key"
+        ).split()
+        if x.strip()
+    )
+    assert got == set(range(n)), (
+        f"failed insert lost JetStream messages: missing {sorted(set(range(n)) - got)}"
+    )
+
+
 def test_stop_aborts_inflight_block_pause_commits_it(nats_cluster):
     # PAUSE lets the in-flight block reach its boundary (the insert into the views) and commit;
     # STOP aborts before it. Core NATS has no broker-side ack or replay, so an aborted block is lost
-    # for good — there is nothing to redeliver. `nats_flush_interval_ms` holds the block open long
+    # for good - there is nothing to redeliver. `nats_flush_interval_ms` holds the block open long
     # enough for the command to arrive while it is in flight.
     for verb in ["PAUSE", "STOP"]:
         table = f"nats_inflight_{verb.lower()}"
@@ -355,7 +429,7 @@ def test_stop_aborts_inflight_block_pause_commits_it(nats_cluster):
             wait_dst_count_at_least(table, 5)
         else:
             # STOP aborts the in-flight block. With core NATS there is no redelivery, so the 5 rows
-            # are lost permanently — they never appear, even after START.
+            # are lost permanently - they never appear, even after START.
             assert_dst_count_stable(table, 0, seconds=12)
             instance.query(f"SYSTEM START test.{table}")
             instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
@@ -463,20 +537,17 @@ def test_cancel_during_insert_does_not_duplicate(nats_cluster):
 
 
 def test_cancel_during_direct_select_does_not_drop_messages(nats_cluster):
-    # A direct SELECT on a NATS table consumes messages but -- unlike the background view path --
-    # performs no acknowledgement of its own (NATSSource never acks/commits). So an aborted direct
-    # read has nothing to ack, and a SYSTEM CANCEL racing it cannot commit messages that were never
-    # returned. We verify this on JetStream (at-least-once): a message stays redeliverable until it
-    # is acked, so a read aborted mid-flight loses nothing. We hammer SYSTEM CANCEL while draining via
-    # repeated direct SELECTs, then drain the remainder with no cancels; every published key must
-    # surface in some SELECT result.
+    # With nats_commit_on_select = 1 a direct read acks only the rows it returns. A read aborted by a racing
+    # SYSTEM CANCEL returns and acks nothing, so on JetStream (at-least-once) the message stays redeliverable
+    # until a completed read acks it. We hammer SYSTEM CANCEL while draining via repeated direct SELECTs,
+    # then drain the rest with no cancels; every published key must surface in some SELECT result.
     stream = "js_cancel_stream"
     subject = "js_cancel_subject"
     durable = "js_cancel_durable"
     table = "nats_direct_cancel"
     n = 10
 
-    # Short ack-wait so messages a direct read pulled but never acked are redelivered quickly.
+    # Short ack-wait so messages a read pulled but did not ack (because it was cancelled) redeliver quickly.
     jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=2)
 
     instance.query(
@@ -490,7 +561,8 @@ def test_cancel_during_direct_select_does_not_drop_messages(nats_cluster):
                      nats_format = 'JSONEachRow',
                      nats_secure = 1,
                      nats_username = '{nats_user}',
-                     nats_password = '{nats_pass}';
+                     nats_password = '{nats_pass}',
+                     nats_commit_on_select = 1;
         """
     )
 
@@ -533,20 +605,20 @@ def test_cancel_during_direct_select_does_not_drop_messages(nats_cluster):
 
 
 def test_commit_on_select_consumes_only_when_enabled(nats_cluster):
-    # A direct SELECT consumes (acks) the JetStream messages it reads only with nats_commit_on_select = 1,
-    # like kafka_commit_on_select / rabbitmq_commit_on_select. By default (0) it reads without acking, so
-    # every message stays pending (num_ack_pending == n); with 1 each is acked (pending == 0). The
+    # A direct read acks the JetStream messages it returns only with nats_commit_on_select = 1 (like
+    # kafka_commit_on_select / rabbitmq_commit_on_select). By default (0) nothing is acked, so every message
+    # stays pending (num_ack_pending == n); with 1 repeated reads drain and ack them all (pending == 0). The
     # materialized-view path is unaffected (covered by test_jetstream_acks_after_insert).
     n = 5
-    for commit_on_select, expect_consumed in [(0, False), (1, True)]:
+    for commit_on_select in (0, 1):
         stream = f"js_cos_stream_{commit_on_select}"
         subject = f"js_cos_subject_{commit_on_select}"
         durable = f"js_cos_durable_{commit_on_select}"
         table = f"nats_cos_{commit_on_select}"
 
-        # Long ack-wait so unacked messages are not redelivered mid-test: the "not consumed" case is
-        # then observed deterministically via num_ack_pending, not a redelivery race.
-        jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=60)
+        # Short ack-wait so unacked messages are redelivered promptly: a block-size-1 read returns one row
+        # per SELECT, so draining every key with commit_on_select = 1 relies on redelivery across ack_wait.
+        jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=2)
 
         # The default (0) is exercised by omitting the setting entirely, proving the default value.
         commit_setting = (
@@ -571,41 +643,41 @@ def test_commit_on_select_consumes_only_when_enabled(nats_cluster):
 
         jetstream_publish(nats_cluster, subject, 0, n)
 
-        # Drain all n keys via repeated direct SELECTs (max_block_size = 1, one message per SELECT);
-        # with nats_commit_on_select = 1 each is auto-acked on delivery, otherwise it stays pending.
-        collected = set()
-        deadline = time.time() + 60
-        while time.time() < deadline and len(collected) < n:
-            res = instance.query(
+        def read_once():
+            return instance.query(
                 f"SELECT key FROM test.{table} "
                 "SETTINGS stream_like_engine_allow_direct_select = 1",
                 ignore_error=True,
             )
-            for line in res.split():
-                if line.strip():
-                    collected.add(int(line))
-        assert collected == set(range(n)), (
-            f"direct SELECT did not return all keys (commit_on_select={commit_on_select}): "
-            f"{sorted(collected)}"
-        )
-
-        # Acks and the consumer-info pending count update asynchronously, so poll until it reaches the
-        # target (it only moves toward n or 0 here, never away, so polling is robust).
-        expected_pending = 0 if expect_consumed else n
 
         def pending():
             return jetstream_ack_pending(nats_cluster, stream, durable)
 
-        for _ in range(40):
-            if pending() == expected_pending:
-                break
-            time.sleep(0.5)
-
-        if expect_consumed:
+        if commit_on_select:
+            # Each returned row is acked, so across ack_wait redelivery cycles every key gets read and acked
+            # and the pending count drains to 0.
+            saw_row = False
+            deadline = time.time() + 60
+            while time.time() < deadline:
+                if read_once().strip():
+                    saw_row = True
+                if saw_row and pending() == 0:
+                    break
+                time.sleep(0.3)
+            assert saw_row, "direct SELECT returned no rows"
             assert pending() == 0, (
                 "nats_commit_on_select = 1: a direct SELECT must acknowledge the messages it reads"
             )
         else:
+            # Drive reads until the broker has delivered the burst, then keep reading: nothing is ever
+            # acked, so the pending count must stay at n.
+            deadline = time.time() + 30
+            while time.time() < deadline and pending() < n:
+                read_once()
+            assert pending() == n
+            for _ in range(5):
+                read_once()
+                time.sleep(0.2)
             assert pending() == n, (
                 "default nats_commit_on_select = 0: a direct SELECT must not consume messages"
             )
@@ -669,6 +741,118 @@ def test_direct_select_leftover_does_not_pollute_view(nats_cluster):
         f"SELECT key, count() FROM test.{table}_dst GROUP BY key HAVING count() > 1 ORDER BY key"
     )
     assert dups == "", f"stale direct-SELECT copies duplicated rows in the view: {dups}"
+
+
+def test_commit_on_select_does_not_lose_unreturned_messages(nats_cluster):
+    # With nats_commit_on_select = 1 a direct read must ack only the rows it returns; the rest of the
+    # delivered burst must stay unacked (num_ack_pending == n - returned) and recoverable. The old
+    # JetStream auto-ack acked every delivered message on arrival, so the unreturned remainder was acked
+    # at the broker (num_ack_pending == 0) and lost.
+    stream = "js_cos_loss_stream"
+    subject = "js_cos_loss_subject"
+    durable = "js_cos_loss_durable"
+    table = "nats_cos_loss"
+    n = 10
+    # Long ack-wait so redelivery does not change the pending count mid-test: the unreturned-but-unacked
+    # messages are observed deterministically via num_ack_pending, not a redelivery race.
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=60)
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_stream = '{stream}',
+                     nats_consumer_name = '{durable}',
+                     nats_format = 'JSONEachRow',
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}',
+                     nats_commit_on_select = 1;
+        """
+    )
+    jetstream_publish(nats_cluster, subject, 0, n)
+
+    # One block-size-1 direct read returns a single key; the broker delivers the whole burst into the local
+    # buffer regardless. Retry until a read returns, so the assertion does not race the async delivery.
+    returned = 0
+    deadline = time.time() + 30
+    while time.time() < deadline and returned == 0:
+        res = instance.query(
+            f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1",
+            ignore_error=True,
+        )
+        returned = len([x for x in res.split() if x.strip()])
+        if returned == 0:
+            time.sleep(0.3)
+    assert returned > 0, "direct SELECT returned no rows"
+
+    # Only the returned rows may be acked; the rest of the delivered burst must remain pending (unacked) and
+    # thus recoverable. With the auto-ack bug every delivered message is acked, so pending collapses to 0.
+    def pending():
+        return jetstream_ack_pending(nats_cluster, stream, durable)
+
+    deadline = time.time() + 30
+    while time.time() < deadline and pending() != n - returned:
+        time.sleep(0.5)
+    assert pending() == n - returned, (
+        f"with nats_commit_on_select = 1 only the {returned} returned row(s) may be acked; the other "
+        f"{n - returned} must stay pending, but pending = {pending()} (0 means the unreturned messages "
+        f"were auto-acked and lost)"
+    )
+
+
+def test_repeated_direct_reads_do_not_return_stale_copies(nats_cluster):
+    # A direct read (block size 1) buffers the whole delivered burst locally and never acks it. With a long
+    # ack-wait the broker does not redeliver during the test, so after the burst is delivered a later read
+    # must return nothing: it drops the buffer before resubscribing. Before the fix the stale copies were
+    # handed out again, duplicating the broker's redelivery once ack_wait passed.
+    stream = "js_stale_stream"
+    subject = "js_stale_subject"
+    durable = "js_stale_durable"
+    table = "nats_stale"
+    n = 10
+    # Long ack-wait: the broker will not redeliver within the test, so any row a later read returns can only
+    # be a stale local copy.
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=60)
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_stream = '{stream}',
+                     nats_consumer_name = '{durable}',
+                     nats_format = 'JSONEachRow',
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}';
+        """
+    )
+    jetstream_publish(nats_cluster, subject, 0, n)
+
+    # Drive direct reads until the broker has delivered the whole burst (all pending, none acked).
+    deadline = time.time() + 30
+    while (
+        time.time() < deadline
+        and jetstream_ack_pending(nats_cluster, stream, durable) < n
+    ):
+        instance.query(
+            f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1",
+            ignore_error=True,
+        )
+    assert jetstream_ack_pending(nats_cluster, stream, durable) == n
+
+    # The burst is delivered and unacked; with a 60s ack-wait the broker does not redeliver now, so further
+    # reads must return nothing: the local buffer is dropped on resubscribe and there is nothing fresh.
+    returned = 0
+    for _ in range(3):
+        res = instance.query(
+            f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1",
+            ignore_error=True,
+        )
+        returned += len([x for x in res.split() if x.strip()])
+    assert returned == 0, f"a direct read returned stale buffered copies ({returned} rows)"
 
 
 def test_system_stop_all_background(nats_cluster):

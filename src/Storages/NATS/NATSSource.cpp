@@ -74,10 +74,13 @@ NATSSource::~NATSSource()
     if (!consumer)
         return;
 
+    if (commit_on_select)
+        consumer->ackConsumed();
+    else
+        consumer->dropConsumed();
+
     if (unsubscribe_on_destroy)
         consumer->unsubscribe(/*finish_queue=*/false);
-
-    consumer->dropConsumed();
 
     storage.pushConsumer(consumer);
 }
@@ -104,7 +107,8 @@ Chunk NATSSource::generate()
 
         if (consumer && !consumer->isSubscribed())
         {
-            consumer->subscribe(commit_on_select);
+            consumer->dropBuffered();
+            consumer->subscribe();
             unsubscribe_on_destroy = true;
         }
     }
