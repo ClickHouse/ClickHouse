@@ -303,6 +303,19 @@ private:
         return static_cast<DateOrTime>(rounded_towards_zero - d);
     }
 
+    /// Add `offset` to `base`, saturating at the boundaries of `Time` instead of overflowing (which is
+    /// undefined behavior). Interval rounding reconstructs the result as `date + offset`; for arguments far
+    /// outside any valid date range this sum can step just past the type boundary even though both operands
+    /// are individually representable. The result for such out-of-range values is meaningless anyway, so we
+    /// saturate to the nearest boundary.
+    static Time addSaturating(Time base, Time offset)
+    {
+        Time res;
+        if (unlikely(__builtin_add_overflow(base, offset, &res)))
+            return offset < 0 ? std::numeric_limits<Time>::min() : std::numeric_limits<Time>::max();
+        return res;
+    }
+
     template <typename DateOrTime, typename Divisor>
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
@@ -1145,7 +1158,7 @@ public:
             time = time / seconds * seconds;
         }
 
-        Time res = values.date + time;
+        Time res = addSaturating(values.date, time);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {
             if (unlikely(res < 0))
