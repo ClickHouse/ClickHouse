@@ -104,7 +104,7 @@ public:
     virtual UInt64 getFileSize(const String & file_name) const = 0;
 
     /// Returns the checksum of the entry's data.
-    /// This function does the same as `read(file_name)->getCheckum()` but faster.
+    /// This function does the same as `read(file_name)->getChecksum()` but faster.
     virtual UInt128 getFileChecksum(const String & file_name) const = 0;
 
     /// Returns both the size and checksum in one call.
@@ -135,9 +135,6 @@ public:
 
     /// Try to remove all files copied to the backup. Could be used after setIsCorrupted().
     virtual bool tryRemoveAllFiles() noexcept = 0;
-
-    /// Remove all files of a directory from original object storage.
-    virtual void removeAllFilesUnderDirectory(const String & directory) const = 0;
 };
 
 using BackupPtr = std::shared_ptr<const IBackup>;

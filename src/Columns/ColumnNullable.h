@@ -52,8 +52,8 @@ public:
     std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
     TypeIndex getDataType() const override { return TypeIndex::Nullable; }
     MutableColumnPtr cloneResized(size_t size) const override;
-    size_t size() const override { return assert_cast<const ColumnUInt8 &>(*null_map).size(); }
-    bool isNullAt(size_t n) const override { return assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
+    size_t size() const final { return assert_cast<const ColumnUInt8 &>(*null_map).size(); }
+    bool isNullAt(size_t n) const final { return assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
     void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
@@ -95,7 +95,17 @@ public:
     void insertDefault() override
     {
         getNestedColumn().insertDefault();
-        getNullMapData().push_back(true);
+        /// Keep the nested column and the null map in sync even if appending to the
+        /// null map throws (e.g. on a memory limit).
+        try
+        {
+            getNullMapData().push_back(true);
+        }
+        catch (...)
+        {
+            getNestedColumn().popBack(1);
+            throw;
+        }
     }
 
     void popBack(size_t n) override;
@@ -119,6 +129,7 @@ public:
 #endif
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator &) const override;
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int null_direction_hint, Permutation & res) const override;
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -130,7 +141,7 @@ public:
     size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -139,7 +150,8 @@ public:
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    WeakHash32 getWeakHash32() const override;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
     // Special function for nullable minmax index
@@ -225,23 +237,27 @@ public:
     void applyNullMap(const ColumnUInt8 & map);
     void applyNullMap(const NullMap & map);
     void applyNegatedNullMap(const ColumnUInt8 & map);
-    void applyNegatedNullMap(const NullMap & map);
+    /// When `offset` is given, only the rows in `[offset, offset + map.size())` are affected and `map`
+    /// covers just that range; otherwise it must cover the whole column.
+    void applyNegatedNullMap(const NullMap & map, size_t offset = 0);
 
     /// Check that size of null map equals to size of nested column.
     void checkConsistency() const;
 
     bool hasDynamicStructure() const override { return nested_column->hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { nested_column->fixDynamicStructure(); }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
+    bool hasStatistics() const override { return nested_column->hasStatistics(); }
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
 private:
     WrappedPtr nested_column;
     WrappedPtr null_map;
 
     template <bool negative>
-    void applyNullMapImpl(const NullMap & map);
+    void applyNullMapImpl(const NullMap & map, size_t offset = 0);
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator=nullptr) const;
 
@@ -254,6 +270,7 @@ private:
 
 ColumnPtr makeNullable(const ColumnPtr & column);
 ColumnPtr makeNullableSafe(const ColumnPtr & column);
+ColumnConstPtr makeNullableSafe(const ColumnConstPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column);
 

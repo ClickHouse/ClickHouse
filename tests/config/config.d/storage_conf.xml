@@ -10,6 +10,7 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
                 <request_timeout_ms>20000</request_timeout_ms>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3_disk>
             <s3_plain_disk>
                 <type>s3_plain</type>
@@ -17,6 +18,16 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
             </s3_plain_disk>
+            <!-- Non-fake disk transactions (as ClickHouse Cloud / Keeper metadata uses): file
+                 writes are batched into the part transaction and only become visible on commit. -->
+            <s3_disk_no_fake_transaction>
+                <type>s3</type>
+                <path>s3_disk_no_fake_transaction/</path>
+                <endpoint>http://localhost:11111/test/s3_no_fake_transaction/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <use_fake_transaction>false</use_fake_transaction>
+            </s3_disk_no_fake_transaction>
             <s3_cache>
                 <type>cache</type>
                 <disk>s3_disk</disk>
@@ -29,6 +40,7 @@
                 <allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>
                 <keep_free_space_size_ratio>0.15</keep_free_space_size_ratio>
                 <keep_free_space_elements_ratio>0.15</keep_free_space_elements_ratio>
+                <keep_free_space_eviction_threads>4</keep_free_space_eviction_threads>
                 <background_download_queue_size_limit>50</background_download_queue_size_limit>
                 <load_metadata_asynchronously>0</load_metadata_asynchronously>
             </s3_cache>
@@ -122,6 +134,13 @@
                     </main>
                 </volumes>
             </s3_cache>
+            <s3_no_fake_transaction>
+                <volumes>
+                    <main>
+                        <disk>s3_disk_no_fake_transaction</disk>
+                    </main>
+                </volumes>
+            </s3_no_fake_transaction>
             <s3_no_cache>
                 <volumes>
                     <main>
@@ -145,6 +164,12 @@
             </s3_cache_encrypted>
         </policies>
     </storage_configuration>
+    <!-- Allow data-lake table engines (Iceberg, Delta, Hudi) to use these disks via
+         `SETTINGS disk = '...'`. Used by tests like 04208_iceberg_disk_with_cache_no_bad_cast.sql.
+         The list intentionally only contains disks that wrap an `S3ObjectStorage` (raw,
+         cached, or with a non-default metadata layer) so we exercise the unwrap-before-cast
+         path in `S3StorageParsedArguments::fromDisk` without affecting other tests. -->
+    <allowed_disks_for_table_engines>s3_disk,s3_cache,s3_plain_disk,s3_plain_rewritable</allowed_disks_for_table_engines>
     <filesystem_caches>
         <cache_for_readbigat>
             <path>./cache_for_readbigat/</path>

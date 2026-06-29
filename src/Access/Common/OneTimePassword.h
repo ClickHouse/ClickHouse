@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <optional>
 
 namespace DB
 {
@@ -17,7 +18,7 @@ struct OneTimePasswordParams
         SHA512,
     } algorithm = Algorithm::SHA1;
 
-    explicit OneTimePasswordParams(Int32 num_digits_ = {}, Int32 period_ = {}, const String & algorithm_name_ = {});
+    explicit OneTimePasswordParams(std::optional<Int32> num_digits_ = {}, std::optional<Int32> period_ = {}, std::optional<String> algorithm_name_ = {});
 
     bool operator==(const OneTimePasswordParams &) const = default;
 

@@ -1,3 +1,9 @@
+-- `optimize_move_to_prewhere = 1` is required because the `ComparisonTupleEliminationVisitor` in
+-- the old analyzer is guarded by this setting. When disabled, tuple comparisons like
+-- `(assumeNotNull(materialize(NULL)), 1) = (1, 1)` are not decomposed at the AST level,
+-- so `FunctionComparison` handles them as tuples and returns `Nullable(UInt8)` NULLs instead of
+-- exposing the `Nothing` type that triggers `ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER`.
+SET optimize_move_to_prewhere = 1;
 SET allow_not_comparable_types_in_comparison_functions = 0;
 
 SELECT (assumeNotNull((NULL)), 1); -- { serverError ILLEGAL_COLUMN }

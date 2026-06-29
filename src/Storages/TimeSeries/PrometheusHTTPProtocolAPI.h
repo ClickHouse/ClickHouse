@@ -4,7 +4,6 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Core/Field.h>
 #include <Parsers/IAST_fwd.h>
 #include <IO/WriteBuffer.h>
 
@@ -15,7 +14,7 @@ class PrometheusQueryTree;
 class PullingPipelineExecutor;
 enum class PrometheusQueryResultType;
 
-/// Helper class to support the Prometheus Query API endpoints.
+/// Helper class to support the query and metadata endpoints of the Prometheus HTTP API.
 /// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values
 class PrometheusHTTPProtocolAPI : public WithMutableContext
 {

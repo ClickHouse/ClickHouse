@@ -7,8 +7,6 @@ description: 'Returns a table with a single `prime` column that contains prime n
 doc_type: 'reference'
 ---
 
-# primes Table Function
-
 - `primes()` – Returns an infinite table with a single `prime` column (UInt64) that contains prime numbers in ascending order, starting from 2. Use `LIMIT` (and optionally `OFFSET`) to restrict the number of rows.
 
 - `primes(N)` – Returns a table with the single `prime` column (UInt64) that contains the first `N` prime numbers, starting from 2.
@@ -61,7 +59,7 @@ SELECT * FROM primes(10);
 
 The first prime greater than 1e15.
 ```sql
-SELECT prime FROM primes() WHERE prime > toUInt64(1e15) LIMIT 1;
+SELECT prime FROM primes() WHERE prime > 1e15 LIMIT 1;
 ```
 
 ```response
@@ -74,7 +72,7 @@ Solve a modular constraint over primes in a very large range: find the first pri
 ```sql
 SELECT prime
 FROM primes()
-WHERE prime >= toUInt64(1e15)
+WHERE prime >= 1e15
   AND prime % 65537 = 1
 LIMIT 1;
 ```
@@ -111,9 +109,9 @@ LIMIT 7;
 ```sql
 SELECT sum(prime)
 FROM primes()
-WHERE prime BETWEEN toUInt64(1e6) AND toUInt64(1e6) + 100
-   OR prime BETWEEN toUInt64(1e12) AND toUInt64(1e12) + 100
-   OR prime BETWEEN toUInt64(1e15) AND toUInt64(1e15) + 100
+WHERE prime BETWEEN 1e6 AND 1e6 + 100
+   OR prime BETWEEN 1e12 AND 1e12 + 100
+   OR prime BETWEEN 1e15 AND 1e15 + 100
    OR prime IN (9999999967, 9999999971, 9999999973)
    OR prime = 1000000000000037;
 ```

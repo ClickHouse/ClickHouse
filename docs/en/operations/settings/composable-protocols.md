@@ -8,8 +8,6 @@ title: 'Composable protocols'
 doc_type: 'reference'
 ---
 
-# Composable protocols
-
 ## Overview {#overview}
 
 Composable protocols allow more flexible configuration of TCP access to the 
@@ -214,7 +212,7 @@ while requests to port 8124 use the `<http_handlers_alt>` rules. If `<handlers>`
 is omitted, the endpoint falls back to the default `<http_handlers>`.
 
 The custom handlers section follows the same format as
-[`<http_handlers>`](/docs/en/operations/server-configuration-parameters/settings#http_handlers).
+[`<http_handlers>`](/docs/operations/server-configuration-parameters/settings#http_handlers).
 Changes to the custom handlers section are detected during config reload, and the
 corresponding endpoint is automatically restarted.
 

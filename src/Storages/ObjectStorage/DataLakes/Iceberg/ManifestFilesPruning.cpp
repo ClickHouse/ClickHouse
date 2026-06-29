@@ -17,8 +17,9 @@
 #include <fmt/ranges.h>
 
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 using namespace DB;
@@ -96,7 +97,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     Int32 current_schema_id_,
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
-    const ManifestFileContent & manifest_file,
+    const ManifestFileIterator & manifest_file,
     DB::ContextPtr context)
     : schema_processor(schema_processor_)
     , current_schema_id(current_schema_id_)
@@ -115,7 +116,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     if (manifest_file.hasPartitionKey())
     {
         partition_key = &manifest_file.getPartitionKeyDescription();
-        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
+        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
         partition_key_condition.emplace(
             inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
     }
@@ -131,16 +132,17 @@ ManifestFilesPruner::ManifestFilesPruner(
         ExpressionActionsPtr expression
             = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
 
-        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
+        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
         min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
     }
 }
 
-PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntryPtr & entry) const
+PruningReturnStatus ManifestFilesPruner::canBePruned(
+    const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
 {
     if (partition_key_condition.has_value())
     {
-        const auto & partition_value = entry->partition_key_value;
+        const auto & partition_value = entry->parsed_entry->partition_key_value;
         std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
         for (auto & field : index_value)
         {
@@ -168,15 +170,15 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntryPtr 
             continue;
         }
 
-        auto it = entry->columns_infos.find(column_id);
-        if (it == entry->columns_infos.end())
-        {
+        auto rect_it = entry_hyperrectangles.find(column_id);
+        if (rect_it == entry_hyperrectangles.end())
             continue;
-        }
 
+        auto info_it = entry->parsed_entry->columns_infos.find(column_id);
+        bool has_no_nulls = info_it != entry->parsed_entry->columns_infos.end() && info_it->second.nulls_count.has_value()
+            && *info_it->second.nulls_count == 0;
 
-        auto hyperrectangle = it->second.hyperrectangle;
-        if (hyperrectangle.has_value() && it->second.nulls_count.has_value() && *it->second.nulls_count == 0 && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
+        if (has_no_nulls && !key_condition.mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, {name_and_type->type}))
         {
             return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
         }

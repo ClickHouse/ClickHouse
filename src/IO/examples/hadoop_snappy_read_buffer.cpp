@@ -10,8 +10,9 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/HadoopSnappyReadBuffer.h>
+#include <Examples/clickhouse_examples.h>
 
-std::string uncompress(size_t buf_size)
+static std::string uncompress(size_t buf_size)
 {
     using namespace DB;
 
@@ -27,7 +28,7 @@ std::string uncompress(size_t buf_size)
     return output;
 }
 
-int main()
+int mainEntryExampleHadoopSnappyReadBuffer(int, char **)
 {
     auto output = uncompress(1024 * 1024);
     for (size_t i = 1; i < 1024; ++i)

@@ -1,5 +1,8 @@
 -- add_minmax_index_for_numeric_columns=0: Changes the plan FOR b
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_skip_index_insert;
+
+SET use_statistics_for_part_pruning = 0; -- disable statistics-based part pruning to keep EXPLAIN output stable
 
 CREATE TABLE t_skip_index_insert
 (
@@ -12,6 +15,9 @@ ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4, add_minmax_i
 
 SET enable_analyzer = 1;
 SET materialize_skip_indexes_on_insert = 0;
+SET use_skip_indexes_on_data_read = 1;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 SYSTEM STOP MERGES t_skip_index_insert;
 

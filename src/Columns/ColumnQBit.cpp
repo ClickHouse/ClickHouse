@@ -36,7 +36,13 @@ size_t ColumnQBit::getBitsCount() const
 
 std::string ColumnQBit::getName() const
 {
-    return fmt::format("QBit({}, {})", getBitsCount() == 16 ? "BFloat16" : getBitsCount() == 32 ? "Float32" : "Float64", dimension);
+    return fmt::format(
+        "QBit({}, {})",
+        getBitsCount() == 8        ? "Int8"
+            : getBitsCount() == 16 ? "BFloat16"
+            : getBitsCount() == 32 ? "Float32"
+                                   : "Float64",
+        dimension);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -149,9 +155,9 @@ void ColumnQBit::forEachSubcolumnRecursively(RecursiveColumnCallback callback) c
     tuple->forEachSubcolumnRecursively(callback);
 }
 
-void ColumnQBit::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnQBit::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
-    Columns source_tuple_columns;
+    VectorWithMemoryTracking<ColumnPtr> source_tuple_columns;
     source_tuple_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         source_tuple_columns.push_back(assert_cast<const ColumnQBit &>(*source_column).getTuple());

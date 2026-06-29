@@ -36,9 +36,9 @@ public:
         return std::make_shared<PromotedType>();
     }
 
-    SerializationPtr doGetDefaultSerialization() const override
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override
     {
-        return std::make_shared<SerializationNumber<T>>();
+        return SerializationNumber<T>::create();
     }
 
     /// Special constructor for unsigned integers that can also fit into signed integer.

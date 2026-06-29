@@ -15,7 +15,6 @@ namespace ErrorCodes
 
 namespace
 {
-VersionNumber VERSION_UNKNOWN = {0};
 
 /// Example input 'types' vector: {"(U)Int*", "Float*"}
 /// Example output string: [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
@@ -226,6 +225,7 @@ String FunctionDocumentation::categoryAsString() const
     {
         {Category::Unknown, ""}, /// Default enum value for default-constructed FunctionDocumentation objects. Be consistent with other default fields (empty).
 
+        {Category::AI, "AI"},
         {Category::Arithmetic, "Arithmetic"},
         {Category::Array, "Arrays"},
         {Category::Bit, "Bit"},

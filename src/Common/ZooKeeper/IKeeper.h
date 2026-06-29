@@ -2,10 +2,15 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 
+#include <chrono>
+#include <limits>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -24,6 +29,11 @@
   * - ZooKeeper emulation layer on top of Etcd, FoundationDB, whatever.
   */
 
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredOther;
+}
+
 namespace Coordination
 {
 
@@ -39,7 +49,7 @@ struct ACL
     static constexpr int32_t Admin = 16;
     static constexpr int32_t All = 0x1F;
 
-    int32_t permissions;
+    int32_t permissions{};
     String scheme;
     String id;
 
@@ -176,6 +186,7 @@ using WatchCallback = std::function<void(const WatchResponse &)>;
 using WatchCallbackPtr = std::shared_ptr<WatchCallback>;
 using EventPtr = std::shared_ptr<Poco::Event>;
 struct TestKeeperRequest;
+
 struct WatchCallbackPtrOrEventPtr
 {
 private:
@@ -186,6 +197,8 @@ private:
 
     WatchCallbackPtr callback;
     EventPtr event;
+    /// The ProfileEvent incremented when this watch is triggered, identifying the subsystem that owns the callback.
+    ProfileEvents::Event triggered_event = ProfileEvents::ZooKeeperWatchTriggeredOther;
 
     void operator()(WatchResponse response) const
     {
@@ -200,6 +213,15 @@ public:
 
     WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_) : callback(std::move(callback_)) {} // NOLINT(google-explicit-constructor)
     WatchCallbackPtrOrEventPtr(EventPtr event_) : event(std::move(event_)) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_, ProfileEvents::Event triggered_event_)
+        : callback(std::move(callback_)), triggered_event(triggered_event_) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr(EventPtr event_, ProfileEvents::Event triggered_event_)
+        : event(std::move(event_)), triggered_event(triggered_event_) {} // NOLINT(google-explicit-constructor)
+
+    ProfileEvents::Event getTriggeredEvent() const { return triggered_event; }
+    void setTriggeredEvent(ProfileEvents::Event triggered_event_) { triggered_event = triggered_event_; }
+
+    void invoke(WatchResponse response) const { (*this)(std::move(response)); }
 
     WatchCallbackPtrOrEventPtr(WatchCallbackPtrOrEventPtr &&) = default;
     WatchCallbackPtrOrEventPtr(const WatchCallbackPtrOrEventPtr &) = default;
@@ -279,7 +301,7 @@ struct CheckWatchRequest : virtual Request
     };
 
     String path;
-    CheckWatchType type;
+    CheckWatchType type{};
 
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
@@ -304,7 +326,7 @@ struct RemoveWatchRequest : virtual Request
         PERSISTENT = 4,
         PERSISTENTRECURSIVE = 5,
         ANY = 3
-    } type;
+    } type{};
 
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
@@ -328,7 +350,7 @@ struct AddWatchRequest : virtual Request
     };
 
     String path;
-    AddWatchMode mode;
+    AddWatchMode mode{};
 
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
@@ -345,7 +367,7 @@ struct AddWatchResponse : virtual Response
 
 struct SetWatchesRequest : virtual Request
 {
-    int64_t zxid;
+    int64_t zxid{};
     std::vector<String> child_watches;
     std::vector<String> exist_watches;
     std::vector<String> data_watches;
@@ -405,6 +427,8 @@ struct CreateRequest : virtual Request
     bool is_sequential = false;
     ACLs acls;
     bool include_stats = false;
+    bool include_ttl = false;
+    int64_t ttl = 0;
 
     /// should it succeed if node already exists
     bool not_exists = false;
@@ -412,8 +436,14 @@ struct CreateRequest : virtual Request
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size() + data.size()
-            + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL); }
+    size_t bytesSize() const override
+    {
+        auto base_size = path.size() + data.size()
+            + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL);
+        if (include_ttl)
+            base_size += sizeof(ttl);
+        return base_size;
+    }
 };
 
 struct CreateResponse : virtual Response
@@ -456,6 +486,22 @@ struct RemoveRecursiveRequest : virtual Request
 
 struct RemoveRecursiveResponse : virtual Response
 {
+};
+
+
+struct ListRecursiveResponse : virtual Response
+{
+    std::vector<String> children;
+
+    void removeRootPath(const String & root_path) override;
+
+    size_t bytesSize() const override
+    {
+        size_t result = 0;
+        for (const auto & child : children)
+            result += child.size();
+        return result;
+    }
 };
 
 struct ExistsRequest : virtual Request
@@ -523,10 +569,17 @@ struct ListRequest : virtual Request
 {
     String path;
 
+    /// FILTERED_LIST extension.
+    std::optional<ListRequestType> list_request_type;
+
+    /// LIST_WITH_STAT_AND_DATA extension.
+    std::optional<bool> with_stat;
+    std::optional<bool> with_data;
+
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size(); }
+    size_t bytesSize() const override { return path.size() + sizeof(list_request_type) + sizeof(with_stat) + sizeof(with_data); }
 };
 
 struct ListResponse : virtual Response
@@ -548,6 +601,14 @@ struct ListResponse : virtual Response
             size += child_data.size();
         return size;
     }
+};
+
+struct ListRecursiveRequest : virtual ListRequest
+{
+    /// strict limit for number of listed nodes
+    uint32_t children_nodes_limit = std::numeric_limits<uint32_t>::max();
+
+    size_t bytesSize() const override { return ListRequest::bytesSize() + sizeof(children_nodes_limit); }
 };
 
 struct CheckRequest : virtual Request
@@ -593,7 +654,7 @@ struct ReconfigRequest : virtual Request
     String joining;
     String leaving;
     String new_members;
-    int32_t version;
+    int32_t version{};
 
     String getPath() const final { return keeper_config_path; }
 
@@ -666,6 +727,7 @@ using SyncCallback = std::function<void(const SyncResponse &)>;
 using ReconfigCallback = std::function<void(const ReconfigResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
 using GetACLCallback = std::function<void(const GetACLResponse &)>;
+using ListRecursiveCallback = std::function<void(const ListRecursiveResponse &)>;
 
 /// For watches.
 enum State
@@ -734,6 +796,13 @@ public:
 
     virtual int64_t getLastZXIDSeen() const = 0;
 
+    /// Returns the timestamp (in microseconds since `steady_clock` epoch) of the
+    /// last data received from the server (any kind: response, heartbeat, or
+    /// watch event). Used by progress-based timeout logic in sync wrappers.
+    /// Returns 0 (epoch) by default, meaning implementations without progress
+    /// tracking will fall back to plain timeout.
+    virtual Int64 getLastReceivedTimestamp() const { return 0; }
+
     virtual String tryGetAvailabilityZone() { return ""; }
 
     using WatchCallbackCreator = std::function<WatchCallback()>;
@@ -769,6 +838,11 @@ public:
         const String & path,
         uint32_t remove_nodes_limit,
         RemoveRecursiveCallback callback) = 0;
+
+    virtual void listRecursive(
+        const String & path,
+        uint32_t get_children_recursive_nodes_limit,
+        ListRecursiveCallback callback) = 0;
 
     virtual void exists(
         const String & path,
@@ -830,9 +904,18 @@ public:
     using WatchCallbacks = std::unordered_set<WatchCallbackPtrOrEventPtr>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
+    struct WatchCreateInfo
+    {
+        std::chrono::system_clock::time_point create_time{};
+        XID request_xid{0};
+        OpNum op_num{OpNum::Error};
+    };
+
+    using WatchesSnapshot = std::unordered_map<String, std::vector<WatchCreateInfo>>;
+
 protected:
     std::unordered_map<String, WatchCallbackPtrOrEventPtr> watches_by_id TSA_GUARDED_BY(watches_mutex);
-    std::mutex watches_mutex;
+    mutable std::mutex watches_mutex;
 };
 
 }

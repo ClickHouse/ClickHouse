@@ -1,46 +1,39 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #if USE_AVRO
 
-#include <numeric>
-
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
+#include <Common/checkStackSize.h>
+#include <Core/AccurateComparison.h>
 #include <Core/Field.h>
-
-#include <Common/CacheBase.h>
-#include <Common/CurrentMetrics.h>
-
-#include <IO/ReadHelpers.h>
-#include <IO/HTTPCommon.h>
-#include <IO/ReadBufferFromString.h>
-
-#include <Formats/FormatFactory.h>
-
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/Serializations/SerializationTuple.h>
-#include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationArray.h>
-
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnMap.h>
-
+#include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationTuple.h>
+#include <Formats/FormatFactory.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
+#include <base/EnumReflection.h>
 #include <Compiler.hh>
 #include <DataFile.hh>
 #include <Decoder.hh>
@@ -48,23 +41,6 @@
 #include <NodeImpl.hh>
 #include <Types.hh>
 #include <ValidSchema.hh>
-
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
-#include <Poco/Net/HTTPBasicCredentials.h>
-#include <Poco/Net/HTTPCredentials.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <Poco/Net/HTTPResponse.h>
-#include <Poco/URI.h>
-
-
-namespace CurrentMetrics
-{
-    extern const Metric AvroSchemaCacheBytes;
-    extern const Metric AvroSchemaCacheCells;
-    extern const Metric AvroSchemaRegistryCacheBytes;
-    extern const Metric AvroSchemaRegistryCacheCells;
-}
 
 namespace DB
 {
@@ -111,6 +87,41 @@ size_t AvroInputStreamReadBufferAdapter::byteCount() const
     return in.count();
 }
 
+/// Helper to convert and insert a numeric value.
+/// Only floating-point to integer/float conversions can cause undefined behavior,
+/// so we only apply range checks for floating-point source types.
+/// Integer-to-integer conversions are always defined (may truncate/wrap).
+template <typename Source, typename Target, typename Column, bool is_ipv4 = false>
+static void convertAndInsert(Column & column, Source value, TypeIndex type_index)
+{
+    auto insert = [&](Target value_to_insert)
+    {
+        if constexpr (is_ipv4)
+            column.insertValue(IPv4(value_to_insert));
+        else
+            column.insertValue(value_to_insert);
+    };
+
+    if constexpr (std::is_floating_point_v<Source>)
+    {
+        // Float-to-integer, float-to-float overflow, and casting NaN to integer are UB - must check
+        Target converted;
+        if ((!std::is_floating_point_v<Target> && isNaN(value)) ||
+         !accurate::convertNumeric<Source, Target, /* strict= */ false>(value, converted))
+        {
+            throw Exception(
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "Cannot convert Avro value {} to {}", value, magic_enum::enum_name(type_index));
+        }
+        insert(converted);
+    }
+    else
+    {
+        // Integer-to-integer conversions are always defined (may truncate/wrap)
+        insert(static_cast<Target>(value));
+    }
+}
+
 /// Insert value with conversion to the column of target type.
 template <typename T>
 static void insertNumber(IColumn & column, WhichDataType type, T value)
@@ -118,49 +129,52 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
     switch (type.idx)
     {
         case TypeIndex::UInt8:
-            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value));
+            convertAndInsert<T, UInt8>(assert_cast<ColumnUInt8 &>(column), value, type.idx);
             break;
-        case TypeIndex::Date: [[fallthrough]];
+        case TypeIndex::Date:
+            [[fallthrough]];
         case TypeIndex::UInt16:
-            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
+            convertAndInsert<T, UInt16>(assert_cast<ColumnUInt16 &>(column), value, type.idx);
             break;
-        case TypeIndex::DateTime: [[fallthrough]];
+        case TypeIndex::DateTime:
+            [[fallthrough]];
         case TypeIndex::UInt32:
-            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
+            convertAndInsert<T, UInt32>(assert_cast<ColumnUInt32 &>(column), value, type.idx);
             break;
         case TypeIndex::UInt64:
-            assert_cast<ColumnUInt64 &>(column).insertValue(static_cast<UInt64>(value));
+            convertAndInsert<T, UInt64>(assert_cast<ColumnUInt64 &>(column), value, type.idx);
             break;
         case TypeIndex::Int8:
-            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
+            convertAndInsert<T, Int8>(assert_cast<ColumnInt8 &>(column), value, type.idx);
             break;
         case TypeIndex::Int16:
-            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
+            convertAndInsert<T, Int16>(assert_cast<ColumnInt16 &>(column), value, type.idx);
             break;
-        case TypeIndex::Date32: [[fallthrough]];
+        case TypeIndex::Date32:
+            [[fallthrough]];
         case TypeIndex::Int32:
-            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value));
+            convertAndInsert<T, Int32>(assert_cast<ColumnInt32 &>(column), value, type.idx);
             break;
         case TypeIndex::Int64:
-            assert_cast<ColumnInt64 &>(column).insertValue(static_cast<Int64>(value));
+            convertAndInsert<T, Int64>(assert_cast<ColumnInt64 &>(column), value, type.idx);
             break;
         case TypeIndex::Float32:
-            assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(value));
+            convertAndInsert<T, Float32>(assert_cast<ColumnFloat32 &>(column), value, type.idx);
             break;
         case TypeIndex::Float64:
-            assert_cast<ColumnFloat64 &>(column).insertValue(static_cast<Float64>(value));
+            convertAndInsert<T, Float64>(assert_cast<ColumnFloat64 &>(column), value, type.idx);
             break;
         case TypeIndex::Decimal32:
-            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(static_cast<Int32>(value));
+            convertAndInsert<T, Int32>(assert_cast<ColumnDecimal<Decimal32> &>(column), value, type.idx);
             break;
         case TypeIndex::Decimal64:
-            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(static_cast<Int64>(value));
+            convertAndInsert<T, Int64>(assert_cast<ColumnDecimal<Decimal64> &>(column), value, type.idx);
             break;
         case TypeIndex::DateTime64:
-            assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(static_cast<Int64>(value));
+            convertAndInsert<T, Int64>(assert_cast<ColumnDecimal<DateTime64> &>(column), value, type.idx);
             break;
         case TypeIndex::IPv4:
-            assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(static_cast<UInt32>(value)));
+            convertAndInsert<T, UInt32, ColumnIPv4, true>(assert_cast<ColumnIPv4 &>(column), value, type.idx);
             break;
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type is not compatible with Avro");
@@ -243,6 +257,14 @@ static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t f
             return true;
         case TypeIndex::FixedString: [[fallthrough]];
         case TypeIndex::IPv6: [[fallthrough]];
+        case TypeIndex::Int8: [[fallthrough]];
+        case TypeIndex::UInt8: [[fallthrough]];
+        case TypeIndex::Int16: [[fallthrough]];
+        case TypeIndex::UInt16: [[fallthrough]];
+        case TypeIndex::Int32: [[fallthrough]];
+        case TypeIndex::UInt32: [[fallthrough]];
+        case TypeIndex::Int64: [[fallthrough]];
+        case TypeIndex::UInt64: [[fallthrough]];
         case TypeIndex::Int128: [[fallthrough]];
         case TypeIndex::UInt128: [[fallthrough]];
         case TypeIndex::Int256: [[fallthrough]];
@@ -255,6 +277,8 @@ static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t f
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type)
 {
+    checkStackSize();
+
     if (target_type->lowCardinality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(target_type.get());
@@ -353,7 +377,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             {
                 return [target](IColumn & column, avro::Decoder & decoder)
                 {
-                    insertNumber(column, target, decoder.decodeBool());
+                    // Cast bool to UInt8 since accurate::convertNumeric doesn't support bool
+                    insertNumber(column, target, static_cast<UInt8>(decoder.decodeBool()));
                     return true;
                 };
             }
@@ -566,6 +591,10 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return [symbols](IColumn & column, avro::Decoder & decoder)
                 {
                     size_t enum_index = decoder.decodeEnum();
+                    if (enum_index >= symbols.size())
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Avro enum index {} is out of range, the schema has {} symbols", enum_index, symbols.size());
+                    }
                     const auto & enum_symbol = symbols[enum_index];
                     column.insertData(enum_symbol.c_str(), enum_symbol.length());
                     return true;
@@ -582,6 +611,10 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return [symbol_mapping](IColumn & column, avro::Decoder & decoder)
                 {
                     size_t enum_index = decoder.decodeEnum();
+                    if (enum_index >= symbol_mapping.size())
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Avro enum index {} is out of range, the schema has {} symbols", enum_index, symbol_mapping.size());
+                    }
                     column.insert(symbol_mapping[enum_index]);
                     return true;
                 };
@@ -625,7 +658,15 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             break;
         }
         case avro::AVRO_SYMBOLIC:
-            return createDeserializeFn(avro::resolveSymbol(root_node), target_type);
+        {
+            const auto & sym_name = root_node->name().fullname();
+            if (!symbolic_deserialize_guard.insert(sym_name).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Recursive Avro schema is not supported: type '{}' references itself", sym_name);
+            auto result = createDeserializeFn(avro::resolveSymbol(root_node), target_type);
+            symbolic_deserialize_guard.erase(sym_name);
+            return result;
+        }
         case avro::AVRO_RECORD:
         {
             if (target.isTuple())
@@ -730,6 +771,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
 
 AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & root_node)
 {
+    checkStackSize();
+
     switch (root_node->type())
     {
         case avro::AVRO_STRING:
@@ -872,6 +915,8 @@ static inline std::string concatPath(const std::string & a, const std::string & 
 
 AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, const avro::NodePtr & node, const std::string & current_path)
 {
+    checkStackSize();
+
     if (node->type() == avro::AVRO_SYMBOLIC)
     {
         /// continue traversal only if some column name starts with current_path
@@ -880,9 +925,26 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
             return col.name.starts_with(current_path);
         });
         auto resolved_node = avro::resolveSymbol(node);
-        if (keep_going)
-            return createAction(header, resolved_node, current_path);
-        return AvroDeserializer::Action(createSkipFn(resolved_node));
+
+        /// When we do not need to descend into the referenced type, take the safe skip path.
+        /// `createSkipFn` handles cyclic symbolic references via `symbolic_skip_fn_map` (lazy
+        /// placeholder that is filled in on first resolution). So legitimately recursive
+        /// schemas (e.g. a LinkedList with optional self-reference) are still readable when
+        /// the requested columns do not traverse into the cycle.
+        if (!keep_going)
+            return AvroDeserializer::Action(createSkipFn(resolved_node));
+
+        /// If we do need to descend, we cannot build a finite deserializer when the same
+        /// symbolic reference appears on the current path — that would require infinite
+        /// unrolling. Guard with a path-stack (insert on entry, erase on exit) so sibling
+        /// re-uses of the same named type are allowed, and only back-edges are rejected.
+        const auto & sym_name = node->name().fullname();
+        if (!symbolic_deserialize_guard.insert(sym_name).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Recursive Avro schema is not supported: type '{}' references itself", sym_name);
+        Action result = createAction(header, resolved_node, current_path);
+        symbolic_deserialize_guard.erase(sym_name);
+        return result;
     }
 
     if (header.has(current_path))
@@ -965,7 +1027,6 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
 }
 
-
 AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_)
     : null_as_default(null_as_default_), settings(settings_)
 {
@@ -1027,7 +1088,6 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
     }
 }
 
-
 AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_), format_settings(format_settings_)
 {
@@ -1035,7 +1095,8 @@ AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, P
 
 void AvroRowInputFormat::readPrefix()
 {
-    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*in));
+    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
+        std::make_unique<AvroInputStreamReadBufferAdapter>(*in), MAX_AVRO_SCHEMA_DEPTH);
     deserializer_ptr = std::make_unique<AvroDeserializer>(
         output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
     file_reader_ptr->init();
@@ -1065,128 +1126,10 @@ size_t AvroRowInputFormat::countRows(size_t max_block_size)
     return num_rows;
 }
 
-class AvroConfluentRowInputFormat::SchemaRegistry
-{
-public:
-    explicit SchemaRegistry(const std::string & base_url_, size_t schema_cache_max_size = 1000)
-        : base_url(base_url_), schema_cache(CurrentMetrics::AvroSchemaCacheBytes, CurrentMetrics::AvroSchemaCacheCells, schema_cache_max_size)
-    {
-        if (base_url.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty Schema Registry URL");
-    }
-
-    avro::ValidSchema getSchema(uint32_t id)
-    {
-        auto [schema, loaded] = schema_cache.getOrSet(
-            id,
-            [this, id](){ return std::make_shared<avro::ValidSchema>(fetchSchema(id)); }
-        );
-        return *schema;
-    }
-
-private:
-    avro::ValidSchema fetchSchema(uint32_t id)
-    {
-        try
-        {
-            try
-            {
-                Poco::URI url(base_url, base_url.getPath() + "/schemas/ids/" + std::to_string(id));
-                LOG_TRACE((getLogger("AvroConfluentRowInputFormat")), "Fetching schema id = {} from url {}", id, url.toString());
-
-                /// One second for connect/send/receive. Just in case.
-                auto timeouts = ConnectionTimeouts()
-                    .withConnectionTimeout(1)
-                    .withSendTimeout(1)
-                    .withReceiveTimeout(1);
-
-                Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-                if (url.getPort())
-                    request.setHost(url.getHost(), url.getPort());
-                else
-                    request.setHost(url.getHost());
-
-                if (!url.getUserInfo().empty())
-                {
-                    Poco::Net::HTTPCredentials http_credentials;
-                    Poco::Net::HTTPBasicCredentials http_basic_credentials;
-
-                    http_credentials.fromUserInfo(url.getUserInfo());
-
-                    std::string decoded_username;
-                    Poco::URI::decode(http_credentials.getUsername(), decoded_username);
-                    http_basic_credentials.setUsername(decoded_username);
-
-                    if (!http_credentials.getPassword().empty())
-                    {
-                        std::string decoded_password;
-                        Poco::URI::decode(http_credentials.getPassword(), decoded_password);
-                        http_basic_credentials.setPassword(decoded_password);
-                    }
-
-                    http_basic_credentials.authenticate(request);
-                }
-
-                auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, url, timeouts);
-                session->sendRequest(request);
-
-                Poco::Net::HTTPResponse response;
-                std::istream * response_body = receiveResponse(*session, request, response, false);
-
-                Poco::JSON::Parser parser;
-                auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
-
-
-                auto schema = json_body->getValue<std::string>("schema");
-                LOG_TRACE((getLogger("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
-                return avro::compileJsonSchemaFromString(schema);
-            }
-            catch (const Exception &)
-            {
-                throw;
-            }
-            catch (const Poco::Exception & e)
-            {
-                throw Exception(Exception::CreateFromPocoTag{}, e);
-            }
-            catch (const avro::Exception & e)
-            {
-                throw Exception::createDeprecated(e.what(), ErrorCodes::INCORRECT_DATA);
-            }
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("while fetching schema id = " + std::to_string(id));
-            throw;
-        }
-    }
-
-    Poco::URI base_url;
-    CacheBase<uint32_t, avro::ValidSchema> schema_cache;
-};
-
-using ConfluentSchemaRegistry = AvroConfluentRowInputFormat::SchemaRegistry;
-#define SCHEMA_REGISTRY_CACHE_MAX_SIZE 1000
-/// Cache of Schema Registry URL -> SchemaRegistry
-static CacheBase<std::string, ConfluentSchemaRegistry> schema_registry_cache(CurrentMetrics::AvroSchemaRegistryCacheBytes, CurrentMetrics::AvroSchemaRegistryCacheCells, SCHEMA_REGISTRY_CACHE_MAX_SIZE);
-
-static std::shared_ptr<ConfluentSchemaRegistry> getConfluentSchemaRegistry(const FormatSettings & format_settings)
-{
-    const auto & base_url = format_settings.avro.schema_registry_url;
-    auto [schema_registry, loaded] = schema_registry_cache.getOrSet(
-        base_url,
-        [base_url]()
-        {
-            return std::make_shared<ConfluentSchemaRegistry>(base_url);
-        }
-    );
-    return schema_registry;
-}
-
 static uint32_t readConfluentSchemaId(ReadBuffer & in)
 {
-    uint8_t magic;
-    uint32_t schema_id;
+    uint8_t magic = 0;
+    uint32_t schema_id = 0;
 
     try
     {
@@ -1257,10 +1200,13 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     auto it = deserializer_cache.find(schema_id);
     if (it == deserializer_cache.end())
     {
-        auto schema = schema_registry->getSchema(schema_id);
+        auto schema = schema_registry->getSchema(
+            schema_id,
+            format_settings.avro.schema_registry_timeouts,
+            format_settings.avro.schema_registry_retry);
         AvroDeserializer deserializer(
             output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
-        it = deserializer_cache.emplace(schema_id, deserializer).first;
+        it = deserializer_cache.emplace(schema_id, std::move(deserializer)).first;
     }
     return it->second;
 }
@@ -1276,11 +1222,15 @@ NamesAndTypesList AvroSchemaReader::readSchema()
     if (confluent)
     {
         UInt32 schema_id = readConfluentSchemaId(in);
-        root_node = getConfluentSchemaRegistry(format_settings)->getSchema(schema_id).root();
+        root_node = getConfluentSchemaRegistry(format_settings)->getSchema(
+            schema_id,
+            format_settings.avro.schema_registry_timeouts,
+            format_settings.avro.schema_registry_retry).root();
     }
     else
     {
-        auto file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(in));
+        auto file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
+            std::make_unique<AvroInputStreamReadBufferAdapter>(in), MAX_AVRO_SCHEMA_DEPTH);
         root_node = file_reader_ptr->dataSchema().root();
     }
 
@@ -1295,6 +1245,14 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 }
 
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
+{
+    checkStackSize();
+
+    std::unordered_set<std::string> seen_names;
+    return avroNodeToDataTypeImpl(node, seen_names);
+}
+
+DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names)
 {
     switch (node->type())
     {
@@ -1364,7 +1322,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
             return std::make_shared<DataTypeFixedString>(node->fixedSize());
         }
         case avro::Type::AVRO_ARRAY:
-            return std::make_shared<DataTypeArray>(avroNodeToDataType(node->leafAt(0)));
+            return std::make_shared<DataTypeArray>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names));
         case avro::Type::AVRO_NULL:
             return std::make_shared<DataTypeNothing>();
         case avro::Type::AVRO_UNION:
@@ -1372,7 +1330,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
             // Treat union[T] as just T
             if (node->leaves() == 1)
             {
-                return avroNodeToDataType(node->leafAt(0));
+                return avroNodeToDataTypeImpl(node->leafAt(0), seen_names);
             }
 
             // Treat union[T, NULL] and union[NULL, T] as Nullable(T)
@@ -1381,7 +1339,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
                 && (node->leafAt(0)->type() == avro::Type::AVRO_NULL || node->leafAt(1)->type() == avro::Type::AVRO_NULL))
             {
                 int nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
-                auto nested_type = avroNodeToDataType(node->leafAt(nested_leaf_index));
+                auto nested_type = avroNodeToDataTypeImpl(node->leafAt(nested_leaf_index), seen_names);
                 return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
             }
 
@@ -1397,32 +1355,43 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
                 if (node->leafAt(i)->type() == avro::Type::AVRO_NULL) continue;
 
                 const auto & avro_node = node->leafAt(i);
-                nested_types.push_back(avroNodeToDataType(avro_node));
+                nested_types.push_back(avroNodeToDataTypeImpl(avro_node, seen_names));
             }
             return std::make_shared<DataTypeVariant>(nested_types);
         }
         case avro::Type::AVRO_SYMBOLIC:
-            return avroNodeToDataType(avro::resolveSymbol(node));
+        {
+            auto resolved = avro::resolveSymbol(node);
+            return avroNodeToDataTypeImpl(resolved, seen_names);
+        }
         case avro::Type::AVRO_RECORD:
         {
+            const auto & name = node->name().fullname();
+            if (!seen_names.insert(name).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Recursive Avro schema is not supported: type '{}' references itself", name);
+
             DataTypes nested_types;
             nested_types.reserve(node->leaves());
             Names nested_names;
             nested_names.reserve(node->leaves());
             for (int i = 0; i != static_cast<int>(node->leaves()); ++i)
             {
-                nested_types.push_back(avroNodeToDataType(node->leafAt(i)));
+                nested_types.push_back(avroNodeToDataTypeImpl(node->leafAt(i), seen_names));
                 nested_names.push_back(node->nameAt(i));
             }
+
+            seen_names.erase(name);
             return std::make_shared<DataTypeTuple>(nested_types, nested_names);
         }
         case avro::Type::AVRO_MAP:
-            return std::make_shared<DataTypeMap>(avroNodeToDataType(node->leafAt(0)), avroNodeToDataType(node->leafAt(1)));
+            return std::make_shared<DataTypeMap>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names), avroNodeToDataTypeImpl(node->leafAt(1), seen_names));
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro column {} is not supported for inserting.", nodeName(node));
     }
 }
 
+void registerInputFormatAvro(FormatFactory & factory);
 void registerInputFormatAvro(FormatFactory & factory)
 {
     factory.registerInputFormat("Avro", [](
@@ -1446,8 +1415,285 @@ void registerInputFormatAvro(FormatFactory & factory)
     });
 
     factory.markFormatSupportsSubsetOfColumns("AvroConfluent");
+
+    factory.setDocumentation("Avro", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+[Apache Avro](https://avro.apache.org/) is a row-oriented serialization format that uses binary encoding for efficient data processing. The `Avro` format supports reading and writing [Avro data files](https://avro.apache.org/docs/current/specification/#object-container-files). This format expects self-describing messages with an embedded schema. If you're using Avro with a schema registry, refer to the [`AvroConfluent`](./AvroConfluent.md) format.
+
+## Data type mapping {#data-type-mapping}
+
+The table below shows all data types supported by the Apache Avro format, and their corresponding ClickHouse [data types](/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+
+| Avro data type `INSERT`                     | ClickHouse data type                                                                                                          | Avro data type `SELECT`         |
+|---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|---------------------------------|
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8\16\32)](/sql-reference/data-types/int-uint.md), [UInt(8\16\32)](/sql-reference/data-types/int-uint.md) | `int`                           |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](/sql-reference/data-types/int-uint.md), [UInt64](/sql-reference/data-types/int-uint.md)               | `long`                          |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](/sql-reference/data-types/float.md)                                                                         | `float`                         |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](/sql-reference/data-types/float.md)                                                                         | `double`                        |
+| `bytes`, `string`, `fixed`, `enum`          | [String](/sql-reference/data-types/string.md)                                                                         | `bytes` or `string` \*          |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](/sql-reference/data-types/fixedstring.md)                                                            | `fixed(N)`                      |
+| `enum`                                      | [Enum(8\16)](/sql-reference/data-types/enum.md)                                                                       | `enum`                          |
+| `array(T)`                                  | [Array(T)](/sql-reference/data-types/array.md)                                                                        | `array(T)`                      |
+| `map(V, K)`                                 | [Map(V, K)](/sql-reference/data-types/map.md)                                                                         | `map(string, K)`                |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/sql-reference/data-types/date.md)                                                                      | `union(null, T)`                |
+| `union(T1, T2, …)` \**                      | [Variant(T1, T2, …)](/sql-reference/data-types/variant.md)                                                            | `union(T1, T2, …)` \**          |
+| `null`                                      | [Nullable(Nothing)](/sql-reference/data-types/special-data-types/nothing.md)                                          | `null`                          |
+| `int (date)` \**\*                          | [Date](/sql-reference/data-types/date.md), [Date32](/sql-reference/data-types/date32.md)                       | `int (date)` \**\*              |
+| `long (timestamp-millis)` \**\*             | [DateTime64(3)](/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-millis)` \**\* |
+| `long (timestamp-micros)` \**\*             | [DateTime64(6)](/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-micros)` \**\* |
+| `bytes (decimal)`  \**\*                    | [DateTime64(N)](/sql-reference/data-types/datetime.md)                                                                | `bytes (decimal)`  \**\*        |
+| `int`                                       | [IPv4](/sql-reference/data-types/ipv4.md)                                                                             | `int`                           |
+| `fixed(16)`                                 | [IPv6](/sql-reference/data-types/ipv6.md)                                                                             | `fixed(16)`                     |
+| `bytes (decimal)` \**\*                     | [Decimal(P, S)](/sql-reference/data-types/decimal.md)                                                                 | `bytes (decimal)` \**\*         |
+| `string (uuid)` \**\*                       | [UUID](/sql-reference/data-types/uuid.md)                                                                             | `string (uuid)` \**\*           |
+| `fixed(16)`                                 | [Int128/UInt128](/sql-reference/data-types/int-uint.md)                                                               | `fixed(16)`                     |
+| `fixed(32)`                                 | [Int256/UInt256](/sql-reference/data-types/int-uint.md)                                                               | `fixed(32)`                     |
+| `record`                                    | [Tuple](/sql-reference/data-types/tuple.md)                                                                           | `record`                        |
+
+\* `bytes` is default, controlled by setting [`output_format_avro_string_column_pattern`](/operations/settings/settings-formats.md/#output_format_avro_string_column_pattern)
+
+\**  The [Variant type](/sql-reference/data-types/variant) implicitly accepts `null` as a field value, so for example the Avro `union(T1, T2, null)` will be converted to `Variant(T1, T2)`.
+As a result, when producing Avro from ClickHouse, we have to always include the `null` type to the Avro `union` type set as we don't know if any value is actually `null` during the schema inference.
+
+\**\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+
+Unsupported Avro logical data types:
+- `time-millis`
+- `time-micros`
+- `duration`
+
+## Format settings {#format-settings}
+
+| Setting                                     | Description                                                                                         | Default |
+|---------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|
+| `input_format_avro_allow_missing_fields`    | Whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
+| `input_format_avro_null_as_default`         | Whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
+| `output_format_avro_codec`                  | Compression algorithm for Avro output files. Possible values: `null`, `deflate`, `snappy`, `zstd`.            |         |
+| `output_format_avro_sync_interval`          | Sync marker frequency in Avro files (in bytes). | `16384` |
+| `output_format_avro_string_column_pattern`  | Regular expression to identify `String` columns for Avro string type mapping. By default, ClickHouse `String` columns are written as Avro `bytes` type.                                 |         |
+| `output_format_avro_rows_in_file`           | Maximum number of rows per Avro output file. When this limit is reached, a new file is created (if the storage system supports file splitting).                                                         | `1`     |
+
+## Examples {#examples}
+
+### Reading Avro data {#reading-avro-data}
+
+To read data from an Avro file into a ClickHouse table:
+
+```bash
+$ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avro"
+```
+
+The root schema of the ingested Avro file must be of type `record`.
+
+To find the correspondence between table columns and fields of Avro schema, ClickHouse compares their names. 
+This comparison is case-sensitive and unused fields are skipped.
+
+Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to the corresponding column type.
+
+While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/operations/settings/settings-formats.md/#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
+
+### Writing Avro data {#writing-avro-data}
+
+To write data from a ClickHouse table into an Avro file:
+
+```bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
+```
+
+Column names must:
+
+- Start with `[A-Za-z_]`
+- Be followed by only `[A-Za-z0-9_]`
+
+The output compression and sync interval for Avro files can be configured using the [`output_format_avro_codec`](/operations/settings/settings-formats.md/#output_format_avro_codec) and [`output_format_avro_sync_interval`](/operations/settings/settings-formats.md/#output_format_avro_sync_interval) settings, respectively.
+
+### Inferring the Avro schema {#inferring-the-avro-schema}
+
+Using the ClickHouse [`DESCRIBE`](/sql-reference/statements/describe-table) function, you can quickly view the inferred format of an Avro file like the following example. 
+This example includes the URL of a publicly accessible Avro file in the ClickHouse S3 public bucket:
+
+```sql
+DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits.avro', 'Avro');
+
+┌─name───────────────────────┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ WatchID                    │ Int64           │              │                    │         │                  │                │
+│ JavaEnable                 │ Int32           │              │                    │         │                  │                │
+│ Title                      │ String          │              │                    │         │                  │                │
+│ GoodEvent                  │ Int32           │              │                    │         │                  │                │
+│ EventTime                  │ Int32           │              │                    │         │                  │                │
+│ EventDate                  │ Date32          │              │                    │         │                  │                │
+│ CounterID                  │ Int32           │              │                    │         │                  │                │
+│ ClientIP                   │ Int32           │              │                    │         │                  │                │
+│ ClientIP6                  │ FixedString(16) │              │                    │         │                  │                │
+│ RegionID                   │ Int32           │              │                    │         │                  │                │
+...
+│ IslandID                   │ FixedString(16) │              │                    │         │                  │                │
+│ RequestNum                 │ Int32           │              │                    │         │                  │                │
+│ RequestTry                 │ Int32           │              │                    │         │                  │                │
+└────────────────────────────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+)DOCS_MD"});
+
+    factory.setDocumentation("AvroConfluent", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+[Apache Avro](https://avro.apache.org/) is a row-oriented serialization format that uses binary encoding for efficient data processing. The `AvroConfluent` format supports reading and writing Avro-encoded messages using the [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) (or API-compatible services).
+
+Each message uses the Confluent wire format: a magic byte (`0x00`) followed by a 4-byte big-endian schema ID, followed by the Avro binary datum. When reading, ClickHouse resolves the schema ID by querying the registry. When writing, ClickHouse registers the schema derived from the output columns and prepends the resulting ID to each row. Schemas are cached for optimal performance.
+
+<a id="data-types-matching"></a>
+## Data type mapping {#data-type-mapping}
+
+The table below shows all data types supported by the Apache Avro format, and their corresponding ClickHouse [data types](/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+
+| Avro data type `INSERT`                     | ClickHouse data type                                                                                                          | Avro data type `SELECT`         |
+|---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|---------------------------------|
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8\16\32)](/sql-reference/data-types/int-uint.md), [UInt(8\16\32)](/sql-reference/data-types/int-uint.md) | `int`                           |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](/sql-reference/data-types/int-uint.md), [UInt64](/sql-reference/data-types/int-uint.md)               | `long`                          |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](/sql-reference/data-types/float.md)                                                                         | `float`                         |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](/sql-reference/data-types/float.md)                                                                         | `double`                        |
+| `bytes`, `string`, `fixed`, `enum`          | [String](/sql-reference/data-types/string.md)                                                                         | `bytes` or `string` \*          |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](/sql-reference/data-types/fixedstring.md)                                                            | `fixed(N)`                      |
+| `enum`                                      | [Enum(8\16)](/sql-reference/data-types/enum.md)                                                                       | `enum`                          |
+| `array(T)`                                  | [Array(T)](/sql-reference/data-types/array.md)                                                                        | `array(T)`                      |
+| `map(V, K)`                                 | [Map(V, K)](/sql-reference/data-types/map.md)                                                                         | `map(string, K)`                |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/sql-reference/data-types/date.md)                                                                      | `union(null, T)`                |
+| `union(T1, T2, …)` \**                      | [Variant(T1, T2, …)](/sql-reference/data-types/variant.md)                                                            | `union(T1, T2, …)` \**          |
+| `null`                                      | [Nullable(Nothing)](/sql-reference/data-types/special-data-types/nothing.md)                                          | `null`                          |
+| `int (date)` \**\*                          | [Date](/sql-reference/data-types/date.md), [Date32](/sql-reference/data-types/date32.md)                       | `int (date)` \**\*              |
+| `long (timestamp-millis)` \**\*             | [DateTime64(3)](/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-millis)` \**\* |
+| `long (timestamp-micros)` \**\*             | [DateTime64(6)](/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-micros)` \**\* |
+| `bytes (decimal)`  \**\*                    | [DateTime64(N)](/sql-reference/data-types/datetime.md)                                                                | `bytes (decimal)`  \**\*        |
+| `int`                                       | [IPv4](/sql-reference/data-types/ipv4.md)                                                                             | `int`                           |
+| `fixed(16)`                                 | [IPv6](/sql-reference/data-types/ipv6.md)                                                                             | `fixed(16)`                     |
+| `bytes (decimal)` \**\*                     | [Decimal(P, S)](/sql-reference/data-types/decimal.md)                                                                 | `bytes (decimal)` \**\*         |
+| `string (uuid)` \**\*                       | [UUID](/sql-reference/data-types/uuid.md)                                                                             | `string (uuid)` \**\*           |
+| `fixed(16)`                                 | [Int128/UInt128](/sql-reference/data-types/int-uint.md)                                                               | `fixed(16)`                     |
+| `fixed(32)`                                 | [Int256/UInt256](/sql-reference/data-types/int-uint.md)                                                               | `fixed(32)`                     |
+| `record`                                    | [Tuple](/sql-reference/data-types/tuple.md)                                                                           | `record`                        |
+
+\* `bytes` is default, controlled by setting [`output_format_avro_string_column_pattern`](/operations/settings/settings-formats.md/#output_format_avro_string_column_pattern)
+
+\**  The [Variant type](/sql-reference/data-types/variant) implicitly accepts `null` as a field value, so for example the Avro `union(T1, T2, null)` will be converted to `Variant(T1, T2)`.
+As a result, when producing Avro from ClickHouse, we have to always include the `null` type to the Avro `union` type set as we don't know if any value is actually `null` during the schema inference.
+
+\**\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+
+Unsupported Avro logical data types:
+- `time-millis`
+- `time-micros`
+- `duration`
+
+## Format settings {#format-settings}
+
+[//]: # "NOTE These settings can be set at a session-level, but this isn't common and documenting it too prominently can be confusing to users."
+
+| Setting                                              | Description                                                                                         | Default |
+|------------------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|
+| `input_format_avro_allow_missing_fields`             | Whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
+| `input_format_avro_null_as_default`                  | Whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
+| `format_avro_schema_registry_url`                    | The Confluent Schema Registry URL. For basic authentication, URL-encoded credentials can be included directly in the URL path. |         |
+| `format_avro_schema_registry_connection_timeout`     | Connection timeout in seconds for the Schema Registry HTTP client (used for both schema fetch and registration). Must be greater than 0 and less than 600 (10 minutes). | `1`     |
+| `format_avro_schema_registry_send_timeout`           | Send timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
+| `format_avro_schema_registry_receive_timeout`        | Receive timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
+| `output_format_avro_confluent_subject`               | For output: the subject name under which the schema is registered in the Schema Registry. Required when writing. |         |
+| `output_format_avro_string_column_pattern`           | For output: regexp of String columns to serialize as Avro `string` (default is `bytes`). |         |
+
+## Examples {#examples}
+
+### Reading from Kafka {#reading-from-kafka}
+
+To read an Avro-encoded Kafka topic using the [Kafka table engine](/engines/table-engines/integrations/kafka.md), use the `format_avro_schema_registry_url` setting to provide the URL of the schema registry.
+
+```sql
+CREATE TABLE topic1_stream
+(
+    field1 String,
+    field2 String
+)
+ENGINE = Kafka()
+SETTINGS
+kafka_broker_list = 'kafka-broker',
+kafka_topic_list = 'topic1',
+kafka_group_name = 'group1',
+kafka_format = 'AvroConfluent',
+format_avro_schema_registry_url = 'http://schema-registry-url';
+
+SELECT * FROM topic1_stream;
+```
+
+### Writing to Kafka {#writing-to-kafka}
+
+To write AvroConfluent messages to a Kafka topic, set both the schema registry URL and the subject name. The schema is automatically registered with the registry on the first write.
+
+```sql
+CREATE TABLE topic1_sink
+(
+    field1 String,
+    field2 String
+)
+ENGINE = Kafka()
+SETTINGS
+kafka_broker_list = 'kafka-broker',
+kafka_topic_list = 'topic1',
+kafka_format = 'AvroConfluent',
+format_avro_schema_registry_url = 'http://schema-registry-url',
+output_format_avro_confluent_subject = 'topic1-value';
+
+INSERT INTO topic1_sink VALUES ('hello', 'world');
+```
+
+#### Using basic authentication {#using-basic-authentication}
+
+If your schema registry requires basic authentication (e.g., if you're using Confluent Cloud), you can provide URL-encoded credentials in the `format_avro_schema_registry_url` setting.
+
+```sql
+CREATE TABLE topic1_stream
+(
+    field1 String,
+    field2 String
+)
+ENGINE = Kafka()
+SETTINGS
+kafka_broker_list = 'kafka-broker',
+kafka_topic_list = 'topic1',
+kafka_group_name = 'group1',
+kafka_format = 'AvroConfluent',
+format_avro_schema_registry_url = 'https://<username>:<password>@schema-registry-url';
+```
+
+## Troubleshooting {#troubleshooting}
+
+To monitor ingestion progress and debug errors with the Kafka consumer, you can query the [`system.kafka_consumers` system table](../../../operations/system-tables/kafka_consumers.md). If your deployment has multiple replicas (e.g., ClickHouse Cloud), you must use the [`clusterAllReplicas`](../../../sql-reference/table-functions/cluster.md) table function.
+
+```sql
+SELECT * FROM clusterAllReplicas('default',system.kafka_consumers)
+ORDER BY assignments.partition_id ASC;
+```
+
+If you run into schema resolution issues, you can use [kafkacat](https://github.com/edenhill/kafkacat) with [clickhouse-local](/operations/utilities/clickhouse-local.md) to troubleshoot:
+
+```bash
+$ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-local   --input-format AvroConfluent --format_avro_schema_registry_url 'http://schema-registry' -S "field1 Int64, field2 String"  -q 'select *  from table'
+1 a
+2 b
+3 c
+```
+)DOCS_MD"});
 }
 
+void registerAvroSchemaReader(FormatFactory & factory);
 void registerAvroSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Avro", [](ReadBuffer & buf, const FormatSettings & settings)
@@ -1462,7 +1708,6 @@ void registerAvroSchemaReader(FormatFactory & factory)
 
 }
 
-
 }
 
 #else
@@ -1470,6 +1715,8 @@ void registerAvroSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatAvro(FormatFactory &);
+void registerAvroSchemaReader(FormatFactory &);
 void registerInputFormatAvro(FormatFactory &)
 {
 }

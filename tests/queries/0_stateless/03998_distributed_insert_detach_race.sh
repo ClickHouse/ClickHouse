@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-s3-storage
 
 # Stress test for the race between async INSERT into Distributed and DETACH.
 # Before the fix, this could cause "Cannot schedule a file" LOGICAL_ERROR.

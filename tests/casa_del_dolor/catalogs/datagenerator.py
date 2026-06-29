@@ -32,17 +32,23 @@ from pyspark.sql.types import (
 )
 
 try:
-    from pyspark.sql.types import VariantType, VariantVal
+    from pyspark.sql.types import VariantType, VariantVal  # noqa: F401  (import probe)
 
     HAS_VARIANT_TYPE = True
 except ImportError:
     HAS_VARIANT_TYPE = False
 
+try:
+    from pyspark.sql.types import TimestampNTZType
+
+    HAS_TIMESTAMP_NTZ = True
+except ImportError:
+    HAS_TIMESTAMP_NTZ = False
+
 from .tablegenerator import LakeTableGenerator
 from .clickhousetospark import ClickHouseTypeMapper
 
 from .laketables import SparkTable
-
 
 SOME_STRINGS = [
     "",
@@ -328,6 +334,8 @@ class LakeDataGenerator:
             return self._rand_date()
         if isinstance(dtype, TimestampType):
             return self._rand_timestamp()
+        if HAS_TIMESTAMP_NTZ and isinstance(dtype, TimestampNTZType):
+            return self._rand_timestamp()
         if HAS_VARIANT_TYPE and isinstance(dtype, VariantType):
             # Spark stores variants as self-describing values, so any type works.
             inner_type = self.type_generator.generate_random_spark_type(
@@ -548,7 +556,7 @@ class LakeDataGenerator:
             spark,
             f"MERGE INTO {table.get_table_full_path()} AS t USING updates AS s ON t.{next_pick} = s.{next_pick}\
  WHEN MATCHED THEN {random.choice(match_options)}{' WHEN NOT MATCHED BY TARGET THEN INSERT *' if random.randint(1, 4) == 1 else ''}\
-{f' WHEN NOT MATCHED BY SOURCE THEN DELETE' if random.randint(1, 4) == 1 else ''};",
+{' WHEN NOT MATCHED BY SOURCE THEN DELETE' if random.randint(1, 4) == 1 else ''};",
         )
 
     def delete_table(self, spark: SparkSession, table: SparkTable):
@@ -564,38 +572,54 @@ class LakeDataGenerator:
         self.logger.info(f"Truncate table {table.get_table_full_path()}")
         self.run_query(spark, f"DELETE FROM {table.get_table_full_path()};")
 
+    def insert_overwrite_data(self, spark: SparkSession, table: SparkTable):
+        nrows: int = random.randint(0, 100)
+        df = self._create_random_df(spark, table, nrows)
+        view_name = f"overwrite_src_{table.table_name}"
+        df.createOrReplaceTempView(view_name)
+        self.logger.info(
+            f"INSERT OVERWRITE {nrows} row(s) into {table.get_table_full_path()}"
+        )
+        self.run_query(
+            spark,
+            f"INSERT OVERWRITE {table.get_table_full_path()} SELECT * FROM {view_name};",
+        )
+
     def update_table(self, spark: SparkSession, table: SparkTable) -> bool:
         next_operation = random.randint(1, 1000)
 
         try:
-            if next_operation <= 400:
+            if next_operation <= 380:
                 # Insert
                 self.insert_random_data(spark, table)
-            elif next_operation <= 600:
+            elif next_operation <= 560:
                 # Update and delete
                 self.merge_into_table(spark, table)
-            elif next_operation <= 650:
+            elif next_operation <= 610:
                 # Delete
                 self.delete_table(spark, table)
-            elif next_operation <= 700:
+            elif next_operation <= 650:
                 # Truncate
                 self.truncate_table(spark, table)
+            elif next_operation <= 690:
+                # INSERT OVERWRITE (replaces all data)
+                self.insert_overwrite_data(spark, table)
             elif next_operation <= 850:
                 # SQL Procedures or other statements specific for the lake
                 next_table_generator = LakeTableGenerator.get_next_generator(
                     table.lake_format
                 )
-                self.run_query(
-                    spark, next_table_generator.generate_extra_statement(spark, table)
-                )
+                stmt = next_table_generator.generate_extra_statement(spark, table)
+                if stmt:
+                    self.run_query(spark, stmt)
             else:
                 # Alter statements
                 next_table_generator = LakeTableGenerator.get_next_generator(
                     table.lake_format
                 )
-                self.run_query(
-                    spark, next_table_generator.generate_alter_table_statements(table)
-                )
+                stmt = next_table_generator.generate_alter_table_statements(spark, table)
+                if stmt:
+                    self.run_query(spark, stmt)
         except Exception as e:
             # If an error happens, ignore it, but log it
             traceback.print_exc()

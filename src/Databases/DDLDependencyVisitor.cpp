@@ -21,6 +21,7 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Poco/String.h>
 
 
@@ -127,6 +128,22 @@ namespace
                     {
                         mv_to_dependency = StorageID{table_name.database, target.table_id.getQualifiedName().table, target.inner_uuid};
                         mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
+                    }
+                    else if (target.kind == ViewTarget::Kind::Samples
+                        || target.kind == ViewTarget::Kind::Tags
+                        || target.kind == ViewTarget::Kind::Metrics)
+                    {
+                        /// External target tables of a TimeSeries table are referential dependencies.
+                        /// Inner target tables (created and owned by the TimeSeries table) are not, the same way
+                        /// the inner "TO" table of a materialized view is not registered as a dependency.
+                        const auto & table_id = target.table_id;
+                        if (!table_id.table_name.empty())
+                        {
+                            QualifiedTableName target_name{table_id.database_name, table_id.table_name};
+                            if (target_name.database.empty())
+                                target_name.database = current_database;
+                            dependencies.emplace(std::move(target_name));
+                        }
                     }
 
                     if (mv_to_dependency && mv_to_dependency->database_name.empty())
@@ -260,10 +277,12 @@ namespace
                 visitDistributedTableEngine(table_engine);
 
             /// Alias(table_name) or Alias(db_name, table_name)
+            /// Note: Alias resolves non-qualified target names to its own database (not current_database),
+            /// so we use addQualifiedNameFromArgumentUsingTableDatabase for the single-argument case.
             if (table_engine.name == "Alias" && table_engine.arguments)
             {
                 if (table_engine.arguments->children.size() == 1)
-                    addQualifiedNameFromArgument(table_engine, 0);
+                    addQualifiedNameFromArgumentUsingTableDatabase(table_engine, 0);
                 else
                     addDatabaseAndTableNameFromArguments(table_engine, 0, 1);
             }
@@ -423,7 +442,7 @@ namespace
                     return {};
                 return literal->value.safeGet<String>();
             }
-            catch (...)
+            catch (const Exception &)
             {
                 return {};
             }
@@ -480,6 +499,19 @@ namespace
         {
             if (auto qualified_name = tryGetQualifiedNameFromArgument(function, arg_idx, evaluate))
                 dependencies.emplace(std::move(qualified_name).value());
+        }
+
+        /// Like addQualifiedNameFromArgument, but uses the database of the table being created
+        /// as the default database (instead of current_database). This matches the behavior of
+        /// engines like Alias that resolve non-qualified target names to their own database.
+        void addQualifiedNameFromArgumentUsingTableDatabase(const ASTFunction & function, size_t arg_idx, bool evaluate = true)
+        {
+            if (auto qualified_name = tryGetQualifiedNameFromArgument(function, arg_idx, evaluate, /* apply_current_database= */ false))
+            {
+                if (qualified_name->database.empty())
+                    qualified_name->database = table_name.database;
+                dependencies.emplace(std::move(qualified_name).value());
+            }
         }
 
         /// Returns a database name and a table name extracted from two separate arguments.

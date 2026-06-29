@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
@@ -12,12 +13,16 @@ SerializationInfoSettings::SerializationInfoSettings(
     bool choose_kind_,
     MergeTreeSerializationInfoVersion version_,
     MergeTreeStringSerializationVersion string_serialization_version_,
-    MergeTreeNullableSerializationVersion nullable_serialization_version_)
+    MergeTreeNullableSerializationVersion nullable_serialization_version_,
+    MergeTreeMapSerializationVersion map_serialization_version_,
+    bool propagate_types_serialization_versions_to_nested_types_)
     : ratio_of_defaults_for_sparse(ratio_of_defaults_for_sparse_)
     , choose_kind(choose_kind_)
     , version(version_)
     , string_serialization_version(string_serialization_version_)
     , nullable_serialization_version(nullable_serialization_version_)
+    , map_serialization_version(map_serialization_version_)
+    , propagate_types_serialization_versions_to_nested_types(propagate_types_serialization_versions_to_nested_types_)
 {
     /// New type specialized serialization version is valid only when using MergeTreeSerializationInfoVersion::WITH_TYPES.
     /// For older versions, it is automatically defaulted to preserve compatibility.
@@ -25,6 +30,7 @@ SerializationInfoSettings::SerializationInfoSettings(
     {
         string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
         nullable_serialization_version = MergeTreeNullableSerializationVersion::BASIC;
+        map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
     }
 }
 
@@ -34,7 +40,7 @@ void SerializationInfoSettings::tryDowngradeToBasic()
         return;
 
     bool no_specialization = string_serialization_version == MergeTreeStringSerializationVersion::SINGLE_STREAM
-        && nullable_serialization_version == MergeTreeNullableSerializationVersion::BASIC;
+        && nullable_serialization_version == MergeTreeNullableSerializationVersion::BASIC && map_serialization_version == MergeTreeMapSerializationVersion::BASIC;
 
     if (no_specialization)
         version = MergeTreeSerializationInfoVersion::BASIC;
@@ -56,6 +62,16 @@ bool SerializationInfoSettings::canUseSparseSerialization(const IDataType & type
     }
 
     return type.supportsSparseSerialization();
+}
+
+void SerializationInfoSettings::updateHash(SipHash & hash) const
+{
+    hash.update(ratio_of_defaults_for_sparse);
+    hash.update(choose_kind);
+    hash.update(static_cast<int>(version));
+    hash.update(static_cast<int>(string_serialization_version));
+    hash.update(static_cast<int>(nullable_serialization_version));
+    hash.update(propagate_types_serialization_versions_to_nested_types);
 }
 
 SerializationInfoSettings SerializationInfoSettings::enableAllSupportedSerializations()

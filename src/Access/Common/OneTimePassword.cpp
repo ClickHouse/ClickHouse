@@ -33,7 +33,7 @@ namespace ErrorCodes
 
 /// Checks if the secret contains only valid base32 characters.
 /// The secret may contain spaces, which are ignored and lower-case characters, which are converted to upper-case.
-String normalizeOneTimePasswordSecret(const String & secret)
+static String normalizeOneTimePasswordSecret(const String & secret)
 {
     static const UInt8 b32_alphabet[] = u8"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
     static const UInt8 b32_lower_alphabet[] = u8"abcdefghijklmnopqrstuvwxyz";
@@ -90,14 +90,14 @@ static OneTimePasswordParams::Algorithm hashingAlgorithmFromString(const String 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown algorithm for one-time password: '{}'", algorithm_name);
 }
 
-OneTimePasswordParams::OneTimePasswordParams(Int32 num_digits_, Int32 period_, const String & algorithm_name_)
+OneTimePasswordParams::OneTimePasswordParams(std::optional<Int32> num_digits_, std::optional<Int32> period_, std::optional<String> algorithm_name_)
 {
-    if (num_digits_)
-        num_digits = num_digits_;
-    if (period_)
-        period = period_;
-    if (!algorithm_name_.empty())
-        algorithm = hashingAlgorithmFromString(algorithm_name_);
+    if (num_digits_.has_value())
+        num_digits = num_digits_.value();
+    if (period_.has_value())
+        period = period_.value();
+    if (algorithm_name_.has_value())
+        algorithm = hashingAlgorithmFromString(algorithm_name_.value());
 
     if (num_digits < 4 || 10 < num_digits)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid number of digits for one-time password: {}", num_digits);
@@ -125,14 +125,14 @@ String getOneTimePasswordSecretLink(const OneTimePasswordSecret & secret)
 
 struct CStringDeleter { void operator()(char * ptr) const { std::free(ptr); } };
 
-String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTimePasswordParams & config [[ maybe_unused ]], UInt64 current_time [[ maybe_unused ]])
+static String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTimePasswordParams & config [[ maybe_unused ]], UInt64 current_time [[ maybe_unused ]])
 {
 #if USE_SSL && USE_LIBCOTP
     int sha_algo = config.algorithm == OneTimePasswordParams::Algorithm::SHA512 ? TOTP_SHA512
                  : config.algorithm == OneTimePasswordParams::Algorithm::SHA256 ? TOTP_SHA256
                  : TOTP_SHA1;
 
-    cotp_error_t error;
+    cotp_error_t error = {};
     auto result = std::unique_ptr<char, CStringDeleter>(get_totp_at(secret.c_str(), current_time, config.num_digits, config.period, sha_algo, &error));
 
     if (result == nullptr || (error != NO_ERROR && error != VALID))

@@ -45,7 +45,7 @@ WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col1.a FROM %n
 SYSTEM CLEAR MARK CACHE;
 SELECT col3.n2.s FROM nested FORMAT Null;
 
--- 6 files: (col3.size0, col3.n2.size1, col3.n2.s) x2
+-- 8 files: (col3.size0, col3.n2.size1, col3.n2.s, col3.n2.s.size) x2
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen'] - ProfileEvents['CreatedReadBufferDirectIOFailed']
 FROM system.query_log
@@ -67,6 +67,9 @@ INSERT INTO nested SELECT number, arrayMap(x -> (x, arrayMap(y -> (toString(y * 
 SELECT id % 10, sum(length(col1)), sumArray(arrayMap(x -> length(x), col1.n.b)) FROM nested GROUP BY id % 10;
 
 SELECT arraySum(col1.a), arrayMap(x -> x * x * 2, col1.a) FROM nested ORDER BY id LIMIT 5;
-SELECT untuple(arrayJoin(arrayJoin(col1.n))) FROM nested ORDER BY id LIMIT 10 OFFSET 10;
+-- Pin `optimize_read_in_order` so the test's expected row order, which relies on
+-- `arrayJoin` consuming pre-sorted source rows in primary-key order, is stable.
+-- See https://github.com/ClickHouse/ClickHouse/issues/82279.
+SELECT untuple(arrayJoin(arrayJoin(col1.n))) FROM nested ORDER BY id LIMIT 10 OFFSET 10 SETTINGS optimize_read_in_order = 1;
 
 DROP TABLE nested;

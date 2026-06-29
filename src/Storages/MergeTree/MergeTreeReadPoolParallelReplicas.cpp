@@ -137,16 +137,26 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
         context_)
     , extension(std::move(extension_))
     , coordination_mode(CoordinationMode::Default)
-    , min_marks_per_task(getMinMarksPerTask(pool_settings.min_marks_for_concurrent_read, per_part_infos))
-    , mark_segment_size(chooseSegmentSize(
-          log,
-          context_->getSettingsRef()[Setting::parallel_replicas_mark_segment_size],
-          min_marks_per_task,
-          pool_settings.threads,
-          pool_settings.sum_marks,
-          extension.getTotalNodesCount()))
 {
-    extension.sendInitialRequest(coordination_mode, parts_ranges, mark_segment_size);
+    const size_t min_marks_per_task = getMinMarksPerTask(pool_settings.min_marks_for_concurrent_read, per_part_infos);
+    min_marks_per_request = min_marks_per_task * pool_settings.threads;
+
+    const size_t mark_segment_size = chooseSegmentSize(
+        log,
+        context_->getSettingsRef()[Setting::parallel_replicas_mark_segment_size],
+        min_marks_per_task,
+        pool_settings.threads,
+        pool_settings.sum_marks,
+        extension.getTotalNodesCount());
+
+    /// Build descriptions with per-part `min_marks_per_task` so the coordinator can propagate
+    /// them to other replicas that may not have done primary key analysis.
+    auto descriptions = parts_ranges.getDescriptions();
+    chassert(descriptions.size() == per_part_infos.size());
+    for (size_t i = 0; i < descriptions.size(); ++i)
+        descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
+
+    extension.sendInitialRequest(coordination_mode, std::move(descriptions), mark_segment_size, min_marks_per_request);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_idx*/, MergeTreeReadTask * previous_task)
@@ -176,7 +186,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         {
             response = extension.sendReadRequest(
                 coordination_mode,
-                min_marks_per_task * pool_settings.threads,
+                min_marks_per_request,
                 /// For Default coordination mode we don't need to pass part names.
                 RangesInDataPartsDescription{});
         }
@@ -223,11 +233,17 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assignment contains an unknown part (current_task: {})", current_task.describe());
     const size_t part_idx = std::distance(per_part_infos.begin(), part_it);
 
+    /// Since DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK, the coordinator propagates per-part
+    /// `min_marks_per_task` computed by the initiator after primary key analysis.
+    /// Fall back to locally computed value for old initiators.
+    const size_t effective_min_marks_per_task
+        = current_task.min_marks_per_task > 0 ? current_task.min_marks_per_task : (*part_it)->min_marks_per_task;
+
     MarkRanges ranges_to_read;
     size_t current_sum_marks = 0;
-    while (current_sum_marks < min_marks_per_task && !current_task.ranges.empty())
+    while (current_sum_marks < effective_min_marks_per_task && !current_task.ranges.empty())
     {
-        auto diff = min_marks_per_task - current_sum_marks;
+        auto diff = effective_min_marks_per_task - current_sum_marks;
         auto range = current_task.ranges.front();
         if (range.getNumberOfMarks() > diff)
         {

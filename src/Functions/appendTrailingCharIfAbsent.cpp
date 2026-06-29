@@ -4,6 +4,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/assert_cast.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 
 namespace DB
@@ -12,14 +13,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
 
-class FunctionAppendTrailingCharIfAbsent : public IFunction
+class FunctionAppendTrailingCharIfAbsent final : public IFunction
 {
 public:
     static constexpr auto name = "appendTrailingCharIfAbsent";
@@ -42,13 +42,14 @@ private:
         return 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the first argument of function {}", arguments[0]->getName(), getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"s", &isString, nullptr, "String"},
+            {"c", &isString, nullptr, "String"}
+        };
 
-        if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the second argument of function {}", arguments[1]->getName(), getName());
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         return std::make_shared<DataTypeString>();
     }

@@ -1,6 +1,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -153,11 +154,14 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
-    params.explain(settings.out, settings.offset);
+    params.explain(settings);
+
     if (!group_by_sort_description.empty())
     {
-        String prefix(settings.offset, settings.indent_char);
-        settings.out << prefix << "Order: " << dumpSortDescription(group_by_sort_description) << '\n';
+        const String & prefix = settings.detail_prefix;
+        settings.out << prefix << "Order: ";
+        dumpSortDescription(group_by_sort_description, settings);
+        settings.out << '\n';
     }
 }
 
@@ -245,7 +249,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "MergingAggregatedStep must have one input stream");
 
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
     const bool final = bool(flags & 1);
@@ -255,7 +259,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     const bool should_produce_results_in_order_of_bucket_number = bool(flags & 16);
     const bool memory_bound_merging_of_aggregation_results_enabled = bool(flags & 32);
 
-    UInt64 num_keys;
+    UInt64 num_keys = 0;
     readVarUInt(num_keys, ctx.in);
     Names keys(num_keys);
     for (auto & key : keys)
@@ -264,12 +268,12 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     GroupingSetsParamsList grouping_sets_params;
     if (has_grouping_sets)
     {
-        UInt64 num_groups;
+        UInt64 num_groups = 0;
         readVarUInt(num_groups, ctx.in);
         for (size_t group_num = 0; group_num < num_groups; ++group_num)
         {
             auto & grouping_set = grouping_sets_params.emplace_back();
-            UInt64 num_used_keys;
+            UInt64 num_used_keys = 0;
             readVarUInt(num_used_keys, ctx.in);
             grouping_set.used_keys.resize(num_used_keys);
             NameSet used_keys_set;
@@ -330,6 +334,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     return merging_aggregated_step;
 }
 
+void registerMergingAggregatedStep(QueryPlanStepRegistry & registry);
 void registerMergingAggregatedStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("MergingAggregated", MergingAggregatedStep::deserialize);

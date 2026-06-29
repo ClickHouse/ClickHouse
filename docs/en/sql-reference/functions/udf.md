@@ -6,7 +6,7 @@ title: 'User Defined Functions (UDFs)'
 doc_type: 'reference'
 ---
 
-import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
+import BetaBadge from '@theme/badges/BetaBadge';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -22,11 +22,10 @@ ClickHouse supports several types of user defined functions (UDFs):
 
 ## Executable User Defined Functions {#executable-user-defined-functions}
 
-<PrivatePreviewBadge/>
+<BetaBadge/>
 
 :::note
-This feature is supported in private preview in ClickHouse Cloud.
-Please contact ClickHouse Support at https://clickhouse.cloud/support to access.
+In ClickHouse Cloud, executable UDFs are in public beta and are created through the Cloud console UI. See [User-defined functions in Cloud](/cloud/features/user-defined-functions) for the Cloud-specific workflow.
 :::
 
 ClickHouse can call any external executable program or script to process data.
@@ -54,6 +53,8 @@ A function configuration contains the following settings:
 | `execute_direct`              | If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c` | Optional  | `1`                   |
 | `lifetime`                    | The reload interval of a function in seconds. If it is set to `0` then the function is not reloaded                                                                                                                                                                                                                                                                                           | Optional  | `0`                   |
 | `deterministic`               | If the function is deterministic (returns the same result for the same input)                                                                                                                                                                                                                                                                                                                 | Optional  | `false`               |
+| `stderr_reaction`             | How to handle the command's stderr output. Values: `none` (ignore), `log` (log all stderr immediately), `log_first` (log first 4 KiB after exit), `log_last` (log last 4 KiB after exit), `throw` (throw exception immediately on any stderr output). When using `log_first` or `log_last` with a non-zero exit code, the stderr content is included in the exception message              | Optional  | `log_last`            |
+| `check_exit_code`             | If true, ClickHouse will check the exit code of the command. A non-zero exit code causes an exception                                                                                                                                                                                                                                                                                         | Optional  | `true`                |
 
 The command must read arguments from `STDIN` and must output the result to `STDOUT`. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
 

@@ -72,7 +72,7 @@ public:
 
     off_t getPosition() override
     {
-        return file_offset_of_buffer_end - (working_buffer.end() - pos);
+        return file_offset_of_buffer_end - (working_buffer.end() - pos) + bytes_to_ignore;
     }
 
     /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
