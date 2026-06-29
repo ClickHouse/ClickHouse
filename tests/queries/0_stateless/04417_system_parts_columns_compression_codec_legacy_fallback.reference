@@ -1,4 +1,4 @@
 before_wide	<empty>
 before_compact	<empty>
 after_wide	<empty>
-after_compact	<empty>
+after_compact	ZSTD(3)
