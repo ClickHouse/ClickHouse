@@ -60,10 +60,7 @@ bool arrowFieldsEqual(const ArrowIPC::ArrowField & a, const ArrowIPC::ArrowField
         return false;
     if (a.nullable != b.nullable)
         return false;
-    if (a.dictionary.has_value() != b.dictionary.has_value())
-        return false;
-    if (a.dictionary && (a.dictionary->id != b.dictionary->id || a.dictionary->index_bit_width != b.dictionary->index_bit_width
-                         || a.dictionary->index_is_signed != b.dictionary->index_is_signed))
+    if (a.dictionary != b.dictionary)
         return false;
     /// Field metadata changes the mapped ClickHouse type for the same physical Arrow type (e.g. the Arrow
     /// extension name maps `fixed_size_binary(16)` to `UUID` instead of `FixedString(16)`), so two fields

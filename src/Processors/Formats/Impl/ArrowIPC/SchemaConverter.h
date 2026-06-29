@@ -113,7 +113,8 @@ struct DictionaryEncoding
     Int64 id = -1;
     int index_bit_width = 32;
     bool index_is_signed = true;
-    bool is_ordered = false;
+
+    bool operator==(const DictionaryEncoding &) const = default;
 };
 
 using KeyValueMetadata = MapWithMemoryTracking<std::string, std::string>;

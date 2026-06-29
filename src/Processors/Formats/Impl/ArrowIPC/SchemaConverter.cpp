@@ -85,7 +85,6 @@ ArrowFields parseChildren(const flatbuffers::Vector<flatbuffers::Offset<flatbuf:
         {
             DictionaryEncoding enc;
             enc.id = dict->id();
-            enc.is_ordered = dict->isOrdered();
             if (const auto * index_type = dict->indexType())
             {
                 enc.index_bit_width = index_type->bitWidth();
@@ -360,7 +359,6 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema)
             {
                 DictionaryEncoding enc;
                 enc.id = dict->id();
-                enc.is_ordered = dict->isOrdered();
                 if (const auto * index_type = dict->indexType())
                 {
                     enc.index_bit_width = index_type->bitWidth();
