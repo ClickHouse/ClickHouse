@@ -4,6 +4,7 @@ scheme_group1	0
 host_group2	0
 escaped_dot_prefix	0
 explicit_nonnl_tail	0
+no_dotall_scope	0
 backslash_A_z	0
 dotall_host	0
 anchored_no_dotstar	0
@@ -36,13 +37,13 @@ FIRE q28 \\1	19	hello world	hello world	hello world
 FIRE q28 \\1	20			
 FIRE q28 \\1	21	http://www.www.com/x	www.com	www.com
 FIRE q28 \\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	h.com	h.com
-FIRE q28 \\1	23	http://www.x.com/a\nb	http://www.x.com/a\nb	http://www.x.com/a\nb
-FIRE q28 \\1	24	http://x.com/\nfoo	http://x.com/\nfoo	http://x.com/\nfoo
+FIRE q28 \\1	23	http://www.x.com/a\nb	x.com	x.com
+FIRE q28 \\1	24	http://x.com/\nfoo	x.com	x.com
 FIRE q28 \\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
-FIRE q28 \\1	26	http://h.com/a\n	http://h.com/a\n	http://h.com/a\n
-FIRE q28 \\1	27	http://h.com/\n	http://h.com/\n	http://h.com/\n
+FIRE q28 \\1	26	http://h.com/a\n	h.com	h.com
+FIRE q28 \\1	27	http://h.com/\n	h.com	h.com
 FIRE q28 \\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
-FIRE q28 \\1	29	http://h.com/a\r\nb	http://h.com/a\r\nb	http://h.com/a\r\nb
+FIRE q28 \\1	29	http://h.com/a\r\nb	h.com	h.com
 FIRE q28 \\1	30	http://h.com/a\tb	h.com	h.com
 FIRE q28 \\1	31	http://h.com/a\0b	h.com	h.com
 FIRE q28 \\1	32	a\nb	a\nb	a\nb
@@ -82,13 +83,13 @@ FIRE scheme \\1	19	hello world	hello world	hello world
 FIRE scheme \\1	20			
 FIRE scheme \\1	21	http://www.www.com/x	http	http
 FIRE scheme \\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	http	http
-FIRE scheme \\1	23	http://www.x.com/a\nb	http://www.x.com/a\nb	http://www.x.com/a\nb
-FIRE scheme \\1	24	http://x.com/\nfoo	http://x.com/\nfoo	http://x.com/\nfoo
+FIRE scheme \\1	23	http://www.x.com/a\nb	http	http
+FIRE scheme \\1	24	http://x.com/\nfoo	http	http
 FIRE scheme \\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
-FIRE scheme \\1	26	http://h.com/a\n	http://h.com/a\n	http://h.com/a\n
-FIRE scheme \\1	27	http://h.com/\n	http://h.com/\n	http://h.com/\n
+FIRE scheme \\1	26	http://h.com/a\n	http	http
+FIRE scheme \\1	27	http://h.com/\n	http	http
 FIRE scheme \\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
-FIRE scheme \\1	29	http://h.com/a\r\nb	http://h.com/a\r\nb	http://h.com/a\r\nb
+FIRE scheme \\1	29	http://h.com/a\r\nb	http	http
 FIRE scheme \\1	30	http://h.com/a\tb	http	http
 FIRE scheme \\1	31	http://h.com/a\0b	http	http
 FIRE scheme \\1	32	a\nb	a\nb	a\nb
@@ -128,13 +129,13 @@ FIRE host \\2	19	hello world	hello world	hello world
 FIRE host \\2	20			
 FIRE host \\2	21	http://www.www.com/x	www.www.com	www.www.com
 FIRE host \\2	22	http://h.com/very/long/path/segment/here?a=1&b=2	h.com	h.com
-FIRE host \\2	23	http://www.x.com/a\nb	http://www.x.com/a\nb	http://www.x.com/a\nb
-FIRE host \\2	24	http://x.com/\nfoo	http://x.com/\nfoo	http://x.com/\nfoo
+FIRE host \\2	23	http://www.x.com/a\nb	www.x.com	www.x.com
+FIRE host \\2	24	http://x.com/\nfoo	x.com	x.com
 FIRE host \\2	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
-FIRE host \\2	26	http://h.com/a\n	http://h.com/a\n	http://h.com/a\n
-FIRE host \\2	27	http://h.com/\n	http://h.com/\n	http://h.com/\n
+FIRE host \\2	26	http://h.com/a\n	h.com	h.com
+FIRE host \\2	27	http://h.com/\n	h.com	h.com
 FIRE host \\2	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
-FIRE host \\2	29	http://h.com/a\r\nb	http://h.com/a\r\nb	http://h.com/a\r\nb
+FIRE host \\2	29	http://h.com/a\r\nb	h.com	h.com
 FIRE host \\2	30	http://h.com/a\tb	h.com	h.com
 FIRE host \\2	31	http://h.com/a\0b	h.com	h.com
 FIRE host \\2	32	a\nb	a\nb	a\nb
@@ -266,13 +267,13 @@ NOFIRE repl x\\1	19	hello world	hello world	hello world
 NOFIRE repl x\\1	20			
 NOFIRE repl x\\1	21	http://www.www.com/x	xwww.com	xwww.com
 NOFIRE repl x\\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	xh.com	xh.com
-NOFIRE repl x\\1	23	http://www.x.com/a\nb	http://www.x.com/a\nb	http://www.x.com/a\nb
-NOFIRE repl x\\1	24	http://x.com/\nfoo	http://x.com/\nfoo	http://x.com/\nfoo
+NOFIRE repl x\\1	23	http://www.x.com/a\nb	xx.com	xx.com
+NOFIRE repl x\\1	24	http://x.com/\nfoo	xx.com	xx.com
 NOFIRE repl x\\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
-NOFIRE repl x\\1	26	http://h.com/a\n	http://h.com/a\n	http://h.com/a\n
-NOFIRE repl x\\1	27	http://h.com/\n	http://h.com/\n	http://h.com/\n
+NOFIRE repl x\\1	26	http://h.com/a\n	xh.com	xh.com
+NOFIRE repl x\\1	27	http://h.com/\n	xh.com	xh.com
 NOFIRE repl x\\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
-NOFIRE repl x\\1	29	http://h.com/a\r\nb	http://h.com/a\r\nb	http://h.com/a\r\nb
+NOFIRE repl x\\1	29	http://h.com/a\r\nb	xh.com	xh.com
 NOFIRE repl x\\1	30	http://h.com/a\tb	xh.com	xh.com
 NOFIRE repl x\\1	31	http://h.com/a\0b	xh.com	xh.com
 NOFIRE repl x\\1	32	a\nb	a\nb	a\nb
@@ -312,13 +313,13 @@ NOFIRE repl \\2-\\1	19	hello world	hello world	hello world
 NOFIRE repl \\2-\\1	20			
 NOFIRE repl \\2-\\1	21	http://www.www.com/x	www.www.com-http	www.www.com-http
 NOFIRE repl \\2-\\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	h.com-http	h.com-http
-NOFIRE repl \\2-\\1	23	http://www.x.com/a\nb	http://www.x.com/a\nb	http://www.x.com/a\nb
-NOFIRE repl \\2-\\1	24	http://x.com/\nfoo	http://x.com/\nfoo	http://x.com/\nfoo
+NOFIRE repl \\2-\\1	23	http://www.x.com/a\nb	www.x.com-http	www.x.com-http
+NOFIRE repl \\2-\\1	24	http://x.com/\nfoo	x.com-http	x.com-http
 NOFIRE repl \\2-\\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
-NOFIRE repl \\2-\\1	26	http://h.com/a\n	http://h.com/a\n	http://h.com/a\n
-NOFIRE repl \\2-\\1	27	http://h.com/\n	http://h.com/\n	http://h.com/\n
+NOFIRE repl \\2-\\1	26	http://h.com/a\n	h.com-http	h.com-http
+NOFIRE repl \\2-\\1	27	http://h.com/\n	h.com-http	h.com-http
 NOFIRE repl \\2-\\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
-NOFIRE repl \\2-\\1	29	http://h.com/a\r\nb	http://h.com/a\r\nb	http://h.com/a\r\nb
+NOFIRE repl \\2-\\1	29	http://h.com/a\r\nb	h.com-http	h.com-http
 NOFIRE repl \\2-\\1	30	http://h.com/a\tb	h.com-http	h.com-http
 NOFIRE repl \\2-\\1	31	http://h.com/a\0b	h.com-http	h.com-http
 NOFIRE repl \\2-\\1	32	a\nb	a\nb	a\nb
@@ -660,7 +661,7 @@ NOFIRE tail[^/]* \\1	45	seg/ab1	seg	seg
 NOFIRE tail[^/]* \\1	46	seg/x\ry	seg	seg
 FS q28 \\1	1	687474703A2F2F7777772E6578616D706C652E636F6D2F7000000000000000000000000000000000	6578616D706C652E636F6D	6578616D706C652E636F6D
 FS q28 \\1	2	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000
-FS q28 \\1	3	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000
+FS q28 \\1	3	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000	682E636F6D	682E636F6D
 FS q28 \\1	4	687474703A2F2F782E636F6D3A383038302F70617468000000000000000000000000000000000000	782E636F6D3A38303830	782E636F6D3A38303830
 FS q28 \\1	5	00000000000000000000000000000000000000000000000000000000000000000000000000000000	00000000000000000000000000000000000000000000000000000000000000000000000000000000	00000000000000000000000000000000000000000000000000000000000000000000000000000000
 FS q28 \\1	6	687474703A2F2FD0BFD180D0B8D0BCD0B5D1802ED180D1842F710000000000000000000000000000	D0BFD180D0B8D0BCD0B5D1802ED180D184	D0BFD180D0B8D0BCD0B5D1802ED180D184
@@ -670,7 +671,7 @@ FS q28 \\1	9	6E6F2D6D61746368000000000000000000000000000000000000000000000000000
 FS q28 \\1	10	612F622F630000000000000000000000000000000000000000000000000000000000000000000000	612F622F630000000000000000000000000000000000000000000000000000000000000000000000	612F622F630000000000000000000000000000000000000000000000000000000000000000000000
 FS host \\2	1	687474703A2F2F7777772E6578616D706C652E636F6D2F7000000000000000000000000000000000	7777772E6578616D706C652E636F6D	7777772E6578616D706C652E636F6D
 FS host \\2	2	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000
-FS host \\2	3	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000
+FS host \\2	3	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000	682E636F6D	682E636F6D
 FS host \\2	4	687474703A2F2F782E636F6D3A383038302F70617468000000000000000000000000000000000000	782E636F6D3A38303830	782E636F6D3A38303830
 FS host \\2	5	00000000000000000000000000000000000000000000000000000000000000000000000000000000	00000000000000000000000000000000000000000000000000000000000000000000000000000000	00000000000000000000000000000000000000000000000000000000000000000000000000000000
 FS host \\2	6	687474703A2F2FD0BFD180D0B8D0BCD0B5D1802ED180D1842F710000000000000000000000000000	D0BFD180D0B8D0BCD0B5D1802ED180D184	D0BFD180D0B8D0BCD0B5D1802ED180D184
