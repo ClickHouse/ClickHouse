@@ -32,7 +32,7 @@ extern const int BAD_ARGUMENTS;
 struct TokenScratch
 {
     VectorWithMemoryTracking<std::string_view> tokens;
-    std::string ngram_buffer;
+    PaddedPODArray<char> ngram_buffer;
 };
 
 struct ClassProbability
@@ -220,7 +220,7 @@ struct TokenPolicy
 
     /// Combines the tokens in `window` into a single n-gram, with each token separated by a single space.
     /// The result is written to `ngram`.
-    void join(std::span<const std::string_view> window, std::string & ngram) const
+    void join(std::span<const std::string_view> window, PaddedPODArray<char> & ngram) const
     {
         chassert(!window.empty());
 
@@ -269,7 +269,7 @@ struct TokenPolicy
         for (size_t i = 0; i < ngram_count; ++i)
         {
             join(std::span<const std::string_view>(&tokens[i], ngram_size), ngram);
-            visit(std::string_view(ngram));
+            visit(std::string_view(ngram.data(), ngram.size()));
         }
         return ngram_count;
     }
@@ -312,7 +312,7 @@ struct TokenPolicy
         scratch.tokens.clear();
         tokenize(ngram, scratch.tokens);
         join(scratch.tokens, scratch.ngram_buffer);
-        return {std::string_view(scratch.ngram_buffer), token_count};
+        return {std::string_view(scratch.ngram_buffer.data(), scratch.ngram_buffer.size()), token_count};
     }
 };
 
