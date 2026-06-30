@@ -24,6 +24,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/hasNullable.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -1352,7 +1353,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// left default value would also wrongly reject a valid query whose default
                     /// happens not to cast (e.g. a `NULL` in a nullable element cast to a non-nullable
                     /// right element), so short-circuit on matching arity instead of running the probe.
-                    const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right_single_type.get());
+                    /// Detect the arity on the set key type, i.e. after stripping the wrappers that
+                    /// `Set::getElementTypes` removes (`LowCardinality` recursively, and a top-level
+                    /// `Nullable` with the default `transform_null_in = 0`); otherwise a single right
+                    /// column typed as `Nullable(Tuple(...))` would not be recognized as a tuple and
+                    /// would fall through to the probe, which then misreports a `NULL`-element default
+                    /// cast failure as a column-count mismatch.
+                    auto right_single_key_type = removeNullable(recursiveRemoveLowCardinality(right_single_type));
+                    const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right_single_key_type.get());
                     if (right_tuple_type && right_tuple_type->getElements().size() == left_columns_count)
                     {
                         left_comparable_as_single_key = true;

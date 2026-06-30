@@ -68,3 +68,11 @@ SELECT (1, 2) IN (SELECT materialize(1)); -- { serverError NUMBER_OF_COLUMNS_DOE
 -- nullable element that cannot be cast to the non-nullable right element, yet the actual values
 -- compare fine at runtime. Regression for `03989_set_low_cardinality_in_tuple`.
 SELECT CAST((1, 2), 'Tuple(Nullable(UInt8), UInt8)') IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));
+
+-- The same nullable-element left tuple, but compared against a single `Nullable(Tuple(...))` right column.
+-- The set key type strips the top-level `Nullable` (default `transform_null_in = 0`), so this is a
+-- same-arity one-key comparison and must NOT be rejected at analysis. The arity has to be detected after
+-- unwrapping the right column's `Nullable`/`LowCardinality`, not only for a raw `Tuple` - otherwise the
+-- probe of the left default `(NULL, 0)` fails to cast to `Nullable(Tuple(UInt8, UInt8))` and is misreported
+-- as a column-count mismatch. Regression for the false positive flagged in PR #97540.
+SELECT CAST((1, 2), 'Tuple(Nullable(UInt8), UInt8)') IN (SELECT CAST((1, 2), 'Nullable(Tuple(UInt8, UInt8))'));
