@@ -8,8 +8,6 @@
 
 #include <Common/NaNUtils.h>
 
-#include <algorithm>
-
 
 namespace DB
 {
@@ -78,7 +76,10 @@ public:
             if (precision_column)
             {
                 const Int64 value = precision_column->getInt(i);
-                precision = static_cast<UInt8>(std::clamp<Int64>(value, 0, 5));
+                if (value < 0 || value > 5)
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "Precision {} is out of range [0, 5] in function {}", value, getName());
+                precision = static_cast<UInt8>(value);
             }
 
             const std::string mgrs = mgrsEncode(lon, lat, precision);

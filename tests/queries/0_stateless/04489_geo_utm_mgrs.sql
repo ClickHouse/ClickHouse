@@ -10,6 +10,7 @@ WITH geoToUTM(0., 0.) AS t SELECT round(t.1, 3), round(t.2, 3), t.3, t.4;       
 SELECT '-- geoToUTM: Norway and Svalbard zone exceptions';
 SELECT geoToUTM(6.5, 58.0).3 AS norway_zone;       -- would be 32 instead of 31
 SELECT geoToUTM(15.0, 78.0).3 AS svalbard_zone;    -- would be 33 instead of 32
+SELECT geoToUTM(6.0, 84.0).3 AS svalbard_top_zone; -- 31 at the inclusive 84 degree upper boundary
 
 SELECT '-- geoToUTM: forced zone';
 WITH geoToUTM(2.294497, 48.858222, 32) AS t SELECT round(t.1, 3), round(t.2, 3), t.3, t.4; -- project into a neighbouring zone
@@ -51,3 +52,7 @@ SELECT mgrsToGeo('hello'); -- { serverError BAD_ARGUMENTS }
 SELECT mgrsToGeo('31'); -- { serverError BAD_ARGUMENTS }
 SELECT mgrsToGeo('31UDQ482111935'); -- { serverError BAD_ARGUMENTS }
 SELECT mgrsToGeo('31UDQ482511193512'); -- { serverError BAD_ARGUMENTS } -- more than five digits per coordinate
+SELECT mgrsToGeo('31UQD4825111935'); -- { serverError BAD_ARGUMENTS } -- column letter out of range for the zone
+SELECT mgrsToGeo('32XAA'); -- { serverError BAD_ARGUMENTS } -- zone 32 does not exist in the X band
+SELECT geoToMGRS(0., 0., 6); -- { serverError ARGUMENT_OUT_OF_BOUND } -- precision above 5
+SELECT geoToMGRS(0., 0., -1); -- { serverError ARGUMENT_OUT_OF_BOUND } -- negative precision

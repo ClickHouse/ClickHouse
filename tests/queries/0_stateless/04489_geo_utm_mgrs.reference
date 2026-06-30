@@ -7,6 +7,7 @@
 -- geoToUTM: Norway and Svalbard zone exceptions
 32
 33
+31
 -- geoToUTM: forced zone
 8303.806	5433409.649	32	U
 -- utmToGeo: inverse conversion round-trips back to the input (within 1e-6 degrees)

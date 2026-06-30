@@ -165,6 +165,12 @@ Float64 getEastingFromChar(char letter, int set)
         }
         easting += 100000.0;
     }
+
+    /// Only the first eight 100km columns (eastings 100000..800000) occur within a UTM zone; later
+    /// letters of the set cannot be produced by the encoder and would decode far outside the zone.
+    if (easting > 800000.0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MGRS 100km column letter '{}' is out of range for the zone", String(1, letter));
+
     return easting;
 }
 
@@ -226,7 +232,8 @@ UTMCoordinate wgs84ToUTM(Float64 longitude, Float64 latitude, UInt8 forced_zone)
             zone = 32;
 
         /// Svalbard: zones 31, 33, 35, 37 are widened and the even zones removed.
-        if (latitude >= 72.0 && latitude < 84.0)
+        /// The upper bound is inclusive to match the public latitude domain (up to 84°).
+        if (latitude >= 72.0 && latitude <= 84.0)
         {
             if (longitude >= 0.0 && longitude < 9.0)
                 zone = 31;
@@ -390,6 +397,10 @@ MGRSCoordinate mgrsDecode(std::string_view mgrs)
     const char band = clean[i++];
     if (band < 'C' || band > 'X' || band == 'I' || band == 'O')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid MGRS latitude band '{}' in string '{}'", String(1, band), String(mgrs));
+
+    /// In the X band (72°..84°N) the even zones 32, 34, 36 do not exist; they are absorbed by the widened Svalbard zones.
+    if (band == 'X' && (zone == 32 || zone == 34 || zone == 36))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MGRS zone {} does not exist in the X band in string '{}'", zone, String(mgrs));
 
     const char column_letter = clean[i++];
     const char row_letter = clean[i++];
