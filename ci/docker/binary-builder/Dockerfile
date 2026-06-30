@@ -23,22 +23,19 @@ RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dear
     && apt-get update \
     && apt-get install software-properties-common --yes --no-install-recommends --verbose-versions
 
-# Add the toolchain PPA manually instead of `add-apt-repository`: the base image makes python3.13
-# the default python3, and add-apt-repository needs apt_pkg from the distro's python3-apt (3.10).
-RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 60C317803A41BA51845E371A1E9377A2BA9EF27F \
-    && echo "deb https://ppa.launchpadcontent.net/ubuntu-toolchain-r/test/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/ubuntu-toolchain-r.list \
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
     && apt-get -o Dpkg::Options::="--force-overwrite" upgrade --yes \
     && apt-get -o Dpkg::Options::="--force-overwrite" install --yes \
         binutils-dev \
         build-essential \
+        python3-boto3 \
         yasm \
         zstd \
         zip \
         clang-tidy-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
         bolt-${LLVM_VERSION} \
-    && python3.13 -m pip install --no-cache-dir boto3 \
     && ln -sf /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
     && ln -sf /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
     && ln -sf /usr/bin/llvm-bolt-${LLVM_VERSION} /usr/bin/llvm-bolt \

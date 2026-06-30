@@ -1,5 +1,7 @@
 # docker build -t clickhouse/fasttest .
-FROM ubuntu:22.04
+# Ubuntu 24.04 ships Python 3.12 natively (with working distro python3-apt / aws CLI), which both the
+# fast tests and the macOS runner need: numpy 2.3.x has no wheel for 22.04's Python 3.10.
+FROM ubuntu:24.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
@@ -136,24 +138,9 @@ RUN arch=${TARGETARCH} \
   && mv "/tmp/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl/sccache" /usr/bin \
   && rm "/tmp/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl" -r
 
-# Ubuntu 22.04 ships Python 3.10, whose newest numpy is 2.2.x. The fast tests share their Python
-# requirements with the macOS runner (Python 3.14, where numpy starts at 2.3.x), so install Python
-# 3.13 from deadsnakes and make it the default python3 - mirrors clickhouse/test-base.
-RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F23C5A6CF475977595C89F51BA6932366A755776 \
-    && echo "deb https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/deadsnakes-ppa.list \
-    && printf 'Package: *\nPin: release o=LP-PPA-deadsnakes\nPin-Priority: 100\n' > /etc/apt/preferences.d/deadsnakes \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        python3.13 \
-        python3.13-venv \
-        python3.13-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/* \
-    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.13 \
-    && ln -sf /usr/bin/python3.13 /usr/bin/python3
-
 COPY requirements.txt /
-RUN python3.13 -m pip install --no-cache-dir -r /requirements.txt
+# --break-system-packages: Ubuntu 24.04 marks the system Python as externally managed (PEP 668).
+RUN pip3 install --break-system-packages --no-cache-dir -r /requirements.txt
 
 # chmod 777 to make the container user independent
 RUN mkdir -p /var/lib/clickhouse \
