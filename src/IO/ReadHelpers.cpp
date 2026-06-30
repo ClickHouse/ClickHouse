@@ -1607,7 +1607,14 @@ ReturnType readDateTimeTextFallback(
 
     /// 2015-01-01 01:02:03 or 2015-01-01
     /// if negative, it is a timestamp with no ambiguity
-    if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
+    ///
+    /// Quick peek: if char 4 is '.' but char 7 (peeked 3 bytes ahead) is not '.', this is
+    /// a decimal timestamp like "1234.5,..." not a dotted date like "2025.08.31". Skip the
+    /// date branch; the integer branch + DateTime64 wrapper handle the fractional part.
+    const bool peek_suggests_decimal
+        = dt64_mode && !buf.eof() && *buf.position() == '.' && buf.available() >= 4 && buf.position()[3] != '.';
+
+    if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()) && !peek_suggests_decimal)
     {
         const auto already_read_length = s_pos - s;
         const size_t remaining_date_size = date_broken_down_length - already_read_length;
@@ -1621,14 +1628,32 @@ ReturnType readDateTimeTextFallback(
                 return false;
         }
 
+        /// Mirror the optimistic-path guard: dotted dates share the same separator at positions 4 and 7
+        /// ("2025.08.31"); decimal timestamps do not ("1234.5,true,...").
+        const bool is_decimal_dt64 = dt64_mode && s[4] == '.' && s[7] != '.';
+        const bool looks_like_date
+            = !is_decimal_dt64
+            && isNumericASCII(s[5]) && isNumericASCII(s[6]) && isNumericASCII(s[8]) && isNumericASCII(s[9])
+            && isSymbolIn(s[4], allowed_date_delimiters) && isSymbolIn(s[7], allowed_date_delimiters);
+
         if constexpr (!throw_exception)
         {
             if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
-                || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
+                || !looks_like_date)
                 return false;
-
-            if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
-                return false;
+        }
+        else if (!looks_like_date)
+        {
+            /// Rewind the 6 over-consumed bytes, compute the 4-digit integer, and return it.
+            /// The DateTime64 wrapper then sees '.' and reads the fractional part.
+            if (static_cast<size_t>(buf.position() - buf.buffer().begin()) >= size)
+            {
+                buf.position() -= size;
+                datetime = (s[0]-'0')*1000 + (s[1]-'0')*100 + (s[2]-'0')*10 + (s[3]-'0');
+                datetime *= negative_multiplier;
+                return ReturnType(true);
+            }
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
         }
 
         UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
