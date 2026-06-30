@@ -379,7 +379,8 @@ You can't decompress ClickHouse database files with external utilities like `lz4
 Compression is supported for the following table engines:
 
 - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family. Supports column compression codecs and selecting the default compression method by [compression](/operations/server-configuration-parameters/settings#compression) settings.
-- [Log](../../../engines/table-engines/log-family/index.md) family. Uses the default `ZSTD(3)` compression method and supports column compression codecs.
+- [Log](../../../engines/table-engines/log-family/index.md) family — the `Log` and `TinyLog` engines use the default `ZSTD(3)` compression method and support column compression codecs.
+- [StripeLog](../../../engines/table-engines/log-family/index.md) writes all columns into a single shared data stream compressed with the default `ZSTD(3)` method, so per-column compression codecs are not applied to it.
 - [Set](../../../engines/table-engines/special/set.md). Only supported the default compression.
 - [Join](../../../engines/table-engines/special/join.md). Only supported the default compression.
 
