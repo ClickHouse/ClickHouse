@@ -323,6 +323,17 @@ void StorageMaterializedPostgreSQL::backupData(
 }
 
 
+bool StorageMaterializedPostgreSQL::supportsBackupPartition() const
+{
+    /// Partition backups are delegated to the nested ReplacingMergeTree (see `backupData`), so report whatever
+    /// it supports. If the nested table does not exist yet, fall back to the default (no partition support);
+    /// `backupData` will then fail closed with a clear message anyway.
+    if (auto nested = tryGetNested())
+        return nested->supportsBackupPartition();
+    return false;
+}
+
+
 void StorageMaterializedPostgreSQL::restoreDataFromBackup(
     RestorerFromBackup &, const String &, const std::optional<ASTs> &)
 {
