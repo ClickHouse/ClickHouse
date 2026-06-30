@@ -32,7 +32,7 @@ HotKeyStatePtr makeState(bool nullable = false)
 /// detector and promotes any hot keys into `state`.
 void observe(const HotKeyStatePtr & state, MutableColumnPtr key_col, size_t num_cold)
 {
-    auto builder = makeInputHotColdSelector(state, ColumnNumbers{0}, num_cold);
+    auto builder = makeInputHotColdSelector(state, ColumnNumbers{0}, num_cold, /*merge_output=*/num_cold);
     Columns columns;
     columns.push_back(std::move(key_col));
     builder(columns);
@@ -202,4 +202,54 @@ TEST_F(HotKeyStateTest, MembershipExactAndNullAware)
     EXPECT_EQ(m[1], 1);
     EXPECT_EQ(m[2], 0);
     EXPECT_EQ(m[3], 1);
+}
+
+namespace
+{
+
+/// Drives a fresh input selector through a full warmup window of rows drawn from `distinct` keys, then
+/// probes it with a one-row chunk and returns that probe's routing. By the time the window closes the
+/// selector has decided whether to fall back to the merge path, so the probe reveals the decision.
+ChunkRouting routeAfterWarmup(size_t distinct, size_t num_cold)
+{
+    auto state = makeState();
+    auto builder = makeInputHotColdSelector(state, ColumnNumbers{0}, num_cold, /*merge_output=*/num_cold);
+
+    const size_t n = 200000; // Past the warmup window (min 131072 rows), so it closes within this chunk.
+    auto warmup = ColumnUInt64::create();
+    for (size_t i = 0; i < n; ++i)
+        warmup->insertValue(i % distinct);
+    Columns warmup_cols;
+    warmup_cols.push_back(std::move(warmup));
+    builder(warmup_cols);
+
+    auto probe = ColumnUInt64::create();
+    probe->insertValue(0);
+    Columns probe_cols;
+    probe_cols.push_back(std::move(probe));
+    return builder(probe_cols);
+}
+
+}
+
+/// With only 16 distinct keys, the warmup's distinct count stays far below the fallback's distinct-key
+/// threshold (about 24000 for these 8 shards), so the selector falls back and routes the whole chunk to the
+/// merge path (the last port, numbered `num_cold`) with no per-row selector.
+TEST_F(HotKeyStateTest, LowCardinalityRoutesWholeChunkToMergePath)
+{
+    const size_t num_cold = 8;
+    auto routing = routeAfterWarmup(/*distinct=*/16, num_cold);
+    ASSERT_TRUE(routing.whole_chunk_output.has_value());
+    EXPECT_EQ(*routing.whole_chunk_output, num_cold);
+    EXPECT_TRUE(routing.selector.empty());
+}
+
+/// With every row a new key, the distinct count fills the warmup window and stays above that threshold, so
+/// the selector does not fall back: it keeps scattering and returns a per-row selector rather than a
+/// whole-chunk route.
+TEST_F(HotKeyStateTest, HighCardinalityKeepsScattering)
+{
+    const size_t num_cold = 8;
+    auto routing = routeAfterWarmup(/*distinct=*/200000, num_cold);
+    EXPECT_FALSE(routing.whole_chunk_output.has_value());
 }
