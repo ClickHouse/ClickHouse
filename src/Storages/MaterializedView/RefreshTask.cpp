@@ -82,8 +82,27 @@ namespace ErrorCodes
     extern const int TABLE_UUID_MISMATCH;
 }
 
+namespace FailPoints
+{
+    /// Simulates the Keeper feature-flag propagation race on attach: makes the constructor's
+    /// up-front MULTI_READ / CREATE_IF_NOT_EXISTS check behave as if the flags were present, even
+    /// when the Keeper actually lacks them. Used to test that doScheduling re-detects the missing
+    /// flags and stops the view gracefully instead of crashing the scheduling thread.
+    extern const char refresh_mv_skip_attach_feature_flag_check[];
+}
+
 namespace
 {
+
+/// Whether the Keeper this view is coordinated through is missing a feature flag that coordination
+/// requires (MULTI_READ, CREATE_IF_NOT_EXISTS). readZnodesIfNeeded uses multi-read on the
+/// scheduling thread, where a throw aborts the whole server, so this must be detected up front and
+/// turned into a graceful permanent stop instead.
+bool coordinationFeatureFlagsMissing(const zkutil::ZooKeeper & zookeeper)
+{
+    return !zookeeper.isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) ||
+        !zookeeper.isFeatureEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
+}
 
 /// Build the dependency StorageIDs, resolving unqualified names against the view's database.
 /// An empty database would later throw from StorageID::getFullTableName() during scheduling.
@@ -151,21 +170,20 @@ RefreshTask::RefreshTask(
         /// Coordination needs these Keeper feature flags on every path: readZnodesIfNeeded uses
         /// multi-read on the scheduling thread, where a throw aborts the whole server.
         /// (It would be possible to avoid using these features, if needed.)
-        if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) ||
-            !zookeeper->isFeatureEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS))
+        bool feature_flags_missing = coordinationFeatureFlagsMissing(*zookeeper);
+        /// The flags are read once per Keeper connection, when the connection is established. Right
+        /// after a (re)start the freshly-attached view may read them before the connection settles
+        /// on the current Keeper, so this up-front check is not authoritative: doScheduling
+        /// re-checks before touching Keeper and stops the view gracefully if they turn out missing.
+        fiu_do_on(FailPoints::refresh_mv_skip_attach_feature_flag_check, { feature_flags_missing = false; });
+        if (feature_flags_missing)
         {
             /// Fresh CREATE rejects. ATTACH/restore must not throw (it would fail server startup),
-            /// so enter a permanent non-resumable "coordination unavailable" state instead. We keep
-            /// `coordinated` true so the view never degrades into an uncoordinated local refresh
-            /// (that would corrupt the replicated target table); `unavailable` keeps it Disabled and
-            /// makes start()/finalizeRestoreFromBackup() refuse to resume it.
+            /// so enter a permanent non-resumable "coordination unavailable" state instead.
             if (!attach && !is_restore_from_backup)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS");
 
-            LOG_ERROR(getLogger(), "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.");
-            coordination.unavailable = true;
-            scheduling.stop_requested = true;
-            scheduling.unexpected_error = "Keeper server doesn't have all feature flags required by refreshable materialized view: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.";
+            markCoordinationUnavailable();
             return;
         }
 
@@ -205,6 +223,18 @@ RefreshTask::RefreshTask(
         if (is_restore_from_backup)
             scheduling.stop_requested = true;
     }
+}
+
+void RefreshTask::markCoordinationUnavailable()
+{
+    /// Enter a permanent, non-resumable "coordination unavailable" state. `coordinated` is left
+    /// true so the view never degrades into an uncoordinated local refresh (that would corrupt the
+    /// replicated target table); `unavailable` keeps it Disabled and makes start() /
+    /// finalizeRestoreFromBackup() refuse to resume it.
+    LOG_ERROR(getLogger(), "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.");
+    coordination.unavailable = true;
+    scheduling.stop_requested = true;
+    scheduling.unexpected_error = "Keeper server doesn't have all feature flags required by refreshable materialized view: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.";
 }
 
 void RefreshTask::createLogger(const StorageID & storage_id)
@@ -729,7 +759,22 @@ void RefreshTask::doScheduling(bool is_shutdown)
 
         std::shared_ptr<zkutil::ZooKeeper> zookeeper;
         if (coordination.coordinated)
+        {
             zookeeper = view->getContext()->getZooKeeper();
+
+            /// Re-check the Keeper feature flags the constructor checked on attach. The flags are
+            /// read once per Keeper connection, so a view attached during a (re)start can read them
+            /// before the connection settles on the current Keeper and miss that coordination is
+            /// actually unavailable. If we proceeded, readZnodesIfNeeded below would throw
+            /// NOT_IMPLEMENTED on this scheduling thread and the catch-all would abort the server.
+            /// Detect it here and stop the view gracefully, same as the constructor does on attach.
+            if (coordinationFeatureFlagsMissing(*zookeeper))
+            {
+                markCoordinationUnavailable();
+                setState(RefreshState::Disabled, lock);
+                return;
+            }
+        }
         readZnodesIfNeeded(zookeeper, lock);
         chassert(lock.owns_lock());
 

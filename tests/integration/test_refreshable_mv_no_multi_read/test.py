@@ -117,3 +117,66 @@ def test_refreshable_mv_attach_without_multi_read(started_cluster):
     assert node.query("SELECT 1").strip() == "1"
 
     node.query("DROP DATABASE rdb SYNC")
+
+
+def test_refreshable_mv_attach_feature_flag_propagation_race(started_cluster):
+    # The constructor reads the Keeper feature flags once, when its Keeper connection is
+    # established. A view re-attached during a (re)start can read them before the connection
+    # settles on the current Keeper, see MULTI_READ as still present, and stay coordinated even
+    # though the Keeper actually lacks it. The scheduling thread would then throw NOT_IMPLEMENTED
+    # in readZnodesIfNeeded and the doScheduling catch-all would abort the server. doScheduling
+    # must re-check the flags before touching Keeper and stop the view gracefully.
+    #
+    # That race is timing-dependent and only shows up under slow configs, so it is forced
+    # deterministically here: the no-multi-read Keeper config also activates the
+    # refresh_mv_skip_attach_feature_flag_check failpoint, which makes the constructor's check
+    # behave as if the flags were present. The view therefore attaches as coordinated on a Keeper
+    # without MULTI_READ - exactly the post-race state - and only doScheduling can save the server.
+    use_keeper_config("enable_keeper_multi_read.xml")
+    node.restart_clickhouse()
+
+    node.query(
+        "CREATE DATABASE rdb2 ENGINE = Replicated('/clickhouse/rdb2', '{shard}', '{replica}')"
+    )
+    node.query(
+        """
+        CREATE MATERIALIZED VIEW rdb2.mv
+        REFRESH EVERY 1 SECOND
+        ENGINE = ReplicatedMergeTree ORDER BY x
+        EMPTY
+        AS SELECT number AS x FROM numbers(3)
+        """
+    )
+    node.query("SYSTEM REFRESH VIEW rdb2.mv")
+    node.query("SYSTEM WAIT VIEW rdb2.mv")
+    assert node.query("SELECT count() FROM rdb2.mv").strip() == "3"
+
+    # The prior test (same node) may already have the catch-all message in the log, so compare the
+    # count across this restart rather than asserting absolute absence.
+    aborts_before = int(node.count_in_log("Unexpected exception in refresh scheduling"))
+
+    # Downgrade Keeper AND make the constructor miss the downgrade (simulating the race).
+    use_keeper_config("enable_keeper_no_multi_read_simulate_attach_race.xml")
+    node.restart_clickhouse()
+
+    # The server must be up and answering queries (no crash, no crash-loop).
+    assert node.query("SELECT 1").strip() == "1"
+
+    # doScheduling re-detected the missing flags and stopped the view gracefully. WAIT VIEW returns
+    # immediately once the view is Disabled.
+    node.query("SYSTEM WAIT VIEW rdb2.mv")
+    status = node.query(
+        "SELECT status, exception FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb2'"
+    )
+    assert "Disabled" in status, status
+    assert "multi-read" in status.lower() or "multi_read" in status.lower(), status
+
+    # The catch-all LOGICAL_ERROR must not have fired during this restart.
+    aborts_after = int(node.count_in_log("Unexpected exception in refresh scheduling"))
+    assert aborts_after == aborts_before, (aborts_before, aborts_after)
+
+    use_keeper_config("enable_keeper_multi_read.xml")
+    node.restart_clickhouse()
+    assert node.query("SELECT 1").strip() == "1"
+
+    node.query("DROP DATABASE rdb2 SYNC")
