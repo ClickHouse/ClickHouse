@@ -123,6 +123,30 @@ FROM (SELECT 1::Bool) t0(c0)
 GROUP BY c0 WITH ROLLUP
 ORDER BY c0 NULLS LAST;
 
+-- An inner query's own GROUP BY key sharing the outer rollup key's name AND type must not be
+-- wrapped Nullable by the outer scope: nullable_group_by_keys matches on name+type only (column
+-- source ignored), but the inner non-rollup query never registers keys, so its local `c` (2) is
+-- returned unchanged while only the outer `c` rolls up. Conversely the correlated outer `c`,
+-- when projected via an aggregate, still picks up the outer post-rollup Nullable.
+SELECT '-- inner local key collides with outer rollup key (name+type) ---';
+SELECT t0.c AS oc, (SELECT t1.c FROM (SELECT toInt32(2) AS c) t1 GROUP BY t1.c)
+FROM (SELECT toInt32(7) AS c) t0
+GROUP BY t0.c WITH ROLLUP
+ORDER BY t0.c NULLS LAST;
+
+SELECT '-- correlated outer key under aggregate, inner has same-named local key ---';
+SELECT t0.c AS oc, (SELECT any(t0.c) FROM (SELECT toInt32(2) AS c) t1 GROUP BY t1.c)
+FROM (SELECT toInt32(7) AS c) t0
+GROUP BY t0.c WITH ROLLUP
+ORDER BY t0.c NULLS LAST;
+
+SELECT '-- type pin: inner local key stays non-Nullable despite outer rollup key collision ---';
+SELECT replaceRegexpAll(trim(explain), 'id: [0-9]+', 'id: N') AS line
+FROM (EXPLAIN QUERY TREE
+    SELECT t0.c, (SELECT t1.c FROM (SELECT toInt32(2) AS c) t1 GROUP BY t1.c)
+    FROM (SELECT toInt32(7) AS c) t0 GROUP BY t0.c WITH ROLLUP)
+WHERE explain ILIKE '%column_name: c,%result_type%';
+
 -- A constant LowCardinality GROUP BY key (STID 3721-419e). ConstantNode::convertToNullable used
 -- plain makeNullableSafe, which is a no-op on LowCardinality(T) (it cannot be inside Nullable), so
 -- the key stayed non-Nullable while its rollup/grouping-sets rows were NULL at runtime, and an

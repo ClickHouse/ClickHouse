@@ -69,6 +69,17 @@ a
 -- non-correlated subquery ---
 inner
 inner
+-- inner local key collides with outer rollup key (name+type) ---
+7	2
+\N	2
+-- correlated outer key under aggregate, inner has same-named local key ---
+7	7
+\N	\N
+-- type pin: inner local key stays non-Nullable despite outer rollup key collision ---
+COLUMN id: N, column_name: c, result_type: Nullable(Int32), source_id: N
+COLUMN id: N, column_name: c, result_type: Int32, source_id: N
+COLUMN id: N, column_name: c, result_type: Int32, source_id: N
+COLUMN id: N, column_name: c, result_type: Int32, source_id: N
 -- minSimpleState over LowCardinality constant key ---
 1
 -- projected type is LowCardinality(Nullable) ---
