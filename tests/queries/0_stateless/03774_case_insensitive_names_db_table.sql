@@ -1,4 +1,7 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-darwin
+-- no-darwin: the Ambiguity Detection sections create case-different sibling databases/tables
+-- (`AmbigDB`/`AMBIGDB`, `AmbigTable`/`AMBIGTABLE`), which collide on macOS's case-insensitive
+-- filesystem and make the test premise (two distinct case-only-different objects coexisting) impossible.
 
 SET allow_experimental_analyzer = 1;
 
