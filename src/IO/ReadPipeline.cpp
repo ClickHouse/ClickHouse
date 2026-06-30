@@ -346,8 +346,10 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
     /// use_external_buffer is true only when a downstream stage (memory cache, async prefetch)
     /// manages the working buffer. Distributed cache does NOT require it — it reads from TCP
     /// and manages its own buffer, so memory_cache/async_prefetch are the only stages that
-    /// hand external memory to the inner reader via `set()`.
-    bool use_external_buffer = memory_cache.has_value() || async_prefetch.has_value();
+    /// hand external memory to the inner reader via `set()`. `usesMemoryCache()` (not a bare
+    /// `memory_cache.has_value()`) so an unknown-size object — for which the memory cache stage is
+    /// skipped — does not leave this reader in external-buffer mode without a driver.
+    bool use_external_buffer = usesMemoryCache() || async_prefetch.has_value();
 
     size_t total_objects_size = getTotalSize(source->objects);
     size_t effective_buffer_size = settings.remote_fs_settings.buffer_size;
@@ -428,7 +430,10 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
     /// use_external_buffer for the outermost buffer: true when a downstream
     /// stage (memory cache, async prefetch) manages the working buffer.
     /// Inner cache layers always use external buffer (the outer cache calls set()).
-    bool use_ext_buf = memory_cache.has_value() || async_prefetch.has_value();
+    /// `usesMemoryCache()` (not a bare `memory_cache.has_value()`) so an unknown-size object — for
+    /// which the memory cache stage is skipped — does not leave this reader in external-buffer
+    /// mode without a driver.
+    bool use_ext_buf = usesMemoryCache() || async_prefetch.has_value();
 
     /// -- Stage 2.5 (non-gather): Distributed cache --
     /// When DC is active it owns the whole chain and assigns `impl` outright.
@@ -612,10 +617,33 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
     }, source->source);
 }
 
+bool ReadPipeline::usesMemoryCache() const
+{
+    if (!memory_cache || !memory_cache->page_cache_settings.cache)
+        return false;
+
+    /// The page cache addresses the file by absolute offset and needs a known size:
+    /// `CachedInMemoryReadBufferFromFile` reads `in_->getFileSize()` up front and uses it for
+    /// every range computation. An object served without `Content-Length` arrives with
+    /// `UnknownSize`, so wrapping it would throw `UNKNOWN_FILE_SIZE` before any bytes are read.
+    /// Skip the page cache for such objects and stream them directly, mirroring the
+    /// `canUseFilesystemCache` guard applied to the filesystem cache stages. The object storage
+    /// source already disables the page cache for unknown-size objects up front; this also covers
+    /// the `DiskObjectStorage` read path (e.g. a `web_index` disk entry whose origin served no
+    /// `Content-Length`), which enables the page cache without checking object size.
+    for (const auto & object : source->objects)
+    {
+        if (object.bytes_size == StoredObject::UnknownSize)
+            return false;
+    }
+
+    return true;
+}
+
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const
 {
     /// -- Stage 4: Memory cache --
-    if (!memory_cache || !memory_cache->page_cache_settings.cache)
+    if (!usesMemoryCache())
         return impl;
 
     PageCacheFile cache_file;
