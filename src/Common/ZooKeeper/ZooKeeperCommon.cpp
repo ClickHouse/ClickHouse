@@ -1437,7 +1437,7 @@ ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
     if (op_num == OpNum::CreateTTL)
         return std::make_shared<ZooKeeperCreateTTLResponse>();
 
-    if (op_num == OpNum::Create2)
+    if (op_num == OpNum::Create2 || op_num == OpNum::CreateContainer)
         return std::make_shared<ZooKeeperCreate2Response>();
 
     if (op_num == OpNum::CreateIfNotExists)
