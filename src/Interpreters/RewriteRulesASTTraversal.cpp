@@ -1,6 +1,7 @@
 #include <Interpreters/RewriteRulesASTTraversal.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTCreateRewriteRuleQuery.h>
@@ -32,6 +33,29 @@ namespace ErrorCodes
     extern const int REWRITE_RULE_UNKNOWN_QUERY_PARAMETER;
     extern const int REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE;
     extern const int REWRITE_RULE_DOESNT_EXIST;
+    extern const int TOO_BIG_AST;
+    extern const int TOO_DEEP_AST;
+}
+
+namespace
+{
+
+/// A typed (non-`String`) query parameter is not substituted as a bare literal: `makeASTForQueryParameter`
+/// wraps it as `_CAST(<literal>, '<type>')` (see `ReplaceQueryParameterVisitor`). Rewrite-rule matching
+/// runs after that substitution, so without unwrapping a rule written against a bare literal (e.g. a
+/// `REJECT` rule for `... id = 42`) would not match a query that supplied the same value through a typed
+/// parameter `{p:UInt64}`, letting the rule be bypassed. Return the inner literal for such a wrapper so it
+/// is matched (and captured by `{x:Int}`) as the literal it stands for. This is read-only: the original
+/// query AST is never mutated, so a query that no rule matches still executes with its `_CAST` intact.
+ASTPtr unwrapQueryParameterCast(const ASTPtr & node)
+{
+    const auto * func = node->as<ASTFunction>();
+    if (func && func->name == "_CAST" && func->arguments && func->arguments->children.size() == 2
+        && func->arguments->children[0]->as<ASTLiteral>() && func->arguments->children[1]->as<ASTLiteral>())
+        return func->arguments->children[0];
+    return node;
+}
+
 }
 
 bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied_rules)
@@ -121,6 +145,10 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
             auto top2 = queue_rule.front();
             queue_query.pop();
             queue_rule.pop();
+            /// Treat a typed-query-parameter `_CAST(<literal>, '<type>')` wrapper on the query side
+            /// as the literal it stands for, so a rule written against a bare literal still matches
+            /// (and `{x:Int}` still captures) a value supplied through a typed parameter.
+            top1 = unwrapQueryParameterCast(top1);
             if (top1->getTreeHash(true) != top2->getTreeHash(true))
             {
                 auto hash1 = top1->getCurrentNodeHash(true);
@@ -226,7 +254,11 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
                 }
             }
             /// Otherwise the subtrees are identical (equal hash) and match as-is, with
-            /// nothing to capture. Matching runs after query-parameter substitution, so the
+            /// nothing to capture. This relies on `getTreeHash(true)` capturing every semantic
+            /// field of the node; an AST class that keeps semantic state outside both `children`
+            /// and `updateTreeHashImpl` (as `ASTShowTablesQuery` did for `LIKE` and its flags)
+            /// would otherwise let a rule over-match an unrelated query — see the explicit hash
+            /// for `ASTShowTablesQuery`. Matching runs after query-parameter substitution, so the
             /// incoming query never carries a placeholder of its own — only the rule template
             /// does — and an equal-hash subtree therefore has no placeholder to bind here.
         }
@@ -238,6 +270,17 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
             /// pushed before the throw), so the caller can log it in `system.query_log` even
             /// for a rejection.
             applyRule(ast, rule, matching_map);
+            /// Bound the rewrite result after every rule, not only the final query. The
+            /// post-rewrite `checkASTSizeLimits` in `executeQuery` sees only the last result, so
+            /// without this an intermediate rule could rewrite a small query into an oversized or
+            /// very deep AST — forcing the next rule's matcher to walk an unbounded tree — and a
+            /// later rule could then shrink it again, bypassing the effective `max_ast_elements` /
+            /// `max_ast_depth` for the work in between. (A `REJECT` rule threw above, so this runs
+            /// only for a successful `REWRITE`.)
+            if (const UInt64 max_ast_depth = settings[Setting::max_ast_depth])
+                ast->checkDepth(max_ast_depth);
+            if (const UInt64 max_ast_elements = settings[Setting::max_ast_elements])
+                ast->checkSize(max_ast_elements);
         }
     }
 
@@ -252,28 +295,24 @@ void checkRewriteRuleTemplateLimits(const IAST & ast, const Settings & settings)
     if (!max_ast_depth && !max_ast_elements)
         return;
 
-    auto check_limits = [&](const ASTPtr & node)
+    /// Count elements and depth across a rule-template subtree, descending through both ordinary
+    /// `children` and any nested rule-template fields (`source_query` / `resulting_query`) with a
+    /// single shared element counter. A `CREATE RULE` / `ALTER RULE` template can itself contain
+    /// further rule DDL, and following a template edge must NOT reset the accounting: otherwise a
+    /// chain of individually-small nested templates could keep every level under the limit while
+    /// the aggregate AST persisted by one DDL statement is arbitrarily large or deep. `depth` is
+    /// measured from the enclosing rule node and increases by one per nested template edge, so the
+    /// cumulative depth of a nesting chain is bounded too. `max_ast_depth` / `max_ast_elements` of
+    /// `0` mean "no limit", matching the generic `checkASTSizeLimits` gate.
+    std::function<void(const IAST &, size_t &, size_t)> check_template
+        = [&](const IAST & node, size_t & elements, size_t depth)
     {
-        if (!node)
-            return;
-        if (max_ast_depth)
-            node->checkDepth(max_ast_depth);
-        if (max_ast_elements)
-            node->checkSize(max_ast_elements);
-    };
+        ++elements;
+        if (max_ast_elements && elements > max_ast_elements)
+            throw Exception(ErrorCodes::TOO_BIG_AST, "AST is too big. Maximum: {}", max_ast_elements);
+        if (max_ast_depth && depth > max_ast_depth)
+            throw Exception(ErrorCodes::TOO_DEEP_AST, "AST is too deep. Maximum: {}", max_ast_depth);
 
-    /// `checkDepth` / `checkSize` walk only `IAST::children`. A `CREATE RULE` / `ALTER RULE`
-    /// keeps its own source and result templates outside `children`, so the generic
-    /// `checkASTSizeLimits` walk in `executeQuery` never reaches them — even when the rule DDL
-    /// is nested below a wrapper, e.g. `EXPLAIN AST CREATE RULE inner AS (SELECT <huge>)
-    /// REWRITE TO (SELECT 1)`. Walk the whole AST through ordinary `children` (so wrappers are
-    /// covered) and, whenever a rule DDL node is found, check its template fields explicitly,
-    /// recursing into them since they may contain further nested rule DDL. Running this as part
-    /// of the generic pre-execution AST limit gate (before access checks and interpreter
-    /// dispatch) keeps an oversized or very deep template from bypassing the limits and being
-    /// persisted, including via wrappers that never reach the rule interpreter.
-    std::function<void(const IAST &)> walk = [&](const IAST & node)
-    {
         const ASTPtr * nested_source = nullptr;
         const ASTPtr * nested_result = nullptr;
         if (const auto * create_rule = node.as<ASTCreateRewriteRuleQuery>())
@@ -288,19 +327,36 @@ void checkRewriteRuleTemplateLimits(const IAST & ast, const Settings & settings)
         }
         if (nested_source)
         {
-            check_limits(*nested_source);
-            check_limits(*nested_result);
             if (*nested_source)
-                walk(**nested_source);
+                check_template(**nested_source, elements, depth + 1);
             if (*nested_result)
-                walk(**nested_result);
+                check_template(**nested_result, elements, depth + 1);
         }
         for (const auto & child : node.children)
             if (child)
-                walk(*child);
+                check_template(*child, elements, depth + 1);
     };
 
-    walk(ast);
+    /// The generic `checkASTSizeLimits` gate in `executeQuery` already bounds the outer query
+    /// through `children` (covering wrappers such as `EXPLAIN AST`), but never reaches the rule
+    /// templates because they live outside `children`. Walk ordinary `children` to find each rule
+    /// DDL node, then bound its templates cumulatively with a fresh counter. `check_template`
+    /// itself descends into rule DDL nested inside templates, so a found rule node closes off its
+    /// whole subtree and there is no double counting.
+    std::function<void(const IAST &)> find_rules = [&](const IAST & node)
+    {
+        if (node.as<ASTCreateRewriteRuleQuery>() || node.as<ASTAlterRewriteRuleQuery>())
+        {
+            size_t elements = 0;
+            check_template(node, elements, 1);
+            return;
+        }
+        for (const auto & child : node.children)
+            if (child)
+                find_rules(*child);
+    };
+
+    find_rules(ast);
 }
 
 
