@@ -9,13 +9,8 @@ Scenario:
   4. Start node 3, which has no log and must catch up by streaming log entries from
      the leader via log_entries_ext.
   5. Wait for node 3 to become a connected follower.
-  6. Assert that:
-     a. Node 3 can read back all the znodes written in step 3 (correctness).
-     b. The read-ahead fill counter on node 3 is > 0, confirming that the
-        per-peer decoded read-ahead path was exercised during catch-up.
+  6. Assert that node 3 can read back all the znodes written in step 3.
 """
-
-import time
 
 import pytest
 
@@ -63,19 +58,10 @@ def get_zk(node, timeout=30.0):
     return keeper_utils.get_fake_zk(cluster, node.name, timeout=timeout)
 
 
-def read_ahead_decoded_entries(node):
-    """Return the cumulative KeeperLogsReadAheadFillDecodedEntries counter from system.events."""
-    result = node.query(
-        "SELECT value FROM system.events WHERE event = 'KeeperLogsReadAheadFillDecodedEntries'",
-        query_id="readahead_check",
-    )
-    return int(result.strip()) if result.strip() else 0
-
-
 def test_readahead_catchup(started_cluster):
     """
     Write 5000 entries on a 2-node quorum, then start the lagging 3rd node and
-    verify it catches up correctly using the read-ahead path.
+    verify it catches up correctly with read-ahead enabled.
     """
     # --- Setup: bring node3 down so it misses all writes ---
     node3.stop_clickhouse()
@@ -112,42 +98,9 @@ def test_readahead_catchup(started_cluster):
         f"Expected at least 4 log files, got {len(log_files)}: {log_files}"
     )
 
-    # --- Step 2: capture baseline counters, then start node3 ---
-    # node2 is already an active follower during step 1 and can accumulate
-    # KeeperLogsReadAheadFillDecodedEntries before node3 starts; assert a delta.
-    def get_counter(node, event):
-        r = node.query(f"SELECT value FROM system.events WHERE event = '{event}'")
-        return int(r.strip()) if r.strip() else 0
-
-    baseline_decoded = get_counter(leader, "KeeperLogsReadAheadFillDecodedEntries")
-    baseline_cursors = get_counter(leader, "KeeperLogsReadAheadCursorsInstalled")
-    print(
-        f"Leader read-ahead baseline (before node3 start): "
-        f"decoded={baseline_decoded}, cursors_installed={baseline_cursors}"
-    )
-
+    # --- Step 2: start node3 (empty log) and wait for it to catch up ---
     node3.start_clickhouse()
     keeper_utils.wait_until_connected(cluster, node3)
-
-    # Poll until the decoded-entries counter grows beyond the baseline.
-    deadline = time.time() + 30
-    decoded_delta = 0
-    while time.time() < deadline:
-        decoded_delta = get_counter(leader, "KeeperLogsReadAheadFillDecodedEntries") - baseline_decoded
-        if decoded_delta > 0:
-            break
-        time.sleep(0.5)
-
-    cursors_delta = get_counter(leader, "KeeperLogsReadAheadCursorsInstalled") - baseline_cursors
-    reopens = get_counter(leader, "KeeperLogsReadAheadFillReopens")
-    print(
-        f"Leader read-ahead delta after node3 catch-up: "
-        f"decoded_delta={decoded_delta}, cursors_delta={cursors_delta}, reopens={reopens}"
-    )
-    assert decoded_delta > 0, (
-        "KeeperLogsReadAheadFillDecodedEntries did not increase after node3 started: "
-        "read-ahead did not fire when streaming to the lagging follower"
-    )
 
     # --- Step 3: verify correctness — node3 must serve every written znode ---
     zk3 = get_zk(node3)

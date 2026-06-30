@@ -2367,9 +2367,13 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadShutdownJoinsFills)
     }
     changelog.end_of_append_batch(0, 0);
     waitDurableLogs(changelog);
-    // flush() triggers refreshCache() after the write thread's addLogLocations() has run,
-    // populating logs_location so getReadAheadPlan can build a read-ahead window.
-    changelog.flush();
+
+    // A later append batch runs the existing `flushAsync` refresh after the first batch's
+    // `addLogLocations`, so old entries leave `latest_logs_cache` and become file spans.
+    auto marker = getLogEntry("readahead_test_l2_test16_marker", 11);
+    changelog.append(marker);
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
 
     DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
 

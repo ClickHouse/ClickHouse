@@ -102,11 +102,6 @@ KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size
     {
         if (peer_id != NO_PEER_ID && changelog.isReadAheadEnabled())
         {
-            // Populate logs_location before planning; flushAsync's refreshCache races with addLogLocations.
-            {
-                ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
-                changelog.refreshCache();
-            }
             auto plan = build_plan_under_lock([&] TSA_NO_THREAD_SAFETY_ANALYSIS
                                               { return changelog.getReadAheadPlan(start, end, batch_size_hint_in_bytes); });
             return changelog.serveReadAhead(peer_id, plan);
