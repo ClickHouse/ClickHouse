@@ -326,7 +326,5 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
 
     step("--push-release-tag", "--dry-run")
     step("--create-bump-version-pr", "--dry-run")
-    step("--set-progress-started", "--progress", "completed")
-    step("--set-progress-completed")
     final = step("--post-status", "--dry-run")
-    assert "Completed: New release" in final.stdout
+    assert "New release" in final.stdout

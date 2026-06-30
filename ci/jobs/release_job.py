@@ -364,8 +364,6 @@ def main():
         step(
             name="Bump Docker Versions, Changelog, Security",
             command=[
-                "python3 ./ci/jobs/create_release.py --set-progress-started"
-                " --progress 'update changelog, docker version, security'",
                 "echo 'List versions'",
                 "./utils/list-versions/list-versions.sh"
                 " > ./utils/list-versions/version_date.tsv",
@@ -479,25 +477,15 @@ def main():
         and not args.only_docker
     ):
         # Restore the working tree after the changelog/version-bump steps, which
-        # dirty it (only when create_new_release ran, but the reset/checkout is a
-        # harmless no-op otherwise). The trailing --set-progress-completed is the
-        # closing half of the progress transaction opened by --set-progress-started
-        # in "Bump Docker Versions, Changelog, Security"; that opening is gated on
-        # create_new_release, so the close must be too. On a recovery / out-of-order
-        # run the opening never runs, progress_status stays OK, and an unconditional
-        # --set-progress-completed would fail its "must be FAILED before set to OK"
-        # assertion after everything was already published.
-        restore_commands = [
-            "git reset --hard HEAD",
-            f"git checkout {original_branch}",
-        ]
-        if create_new_release:
-            restore_commands.append(
-                "python3 ./ci/jobs/create_release.py --set-progress-completed"
-            )
+        # dirty it. A no-op on recovery / out-of-order runs (they skip the
+        # changelog steps); the always-run "Checkout Back" below is the safety net
+        # if anything between here and there leaves the tree dirty.
         step(
-            name="Complete Previous Steps and Restore Git State",
-            command=restore_commands,
+            name="Restore Git State",
+            command=[
+                "git reset --hard HEAD",
+                f"git checkout {original_branch}",
+            ],
             workdir=REPO_PATH,
         )
 
@@ -543,15 +531,9 @@ def main():
 
         def _make_docker_build(
             image: str,
-            progress: str,
             build_configs: List[Tuple[str, str, str]],
         ):
             def build():
-                Shell.check(
-                    f"python3 ./ci/jobs/create_release.py --set-progress-started"
-                    f" --progress {shlex.quote(progress)}",
-                    strict=True,
-                )
                 Shell.check(f"git checkout {release_tag}", strict=True)
 
                 m = re.match(r"^v(\d+\.\d+\.\d+\.\d+)", release_tag)
@@ -621,10 +603,6 @@ def main():
                     )
 
                 Shell.check("git checkout -", strict=True)
-                Shell.check(
-                    "python3 ./ci/jobs/create_release.py --set-progress-completed",
-                    strict=True,
-                )
 
             return build
 
@@ -662,7 +640,6 @@ def main():
             name="Docker clickhouse/clickhouse-server Building",
             command=_make_docker_build(
                 image="clickhouse/clickhouse-server",
-                progress="docker server release",
                 build_configs=[
                     (
                         "ubuntu",
@@ -688,7 +665,6 @@ def main():
             name="Docker clickhouse/clickhouse-keeper Building",
             command=_make_docker_build(
                 image="clickhouse/clickhouse-keeper",
-                progress="docker keeper release",
                 build_configs=[
                     (
                         "ubuntu",
@@ -713,8 +689,7 @@ def main():
     # Always restore git state — equivalent to `if: ${{ !cancelled() }}`, so it
     # must run even after a failure (hence Result.from_commands_run, not step()
     # which skips when ok is already False). But a failed restore must still
-    # block the release mutations below (--merge-prs, marking completed), so
-    # fold its result back into ok.
+    # block the release mutation below (--merge-prs), so fold its result into ok.
     results.append(
         Result.from_commands_run(
             name="Checkout Back",
@@ -725,11 +700,10 @@ def main():
     if results[-1].status != Result.Status.OK:
         ok = False
 
-    # Merging the created PRs and marking the release "completed" are release
-    # mutations that must only happen when every preceding step succeeded. Use
-    # step(), which skips when ok is already False and folds its own result back
-    # into ok — so if --merge-prs fails, the release is NOT marked completed and
-    # the Slack post below reports the actual failing step.
+    # Merging the created PRs is a release mutation that must only happen when
+    # every preceding step succeeded. Use step(), which skips when ok is already
+    # False — so if anything failed, the Slack post below reports the failing
+    # step instead of merging.
     #
     # Only a release that created the changelog/version-bump PRs has anything to
     # merge; a recovery / out-of-order run did not create them, so skip
@@ -743,16 +717,6 @@ def main():
             ],
             workdir=REPO_PATH,
         )
-
-    step(
-        name="Set Release Progress to Completed",
-        command=[
-            "python3 ./ci/jobs/create_release.py --set-progress-started"
-            " --progress completed",
-            "python3 ./ci/jobs/create_release.py --set-progress-completed",
-        ],
-        workdir=REPO_PATH,
-    )
 
     # Always post the final status (the completed release, or the failing step).
     results.append(

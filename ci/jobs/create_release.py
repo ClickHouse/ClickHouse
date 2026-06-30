@@ -380,11 +380,6 @@ class ReleaseProgress:
     COMPLETED = "completed"
 
 
-class ReleaseProgressDescription:
-    OK = "OK"
-    FAILED = "FAILED"
-
-
 class ReleaseContextManager:
     def __init__(self, release_progress):
         self.release_progress = release_progress
@@ -407,20 +402,20 @@ class ReleaseContextManager:
         else:
             self.release_info = ReleaseInfo.from_file()
             assert self.release_info
-            assert (
-                self.release_info.progress_status == ReleaseProgressDescription.OK
-            ), "Must be OK on the start of new context"
+            # Record the furthest step reached (informational only). Step
+            # ordering within a run is enforced by the workflow's own step
+            # gating, not by a per-step status flag.
             self.release_info.release_progress = self.release_progress
             self.release_info.dump()
         return self.release_info
 
     def __exit__(self, exc_type, exc_value, traceback):
+        # Persist whatever the body mutated on release_info. A failed step is
+        # reflected by the workflow job result, not by a status flag here, so we
+        # only dump and do not suppress the exception.
         assert self.release_info
-        if exc_type is not None:
-            self.release_info.progress_status = ReleaseProgressDescription.FAILED
-        else:
-            self.release_info.progress_status = ReleaseProgressDescription.OK
         self.release_info.dump()
+        return False
 
 
 @dataclasses.dataclass
@@ -450,7 +445,6 @@ class ReleaseInfo:
     tgz: str = ""
     docker: str = ""
     release_progress: str = ""
-    progress_status: str = ""
 
     def is_patch(self):
         return self.release_branch != "master"
@@ -581,7 +575,6 @@ class ReleaseInfo:
         self.previous_release_tag = previous_release_tag
         self.previous_release_sha = previous_release_sha
         self.release_progress = ReleaseProgress.STARTED
-        self.progress_status = ReleaseProgressDescription.OK
         self.latest = latest_release
         # The release is the latest on its branch unless an existing release tag
         # on the same branch already has a higher version. This is what decides
@@ -1177,21 +1170,6 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="do not make any actual changes in the repo, just show what will be done",
     )
-    parser.add_argument(
-        "--set-progress-started",
-        action="store_true",
-        help="Set new progress step, --progress <PROGRESS STEP> must be set",
-    )
-    parser.add_argument(
-        "--progress",
-        type=str,
-        help="Progress step name, see @ReleaseProgress",
-    )
-    parser.add_argument(
-        "--set-progress-completed",
-        action="store_true",
-        help="Set current progress step to OK (completed)",
-    )
     return parser.parse_args()
 
 
@@ -1264,30 +1242,10 @@ if __name__ == "__main__":
             title = "New release branch"
         else:
             title = "New release"
-        if (
-            release_info.progress_status == ReleaseProgressDescription.OK
-            and release_info.release_progress == ReleaseProgress.COMPLETED
-        ):
-            print(f"Completed: {title}")
-            print(json.dumps(dataclasses.asdict(release_info), indent=2))
-        else:
-            print(f"Failed: {title}")
-            print(json.dumps(dataclasses.asdict(release_info), indent=2))
-
-    if args.set_progress_started:
-        ri = ReleaseInfo.from_file()
-        ri.release_progress = args.progress
-        ri.progress_status = ReleaseProgressDescription.FAILED
-        ri.dump()
-        assert args.progress, "Progress step name must be provided"
-
-    if args.set_progress_completed:
-        ri = ReleaseInfo.from_file()
-        assert (
-            ri.progress_status == ReleaseProgressDescription.FAILED
-        ), "Must be FAILED before set to OK"
-        ri.progress_status = ReleaseProgressDescription.OK
-        ri.dump()
+        # Print the release-info summary for the job log / Slack context. Pass or
+        # fail is conveyed by the workflow job result, not re-derived here.
+        print(f"{title}: {release_info.release_tag}")
+        print(json.dumps(dataclasses.asdict(release_info), indent=2))
 
     if args.merge_prs:
         with ReleaseContextManager(
