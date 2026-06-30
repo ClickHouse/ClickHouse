@@ -604,7 +604,7 @@ void ReadFromRemote::addLazyPipe(
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
             query = shard.query, header = shard.header,
-            my_context = context, my_throttler = throttler,
+            my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
             my_stage = stage, my_storage = storage,
@@ -709,6 +709,7 @@ void ReadFromRemote::addLazyPipe(
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
+        remote_query_executor->setLogger(my_log);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
 
         auto pipe = createRemoteSourcePipe(

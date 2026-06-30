@@ -1,0 +1,38 @@
+Exact match
+2024-01-01 00:00:00	hello
+2024-01-03 00:00:00	foo
+2024-01-05 00:00:00	baz
+Stricter match (AND)
+2024-01-03 00:00:00	foo
+2024-01-05 00:00:00	baz
+Non-matching (different value)
+2024-01-02 00:00:00	world
+No WHERE
+5
+Weaker (OR)
+2024-01-01 00:00:00	hello
+2024-01-02 00:00:00	world
+2024-01-03 00:00:00	foo
+2024-01-05 00:00:00	baz
+Projection row count
+3
+Projection with WITH clause
+Projection with SELECT alias
+Mutation with filtered projection
+2024-01-03 00:00:00	c
+2024-01-04 00:00:00	d
+Aggregate projection with WHERE
+Aggregate exact match
+1	30
+Aggregate stricter AND
+1	30
+Aggregate non-matching
+2	300
+Aggregate no WHERE
+1	30
+2	300
+3	1000
+Aggregate filter column not in GROUP BY
+30
+Aggregate exact match k=0
+0	30
