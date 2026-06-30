@@ -673,6 +673,8 @@ namespace
     This setting can be modified at runtime and will take effect immediately.
     :::
     )", 0) \
+    DECLARE(UInt64, multi_search_automaton_cache_size, DEFAULT_MULTI_SEARCH_AUTOMATON_CACHE_MAX_SIZE, R"(Sets the cache size (in bytes) for compiled Aho-Corasick automata used by `multiSearch*` functions with large pattern sets.)", 0) \
+    DECLARE(UInt64, multi_search_automaton_cache_elements_size, DEFAULT_MULTI_SEARCH_AUTOMATON_CACHE_MAX_ENTRIES, R"(Sets the cache size (in elements) for compiled Aho-Corasick automata used by `multiSearch*` functions with large pattern sets.)", 0) \
     DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache policy name.", 0) \
     DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, R"(
     Maximum size of the query condition cache.

@@ -1,0 +1,13 @@
+-- forced daachorse path (<= 255 needles) --
+1
+1
+1
+1
+0
+1
+0
+1
+1
+-- automatic daachorse path (> 255 needles) --
+1	0	1	1
+0	1

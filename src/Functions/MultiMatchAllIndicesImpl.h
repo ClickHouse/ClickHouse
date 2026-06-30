@@ -53,9 +53,27 @@ struct MultiMatchAllIndicesImpl
         size_t max_hyperscan_regexp_length,
         size_t max_hyperscan_regexp_total_length,
         bool reject_expensive_hyperscan_regexps,
+        bool /*force_daachorse*/,
         size_t input_rows_count)
     {
         vectorConstant(haystack_data, haystack_offsets, needles_arr, res, offsets, std::nullopt, allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps, input_rows_count);
+    }
+
+    /// Overload for fuzzy search (called from FunctionsMultiStringFuzzySearch.h)
+    static void vectorConstant(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const Array & needles_arr,
+        PaddedPODArray<ResultType> & res,
+        PaddedPODArray<UInt64> & offsets,
+        UInt32 edit_distance,
+        bool allow_hyperscan,
+        size_t max_hyperscan_regexp_length,
+        size_t max_hyperscan_regexp_total_length,
+        bool reject_expensive_hyperscan_regexps,
+        size_t input_rows_count)
+    {
+        vectorConstant(haystack_data, haystack_offsets, needles_arr, res, offsets, std::optional<UInt32>(edit_distance), allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps, input_rows_count);
     }
 
     static void vectorConstant(
@@ -163,9 +181,28 @@ struct MultiMatchAllIndicesImpl
         size_t max_hyperscan_regexp_length,
         size_t max_hyperscan_regexp_total_length,
         bool reject_expensive_hyperscan_regexps,
+        bool /*force_daachorse*/,
         size_t input_rows_count)
     {
         vectorVector(haystack_data, haystack_offsets, needles_data, needles_offsets, res, offsets, std::nullopt, allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps, input_rows_count);
+    }
+
+    /// Overload for fuzzy search (called from FunctionsMultiStringFuzzySearch.h)
+    static void vectorVector(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const IColumn & needles_data,
+        const ColumnArray::Offsets & needles_offsets,
+        PaddedPODArray<ResultType> & res,
+        PaddedPODArray<UInt64> & offsets,
+        UInt32 edit_distance,
+        bool allow_hyperscan,
+        size_t max_hyperscan_regexp_length,
+        size_t max_hyperscan_regexp_total_length,
+        bool reject_expensive_hyperscan_regexps,
+        size_t input_rows_count)
+    {
+        vectorVector(haystack_data, haystack_offsets, needles_data, needles_offsets, res, offsets, std::optional<UInt32>(edit_distance), allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps, input_rows_count);
     }
 
     static void vectorVector(
