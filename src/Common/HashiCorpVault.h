@@ -67,8 +67,8 @@ private:
     String cert_name;
     String scheme;
     String host;
-    int port;
-    HashiCorpVaultAuthMethod auth_method;
+    int port = 0;
+    HashiCorpVaultAuthMethod auth_method = HashiCorpVaultAuthMethod::Token;
 #if USE_SSL
     Poco::Net::Context::Ptr request_context;
 #endif

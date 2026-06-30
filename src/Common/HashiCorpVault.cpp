@@ -83,15 +83,13 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
     params.dhParamsFile = config.getString(prefix + Poco::Net::SSLManager::CFG_DH_PARAMS_FILE, "");
     params.ecdhCurve = config.getString(prefix + Poco::Net::SSLManager::CFG_ECDH_CURVE, "");
 
-    Poco::Net::Context::Usage usage;
+    Poco::Net::Context::Usage usage = Poco::Net::Context::CLIENT_USE;
     if (require_tlsv1_2)
         usage = Poco::Net::Context::TLSV1_2_CLIENT_USE;
     else if (require_tlsv1_1)
         usage = Poco::Net::Context::TLSV1_1_CLIENT_USE;
     else if (require_tlsv1)
         usage = Poco::Net::Context::TLSV1_CLIENT_USE;
-    else
-        usage = Poco::Net::Context::CLIENT_USE;
     request_context = new Poco::Net::Context(usage, params);
 
     std::string disabled_protocols_list = config.getString(prefix + Poco::Net::SSLManager::CFG_DISABLE_PROTOCOLS, "");
