@@ -23,6 +23,13 @@ source settings before returning do not cap returning
 9
 10
 1
+query settings preserved for returning
+0
+1
+2
+3
+4
+1
 trailing settings do not affect returning planning
 1
 1

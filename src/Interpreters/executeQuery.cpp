@@ -27,6 +27,7 @@
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -1500,8 +1501,25 @@ static BlockIO executeQueryImpl(
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
-            if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->source_select_settings_ast)
+            if (auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->source_select_settings_ast)
+            {
+                Settings settings_before_source = context->getSettingsRef();
                 InterpreterSetQuery::applySettingsFromQuery(insert_query->source_select_settings_ast, context);
+
+                const auto & settings_after_source = context->getSettingsRef();
+                auto restore_ast = make_intrusive<ASTSetQuery>();
+                restore_ast->is_standalone = false;
+
+                for (std::string_view setting_name : settings_after_source.getAllRegisteredNames())
+                {
+                    Field value_before = settings_before_source.get(setting_name);
+                    Field value_after = settings_after_source.get(setting_name);
+                    if (value_before != value_after)
+                        restore_ast->changes.emplace_back(String(setting_name), std::move(value_before));
+                }
+
+                insert_query->source_select_settings_restore_ast = restore_ast->changes.empty() ? ASTPtr{} : restore_ast;
+            }
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
             /// The RETURNING subquery is an independent `SELECT` that must be validated and normalized with its own
@@ -2005,7 +2023,7 @@ static BlockIO executeQueryImpl(
             if (stage == QueryProcessingStage::Complete && pipeline.pulling())
             {
                 if (insert_query && insert_query->returning_select)
-                    setupPullingQueryPipeline(pipeline, context, stage, insert_query->returning_select, insert_query->source_select_settings_ast);
+                    setupPullingQueryPipeline(pipeline, context, stage, insert_query->returning_select, insert_query->source_select_settings_restore_ast);
                 else
                     pipeline.setLimitsAndQuota(limits, quota);
             }
@@ -2106,12 +2124,12 @@ static BlockIO executeQueryImpl(
             auto wrap_returning = [&]()
             {
                 res.pipeline = buildInsertReturningPipeline(
-                    std::move(res.pipeline), insert_query->returning_select, context, res.query_metadata_cache, insert_query->source_select_settings_ast);
+                    std::move(res.pipeline), insert_query->returning_select, context, res.query_metadata_cache, insert_query->source_select_settings_restore_ast);
                 if (res.finish_callback_state)
                     res.finish_callback_state->insert_returning_result_as_select = true;
                 if (insert_table)
                     res.pipeline.addStorageHolder(insert_table);
-                setupPullingQueryPipeline(res.pipeline, context, stage, insert_query->returning_select, insert_query->source_select_settings_ast);
+                setupPullingQueryPipeline(res.pipeline, context, stage, insert_query->returning_select, insert_query->source_select_settings_restore_ast);
             };
 
             if (!res.pipeline.pushing())

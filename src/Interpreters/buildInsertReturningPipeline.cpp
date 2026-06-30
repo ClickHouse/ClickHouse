@@ -175,31 +175,15 @@ namespace Setting
 ContextMutablePtr makeReturningSelectContext(
     const ASTPtr & returning_select,
     ContextPtr context,
-    const ASTPtr & source_select_settings_ast)
+    const ASTPtr & source_select_settings_restore_ast)
 {
     auto returning_context = Context::createCopy(context);
     /// `Context::createCopy` gives the subquery an independent `QueryAccessInfo`, so the tables and columns read by
     /// the RETURNING subquery would be missing from `system.query_log`. Share the outer query's access info (the same
     /// approach as the materialized-view path in `InsertDependenciesBuilder`) so the accesses are recorded.
     returning_context->setQueryAccessInfo(context->getQueryAccessInfoPtr());
-    if (source_select_settings_ast)
-    {
-        std::unordered_set<String> source_setting_names;
-        const auto & source_select_settings = source_select_settings_ast->as<ASTSetQuery &>();
-        source_setting_names.reserve(source_select_settings.changes.size() + source_select_settings.default_settings.size());
-        for (const auto & change : source_select_settings.changes)
-            source_setting_names.insert(change.name);
-        for (const auto & default_setting : source_select_settings.default_settings)
-            source_setting_names.insert(default_setting);
-
-        if (!source_setting_names.empty())
-        {
-            ContextPtr session_context = context->getSessionContext();
-            const auto & session_settings = session_context->getSettingsRef();
-            for (const auto & setting_name : source_setting_names)
-                returning_context->setSetting(setting_name, session_settings.get(setting_name));
-        }
-    }
+    if (source_select_settings_restore_ast)
+        InterpreterSetQuery::applySettingsFromQuery(source_select_settings_restore_ast, returning_context);
     InterpreterSetQuery::applySettingsFromQuery(returning_select, returning_context);
     return returning_context;
 }
@@ -208,11 +192,11 @@ QueryPipeline buildReturningSelectPipeline(
     const ASTPtr & returning_select,
     ContextPtr context,
     QueryMetadataCachePtr & out_metadata_cache,
-    const ASTPtr & source_select_settings_ast)
+    const ASTPtr & source_select_settings_restore_ast)
 {
     rejectUnsupportedReturningSettings(returning_select);
     rejectInputInReturning(returning_select);
-    auto returning_context = makeReturningSelectContext(returning_select, context, source_select_settings_ast);
+    auto returning_context = makeReturningSelectContext(returning_select, context, source_select_settings_restore_ast);
 
     /// `executeQueryImpl` detaches the RETURNING subquery from the INSERT before running the global AST visitors, so
     /// they do not normalize it with the outer INSERT settings. Run the same normalization passes here using the
@@ -276,14 +260,14 @@ void setupPullingQueryPipeline(
     ContextPtr context,
     QueryProcessingStage::Enum stage,
     const ASTPtr & returning_select,
-    const ASTPtr & source_select_settings_ast)
+    const ASTPtr & source_select_settings_restore_ast)
 {
     pipeline.setProgressCallback(context->getProgressCallback());
     pipeline.setProcessListElement(context->getProcessListElement());
 
     if (stage == QueryProcessingStage::Complete && pipeline.pulling())
     {
-        const auto limits_context = returning_select ? makeReturningSelectContext(returning_select, context, source_select_settings_ast) : context;
+        const auto limits_context = returning_select ? makeReturningSelectContext(returning_select, context, source_select_settings_restore_ast) : context;
         const auto & settings = limits_context->getSettingsRef();
         StreamLocalLimits limits;
         limits.mode = LimitsMode::LIMITS_CURRENT;
@@ -305,8 +289,8 @@ bool replacePipelineWithInsertReturningAfterPush(
         return false;
 
     io.pipeline.reset();
-    io.pipeline = buildReturningSelectPipeline(insert_query.returning_select, context, io.query_metadata_cache, insert_query.source_select_settings_ast);
-    setupPullingQueryPipeline(io.pipeline, context, stage, insert_query.returning_select, insert_query.source_select_settings_ast);
+    io.pipeline = buildReturningSelectPipeline(insert_query.returning_select, context, io.query_metadata_cache, insert_query.source_select_settings_restore_ast);
+    setupPullingQueryPipeline(io.pipeline, context, stage, insert_query.returning_select, insert_query.source_select_settings_restore_ast);
     if (io.finish_callback_state)
         io.finish_callback_state->insert_returning_result_as_select = true;
     return true;
@@ -317,7 +301,7 @@ QueryPipeline buildInsertReturningPipeline(
     const ASTPtr & returning_select,
     ContextPtr context,
     QueryMetadataCachePtr & out_metadata_cache,
-    const ASTPtr & source_select_settings_ast)
+    const ASTPtr & source_select_settings_restore_ast)
 {
     if (insert_pipeline.pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "INSERT pipeline must be completed before wrapping with RETURNING");
@@ -337,7 +321,7 @@ QueryPipeline buildInsertReturningPipeline(
             std::move(callback), context->getSettingsRef()[Setting::interactive_delay] / 1000);
     insert_executor.execute();
 
-    return buildReturningSelectPipeline(returning_select, context, out_metadata_cache, source_select_settings_ast);
+    return buildReturningSelectPipeline(returning_select, context, out_metadata_cache, source_select_settings_restore_ast);
 }
 
 }

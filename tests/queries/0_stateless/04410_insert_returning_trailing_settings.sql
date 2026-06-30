@@ -47,6 +47,17 @@ RETURNING (SELECT number FROM numbers(10) ORDER BY number);
 
 SELECT count() FROM t_ret_settings;
 
+-- Per-query INSERT settings must be restored for RETURNING even when source-only settings use same names.
+SELECT 'query settings preserved for returning';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings
+SETTINGS max_result_rows = 5, result_overflow_mode = 'break'
+SELECT number FROM numbers(10)
+SETTINGS max_result_rows = 1, result_overflow_mode = 'break'
+RETURNING (SELECT number FROM numbers(10) ORDER BY number);
+
+SELECT count() FROM t_ret_settings;
+
 -- Trailing source SETTINGS must not affect RETURNING SELECT normalization/planning.
 -- Session UNION mode is ALL; trailing source settings set DISTINCT only for source phase.
 SELECT 'trailing settings do not affect returning planning';
