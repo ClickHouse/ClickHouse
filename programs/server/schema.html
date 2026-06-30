@@ -738,28 +738,39 @@ function resetCredentialsStatus() {
     for (const id of ['user', 'password']) $(id).classList.remove('ok', 'fail');
 }
 
-let checkCredentialsNum = 0;
-async function checkCredentials() {
-    const num = ++checkCredentialsNum;
-    /// The status must describe the *current* `url` / `user` / `password`. Snapshot the values
-    /// this probe is testing, so a result that arrives after they change - the user edits a
-    /// field, or `loadAll` runs with different credentials - cannot repaint the now-stale result.
+/// The credential status - and the offer to store credentials - must describe the values
+/// that were actually probed. Snapshot the `url` / `user` / `password` a request is about
+/// to use; the returned predicate reports whether the fields still hold those exact values,
+/// so a result that arrives after the user edits a field, or after another load runs with
+/// different credentials, cannot repaint or store the now-stale outcome. `chQuery` reads
+/// these fields synchronously when it builds the request, so the snapshot is exactly what
+/// was queried.
+function credentialSnapshot() {
     const url = $('url').value;
     const user = $('user').value;
     const password = $('password').value;
-    const isCurrent = () => num === checkCredentialsNum
-        && $('url').value === url && $('user').value === user && $('password').value === password;
+    return () => $('url').value === url && $('user').value === user && $('password').value === password;
+}
+
+let checkCredentialsNum = 0;
+async function checkCredentials() {
+    const num = ++checkCredentialsNum;
+    const isCurrent = credentialSnapshot();
+    /// A newer probe also supersedes this one, even when the field values are unchanged.
+    const stillProbing = () => num === checkCredentialsNum && isCurrent();
     try {
         const res = await chQuery('SELECT version() AS v');
-        if (isCurrent()) setCredentialStatus(true, res.rows[0] && res.rows[0].v);
+        if (stillProbing()) setCredentialStatus(true, res.rows[0] && res.rows[0].v);
     } catch (e) {
-        if (isCurrent()) setCredentialStatus(false);
+        if (stillProbing()) setCredentialStatus(false);
     }
 }
 
-for (const id of ['user', 'password']) {
+for (const id of ['url', 'user', 'password']) {
+    /// Editing any connection field invalidates the displayed status, including the `url`:
+    /// a green probe against one server must not stay green after the target changes.
     $(id).addEventListener('input', resetCredentialsStatus);
-    /// Credentials are usually pasted; re-check shortly after so we read the new value.
+    /// The URL and credentials are usually pasted; re-check shortly after so we read the new value.
     $(id).addEventListener('paste', () => setTimeout(checkCredentials, 100));
 }
 
@@ -928,18 +939,24 @@ async function loadAll() {
         FROM system.view_refreshes
     `;
 
+    /// Snapshot the credentials this load uses, so a result that arrives after the fields
+    /// change cannot paint or store a stale outcome (see `credentialSnapshot`).
+    const isCurrent = credentialSnapshot();
     let tablesRes;
     try {
         tablesRes = await chQuery(tablesQ);
     } catch (e) {
         setStatus('Failed: ' + e.message, true);
-        setCredentialStatus(false);
+        if (isCurrent()) setCredentialStatus(false);
         return;
     }
     /// The probe succeeded, so the credentials are valid: reflect that, and offer to
-    /// remember them through the Credential Management API.
-    setCredentialStatus(true);
-    storeCredentials();
+    /// remember them through the Credential Management API - but only while the fields
+    /// still hold the values that were actually validated.
+    if (isCurrent()) {
+        setCredentialStatus(true);
+        storeCredentials();
+    }
 
     let columnsRes = { rows: [] };
     try { columnsRes = await chQuery(columnsQ); } catch (e) { console.warn(e); }
