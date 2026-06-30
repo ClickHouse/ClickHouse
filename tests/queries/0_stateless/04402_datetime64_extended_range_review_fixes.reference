@@ -10,3 +10,8 @@
 1	1	2
 -- dateDiff week on out-of-range (pre-1900) dates uses floor: matches the in-range analog 400 years later
 1	12
+-- numeric toDateTime64 saturates per-scale instead of throwing DECIMAL_OVERFLOW (ticks are stored in Int64)
+1	1	1
+-- scale 0 numeric conversion reaches the full [0000, 9999] range
+1	1
+-- throw overflow mode raises the proper out-of-range error (not DECIMAL_OVERFLOW) past the tick range

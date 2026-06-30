@@ -31,3 +31,19 @@ SELECT '-- dateDiff week on out-of-range (pre-1900) dates uses floor: matches th
 SELECT dateDiff('week', toDateTime64('1850-03-11 00:00:00', 0, 'UTC'), toDateTime64('1850-06-03 00:00:00', 0, 'UTC')) =
        dateDiff('week', toDateTime64('2250-03-11 00:00:00', 0, 'UTC'), toDateTime64('2250-06-03 00:00:00', 0, 'UTC')),
        dateDiff('week', toDateTime64('1850-03-11 00:00:00', 0, 'UTC'), toDateTime64('1850-06-03 00:00:00', 0, 'UTC'));
+
+SELECT '-- numeric toDateTime64 saturates per-scale instead of throwing DECIMAL_OVERFLOW (ticks are stored in Int64)';
+-- The whole-seconds range shrinks with the scale: scale 8 tops out near year 4892 and scale 9 near 2262-04-11.
+-- A value past the tick range must clamp (under the non-throwing overflow modes) rather than fail in DecimalUtils.
+SELECT toDateTime64(300000000000, 9, 'UTC') = toDateTime64(9223372036, 9, 'UTC'),
+       toDateTime64(300000000000, 8, 'UTC') = toDateTime64(92233720368, 8, 'UTC'),
+       toDateTime64(-300000000000, 9, 'UTC') = toDateTime64(-9223372036, 9, 'UTC')
+SETTINGS date_time_overflow_behavior = 'saturate';
+
+SELECT '-- scale 0 numeric conversion reaches the full [0000, 9999] range';
+SELECT toYear(toDateTime64(253402300799, 0, 'UTC')) = 9999,
+       toYear(toDateTime64(-62167219200, 0, 'UTC')) = 0;
+
+SELECT '-- throw overflow mode raises the proper out-of-range error (not DECIMAL_OVERFLOW) past the tick range';
+SELECT toDateTime64(300000000000, 9, 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime64(-300000000000, 9, 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
