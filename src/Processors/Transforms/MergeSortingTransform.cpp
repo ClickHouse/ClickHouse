@@ -147,7 +147,7 @@ MergeSortingTransform::MergeSortingTransform(
 {
 }
 
-IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
+Processors MergeSortingTransform::expandPipeline()
 {
     if (processors.size() > 2)
     {
@@ -173,7 +173,7 @@ IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
         /// Generate
         static_cast<MergingSortedTransform &>(*external_merging_sorted).setHaveAllInputs();
 
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return std::move(processors);
 }
 
 void MergeSortingTransform::consume(Chunk chunk)
@@ -352,12 +352,7 @@ void MergeSortingTransform::remerge()
     if (threshold_tracker && sum_rows_in_blocks == limit && chunks.size() == 1)
     {
         Field value;
-        /// Chunk columns follow `header_without_constants` order; the first sort column
-        /// is not necessarily at position 0 (e.g. lazy materialization can place a
-        /// WHERE-only column before it). Resolve its actual position by name.
-        chassert(!description.empty());
-        size_t sort_column_position = header_without_constants.getPositionByName(description.front().column_name);
-        chunks[0].getColumns()[sort_column_position]->get(limit - 1, value);
+        chunks[0].getColumns()[0]->get(limit - 1, value);
         threshold_tracker->testAndSet(value);
         LOG_DEBUG(log, "TopK threshold tracker is updated");
     }
