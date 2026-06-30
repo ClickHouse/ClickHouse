@@ -163,6 +163,10 @@ ASTPtr ASTFunction::clone() const
 
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
+    if (order_by_combinator_columns) {
+        res->order_by_combinator_columns = order_by_combinator_columns->clone();
+        res->children.push_back(res->order_by_combinator_columns);
+    }
 
     if (window_definition)
     {
@@ -873,6 +877,17 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             argument->format(ostr, settings, state, argument_frame);
         }
 
+    }
+
+    /// Aggregate function combinator: ORDER BY ... [LIMIT N] inside the function arguments.
+    /// Example: groupArray(value ORDER BY ts DESC LIMIT 10).
+    /// Must be printed BEFORE the closing parenthesis so the syntactic sugar round-trips correctly.
+    if (order_by_combinator && order_by_combinator_columns)
+    {
+        ostr << " ORDER BY ";
+        order_by_combinator_columns->format(ostr, settings, state, frame);
+        if (order_by_combinator_limit.has_value())
+            ostr << " LIMIT " << *order_by_combinator_limit;
     }
 
     if (need_parens)
