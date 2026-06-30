@@ -243,6 +243,13 @@ private:
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
 
     LoggerPtr log = getLogger("ReadPipeline");
+
+    /// Whether the memory (page) cache stage will actually be applied. It is requested via
+    /// `needMemoryCache`, but is skipped for objects of unknown size: the page cache addresses
+    /// the file by absolute offset and reads `getFileSize()` up front, which is impossible for an
+    /// object served without `Content-Length`. The source stages gate `use_external_buffer` on
+    /// this so the inner reader is not left in external-buffer mode without a driver.
+    bool usesMemoryCache() const;
 };
 
 }
