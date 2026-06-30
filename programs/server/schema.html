@@ -902,7 +902,18 @@ function engineLabel(n) {
     return n.engine || '';
 }
 
+/// Monotonic load generation. `connectionSnapshot` binds a batch's requests — and its
+/// credential status — to one server, but two loads can still race over the *rendered* result:
+/// a same-origin auto-load can start, the user can edit `url` / credentials and press `Load`,
+/// and if the newer load renders first the older batch's awaited queries can still return and
+/// overwrite `state` and the graph with data from the superseded connection. Each load captures
+/// the generation it started in and applies its results only while it is still the latest one,
+/// so a superseded batch quietly drops its stale `state` / status / heat-map / render.
+let loadGeneration = 0;
+
 async function loadAll() {
+    const myGeneration = ++loadGeneration;
+    const isLatestLoad = () => myGeneration === loadGeneration;
     setStatus('Loading tables...');
     /// Skip server-internal databases; they pollute the graph and aren't user-facing.
     const sysFilter = "WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')";
@@ -961,7 +972,7 @@ async function loadAll() {
     try {
         tablesRes = await chQuery(tablesQ, conn);
     } catch (e) {
-        setStatus('Failed: ' + e.message, true);
+        if (isLatestLoad()) setStatus('Failed: ' + e.message, true);
         if (conn.isCurrent()) setCredentialStatus(false);
         return;
     }
@@ -984,6 +995,10 @@ async function loadAll() {
         console.info('system.view_refreshes not available:', e.message);
     }
 
+    /// A newer load started while these queries were in flight — it owns the view now, so
+    /// applying this batch would render a schema from a superseded (possibly different) connection.
+    if (!isLatestLoad()) return;
+
     state.tables = tablesRes.rows;
     state.columnsByTable = new Map();
     for (const c of columnsRes.rows) {
@@ -1005,7 +1020,8 @@ async function loadAll() {
     setStatus(`Loaded ${state.tables.length} tables, ${columnsRes.rows.length} columns.`);
     buildGraph();
     updateDbFilter();
-    await loadViewsLoad(conn);
+    await loadViewsLoad(conn, myGeneration);
+    if (!isLatestLoad()) return;
     render();
 }
 
@@ -1013,11 +1029,16 @@ async function loadAll() {
 /// lookback window and stores it on `state.loadByMv` / `state.loadByEdge`. Best-effort:
 /// if the table is empty, missing, or query_views_log is disabled, we silently fall back
 /// to an empty heat-map.
-async function loadViewsLoad(conn) {
+async function loadViewsLoad(conn, generation) {
     /// Reuse the load batch's captured connection when called from `loadAll`; when the user
     /// changes the lookback period interactively, capture the connection at that point so this
     /// query, too, is bound to one target (see `connectionSnapshot`).
     conn = conn || connectionSnapshot();
+    /// Reuse the caller's load generation (a `loadAll` batch) or, for a standalone reload from
+    /// the lookback selector, read the current one without bumping it — a standalone heat-map
+    /// reload must not cancel an in-flight `loadAll`, but a newer `loadAll` does supersede it.
+    if (generation === undefined) generation = loadGeneration;
+    const isLatestLoad = () => generation === loadGeneration;
     state.loadByMv = new Map();
     state.loadByEdge = new Map();
     state.loadMax = { byMv: {}, byEdge: {} };
@@ -1059,11 +1080,16 @@ async function loadViewsLoad(conn) {
         rows = res.rows;
     } catch (e) {
         console.info('system.query_views_log not available:', e.message);
-        setStatus(`Loaded ${state.tables.length} tables, ${state.nodes.size} nodes (query_views_log unavailable).`);
+        if (isLatestLoad())
+            setStatus(`Loaded ${state.tables.length} tables, ${state.nodes.size} nodes (query_views_log unavailable).`);
         return;
     }
 
-    const metricKeys = ['executions', 'total_duration_ms', 'read_rows', 'read_bytes',
+    /// A newer load started while query_views_log was loading; it owns `state` now, so this
+    /// stale heat-map must not overwrite the newer one (`state.loadByMv` / `loadByEdge` / `loadMax`).
+    if (!isLatestLoad()) return;
+
+    const metricKeys =['executions', 'total_duration_ms', 'read_rows', 'read_bytes',
                         'written_rows', 'written_bytes', 'peak_memory_usage'];
     const maxByMv = {}, maxByEdge = {};
     for (const m of metricKeys) { maxByMv[m] = 0; maxByEdge[m] = 0; }
