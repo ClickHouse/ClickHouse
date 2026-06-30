@@ -54,6 +54,7 @@ namespace Setting
 {
     extern const SettingsBool cloud_mode;
     extern const SettingsBool s3queue_migrate_old_metadata_to_buckets;
+    extern const SettingsBool s3queue_allow_unsafe_alter;
     extern const SettingsFloat s3queue_keeper_fault_injection_probability;
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
@@ -384,6 +385,16 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
 
         if (change.name == "processing_threads_num")
         {
+            if (!context->getSettingsRef()[Setting::s3queue_allow_unsafe_alter])
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Changing `processing_threads_num` of an existing table reshards the work "
+                    "distribution and can break the queue (files may be skipped or processed more "
+                    "than once). To allow it set `s3queue_allow_unsafe_alter = 1` and make sure "
+                    "you understand the consequences");
+            }
+
             const auto value = change.value.safeGet<UInt64>();
             if (table_metadata.processing_threads_num == value)
             {
@@ -446,12 +457,16 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                     "Changing `buckets` setting is allowed only for Ordered mode");
             }
 
-            if (!context->getSettingsRef()[Setting::s3queue_migrate_old_metadata_to_buckets])
+            if (!context->getSettingsRef()[Setting::s3queue_migrate_old_metadata_to_buckets]
+                && !context->getSettingsRef()[Setting::s3queue_allow_unsafe_alter])
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Changing `buckets` setting is allowed only for migration of old metadata structure. "
-                    "To allow migration set s3queue_migrate_old_metadata_to_buckets = 1");
+                    "Changing `buckets` reshards the work distribution and can break the queue "
+                    "(files may be skipped or processed more than once). It is normally allowed "
+                    "only for migration of old metadata structure (set "
+                    "s3queue_migrate_old_metadata_to_buckets = 1). To change it in any other case "
+                    "set `s3queue_allow_unsafe_alter = 1` and make sure you understand the consequences");
             }
 
             const auto value = change.value.safeGet<UInt64>();
@@ -1474,8 +1489,6 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
             cleanup_interval_min_ms = change.value.safeGet<UInt64>();
         if (change.name == "cleanup_interval_max_ms")
             cleanup_interval_max_ms = change.value.safeGet<UInt64>();
-        if (change.name == "use_persistent_processing_nodes")
-            use_persistent_processing_nodes = change.value.safeGet<bool>();
         if (change.name == "persistent_processing_node_ttl_seconds")
             persistent_processing_node_ttl_seconds = change.value.safeGet<UInt64>();
     }
@@ -1573,7 +1586,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     {
         const auto & node = node_with_version.first;
         const auto version = node_with_version.second;
-        LOG_TRACE(log, "Removing stale processing node: {}", node);
+        LOG_INFO(log, "Removing stale processing node: {}", node);
         zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {

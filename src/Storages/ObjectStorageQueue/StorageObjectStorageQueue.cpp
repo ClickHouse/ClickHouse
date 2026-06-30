@@ -71,6 +71,7 @@ namespace Setting
 {
     extern const SettingsString s3queue_default_zookeeper_path;
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
+    extern const SettingsBool s3queue_allow_unsafe_alter;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
@@ -1186,7 +1187,6 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "min_insert_block_size_bytes_for_materialized_views",
     "cleanup_interval_max_ms",
     "cleanup_interval_min_ms",
-    "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
     "after_processing_retries",
     "after_processing_move_uri",
@@ -1220,7 +1220,6 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "min_insert_block_size_bytes_for_materialized_views",
     "cleanup_interval_max_ms",
     "cleanup_interval_min_ms",
-    "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
     "after_processing_retries",
     "after_processing_move_uri",
@@ -1329,7 +1328,12 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
                 old_settings->begin(), old_settings->end(),
                 [&](const SettingChange & change) { return change.name == setting.name; });
 
-            setting_changed = it != old_settings->end() && it->value != setting.value;
+            /// A setting missing from `old_settings` (not set explicitly at creation) but present in
+            /// `new_settings` is being introduced by this ALTER, so it counts as changed. This must
+            /// match the same condition in `alter`, otherwise the check below is bypassed while
+            /// `alter` still applies the change (e.g. `MODIFY SETTING deduplication_v2 = 0` on a
+            /// table that did not set it at creation).
+            setting_changed = it == old_settings->end() || it->value != setting.value;
         }
 
         if (setting_changed)
@@ -1342,6 +1346,16 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Changing setting {} is not allowed for {} mode of {}",
                     setting.name, magic_enum::enum_name(mode), getName());
+            }
+
+            if (setting.name == "deduplication_v2"
+                && !local_context->getSettingsRef()[Setting::s3queue_allow_unsafe_alter])
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Changing `deduplication_v2` on an existing table can break deduplication "
+                    "and produce duplicate rows. Set `s3queue_allow_unsafe_alter = 1` if you "
+                    "understand the consequences");
             }
 
             /// Some settings affect the work of background processing thread,
@@ -1357,6 +1371,26 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
                         "only with detached dependencies (dependencies count: {})",
                         setting.name, dependencies_count);
                 }
+            }
+        }
+    }
+
+    /// `RESET SETTING` removes the setting from `new_settings`, so the loop above never sees it, but
+    /// `alter` re-derives the default and applies it. Re-deriving an unsafe setting (e.g.
+    /// `RESET deduplication_v2` -> default `true`) is as unsafe as modifying it, so it must obey the
+    /// same opt-in.
+    for (const auto & command : alter_commands)
+    {
+        for (const auto & reset_name : command.settings_resets)
+        {
+            if (reset_name == "deduplication_v2"
+                && !local_context->getSettingsRef()[Setting::s3queue_allow_unsafe_alter])
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Resetting `deduplication_v2` on an existing table can break deduplication and "
+                    "produce duplicate rows. Set `s3queue_allow_unsafe_alter = 1` if you understand "
+                    "the consequences");
             }
         }
     }

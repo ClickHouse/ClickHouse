@@ -180,22 +180,20 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             zk_retry.retryLoop([&]
             {
                 auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-                if (zk_retry.isRetry() || uncertain_commit)
+                /// Never remove a processing node we no longer own. This covers:
+                /// - a retry after a possible "fail after operation" (a previous attempt removed the
+                ///   node, but we did not get confirmation, and another processor recreated it) and
+                ///   an uncertain commit;
+                /// - the persistent processing node being removed by the TTL cleanup while still
+                ///   held (a long batch that did not commit, and thus did not heartbeat, in time)
+                ///   and possibly re-acquired by another processor.
+                /// All of these are expected, recoverable conditions, not logical errors, so the
+                /// ownership check has to be unconditional here.
+                if (!checkProcessingOwnership(zk_client))
                 {
-                    /// It is possible that we fail "after operation",
-                    /// e.g. we successfully removed the node, but did not get confirmation,
-                    /// but then if we retry - we can remove a newly recreated node,
-                    /// therefore avoid this with this check.
-                    if (!checkProcessingOwnership(zk_client))
-                    {
-                        LOG_TEST(log, "Will not remove processing node, ownership changed");
-                        code = Coordination::Error::ZOK;
-                        return;
-                    }
-                }
-                else
-                {
-                    chassert(checkProcessingOwnership(zk_client));
+                    LOG_TEST(log, "Will not remove processing node, ownership changed or node is gone");
+                    code = Coordination::Error::ZOK;
+                    return;
                 }
                 code = zk_client->tryRemove(processing_node_path);
             });
@@ -398,22 +396,17 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-        if (zk_retry.isRetry())
+        /// Never act on a processing node we no longer own. Besides a retry after a possible "fail
+        /// after operation" (a previous attempt removed the node and another processor recreated
+        /// it), the persistent processing node can be removed by the TTL cleanup while still held
+        /// (a long batch that did not commit, and thus did not heartbeat, in time) and possibly
+        /// re-acquired by another processor. Both are recoverable, so the ownership check has to be
+        /// unconditional here instead of asserting.
+        if (!checkProcessingOwnership(zk_client))
         {
-            /// It is possible that we fail "after operation",
-            /// e.g. we successfully removed the node, but did not get confirmation,
-            /// but then if we retry - we can remove a newly recreated node,
-            /// therefore avoid this with this check.
-            if (!checkProcessingOwnership(zk_client))
-            {
-                LOG_TEST(log, "Will not remove processing node, ownership changed");
-                code = Coordination::Error::ZOK;
-                return;
-            }
-        }
-        else
-        {
-            chassert(checkProcessingOwnership(zk_client));
+            LOG_TEST(log, "Will not remove processing node, ownership changed or node is gone");
+            code = Coordination::Error::ZOK;
+            return;
         }
         code = zk_client->tryMulti(requests, responses);
     });

@@ -721,6 +721,13 @@ Default zookeeper path prefix for S3Queue engine
     DECLARE(Bool, s3queue_migrate_old_metadata_to_buckets, false, R"(
 Migrate old metadata structure of S3Queue table to a new one
 )", 0) \
+    DECLARE(Bool, s3queue_allow_unsafe_alter, false, R"(
+Allow `ALTER TABLE ... MODIFY SETTING` of S3Queue/ObjectStorageQueue settings that are unsafe to change on a table that has already processed (or is processing) files, specifically `processing_threads_num`, `buckets` and `deduplication_v2`.
+
+`processing_threads_num` and `buckets` are part of the table metadata stored in Keeper and define how files are sharded across processing threads and replicas; they are shared across all replicas and assumed to be stable for the lifetime of the table. `deduplication_v2` defines the deduplication token scheme. Changing any of them reshards the work distribution or changes deduplication, and depending on the transition this can break the queue: files may be silently skipped (never processed) or processed more than once (duplicated).
+
+Disabled by default. Enable it only for a single statement, and only if you fully understand the consequences for your specific setup.
+)", 0) \
     DECLARE(Bool, s3queue_enable_logging_to_s3queue_log, false, R"(
 Enable writing to system.s3queue_log. The value can be overwritten per table with table settings
 )", 0) \
