@@ -216,16 +216,12 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
             ++columms_start_pos;
         }
         String column_str;
-        String function_name;
         std::vector<String> tokens;
 
         while (columms_start_pos < end_pos)
         {
             if (!KQLOperators::convert(tokens, columms_start_pos))
             {
-                if (columms_start_pos->type == TokenType::BareWord && function_name.empty())
-                    function_name = String(columms_start_pos->begin, columms_start_pos->end);
-
                 auto expr = IParserKQLFunction::getExpression(columms_start_pos);
                 tokens.push_back(expr);
             }
@@ -256,57 +252,15 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
         if (has_alias)
         {
             --equal_pos;
-            if (start_pos == equal_pos)
-            {
-                String new_column_str;
-                if (start_pos->type != TokenType::BareWord)
-                    throw Exception(
-                        ErrorCodes::SYNTAX_ERROR, "{} is not a valid alias", std::string_view(start_pos->begin, start_pos->end));
+            if (start_pos != equal_pos)
+                throw Exception(
+                    ErrorCodes::SYNTAX_ERROR, "{} is not a valid alias", std::string_view(start_pos->begin, equal_pos->end));
 
-                if (function_name == "array_sort_asc" || function_name == "array_sort_desc")
-                    new_column_str = fmt::format("{0}[1] AS {1}", column_str, String(start_pos->begin, start_pos->end));
-                else
-                    new_column_str = fmt::format("{0} AS {1}", column_str, String(start_pos->begin, start_pos->end));
+            if (start_pos->type != TokenType::BareWord)
+                throw Exception(
+                    ErrorCodes::SYNTAX_ERROR, "{} is not a valid alias", std::string_view(start_pos->begin, start_pos->end));
 
-                columns.push_back(new_column_str);
-            }
-            else
-            {
-                String whole_alias(start_pos->begin, equal_pos->end);
-
-                if (function_name != "array_sort_asc" && function_name != "array_sort_desc")
-                    throw Exception(ErrorCodes::SYNTAX_ERROR, "{} is not a valid alias", whole_alias);
-
-                if (start_pos->type != TokenType::OpeningRoundBracket && equal_pos->type != TokenType::ClosingRoundBracket)
-                    throw Exception(ErrorCodes::SYNTAX_ERROR, "{} is not a valid alias for {}", whole_alias, function_name);
-
-                String alias_inside;
-                bool comma_meet = false;
-                size_t index = 1;
-                ++start_pos;
-                while (start_pos < equal_pos)
-                {
-                    if (start_pos->type == TokenType::Comma)
-                    {
-                        alias_inside.clear();
-                        if (comma_meet)
-                            throw Exception(ErrorCodes::SYNTAX_ERROR, "{} has invalid alias for {}", whole_alias, function_name);
-                        comma_meet = true;
-                    }
-                    else
-                    {
-                        if (!alias_inside.empty() || start_pos->type != TokenType::BareWord)
-                            throw Exception(ErrorCodes::SYNTAX_ERROR, "{} has invalid alias for {}", whole_alias, function_name);
-
-                        alias_inside = String(start_pos->begin, start_pos->end);
-                        auto new_column_str = fmt::format("{0}[{1}] AS {2}", column_str, index, alias_inside);
-                        columns.push_back(new_column_str);
-                        comma_meet = false;
-                        ++index;
-                    }
-                    ++start_pos;
-                }
-            }
+            columns.push_back(fmt::format("{0} AS {1}", column_str, String(start_pos->begin, start_pos->end)));
         }
         else
             columns.push_back(column_str);
