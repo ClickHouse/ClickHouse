@@ -146,3 +146,14 @@ FROM numbers(4)
 SETTINGS engine_file_truncate_on_insert = 1, allow_experimental_nullable_tuple_type = 1"
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${NTUP_FILE}', CSVWithNames, 'User Nullable(Tuple(ID UInt64, Name String))')
 SETTINGS allow_experimental_nullable_tuple_type = 1"
+
+# A Nullable(Tuple()) value is written as a single quoted field ("()"), so a genuinely empty
+# input field is no longer a valid tuple value: with input_format_csv_empty_as_default = 1
+# (the default) it is the nullable default (NULL), like every other Nullable type. The quoted
+# "()" / "(5)" fields still parse into the empty / non-empty tuple value, so it is not always NULL.
+echo '-- empty input field into Nullable(Tuple()): empty_as_default=1 (default) gives NULL, "()" parses'
+printf '\n"()"\n' | ${CLICKHOUSE_LOCAL} --query "SELECT c0 FROM file('/dev/stdin', CSV, 'c0 Nullable(Tuple())')
+SETTINGS allow_experimental_nullable_tuple_type = 1"
+echo '-- empty input field into Nullable(Tuple(Int32)): NULL, "(5)" parses'
+printf '\n"(5)"\n' | ${CLICKHOUSE_LOCAL} --query "SELECT c0 FROM file('/dev/stdin', CSV, 'c0 Nullable(Tuple(a Int32))')
+SETTINGS allow_experimental_nullable_tuple_type = 1"
