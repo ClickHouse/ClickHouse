@@ -124,6 +124,25 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
     if (mode == TTLMode::RECOMPRESS && !recompression_codec)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'recompression_codec' is missing for RECOMPRESS mode during AST JSON deserialization");
 
+    /// Only `TTL ... TO DISK/VOLUME '<name>'` (mode `MOVE`) carries a destination. `ParserTTLElement`
+    /// produces exactly `DISK` or `VOLUME` with a non-empty name there; every other mode leaves the
+    /// destination at its default (`DELETE`, no name). Reject the parser-impossible shapes a malformed
+    /// `clickhouse_json` could carry: a non-`DISK`/`VOLUME` destination for `MOVE` (which would reach the
+    /// `LOGICAL_ERROR` branch in `formatImpl`), an empty `MOVE` destination name (mirrors the sibling
+    /// `MOVE_PARTITION` check in `ASTAlterCommand`), or any destination state on a non-`MOVE` mode.
+    if (mode == TTLMode::MOVE)
+    {
+        if (destination_type != DataDestinationType::DISK && destination_type != DataDestinationType::VOLUME)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "TTL MOVE requires a DISK or VOLUME 'destination_type' during AST JSON deserialization");
+        if (destination_name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "TTL MOVE requires a non-empty 'destination_name' during AST JSON deserialization");
+    }
+    else if (destination_type != DataDestinationType::DELETE || !destination_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'destination_type'/'destination_name' are only valid for TTL MOVE during AST JSON deserialization");
+
     /// `GROUP BY` is the only mode that carries `group_by_key`/`group_by_assignments`, and
     /// `ParserTTLElement` sets it only after parsing at least one grouping key. Reject the
     /// parser-impossible shapes: a `GROUP_BY` without keys (`formatImpl` would emit `GROUP BY ` with no

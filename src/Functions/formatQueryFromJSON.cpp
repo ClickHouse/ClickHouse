@@ -423,7 +423,7 @@ through their JSON AST form.
     }
     };
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, func_arguments, {}, returned_value, examples, {26, 6}, category};
+    FunctionDocumentation documentation = {description, syntax, func_arguments, {}, returned_value, examples, {26, 7}, category};
 
     factory.registerFunction<FunctionFormatQueryFromJSON>(documentation);
 }

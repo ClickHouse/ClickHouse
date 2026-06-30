@@ -214,6 +214,9 @@ void LocalConnection::sendQuery(
     /// dialect/gate the query was originally accepted with rather than the (possibly mutated) live ones.
     state->parsed_as_json_dialect = query_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
     state->allow_experimental_json_ast_dialect = query_context->getSettingsRef()[Setting::allow_experimental_json_ast_dialect];
+    state->json_ast_max_query_size = query_context->getSettingsRef()[Setting::max_query_size];
+    state->json_ast_max_depth = query_context->getSettingsRef()[Setting::max_ast_depth];
+    state->json_ast_max_elements = query_context->getSettingsRef()[Setting::max_ast_elements];
     state->query_scope_holder = QueryScope::create(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
@@ -257,14 +260,14 @@ void LocalConnection::sendQuery(
         /// except for plain `SET` queries which are still parsed with `ParserQuery` so
         /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
         /// without being locked into JSON-only input.
-        if (state->parsed_as_json_dialect && !isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]))
+        if (state->parsed_as_json_dialect && !isClickHouseJSONSetEscape(begin, end, state->json_ast_max_query_size))
         {
             if (!state->allow_experimental_json_ast_dialect)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Support for clickhouse_json dialect is disabled "
                     "(turn on setting 'allow_experimental_json_ast_dialect')");
 
-            const size_t max_query_size = settings[Setting::max_query_size];
+            const size_t max_query_size = state->json_ast_max_query_size;
             if (max_query_size != 0 && static_cast<size_t>(end - begin) > max_query_size)
                 throw Exception(ErrorCodes::SYNTAX_ERROR,
                     "Max query size exceeded (can be increased with the `max_query_size` setting)");
@@ -283,17 +286,17 @@ void LocalConnection::sendQuery(
             }
 
             parsed_query = IAST::createFromJSON(String(begin, json_end),
-                settings[Setting::max_ast_depth],
-                settings[Setting::max_ast_elements]);
+                state->json_ast_max_depth,
+                state->json_ast_max_elements);
 
             /// `createFromJSON` enforces depth/element limits via counters during construction,
             /// but some `readJSON` implementations build extra AST nodes (e.g. `ASTIdentifier`
             /// children from strings) that bypass those counters. Re-check the assembled AST,
             /// mirroring the server path (`checkASTSizeLimits` in `executeQuery`).
-            if (settings[Setting::max_ast_depth])
-                parsed_query->checkDepth(settings[Setting::max_ast_depth]);
-            if (settings[Setting::max_ast_elements])
-                parsed_query->checkSize(settings[Setting::max_ast_elements]);
+            if (state->json_ast_max_depth)
+                parsed_query->checkDepth(state->json_ast_max_depth);
+            if (state->json_ast_max_elements)
+                parsed_query->checkSize(state->json_ast_max_elements);
         }
         else
         {

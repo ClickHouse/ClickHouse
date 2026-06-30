@@ -370,14 +370,24 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ADD/MODIFY STATISTICS requires a TYPE list ('statistics_decl' must have 'types') during AST JSON deserialization");
             break;
-        case ASTAlterCommand::DROP_STATISTICS:
         case ASTAlterCommand::MATERIALIZE_STATISTICS:
-            require(statistics_decl, "statistics_decl");
-            /// `DROP`/`CLEAR`/`MATERIALIZE STATISTICS` are parsed with `ParserStatisticsDeclarationWithoutTypes`
-            /// (column list only), so a `TYPE` list is parser-impossible here.
-            if (statistics_decl->as<ASTStatisticsDeclaration &>().types)
+            /// `MATERIALIZE STATISTICS ALL` is parser-produced with a null declaration (`writeJSON` omits
+            /// it and `formatImpl` emits `ALL`); the column-list form carries one. Allow the null form, but
+            /// reject a `TYPE` list when a declaration is present (parser-impossible:
+            /// `ParserStatisticsDeclarationWithoutTypes`).
+            if (statistics_decl && statistics_decl->as<ASTStatisticsDeclaration &>().types)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "DROP/CLEAR/MATERIALIZE STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
+                    "MATERIALIZE STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
+            break;
+        case ASTAlterCommand::DROP_STATISTICS:
+            /// `CLEAR STATISTICS ALL` (`clear_statistics`) is parser-produced with a null declaration; plain
+            /// `DROP STATISTICS` and the non-`ALL` `CLEAR STATISTICS <cols>` form always carry a column-list
+            /// declaration. A `TYPE` list is parser-impossible for any of them.
+            if (!clear_statistics)
+                require(statistics_decl, "statistics_decl");
+            if (statistics_decl && statistics_decl->as<ASTStatisticsDeclaration &>().types)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "DROP/CLEAR STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
             break;
         case ASTAlterCommand::ADD_CONSTRAINT:
             require(constraint_decl, "constraint_decl");
@@ -396,11 +406,39 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         case ASTAlterCommand::DROP_DETACHED_PARTITION:
         case ASTAlterCommand::FORGET_PARTITION:
         case ASTAlterCommand::ATTACH_PARTITION:
-        case ASTAlterCommand::REPLACE_PARTITION:
-        case ASTAlterCommand::FETCH_PARTITION:
         case ASTAlterCommand::FREEZE_PARTITION:
-        case ASTAlterCommand::UNFREEZE_PARTITION:
             require(partition, "partition");
+            break;
+        case ASTAlterCommand::REPLACE_PARTITION:
+            /// `[ATTACH|REPLACE] PARTITION ... FROM [db.]table` — the parser always parses a source table
+            /// (`from_database` is optional, defaulting to the current database). `formatImpl` emits
+            /// `FROM <from_table>`, so an empty `from_table` would format a parser-impossible `FROM `.
+            require(partition, "partition");
+            if (from_table.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "REPLACE/ATTACH PARTITION FROM requires a non-empty 'from_table' during AST JSON deserialization");
+            break;
+        case ASTAlterCommand::FETCH_PARTITION:
+            /// `FETCH PART[ITION] ... FROM '<path>'` — the parser always requires the `FROM` path; an empty
+            /// path is never a valid source. `formatImpl` emits `FROM <from>`.
+            require(partition, "partition");
+            if (from.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "FETCH PARTITION requires a non-empty 'from' (FROM path) during AST JSON deserialization");
+            break;
+        case ASTAlterCommand::UNFREEZE_PARTITION:
+            /// `UNFREEZE PARTITION ... WITH NAME '<name>'` — unlike `FREEZE`, the parser requires `WITH NAME`,
+            /// so the backup name must be present. `formatImpl` only emits `WITH NAME` for a non-empty name.
+            require(partition, "partition");
+            if (with_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "UNFREEZE PARTITION requires a non-empty 'with_name' (WITH NAME) during AST JSON deserialization");
+            break;
+        case ASTAlterCommand::UNFREEZE_ALL:
+            /// `UNFREEZE WITH NAME '<name>'` — the parser requires `WITH NAME` for the all-partitions form too.
+            if (with_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "UNFREEZE requires a non-empty 'with_name' (WITH NAME) during AST JSON deserialization");
             break;
         case ASTAlterCommand::MOVE_PARTITION:
             require(partition, "partition");
@@ -753,6 +791,11 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << "ATTACH " << (part ? "PART " : "PARTITION ")
                      ;
         partition->format(ostr, settings, state, frame);
+        /// `ATTACH PART '...' FROM '<path>'` stores the source path in `from` (the parser only sets it for
+        /// the PART form). `PartitionCommand::parse` consumes it as `from_path`, so the path must be emitted
+        /// for the JSON round trip; otherwise the formatted SQL would hide the source the command uses.
+        if (part && !from.empty())
+            ostr << " FROM " << DB::quote << from;
     }
     else if (type == ASTAlterCommand::MOVE_PARTITION)
     {

@@ -709,17 +709,23 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     if (auto tables_child = r.readChildOfType<ASTTablesInSelectQuery>("tables"))
         this->setExpression(Expression::TABLES, std::move(tables_child));
 
-    /// Column `aliases` (`SELECT ... (a, b)`) is an `ASTExpressionList` of `ASTIdentifier`;
+    /// Both column `aliases` (`SELECT ... (a, b)`) and `cte_aliases` (`WITH (a, b) AS (...)`) are
+    /// parser-produced as an `ASTExpressionList` of `ASTIdentifier` (`ParserAliasesExpressionList`).
     /// `QueryTreeBuilder::buildSelectWithUnionExpression` does `aliases->as<ASTExpressionList &>()`
-    /// then `column_alias->as<ASTIdentifier &>()`, so validate both layers here.
-    if (auto aliases_child = r.readChildOfType<ASTExpressionList>("aliases"))
+    /// then `column_alias->as<ASTIdentifier &>()`, so validate both layers here for either list.
+    auto setIdentifierList = [&](const char * key, ASTSelectQuery::Expression expr, const char * what)
     {
-        for (const auto & alias : aliases_child->children)
-            if (!alias || !alias->as<ASTIdentifier>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "SELECT column aliases must be identifiers during AST JSON deserialization");
-        this->setExpression(Expression::ALIASES, std::move(aliases_child));
-    }
-    setExpr("cte_aliases", Expression::CTE_ALIASES);
+        if (auto list_child = r.readChildOfType<ASTExpressionList>(key))
+        {
+            for (const auto & alias : list_child->children)
+                if (!alias || !alias->as<ASTIdentifier>())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} must be identifiers during AST JSON deserialization", what);
+            this->setExpression(expr, std::move(list_child));
+        }
+    };
+
+    setIdentifierList("aliases", Expression::ALIASES, "SELECT column aliases");
+    setIdentifierList("cte_aliases", Expression::CTE_ALIASES, "CTE column aliases");
     setExpr("prewhere", Expression::PREWHERE);
     setExpr("where", Expression::WHERE);
     setExprList("group_by", Expression::GROUP_BY);
