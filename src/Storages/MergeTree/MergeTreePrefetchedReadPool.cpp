@@ -29,7 +29,6 @@ namespace Setting
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 filesystem_prefetch_step_bytes;
     extern const SettingsUInt64 filesystem_prefetch_step_marks;
-    extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
 }
 
@@ -354,6 +353,19 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
 
         part_stat.approx_size_of_mark = read_info.approx_size_of_mark;
 
+        /// Account for the effective buffer each prefetched reader actually allocates, so
+        /// `filesystem_prefetch_max_memory_usage` bounds real memory. The pool serves both remote and
+        /// local parts (the latter when `allow_prefetched_read_pool_for_local_filesystem` is enabled),
+        /// and the two paths allocate from different settings: a remote reader uses
+        /// `max(buffer_size, large_buffer_size)` (`DiskObjectStorage` may raise the buffer to the larger
+        /// of the two), while a local reader uses `local_fs_settings.buffer_size`. Charge each part by
+        /// the buffer its own storage will allocate, otherwise a local prefetch could be admitted on a
+        /// smaller remote estimate while allocating a larger local buffer (or vice versa).
+        const auto & read_settings = reader_settings.read_settings;
+        const size_t effective_buffer_size = is_part_on_remote_disk[i]
+            ? std::max(read_settings.remote_fs_settings.buffer_size, read_settings.remote_fs_settings.large_buffer_size)
+            : read_settings.local_fs_settings.buffer_size;
+
         auto update_stat_for_column = [&](const auto & column_name)
         {
             size_t column_size = 0;
@@ -366,13 +378,13 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
                     column_size = read_info.data_part->getColumnSize(column->getNameInStorage()).data_compressed;
             }
 
-            part_stat.estimated_memory_usage_for_single_prefetch += std::min<size_t>(column_size, settings[Setting::prefetch_buffer_size]);
+            part_stat.estimated_memory_usage_for_single_prefetch += std::min<size_t>(column_size, effective_buffer_size);
             ++part_stat.required_readers_num;
         };
 
         /// adjustBufferSize(), which is done in MergeTreeReaderStream and MergeTreeReaderCompact,
         /// lowers buffer size if file size (or required read range) is less. So we know that the
-        /// settings[Setting::prefetch_buffer_size] will be lowered there, therefore we account it here as well.
+        /// prefetch buffer size will be lowered there, therefore we account it here as well.
         /// But here we make a more approximate lowering (because we do not have loaded marks yet),
         /// while in adjustBufferSize it will be presize.
         for (const auto & column : read_info.task_columns.columns)
