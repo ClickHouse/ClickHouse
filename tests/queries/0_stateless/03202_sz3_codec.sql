@@ -396,6 +396,10 @@ CREATE TABLE tab_pk_codec (x Float64 CODEC(SZ3)) ENGINE = MergeTree ORDER BY x S
 INSERT INTO tab_pk_codec VALUES (1.5); -- { serverError BAD_ARGUMENTS }
 DROP TABLE tab_pk_codec;
 
+-- A lossy TTL recompression codec is rejected when the table is created, not later in a background merge
+CREATE TABLE tab_ttl_codec (d Date, x Float64) ENGINE = MergeTree ORDER BY tuple()
+    TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(SZ3); -- { serverError BAD_ARGUMENTS }
+
 SELECT 'A compression block size that is not a multiple of the float width is rejected';
 -- SZ3 compresses whole values. `CompressedWriteBuffer` chunks the column stream into compressed blocks by the
 -- `max_compress_block_size` byte count, so a value is split across two blocks when that setting is not a

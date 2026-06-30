@@ -188,6 +188,18 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                         "whose keys would be corrupted by lossy compression",
                         codec_family_name, column_type->getName());
 
+                /// Lossy codecs (e.g. SZ3) reinterpret the raw bytes as floating-point values, so they can only
+                /// be applied to a known floating-point column. The marks, primary key, default and TTL
+                /// recompression codec settings all validate with a null data type; reject a lossy codec here so
+                /// the misconfiguration is reported when the metadata is created, instead of being accepted and
+                /// then failing later in a background merge or part write.
+                if (result_codec->isLossyCompression() && !column_type)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} is lossy and can only be applied to Float32/Float64 columns (or arrays/tuples/"
+                        "nullables of them); it cannot be used as a marks, primary key, default or TTL recompression "
+                        "codec, or in any other context where the column data type is unknown",
+                        codec_family_name);
+
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
             }
 
