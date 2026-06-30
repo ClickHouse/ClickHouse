@@ -1465,7 +1465,7 @@ class QueryResultElement extends HTMLElement
                 }
 
                 /* Icon at the right side of a column header to switch the color coding mode.
-                   Visible only while the header is hovered or, on touch devices, pressed (:active),
+                   On devices with a hovering pointer it appears only while the header is hovered,
                    so it stays out of the way otherwise. Sits just left of the resizer. */
                 .colorize-toggle
                 {
@@ -1480,9 +1480,21 @@ class QueryResultElement extends HTMLElement
                     user-select: none;
                 }
 
-                th:hover .colorize-toggle, th:active .colorize-toggle
+                th:hover .colorize-toggle
                 {
                     display: inline-block;
+                }
+
+                /* Touch / coarse-pointer devices have no hover, and a hidden (display: none) icon is
+                   not hit-testable: a tap would land on the th, never reaching the icon's click
+                   handler, so the color switch could not be activated at all. Keep the icon always
+                   visible there, which makes it directly tappable. */
+                @media (hover: none), (pointer: coarse)
+                {
+                    .colorize-toggle
+                    {
+                        display: inline-block;
+                    }
                 }
 
                 /* A faint dimming on hover, since the colorful emoji cannot take a text color. */
