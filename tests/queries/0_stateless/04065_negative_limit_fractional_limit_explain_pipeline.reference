@@ -2,69 +2,69 @@
 
 -- Negative limit
 SELECT explain FROM (EXPLAIN actions=1 SELECT number FROM numbers(10) ORDER BY number LIMIT -3) WHERE explain LIKE '%Negative%' OR explain LIKE '%WITH TIES%' OR explain LIKE '%Fractional%';
-  NegativeLimit
-  Negative Limit 3
-  Negative Offset 0
+NegativeLimit
+│  Negative Limit 3
+│  Negative Offset 0
 -- Negative limit with ties
 SELECT explain FROM (EXPLAIN actions=1 SELECT number FROM numbers(10) ORDER BY number LIMIT -3 WITH TIES) WHERE explain LIKE '%Negative%' OR explain LIKE '%WITH TIES%' OR explain LIKE '%Fractional%';
-  NegativeLimit (NEGATIVE LIMIT WITH TIES)
-  Negative Limit 3
-  Negative Offset 0
-  WITH TIES
+NegativeLimit (NEGATIVE LIMIT WITH TIES)
+│  Negative Limit 3
+│  Negative Offset 0
+│  WITH TIES
 -- Negative limit + negative offset
 SELECT explain FROM (EXPLAIN actions=1 SELECT number FROM numbers(10) ORDER BY number LIMIT -2, -3) WHERE explain LIKE '%Negative%' OR explain LIKE '%WITH TIES%' OR explain LIKE '%Fractional%';
-  NegativeLimit
-  Negative Limit 3
-  Negative Offset 2
+NegativeLimit
+│  Negative Limit 3
+│  Negative Offset 2
 -- Negative limit + negative offset with ties
 SELECT explain FROM (EXPLAIN actions=1 SELECT number FROM numbers(10) ORDER BY number LIMIT -2, -3 WITH TIES) WHERE explain LIKE '%Negative%' OR explain LIKE '%WITH TIES%' OR explain LIKE '%Fractional%';
-  NegativeLimit (NEGATIVE LIMIT WITH TIES)
-  Negative Limit 3
-  Negative Offset 2
-  WITH TIES
+NegativeLimit (NEGATIVE LIMIT WITH TIES)
+│  Negative Limit 3
+│  Negative Offset 2
+│  WITH TIES
 -- Negative limit + positive offset
 SELECT explain FROM (EXPLAIN actions=1 SELECT number FROM numbers(10) ORDER BY number LIMIT 2, -3) WHERE explain LIKE '%Negative%' OR explain LIKE '%WITH TIES%' OR explain LIKE '%Fractional%';
-  NegativeLimit
-  Negative Limit 3
-  Negative Offset 0
+NegativeLimit
+│  Negative Limit 3
+│  Negative Offset 0
 -- Negative limit + positive offset with ties
 SELECT explain FROM (EXPLAIN actions=1 SELECT number FROM numbers(10) ORDER BY number LIMIT 2, -3 WITH TIES) WHERE explain LIKE '%Negative%' OR explain LIKE '%WITH TIES%' OR explain LIKE '%Fractional%';
-  NegativeLimit (NEGATIVE LIMIT WITH TIES)
-  Negative Limit 3
-  Negative Offset 0
-  WITH TIES
+NegativeLimit (NEGATIVE LIMIT WITH TIES)
+│  Negative Limit 3
+│  Negative Offset 0
+│  WITH TIES
 -- Positive limit + negative offset
 SELECT explain FROM (EXPLAIN actions=1 SELECT number FROM numbers(10) ORDER BY number LIMIT -2, 3) WHERE explain LIKE '%Negative%' OR explain LIKE '%WITH TIES%' OR explain LIKE '%Fractional%';
-    NegativeOffset
-    Negative Offset 2
+└──NegativeOffset
+   │  Negative Offset 2
 -- Positive limit + negative offset with ties
 SELECT explain FROM (EXPLAIN actions=1 SELECT number FROM numbers(10) ORDER BY number LIMIT -2, 3 WITH TIES) WHERE explain LIKE '%Negative%' OR explain LIKE '%WITH TIES%' OR explain LIKE '%Fractional%';
-  Limit (LIMIT WITH TIES)
-  WITH TIES
-    NegativeOffset
-    Negative Offset 2
+Limit (LIMIT WITH TIES)
+│  WITH TIES
+└──NegativeOffset
+   │  Negative Offset 2
 -- Fractional limit
 SELECT explain FROM (EXPLAIN actions=1 SELECT number FROM numbers(10) ORDER BY number LIMIT 0.5) WHERE explain LIKE '%Negative%' OR explain LIKE '%WITH TIES%' OR explain LIKE '%Fractional%';
-  FractionalLimit
-  Fractional Limit 0.5
-  Fractional Offset 0
+FractionalLimit
+│  Fractional Limit 0.5
+│  Fractional Offset 0
 -- Fractional limit with ties
 SELECT explain FROM (EXPLAIN actions=1 SELECT number FROM numbers(10) ORDER BY number LIMIT 0.5 WITH TIES) WHERE explain LIKE '%Negative%' OR explain LIKE '%WITH TIES%' OR explain LIKE '%Fractional%';
-  FractionalLimit
-  Fractional Limit 0.5
-  Fractional Offset 0
-  WITH TIES
+FractionalLimit
+│  Fractional Limit 0.5
+│  Fractional Offset 0
+│  WITH TIES
 -- Fractional limit with offset
 SELECT explain FROM (EXPLAIN actions=1 SELECT number FROM numbers(10) ORDER BY number LIMIT 0.3 OFFSET 0.2) WHERE explain LIKE '%Negative%' OR explain LIKE '%WITH TIES%' OR explain LIKE '%Fractional%';
-  FractionalLimit
-  Fractional Limit 0.3
-  Fractional Offset 0.2
+FractionalLimit
+│  Fractional Limit 0.3
+│  Fractional Offset 0.2
 -- Fractional limit with offset and ties
 SELECT explain FROM (EXPLAIN actions=1 SELECT number FROM numbers(10) ORDER BY number LIMIT 0.3 OFFSET 0.2 WITH TIES) WHERE explain LIKE '%Negative%' OR explain LIKE '%WITH TIES%' OR explain LIKE '%Fractional%';
-  FractionalLimit
-  Fractional Limit 0.3
-  Fractional Offset 0.2
-  WITH TIES
+FractionalLimit
+│  Fractional Limit 0.3
+│  Fractional Offset 0.2
+│  WITH TIES
 -- JSON format: negative limit
 SELECT explain LIKE '%"Negative Limit": 3%' AND explain LIKE '%"Negative Offset": 0%' FROM (EXPLAIN json=1, actions=1 SELECT number FROM numbers(10) ORDER BY number LIMIT -3);
 1
