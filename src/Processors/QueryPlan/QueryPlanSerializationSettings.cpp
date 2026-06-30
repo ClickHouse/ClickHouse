@@ -2,6 +2,8 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
+#include <array>
+
 /**
  * This file declares the concrete list of settings that are considered relevant for query plan step (de)serialization.
  * They are defined through the PLAN_SERIALIZATION_SETTINGS macro which is consumed by BaseSettings machinery
@@ -135,9 +137,32 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSe
 
 QueryPlanSerializationSettings::~QueryPlanSerializationSettings() = default;
 
-void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out) const
+/// Settings added in query plan serialization version 2 (see DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
+/// They must not be emitted when serializing for a version-1 receiver: such a receiver does not know
+/// these names and BaseSettings::readBinary throws on unknown setting names, which would break
+/// mixed-version distributed queries (with serialize_query_plan) even when these settings are at
+/// their defaults.
+static constexpr std::array<std::string_view, 3> settings_since_version_2 =
 {
-    impl->writeChangedBinary(out);
+    "max_memory_usage",
+    "enable_join_in_memory_compression",
+    "join_decompressed_columns_cache_bytes",
+};
+
+void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out, UInt64 version) const
+{
+    if (version >= 2)
+    {
+        impl->writeChangedBinary(out);
+        return;
+    }
+
+    /// Omit the version-2 settings for an older receiver by resetting them to defaults on a copy
+    /// (resetting clears the "changed" flag, so writeChangedBinary no longer emits them).
+    QueryPlanSerializationSettingsImpl filtered(*impl);
+    for (const auto & name : settings_since_version_2)
+        filtered.resetToDefault(name);
+    filtered.writeChangedBinary(out);
 }
 void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
 {

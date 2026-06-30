@@ -54,7 +54,13 @@ static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 
 static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 1;
+/// Query plan serialization version.
+/// Version 1: initial query plan serialization.
+/// Version 2: serialized join steps may carry the in-memory join compression settings
+///            (`max_memory_usage`, `enable_join_in_memory_compression`, `join_decompressed_columns_cache_bytes`).
+///            These names are omitted when serializing for a version-1 receiver, because
+///            `BaseSettings::readBinary` throws on unknown setting names.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 2;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;

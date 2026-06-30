@@ -59,9 +59,11 @@ static Block deserializeHeader(ReadBuffer & in)
     return Block(std::move(columns));
 }
 
-/// Nothing is here for now
 struct QueryPlan::SerializationFlags
 {
+    /// The negotiated serialization version (min of this server's and the receiver's supported version).
+    /// Settings whose names a receiver of this version does not know are omitted when writing them.
+    UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
 };
 
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
@@ -70,6 +72,7 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     writeVarUInt(version, out);
 
     SerializationFlags flags;
+    flags.version = version;
     serialize(out, flags);
 }
 
@@ -124,7 +127,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         QueryPlanSerializationSettings settings;
         node->step->serializeSettings(settings);
 
-        settings.writeChangedBinary(out);
+        settings.writeChangedBinary(out, flags.version);
 
         IQueryPlanStep::Serialization ctx{out, registry};
         node->step->serialize(ctx);

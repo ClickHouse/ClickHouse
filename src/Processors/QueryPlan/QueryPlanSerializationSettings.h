@@ -52,7 +52,10 @@ struct QueryPlanSerializationSettings
     ~QueryPlanSerializationSettings();
 
     /// Serialize only settings that differ from defaults.
-    void writeChangedBinary(WriteBuffer & out) const;
+    /// `version` is the negotiated query plan serialization version of the receiver: settings that
+    /// were introduced after that version are omitted, because a receiver does not know their names
+    /// and `readBinary` throws on unknown setting names.
+    void writeChangedBinary(WriteBuffer & out, UInt64 version) const;
     /// Read settings updating only those present in the stream; missing ones keep defaults.
     void readBinary(ReadBuffer & in);
 
