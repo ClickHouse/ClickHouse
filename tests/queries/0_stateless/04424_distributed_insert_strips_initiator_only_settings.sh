@@ -27,7 +27,7 @@ QUERY_ID="04424-${CLICKHOUSE_DATABASE}-$$"
 # format settings sit on the statement.
 ${CLICKHOUSE_CLIENT} --offset=2 --query_id="${QUERY_ID}" -q "
     INSERT INTO dist
-    SETTINGS distributed_foreground_insert = 1, prefer_localhost_replica = 0,
+    SETTINGS distributed_foreground_insert = 1, prefer_localhost_replica = 0, log_queries = 1,
              input_format = 'CSV', output_format = 'CSV', default_format = 'CSV', compression = 'gz'
     SELECT number FROM numbers(10)"
 
