@@ -3911,7 +3911,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
     /// `RPNBuilder::traverseTree` descends to through `and` / `or` / `not` / `indexHint`. Treat the
     /// column as `key != 0`, so that primary-key and skip-index analysis can prune on it. The negated
     /// form `WHERE NOT key` is covered for free: the surrounding `not` inverts this atom into
-    /// `key == 0`. `Nullable` / `LowCardinality` keys are handled through the nested type. See #89222.
+    /// `key == 0`. `LowCardinality` is handled through the nested type. See #89222.
     {
         size_t key_column_num = size_t(-1);
         std::optional<size_t> argument_num_of_space_filling_curve;
@@ -3921,8 +3921,18 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         if (isKeyPossiblyWrappedByMonotonicFunctions(
                 node, info, key_column_num, argument_num_of_space_filling_curve, key_column_type, chain))
         {
-            auto key_type_not_null = removeNullable(removeLowCardinality(key_column_type));
-            if (isInteger(key_type_not_null) || isFloat(key_type_not_null))
+            auto key_type_not_low_cardinality = removeLowCardinality(key_column_type);
+
+            /// Skip a `Nullable` (or `LowCardinality(Nullable)`) key. Primary-key analysis maps a NULL
+            /// key value to `+Inf` (for `NULLS LAST` ordering), so a granule that holds only NULL looks
+            /// definitely outside `[0, 0]` and the `key != 0` atom would report it as an exact, definite
+            /// match. But `WHERE nullable_key` is NULL for those rows and filters them out. Ordinary
+            /// pruning only ever over-reads, so it stays correct, but the exact-count / implicit-projection
+            /// optimization (`SELECT count() ... WHERE nullable_key`) would count such NULL-only granules
+            /// without reading them and return a wrong result. Leaving the atom unset (`FUNCTION_UNKNOWN`)
+            /// reverts to reading and filtering those rows, which is correct.
+            if (!key_type_not_low_cardinality->isNullable()
+                && (isInteger(key_type_not_low_cardinality) || isFloat(key_type_not_low_cardinality)))
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
                 out.range = Range(Field(UInt64(0)));

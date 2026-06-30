@@ -1,0 +1,6 @@
+--- Nullable(Int32) key: WHERE id must not count NULL-only granules
+1
+1
+1
+--- Nullable(Float64) key: same invariant
+1
