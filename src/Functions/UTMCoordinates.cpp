@@ -381,7 +381,12 @@ MGRSCoordinate mgrsDecode(std::string_view mgrs)
     size_t i = 0;
     std::string zone_digits;
     while (i < clean.size() && std::isdigit(static_cast<unsigned char>(clean[i])))
+    {
         zone_digits += clean[i++];
+        /// The zone designator is one or two digits; bail out before std::stoi can overflow on a long prefix.
+        if (zone_digits.size() > 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid MGRS string '{}': zone designator must be one or two digits", String(mgrs));
+    }
 
     if (zone_digits.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid MGRS string '{}': missing zone number", String(mgrs));

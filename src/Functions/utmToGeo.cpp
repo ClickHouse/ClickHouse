@@ -76,7 +76,11 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "UTM zone {} is out of range [1, 60] in function {}", zone, getName());
 
-            const bool is_north = is_north_column->getInt(i) != 0;
+            const Int64 is_north_value = is_north_column->getInt(i);
+            if (is_north_value != 0 && is_north_value != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Argument is_north of function {} must be 0 or 1, but got {}", getName(), is_north_value);
+            const bool is_north = is_north_value != 0;
 
             utmToWGS84(easting, northing, static_cast<UInt8>(zone), is_north, longitude_data[i], latitude_data[i]);
         }

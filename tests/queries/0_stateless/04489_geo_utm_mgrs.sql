@@ -56,5 +56,7 @@ SELECT mgrsToGeo('31UDQ482511193512'); -- { serverError BAD_ARGUMENTS } -- more 
 SELECT mgrsToGeo('31UQD4825111935'); -- { serverError BAD_ARGUMENTS } -- column letter out of range for the zone
 SELECT mgrsToGeo('32XAA'); -- { serverError BAD_ARGUMENTS } -- zone 32 does not exist in the X band
 SELECT mgrsToGeo('1LAB'); -- { serverError BAD_ARGUMENTS } -- row letter B does not intersect latitude band L
+SELECT mgrsToGeo('031UDQ4825111935'); -- { serverError BAD_ARGUMENTS } -- zone designator more than two digits
+SELECT utmToGeo(448251.6, 5411935.13, 31, 2); -- { serverError BAD_ARGUMENTS } -- is_north must be 0 or 1
 SELECT geoToMGRS(0., 0., 6); -- { serverError ARGUMENT_OUT_OF_BOUND } -- precision above 5
 SELECT geoToMGRS(0., 0., -1); -- { serverError ARGUMENT_OUT_OF_BOUND } -- negative precision
