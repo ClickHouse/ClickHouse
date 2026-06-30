@@ -45,6 +45,12 @@ referenced storage (base table or view, including nested views) was dropped, re-
 database, and a hash of all plan-affecting settings, so plans are never shared across users or incompatible settings. `SELECT` access to
 all dependencies is re-checked on every hit.
 
+A view is expanded into the cached plan, and a table referenced only inside a scalar subquery is folded into a constant, so neither leaves a
+plan node from which the exact columns it contributes can be recovered. A hit therefore requires table-level `SELECT` on such an object,
+which is at least as strict as the per-column access a non-cached query checks. As a consequence, a query that a column-level grant on a view
+alone makes runnable without the cache is not served from the cache (it is denied on a hit); grant table-level `SELECT` on the view to make
+it cacheable.
+
 ## Configuration {#configuration}
 
 Server configuration:

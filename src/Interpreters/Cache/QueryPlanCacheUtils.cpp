@@ -332,12 +332,20 @@ private:
         QueryPlanCacheDependency dep;
         if (!fillDependency(dep, storage, context))
             return false;
-        /// A table reached only through a scalar subquery is folded into a constant during
-        /// analysis: it has no plan leaf, so its exact columns are unknown and a hit must recheck
-        /// table-level SELECT. Tables in ordinary positions - including regular view bodies - are
-        /// expanded into plan leaves whose precise columns `collectPlanDependencies` records, so
-        /// they keep `columns_unknown = false` and the merge below preserves their column set.
-        dep.columns_unknown = inside_scalar_subquery;
+        /// A dependency whose exact selected columns cannot be recovered here must have a hit
+        /// recheck table-level SELECT: a column-level "any column" recheck could otherwise pass
+        /// after the actually-read column's grant was revoked, while the baked plan still returns
+        /// that column. Two cases qualify:
+        ///   - A table reached only through a scalar subquery is folded into a constant during
+        ///     analysis, so it has no plan leaf.
+        ///   - A view is expanded at plan time, so the view storage itself has no plan leaf either
+        ///     (only its body tables do). The miss path checks the precise selected view columns in
+        ///     `prepareBuildQueryPlanForTableExpression` before expanding the view; recording
+        ///     table-level here keeps a hit at least as strict (mirroring the scalar-subquery case,
+        ///     and matching the conservative choice not to recover the exact view columns).
+        /// The view's body tables are still visited below and recorded with their precise columns
+        /// as ordinary plan leaves, so this only tightens the recheck of the view storage itself.
+        dep.columns_unknown = inside_scalar_subquery || storage->isView();
         dependencies.push_back(std::move(dep));
 
         /// Recurse into view bodies: nested views and their tables are dependencies too.
@@ -618,10 +626,11 @@ void checkAccessForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, const Co
         if (isAllowedSystemTable(dep.database, dep.table))
             continue;
 
-        /// Columns are unknown (a view body or a scalar-subquery table discovered through the
-        /// AST closure): the baked plan may read any column, so a column-level recheck is not
-        /// enough - require table-level SELECT, matching the strictest access normal planning
-        /// could demand for this storage.
+        /// Columns are unknown (a view expanded at plan time, or a scalar-subquery table folded
+        /// into a constant - neither has a plan leaf whose precise columns could be recorded):
+        /// the baked plan may read any column, so a column-level recheck is not enough. Require
+        /// table-level SELECT, which is at least as strict as the per-column access a miss checks;
+        /// a hit cannot recover the exact columns to recheck them precisely.
         if (dep.columns_unknown)
         {
             context->checkAccess(AccessType::SELECT, dep.database, dep.table);
