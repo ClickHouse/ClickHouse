@@ -50,6 +50,7 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
@@ -110,6 +111,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/HypotheticalIndexStore.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
@@ -262,6 +264,8 @@ namespace CurrentMetrics
     extern const Metric MarkCacheFiles;
     extern const Metric UniqueKeyIndexCacheBytes;
     extern const Metric UniqueKeyIndexCacheEntries;
+    extern const Metric DeleteBitmapCacheBytes;
+    extern const Metric DeleteBitmapCacheEntries;
     extern const Metric UncompressedCacheBytes;
     extern const Metric UncompressedCacheCells;
     extern const Metric IndexUncompressedCacheBytes;
@@ -374,6 +378,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_move_pool_size;
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_schedule_pool_initial_size;
     extern const ServerSettingsFloat background_schedule_pool_max_parallel_tasks_per_type_ratio;
     extern const ServerSettingsBool disable_insertion_and_mutation;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
@@ -540,6 +545,7 @@ struct ContextSharedPart : boost::noncopyable
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
     String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text
+    bool show_license_expiration_warnings TSA_GUARDED_BY(mutex) = true; /// Whether to show the license expiration warning in system.warnings
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
@@ -554,6 +560,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable UncompressedCachePtr uncompressed_cache TSA_GUARDED_BY(mutex);            /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache TSA_GUARDED_BY(mutex);                            /// Cache of marks in compressed files.
     mutable UniqueKeyIndexCachePtr unique_key_index_cache TSA_GUARDED_BY(mutex);               /// RocksDB-compatible block cache over CacheBase for the UNIQUE KEY index (nullptr when RocksDB unavailable or disabled).
+    mutable DeleteBitmapCachePtr delete_bitmap_cache TSA_GUARDED_BY(mutex);           /// UNIQUE KEY per-part delete-bitmap cache.
     mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
     mutable SystemAllocatedMemoryHolderPtr untracked_memory_holder TSA_GUARDED_BY(mutex);
     mutable OnceFlag load_marks_threadpool_initialized;
@@ -722,7 +729,11 @@ struct ContextSharedPart : boost::noncopyable
     /// No lock required for async_insert_queue modified only during initialization
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
 
-    std::map<String, UInt16> server_ports;
+    /// Server listener port registry. Reads come from concurrent SQL contexts
+    /// (the `getServerPort` SQL function); writes happen during server startup
+    /// and at runtime via `SYSTEM START LISTEN` in `clickhouse-local`.
+    mutable std::mutex server_ports_mutex;
+    std::map<String, UInt16> server_ports TSA_GUARDED_BY(server_ports_mutex);
 
     std::atomic<bool> shutdown_called = false;
 
@@ -2341,6 +2352,19 @@ void Context::setLicenseFile(const String & value)
     shared->license_file = value;
 }
 
+
+bool Context::getShowLicenseExpirationWarnings() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->show_license_expiration_warnings;
+}
+
+void Context::setShowLicenseExpirationWarnings(bool value)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->show_license_expiration_warnings = value;
+}
+
 String Context::getMutationWorkload() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -2586,6 +2610,18 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
         external_tables_mapping.erase(iter);
     }
     return holder;
+}
+
+HypotheticalIndexStore & Context::getHypotheticalIndexStore() const
+{
+    /// in session context so the store persists across queries
+    if (auto session_ctx = session_context.lock(); session_ctx && session_ctx.get() != this)
+        return session_ctx->getHypotheticalIndexStore();
+
+    std::lock_guard lock(mutex);
+    if (!hypothetical_index_store)
+        hypothetical_index_store = std::make_shared<HypotheticalIndexStore>();
+    return *hypothetical_index_store;
 }
 
 
@@ -4147,6 +4183,69 @@ void Context::clearUniqueKeyIndexCache() const
 #endif
 }
 
+void Context::setDeleteBitmapCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->delete_bitmap_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Delete bitmap cache has been already created.");
+
+    if (max_cache_size_in_bytes == 0)
+        return; /// Explicit opt-out — leave unregistered; getDeleteBitmapCache returns nullptr.
+
+    shared->delete_bitmap_cache = std::make_shared<DeleteBitmapCache>(
+        cache_policy,
+        CurrentMetrics::DeleteBitmapCacheBytes,
+        CurrentMetrics::DeleteBitmapCacheEntries,
+        max_cache_size_in_bytes,
+        size_ratio);
+}
+
+void Context::updateDeleteBitmapCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    size_t size = config.getUInt64("unique_key_bitmap_cache_size_bytes", 1ULL << 30);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered UNIQUE KEY delete-bitmap cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+
+    if (!shared->delete_bitmap_cache)
+    {
+        if (size == 0)
+            return; /// Stay disabled until reload requests a non-zero size.
+        /// Enable on the first reload that requests a non-zero size, so a
+        /// startup `size = 0` is reversible rather than a one-way disable
+        /// (mirrors updateUniqueKeyIndexCacheConfiguration).
+        shared->delete_bitmap_cache = std::make_shared<DeleteBitmapCache>(
+            config.getString("unique_key_bitmap_cache_policy", "SLRU"),
+            CurrentMetrics::DeleteBitmapCacheBytes,
+            CurrentMetrics::DeleteBitmapCacheEntries,
+            size,
+            config.getDouble("unique_key_bitmap_cache_size_ratio", 0.5));
+        LOG_INFO(shared->log, "Enabled UNIQUE KEY delete-bitmap cache at {} via reload-config", formatReadableSizeWithBinarySuffix(size));
+        return;
+    }
+
+    shared->delete_bitmap_cache->setMaxSizeInBytes(size);
+    LOG_DEBUG(shared->log, "UNIQUE KEY delete-bitmap cache size set to {}", formatReadableSizeWithBinarySuffix(size));
+}
+
+DeleteBitmapCachePtr Context::getDeleteBitmapCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->delete_bitmap_cache;
+}
+
+void Context::clearDeleteBitmapCache() const
+{
+    DeleteBitmapCachePtr cache = getDeleteBitmapCache();
+    if (cache)
+        cache->clear();
+}
+
 ThreadPool & Context::getLoadMarksThreadpool() const
 {
     callOnce(shared->load_marks_threadpool_initialized, [&] {
@@ -4783,6 +4882,13 @@ void Context::clearCaches() const
     if (shared->query_condition_cache)
         shared->query_condition_cache->clear();
 
+    /// UNIQUE KEY delete-bitmap cache is optional (zero size disables it),
+    /// so the null check stays non-fatal. Without clearing, a renamed /
+    /// dropped non-UUID table whose `disk:relpath` cache identity gets
+    /// reused could see stale bitmaps from the prior table.
+    if (shared->delete_bitmap_cache)
+        shared->delete_bitmap_cache->clear();
+
     /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
 }
 
@@ -4849,6 +4955,7 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
     callOnce(shared->buffer_flush_schedule_pool_initialized, [&] {
         shared->buffer_flush_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
+            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
@@ -4900,6 +5007,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
         {
             shared->schedule_pool = BackgroundSchedulePool::create(
                 shared->server_settings[ServerSetting::background_schedule_pool_size],
+                shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
                 max_parallel_tasks_per_type,
                 CurrentMetrics::BackgroundSchedulePoolTask,
                 CurrentMetrics::BackgroundSchedulePoolSize,
@@ -4914,6 +5022,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     callOnce(shared->distributed_schedule_pool_initialized, [&] {
         shared->distributed_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_distributed_schedule_pool_size],
+            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
@@ -4928,6 +5037,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     callOnce(shared->message_broker_schedule_pool_initialized, [&] {
         shared->message_broker_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_message_broker_schedule_pool_size],
+            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
@@ -4942,6 +5052,7 @@ BackgroundSchedulePool & Context::getIcebergSchedulePool() const
     callOnce(shared->iceberg_schedule_pool_initialized, [&] {
         shared->iceberg_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::iceberg_background_schedule_pool_size],
+            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::IcebergSchedulePoolTask,
             CurrentMetrics::IcebergSchedulePoolSize,
@@ -5724,11 +5835,16 @@ std::optional<UInt16> Context::getTCPPortSecure() const
 
 void Context::registerServerPort(String port_name, UInt16 port)
 {
-    shared->server_ports.emplace(std::move(port_name), port);
+    /// Use `insert_or_assign` so re-registration after stop/start refreshes the
+    /// stored port. With `--tcp_port 0` / `--http_port 0` in `clickhouse-local`,
+    /// each restart binds a new ephemeral port and the registry must reflect it.
+    std::lock_guard lock(shared->server_ports_mutex);
+    shared->server_ports.insert_or_assign(std::move(port_name), port);
 }
 
 UInt16 Context::getServerPort(const String & port_name) const
 {
+    std::lock_guard lock(shared->server_ports_mutex);
     auto it = shared->server_ports.find(port_name);
     if (it == shared->server_ports.end())
         throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "There is no port named {}", port_name);

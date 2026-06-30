@@ -53,6 +53,13 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
 {
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
+        /// A STREAM read returns parts in commit order, not sorting-key order, so its output is not
+        /// sorted by the sorting key even though the key is non-empty. Requesting read-in-order would
+        /// make it advertise that order and feed unsorted data to order-dependent transforms (DISTINCT,
+        /// aggregation and LIMIT BY in order), which then return wrong results or hit a sort assertion.
+        if (reading->getQueryInfo().isStream())
+            return nullptr;
+
         /// Already read-in-order, skip.
         if (!allow_existing_order && reading->getQueryInfo().input_order_info)
             return nullptr;
@@ -1762,8 +1769,16 @@ void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Qu
         return;
 
     auto order_info = buildInputOrderInfo(*limit_by, *node.children.front(), optimization_settings);
-    if (order_info.input_order)
-        limit_by->applyOrder();
+    if (!order_info.input_order)
+        return;
+
+    /// The sorted-stream transform needs every key in the sort prefix (and in that order); otherwise a
+    /// key not covered by the prefix would be dropped from grouping.
+    auto sort_prefix = getCollationAwareSortPrefixInColumns(order_info.sort_description, limit_by->getColumns());
+    if (sort_prefix.size() != limit_by->getColumns().size())
+        return;
+
+    limit_by->applyOrder(sort_prefix);
 }
 
 /// This optimization is obsolete and will be removed.
