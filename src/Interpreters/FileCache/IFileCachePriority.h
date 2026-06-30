@@ -3,7 +3,6 @@
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Core/Types.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 
@@ -22,17 +21,10 @@ struct FileSegmentInfo;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsageStatGuard;
-class BackgroundSchedulePool;
 
 
 class IFileCachePriority : private boost::noncopyable
 {
-    /// SplitFileCachePriority reaches its inner priorities through base references.
-    friend class SplitFileCachePriority;
-    /// OvercommitFileCachePriority reaches its per-user priorities through base pointers.
-    template <typename BasePriority>
-    friend class OvercommitFileCachePriority;
-
 public:
     using Key = FileCacheKey;
 
@@ -183,13 +175,7 @@ public:
 
         virtual void remove(const CachePriorityGuard::WriteLock &) = 0;
 
-        virtual void invalidate() noexcept = 0;
-
-        /// Same as invalidate, but for callers which remove the entry under the same
-        /// write lock right after: the entry is not registered for the background
-        /// cleanup of invalidated entries (such a ref would be stale from birth and
-        /// would only pin the entry allocation until the cleanup discards it).
-        virtual void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept { invalidate(); }
+        virtual void invalidate() = 0;
 
         virtual QueueEntryType getType() const = 0;
 
@@ -317,14 +303,6 @@ public:
 
     virtual PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) = 0;
 
-    /// Which cursor a candidate-collection pass resumes from.
-    enum class EvictionCursor
-    {
-        FromHead,   /// Start from the queue head; do not persist a position.
-        Reserve,    /// Foreground reserve path (shared by concurrent reservers).
-        Background, /// Background free-space keeping thread.
-    };
-
     /// Collect eviction candidates sufficient to free `size` bytes
     /// and `elements` elements from cache.
     virtual bool collectCandidatesForEviction(
@@ -333,7 +311,7 @@ public:
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
         IteratorPtr reservee,
-        EvictionCursor eviction_cursor,
+        bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
@@ -367,30 +345,16 @@ public:
         const OriginInfo & origin_info,
         const CacheStateGuard::Lock & lock) = 0;
 
-    virtual void resetEvictionPos(EvictionCursor cursor) = 0;
+    virtual void resetEvictionPos() = 0;
 
     /// Remove given queue entries for the queue.
     /// Used to cleanup invalidated queue entries.
     static void removeEntries(const std::vector<InvalidatedEntryInfo> & entries, const CachePriorityGuard::WriteLock &);
 
-    /// Configure the background invalidated-entries cleanup (before startup).
-    void setCleanupSettings(size_t threshold, size_t interval_ms, size_t batch)
-    {
-        invalidated_threshold.store(threshold, std::memory_order_relaxed);
-        cleanup_interval_ms = interval_ms;
-        cleanup_batch = batch;
-    }
-
-    void startup(BackgroundSchedulePool & pool, CachePriorityGuard & cache_guard);
-
-    void deactivateBackgroundOperations();
-
     struct UsageStat
     {
-        size_t size = 0;
-        size_t elements = 0;
-        /// Client weight for proportional cache sharing (0 if not set).
-        UInt64 weight = 0;
+        size_t size;
+        size_t elements;
     };
     virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
 
@@ -463,34 +427,9 @@ protected:
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
-    /// Register a hook called from invalidate() once the number of pending
-    /// invalidated entries reaches `threshold`.
-    virtual void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate)
-    {
-        invalidated_threshold.store(threshold, std::memory_order_relaxed);
-        invalidate_notifier = on_invalidate;
-    }
-
-    /// Remove up to `max_batch` pending invalidated entries from the queue under the write
-    /// lock. Returns the number of pending entries removed.
-    virtual size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) = 0;
-
     const QueueType queue_type;
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
-
-    /// Fire `invalidate_notifier` once a queue accumulates this many pending invalidated entries.
-    std::atomic<size_t> invalidated_threshold = 0;
-    std::function<void()> invalidate_notifier;
-
-private:
-    void cleanupTaskFunc();
-
-    /// The single cleanup task lives on the top-level priority only.
-    BackgroundSchedulePoolTaskHolder cleanup_task;
-    CachePriorityGuard * cleanup_guard = nullptr;
-    size_t cleanup_interval_ms = 0;
-    size_t cleanup_batch = 0;
 };
 
 using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;

@@ -4,7 +4,6 @@
 #include <pcg-random/pcg_random.hpp>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 
@@ -23,7 +22,6 @@ namespace ProfileEvents
     extern const Event FilesystemCacheEvictionSkippedEvictingFileSegments;
     extern const Event FilesystemCacheEvictionSkippedMovingFileSegments;
     extern const Event FilesystemCacheEvictionReusedIterator;
-    extern const Event FilesystemCacheBackgroundRemovedInvalidatedEntries;
 }
 
 namespace DB
@@ -81,36 +79,13 @@ LRUFileCachePriority::LRUFileCachePriority(
     : IFileCachePriority(queue_type_, max_size_, max_elements_)
     , description(description_)
     , log(getLogger("LRUFileCachePriority" + (description.empty() ? "" : "(" + description + ")")))
-    , reserve_eviction_pos(queue.end())
-    , background_eviction_pos(queue.end())
+    , eviction_pos(queue.end())
     , queue_id(randomSeed())
 {
     if (state_)
         state = state_;
     else
         state = std::make_shared<State>(log);
-}
-
-LRUFileCachePriority::~LRUFileCachePriority()
-{
-    /// The queue may still hold `Invalidated` entries pending removal by the proactive
-    /// cleanup when the priority is destroyed: e.g. when an emptied per-user overcommit
-    /// priority is pruned by `CacheUsagePerUser::snapshot`, or when a whole cache is
-    /// dropped. Such entries never go through `remove`, so compensate the metrics here.
-    /// The destructor runs with exclusive ownership of the queue, no locks are needed.
-    if (getQueueType() != QueueType::Main || queue.empty())
-        return;
-
-    size_t invalidated = 0;
-    for (const auto & entry : queue)
-    {
-        if (entry->getState() == Entry::State::Invalidated)
-            ++invalidated;
-    }
-
-    if (invalidated)
-        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheInvalidatedElements, invalidated);
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCachePriorityQueueElements, queue.size());
 }
 
 IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
@@ -203,24 +178,6 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
     return queue.erase(it);
 }
 
-void LRUFileCachePriority::addInvalidatedRef(std::weak_ptr<Entry> entry, LRUQueue::iterator it) noexcept
-{
-    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-
-    size_t prev = 0;
-    {
-        std::lock_guard lock(invalidated_mutex);
-        invalidated_refs.push_back({std::move(entry), it});
-        prev = invalidated_count.fetch_add(1, std::memory_order_relaxed);
-    }
-
-    /// `invalidate_notifier` is set once on startup and never changed, so it needs no lock.
-    /// Notify outside `invalidated_mutex` to avoid calling into the schedule pool under it.
-    const size_t threshold = invalidated_threshold.load(std::memory_order_relaxed);
-    if (invalidate_notifier && threshold && prev + 1 == threshold)
-        invalidate_notifier();
-}
-
 LRUFileCachePriority::LRUIterator::LRUIterator(
     LRUFileCachePriority * cache_priority_,
     LRUQueue::iterator iterator_)
@@ -260,63 +217,6 @@ void LRUFileCachePriority::iterate(
 {
     InvalidatedEntriesInfos invalidated_entries;
     iterateImpl(queue.begin(), func, stat, invalidated_entries, lock);
-}
-
-size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard)
-{
-    if (invalidated_count.load(std::memory_order_relaxed) == 0)
-        return 0;
-
-    /// The write lock is acquired lazily, only when a live `Invalidated` ref is found,
-    /// and is then held for the rest of the batch. Refs whose entry was already removed
-    /// elsewhere (e.g. by the opportunistic `removeEntries` during eviction) can be
-    /// discarded without it: entries are registered here only in `Invalidated` state and
-    /// the only transition out of it is the terminal `Removed`, set under the write lock
-    /// in `remove`. So an expired or non-`Invalidated` ref can never become removable
-    /// again and is skipped without the lock and without touching its stale iterator.
-    std::optional<CachePriorityGuard::WriteLock> lock;
-
-    size_t removed = 0;
-    while (removed < max_batch)
-    {
-        InvalidatedRef ref;
-        {
-            std::lock_guard cleanup_lock(invalidated_mutex);
-            if (invalidated_refs.empty())
-                break;
-            ref = std::move(invalidated_refs.front());
-            invalidated_refs.pop_front();
-        }
-
-        try
-        {
-            if (auto entry = ref.entry.lock(); entry && entry->getState() == Entry::State::Invalidated)
-            {
-                if (!lock)
-                    lock.emplace(cache_guard.writeLock());
-
-                /// The entry could have been removed while the lock was being acquired.
-                if (entry->getState() == Entry::State::Invalidated)
-                {
-                    remove(ref.iterator, *lock);
-                    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundRemovedInvalidatedEntries);
-                }
-            }
-        }
-        catch (...)
-        {
-            /// Put the ref back so it is retried later. Must not throw and lose it:
-            /// suppress `MEMORY_LIMIT_EXCEEDED` from the `push_front` allocation.
-            LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-            std::lock_guard cleanup_lock(invalidated_mutex);
-            invalidated_refs.push_front(std::move(ref));
-            throw;
-        }
-
-        invalidated_count.fetch_sub(1, std::memory_order_relaxed);
-        ++removed;
-    }
-    return removed;
 }
 
 LRUFileCachePriority::LRUQueue::iterator
@@ -530,7 +430,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr /* reservee */,
-    EvictionCursor eviction_cursor,
+    bool continue_from_last_eviction_pos,
     size_t max_candidates_size,
     bool /* is_total_space_cleanup */,
     const OriginInfo &,
@@ -560,19 +460,15 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
     auto lock = cache_guard.readLock();
 
-    const bool use_cursor = eviction_cursor != EvictionCursor::FromHead;
-
     auto start_pos = queue.begin();
-    if (use_cursor)
+    auto current_eviction_pos = getEvictionPos(lock);
+    if (continue_from_last_eviction_pos
+        && current_eviction_pos != LRUQueue::iterator{}
+        && current_eviction_pos != queue.end()
+        && start_pos != current_eviction_pos)
     {
-        auto current_eviction_pos = getEvictionPos(eviction_cursor, lock);
-        if (current_eviction_pos != LRUQueue::iterator{}
-            && current_eviction_pos != queue.end()
-            && start_pos != current_eviction_pos)
-        {
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionReusedIterator);
-            start_pos = current_eviction_pos;
-        }
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionReusedIterator);
+        start_pos = current_eviction_pos;
     }
 
     auto iteration_pos = iterateImpl(
@@ -606,8 +502,8 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     },
     stat, invalidated_entries, lock);
 
-    if (use_cursor)
-        setEvictionPos(eviction_cursor, iteration_pos, lock);
+    if (continue_from_last_eviction_pos)
+        setEvictionPos(iteration_pos, lock);
 
     lock.unlock();
 
@@ -749,22 +645,6 @@ void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::WriteLo
 
 void LRUFileCachePriority::LRUIterator::invalidate() noexcept
 {
-    invalidateImpl();
-
-    /// Only the `Main` priority drains `invalidated_refs` via the background cleanup task.
-    if (cache_priority->getQueueType() == QueueType::Main)
-        cache_priority->addInvalidatedRef(entry, iterator);
-}
-
-void LRUFileCachePriority::LRUIterator::invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept
-{
-    /// The caller removes the entry under the same write lock right after,
-    /// so do not register it for the background cleanup.
-    invalidateImpl();
-}
-
-void LRUFileCachePriority::LRUIterator::invalidateImpl() noexcept
-{
     auto entry_ptr = entry.lock();
     chassert(entry_ptr);
 
@@ -848,8 +728,7 @@ bool LRUFileCachePriority::LRUIterator::assertValid() const
 
 void LRUFileCachePriority::shuffle(const CachePriorityGuard::WriteLock &)
 {
-    chassert(TSA_SUPPRESS_WARNING_FOR_READ(reserve_eviction_pos) == queue.end());
-    chassert(TSA_SUPPRESS_WARNING_FOR_READ(background_eviction_pos) == queue.end());
+    chassert(TSA_SUPPRESS_WARNING_FOR_READ(eviction_pos) == queue.end());
     std::vector<LRUQueue::iterator> its;
     its.reserve(queue.size());
     for (auto it = queue.begin(); it != queue.end(); ++it)
@@ -899,14 +778,8 @@ void LRUFileCachePriority::holdImpl(
 
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
 {
-    /// Once the atomic decrements below reach 0, `CacheUsagePerUser::snapshot`
-    /// may concurrently erase this priority and free `cache_usage_stat_guard`,
-    /// so pin it locally to keep the mutex alive until `~unique_lock`.
-    /// This lock is only needed for `OvercommitFileCachePriority::check`'s
-    /// debug consistency check; non-overcommit policies leave the guard unset.
-    auto stat_guard = cache_usage_stat_guard;
-    auto lock = stat_guard
-        ? std::optional<CacheUsageStatGuard::Lock>(stat_guard->lock())
+    auto lock = cache_usage_stat_guard
+        ? std::optional<CacheUsageStatGuard::Lock>(cache_usage_stat_guard->lock())
         : std::nullopt;
 
     state->sub(size, elements);
@@ -917,51 +790,22 @@ void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
     //LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
 }
 
-LRUFileCachePriority::LRUQueue::iterator & LRUFileCachePriority::evictionPos(EvictionCursor cursor)
-{
-    switch (cursor)
-    {
-        case EvictionCursor::Reserve:
-            return reserve_eviction_pos;
-        case EvictionCursor::Background:
-            return background_eviction_pos;
-        case EvictionCursor::FromHead:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "EvictionCursor::FromHead has no persistent cursor");
-    }
-}
-
-const LRUFileCachePriority::LRUQueue::iterator & LRUFileCachePriority::evictionPos(EvictionCursor cursor) const
-{
-    switch (cursor)
-    {
-        case EvictionCursor::Reserve:
-            return reserve_eviction_pos;
-        case EvictionCursor::Background:
-            return background_eviction_pos;
-        case EvictionCursor::FromHead:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "EvictionCursor::FromHead has no persistent cursor");
-    }
-}
-
-LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::getEvictionPos(EvictionCursor cursor, const CachePriorityGuard::ReadLock &) const
+LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::getEvictionPos(const CachePriorityGuard::ReadLock &) const
 {
     std::lock_guard lk(eviction_pos_mutex);
-    return evictionPos(cursor);
+    return eviction_pos;
 }
 
-void LRUFileCachePriority::setEvictionPos(EvictionCursor cursor, LRUQueue::iterator it, const CachePriorityGuard::ReadLock &)
+void LRUFileCachePriority::setEvictionPos(LRUQueue::iterator it, const CachePriorityGuard::ReadLock &)
 {
     std::lock_guard lk(eviction_pos_mutex);
-    evictionPos(cursor) = it;
+    eviction_pos = it;
 }
 
 void LRUFileCachePriority::moveEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
 {
     std::lock_guard lk(eviction_pos_mutex);
-    for (auto * pos : {&reserve_eviction_pos, &background_eviction_pos})
-    {
-        if (*pos != LRUQueue::iterator{} && *pos == it)
-            *pos = std::next(it);
-    }
+    if (eviction_pos != LRUQueue::iterator{} && eviction_pos == it)
+        eviction_pos = std::next(it);
 }
 }
