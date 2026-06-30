@@ -247,7 +247,7 @@ SELECT naiveBayesClassifier('pad_nopad', 'xy'), naiveBayesClassifier('pad_padded
 ```
 
 ```response
-1	0
+1 0
 ```
 
 (The decimal forms `start_token '1' end_token '255'` are equivalent to `'0x01'`/`'0xFF'`.)
@@ -268,7 +268,7 @@ SELECT naiveBayesClassifier('charset', 'abcd'), naiveBayesClassifier('charset', 
 ```
 
 ```response
-0	1
+0 1
 ```
 
 **Code-point mode** — per-character script detection (`n = 1`, `mode 'codepoint'`; class `0` = Latin, `1` = Cyrillic):
@@ -285,7 +285,7 @@ SELECT naiveBayesClassifier('script', 'abcd'), naiveBayesClassifier('script', '�
 ```
 
 ```response
-0	1
+0 1
 ```
 
 **Read the training data back** with `store_source`:
@@ -302,9 +302,9 @@ SELECT ngram, class_id, count FROM stored ORDER BY ngram;
 ```
 
 ```response
-alpha	0	3
-beta	0	2
-gamma	1	4
+alpha 0 3
+beta 0 2
+gamma 1 4
 ```
 
 **Classify a whole column** — the functions work directly over a table:
@@ -317,10 +317,10 @@ SELECT text, naiveBayesClassifier('sentiment', text) AS class FROM reviews ORDER
 ```
 
 ```response
-awful worst	1
-bad terrible hate	1
-excellent wonderful	0
-good great love	0
+awful worst 1
+bad terrible hate 1
+excellent wonderful 0
+good great love 0
 ```
 
 **Empty input** is classified from the priors alone (with the balanced `sentiment` data, that is an even split):
