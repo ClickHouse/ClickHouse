@@ -187,6 +187,23 @@ public:
         getNested()->checkTableCanBeDropped(query_context);
     }
 
+    /// Must materialize the nested storage: the default `Atomic` database renames a table
+    /// via `checkTableCanBeRenamed` + `renameInMemory` and never calls `rename`, so a no-op
+    /// here would let a rename bypass nested-storage guards (e.g. the `leader_election`
+    /// rejection in `StorageMergeTree::checkTableCanBeRenamed`) for lazily loaded on-disk tables.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override
+    {
+        getNested()->checkTableCanBeRenamed(new_name);
+    }
+
+    /// Same reasoning as `checkTableCanBeRenamed`: materialize the nested storage so a
+    /// `RENAME DATABASE` cannot bypass the nested-storage guard (the `leader_election`
+    /// rejection) for a lazily loaded on-disk table.
+    void checkTableCanBeRenamedByDatabaseRename() const override
+    {
+        getNested()->checkTableCanBeRenamedByDatabaseRename();
+    }
+
     bool dropSkipsDataDirectoryCleanup() const override
     {
         std::lock_guard lock{nested_mutex};

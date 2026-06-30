@@ -97,22 +97,14 @@ public:
         IStorage::renameInMemory(new_table_id);
     }
 
-    /// Must materialize the nested storage: the default `Atomic` database renames a table
-    /// via `checkTableCanBeRenamed` + `renameInMemory` and never calls `rename`, so a no-op
-    /// here would let a rename bypass nested-storage guards (e.g. the `leader_election`
-    /// rejection in `StorageMergeTree::checkTableCanBeRenamed`) for lazily loaded tables.
-    void checkTableCanBeRenamed(const StorageID & new_name) const override
-    {
-        getNested()->checkTableCanBeRenamed(new_name);
-    }
-
-    /// Same reasoning as `checkTableCanBeRenamed`: materialize the nested storage so a
-    /// `RENAME DATABASE` cannot bypass the nested-storage guard (the `leader_election`
-    /// rejection) for a lazily loaded table.
-    void checkTableCanBeRenamedByDatabaseRename() const override
-    {
-        getNested()->checkTableCanBeRenamedByDatabaseRename();
-    }
+    /// NOTE: `checkTableCanBeRenamed` / `checkTableCanBeRenamedByDatabaseRename` /
+    /// `dropSkipsDataDirectoryCleanup` are intentionally NOT overridden here on the generic
+    /// `StorageProxy`. Materializing the nested storage in these metadata-only hooks is only
+    /// wanted for `StorageTableProxy` (lazy on-disk tables, where the `leader_election` guard in
+    /// `StorageMergeTree` must run). For `StorageTableFunctionProxy` it would force loading the
+    /// nested table function on a plain `RENAME`/`DROP`, contacting the external source even
+    /// though those proxies store no data and need no such guard. The hooks live in
+    /// `StorageTableProxy` instead.
 
     void renameInMemory(const StorageID & new_table_id) override
     {
@@ -181,7 +173,6 @@ public:
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableCanBeDropped(query_context); }
 
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
-    bool dropSkipsDataDirectoryCleanup() const override { return getNested()->dropSkipsDataDirectoryCleanup(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getNested()->totalRows(query_context); }
