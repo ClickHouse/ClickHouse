@@ -3,135 +3,212 @@
 #include <gtest/gtest.h>
 
 #include <Common/CurrentThread.h>
-#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Interpreters/Context.h>
 
-namespace ProfileEvents
+namespace CurrentMetrics
 {
-    extern const Event Query;
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
-/// Regression test for the borrowed-ThreadGroup use-after-free.
+/// Regression coverage for borrowed `ThreadGroup` async accounting.
 ///
-/// A "borrowed" child group (createForMaterializedView / createForFlushAsyncInsertQueue) stores RAW
-/// pointers into its parent group's performance_counters / memory_tracker. The documented invariant
-/// (MemoryTracker.h: "Lifetime of these trackers should include lifetime of current tracker") was not
-/// enforced: nothing kept the parent alive, so a child pinned past the source query's end (e.g. by a
-/// MergeTreeDeduplicationLog writer's captured thread-pool scheduler under s3_allow_parallel_part_upload)
-/// outlived its parent. The next counter increment / MemoryTracker::setParent then walked freed memory.
-///
-/// The fix makes the borrowed child own a shared_ptr to its parent. These tests drop every EXTERNAL
-/// reference to the parent and then exercise the borrowed pointers; without the fix this is a UAF that
-/// ASan/TSan catch, with the fix the parent stays alive for exactly as long as the child needs it.
+/// Borrowed groups keep raw accounting pointers into the parent query group. They must stay scoped:
+/// async captures must not extend borrowed accounting past the parent query lifetime.
 
 namespace DB
 {
 
-/// Dropping the only external shared_ptr to the parent must not free the parent group while a borrowed
-/// child is still alive: the child keeps it referenced (use_count stays >= the child's hold).
-TEST(BorrowedThreadGroupLifetime, ChildKeepsParentAlive)
+TEST(BorrowedThreadGroupLifetime, AsyncCallbackCaptureDropsBorrowedGroup)
 {
     std::thread t([&]
     {
         ThreadStatus ts;
         auto context = getContext().context;
 
-        auto parent = std::make_shared<ThreadGroup>(context, 0);
-        std::weak_ptr<ThreadGroup> parent_weak = parent;
+        auto root = std::make_shared<ThreadGroup>(context, 0);
+        auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context, root);
 
-        /// Borrowed child: holds raw pointers into parent->performance_counters / parent->memory_tracker.
-        auto child = std::make_shared<ThreadGroup>(parent);
+        CurrentThread::attachToGroupIfDetached(borrowed);
 
-        /// Drop the only external owner of the parent. With the fix the child still owns it.
-        parent.reset();
+        EXPECT_EQ(getCurrentThreadGroupForAsyncCallback(), nullptr);
 
-        EXPECT_FALSE(parent_weak.expired())
-            << "Borrowed child must keep its parent ThreadGroup alive (raw counter pointers would dangle otherwise)";
+        CurrentThread::detachFromGroupIfNotDetached();
     });
     t.join();
 }
 
-/// The classic crash shape: increment a counter through a borrowed child after the external parent
-/// reference is gone. increment() walks current->parent up the chain into the parent group's Counters.
-/// If the parent were freed, this reads freed memory. With the fix the parent is alive, so the walk is safe.
-TEST(BorrowedThreadGroupLifetime, IncrementThroughBorrowedChildAfterParentDropped)
+TEST(BorrowedThreadGroupLifetime, AsyncCallbackCaptureDropsNestedBorrowedGroup)
 {
     std::thread t([&]
     {
         ThreadStatus ts;
         auto context = getContext().context;
 
-        auto parent = std::make_shared<ThreadGroup>(context, 0);
-        auto child = std::make_shared<ThreadGroup>(parent);
-
-        /// Only the child references the parent now.
-        parent.reset();
-
-        /// Walks child->performance_counters then up into the (still-alive) parent group's counters.
-        child->performance_counters.increment(ProfileEvents::Query, 1);
-        child->performance_counters.incrementNoTrace(ProfileEvents::Query, 1);
-
-        SUCCEED();
-    });
-    t.join();
-}
-
-/// Same hazard for the OTHER borrowed ctor: ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent),
-/// used by createForFlushAsyncInsertQueue. It takes its own query context and master thread id, but borrows
-/// the SAME raw pointers into the parent's performance_counters / memory_tracker, so it must keep the parent
-/// alive identically. Drop the only external parent reference, then verify the parent is still alive and that
-/// incrementing through the borrowed counters does not touch freed memory.
-TEST(BorrowedThreadGroupLifetime, TwoArgCtorChildKeepsParentAlive)
-{
-    std::thread t([&]
-    {
-        ThreadStatus ts;
-        auto context = getContext().context;
-
-        auto parent = std::make_shared<ThreadGroup>(context, 0);
-        std::weak_ptr<ThreadGroup> parent_weak = parent;
-
-        /// Borrowed child via the two-arg ctor (own context + parent). Same borrowed counter pointers.
-        auto child = std::make_shared<ThreadGroup>(context, parent);
-
-        /// Drop the only external owner of the parent. With the fix the child still owns it.
-        parent.reset();
-
-        EXPECT_FALSE(parent_weak.expired())
-            << "Two-arg borrowed child must keep its parent ThreadGroup alive (raw counter pointers would dangle otherwise)";
-
-        /// Walks child->performance_counters then up into the (still-alive) parent group's counters.
-        child->performance_counters.increment(ProfileEvents::Query, 1);
-        child->performance_counters.incrementNoTrace(ProfileEvents::Query, 1);
-    });
-    t.join();
-}
-
-/// Same lifetime hazard exercised through the real attach path: attachToGroupImpl calls
-/// performance_counters.setParent(&thread_group->performance_counters) and
-/// memory_tracker.setParent(&thread_group->memory_tracker), i.e. it dereferences the borrowed child's
-/// parent counters. Attaching to a borrowed child whose external parent reference is gone must be safe.
-TEST(BorrowedThreadGroupLifetime, AttachToBorrowedChildAfterParentDropped)
-{
-    std::thread t([&]
-    {
-        ThreadStatus ts;
-        auto context = getContext().context;
-
-        auto parent = std::make_shared<ThreadGroup>(context, 0);
-        auto child = std::make_shared<ThreadGroup>(parent);
-        parent.reset();
-
-        CurrentThread::attachToGroupIfDetached(child);
-        /// Allocate a little so the memory tracker chain (child -> parent group's tracker) is walked.
-        std::vector<int> v(1024, 7);
-        ProfileEvents::increment(ProfileEvents::Query, 1);
+        auto root = std::make_shared<ThreadGroup>(context, 0);
+        CurrentThread::attachToGroupIfDetached(root);
+        auto borrowed = ThreadGroup::createForMaterializedView(context);
         CurrentThread::detachFromGroupIfNotDetached();
 
-        EXPECT_EQ(getCurrentThreadGroup(), nullptr);
+        CurrentThread::attachToGroupIfDetached(borrowed);
+        auto nested_borrowed = ThreadGroup::createForMaterializedView(context);
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        CurrentThread::attachToGroupIfDetached(nested_borrowed);
+        EXPECT_TRUE(nested_borrowed->isBorrowed());
+        EXPECT_EQ(getCurrentThreadGroupForAsyncCallback(), nullptr);
+
+        CurrentThread::detachFromGroupIfNotDetached();
+    });
+    t.join();
+}
+
+TEST(BorrowedThreadGroupLifetime, UnsafeRunnerCreatedUnderBorrowedGroupRunsWithoutBorrowedGroup)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+
+        ThreadPool pool(
+            CurrentMetrics::LocalThread,
+            CurrentMetrics::LocalThreadActive,
+            CurrentMetrics::LocalThreadScheduled,
+            /*max_threads=*/ 1,
+            /*max_free_threads=*/ 1,
+            /*queue_size=*/ 10);
+
+        auto root = std::make_shared<ThreadGroup>(context, 0);
+        auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context, root);
+
+        CurrentThread::attachToGroupIfDetached(borrowed);
+        auto runner = threadPoolCallbackRunnerUnsafe<bool>(pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto future = runner([]
+        {
+            auto group = getCurrentThreadGroup();
+            return group && group->isBorrowed();
+        }, Priority{});
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        EXPECT_FALSE(future.get());
+        pool.wait();
+    });
+    t.join();
+}
+
+TEST(BorrowedThreadGroupLifetime, UnsafeRunnerCreatedUnderRootGroupDoesNotKeepItAlive)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+
+        ThreadPool pool(
+            CurrentMetrics::LocalThread,
+            CurrentMetrics::LocalThreadActive,
+            CurrentMetrics::LocalThreadScheduled,
+            /*max_threads=*/ 1,
+            /*max_free_threads=*/ 1,
+            /*queue_size=*/ 10);
+
+        auto root = std::make_shared<ThreadGroup>(context, 0);
+        std::weak_ptr<ThreadGroup> root_weak = root;
+
+        CurrentThread::attachToGroupIfDetached(root);
+        auto runner = threadPoolCallbackRunnerUnsafe<void>(pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        root.reset();
+
+        EXPECT_TRUE(root_weak.expired());
+        pool.wait();
+    });
+    t.join();
+}
+
+TEST(BorrowedThreadGroupLifetime, LocalRunnerCreatedUnderBorrowedGroupRunsWithoutBorrowedGroup)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+
+        ThreadPool pool(
+            CurrentMetrics::LocalThread,
+            CurrentMetrics::LocalThreadActive,
+            CurrentMetrics::LocalThreadScheduled,
+            /*max_threads=*/ 1,
+            /*max_free_threads=*/ 1,
+            /*queue_size=*/ 10);
+
+        auto root = std::make_shared<ThreadGroup>(context, 0);
+        auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context, root);
+
+        CurrentThread::attachToGroupIfDetached(borrowed);
+        ThreadPoolCallbackRunnerLocal<bool> runner(pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto task = runner.enqueueAndGiveOwnership([]
+        {
+            auto group = getCurrentThreadGroup();
+            return group && group->isBorrowed();
+        }, Priority{});
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        ASSERT_TRUE(task->future.valid());
+        EXPECT_FALSE(task->future.get());
+        pool.wait();
+    });
+    t.join();
+}
+
+TEST(BorrowedThreadGroupLifetime, ChildDoesNotKeepParentAlive)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+
+        auto parent = std::make_shared<ThreadGroup>(context, 0);
+        std::weak_ptr<ThreadGroup> parent_weak = parent;
+
+        /// Borrowed child: holds raw pointers into `parent->performance_counters` / `parent->memory_tracker`.
+        CurrentThread::attachToGroupIfDetached(parent);
+        auto child = ThreadGroup::createForMaterializedView(context);
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        /// Do not dereference the child after this point: it has raw accounting pointers into `parent`.
+        parent.reset();
+
+        EXPECT_TRUE(parent_weak.expired())
+            << "Borrowed child must not keep its parent `ThreadGroup` alive";
+    });
+    t.join();
+}
+
+TEST(BorrowedThreadGroupLifetime, FlushAsyncInsertQueueGroupDoesNotKeepParentAlive)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+
+        auto parent = std::make_shared<ThreadGroup>(context, 0);
+        std::weak_ptr<ThreadGroup> parent_weak = parent;
+
+        /// Borrowed child via the public async-insert factory. Same borrowed counter pointers.
+        auto child = ThreadGroup::createForFlushAsyncInsertQueue(context, parent);
+
+        /// Do not dereference the child after this point: it has raw accounting pointers into `parent`.
+        parent.reset();
+
+        EXPECT_TRUE(parent_weak.expired())
+            << "Async-insert borrowed child must not keep its parent `ThreadGroup` alive";
     });
     t.join();
 }
