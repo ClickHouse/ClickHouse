@@ -988,6 +988,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         pipeline.addCompletedPipeline(std::move(remote_pipeline));
     }
 
+    /// Otherwise CompletedPipelineExecutor uses 1 thread and shards are written sequentially.
+    pipeline.setNumThreads(settings[Setting::max_threads]);
+
     return pipeline;
 }
 

@@ -174,6 +174,10 @@ private:
     IOutputFormat * output_format = nullptr;
 
     size_t num_threads = 0;
+    /// Set by addCompletedPipeline: such a pipeline is hand-assembled from independent
+    /// completed subgraphs, so no builder computed its thread count. The assembler must
+    /// then set num_threads explicitly (CompletedPipelineExecutor enforces this).
+    bool assembled_from_completed = false;
     bool concurrency_control = false;
 
     friend class PushingPipelineExecutor;

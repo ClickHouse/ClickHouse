@@ -729,6 +729,7 @@ void QueryPipeline::addCompletedPipeline(QueryPipeline && other)
 
     resources.append(other.resources);
     processors->insert(processors->end(), std::make_move_iterator(other.processors->begin()), std::make_move_iterator(other.processors->end()));
+    assembled_from_completed = true;
 }
 
 void QueryPipeline::addCompletedPipeline(const QueryPipeline & other)
@@ -738,6 +739,7 @@ void QueryPipeline::addCompletedPipeline(const QueryPipeline & other)
 
     resources.append(other.resources);
     processors->insert(processors->end(), other.processors->begin(), other.processors->end());
+    assembled_from_completed = true;
 }
 
 void QueryPipeline::reset()
