@@ -2308,6 +2308,12 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// section pass validation. So gate the scan on the handler type and the single
     /// consumed field. We iterate only the known handler-group prefixes, never the growing
     /// exemption set, so a discovered payload key can never be mistaken for a handler group.
+    ///
+    /// Read `response_content` with `getRawString`, exactly as `createStaticHandlerFactory`
+    /// does. `getString` would expand Poco `${...}` references first, so a value like
+    /// `${ref}` (with `<ref>config://payload</ref>` elsewhere) would record `payload` as
+    /// referenced here, while `StaticRequestHandler` sees the raw `${ref}` text and never
+    /// reads `payload` — exempting `payload` on that basis is a false negative.
     {
         static const String config_prefix = "config://";
         for (const auto & group : handler_group_paths)
@@ -2324,7 +2330,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 String path = group + "." + rule + ".handler.response_content";
                 if (!config.has(path))
                     continue;
-                String value = config.getString(path);
+                String value = config.getRawString(path);
                 if (value.starts_with(config_prefix))
                 {
                     String ref = top_level_component(value.substr(config_prefix.size()));
@@ -2372,25 +2378,29 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// not merged into the server config, so it is intentionally excluded here.
         std::unordered_set<std::string> merge_files;
 
-        auto scan_file = [&](const fs::path & p)
+        /// Returns true iff the file is an actual merge candidate — i.e. it exists, parses, and has
+        /// a root the merger accepts. Only such files contribute their top-level tags to the merged
+        /// config, so only they belong in `merge_files`. Also collects any `<include_from>` source.
+        auto scan_file = [&](const fs::path & p) -> bool
         {
             if (!fs::exists(p) || !fs::is_regular_file(p))
-                return;
+                return false;
             try
             {
                 Poco::AutoPtr<Poco::XML::Document> doc = ConfigProcessor::parseConfig(p.string(), dom_parser);
                 if (!doc)
-                    return;
-                /// Align with `ConfigProcessor::merge`: it merges only files whose root matches
-                /// the main config root (`clickhouse` and `yandex` are treated as equivalent and
-                /// other roots are silently skipped). Walking a file that the merger would skip
+                    return false;
+                /// Align with `ConfigProcessor::merge`: it merges only files whose root matches the
+                /// main config root (`clickhouse` and `yandex` are treated as equivalent). A fragment
+                /// with any other root is not merged, so its top-level tags never become top-level
+                /// keys of the validated config — it must not enter `merge_files`, and walking it
                 /// would inject bogus `incl` references and mask real typos in the merged config.
                 auto * root = doc->documentElement();
                 if (!root)
-                    return;
+                    return false;
                 const String root_name = root->nodeName();
                 if (root_name != "clickhouse" && root_name != "yandex")
-                    return;
+                    return false;
                 /// Pick up a top-level `<include_from>` so we can later parse the source.
                 /// Also resolve `from_env="VAR"` substitutions, which leave `innerText()` empty
                 /// in the raw XML (the value lives in the environment, not the document).
@@ -2414,10 +2424,12 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             include_from_paths.insert(std::move(src));
                     }
                 }
+                return true;
             }
             catch (...) // NOLINT(bugprone-empty-catch)
             {
                 /// Best-effort scan: ignore parse failures (broken or non-config XML in the dir). Ok.
+                return false;
             }
         };
 
@@ -2426,13 +2438,15 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// `conf.d`, accepting `.xml`, `.conf`, `.yaml`, and `.yml`) instead of hard-coding
         /// `config.d` with an `.xml`/`.yaml` filter — otherwise a substitution source kept in a
         /// `.conf` file or a `conf.d` directory would be missed and the merged config rejected.
+        /// A file enters `merge_files` only when `scan_file` confirms the merger would merge it
+        /// (matching root), so a fragment the merger would skip cannot exempt its top-level tags.
         fs::path config_dir = fs::path(config_path).remove_filename();
-        merge_files.insert(to_canonical(config_path));
-        scan_file(config_path);
+        if (scan_file(config_path))
+            merge_files.insert(to_canonical(config_path));
         for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(config_path))
         {
-            merge_files.insert(to_canonical(merge_file));
-            scan_file(merge_file);
+            if (scan_file(merge_file))
+                merge_files.insert(to_canonical(merge_file));
         }
 
         /// The merged `config` already has `<include_from>` substitutions (from_env, from_zk)
@@ -2523,7 +2537,30 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// child looks like a rollup rule would let a typo'd top-level section that merely happens to
     /// contain a `<pattern>` (alongside an unrelated child the parser rejects) pass validation — a
     /// false negative for exactly the unknown top-level sections this check is meant to catch.
-    auto looks_like_graphite_rollup = [&config](const String & section) -> bool
+    ///
+    /// The check is recursive: a `<pattern>`/`<default>` rule must itself contain only the children
+    /// `appendGraphitePattern` accepts — `regexp`, `function`, `rule_type`, or a `retention*` block —
+    /// otherwise the parser throws on the foreign nested key. Validating only the section's immediate
+    /// children would accept e.g. `<default><not_a_graphite_key>...</not_a_graphite_key></default>`,
+    /// which `appendGraphitePattern` rejects: another false negative.
+    auto graphite_rule_children_recognized = [&config](const String & rule_element) -> bool
+    {
+        Poco::Util::AbstractConfiguration::Keys rule_children;
+        config.keys(rule_element, rule_children);
+        for (const auto & rule_child : rule_children)
+        {
+            /// Mirror `appendGraphitePattern`: it accepts `regexp`, `function`, `rule_type` and any
+            /// `retention*` block (`startsWith(key, "retention")`), throwing on anything else. It
+            /// reads `<retention>` only as `.age`/`.precision`, so its grandchildren are not checked.
+            const bool ok = rule_child == "regexp" || rule_child == "function"
+                || rule_child == "rule_type" || rule_child.starts_with("retention");
+            if (!ok)
+                return false;
+        }
+        return true;
+    };
+
+    auto looks_like_graphite_rollup = [&config, &graphite_rule_children_recognized](const String & section) -> bool
     {
         Poco::Util::AbstractConfiguration::Keys children;
         config.keys(section, children);
@@ -2542,6 +2579,11 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 || child == "value_column_name" || child == "version_column_name";
 
             if (!is_pattern && !is_default && !is_column)
+                return false;
+
+            /// Recurse into rollup rules: a `<pattern>`/`<default>` carrying a foreign nested key is
+            /// rejected by `appendGraphitePattern`, so the whole section is an unknown top-level key.
+            if ((is_pattern || is_default) && !graphite_rule_children_recognized(section + "." + child))
                 return false;
         }
         return true;

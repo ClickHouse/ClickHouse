@@ -201,6 +201,32 @@ node_reload_skip_state = cluster_reload_skip_state.add_instance(
     stay_alive=True,
 )
 
+# Negative case: `StaticRequestHandler` reads `response_content` with `getRawString`, so a Poco
+# `${...}` reference is served verbatim, not expanded. The validator must read it the same way: if it
+# used `getString` it would expand the reference to `config://expansion_only_payload` and wrongly
+# exempt that unknown top-level key, even though no server code reads it (a false negative).
+cluster_response_content_expansion = ClickHouseCluster(
+    __file__, name="response_content_expansion"
+)
+node_response_content_expansion = cluster_response_content_expansion.add_instance(
+    "node_response_content_expansion",
+    main_configs=["configs/config.d/static_handler_response_content_expansion.xml"],
+)
+caught_response_content_expansion_exception = ""
+
+# Negative case: a `GraphiteMergeTree`-shaped section whose immediate children are all recognized
+# (a `<default>` rule) but whose rule contains a foreign NESTED child that `appendGraphitePattern`
+# rejects. The validator must recurse into each `<pattern>`/`<default>` rule, not just check the
+# section's immediate children, otherwise a typo'd section with a nested foreign key sneaks through.
+cluster_graphite_nested_foreign = ClickHouseCluster(
+    __file__, name="graphite_nested_foreign"
+)
+node_graphite_nested_foreign = cluster_graphite_nested_foreign.add_instance(
+    "node_graphite_nested_foreign",
+    main_configs=["configs/config.d/graphite_nested_foreign_child.xml"],
+)
+caught_graphite_nested_foreign_exception = ""
+
 
 @pytest.fixture(scope="module")
 def start_bad_cluster():
@@ -389,6 +415,40 @@ def start_reload_skip_state_cluster():
     cluster_reload_skip_state.start()
     yield
     cluster_reload_skip_state.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_response_content_expansion_cluster():
+    global caught_response_content_expansion_exception
+    try:
+        cluster_response_content_expansion.start()
+    except Exception as e:
+        caught_response_content_expansion_exception = str(e)
+        err_log = os.path.join(
+            node_response_content_expansion.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_response_content_expansion_exception += "\n" + f.read()
+    yield
+    cluster_response_content_expansion.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_graphite_nested_foreign_cluster():
+    global caught_graphite_nested_foreign_exception
+    try:
+        cluster_graphite_nested_foreign.start()
+    except Exception as e:
+        caught_graphite_nested_foreign_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_nested_foreign.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_nested_foreign_exception += "\n" + f.read()
+    yield
+    cluster_graphite_nested_foreign.shutdown()
 
 
 def test_unknown_config_option_rejected(start_bad_cluster):
@@ -767,3 +827,25 @@ def test_reload_does_not_inherit_stale_skip_flag(start_reload_skip_state_cluster
     finally:
         node_reload_skip_state.replace_config(initial_config_path, original_config)
         node_reload_skip_state.query("SYSTEM RELOAD CONFIG")
+
+
+def test_response_content_expansion_does_not_exempt_unknown_key(
+    start_response_content_expansion_cluster,
+):
+    # `StaticRequestHandler` reads `response_content` with `getRawString`, so the `${...}` reference
+    # is served raw and never expanded; the key it would expand to (`expansion_only_payload`) is never
+    # read by the server. The validator must read the field with `getRawString` too — if it expanded
+    # the reference (via `getString`) it would wrongly exempt the unknown top-level key. The node must
+    # therefore fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` naming that key.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_response_content_expansion_exception
+    assert "expansion_only_payload" in caught_response_content_expansion_exception
+
+
+def test_graphite_nested_foreign_child_rejected(start_graphite_nested_foreign_cluster):
+    # `<graphite_nested_foreign>` has a single recognized immediate child (`<default>`), but the
+    # `<default>` rule contains a foreign nested child (`<not_a_graphite_key>`) that
+    # `appendGraphitePattern` rejects. Checking only the section's immediate children would accept it;
+    # the validator must recurse into the rule and reject the whole section as an unknown top-level
+    # key. The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_nested_foreign_exception
+    assert "graphite_nested_foreign" in caught_graphite_nested_foreign_exception
