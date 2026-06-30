@@ -35,14 +35,15 @@ $CLICKHOUSE_CLIENT -mq "
 "
 
 # Local form: already works (checks SYSTEM_PREWARM_PRIMARY_INDEX_CACHE).
+# Assert the command actually succeeds (zero exit), not just the absence of ACCESS_DENIED.
 echo "local"
-$CLICKHOUSE_CLIENT --user "$user" -q "SYSTEM PREWARM PRIMARY INDEX CACHE $CLICKHOUSE_DATABASE.$table" 2>&1 \
-    | grep -m1 -F -o "ACCESS_DENIED" || echo "ok"
+$CLICKHOUSE_CLIENT --user "$user" -q "SYSTEM PREWARM PRIMARY INDEX CACHE $CLICKHOUSE_DATABASE.$table" >/dev/null || exit 1
+echo "ok"
 
 # ON CLUSTER form: before the fix it was denied asking for SYSTEM PREWARM MARK CACHE.
 echo "on cluster"
-$CLICKHOUSE_CLIENT --user "$user" -q "SYSTEM PREWARM PRIMARY INDEX CACHE ON CLUSTER test_shard_localhost $CLICKHOUSE_DATABASE.$table" 2>&1 \
-    | grep -m1 -F -o "ACCESS_DENIED" || echo "ok"
+$CLICKHOUSE_CLIENT --user "$user" -q "SYSTEM PREWARM PRIMARY INDEX CACHE ON CLUSTER test_shard_localhost $CLICKHOUSE_DATABASE.$table" >/dev/null || exit 1
+echo "ok"
 
 # Negative control: a user WITHOUT the privilege is denied, and the required grant
 # named in the error is SYSTEM PREWARM PRIMARY INDEX CACHE (not MARK CACHE).
