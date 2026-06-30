@@ -1076,7 +1076,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
-    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
+    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
     {
         if (FullSortingMergeJoin::isSupported(analyzed_join))
             return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
