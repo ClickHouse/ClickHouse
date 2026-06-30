@@ -77,7 +77,7 @@ struct NameEndsWithCaseInsensitiveUTF8
 };
 
 template <typename Name>
-class FunctionStartsEndsWith final : public IFunction
+class FunctionStartsEndsWith : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -148,7 +148,7 @@ private:
         for (size_t i = 0; i < 2; ++i)
             preprocessed_columns[i] = castColumn(arguments[i], common_type);
 
-        VectorWithMemoryTracking<std::unique_ptr<GatherUtils::IArraySource>> sources;
+        std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
         for (auto & argument_column : preprocessed_columns)
         {
             bool is_const = false;

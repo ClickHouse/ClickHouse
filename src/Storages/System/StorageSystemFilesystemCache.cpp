@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemFilesystemCache.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
@@ -28,7 +27,7 @@ namespace DB
 {
 namespace
 {
-class SystemFilesystemCacheSource final : public ISource, private WithContext
+class SystemFilesystemCacheSource : public ISource, private WithContext
 {
 public:
     SystemFilesystemCacheSource(
@@ -289,6 +288,3 @@ void StorageSystemFilesystemCache::readImpl(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemFilesystemCache) }
