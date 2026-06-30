@@ -1411,6 +1411,135 @@ namespace
     using ProtobufSerializerDateTime64 = ProtobufSerializerDecimal<DateTime64>;
 
 
+    bool isGoogleTimestampField(const FieldDescriptor & field_descriptor)
+    {
+        const auto * message_descriptor = field_descriptor.message_type();
+        if (message_descriptor == nullptr)
+            return false;
+        return message_descriptor->well_known_type() == google::protobuf::Descriptor::WELLKNOWNTYPE_TIMESTAMP;
+    }
+
+
+    /// Serializes a DateTime or DateTime64 column to/from a google.protobuf.Timestamp message field.
+    template <typename ColumnType>
+    class ProtobufSerializerTimestamp : public ProtobufSerializerSingleValue
+    {
+    public:
+        ProtobufSerializerTimestamp(
+            std::string_view column_name_,
+            UInt32 scale_,
+            const FieldDescriptor & field_descriptor_,
+            const ProtobufReaderOrWriter & reader_or_writer_)
+            : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
+            , ticks_per_second(DecimalUtils::scaleMultiplier<Int64>(scale_))
+            , nanos_per_tick(DecimalUtils::scaleMultiplier<Int64>(9 - scale_))
+            , skip_if_empty(shouldSkipZeroOrEmpty(field_descriptor_))
+        {
+            const auto * message_type = field_descriptor.message_type();
+            const auto * seconds_field = message_type ? message_type->FindFieldByName("seconds") : nullptr;
+            const auto * nanos_field = message_type ? message_type->FindFieldByName("nanos") : nullptr;
+            if (!seconds_field || !nanos_field)
+                incompatibleColumnType(is_datetime64 ? "DateTime64" : "DateTime");
+            seconds_field_number = seconds_field->number();
+            nanos_field_number = nanos_field->number();
+        }
+
+        void writeRow(size_t row_num) override
+        {
+            const Int64 ticks = getTicks(row_num);
+
+            Int64 seconds = ticks / ticks_per_second;
+            Int64 frac = ticks % ticks_per_second;
+            if (frac < 0)
+            {
+                frac += ticks_per_second;
+                --seconds;
+            }
+            const Int64 nanos = frac * nanos_per_tick;
+
+            writer->startNestedMessage();
+            if (seconds != 0)
+                writer->writeInt(seconds_field_number, seconds);
+            if (nanos != 0)
+                writer->writeInt(nanos_field_number, nanos);
+            writer->endNestedMessage(field_tag, /* is_group = */ false, skip_if_empty);
+        }
+
+        void readRow(size_t row_num) override
+        {
+            Int64 seconds = 0;
+            Int64 nanos = 0;
+
+            reader->startNestedMessage();
+            int field_number;
+            while (reader->readFieldNumber(field_number))
+            {
+                if (field_number == seconds_field_number)
+                    seconds = reader->readInt();
+                else if (field_number == nanos_field_number)
+                    nanos = reader->readInt();
+            }
+            reader->endNestedMessage();
+
+            setTicks(row_num, seconds * ticks_per_second + nanos / nanos_per_tick);
+        }
+
+        void insertDefaults(size_t row_num) override
+        {
+            auto & column_data = assert_cast<ColumnType &>(column->assumeMutableRef());
+            if (row_num < column_data.size())
+                return;
+            column_data.insertDefault();
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerTimestamp: column " << quoteString(column_name) << " -> field "
+                                     << quoteString(field_descriptor.full_name()) << " (" << field_descriptor.type_name() << ")\n";
+        }
+
+    private:
+        static constexpr bool is_datetime64 = std::is_same_v<ColumnType, ColumnDecimal<DateTime64>>;
+
+        Int64 getTicks(size_t row_num) const
+        {
+            const auto & column_data = assert_cast<const ColumnType &>(*column);
+            if constexpr (is_datetime64)
+                return column_data.getElement(row_num).value;
+            else
+                return static_cast<Int64>(column_data.getElement(row_num));
+        }
+
+        void setTicks(size_t row_num, Int64 ticks)
+        {
+            auto & column_data = assert_cast<ColumnType &>(column->assumeMutableRef());
+            if constexpr (is_datetime64)
+            {
+                const DateTime64 value{ticks};
+                if (row_num < column_data.size())
+                    column_data.getElement(row_num) = value;
+                else
+                    column_data.insertValue(value);
+            }
+            else
+            {
+                ticks = std::min<Int64>(std::max<Int64>(ticks, 0), std::numeric_limits<UInt32>::max());
+                const auto value = static_cast<UInt32>(ticks);
+                if (row_num < column_data.size())
+                    column_data.getElement(row_num) = value;
+                else
+                    column_data.insertValue(value);
+            }
+        }
+
+        const Int64 ticks_per_second;
+        const Int64 nanos_per_tick;
+        const bool skip_if_empty;
+        int seconds_field_number = 1;
+        int nanos_field_number = 2;
+    };
+
+
     /// Serializes a ColumnVector<UInt16> containing dates to a field of any type except TYPE_MESSAGE, TYPE_GROUP, TYPE_BOOL, TYPE_ENUM.
     class ProtobufSerializerDate : public ProtobufSerializerNumber<UInt16>
     {
@@ -3920,8 +4049,20 @@ namespace
                 case TypeIndex::Float32: return std::make_unique<ProtobufSerializerNumber<Float32>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Float64: return std::make_unique<ProtobufSerializerNumber<Float64>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Date: return std::make_unique<ProtobufSerializerDate>(column_name, field_descriptor, reader_or_writer);
-                case TypeIndex::DateTime: return std::make_unique<ProtobufSerializerDateTime>(column_name, assert_cast<const DataTypeDateTime &>(*data_type), field_descriptor, reader_or_writer);
-                case TypeIndex::DateTime64: return std::make_unique<ProtobufSerializerDateTime64>(column_name, assert_cast<const DataTypeDateTime64 &>(*data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::DateTime:
+                {
+                    const auto & datetime_type = assert_cast<const DataTypeDateTime &>(*data_type);
+                    if (isGoogleTimestampField(field_descriptor))
+                        return std::make_unique<ProtobufSerializerTimestamp<ColumnVector<UInt32>>>(column_name, /* scale = */ 0, field_descriptor, reader_or_writer);
+                    return std::make_unique<ProtobufSerializerDateTime>(column_name, datetime_type, field_descriptor, reader_or_writer);
+                }
+                case TypeIndex::DateTime64:
+                {
+                    const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
+                    if (isGoogleTimestampField(field_descriptor))
+                        return std::make_unique<ProtobufSerializerTimestamp<ColumnDecimal<DateTime64>>>(column_name, datetime64_type.getScale(), field_descriptor, reader_or_writer);
+                    return std::make_unique<ProtobufSerializerDateTime64>(column_name, datetime64_type, field_descriptor, reader_or_writer);
+                }
                 case TypeIndex::String: return std::make_unique<ProtobufSerializerString<false>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::FixedString: return std::make_unique<ProtobufSerializerString<true>>(column_name, typeid_cast<std::shared_ptr<const DataTypeFixedString>>(data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::Enum8: return std::make_unique<ProtobufSerializerEnum<Int8>>(column_name, typeid_cast<std::shared_ptr<const DataTypeEnum8>>(data_type), field_descriptor, reader_or_writer);
