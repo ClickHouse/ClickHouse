@@ -68,6 +68,7 @@ namespace FailPoints
 {
     extern const char object_storage_queue_fail_in_the_middle_of_file[];
     extern const char object_storage_queue_fail_commit_after_success[];
+    extern const char object_storage_queue_skip_one_file_in_batch[];
     extern const char object_storage_queue_cancel_in_generate[];
     extern const char object_storage_queue_sleep_in_generate[];
 }
@@ -274,7 +275,17 @@ ObjectStorageQueueSource::FileIterator::next()
                         new_batch[i]->getPath(),
                         /* bucket_info */ {}); /// No buckets for Unordered mode.
 
-                    auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
+                    /// Test-only: make the first file of a multi-file batch non-processable,
+                    /// taking the same std::nullopt path as a file grabbed by another consumer.
+                    bool force_skip = false;
+                    fiu_do_on(FailPoints::object_storage_queue_skip_one_file_in_batch, {
+                        if (new_batch.size() > 1 && i == 0)
+                            force_skip = true;
+                    });
+
+                    std::optional<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes> set_processing_result;
+                    if (!force_skip)
+                        set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
                     {
                         result_indexes[i] = set_processing_result.value();
@@ -390,6 +401,9 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 if (num_successful_objects != new_batch.size())
                 {
+                    /// file_metadatas is empty when the keeper tryMulti above failed and
+                    /// cleared it (see the chassert below); only compact it when populated.
+                    const bool compact_file_metadatas = !file_metadatas.empty();
                     size_t batch_i = 0;
                     for (size_t i = 0; i < num_successful_objects; ++i, ++batch_i)
                     {
@@ -405,10 +419,12 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
 
                         new_batch[i] = new_batch[batch_i];
-                        file_metadatas[i] = file_metadatas[batch_i];
+                        if (compact_file_metadatas)
+                            file_metadatas[i] = file_metadatas[batch_i];
                     }
                     new_batch.resize(num_successful_objects);
-                    file_metadatas.resize(num_successful_objects);
+                    if (compact_file_metadatas)
+                        file_metadatas.resize(num_successful_objects);
                 }
 
                 chassert(file_metadatas.empty() || new_batch.size() == file_metadatas.size());
