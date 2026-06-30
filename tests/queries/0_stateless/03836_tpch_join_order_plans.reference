@@ -1,559 +1,1402 @@
 -- Q01
-Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
-  Expression ((Before ORDER BY + Projection))
-    Sorting
-      MergingAggregated
-        GatherExchange
-          Aggregating
-            Expression (Before GROUP BY)
-              Expression ((WHERE + Change column names to column identifiers))
-                ReadFromMergeTree (ParallelRead default.lineitem)
+Output: l_returnflag, l_linestatus, sumCount(l_quantity).1, sumCount(l_extendedprice).1, sum(l_extendedprice * (1 − l_discount)), sum(l_extendedprice * (1 − l_discount) * (1 + l_tax)), sumCount(l_quantity).1 / toFloat64(sumCount(l_quantity).2), sumCount(l_extendedprice).1 / toFloat64(sumCount(l_extendedprice).2), avg(l_discount), count()
+
+Sorting
+│  Sort description: l_returnflag ASC, l_linestatus ASC
+└──MergingAggregated
+   │  Keys: l_returnflag, l_linestatus
+   │  Aggregates: sumCount(l_quantity), sumCount(l_extendedprice), sum(l_extendedprice * (1 − l_discount)), sum(l_extendedprice * (1 − l_discount) * (1 + l_tax)), avg(l_discount), count()
+   └──GatherExchange
+      └──Aggregating
+         │  Keys: l_returnflag, l_linestatus
+         │  Aggregates: sumCount(l_quantity), sumCount(l_extendedprice), sum(l_extendedprice * (1 − l_discount)), sum(l_extendedprice * (1 − l_discount) * (1 + l_tax)), avg(l_discount), count()
+         │  Skip merging: 0
+         └──ReadFromMergeTree (ParallelRead default.lineitem)
+               Read type: Default
+               Parts: 1 | Granules: 1
+               Output: l_returnflag, l_linestatus, l_quantity, l_extendedprice, l_discount, l_tax
+               Prewhere filter
+               Prewhere filter column:  l_shipdate <= \'1998-09-02\'
 -- Q02
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Limit (TopN merge Sorting for ORDER BY)
-      GatherExchange
-        Sorting
-          Expression ((Before ORDER BY + Projection))
-            Filter (WHERE)
-              JoinLogical (Broadcast HashJoin )
-                JoinLogical (Broadcast HashJoin )
-                  JoinLogical (Broadcast HashJoin )
-                    JoinLogical (Shuffle HashJoin )
-                      ShuffleExchange
-                        JoinLogical (Shuffle HashJoin  swapped)
-                          Expression (Change column names to column identifiers)
-                            ShuffleExchange
-                              ReadFromMergeTree (ParallelRead default.partsupp)
-                          Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
-                            Aggregating
-                              Expression ((Before GROUP BY + ))
-                                ShuffleExchange
-                                  JoinLogical (Broadcast HashJoin  swapped)
-                                    Expression (((WHERE + Renaming correlated columns to equivalent expressions in subquery) + Change column names to column identifiers))
-                                      ReadFromMergeTree (ParallelRead default.partsupp)
-                                    BroadcastExchange
-                                      JoinLogical (Local HashJoin  swapped)
-                                        Expression (Change column names to column identifiers)
-                                          ReadFromMergeTree (default.supplier)
-                                        JoinLogical (Local HashJoin )
-                                          Expression (Change column names to column identifiers)
-                                            ReadFromMergeTree (default.nation)
-                                          Expression (((WHERE + Renaming correlated columns to equivalent expressions in subquery) + Change column names to column identifiers))
-                                            ReadFromMergeTree (default.region)
-                      Expression (Change column names to column identifiers)
-                        ShuffleExchange
-                          ReadFromMergeTree (ParallelRead default.supplier)
-                    Expression (Change column names to column identifiers)
-                      ReadFromMergeTree (ReplicatedRead default.nation)
-                  Expression ((WHERE + Change column names to column identifiers))
-                    ReadFromMergeTree (ReplicatedRead default.part)
-                Expression ((WHERE + Change column names to column identifiers))
-                  ReadFromMergeTree (ReplicatedRead default.region)
+Output: s_acctbal, s_name, n_name, ps_partkey, p_mfgr, s_address, s_phone, s_comment
+
+Limit (preliminary LIMIT)
+│  Limit 100
+│  Offset 0
+└──Limit (TopN merge Sorting for ORDER BY)
+   │  Limit 100
+   │  Offset 0
+   └──GatherExchange
+      └──Sorting
+         │  Sort description: s_acctbal DESC, n_name ASC, s_name ASC, ps_partkey ASC
+         │  Limit 100
+         └──Filter (WHERE)
+            │  Filter column: ps_supplycost = CAST(min(ps_supplycost) AS Nullable(Decimal(15, 2)))
+            └──JoinLogical (Broadcast HashJoin )
+               │  Join: R0 ⋈ partsupp[80000000] ⋈ supplier[1000000] ⋈ nation[25] ⋈ part[137000] ⋈ region[1]
+               │  ResultRows: unknown
+               │  Type: INNER
+               │  Strictness: ALL
+               │  Locality: UNSPECIFIED
+               │  Expression: equals(__table4.n_regionkey, __table5.r_regionkey)
+               ├──JoinLogical (Broadcast HashJoin )
+               │  │  Join: R0 ⋈ partsupp[80000000] ⋈ supplier[1000000] ⋈ nation[25] ⋈ part[137000]
+               │  │  ResultRows: unknown
+               │  │  Type: INNER
+               │  │  Strictness: ALL
+               │  │  Locality: UNSPECIFIED
+               │  │  Expression: equals(__table1.p_partkey, __table3.ps_partkey)
+               │  ├──JoinLogical (Broadcast HashJoin )
+               │  │  │  Join: R0 ⋈ partsupp[80000000] ⋈ supplier[1000000] ⋈ nation[25]
+               │  │  │  ResultRows: unknown
+               │  │  │  Type: INNER
+               │  │  │  Strictness: ALL
+               │  │  │  Locality: UNSPECIFIED
+               │  │  │  Expression: equals(__table2.s_nationkey, __table4.n_nationkey)
+               │  │  ├──JoinLogical (Shuffle HashJoin )
+               │  │  │  │  Join: R0 ⋈ partsupp[80000000] ⋈ supplier[1000000]
+               │  │  │  │  ResultRows: unknown
+               │  │  │  │  Type: INNER
+               │  │  │  │  Strictness: ALL
+               │  │  │  │  Locality: UNSPECIFIED
+               │  │  │  │  Expression: equals(__table2.s_suppkey, __table3.ps_suppkey)
+               │  │  │  ├──ShuffleExchange
+               │  │  │  │  └──JoinLogical (Shuffle HashJoin  swapped)
+               │  │  │  │     │  Join: partsupp[80000000] ⋈ R0
+               │  │  │  │     │  ResultRows: unknown
+               │  │  │  │     │  Type: INNER
+               │  │  │  │     │  Strictness: ALL
+               │  │  │  │     │  Locality: UNSPECIFIED
+               │  │  │  │     │  Expression: equals(__table6.__table1.p_partkey, __table3.ps_partkey)
+               │  │  │  │     ├──ShuffleExchange
+               │  │  │  │     │  └──ReadFromMergeTree (ParallelRead default.partsupp)
+               │  │  │  │     │        Read type: Default
+               │  │  │  │     │        Parts: 1 | Granules: 1
+               │  │  │  │     │        Output: ps_partkey, ps_suppkey, ps_supplycost
+               │  │  │  │     └──Aggregating
+               │  │  │  │        │  Keys: ps_partkey
+               │  │  │  │        │  Aggregates: min(ps_supplycost)
+               │  │  │  │        │  Skip merging: 0
+               │  │  │  │        └──ShuffleExchange
+               │  │  │  │           └──JoinLogical (Broadcast HashJoin  swapped)
+               │  │  │  │              │  Join: partsupp[80000000] ⋈ nation[25] ⋈ region[1] ⋈ supplier[1000000]
+               │  │  │  │              │  ResultRows: 15999999
+               │  │  │  │              │  Type: INNER
+               │  │  │  │              │  Strictness: ALL
+               │  │  │  │              │  Locality: UNSPECIFIED
+               │  │  │  │              │  Expression: equals(__table8.s_suppkey, __table7.ps_suppkey)
+               │  │  │  │              ├──ReadFromMergeTree (ParallelRead default.partsupp)
+               │  │  │  │              │     Read type: Default
+               │  │  │  │              │     Parts: 1 | Granules: 1
+               │  │  │  │              │     Output: ps_partkey, ps_supplycost, ps_suppkey
+               │  │  │  │              │     Prewhere filter
+               │  │  │  │              │     Prewhere filter column:  ps_partkey = ps_partkey
+               │  │  │  │              └──BroadcastExchange
+               │  │  │  │                 └──JoinLogical (Local HashJoin  swapped)
+               │  │  │  │                    │  Join: supplier[1000000] ⋈ nation[25] ⋈ region[1]
+               │  │  │  │                    │  ResultRows: 200000
+               │  │  │  │                    │  Type: INNER
+               │  │  │  │                    │  Strictness: ALL
+               │  │  │  │                    │  Locality: UNSPECIFIED
+               │  │  │  │                    │  Expression: equals(__table8.s_nationkey, __table9.n_nationkey)
+               │  │  │  │                    ├──ReadFromMergeTree (default.supplier)
+               │  │  │  │                    │     Read type: Default
+               │  │  │  │                    │     Parts: 1 | Granules: 1
+               │  │  │  │                    │     Output: s_suppkey, s_nationkey
+               │  │  │  │                    └──JoinLogical (Local HashJoin )
+               │  │  │  │                       │  Join: nation[25] ⋈ region[1]
+               │  │  │  │                       │  ResultRows: 5
+               │  │  │  │                       │  Type: INNER
+               │  │  │  │                       │  Strictness: ALL
+               │  │  │  │                       │  Locality: UNSPECIFIED
+               │  │  │  │                       │  Expression: equals(__table9.n_regionkey, __table10.r_regionkey)
+               │  │  │  │                       ├──ReadFromMergeTree (default.nation)
+               │  │  │  │                       │     Read type: Default
+               │  │  │  │                       │     Parts: 1 | Granules: 1
+               │  │  │  │                       │     Output: n_nationkey, n_regionkey
+               │  │  │  │                       └──ReadFromMergeTree (default.region)
+               │  │  │  │                             Read type: Default
+               │  │  │  │                             Parts: 1 | Granules: 1
+               │  │  │  │                             Output: r_name, r_regionkey
+               │  │  │  │                             Prewhere filter
+               │  │  │  │                             Prewhere filter column:  r_name = \'EUROPE\'
+               │  │  │  └──ShuffleExchange
+               │  │  │     └──ReadFromMergeTree (ParallelRead default.supplier)
+               │  │  │           Read type: Default
+               │  │  │           Parts: 1 | Granules: 1
+               │  │  │           Output: s_acctbal, s_name, s_address, s_phone, s_comment, s_suppkey, s_nationkey
+               │  │  └──ReadFromMergeTree (ReplicatedRead default.nation)
+               │  │        Read type: Default
+               │  │        Parts: 1 | Granules: 1
+               │  │        Output: n_name, n_nationkey, n_regionkey
+               │  └──ReadFromMergeTree (ReplicatedRead default.part)
+               │        Read type: Default
+               │        Parts: 1 | Granules: 1
+               │        Output: ps_partkey, p_mfgr
+               │        Prewhere filter
+               │        Prewhere filter column:  p_size = 15 AND endsWith(p_type, \'BRASS\')
+               └──ReadFromMergeTree (ReplicatedRead default.region)
+                     Read type: Default
+                     Parts: 1 | Granules: 1
+                     Output: r_regionkey
+                     Prewhere filter
+                     Prewhere filter column:  r_name = \'EUROPE\'
 -- Q03
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Limit (TopN merge Sorting for ORDER BY)
-      GatherExchange
-        Sorting
-          Expression ((Before ORDER BY + Projection))
-            Aggregating
-              Expression ((Before GROUP BY + ))
-                JoinLogical (Shuffle HashJoin  swapped)
-                  Expression ((WHERE + Change column names to column identifiers))
-                    ShuffleExchange
-                      ReadFromMergeTree (ParallelRead default.lineitem)
-                  ShuffleExchange
-                    JoinLogical (Shuffle HashJoin  swapped)
-                      Expression ((WHERE + Change column names to column identifiers))
-                        ShuffleExchange
-                          ReadFromMergeTree (ParallelRead default.orders)
-                      Expression ((WHERE + Change column names to column identifiers))
-                        ShuffleExchange
-                          ReadFromMergeTree (ParallelRead default.customer)
+Output: l_orderkey, sum(l_extendedprice * (1 − l_discount)), o_orderdate, o_shippriority
+
+Limit (preliminary LIMIT)
+│  Limit 10
+│  Offset 0
+└──Limit (TopN merge Sorting for ORDER BY)
+   │  Limit 10
+   │  Offset 0
+   └──GatherExchange
+      └──Sorting
+         │  Sort description: sum(l_extendedprice * (1 − l_discount)) DESC, o_orderdate ASC
+         │  Limit 10
+         └──Aggregating
+            │  Keys: l_orderkey, o_orderdate, o_shippriority
+            │  Aggregates: sum(l_extendedprice * (1 − l_discount))
+            │  Skip merging: 0
+            └──JoinLogical (Shuffle HashJoin  swapped)
+               │  Join: lineitem[323000000] ⋈ customer[3000000] ⋈ orders[71000000]
+               │  ResultRows: 68799000
+               │  Type: INNER
+               │  Strictness: ALL
+               │  Locality: UNSPECIFIED
+               │  Expression: equals(__table3.l_orderkey, __table2.o_orderkey)
+               ├──ShuffleExchange
+               │  └──ReadFromMergeTree (ParallelRead default.lineitem)
+               │        Read type: Default
+               │        Parts: 1 | Granules: 1
+               │        Output: l_orderkey, l_extendedprice, l_discount
+               │        Prewhere filter
+               │        Prewhere filter column:  l_shipdate > \'1995-03-15\'
+               └──ShuffleExchange
+                  └──JoinLogical (Shuffle HashJoin  swapped)
+                     │  Join: orders[71000000] ⋈ customer[3000000]
+                     │  ResultRows: 21300000
+                     │  Type: INNER
+                     │  Strictness: ALL
+                     │  Locality: UNSPECIFIED
+                     │  Expression: equals(__table1.c_custkey, __table2.o_custkey)
+                     ├──ShuffleExchange
+                     │  └──ReadFromMergeTree (ParallelRead default.orders)
+                     │        Read type: Default
+                     │        Parts: 1 | Granules: 1
+                     │        Output: o_orderdate, o_shippriority, o_custkey, o_orderkey
+                     │        Prewhere filter
+                     │        Prewhere filter column:  o_orderdate < \'1995-03-15\'
+                     └──ShuffleExchange
+                        └──ReadFromMergeTree (ParallelRead default.customer)
+                              Read type: Default
+                              Parts: 1 | Granules: 1
+                              Output: c_custkey
+                              Prewhere filter
+                              Prewhere filter column:  c_mktsegment = \'BUILDING\'
 -- Q04
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    Sorting
-      MergingAggregated
-        GatherExchange
-          Aggregating
-            Expression ((Before GROUP BY + WHERE))
-              JoinLogical (Shuffle HashJoin )
-                Expression (Create result for always true EXISTS expression)
-                  Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-                    ShuffleExchange
-                      ReadFromMergeTree (ParallelRead default.lineitem)
-                Expression ((WHERE + Change column names to column identifiers))
-                  ShuffleExchange
-                    ReadFromMergeTree (ParallelRead default.orders)
+Output: o_orderpriority, count()
+
+Sorting
+│  Sort description: o_orderpriority ASC
+└──MergingAggregated
+   │  Keys: o_orderpriority
+   │  Aggregates: count()
+   └──GatherExchange
+      └──Aggregating
+         │  Keys: o_orderpriority
+         │  Aggregates: count()
+         │  Skip merging: 0
+         └──JoinLogical (Shuffle HashJoin )
+            │  Join: lineitem[600037902] ⋊ orders[5400000]
+            │  ResultRows: 21601364
+            │  Type: RIGHT
+            │  Strictness: SEMI
+            │  Locality: UNSPECIFIED
+            │  Expression: equals(exists(__table2).__table1.o_orderkey, __table1.o_orderkey)
+            ├──ShuffleExchange
+            │  └──ReadFromMergeTree (ParallelRead default.lineitem)
+            │        Read type: Default
+            │        Parts: 1 | Granules: 1
+            │        Output: l_orderkey
+            │        Prewhere filter
+            │        Prewhere filter column:  l_orderkey = l_orderkey AND l_commitdate < l_receiptdate
+            └──ShuffleExchange
+               └──ReadFromMergeTree (ParallelRead default.orders)
+                     Read type: Default
+                     Parts: 1 | Granules: 1
+                     Output: o_orderpriority, o_orderkey
+                     Prewhere filter
+                     Prewhere filter column:  o_orderdate < \'1993-10-01\' AND o_orderdate >= \'1993-07-01\'
 -- Q05
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    Sorting
-      MergingAggregated
-        GatherExchange
-          Aggregating
-            Expression ((Before GROUP BY + ))
-              JoinLogical (Broadcast HashJoin )
-                JoinLogical (Shuffle HashJoin  swapped)
-                  Expression (Change column names to column identifiers)
-                    ShuffleExchange
-                      ReadFromMergeTree (ParallelRead default.lineitem)
-                  ShuffleExchange
-                    JoinLogical (Shuffle HashJoin  swapped)
-                      Expression ((WHERE + Change column names to column identifiers))
-                        ShuffleExchange
-                          ReadFromMergeTree (ParallelRead default.orders)
-                      ShuffleExchange
-                        JoinLogical (Broadcast HashJoin  swapped)
-                          Expression (Change column names to column identifiers)
-                            ReadFromMergeTree (ParallelRead default.customer)
-                          BroadcastExchange
-                            JoinLogical (Local HashJoin )
-                              Expression (Change column names to column identifiers)
-                                ReadFromMergeTree (default.nation)
-                              Expression ((WHERE + Change column names to column identifiers))
-                                ReadFromMergeTree (default.region)
-                Expression (Change column names to column identifiers)
-                  ReadFromMergeTree (ReplicatedRead default.supplier)
+Output: n_name, sum(l_extendedprice * (1 − l_discount))
+
+Sorting
+│  Sort description: sum(l_extendedprice * (1 − l_discount)) DESC
+└──MergingAggregated
+   │  Keys: n_name
+   │  Aggregates: sum(l_extendedprice * (1 − l_discount))
+   └──GatherExchange
+      └──Aggregating
+         │  Keys: n_name
+         │  Aggregates: sum(l_extendedprice * (1 − l_discount))
+         │  Skip merging: 0
+         └──JoinLogical (Broadcast HashJoin )
+            │  Join: nation[25] ⋈ region[1] ⋈ customer[15000000] ⋈ orders[21900000] ⋈ lineitem[600037902] ⋈ supplier[1000000]
+            │  ResultRows: 17521106
+            │  Type: INNER
+            │  Strictness: ALL
+            │  Locality: UNSPECIFIED
+            │  Expression: equals(__table1.c_nationkey, __table4.s_nationkey) AND equals(__table3.l_suppkey, __table4.s_suppkey)
+            ├──JoinLogical (Shuffle HashJoin  swapped)
+            │  │  Join: lineitem[600037902] ⋈ nation[25] ⋈ region[1] ⋈ customer[15000000] ⋈ orders[21900000]
+            │  │  ResultRows: 17521106
+            │  │  Type: INNER
+            │  │  Strictness: ALL
+            │  │  Locality: UNSPECIFIED
+            │  │  Expression: equals(__table3.l_orderkey, __table2.o_orderkey)
+            │  ├──ShuffleExchange
+            │  │  └──ReadFromMergeTree (ParallelRead default.lineitem)
+            │  │        Read type: Default
+            │  │        Parts: 1 | Granules: 1
+            │  │        Output: l_extendedprice, l_discount, l_orderkey, l_suppkey
+            │  └──ShuffleExchange
+            │     └──JoinLogical (Shuffle HashJoin  swapped)
+            │        │  Join: orders[21900000] ⋈ nation[25] ⋈ region[1] ⋈ customer[15000000]
+            │        │  ResultRows: 4380000
+            │        │  Type: INNER
+            │        │  Strictness: ALL
+            │        │  Locality: UNSPECIFIED
+            │        │  Expression: equals(__table1.c_custkey, __table2.o_custkey)
+            │        ├──ShuffleExchange
+            │        │  └──ReadFromMergeTree (ParallelRead default.orders)
+            │        │        Read type: Default
+            │        │        Parts: 1 | Granules: 1
+            │        │        Output: o_custkey, o_orderkey
+            │        │        Prewhere filter
+            │        │        Prewhere filter column:  o_orderdate < \'1995-01-01\' AND o_orderdate >= \'1994-01-01\'
+            │        └──ShuffleExchange
+            │           └──JoinLogical (Broadcast HashJoin  swapped)
+            │              │  Join: customer[15000000] ⋈ nation[25] ⋈ region[1]
+            │              │  ResultRows: 3000000
+            │              │  Type: INNER
+            │              │  Strictness: ALL
+            │              │  Locality: UNSPECIFIED
+            │              │  Expression: equals(__table5.n_nationkey, __table1.c_nationkey)
+            │              ├──ReadFromMergeTree (ParallelRead default.customer)
+            │              │     Read type: Default
+            │              │     Parts: 1 | Granules: 1
+            │              │     Output: c_custkey, c_nationkey
+            │              └──BroadcastExchange
+            │                 └──JoinLogical (Local HashJoin )
+            │                    │  Join: nation[25] ⋈ region[1]
+            │                    │  ResultRows: 5
+            │                    │  Type: INNER
+            │                    │  Strictness: ALL
+            │                    │  Locality: UNSPECIFIED
+            │                    │  Expression: equals(__table5.n_regionkey, __table6.r_regionkey)
+            │                    ├──ReadFromMergeTree (default.nation)
+            │                    │     Read type: Default
+            │                    │     Parts: 1 | Granules: 1
+            │                    │     Output: n_name, n_nationkey, n_regionkey
+            │                    └──ReadFromMergeTree (default.region)
+            │                          Read type: Default
+            │                          Parts: 1 | Granules: 1
+            │                          Output: r_regionkey
+            │                          Prewhere filter
+            │                          Prewhere filter column:  r_name = \'ASIA\'
+            └──ReadFromMergeTree (ReplicatedRead default.supplier)
+                  Read type: Default
+                  Parts: 1 | Granules: 1
+                  Output: s_nationkey, s_suppkey
 -- Q06
-Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Expression (Before GROUP BY)
-          Expression ((WHERE + Change column names to column identifiers))
-            ReadFromMergeTree (ParallelRead default.lineitem)
+Output: sum(l_extendedprice * l_discount)
+
+MergingAggregated
+│  Keys:
+│  Aggregates: sum(l_extendedprice * l_discount)
+└──GatherExchange
+   └──Aggregating
+      │  Keys:
+      │  Aggregates: sum(l_extendedprice * l_discount)
+      │  Skip merging: 0
+      └──ReadFromMergeTree (ParallelRead default.lineitem)
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: l_discount, l_extendedprice
+            Prewhere filter
+            Prewhere filter column:  l_quantity < 24 AND l_discount <= 0.07 AND l_discount >= 0.05 AND l_shipdate < \'1995-01-01\' AND l_shipdate >= \'1994-01-01\'
 -- Q07
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    Sorting
-      MergingAggregated
-        GatherExchange
-          Aggregating
-            Expression (Before GROUP BY)
-              Filter (WHERE)
-                JoinLogical (Broadcast HashJoin )
-                  JoinLogical (Shuffle HashJoin  swapped)
-                    Expression ((WHERE + Change column names to column identifiers))
-                      ShuffleExchange
-                        ReadFromMergeTree (ParallelRead default.lineitem)
-                    ShuffleExchange
-                      JoinLogical (Shuffle HashJoin  swapped)
-                        Expression (Change column names to column identifiers)
-                          ShuffleExchange
-                            ReadFromMergeTree (ParallelRead default.orders)
-                        ShuffleExchange
-                          JoinLogical (Broadcast HashJoin )
-                            Expression (Change column names to column identifiers)
-                              ReadFromMergeTree (ParallelRead default.customer)
-                            Expression (( + Change column names to column identifiers))
-                              ReadFromMergeTree (ReplicatedRead default.nation)
-                  BroadcastExchange
-                    JoinLogical (Local HashJoin )
-                      Expression (Change column names to column identifiers)
-                        ReadFromMergeTree (default.supplier)
-                      Expression ((( + ) + Change column names to column identifiers))
-                        ReadFromMergeTree (default.nation)
+Output: n_name, n_name, toYear(l_shipdate), sum(l_extendedprice * (1 − l_discount))
+
+Sorting
+│  Sort description: n_name ASC, n_name ASC, toYear(l_shipdate) ASC
+└──MergingAggregated
+   │  Keys: n_name, n_name, toYear(l_shipdate)
+   │  Aggregates: sum(l_extendedprice * (1 − l_discount))
+   └──GatherExchange
+      └──Aggregating
+         │  Keys: n_name, n_name, toYear(l_shipdate)
+         │  Aggregates: sum(l_extendedprice * (1 − l_discount))
+         │  Skip merging: 0
+         └──Filter (WHERE)
+            │  Filter column: n_name = \'FRANCE\' AND n_name = \'GERMANY\' OR n_name = \'GERMANY\' AND n_name = \'FRANCE\'
+            └──JoinLogical (Broadcast HashJoin )
+               │  Join: customer[15000000] ⋈ n2[1] ⋈ orders[150000000] ⋈ lineitem[183000000] ⋈ (supplier[1000000] ⋈ n1[1])
+               │  ResultRows: 292800
+               │  Type: INNER
+               │  Strictness: ALL
+               │  Locality: UNSPECIFIED
+               │  Expression: equals(__table1.s_suppkey, __table2.l_suppkey)
+               ├──JoinLogical (Shuffle HashJoin  swapped)
+               │  │  Join: lineitem[183000000] ⋈ customer[15000000] ⋈ n2[1] ⋈ orders[150000000]
+               │  │  ResultRows: 7320000
+               │  │  Type: INNER
+               │  │  Strictness: ALL
+               │  │  Locality: UNSPECIFIED
+               │  │  Expression: equals(__table3.o_orderkey, __table2.l_orderkey)
+               │  ├──ShuffleExchange
+               │  │  └──ReadFromMergeTree (ParallelRead default.lineitem)
+               │  │        Read type: Default
+               │  │        Parts: 1 | Granules: 1
+               │  │        Output: l_shipdate, l_extendedprice, l_discount, l_suppkey, l_orderkey
+               │  │        Prewhere filter
+               │  │        Prewhere filter column:  l_shipdate <= \'1996-12-31\' AND l_shipdate >= \'1995-01-01\'
+               │  └──ShuffleExchange
+               │     └──JoinLogical (Shuffle HashJoin  swapped)
+               │        │  Join: orders[150000000] ⋈ customer[15000000] ⋈ n2[1]
+               │        │  ResultRows: 6000000
+               │        │  Type: INNER
+               │        │  Strictness: ALL
+               │        │  Locality: UNSPECIFIED
+               │        │  Expression: equals(__table4.c_custkey, __table3.o_custkey)
+               │        ├──ShuffleExchange
+               │        │  └──ReadFromMergeTree (ParallelRead default.orders)
+               │        │        Read type: Default
+               │        │        Parts: 1 | Granules: 1
+               │        │        Output: o_orderkey, o_custkey
+               │        └──ShuffleExchange
+               │           └──JoinLogical (Broadcast HashJoin )
+               │              │  Join: customer[15000000] ⋈ n2[1]
+               │              │  ResultRows: 600000
+               │              │  Type: INNER
+               │              │  Strictness: ALL
+               │              │  Locality: UNSPECIFIED
+               │              │  Expression: equals(__table4.c_nationkey, __table6.n_nationkey)
+               │              ├──ReadFromMergeTree (ParallelRead default.customer)
+               │              │     Read type: Default
+               │              │     Parts: 1 | Granules: 1
+               │              │     Output: c_custkey, c_nationkey
+               │              └──ReadFromMergeTree (ReplicatedRead default.nation)
+               │                    Read type: Default
+               │                    Parts: 1 | Granules: 1
+               │                    Output: n_name, n_nationkey
+               │                    Prewhere filter
+               │                    Prewhere filter column:  (n_name = \'GERMANY\' OR n_name = \'FRANCE\')
+               └──BroadcastExchange
+                  └──JoinLogical (Local HashJoin )
+                     │  Join: supplier[1000000] ⋈ n1[1]
+                     │  ResultRows: 40000
+                     │  Type: INNER
+                     │  Strictness: ALL
+                     │  Locality: UNSPECIFIED
+                     │  Expression: equals(__table1.s_nationkey, __table5.n_nationkey)
+                     ├──ReadFromMergeTree (default.supplier)
+                     │     Read type: Default
+                     │     Parts: 1 | Granules: 1
+                     │     Output: s_suppkey, s_nationkey
+                     └──ReadFromMergeTree (default.nation)
+                           Read type: Default
+                           Parts: 1 | Granules: 1
+                           Output: n_name, n_nationkey
+                           Prewhere filter
+                           Prewhere filter column:  (n_name = \'FRANCE\' OR n_name = \'GERMANY\')
 -- Q08
-Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
-  Expression ((Before ORDER BY + Projection))
-    Sorting
-      MergingAggregated
-        GatherExchange
-          Aggregating
-            Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + )))))
-              JoinLogical (Broadcast HashJoin )
-                JoinLogical (Shuffle HashJoin  swapped)
-                  Expression (Change column names to column identifiers)
-                    ShuffleExchange
-                      ReadFromMergeTree (ParallelRead default.supplier)
-                  ShuffleExchange
-                    JoinLogical (Broadcast HashJoin )
-                      JoinLogical (Shuffle HashJoin  swapped)
-                        Expression (Change column names to column identifiers)
-                          ShuffleExchange
-                            ReadFromMergeTree (ParallelRead default.customer)
-                        ShuffleExchange
-                          JoinLogical (Shuffle HashJoin  swapped)
-                            Expression ((WHERE + Change column names to column identifiers))
-                              ShuffleExchange
-                                ReadFromMergeTree (ParallelRead default.orders)
-                            ShuffleExchange
-                              JoinLogical (Broadcast HashJoin  swapped)
-                                Expression (Change column names to column identifiers)
-                                  ReadFromMergeTree (ParallelRead default.lineitem)
-                                Expression ((WHERE + Change column names to column identifiers))
-                                  ReadFromMergeTree (ReplicatedRead default.part)
-                      BroadcastExchange
-                        JoinLogical (Local HashJoin )
-                          Expression (Change column names to column identifiers)
-                            ReadFromMergeTree (default.nation)
-                          Expression ((WHERE + Change column names to column identifiers))
-                            ReadFromMergeTree (default.region)
-                Expression (Change column names to column identifiers)
-                  ReadFromMergeTree (ReplicatedRead default.nation)
+Output: toYear(o_orderdate), sumIf(l_extendedprice * (1 − l_discount), n_name = \'BRAZIL\') / sum(l_extendedprice * (1 − l_discount))
+
+Sorting
+│  Sort description: toYear(o_orderdate) ASC
+└──MergingAggregated
+   │  Keys: toYear(o_orderdate)
+   │  Aggregates: sumIf(l_extendedprice * (1 − l_discount), n_name = \'BRAZIL\'), sum(l_extendedprice * (1 − l_discount))
+   └──GatherExchange
+      └──Aggregating
+         │  Keys: toYear(o_orderdate)
+         │  Aggregates: sumIf(l_extendedprice * (1 − l_discount), n_name = \'BRAZIL\'), sum(l_extendedprice * (1 − l_discount))
+         │  Skip merging: 0
+         └──JoinLogical (Broadcast HashJoin )
+            │  Join: part[134000] ⋈ lineitem[600037902] ⋈ orders[43900000] ⋈ customer[15000000] ⋈ (n1[25] ⋈ region[1]) ⋈ supplier[1000000] ⋈ n2[25]
+            │  ResultRows: 235317
+            │  Type: INNER
+            │  Strictness: ALL
+            │  Locality: UNSPECIFIED
+            │  Expression: equals(__table3.s_nationkey, __table8.n_nationkey)
+            ├──JoinLogical (Shuffle HashJoin  swapped)
+            │  │  Join: supplier[1000000] ⋈ part[134000] ⋈ lineitem[600037902] ⋈ orders[43900000] ⋈ customer[15000000] ⋈ (n1[25] ⋈ region[1])
+            │  │  ResultRows: 235318
+            │  │  Type: INNER
+            │  │  Strictness: ALL
+            │  │  Locality: UNSPECIFIED
+            │  │  Expression: equals(__table3.s_suppkey, __table4.l_suppkey)
+            │  ├──ShuffleExchange
+            │  │  └──ReadFromMergeTree (ParallelRead default.supplier)
+            │  │        Read type: Default
+            │  │        Parts: 1 | Granules: 1
+            │  │        Output: s_suppkey, s_nationkey
+            │  └──ShuffleExchange
+            │     └──JoinLogical (Broadcast HashJoin )
+            │        │  Join: part[134000] ⋈ lineitem[600037902] ⋈ orders[43900000] ⋈ customer[15000000] ⋈ (n1[25] ⋈ region[1])
+            │        │  ResultRows: 235318
+            │        │  Type: INNER
+            │        │  Strictness: ALL
+            │        │  Locality: UNSPECIFIED
+            │        │  Expression: equals(__table6.c_nationkey, __table7.n_nationkey)
+            │        ├──JoinLogical (Shuffle HashJoin  swapped)
+            │        │  │  Join: customer[15000000] ⋈ part[134000] ⋈ lineitem[600037902] ⋈ orders[43900000]
+            │        │  │  ResultRows: 1176594
+            │        │  │  Type: INNER
+            │        │  │  Strictness: ALL
+            │        │  │  Locality: UNSPECIFIED
+            │        │  │  Expression: equals(__table5.o_custkey, __table6.c_custkey)
+            │        │  ├──ShuffleExchange
+            │        │  │  └──ReadFromMergeTree (ParallelRead default.customer)
+            │        │  │        Read type: Default
+            │        │  │        Parts: 1 | Granules: 1
+            │        │  │        Output: c_custkey, c_nationkey
+            │        │  └──ShuffleExchange
+            │        │     └──JoinLogical (Shuffle HashJoin  swapped)
+            │        │        │  Join: orders[43900000] ⋈ part[134000] ⋈ lineitem[600037902]
+            │        │        │  ResultRows: 1176594
+            │        │        │  Type: INNER
+            │        │        │  Strictness: ALL
+            │        │        │  Locality: UNSPECIFIED
+            │        │        │  Expression: equals(__table4.l_orderkey, __table5.o_orderkey)
+            │        │        ├──ShuffleExchange
+            │        │        │  └──ReadFromMergeTree (ParallelRead default.orders)
+            │        │        │        Read type: Default
+            │        │        │        Parts: 1 | Granules: 1
+            │        │        │        Output: o_orderdate, o_orderkey, o_custkey
+            │        │        │        Prewhere filter
+            │        │        │        Prewhere filter column:  o_orderdate <= \'1996-12-31\' AND o_orderdate >= \'1995-01-01\'
+            │        │        └──ShuffleExchange
+            │        │           └──JoinLogical (Broadcast HashJoin  swapped)
+            │        │              │  Join: lineitem[600037902] ⋈ part[134000]
+            │        │              │  ResultRows: 4020253
+            │        │              │  Type: INNER
+            │        │              │  Strictness: ALL
+            │        │              │  Locality: UNSPECIFIED
+            │        │              │  Expression: equals(__table2.p_partkey, __table4.l_partkey)
+            │        │              ├──ReadFromMergeTree (ParallelRead default.lineitem)
+            │        │              │     Read type: Default
+            │        │              │     Parts: 1 | Granules: 1
+            │        │              │     Output: l_extendedprice, l_discount, l_partkey, l_suppkey, l_orderkey
+            │        │              └──ReadFromMergeTree (ReplicatedRead default.part)
+            │        │                    Read type: Default
+            │        │                    Parts: 1 | Granules: 1
+            │        │                    Output: p_partkey
+            │        │                    Prewhere filter
+            │        │                    Prewhere filter column:  p_type = \'ECONOMY ANODIZED STEEL\'
+            │        └──BroadcastExchange
+            │           └──JoinLogical (Local HashJoin )
+            │              │  Join: n1[25] ⋈ region[1]
+            │              │  ResultRows: 5
+            │              │  Type: INNER
+            │              │  Strictness: ALL
+            │              │  Locality: UNSPECIFIED
+            │              │  Expression: equals(__table7.n_regionkey, __table9.r_regionkey)
+            │              ├──ReadFromMergeTree (default.nation)
+            │              │     Read type: Default
+            │              │     Parts: 1 | Granules: 1
+            │              │     Output: n_nationkey, n_regionkey
+            │              └──ReadFromMergeTree (default.region)
+            │                    Read type: Default
+            │                    Parts: 1 | Granules: 1
+            │                    Output: r_regionkey
+            │                    Prewhere filter
+            │                    Prewhere filter column:  r_name = \'AMERICA\'
+            └──ReadFromMergeTree (ReplicatedRead default.nation)
+                  Read type: Default
+                  Parts: 1 | Granules: 1
+                  Output: n_name, n_nationkey
 -- Q09
-Expression (Project names)
-  GatherExchange
-    Expression ((Before ORDER BY + Projection))
-      Sorting
-        Aggregating
-          ShuffleExchange
-            Expression ((Before GROUP BY + ))
-              JoinLogical (Shuffle HashJoin (by __table4.ps_partkey)  swapped)
-                Expression (Change column names to column identifiers)
-                  ShuffleExchange
-                    ReadFromMergeTree (ParallelRead default.partsupp)
-                ShuffleExchange
-                  JoinLogical (Shuffle HashJoin  swapped)
-                    Expression (Change column names to column identifiers)
-                      ShuffleExchange
-                        ReadFromMergeTree (ParallelRead default.orders)
-                    ShuffleExchange
-                      JoinLogical (Shuffle HashJoin )
-                        ShuffleExchange
-                          JoinLogical (Broadcast HashJoin  swapped)
-                            Expression (Change column names to column identifiers)
-                              ReadFromMergeTree (ParallelRead default.lineitem)
-                            Expression ((WHERE + Change column names to column identifiers))
-                              ReadFromMergeTree (ReplicatedRead default.part)
-                        ShuffleExchange
-                          JoinLogical (Broadcast HashJoin )
-                            Expression (Change column names to column identifiers)
-                              ReadFromMergeTree (ParallelRead default.supplier)
-                            Expression (Change column names to column identifiers)
-                              ReadFromMergeTree (ReplicatedRead default.nation)
+Output: n_name, toYear(o_orderdate), sum(l_extendedprice * (1 − l_discount) − ps_supplycost * l_quantity)
+
+GatherExchange
+└──Sorting
+   │  Sort description: n_name ASC, toYear(o_orderdate) DESC
+   └──Aggregating
+      │  Keys: n_name, toYear(o_orderdate)
+      │  Aggregates: sum(l_extendedprice * (1 − l_discount) − ps_supplycost * l_quantity)
+      │  Skip merging: 0
+      └──ShuffleExchange
+         └──JoinLogical (Shuffle HashJoin (by ps_partkey)  swapped)
+            │  Join: partsupp[80000000] ⋈ part[1128000] ⋈ lineitem[600037902] ⋈ (supplier[1000000] ⋈ nation[25]) ⋈ orders[150000000]
+            │  ResultRows: 135368548
+            │  Type: INNER
+            │  Strictness: ALL
+            │  Locality: UNSPECIFIED
+            │  Expression: equals(__table4.ps_suppkey, __table3.l_suppkey) AND equals(__table4.ps_partkey, __table3.l_partkey)
+            ├──ShuffleExchange
+            │  └──ReadFromMergeTree (ParallelRead default.partsupp)
+            │        Read type: Default
+            │        Parts: 1 | Granules: 1
+            │        Output: ps_supplycost, ps_suppkey, ps_partkey
+            └──ShuffleExchange
+               └──JoinLogical (Shuffle HashJoin  swapped)
+                  │  Join: orders[150000000] ⋈ part[1128000] ⋈ lineitem[600037902] ⋈ (supplier[1000000] ⋈ nation[25])
+                  │  ResultRows: 33842137
+                  │  Type: INNER
+                  │  Strictness: ALL
+                  │  Locality: UNSPECIFIED
+                  │  Expression: equals(__table5.o_orderkey, __table3.l_orderkey)
+                  ├──ShuffleExchange
+                  │  └──ReadFromMergeTree (ParallelRead default.orders)
+                  │        Read type: Default
+                  │        Parts: 1 | Granules: 1
+                  │        Output: o_orderdate, o_orderkey
+                  └──ShuffleExchange
+                     └──JoinLogical (Shuffle HashJoin )
+                        │  Join: part[1128000] ⋈ lineitem[600037902] ⋈ (supplier[1000000] ⋈ nation[25])
+                        │  ResultRows: 33842137
+                        │  Type: INNER
+                        │  Strictness: ALL
+                        │  Locality: UNSPECIFIED
+                        │  Expression: equals(__table2.s_suppkey, __table3.l_suppkey)
+                        ├──ShuffleExchange
+                        │  └──JoinLogical (Broadcast HashJoin  swapped)
+                        │     │  Join: lineitem[600037902] ⋈ part[1128000]
+                        │     │  ResultRows: 33842137
+                        │     │  Type: INNER
+                        │     │  Strictness: ALL
+                        │     │  Locality: UNSPECIFIED
+                        │     │  Expression: equals(__table1.p_partkey, __table3.l_partkey)
+                        │     ├──ReadFromMergeTree (ParallelRead default.lineitem)
+                        │     │     Read type: Default
+                        │     │     Parts: 1 | Granules: 1
+                        │     │     Output: l_extendedprice, l_discount, l_quantity, l_partkey, l_suppkey, l_orderkey
+                        │     └──ReadFromMergeTree (ReplicatedRead default.part)
+                        │           Read type: Default
+                        │           Parts: 1 | Granules: 1
+                        │           Output: p_partkey
+                        │           Prewhere filter
+                        │           Prewhere filter column:  p_name LIKE \'%green%\'
+                        └──ShuffleExchange
+                           └──JoinLogical (Broadcast HashJoin )
+                              │  Join: supplier[1000000] ⋈ nation[25]
+                              │  ResultRows: 1000000
+                              │  Type: INNER
+                              │  Strictness: ALL
+                              │  Locality: UNSPECIFIED
+                              │  Expression: equals(__table2.s_nationkey, __table6.n_nationkey)
+                              ├──ReadFromMergeTree (ParallelRead default.supplier)
+                              │     Read type: Default
+                              │     Parts: 1 | Granules: 1
+                              │     Output: s_suppkey, s_nationkey
+                              └──ReadFromMergeTree (ReplicatedRead default.nation)
+                                    Read type: Default
+                                    Parts: 1 | Granules: 1
+                                    Output: n_name, n_nationkey
 -- Q10
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Limit (TopN merge Sorting for ORDER BY)
-      GatherExchange
-        Sorting
-          Expression ((Before ORDER BY + Projection))
-            Aggregating
-              Expression ((Before GROUP BY + ))
-                ShuffleExchange
-                  JoinLogical (Shuffle HashJoin  swapped)
-                    Expression ((WHERE + Change column names to column identifiers))
-                      ShuffleExchange
-                        ReadFromMergeTree (ParallelRead default.lineitem)
-                    ShuffleExchange
-                      JoinLogical (Broadcast HashJoin )
-                        JoinLogical (Shuffle HashJoin )
-                          Expression (Change column names to column identifiers)
-                            ShuffleExchange
-                              ReadFromMergeTree (ParallelRead default.customer)
-                          Expression ((WHERE + Change column names to column identifiers))
-                            ShuffleExchange
-                              ReadFromMergeTree (ParallelRead default.orders)
-                        Expression (Change column names to column identifiers)
-                          ReadFromMergeTree (ReplicatedRead default.nation)
+Output: c_custkey, c_name, sum(l_extendedprice * (1 − l_discount)), c_acctbal, n_name, c_address, c_phone, c_comment
+
+Limit (preliminary LIMIT)
+│  Limit 20
+│  Offset 0
+└──Limit (TopN merge Sorting for ORDER BY)
+   │  Limit 20
+   │  Offset 0
+   └──GatherExchange
+      └──Sorting
+         │  Sort description: sum(l_extendedprice * (1 − l_discount)) DESC
+         │  Limit 20
+         └──Aggregating
+            │  Keys: c_custkey, c_name, c_acctbal, c_phone, n_name, c_address, c_comment
+            │  Aggregates: sum(l_extendedprice * (1 − l_discount))
+            │  Skip merging: 0
+            └──ShuffleExchange
+               └──JoinLogical (Shuffle HashJoin  swapped)
+                  │  Join: lineitem[148000000] ⋈ customer[15000000] ⋈ orders[5500000] ⋈ nation[25]
+                  │  ResultRows: 8140000
+                  │  Type: INNER
+                  │  Strictness: ALL
+                  │  Locality: UNSPECIFIED
+                  │  Expression: equals(__table3.l_orderkey, __table2.o_orderkey)
+                  ├──ShuffleExchange
+                  │  └──ReadFromMergeTree (ParallelRead default.lineitem)
+                  │        Read type: Default
+                  │        Parts: 1 | Granules: 1
+                  │        Output: l_extendedprice, l_discount, l_orderkey
+                  │        Prewhere filter
+                  │        Prewhere filter column:  l_returnflag = \'R\'
+                  └──ShuffleExchange
+                     └──JoinLogical (Broadcast HashJoin )
+                        │  Join: customer[15000000] ⋈ orders[5500000] ⋈ nation[25]
+                        │  ResultRows: 5500000
+                        │  Type: INNER
+                        │  Strictness: ALL
+                        │  Locality: UNSPECIFIED
+                        │  Expression: equals(__table1.c_nationkey, __table4.n_nationkey)
+                        ├──JoinLogical (Shuffle HashJoin )
+                        │  │  Join: customer[15000000] ⋈ orders[5500000]
+                        │  │  ResultRows: 5500000
+                        │  │  Type: INNER
+                        │  │  Strictness: ALL
+                        │  │  Locality: UNSPECIFIED
+                        │  │  Expression: equals(__table1.c_custkey, __table2.o_custkey)
+                        │  ├──ShuffleExchange
+                        │  │  └──ReadFromMergeTree (ParallelRead default.customer)
+                        │  │        Read type: Default
+                        │  │        Parts: 1 | Granules: 1
+                        │  │        Output: c_custkey, c_name, c_acctbal, c_address, c_phone, c_comment, c_nationkey
+                        │  └──ShuffleExchange
+                        │     └──ReadFromMergeTree (ParallelRead default.orders)
+                        │           Read type: Default
+                        │           Parts: 1 | Granules: 1
+                        │           Output: o_custkey, o_orderkey
+                        │           Prewhere filter
+                        │           Prewhere filter column:  o_orderdate < \'1994-01-01\' AND o_orderdate >= \'1993-10-01\'
+                        └──ReadFromMergeTree (ReplicatedRead default.nation)
+                              Read type: Default
+                              Parts: 1 | Granules: 1
+                              Output: n_name, n_nationkey
 -- Q11
-Expression (Project names)
-  GatherExchange
-    Expression ((Before ORDER BY + Projection))
-      Filter (HAVING)
-        Sorting
-          Aggregating
-            Expression ((Before GROUP BY + ))
-              ShuffleExchange
-                JoinLogical (Broadcast HashJoin  swapped)
-                  Expression (Change column names to column identifiers)
-                    ReadFromMergeTree (ParallelRead default.partsupp)
-                  BroadcastExchange
-                    JoinLogical (Local HashJoin )
-                      Expression (Change column names to column identifiers)
-                        ReadFromMergeTree (default.supplier)
-                      Expression ((WHERE + Change column names to column identifiers))
-                        ReadFromMergeTree (default.nation)
+Output: ps_partkey, sum(ps_supplycost * ps_availqty)
+
+GatherExchange
+└──Filter (HAVING)
+   │  Filter column: sum(ps_supplycost * ps_availqty) > 0.
+   └──Sorting
+      │  Sort description: sum(ps_supplycost * ps_availqty) DESC
+      └──Aggregating
+         │  Keys: ps_partkey
+         │  Aggregates: sum(ps_supplycost * ps_availqty)
+         │  Skip merging: 0
+         └──ShuffleExchange
+            └──JoinLogical (Broadcast HashJoin  swapped)
+               │  Join: partsupp[80000000] ⋈ supplier[1000000] ⋈ nation[1]
+               │  ResultRows: 3200000
+               │  Type: INNER
+               │  Strictness: ALL
+               │  Locality: UNSPECIFIED
+               │  Expression: equals(__table1.ps_suppkey, __table2.s_suppkey)
+               ├──ReadFromMergeTree (ParallelRead default.partsupp)
+               │     Read type: Default
+               │     Parts: 1 | Granules: 1
+               │     Output: ps_partkey, ps_supplycost, ps_availqty, ps_suppkey
+               └──BroadcastExchange
+                  └──JoinLogical (Local HashJoin )
+                     │  Join: supplier[1000000] ⋈ nation[1]
+                     │  ResultRows: 40000
+                     │  Type: INNER
+                     │  Strictness: ALL
+                     │  Locality: UNSPECIFIED
+                     │  Expression: equals(__table2.s_nationkey, __table3.n_nationkey)
+                     ├──ReadFromMergeTree (default.supplier)
+                     │     Read type: Default
+                     │     Parts: 1 | Granules: 1
+                     │     Output: s_suppkey, s_nationkey
+                     └──ReadFromMergeTree (default.nation)
+                           Read type: Default
+                           Parts: 1 | Granules: 1
+                           Output: n_nationkey
+                           Prewhere filter
+                           Prewhere filter column:  n_name = \'GERMANY\'
 -- Q12
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    Sorting
-      MergingAggregated
-        GatherExchange
-          Aggregating
-            Expression ((Before GROUP BY + ))
-              JoinLogical (Shuffle HashJoin )
-                Expression (Change column names to column identifiers)
-                  ShuffleExchange
-                    ReadFromMergeTree (ParallelRead default.orders)
-                Expression ((WHERE + Change column names to column identifiers))
-                  ShuffleExchange
-                    ReadFromMergeTree (ParallelRead default.lineitem)
+Output: l_shipmode, countIf(o_orderpriority = \'1-URGENT\' OR o_orderpriority = \'2-HIGH\'), countIf(o_orderpriority != \'1-URGENT\' AND o_orderpriority != \'2-HIGH\')
+
+Sorting
+│  Sort description: l_shipmode ASC
+└──MergingAggregated
+   │  Keys: l_shipmode
+   │  Aggregates: countIf(o_orderpriority = \'1-URGENT\' OR o_orderpriority = \'2-HIGH\'), countIf(o_orderpriority != \'1-URGENT\' AND o_orderpriority != \'2-HIGH\')
+   └──GatherExchange
+      └──Aggregating
+         │  Keys: l_shipmode
+         │  Aggregates: countIf(o_orderpriority = \'1-URGENT\' OR o_orderpriority = \'2-HIGH\'), countIf(o_orderpriority != \'1-URGENT\' AND o_orderpriority != \'2-HIGH\')
+         │  Skip merging: 0
+         └──JoinLogical (Shuffle HashJoin )
+            │  Join: orders[150000000] ⋈ lineitem[4770000]
+            │  ResultRows: 4770000
+            │  Type: INNER
+            │  Strictness: ALL
+            │  Locality: UNSPECIFIED
+            │  Expression: equals(__table1.o_orderkey, __table2.l_orderkey)
+            ├──ShuffleExchange
+            │  └──ReadFromMergeTree (ParallelRead default.orders)
+            │        Read type: Default
+            │        Parts: 1 | Granules: 1
+            │        Output: o_orderpriority, o_orderkey
+            └──ShuffleExchange
+               └──ReadFromMergeTree (ParallelRead default.lineitem)
+                     Read type: Default
+                     Parts: 1 | Granules: 1
+                     Output: l_shipmode, l_orderkey
+                     Prewhere filter
+                     Prewhere filter column:  l_shipdate < l_commitdate AND l_commitdate < l_receiptdate AND l_shipdate < \'1995-01-01\' AND l_commitdate < \'1995-01-01\' AND l_receiptdate < \'1995-01-01\' AND l_receiptdate >= \'1994-01-01\' AND l_shipmode IN (\'MAIL\', \'SHIP\')
 -- Q13
-Expression (Project names)
-  GatherExchange
-    Expression ((Before ORDER BY + Projection))
-      Sorting
-        Aggregating
-          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
-            ShuffleExchange
-              Aggregating
-                Expression (Before GROUP BY)
-                  JoinLogical (Shuffle HashJoin )
-                    Expression (Change column names to column identifiers)
-                      ShuffleExchange
-                        ReadFromMergeTree (ParallelRead default.customer)
-                    Expression ((Join filter + Change column names to column identifiers))
-                      ShuffleExchange
-                        ReadFromMergeTree (ParallelRead default.orders)
+Output: count(o_orderkey), count()
+
+GatherExchange
+└──Sorting
+   │  Sort description: count() DESC, count(o_orderkey) DESC
+   └──Aggregating
+      │  Keys: count(o_orderkey)
+      │  Aggregates: count()
+      │  Skip merging: 0
+      └──ShuffleExchange
+         └──Aggregating
+            │  Keys: c_custkey
+            │  Aggregates: count(o_orderkey)
+            │  Skip merging: 0
+            └──JoinLogical (Shuffle HashJoin )
+               │  Join: customer[15000000] ⟕ orders[148500000]
+               │  ResultRows: 148500000
+               │  Type: LEFT
+               │  Strictness: ALL
+               │  Locality: UNSPECIFIED
+               │  Expression: equals(__table2.c_custkey, __table3.o_custkey)
+               ├──ShuffleExchange
+               │  └──ReadFromMergeTree (ParallelRead default.customer)
+               │        Read type: Default
+               │        Parts: 1 | Granules: 1
+               │        Output: c_custkey
+               └──ShuffleExchange
+                  └──ReadFromMergeTree (ParallelRead default.orders)
+                        Read type: Default
+                        Parts: 1 | Granules: 1
+                        Output: o_orderkey, o_custkey
+                        Prewhere filter
+                        Prewhere filter column:  o_comment NOT LIKE \'%special%requests%\'
 -- Q14
-Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Expression ((Before GROUP BY + ))
-          JoinLogical (Shuffle HashJoin  swapped)
-            Expression (Change column names to column identifiers)
-              ShuffleExchange
-                ReadFromMergeTree (ParallelRead default.part)
-            Expression ((WHERE + Change column names to column identifiers))
-              ShuffleExchange
-                ReadFromMergeTree (ParallelRead default.lineitem)
+Output: 100. * sumIf(l_extendedprice * (1 − l_discount), startsWith(p_type, \'PROMO\')) / sum(l_extendedprice * (1 − l_discount))
+
+MergingAggregated
+│  Keys:
+│  Aggregates: sumIf(l_extendedprice * (1 − l_discount), startsWith(p_type, \'PROMO\')), sum(l_extendedprice * (1 − l_discount))
+└──GatherExchange
+   └──Aggregating
+      │  Keys:
+      │  Aggregates: sumIf(l_extendedprice * (1 − l_discount), startsWith(p_type, \'PROMO\')), sum(l_extendedprice * (1 − l_discount))
+      │  Skip merging: 0
+      └──JoinLogical (Shuffle HashJoin  swapped)
+         │  Join: part[20000000] ⋈ lineitem[7760000]
+         │  ResultRows: 7759999
+         │  Type: INNER
+         │  Strictness: ALL
+         │  Locality: UNSPECIFIED
+         │  Expression: equals(__table1.l_partkey, __table2.p_partkey)
+         ├──ShuffleExchange
+         │  └──ReadFromMergeTree (ParallelRead default.part)
+         │        Read type: Default
+         │        Parts: 1 | Granules: 1
+         │        Output: p_type, p_partkey
+         └──ShuffleExchange
+            └──ReadFromMergeTree (ParallelRead default.lineitem)
+                  Read type: Default
+                  Parts: 1 | Granules: 1
+                  Output: l_extendedprice, l_discount, l_partkey
+                  Prewhere filter
+                  Prewhere filter column:  l_shipdate < \'1995-10-01\' AND l_shipdate >= \'1995-09-01\'
 -- Q15
-Expression (Project names)
-  GatherExchange
-    Expression ((Before ORDER BY + (Projection + )))
-      Sorting
-        JoinLogical (Shuffle HashJoin )
-          Expression (Change column names to column identifiers)
-            ShuffleExchange
-              ReadFromMergeTree (ParallelRead default.supplier)
-          Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))))
-            Aggregating
-              Expression (Before GROUP BY)
-                Expression ((WHERE + Change column names to column identifiers))
-                  ShuffleExchange
-                    ReadFromMergeTree (ParallelRead default.lineitem)
+Output: s_suppkey, s_name, s_address, s_phone, sum(l_extendedprice * (1 − l_discount))
+
+GatherExchange
+└──Sorting
+   │  Sort description: s_suppkey ASC
+   └──JoinLogical (Shuffle HashJoin )
+      │  Join: supplier[1000000] ⋈ revenue0[1000000]
+      │  ResultRows: 1000000
+      │  Type: INNER
+      │  Strictness: ALL
+      │  Locality: UNSPECIFIED
+      │  Expression: equals(__table1.s_suppkey, __table2.supplier_no)
+      ├──ShuffleExchange
+      │  └──ReadFromMergeTree (ParallelRead default.supplier)
+      │        Read type: Default
+      │        Parts: 1 | Granules: 1
+      │        Output: s_suppkey, s_name, s_address, s_phone
+      └──Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))))
+         │  Filter column: sum(l_extendedprice * (1 − l_discount)) = \'0\'
+         └──Aggregating
+            │  Keys: l_suppkey
+            │  Aggregates: sum(l_extendedprice * (1 − l_discount))
+            │  Skip merging: 0
+            └──ShuffleExchange
+               └──ReadFromMergeTree (ParallelRead default.lineitem)
+                     Read type: Default
+                     Parts: 1 | Granules: 1
+                     Output: l_suppkey, l_extendedprice, l_discount
+                     Prewhere filter
+                     Prewhere filter column:  l_shipdate < \'1996-04-01\' AND l_shipdate >= \'1996-01-01\'
 -- Q16
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    Sorting
-      MergingAggregated
-        GatherExchange
-          Aggregating
-            Expression ((Before GROUP BY + WHERE))
-              JoinLogical (Broadcast HashJoin  swapped)
-                JoinLogical (Shuffle HashJoin )
-                  Expression (Change column names to column identifiers)
-                    ShuffleExchange
-                      ReadFromMergeTree (ParallelRead default.partsupp)
-                  Expression ((WHERE + Change column names to column identifiers))
-                    ShuffleExchange
-                      ReadFromMergeTree (ParallelRead default.part)
-                Expression (Create result for always true EXISTS expression)
-                  Expression (((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + (WHERE + Change column names to column identifiers)))
-                    ReadFromMergeTree (ReplicatedRead default.supplier)
+Output: p_brand, p_type, p_size, uniqExact(ps_suppkey)
+
+Sorting
+│  Sort description: uniqExact(ps_suppkey) DESC, p_brand ASC, p_type ASC, p_size ASC
+└──MergingAggregated
+   │  Keys: p_brand, p_type, p_size
+   │  Aggregates: uniqExact(ps_suppkey)
+   └──GatherExchange
+      └──Aggregating
+         │  Keys: p_brand, p_type, p_size
+         │  Aggregates: uniqExact(ps_suppkey)
+         │  Skip merging: 0
+         └──JoinLogical (Broadcast HashJoin  swapped)
+            │  Join: R1 ⋉̸ supplier[732]
+            │  ResultRows: unknown
+            │  Type: LEFT
+            │  Strictness: ANTI
+            │  Locality: UNSPECIFIED
+            │  Expression: equals(exists(__table3).__table1.ps_suppkey, __table1.ps_suppkey)
+            ├──JoinLogical (Shuffle HashJoin )
+            │  │  Join: partsupp[80000000] ⋈ part[1248000]
+            │  │  ResultRows: 4992000
+            │  │  Type: INNER
+            │  │  Strictness: ALL
+            │  │  Locality: UNSPECIFIED
+            │  │  Expression: equals(__table2.p_partkey, __table1.ps_partkey)
+            │  ├──ShuffleExchange
+            │  │  └──ReadFromMergeTree (ParallelRead default.partsupp)
+            │  │        Read type: Default
+            │  │        Parts: 1 | Granules: 1
+            │  │        Output: ps_suppkey, ps_partkey
+            │  └──ShuffleExchange
+            │     └──ReadFromMergeTree (ParallelRead default.part)
+            │           Read type: Default
+            │           Parts: 1 | Granules: 1
+            │           Output: p_brand, p_type, p_size, p_partkey
+            │           Prewhere filter
+            │           Prewhere filter column:  p_size IN (49, 14, 23, 45, 19, 3, 36, 9) AND NOT startsWith(p_type, \'MEDIUM POLISHED\') AND p_brand != \'Brand#45\'
+            └──ReadFromMergeTree (ReplicatedRead default.supplier)
+                  Read type: Default
+                  Parts: 1 | Granules: 1
+                  Output: s_suppkey
+                  Prewhere filter
+                  Prewhere filter column:  s_suppkey = s_suppkey AND s_comment LIKE \'%Customer%Complaints%\'
 -- Q17
-Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Expression (Before GROUP BY)
-          Filter (WHERE)
-            JoinLogical (Broadcast HashJoin  swapped)
-              Expression (Change column names to column identifiers)
-                ReadFromMergeTree (ParallelRead default.lineitem)
-              BroadcastExchange
-                GatherExchange
-                  JoinLogical (Shuffle HashJoin )
-                    Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
-                      Aggregating
-                        Expression (Before GROUP BY)
-                          Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-                            ShuffleExchange
-                              ReadFromMergeTree (ParallelRead default.lineitem)
-                    Expression ((WHERE + Change column names to column identifiers))
-                      ShuffleExchange
-                        ReadFromMergeTree (ParallelRead default.part)
+Output: sum(l_extendedprice) / 7.
+
+MergingAggregated
+│  Keys:
+│  Aggregates: sum(l_extendedprice)
+└──GatherExchange
+   └──Aggregating
+      │  Keys:
+      │  Aggregates: sum(l_extendedprice)
+      │  Skip merging: 0
+      └──Filter (WHERE)
+         │  Filter column: l_quantity < CAST(0.2 * avg(l_quantity) AS Nullable(Float64))
+         └──JoinLogical (Broadcast HashJoin  swapped)
+            │  Join: lineitem[600037902] ⋈ R0[20000000] ⋈ part[20000]
+            │  ResultRows: 600037
+            │  Type: INNER
+            │  Strictness: ALL
+            │  Locality: UNSPECIFIED
+            │  Expression: equals(__table2.p_partkey, __table1.l_partkey)
+            ├──ReadFromMergeTree (ParallelRead default.lineitem)
+            │     Read type: Default
+            │     Parts: 1 | Granules: 1
+            │     Output: l_extendedprice, l_partkey, l_quantity
+            └──BroadcastExchange
+               └──GatherExchange
+                  └──JoinLogical (Shuffle HashJoin )
+                     │  Join: R0[20000000] ⋈ part[20000]
+                     │  ResultRows: 20000
+                     │  Type: INNER
+                     │  Strictness: ALL
+                     │  Locality: UNSPECIFIED
+                     │  Expression: equals(__table3.__table2.p_partkey, __table2.p_partkey)
+                     ├──Aggregating
+                     │  │  Keys: l_partkey
+                     │  │  Aggregates: avg(l_quantity)
+                     │  │  Skip merging: 0
+                     │  └──ShuffleExchange
+                     │     └──ReadFromMergeTree (ParallelRead default.lineitem)
+                     │           Read type: Default
+                     │           Parts: 1 | Granules: 1
+                     │           Output: l_partkey, l_quantity
+                     │           Prewhere filter
+                     │           Prewhere filter column:  l_partkey = l_partkey
+                     └──ShuffleExchange
+                        └──ReadFromMergeTree (ParallelRead default.part)
+                              Read type: Default
+                              Parts: 1 | Granules: 1
+                              Output: p_partkey
+                              Prewhere filter
+                              Prewhere filter column:  p_container = \'MED BOX\' AND p_brand = \'Brand#23\'
 -- Q18
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Limit (TopN merge Sorting for ORDER BY)
-      GatherExchange
-        Sorting
-          Expression ((Before ORDER BY + Projection))
-            Aggregating
-              Expression ((Before GROUP BY + WHERE))
-                JoinLogical (Shuffle HashJoin  swapped)
-                  JoinLogical (Shuffle HashJoin  swapped)
-                    Expression (Change column names to column identifiers)
-                      ShuffleExchange
-                        ReadFromMergeTree (ParallelRead default.lineitem)
-                    ShuffleExchange
-                      JoinLogical (Shuffle HashJoin  swapped)
-                        Expression (Change column names to column identifiers)
-                          ShuffleExchange
-                            ReadFromMergeTree (ParallelRead default.orders)
-                        Expression (Change column names to column identifiers)
-                          ShuffleExchange
-                            ReadFromMergeTree (ParallelRead default.customer)
-                  Expression (Create result for always true EXISTS expression)
-                    Filter (((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + HAVING))
-                      Aggregating
-                        Expression ((((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + HAVING) + (Before GROUP BY + Change column names to column identifiers)))
-                          ShuffleExchange
-                            ReadFromMergeTree (ParallelRead default.lineitem)
+Output: c_name, c_custkey, o_orderkey, o_orderdate, o_totalprice, sum(l_quantity)
+
+Limit (preliminary LIMIT)
+│  Limit 100
+│  Offset 0
+└──Limit (TopN merge Sorting for ORDER BY)
+   │  Limit 100
+   │  Offset 0
+   └──GatherExchange
+      └──Sorting
+         │  Sort description: o_totalprice DESC, o_orderdate ASC
+         │  Limit 100
+         └──Aggregating
+            │  Keys: c_name, c_custkey, o_orderkey, o_orderdate, o_totalprice
+            │  Aggregates: sum(l_quantity)
+            │  Skip merging: 0
+            └──JoinLogical (Shuffle HashJoin  swapped)
+               │  Join: R1 ⋉ R0[150000000]
+               │  ResultRows: unknown
+               │  Type: LEFT
+               │  Strictness: SEMI
+               │  Locality: UNSPECIFIED
+               │  Expression: equals(exists(__table4).__table2.o_orderkey, __table2.o_orderkey)
+               ├──JoinLogical (Shuffle HashJoin  swapped)
+               │  │  Join: lineitem[600037902] ⋈ customer[15000000] ⋈ orders[150000000]
+               │  │  ResultRows: 600037902
+               │  │  Type: INNER
+               │  │  Strictness: ALL
+               │  │  Locality: UNSPECIFIED
+               │  │  Expression: equals(__table2.o_orderkey, __table3.l_orderkey)
+               │  ├──ShuffleExchange
+               │  │  └──ReadFromMergeTree (ParallelRead default.lineitem)
+               │  │        Read type: Default
+               │  │        Parts: 1 | Granules: 1
+               │  │        Output: l_quantity, l_orderkey
+               │  └──ShuffleExchange
+               │     └──JoinLogical (Shuffle HashJoin  swapped)
+               │        │  Join: orders[150000000] ⋈ customer[15000000]
+               │        │  ResultRows: 150000000
+               │        │  Type: INNER
+               │        │  Strictness: ALL
+               │        │  Locality: UNSPECIFIED
+               │        │  Expression: equals(__table1.c_custkey, __table2.o_custkey)
+               │        ├──ShuffleExchange
+               │        │  └──ReadFromMergeTree (ParallelRead default.orders)
+               │        │        Read type: Default
+               │        │        Parts: 1 | Granules: 1
+               │        │        Output: o_orderkey, o_orderdate, o_totalprice, o_custkey
+               │        └──ShuffleExchange
+               │           └──ReadFromMergeTree (ParallelRead default.customer)
+               │                 Read type: Default
+               │                 Parts: 1 | Granules: 1
+               │                 Output: c_name, c_custkey
+               └──Filter (((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + HAVING))
+                  │  Filter column: sum(l_quantity) > 300
+                  └──Aggregating
+                     │  Keys: l_orderkey
+                     │  Aggregates: sum(l_quantity)
+                     │  Skip merging: 0
+                     └──ShuffleExchange
+                        └──ReadFromMergeTree (ParallelRead default.lineitem)
+                              Read type: Default
+                              Parts: 1 | Granules: 1
+                              Output: l_orderkey, l_quantity
+                              Prewhere filter
+                              Prewhere filter column:  l_orderkey = l_orderkey
 -- Q19
-Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Expression (Before GROUP BY)
-          Filter (WHERE)
-            JoinLogical (Broadcast HashJoin )
-              Expression (( + (WHERE + Change column names to column identifiers)))
-                ReadFromMergeTree (ParallelRead default.lineitem)
-              Expression (( + (WHERE + Change column names to column identifiers)))
-                ReadFromMergeTree (ReplicatedRead default.part)
+Output: sum(l_extendedprice * (1 − l_discount))
+
+MergingAggregated
+│  Keys:
+│  Aggregates: sum(l_extendedprice * (1 − l_discount))
+└──GatherExchange
+   └──Aggregating
+      │  Keys:
+      │  Aggregates: sum(l_extendedprice * (1 − l_discount))
+      │  Skip merging: 0
+      └──Filter (WHERE)
+         │  Filter column: p_brand = \'Brand#12\' AND p_container IN (\'SM CASE\', \'SM BOX\', \'SM PACK\', \'SM PKG\') AND l_quantity >= 1 AND l_quantity <= 11 AND p_size <= 5 OR p_brand = \'Brand#23\' AND p_container IN (\'MED BAG\', \'MED BOX\', \'MED PKG\', \'MED PACK\') AND l_quantity >= 10 AND l_quantity <= 20 AND p_size <= 10 AND p_size <= 20 AND l_quantity >= 1 OR p_brand = \'Brand#34\' AND p_container IN (\'LG CASE\', \'LG BOX\', \'LG PACK\', \'LG PKG\') AND l_quantity >= 20 AND l_quantity <= 30 AND p_size <= 15
+         └──JoinLogical (Broadcast HashJoin )
+            │  Join: lineitem[21000000] ⋈ part[50000]
+            │  ResultRows: 350000
+            │  Type: INNER
+            │  Strictness: ALL
+            │  Locality: UNSPECIFIED
+            │  Expression: equals(__table2.p_partkey, __table1.l_partkey)
+            ├──ReadFromMergeTree (ParallelRead default.lineitem)
+            │     Read type: Default
+            │     Parts: 1 | Granules: 1
+            │     Output: l_quantity, l_extendedprice, l_discount, l_partkey
+            │     Prewhere filter
+            │     Prewhere filter column:  (l_quantity >= 1 AND l_quantity <= 11 OR l_quantity >= 10 AND l_quantity <= 20 AND l_quantity >= 1 OR l_quantity >= 20 AND l_quantity <= 30) AND l_shipinstruct = \'DELIVER IN PERSON\' AND l_shipmode IN (\'AIR\', \'AIR REG\')
+            └──ReadFromMergeTree (ReplicatedRead default.part)
+                  Read type: Default
+                  Parts: 1 | Granules: 1
+                  Output: p_brand, p_container, p_size, p_partkey
+                  Prewhere filter
+                  Prewhere filter column:  (p_brand = \'Brand#12\' AND p_container IN (\'SM CASE\', \'SM BOX\', \'SM PACK\', \'SM PKG\') AND p_size <= 5 OR p_brand = \'Brand#23\' AND p_container IN (\'MED BAG\', \'MED BOX\', \'MED PKG\', \'MED PACK\') AND p_size <= 10 AND p_size <= 20 OR p_brand = \'Brand#34\' AND p_container IN (\'LG CASE\', \'LG BOX\', \'LG PACK\', \'LG PKG\') AND p_size <= 15) AND p_size >= 1
 -- Q20
-Expression (Project names)
-  GatherExchange
-    Expression ((Before ORDER BY + (Projection + WHERE)))
-      Sorting
-        JoinLogical (Broadcast HashJoin  swapped)
-          JoinLogical (Broadcast HashJoin )
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (ParallelRead default.supplier)
-            Expression ((WHERE + Change column names to column identifiers))
-              ReadFromMergeTree (ReplicatedRead default.nation)
-          BroadcastExchange
-            GatherExchange
-              Expression (Create result for always true EXISTS expression)
-                Filter (((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + WHERE))
-                  JoinLogical (Shuffle HashJoin (by __table7.ps_partkey)  swapped)
-                    Expression
-                      JoinLogical (Shuffle HashJoin  swapped)
-                        Expression (((((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + WHERE) + WHERE) + Change column names to column identifiers))
-                          ShuffleExchange
-                            ReadFromMergeTree (ParallelRead default.partsupp)
-                        Expression (Create result for always true EXISTS expression)
-                          Expression (((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + (WHERE + Change column names to column identifiers)))
-                            ShuffleExchange
-                              ReadFromMergeTree (ParallelRead default.part)
-                    Expression ((((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + WHERE) + (Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection)))))
-                      Aggregating
-                        Expression ((((((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + WHERE) + (Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection)))) + Before GROUP BY) + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column )
-                          ShuffleExchange
-                            ReadFromMergeTree (ParallelRead default.lineitem)
+Output: s_name, s_address
+
+GatherExchange
+└──Sorting
+   │  Sort description: s_name ASC
+   └──JoinLogical (Broadcast HashJoin  swapped)
+      │  Join: R1 ⋉ R0
+      │  ResultRows: unknown
+      │  Type: LEFT
+      │  Strictness: SEMI
+      │  Locality: UNSPECIFIED
+      │  Expression: equals(exists(__table3).__table1.s_suppkey, __table1.s_suppkey)
+      ├──JoinLogical (Broadcast HashJoin )
+      │  │  Join: supplier[1000000] ⋈ nation[1]
+      │  │  ResultRows: 40000
+      │  │  Type: INNER
+      │  │  Strictness: ALL
+      │  │  Locality: UNSPECIFIED
+      │  │  Expression: equals(__table1.s_nationkey, __table2.n_nationkey)
+      │  ├──ReadFromMergeTree (ParallelRead default.supplier)
+      │  │     Read type: Default
+      │  │     Parts: 1 | Granules: 1
+      │  │     Output: s_name, s_address, s_nationkey, s_suppkey
+      │  └──ReadFromMergeTree (ReplicatedRead default.nation)
+      │        Read type: Default
+      │        Parts: 1 | Granules: 1
+      │        Output: n_nationkey
+      │        Prewhere filter
+      │        Prewhere filter column:  n_name = \'CANADA\'
+      └──BroadcastExchange
+         └──GatherExchange
+            └──Filter (((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + WHERE))
+               │  Filter column: ps_availqty > CAST(0.5 * sum(l_quantity) AS Nullable(Float64))
+               └──JoinLogical (Shuffle HashJoin (by ps_partkey)  swapped)
+                  │  Join: R1 ⋈ R0[90400000]
+                  │  ResultRows: unknown
+                  │  Type: INNER
+                  │  Strictness: ALL
+                  │  Locality: UNSPECIFIED
+                  │  Expression: equals(__table13.__table7.ps_partkey, __table7.ps_partkey) AND equals(__table13.__table7.ps_suppkey, __table7.ps_suppkey)
+                  ├──JoinLogical (Shuffle HashJoin  swapped)
+                  │  │  Join: partsupp[80000000] ⋉ part[220000]
+                  │  │  ResultRows: 80000000
+                  │  │  Type: LEFT
+                  │  │  Strictness: SEMI
+                  │  │  Locality: UNSPECIFIED
+                  │  │  Expression: equals(exists(__table8).__table7.ps_partkey, __table7.ps_partkey)
+                  │  ├──ShuffleExchange
+                  │  │  └──ReadFromMergeTree (ParallelRead default.partsupp)
+                  │  │        Read type: Default
+                  │  │        Parts: 1 | Granules: 1
+                  │  │        Output: ps_suppkey, ps_partkey, ps_availqty
+                  │  │        Prewhere filter
+                  │  │        Prewhere filter column:  ps_suppkey = ps_suppkey
+                  │  └──ShuffleExchange
+                  │     └──ReadFromMergeTree (ParallelRead default.part)
+                  │           Read type: Default
+                  │           Parts: 1 | Granules: 1
+                  │           Output: p_partkey
+                  │           Prewhere filter
+                  │           Prewhere filter column:  p_partkey = p_partkey AND startsWith(p_name, \'forest\')
+                  └──Aggregating
+                     │  Keys: ps_partkey, ps_suppkey
+                     │  Aggregates: sum(l_quantity)
+                     │  Skip merging: 0
+                     └──ShuffleExchange
+                        └──ReadFromMergeTree (ParallelRead default.lineitem)
+                              Read type: Default
+                              Parts: 1 | Granules: 1
+                              Output: l_partkey, l_suppkey, l_shipdate, l_quantity
+                              Prewhere filter
+                              Prewhere filter column:  l_shipdate < \'1995-01-01\' AND l_shipdate >= \'1994-01-01\' AND l_suppkey = l_suppkey AND l_partkey = l_partkey
 -- Q21
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Sorting
-      Expression ((Before ORDER BY + Projection))
-        MergingAggregated
-          GatherExchange
-            Aggregating
-              Expression ((Before GROUP BY + WHERE))
-                JoinLogical (Shuffle HashJoin (by exists(__table8).__table2.l_orderkey) )
-                  Expression (Create result for always true EXISTS expression)
-                    Filter (WHERE)
-                      ShuffleExchange
-                        JoinLogical (Broadcast HashJoin )
-                          Expression ((WHERE + Change column names to column identifiers))
-                            ReadFromMergeTree (ParallelRead default.lineitem)
-                          BroadcastExchange
-                            GatherExchange
-                              Expression (Project only used columns)
-                                Expression (WHERE)
-                                  JoinLogical (Shuffle HashJoin )
-                                    Expression (Create result for always true EXISTS expression)
-                                      Filter (WHERE)
-                                        JoinLogical (Shuffle HashJoin )
-                                          Expression (Change column names to column identifiers)
-                                            ShuffleExchange
-                                              ReadFromMergeTree (ParallelRead default.lineitem)
-                                          Expression (Project only used columns)
-                                            Expression
-                                              JoinLogical (Shuffle HashJoin  swapped)
-                                                Expression ((WHERE + Change column names to column identifiers))
-                                                  ShuffleExchange
-                                                    ReadFromMergeTree (ParallelRead default.orders)
-                                                ShuffleExchange
-                                                  JoinLogical (Broadcast HashJoin  swapped)
-                                                    Expression ((WHERE + Change column names to column identifiers))
-                                                      ReadFromMergeTree (ParallelRead default.lineitem)
-                                                    BroadcastExchange
-                                                      GatherExchange
-                                                        JoinLogical (Broadcast HashJoin )
-                                                          Expression (Change column names to column identifiers)
-                                                            ReadFromMergeTree (ParallelRead default.supplier)
-                                                          Expression ((WHERE + Change column names to column identifiers))
-                                                            ReadFromMergeTree (ReplicatedRead default.nation)
-                                    Expression
-                                      JoinLogical (Shuffle HashJoin  swapped)
-                                        Expression ((WHERE + Change column names to column identifiers))
-                                          ShuffleExchange
-                                            ReadFromMergeTree (ParallelRead default.orders)
-                                        ShuffleExchange
-                                          JoinLogical (Broadcast HashJoin  swapped)
-                                            Expression ((WHERE + Change column names to column identifiers))
-                                              ReadFromMergeTree (ParallelRead default.lineitem)
-                                            BroadcastExchange
-                                              GatherExchange
-                                                JoinLogical (Broadcast HashJoin )
-                                                  Expression (Change column names to column identifiers)
-                                                    ReadFromMergeTree (ParallelRead default.supplier)
-                                                  Expression ((WHERE + Change column names to column identifiers))
-                                                    ReadFromMergeTree (ReplicatedRead default.nation)
-                  Expression (WHERE)
-                    Expression (WHERE)
-                      JoinLogical (Shuffle HashJoin (by exists(__table5).__table2.l_orderkey) )
-                        Expression (Create result for always true EXISTS expression)
-                          Filter (WHERE)
-                            JoinLogical (Shuffle HashJoin )
-                              Expression (Change column names to column identifiers)
-                                ShuffleExchange
-                                  ReadFromMergeTree (ParallelRead default.lineitem)
-                              Expression (Project only used columns)
-                                Expression
-                                  JoinLogical (Shuffle HashJoin  swapped)
-                                    Expression ((WHERE + Change column names to column identifiers))
-                                      ShuffleExchange
-                                        ReadFromMergeTree (ParallelRead default.orders)
-                                    ShuffleExchange
-                                      JoinLogical (Broadcast HashJoin  swapped)
-                                        Expression ((WHERE + Change column names to column identifiers))
-                                          ReadFromMergeTree (ParallelRead default.lineitem)
-                                        BroadcastExchange
-                                          GatherExchange
-                                            JoinLogical (Broadcast HashJoin )
-                                              Expression (Change column names to column identifiers)
-                                                ReadFromMergeTree (ParallelRead default.supplier)
-                                              Expression ((WHERE + Change column names to column identifiers))
-                                                ReadFromMergeTree (ReplicatedRead default.nation)
-                        Expression
-                          JoinLogical (Shuffle HashJoin  swapped)
-                            Expression ((WHERE + Change column names to column identifiers))
-                              ShuffleExchange
-                                ReadFromMergeTree (ParallelRead default.orders)
-                            ShuffleExchange
-                              JoinLogical (Broadcast HashJoin  swapped)
-                                Expression ((WHERE + Change column names to column identifiers))
-                                  ReadFromMergeTree (ParallelRead default.lineitem)
-                                BroadcastExchange
-                                  GatherExchange
-                                    JoinLogical (Broadcast HashJoin )
-                                      Expression (Change column names to column identifiers)
-                                        ReadFromMergeTree (ParallelRead default.supplier)
-                                      Expression ((WHERE + Change column names to column identifiers))
-                                        ReadFromMergeTree (ReplicatedRead default.nation)
+Output: s_name, count()
+
+Limit (preliminary LIMIT)
+│  Limit 100
+│  Offset 0
+└──Sorting
+   │  Sort description: count() DESC, s_name ASC
+   │  Limit 100
+   └──MergingAggregated
+      │  Keys: s_name
+      │  Aggregates: count()
+      └──GatherExchange
+         └──Aggregating
+            │  Keys: s_name
+            │  Aggregates: count()
+            │  Skip merging: 0
+            └──JoinLogical (Shuffle HashJoin (by exists(__table8).l_orderkey) )
+               │  Join: R0 ⋊̸ R1
+               │  ResultRows: unknown
+               │  Type: RIGHT
+               │  Strictness: ANTI
+               │  Locality: UNSPECIFIED
+               │  Expression: equals(exists(__table8).__table2.l_orderkey, __table2.l_orderkey) AND equals(exists(__table8).__table2.l_suppkey, __table2.l_suppkey)
+               ├──Filter (WHERE)
+               │  │  Filter column: l_suppkey != l_suppkey
+               │  └──ShuffleExchange
+               │     └──JoinLogical (Broadcast HashJoin )
+               │        │  Join: lineitem[600037902] ⋈ R1
+               │        │  ResultRows: unknown
+               │        │  Type: INNER
+               │        │  Strictness: ALL
+               │        │  Locality: UNSPECIFIED
+               │        │  Expression: equals(__table10.l_orderkey, __table2.l_orderkey)
+               │        ├──ReadFromMergeTree (ParallelRead default.lineitem)
+               │        │     Read type: Default
+               │        │     Parts: 1 | Granules: 1
+               │        │     Output: l_receiptdate, l_commitdate, l_orderkey, l_suppkey
+               │        │     Prewhere filter
+               │        │     Prewhere filter column:  l_receiptdate > l_commitdate
+               │        └──BroadcastExchange
+               │           └──GatherExchange
+               │              └──JoinLogical (Shuffle HashJoin )
+               │                 │  Join: R0 ⋊ R1
+               │                 │  ResultRows: unknown
+               │                 │  Type: RIGHT
+               │                 │  Strictness: SEMI
+               │                 │  Locality: UNSPECIFIED
+               │                 │  Expression: equals(exists(__table5).__table2.l_orderkey, __table2.l_orderkey) AND equals(exists(__table5).__table2.l_suppkey, __table2.l_suppkey)
+               │                 ├──Filter (WHERE)
+               │                 │  │  Filter column: l_suppkey != l_suppkey
+               │                 │  └──JoinLogical (Shuffle HashJoin )
+               │                 │     │  Join: lineitem[600037902] ⋈ R1
+               │                 │     │  ResultRows: unknown
+               │                 │     │  Type: INNER
+               │                 │     │  Strictness: ALL
+               │                 │     │  Locality: UNSPECIFIED
+               │                 │     │  Expression: equals(__table7.l_orderkey, __table2.l_orderkey)
+               │                 │     ├──ShuffleExchange
+               │                 │     │  └──ReadFromMergeTree (ParallelRead default.lineitem)
+               │                 │     │        Read type: Default
+               │                 │     │        Parts: 1 | Granules: 1
+               │                 │     │        Output: l_orderkey, l_suppkey
+               │                 │     └──JoinLogical (Shuffle HashJoin  swapped)
+               │                 │        │  Join: orders[73000000] ⋈ supplier[1000000] ⋈ nation[1] ⋈ l1[600037902]
+               │                 │        │  ResultRows: 11680737
+               │                 │        │  Type: INNER
+               │                 │        │  Strictness: ALL
+               │                 │        │  Locality: UNSPECIFIED
+               │                 │        │  Expression: equals(__table3.o_orderkey, __table2.l_orderkey)
+               │                 │        ├──ShuffleExchange
+               │                 │        │  └──ReadFromMergeTree (ParallelRead default.orders)
+               │                 │        │        Read type: Default
+               │                 │        │        Parts: 1 | Granules: 1
+               │                 │        │        Output: o_orderstatus, o_orderkey
+               │                 │        │        Prewhere filter
+               │                 │        │        Prewhere filter column:  o_orderstatus = \'F\'
+               │                 │        └──ShuffleExchange
+               │                 │           └──JoinLogical (Broadcast HashJoin  swapped)
+               │                 │              │  Join: l1[600037902] ⋈ supplier[1000000] ⋈ nation[1]
+               │                 │              │  ResultRows: 24001516
+               │                 │              │  Type: INNER
+               │                 │              │  Strictness: ALL
+               │                 │              │  Locality: UNSPECIFIED
+               │                 │              │  Expression: equals(__table1.s_suppkey, __table2.l_suppkey)
+               │                 │              ├──ReadFromMergeTree (ParallelRead default.lineitem)
+               │                 │              │     Read type: Default
+               │                 │              │     Parts: 1 | Granules: 1
+               │                 │              │     Output: l_receiptdate, l_commitdate, l_suppkey, l_orderkey
+               │                 │              │     Prewhere filter
+               │                 │              │     Prewhere filter column:  l_receiptdate > l_commitdate
+               │                 │              └──BroadcastExchange
+               │                 │                 └──GatherExchange
+               │                 │                    └──JoinLogical (Broadcast HashJoin )
+               │                 │                       │  Join: supplier[1000000] ⋈ nation[1]
+               │                 │                       │  ResultRows: 40000
+               │                 │                       │  Type: INNER
+               │                 │                       │  Strictness: ALL
+               │                 │                       │  Locality: UNSPECIFIED
+               │                 │                       │  Expression: equals(__table1.s_nationkey, __table4.n_nationkey)
+               │                 │                       ├──ReadFromMergeTree (ParallelRead default.supplier)
+               │                 │                       │     Read type: Default
+               │                 │                       │     Parts: 1 | Granules: 1
+               │                 │                       │     Output: s_name, s_suppkey, s_nationkey
+               │                 │                       └──ReadFromMergeTree (ReplicatedRead default.nation)
+               │                 │                             Read type: Default
+               │                 │                             Parts: 1 | Granules: 1
+               │                 │                             Output: n_name, n_nationkey
+               │                 │                             Prewhere filter
+               │                 │                             Prewhere filter column:  n_name = \'SAUDI ARABIA\'
+               │                 └──JoinLogical (Shuffle HashJoin  swapped)
+               │                    │  Join: orders[73000000] ⋈ supplier[1000000] ⋈ nation[1] ⋈ l1[600037902]
+               │                    │  ResultRows: 11680737
+               │                    │  Type: INNER
+               │                    │  Strictness: ALL
+               │                    │  Locality: UNSPECIFIED
+               │                    │  Expression: equals(__table3.o_orderkey, __table2.l_orderkey)
+               │                    ├──ShuffleExchange
+               │                    │  └──ReadFromMergeTree (ParallelRead default.orders)
+               │                    │        Read type: Default
+               │                    │        Parts: 1 | Granules: 1
+               │                    │        Output: o_orderstatus, o_orderkey
+               │                    │        Prewhere filter
+               │                    │        Prewhere filter column:  o_orderstatus = \'F\'
+               │                    └──ShuffleExchange
+               │                       └──JoinLogical (Broadcast HashJoin  swapped)
+               │                          │  Join: l1[600037902] ⋈ supplier[1000000] ⋈ nation[1]
+               │                          │  ResultRows: 24001516
+               │                          │  Type: INNER
+               │                          │  Strictness: ALL
+               │                          │  Locality: UNSPECIFIED
+               │                          │  Expression: equals(__table1.s_suppkey, __table2.l_suppkey)
+               │                          ├──ReadFromMergeTree (ParallelRead default.lineitem)
+               │                          │     Read type: Default
+               │                          │     Parts: 1 | Granules: 1
+               │                          │     Output: l_receiptdate, l_commitdate, l_suppkey, l_orderkey
+               │                          │     Prewhere filter
+               │                          │     Prewhere filter column:  l_receiptdate > l_commitdate
+               │                          └──BroadcastExchange
+               │                             └──GatherExchange
+               │                                └──JoinLogical (Broadcast HashJoin )
+               │                                   │  Join: supplier[1000000] ⋈ nation[1]
+               │                                   │  ResultRows: 40000
+               │                                   │  Type: INNER
+               │                                   │  Strictness: ALL
+               │                                   │  Locality: UNSPECIFIED
+               │                                   │  Expression: equals(__table1.s_nationkey, __table4.n_nationkey)
+               │                                   ├──ReadFromMergeTree (ParallelRead default.supplier)
+               │                                   │     Read type: Default
+               │                                   │     Parts: 1 | Granules: 1
+               │                                   │     Output: s_name, s_suppkey, s_nationkey
+               │                                   └──ReadFromMergeTree (ReplicatedRead default.nation)
+               │                                         Read type: Default
+               │                                         Parts: 1 | Granules: 1
+               │                                         Output: n_name, n_nationkey
+               │                                         Prewhere filter
+               │                                         Prewhere filter column:  n_name = \'SAUDI ARABIA\'
+               └──JoinLogical (Shuffle HashJoin (by exists(__table5).l_orderkey) )
+                  │  Join: R0 ⋊ R1
+                  │  ResultRows: unknown
+                  │  Type: RIGHT
+                  │  Strictness: SEMI
+                  │  Locality: UNSPECIFIED
+                  │  Expression: equals(exists(__table5).__table2.l_orderkey, __table2.l_orderkey) AND equals(exists(__table5).__table2.l_suppkey, __table2.l_suppkey)
+                  ├──Filter (WHERE)
+                  │  │  Filter column: l_suppkey != l_suppkey
+                  │  └──JoinLogical (Shuffle HashJoin )
+                  │     │  Join: lineitem[600037902] ⋈ R1
+                  │     │  ResultRows: unknown
+                  │     │  Type: INNER
+                  │     │  Strictness: ALL
+                  │     │  Locality: UNSPECIFIED
+                  │     │  Expression: equals(__table7.l_orderkey, __table2.l_orderkey)
+                  │     ├──ShuffleExchange
+                  │     │  └──ReadFromMergeTree (ParallelRead default.lineitem)
+                  │     │        Read type: Default
+                  │     │        Parts: 1 | Granules: 1
+                  │     │        Output: l_orderkey, l_suppkey
+                  │     └──JoinLogical (Shuffle HashJoin  swapped)
+                  │        │  Join: orders[73000000] ⋈ supplier[1000000] ⋈ nation[1] ⋈ l1[600037902]
+                  │        │  ResultRows: 11680737
+                  │        │  Type: INNER
+                  │        │  Strictness: ALL
+                  │        │  Locality: UNSPECIFIED
+                  │        │  Expression: equals(__table3.o_orderkey, __table2.l_orderkey)
+                  │        ├──ShuffleExchange
+                  │        │  └──ReadFromMergeTree (ParallelRead default.orders)
+                  │        │        Read type: Default
+                  │        │        Parts: 1 | Granules: 1
+                  │        │        Output: o_orderstatus, o_orderkey
+                  │        │        Prewhere filter
+                  │        │        Prewhere filter column:  o_orderstatus = \'F\'
+                  │        └──ShuffleExchange
+                  │           └──JoinLogical (Broadcast HashJoin  swapped)
+                  │              │  Join: l1[600037902] ⋈ supplier[1000000] ⋈ nation[1]
+                  │              │  ResultRows: 24001516
+                  │              │  Type: INNER
+                  │              │  Strictness: ALL
+                  │              │  Locality: UNSPECIFIED
+                  │              │  Expression: equals(__table1.s_suppkey, __table2.l_suppkey)
+                  │              ├──ReadFromMergeTree (ParallelRead default.lineitem)
+                  │              │     Read type: Default
+                  │              │     Parts: 1 | Granules: 1
+                  │              │     Output: l_receiptdate, l_commitdate, l_suppkey, l_orderkey
+                  │              │     Prewhere filter
+                  │              │     Prewhere filter column:  l_receiptdate > l_commitdate
+                  │              └──BroadcastExchange
+                  │                 └──GatherExchange
+                  │                    └──JoinLogical (Broadcast HashJoin )
+                  │                       │  Join: supplier[1000000] ⋈ nation[1]
+                  │                       │  ResultRows: 40000
+                  │                       │  Type: INNER
+                  │                       │  Strictness: ALL
+                  │                       │  Locality: UNSPECIFIED
+                  │                       │  Expression: equals(__table1.s_nationkey, __table4.n_nationkey)
+                  │                       ├──ReadFromMergeTree (ParallelRead default.supplier)
+                  │                       │     Read type: Default
+                  │                       │     Parts: 1 | Granules: 1
+                  │                       │     Output: s_name, s_suppkey, s_nationkey
+                  │                       └──ReadFromMergeTree (ReplicatedRead default.nation)
+                  │                             Read type: Default
+                  │                             Parts: 1 | Granules: 1
+                  │                             Output: n_name, n_nationkey
+                  │                             Prewhere filter
+                  │                             Prewhere filter column:  n_name = \'SAUDI ARABIA\'
+                  └──JoinLogical (Shuffle HashJoin  swapped)
+                     │  Join: orders[73000000] ⋈ supplier[1000000] ⋈ nation[1] ⋈ l1[600037902]
+                     │  ResultRows: 11680737
+                     │  Type: INNER
+                     │  Strictness: ALL
+                     │  Locality: UNSPECIFIED
+                     │  Expression: equals(__table3.o_orderkey, __table2.l_orderkey)
+                     ├──ShuffleExchange
+                     │  └──ReadFromMergeTree (ParallelRead default.orders)
+                     │        Read type: Default
+                     │        Parts: 1 | Granules: 1
+                     │        Output: o_orderstatus, o_orderkey
+                     │        Prewhere filter
+                     │        Prewhere filter column:  o_orderstatus = \'F\'
+                     └──ShuffleExchange
+                        └──JoinLogical (Broadcast HashJoin  swapped)
+                           │  Join: l1[600037902] ⋈ supplier[1000000] ⋈ nation[1]
+                           │  ResultRows: 24001516
+                           │  Type: INNER
+                           │  Strictness: ALL
+                           │  Locality: UNSPECIFIED
+                           │  Expression: equals(__table1.s_suppkey, __table2.l_suppkey)
+                           ├──ReadFromMergeTree (ParallelRead default.lineitem)
+                           │     Read type: Default
+                           │     Parts: 1 | Granules: 1
+                           │     Output: l_receiptdate, l_commitdate, l_suppkey, l_orderkey
+                           │     Prewhere filter
+                           │     Prewhere filter column:  l_receiptdate > l_commitdate
+                           └──BroadcastExchange
+                              └──GatherExchange
+                                 └──JoinLogical (Broadcast HashJoin )
+                                    │  Join: supplier[1000000] ⋈ nation[1]
+                                    │  ResultRows: 40000
+                                    │  Type: INNER
+                                    │  Strictness: ALL
+                                    │  Locality: UNSPECIFIED
+                                    │  Expression: equals(__table1.s_nationkey, __table4.n_nationkey)
+                                    ├──ReadFromMergeTree (ParallelRead default.supplier)
+                                    │     Read type: Default
+                                    │     Parts: 1 | Granules: 1
+                                    │     Output: s_name, s_suppkey, s_nationkey
+                                    └──ReadFromMergeTree (ReplicatedRead default.nation)
+                                          Read type: Default
+                                          Parts: 1 | Granules: 1
+                                          Output: n_name, n_nationkey
+                                          Prewhere filter
+                                          Prewhere filter column:  n_name = \'SAUDI ARABIA\'
 -- Q22
-Expression (Project names)
-  GatherExchange
-    Expression ((Before ORDER BY + Projection))
-      Sorting
-        Aggregating
-          ShuffleExchange
-            Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + WHERE)))))
-              JoinLogical (Shuffle HashJoin )
-                Expression (Create result for always true EXISTS expression)
-                  Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-                    ShuffleExchange
-                      ReadFromMergeTree (ParallelRead default.orders)
-                Expression ((WHERE + Change column names to column identifiers))
-                  ShuffleExchange
-                    ReadFromMergeTree (ParallelRead default.customer)
+Output: substring(c_phone, 1, 2), count(), sum(c_acctbal)
+
+GatherExchange
+└──Sorting
+   │  Sort description: substring(c_phone, 1, 2) ASC
+   └──Aggregating
+      │  Keys: substring(c_phone, 1, 2)
+      │  Aggregates: count(), sum(c_acctbal)
+      │  Skip merging: 0
+      └──ShuffleExchange
+         └──JoinLogical (Shuffle HashJoin )
+            │  Join: orders[150000000] ⋊̸ customer[4000000]
+            │  ResultRows: 40000000
+            │  Type: RIGHT
+            │  Strictness: ANTI
+            │  Locality: UNSPECIFIED
+            │  Expression: equals(exists(__table3).__table2.c_custkey, __table2.c_custkey)
+            ├──Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
+            │  │  Filter column: o_custkey = o_custkey
+            │  └──ShuffleExchange
+            │     └──ReadFromMergeTree (ParallelRead default.orders)
+            │           Read type: Default
+            │           Parts: 1 | Granules: 1
+            │           Output: o_custkey
+            └──ShuffleExchange
+               └──ReadFromMergeTree (ParallelRead default.customer)
+                     Read type: Default
+                     Parts: 1 | Granules: 1
+                     Output: c_phone, c_acctbal, c_custkey
+                     Prewhere filter
+                     Prewhere filter column:  c_acctbal > nan AND substring(c_phone, 1, 2) IN (\'13\', \'31\', \'23\', \'29\', \'30\', \'18\', \'17\')

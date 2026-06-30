@@ -1,20 +1,42 @@
 -- RIGHT JOIN then join on the null-extended (left) key
-Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Expression (Before GROUP BY)
-          JoinLogical (Broadcast HashJoin )
-            Expression ((Change column names to column identifiers + (Project names + Projection)))
-              JoinLogical (Shuffle HashJoin )
-                Expression (Change column names to column identifiers)
-                  ShuffleExchange
-                    ReadFromMergeTree (ParallelRead default.oj_l)
-                Expression (Change column names to column identifiers)
-                  ShuffleExchange
-                    ReadFromMergeTree (ParallelRead default.oj_r)
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (ReplicatedRead default.oj_s)
+Output: count()
+
+MergingAggregated
+│  Keys:
+│  Aggregates: count()
+└──GatherExchange
+   └──Aggregating
+      │  Keys:
+      │  Aggregates: count()
+      │  Skip merging: 0
+      └──JoinLogical (Broadcast HashJoin )
+         │  Join: j ⋈ oj_s[100000]
+         │  ResultRows: unknown
+         │  Type: INNER
+         │  Strictness: ALL
+         │  Locality: UNSPECIFIED
+         │  Expression: equals(__table1.jk, __table4.k)
+         ├──JoinLogical (Shuffle HashJoin )
+         │  │  Join: oj_l[100000] ⟖ oj_r[100000]
+         │  │  ResultRows: 100000
+         │  │  Type: RIGHT
+         │  │  Strictness: ALL
+         │  │  Locality: UNSPECIFIED
+         │  │  Expression: equals(__table2.k, __table3.k)
+         │  ├──ShuffleExchange
+         │  │  └──ReadFromMergeTree (ParallelRead default.oj_l)
+         │  │        Read type: Default
+         │  │        Parts: 1 | Granules: 12
+         │  │        Output: k
+         │  └──ShuffleExchange
+         │     └──ReadFromMergeTree (ParallelRead default.oj_r)
+         │           Read type: Default
+         │           Parts: 1 | Granules: 12
+         │           Output: k
+         └──ReadFromMergeTree (ReplicatedRead default.oj_s)
+               Read type: Default
+               Parts: 1 | Granules: 12
+               Output: k
 -- results match the non-distributed baseline
 100000
 100000
