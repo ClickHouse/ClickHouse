@@ -1137,10 +1137,20 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(!remote_file_reader);
             chassert(!cache_writer);
 
-            auto file_size = fs::file_size(getPath());
-            UNUSED(file_size);
+            /// When the size was read from the file name (`<offset>_<size>`), we deliberately trust it
+            /// without a `stat` — that is the whole point of the optimization (see `loadMetadataForKey`).
+            /// An externally truncated or corrupted `<offset>_<size>` file is handled lazily on read:
+            /// `getCacheReadBuffer` compares the on-disk size against the recorded one and discards the
+            /// broken entry (re-fetching from the source). Asserting the on-disk size here would both
+            /// re-introduce the `stat` and turn that discardable inconsistency into a startup abort in
+            /// debug/sanitizer builds (`FileCache::assertCacheCorrectness` runs right after metadata load).
+            if (!size_in_filename)
+            {
+                auto file_size = fs::file_size(getPath());
+                UNUSED(file_size);
 
-            chassert(file_size == range().size());
+                chassert(file_size == range().size());
+            }
             chassert(downloaded_size == range().size());
 
             chassert(queue_iterator || on_delayed_removal);
