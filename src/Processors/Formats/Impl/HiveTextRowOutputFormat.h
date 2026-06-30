@@ -15,8 +15,9 @@ class WriteBuffer;
   *
   * Fields of a row are separated by the fields delimiter ('\001' by default), rows are
   * separated by the rows delimiter ('\n' by default). Values of complex types (Array, Map,
-  * Tuple) are written without any quoting and are separated by a delimiter derived from the
-  * fields delimiter by their nesting level, the same way Apache Hive does it.
+  * Tuple) are written without any quoting and are separated by the Hive separator for their
+  * nesting level (the configurable collection-items and map-keys delimiters, then Hive's
+  * continuation defaults; see getHiveTextDelimiter), the same way Apache Hive does it.
   */
 class HiveTextRowOutputFormat final : public IRowOutputFormat
 {

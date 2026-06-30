@@ -125,9 +125,13 @@ rows are separated by the rows delimiter (`\n` by default, configurable via
 [`format_hive_text_rows_delimiter`](#format-settings)). Values of nested types
 ([`Array`](/sql-reference/data-types/array), [`Map`](/sql-reference/data-types/map)
 and [`Tuple`](/sql-reference/data-types/tuple)) are written without brackets and
-are separated by a delimiter derived from the fields delimiter by their nesting
-level, the same way Hive's `LazySimpleSerDe` does it (`\x02` for the second
-level, `\x03`/`\x04` for the third, and so on). Data types that have no natural
+are separated by the Hive separator for their nesting level, the same way Hive's
+`LazySimpleSerDe` does it. The first three separators are the configurable fields
+delimiter, [`input_format_hive_text_collection_items_delimiter`](#format-settings)
+(`\x02` by default, used for array elements, map entries and tuple elements) and
+[`input_format_hive_text_map_keys_delimiter`](#format-settings) (`\x03` by default,
+used between a map key and its value); deeper levels default to consecutive control
+characters (`\x04`, `\x05`, and so on, up to eight levels). Data types that have no natural
 Hive text representation are not supported for output and raise a
 `NOT_IMPLEMENTED` exception. This includes `AggregateFunction`, `Dynamic`,
 `Variant`, `LowCardinality` and `Object`, as well as the numeric-backed types
@@ -144,7 +148,7 @@ SELECT '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555)) 
 | Setting                                                | Description                                                                                                                           | Default |
 |--------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|---------|
 | `input_format_hive_text_fields_delimiter`              | Delimiter between fields in Hive Text File                                                                                             | `\x01`  |
-| `input_format_hive_text_collection_items_delimiter`    | Delimiter between collection (array or map) items in Hive Text File. Accepted but currently not used during parsing.                   | `\x02`  |
-| `input_format_hive_text_map_keys_delimiter`            | Delimiter between a pair of map key/values in Hive Text File. Accepted but currently not used during parsing.                          | `\x03`  |
+| `input_format_hive_text_collection_items_delimiter`    | Delimiter between collection (array or map) items in Hive Text File. Used by the output format; accepted but currently not used during input parsing.   | `\x02`  |
+| `input_format_hive_text_map_keys_delimiter`            | Delimiter between a pair of map key/values in Hive Text File. Used by the output format; accepted but currently not used during input parsing.          | `\x03`  |
 | `input_format_hive_text_allow_variable_number_of_columns` | Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields as default values        | `1`     |
 | `format_hive_text_rows_delimiter`                      | Delimiter at the end of each row in Hive Text output                                                                                   | `\n`    |

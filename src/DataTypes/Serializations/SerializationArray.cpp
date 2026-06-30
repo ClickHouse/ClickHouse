@@ -702,13 +702,17 @@ void SerializationArray::serializeTextHive(const IColumn & column, size_t row_nu
 
     const IColumn & nested_column = column_array.getData();
 
+    const size_t level = settings.hive_text.nesting_level;
+    const char separator = getHiveTextDelimiter(settings, level);
+
+    auto child_settings = settings;
+    child_settings.hive_text.nesting_level = level + 1;
+
     for (size_t i = offset; i < next_offset; ++i)
     {
         if (i != offset)
-            writeChar(settings.hive_text.fields_delimiter + 1, ostr);
+            writeChar(separator, ostr);
 
-        auto child_settings = settings;
-        child_settings.hive_text.fields_delimiter = settings.hive_text.fields_delimiter + 1;
         nested->serializeTextHive(nested_column, i, ostr, child_settings);
     }
 }

@@ -305,15 +305,20 @@ void SerializationMap::serializeTextHive(const IColumn & column, size_t row_num,
     size_t offset = offsets[row_num - 1];
     size_t next_offset = offsets[row_num];
 
+    const size_t level = settings.hive_text.nesting_level;
+    const char entry_separator = getHiveTextDelimiter(settings, level);
+    const char key_value_separator = getHiveTextDelimiter(settings, level + 1);
+
+    auto child_settings = settings;
+    child_settings.hive_text.nesting_level = level + 2;
+
     for (size_t i = offset; i < next_offset; ++i)
     {
         if (i != offset)
-            writeChar(settings.hive_text.fields_delimiter + 1, ostr);
+            writeChar(entry_separator, ostr);
 
-        auto child_settings = settings;
-        child_settings.hive_text.fields_delimiter = settings.hive_text.fields_delimiter + 2;
         key_serialization->serializeTextHive(nested_tuple.getColumn(0), i, ostr, child_settings);
-        writeChar(settings.hive_text.fields_delimiter + 2, ostr);
+        writeChar(key_value_separator, ostr);
         value_serialization->serializeTextHive(nested_tuple.getColumn(1), i, ostr, child_settings);
     }
 }

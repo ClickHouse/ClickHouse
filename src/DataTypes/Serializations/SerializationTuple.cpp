@@ -185,13 +185,17 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
 void SerializationTuple::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    const size_t level = settings.hive_text.nesting_level;
+    const char separator = getHiveTextDelimiter(settings, level);
+
+    auto child_settings = settings;
+    child_settings.hive_text.nesting_level = level + 1;
+
     for (size_t i = 0; i < elems.size(); ++i)
     {
         if (i != 0)
-            writeChar(settings.hive_text.fields_delimiter + 1, ostr);
+            writeChar(separator, ostr);
 
-        auto child_settings = settings;
-        child_settings.hive_text.fields_delimiter = settings.hive_text.fields_delimiter + 1;
         elems[i]->serializeTextHive(extractElementColumn(column, i), row_num, ostr, child_settings);
     }
 }
