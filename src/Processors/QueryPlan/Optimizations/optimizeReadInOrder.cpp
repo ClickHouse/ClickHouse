@@ -1554,6 +1554,13 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
                 order_info.input_order->used_prefix_of_sorting_key_size, order_info.input_order->direction, order_info.input_order->limit))
             return {};
 
+        /// `LimitByStep` runs the optimized per-stream `LimitBySortedStreamTransform` pre-filter on
+        /// each input stream before the final resize/dedup. Keep the per-stream pipeline parallel:
+        /// `PrefetchingConcatProcessor` would otherwise collapse a single-part filtered read into one
+        /// stream and serialize that pre-filter (the same reason aggregation-in-order and
+        /// distinct-in-order opt out above).
+        reading->setPreferMultipleStreams();
+
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;

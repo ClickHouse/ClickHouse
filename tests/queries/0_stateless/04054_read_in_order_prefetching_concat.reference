@@ -10,5 +10,11 @@ no_prefetching_residual_filter
 0
 residual_filter_correctness
 1	1
+no_prefetching_limit_by_in_order
+0
+limit_by_in_order_multi_stream
+1	1
+limit_by_in_order_correctness
+1
 no_prefetching_multi_part
 0

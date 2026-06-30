@@ -104,6 +104,41 @@ FROM (
     )
 ) SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
 
+-- A no-`ORDER BY` `LIMIT BY` whose `BY` columns are a prefix of the sorting key drives read-in-order
+-- via `optimizeLimitByInOrder`. `LimitByStep` then runs the optimized per-stream
+-- `LimitBySortedStreamTransform` pre-filter on each input stream before the final resize/dedup
+-- (`LimitByTransform`). PrefetchingConcat must NOT collapse those streams into one (it would serialize
+-- the pre-filter), so a single-part filtered `LIMIT BY` keeps multiple streams, just like
+-- aggregation-in-order and distinct-in-order. Expect no PrefetchingConcat and the multi-stream
+-- LIMIT BY path (per-stream `LimitBySortedStreamTransform` plus the final `LimitByTransform`).
+SELECT 'no_prefetching_limit_by_in_order';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT path FROM t_prefetching_concat
+    PREWHERE path LIKE '%file.log'
+    LIMIT 1 BY path
+) WHERE explain LIKE '%PrefetchingConcat%'
+SETTINGS optimize_limit_by_in_order = 1;
+
+SELECT 'limit_by_in_order_multi_stream';
+SELECT
+    countIf(explain LIKE '%LimitBySortedStreamTransform%') > 0 AS has_per_stream_prefilter,
+    countIf(explain LIKE '%LimitByTransform%') > 0 AS has_final_dedup
+FROM (
+    EXPLAIN PIPELINE SELECT path FROM t_prefetching_concat
+    PREWHERE path LIKE '%file.log'
+    LIMIT 1 BY path
+)
+SETTINGS optimize_limit_by_in_order = 1;
+
+SELECT 'limit_by_in_order_correctness';
+SELECT count() = (SELECT uniqExact(path) FROM t_prefetching_concat WHERE path LIKE '%file.log') AS ok
+FROM (
+    SELECT path FROM t_prefetching_concat
+    PREWHERE path LIKE '%file.log'
+    LIMIT 1 BY path
+)
+SETTINGS optimize_limit_by_in_order = 1;
+
 DROP TABLE t_prefetching_concat;
 
 -- PrefetchingConcat should NOT be used with multiple parts whose ranges
