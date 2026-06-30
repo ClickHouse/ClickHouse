@@ -866,22 +866,26 @@ def main():
                     reprepared = CH.create_minio_log_tables()
                     reprepare_error = CH.minio_setup_error
                     if reprepared and has_stateful_tests:
-                        reprepared = (
-                            CH.prepare_stateful_data(
-                                with_s3_storage=is_s3_storage,
-                                is_db_replicated=is_database_replicated,
-                            )
-                            and CH.insert_system_zookeeper_config()
-                        )
-                        if not reprepared:
+                        # Split the two sub-steps like the START stage does so the
+                        # persisted Environment setup row names the operation that
+                        # actually failed instead of collapsing both into the
+                        # generic "failed to re-prepare stateful data" bucket.
+                        if not CH.prepare_stateful_data(
+                            with_s3_storage=is_s3_storage,
+                            is_db_replicated=is_database_replicated,
+                        ):
                             # Prefer the concrete sub-command + ClickHouse error
                             # captured by prepare_stateful_data() over the generic
                             # message, so the (intermittent, msan) re-prepare
                             # failure is diagnosable in CIDB test_context_raw.
+                            reprepared = False
                             reprepare_error = (
                                 CH.stateful_setup_error
                                 or "failed to re-prepare stateful data"
                             )
+                        elif not CH.insert_system_zookeeper_config():
+                            reprepared = False
+                            reprepare_error = "insert_system_zookeeper_config failed"
                     if not reprepared:
                         info_text = (
                             "Failed to re-prepare the test environment "

@@ -720,10 +720,12 @@ profiles:
         command = """
 set -e
 set -o pipefail
-# Record which sub-command failed (set -e then exits). Combined with the
-# ClickHouse client error already on stderr, this is captured below so the
-# bugfix-validation re-prepare path can report the real reason.
-trap 'rc=$?; echo "prepare_stateful_data: command at line $LINENO failed with exit $rc" >&2' ERR
+# Record which sub-command failed (set -e then exits). $BASH_COMMAND is the
+# failing command itself, so the captured reason names the exact query instead
+# of just a line number; combined with the ClickHouse client error already on
+# stderr this is captured below so the bugfix-validation re-prepare path can
+# report the real reason.
+trap 'rc=$?; echo "prepare_stateful_data: command [$BASH_COMMAND] at line $LINENO failed with exit $rc" >&2' ERR
 
 MAX_EXECUTION_TIME=1800
 
