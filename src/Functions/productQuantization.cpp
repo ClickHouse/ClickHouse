@@ -286,7 +286,10 @@ public:
 
         auto query = ProductQuantization::prepareQuery(codebook, dimensions, m, nbits, query_buf.data(), is_l2);
 
-        const auto * col_code = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get());
+        /// Accept a constant code argument (e.g. a literal `FixedString`) by materializing it, so scalar and column use
+        /// of the function agree (the codebook argument is handled the same way in getCodebook).
+        const ColumnPtr code_column = arguments[0].column->convertToFullColumnIfConst();
+        const auto * col_code = checkAndGetColumn<ColumnFixedString>(code_column.get());
         if (!col_code)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be a FixedString", name);
         const size_t n = col_code->getN();

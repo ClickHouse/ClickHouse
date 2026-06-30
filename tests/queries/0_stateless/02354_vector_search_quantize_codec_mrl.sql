@@ -70,4 +70,13 @@ SELECT 'int8_unfiltered_exact',
 WITH (SELECT vfull FROM quantize_mrl WHERE id = 123) AS ref
 SELECT 'bf16_nearest_is_self', (SELECT id FROM quantize_mrl ORDER BY L2Distance(vfull, ref) ASC LIMIT 1 SETTINGS vector_search_index_fetch_multiplier = 100) = 123;
 
+-- Non-finite prefix values (NaN, +/-Inf) must not trip std::lround(NaN) in the int8 encoder: they are encoded
+-- deterministically (the scale ignores them and they become 0), and since the full-precision vector is stored verbatim
+-- it round-trips unchanged. The insert must succeed and the codes keep their fixed length.
+INSERT INTO quantize_mrl (id, vfull, vtrunc)
+SELECT 9999,
+    arrayMap(j -> if(j = 0, toFloat32(nan), if(j = 1, toFloat32(inf), if(j = 2, toFloat32(-inf), toFloat32(j)))), range(64)),
+    arrayMap(j -> if(j = 0, toFloat32(nan), if(j = 1, toFloat32(inf), if(j = 2, toFloat32(-inf), toFloat32(j)))), range(64));
+SELECT 'nonfinite', isNaN(vtrunc[1]), isInfinite(vtrunc[2]), length(vtrunc.quantized) FROM quantize_mrl WHERE id = 9999;
+
 DROP TABLE quantize_mrl;

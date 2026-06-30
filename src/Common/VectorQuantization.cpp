@@ -567,14 +567,18 @@ void encode(std::string_view method, const float * vec, size_t dimensions, size_
         case FlatQuantization::MrlInt8:
         {
             /// Store the leading `bits` dimensions as int8 with a per-vector symmetric scale (max|x| over the prefix),
-            /// followed by the 4-byte scale. Robust to any vector magnitude.
+            /// followed by the 4-byte scale. Robust to any vector magnitude. Non-finite prefix values are skipped in the
+            /// scale and encoded as 0 (the full-precision vector is stored verbatim, so the exact rescore is unaffected);
+            /// this keeps the encoding deterministic and avoids std::lround(NaN), whose result is implementation-defined.
             float scale = 0.0f;
             for (size_t i = 0; i < bits; ++i)
-                scale = std::max(scale, std::abs(vec[i]));
+                if (std::isfinite(vec[i]))
+                    scale = std::max(scale, std::abs(vec[i]));
             const float inv = (scale > 0.0f) ? 127.0f / scale : 0.0f;
             for (size_t i = 0; i < bits; ++i)
             {
-                const int q = static_cast<int>(std::lround(vec[i] * inv));
+                const float scaled = vec[i] * inv;
+                const int q = std::isfinite(scaled) ? static_cast<int>(std::lround(scaled)) : 0;
                 dst[i] = static_cast<char>(static_cast<Int8>(std::clamp(q, -127, 127)));
             }
             std::memcpy(dst + bits, &scale, sizeof(float));

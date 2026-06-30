@@ -14,6 +14,12 @@ SELECT 'code_length_9bit', length(pqEncode(arrayMap(j -> toFloat32(j), range(4))
 WITH pqTrain([[1., 0.]], 2, 2, 1) AS cb
 SELECT 'self_distance', round(pqDistance(pqEncode([1., 0.], cb, 2, 2, 1), cb, [1., 0.], 2, 2, 1, 1), 3);
 
+-- A constant FixedString code argument (here from a scalar subquery) is accepted, matching the materialized-column
+-- path; it previously errored with ILLEGAL_COLUMN.
+SELECT 'const_code_distance', round(pqDistance(
+    (SELECT pqEncode([1., 0.], pqTrain([[1., 0.]], 2, 2, 1), 2, 2, 1)),
+    pqTrain([[1., 0.]], 2, 2, 1), [1., 0.], 2, 2, 1, 1), 3);
+
 -- Ranking: with two well-separated clusters, the code of the cluster nearer to the query has the smaller distance.
 WITH pqTrain([[0., 0., 0., 0.], [10., 10., 10., 10.]], 4, 2, 1) AS cb,
      pqEncode([0., 0., 0., 0.], cb, 4, 2, 1) AS code_near,
