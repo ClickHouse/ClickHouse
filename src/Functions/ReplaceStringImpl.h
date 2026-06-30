@@ -40,6 +40,15 @@ struct ReplaceStringImpl
             return;
         }
 
+        /// Replacing the needle with itself is a no-op for any needle length and both modes, so
+        /// copy the column verbatim and skip the search.
+        if (needle == replacement)
+        {
+            res_data.assign(haystack_data.begin(), haystack_data.end());
+            res_offsets.assign(haystack_offsets.begin(), haystack_offsets.end());
+            return;
+        }
+
         /// One-byte needle and one-byte replacement in "replace all" mode: every match keeps the
         /// string layout, so offsets are unchanged and we can copy the buffer once and flip matching
         /// bytes in place. Row boundaries are defined by offsets (not by in-band terminators), which
@@ -367,7 +376,7 @@ struct ReplaceStringImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        if (needle.empty())
+        if (needle.empty() || needle == replacement)
         {
             chassert(input_rows_count == haystack_data.size() / n);
             res_data.assign(haystack_data.begin(), haystack_data.end());

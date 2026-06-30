@@ -74,3 +74,25 @@ FROM
     FROM numbers(1000)
 )
 WHERE w != oracle;
+
+-- needle == replacement is a no-op for any needle length and both modes: copy the column verbatim
+-- and skip the search. Output must be byte-identical to the input.
+
+-- One-byte needle == replacement (the case raised in review).
+SELECT replaceAll(materialize('a b c'), ' ', ' ');
+-- Multi-byte needle == replacement also short-circuits.
+SELECT replaceAll(materialize('a, b, c'), ', ', ', ');
+-- First mode (replaceOne) with needle == replacement is likewise a no-op.
+SELECT replaceOne(materialize('a b c'), ' ', ' ');
+-- FixedString haystack with needle == replacement: output unchanged.
+SELECT replaceAll(materialize(toFixedString('a b c', 5)), ' ', ' ');
+-- NUL needle == NUL replacement: payload preserved exactly.
+SELECT replaceAll(materialize(concat('a', char(0), 'b')), char(0), char(0)) = concat('a', char(0), 'b');
+-- Many-row cross-check: needle == replacement leaves every row identical to the input.
+SELECT count()
+FROM
+(
+    SELECT replaceAll(materialize(toString(number)), '0', '0') AS w, toString(number) AS oracle
+    FROM numbers(1000)
+)
+WHERE w != oracle;
