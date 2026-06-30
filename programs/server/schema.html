@@ -1089,7 +1089,7 @@ async function loadViewsLoad(conn, generation) {
     /// stale heat-map must not overwrite the newer one (`state.loadByMv` / `loadByEdge` / `loadMax`).
     if (!isLatestLoad()) return;
 
-    const metricKeys =['executions', 'total_duration_ms', 'read_rows', 'read_bytes',
+    const metricKeys = ['executions', 'total_duration_ms', 'read_rows', 'read_bytes',
                         'written_rows', 'written_bytes', 'peak_memory_usage'];
     const maxByMv = {}, maxByEdge = {};
     for (const m of metricKeys) { maxByMv[m] = 0; maxByEdge[m] = 0; }
