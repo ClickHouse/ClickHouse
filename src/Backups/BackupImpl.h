@@ -170,6 +170,8 @@ private:
     mutable std::optional<BackupInfo> base_backup_info;
     mutable std::shared_ptr<const IBackup> base_backup;
     mutable std::optional<UUID> base_backup_uuid;
+    /// Whether metadata has a marker to copy `S3` credentials from this backup locator to the base backup locator.
+    bool base_backup_copy_s3_credentials_from_backup = false;
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
