@@ -39,7 +39,11 @@ SETTINGS index_granularity = 8192, allow_nullable_key = 1;
 
 INSERT INTO test_bool_nullable VALUES (NULL, 'null'), (0, 'zero'), (1, 'one'), (2, 'two');
 
-SELECT id, value FROM test_bool_nullable WHERE id ORDER BY value SETTINGS force_primary_key = 1;
+-- A bare `Nullable` key is intentionally left out of the index optimization (it would otherwise
+-- over-count NULL-only granules in the exact-count path, see #89222 and
+-- 04490_where_field_nullable_key_exact_count), so it must not use `force_primary_key` here: the
+-- query falls back to a full scan and filter, which is still correct.
+SELECT id, value FROM test_bool_nullable WHERE id ORDER BY value;
 
 DROP TABLE test_bool_nullable;
 
