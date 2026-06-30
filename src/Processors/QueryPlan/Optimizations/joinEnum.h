@@ -103,6 +103,8 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::initDPTable(TDPTable & dp_tab
         LOG_TEST(log, "Edge contains relations: {} edge info: {}", toString(edge_sources), edge.dump());
 
         std::vector<UInt> relations;
+        relations.reserve(edge_sources.count());
+
         // Fill relations with bit positions set in edge_sources
         for (auto relation : edge_sources)
             relations.push_back(static_cast<UInt>(relation));
@@ -159,7 +161,7 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::enumerate(TConsumer & consume
 
         auto & dp_table = consumer.getDPTable();
         // If the query is large/complex break out of the optimization early
-        if (dp_table.noCcp() > budget)
+        if (dp_table.noCCP() > budget)
             return;
 
         NonEmptySubmasks<UInt> subsets(s);
@@ -176,13 +178,13 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::enumerate(TConsumer & consume
 
             if (!(dp_table.isConnected(lhs)))
             {
-                LOG_TEST(log, "lhs not connected");
+                LOG_TEST(log, "lhs subset '{}' not connected", toBinaryString(lhs));
                 continue;
             }
 
             if (!(dp_table.isConnected(rhs)))
             {
-                LOG_TEST(log, "rhs not connected");
+                LOG_TEST(log, "rhs subset '{}' not connected", toBinaryString(rhs));
                 continue;
             }
 

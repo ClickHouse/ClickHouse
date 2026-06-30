@@ -1,10 +1,9 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/logger_useful.h>
 #include <concepts>
 #include <limits>
-#include <unordered_map>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -20,7 +19,7 @@ class DPTable
 public:
     struct DPEntry : TEntry
     {
-        UInt64 count{0};
+        size_t count{0};
     };
 
     using Key = TUInt;
@@ -34,22 +33,22 @@ public:
 
     bool isConnected(TUInt S) const { return table[S].count; }
     size_t numRelations() const { return num_relations; }
-    UInt64 noCcp() const { return nr_ccp; }
-    UInt64 noCsg() const { return map().size(); }
+    size_t noCCP() const { return nr_ccp; }
+    size_t noCSG() const { return map().size(); }
     const Map & map() const { return table; }
 
     void printStatistics() const;
 private:
     const size_t num_relations;
+    size_t nr_ccp;
     Map table;
-    UInt64 nr_ccp;
 };
 
 template <class TEntry, std::unsigned_integral TUInt>
 DPTable<TEntry, TUInt>::DPTable(size_t numRelations_)
     : num_relations(numRelations_),
-    table(static_cast<TUInt>(1) << numRelations_, DPEntry{}), /// reserve space for all subsets of relations
-    nr_ccp(0)
+    nr_ccp(0),
+    table(static_cast<TUInt>(1) << numRelations_, DPEntry{}) /// reserve space for all subsets of relations
 {
     for (TUInt i = 0; i < numRelations(); ++i)
         table[static_cast<TUInt>(1) << i].count = 1;
@@ -78,10 +77,10 @@ void DPTable<TEntry, TUInt>::insert(TUInt S, TUInt S1, TUInt S2)
 template <class TEntry, std::unsigned_integral TUInt>
 void DPTable<TEntry, TUInt>::printStatistics() const
 {
-    auto * logger = &Poco::Logger::get("JoinOrderOptimizer");
+    auto logger = getLogger("JoinOrderOptimizer");
     LOG_INFO(logger, "DP Table Statistics:");
-    LOG_INFO(logger, "Number of CSGs: {}", noCsg());
-    LOG_INFO(logger, "Number of CCPs: {}", noCcp());
+    LOG_INFO(logger, "Number of CSGs: {}", noCSG());
+    LOG_INFO(logger, "Number of CCPs: {}", noCCP());
 
     for (Key i = 1; i < (static_cast<TUInt>(1) << numRelations()); ++i)
     {

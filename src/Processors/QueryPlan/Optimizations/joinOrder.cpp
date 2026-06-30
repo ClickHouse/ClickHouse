@@ -22,7 +22,7 @@
 #include <unordered_map>
 #include <vector>
 #include <Processors/QueryPlan/Optimizations/dpTable.h>
-#include <Processors/QueryPlan/Optimizations/enumChecker.h>
+#include <Processors/QueryPlan/Optimizations/enumeratorChecker.h>
 
 
 namespace ProfileEvents
@@ -1059,7 +1059,7 @@ static bool connects(const JoinActionRef * predicate, const BitSet & left, const
 template <typename DPTable, std::unsigned_integral TUInt>
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable & dptable, const TUInt & S) const
 {
-    auto entry = dptable[S];
+    auto& entry = dptable[S];
     if (!entry.left && !entry.right)
         return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats);
 
