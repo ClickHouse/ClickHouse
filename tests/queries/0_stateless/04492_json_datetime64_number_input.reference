@@ -35,5 +35,9 @@
 2023-12-23 20:37:33
 -- DateTime: an unquoted integer is unchanged
 2023-12-23 20:37:33
+-- DateTime: exponent notation is parsed and truncated to whole seconds, like CAST
+2023-12-23 20:37:33
+2023-12-23 20:37:33
+2023-12-23 20:37:33
 -- DateTime: try-path via Nullable
 2023-12-23 20:37:33

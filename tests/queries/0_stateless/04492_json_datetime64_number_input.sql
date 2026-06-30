@@ -59,5 +59,10 @@ SELECT CAST(1703363853.7 AS DateTime);
 SELECT '-- DateTime: an unquoted integer is unchanged';
 SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":1703363853}');
 
+SELECT '-- DateTime: exponent notation is parsed and truncated to whole seconds, like CAST';
+SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":1.703363853e9}');
+SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":1703363853.0e0}');
+SELECT CAST(1.703363853e9 AS DateTime);
+
 SELECT '-- DateTime: try-path via Nullable';
 SELECT t FROM format(JSONEachRow, 't Nullable(DateTime)', '{"t":1703363853.7}');
