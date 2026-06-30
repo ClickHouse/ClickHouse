@@ -171,6 +171,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 role_arn,
                 role_session_name,
+                external_id,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
