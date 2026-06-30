@@ -578,6 +578,22 @@ profiles:
             time.sleep(1)
         return False
 
+    @staticmethod
+    def _minio_binary():
+        """Locate the `minio` binary the same way `setup_minio.sh` does.
+
+        The stateless-test docker image ships it at `/minio`, and a local
+        download (`download_minio`) writes it to `$TEMP_DIR` (== `temp_dir`).
+        `setup_minio.sh` finds it via `PATH="/:.:$PATH"` after `cd "$TEMP_DIR"`,
+        which prefers `/minio`; mirror that precedence here. The Python harness
+        only adds `temp_dir` to `PATH`, not `/`, so a bare `minio` would not
+        resolve to the docker binary - use an explicit path instead.
+        """
+        for path in ("/minio", f"{temp_dir}/minio"):
+            if os.path.exists(path):
+                return path
+        return ""
+
     def _force_restart_minio(self, attempts=3, ready_timeout_s=60):
         """Kill any running MinIO and start a fresh instance from the same data
         directory, so it re-reads the webhook config written by `mc admin config
@@ -589,12 +605,29 @@ profiles:
         restarts, and waits for readiness; a dead or too-slow instance is simply
         killed and started again on the next iteration.
         """
+        minio_bin = self._minio_binary()
+        if not minio_bin:
+            print(
+                "ERROR: cannot find the minio binary (looked for /minio and "
+                f"{temp_dir}/minio); cannot restart MinIO"
+            )
+            return False
+        # Start MinIO with the same root credentials `setup_minio.sh` used.
+        # Otherwise it comes up with different root credentials and the
+        # `clickminio` alias (clickhouse/clickhouse) can no longer authenticate,
+        # so every readiness check below would fail for all retry attempts.
+        # `setup_minio.sh` resolves these as `${MINIO_ROOT_USER:-clickhouse}`;
+        # do the same so a custom value in the environment is honored too.
+        minio_root_user = os.environ.get("MINIO_ROOT_USER", "clickhouse")
+        minio_root_password = os.environ.get("MINIO_ROOT_PASSWORD", "clickhouse")
         for attempt in range(1, attempts + 1):
             Shell.check("pkill -9 -f 'minio server'", verbose=True)
             # Give the OS time to release port 11111 before rebinding.
             time.sleep(3)
             Shell.check(
-                f"nohup minio server --address :11111 {temp_dir}/minio_data "
+                f"MINIO_ROOT_USER={minio_root_user} "
+                f"MINIO_ROOT_PASSWORD={minio_root_password} "
+                f"nohup {minio_bin} server --address :11111 {temp_dir}/minio_data "
                 f">> {self.MINIO_LOG} 2>&1 &",
                 verbose=True,
             )
