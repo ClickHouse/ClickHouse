@@ -3360,7 +3360,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
         /// With no_more_keys, keys that don't already exist are dropped (overflow) - nothing to insert.
         if (!no_more_keys)
             for (size_t i = row_begin; i < row_end; i++)
-                state.emplaceKey(data, i, *arena_for_keys);
+                state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
         return;
     }
     else
