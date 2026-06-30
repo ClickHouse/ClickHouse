@@ -6,6 +6,8 @@
 namespace DB
 {
 
+/// This struct is serialized into RocksDB by `FileCacheRocksDBIndex`.
+/// Do not rename, reorder, or remove existing fields without updating the serialization format.
 struct FileCacheOriginInfo
 {
     using UserID = std::string;

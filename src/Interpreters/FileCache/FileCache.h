@@ -20,6 +20,12 @@
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Interpreters/FileCache/SplitFileCachePriority.h>
+#include "config.h"
+
+#if USE_ROCKSDB
+#include <Interpreters/FileCache/FileCacheRocksDBIndex.h>
+#endif
+
 #include <filesystem>
 #include <random>
 #include <pcg_random.hpp>
@@ -265,6 +271,10 @@ public:
 
     const String & getName() const { return name; }
 
+#if USE_ROCKSDB
+    FileCacheRocksDBIndexPtr getRocksDBIndex() const { return rocksdb_index; }
+#endif
+
     static void onSegmentEvicted(const FileSegment & segment);
     static void onSegmentEvictedInTheBackground(const FileSegment & segment);
 
@@ -319,6 +329,11 @@ private:
     /// Must be declared after main_priority: metadata holds iterators that reference
     /// the priority's internal state, so metadata must be destroyed first
     CacheMetadata metadata;
+
+#if USE_ROCKSDB
+    FileCacheRocksDBIndexPtr rocksdb_index;
+#endif
+
     mutable CachePriorityGuard cache_guard;
     mutable CachePriorityGuard queue_guard;
     mutable CacheStateGuard cache_state_guard;
@@ -354,6 +369,20 @@ private:
     void loadMetadata();
     void loadMetadataImpl();
     void loadMetadataForKey(const std::filesystem::path & key_dir, const OriginInfo & origin);
+
+    /// Insert a single file segment into cache during metadata loading.
+    /// Returns true if the segment was inserted, false if it didn't fit.
+    bool loadFileSegment(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        const KeyMetadataPtr & key_metadata,
+        const OriginInfo & origin,
+        bool is_in_rocksdb_index);
+
+#if USE_ROCKSDB
+    void loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> entries);
+#endif
 
     /// Get all file segments from cache which intersect with `range`.
     /// If `file_segments_limit` > 0, return no more than first file_segments_limit

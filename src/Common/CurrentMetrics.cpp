@@ -332,6 +332,7 @@
     M(FilesystemCacheKeys, "Number of keys in filesystem cache") \
     M(FilesystemCacheOvercommitUsers, "Number of users tracked by the overcommit filesystem cache eviction policy") \
     M(FilesystemCacheReserveThreads, "Threads number trying to reserve space in cache") \
+    M(FilesystemCacheRocksDBIndexElements, "Number of elements in the filesystem cache RocksDB metadata index") \
     M(FilesystemCacheEvictionThreads, "Number of threads in the filesystem cache background eviction (removal) pool") \
     M(FilesystemCacheEvictionThreadsActive, "Number of threads in the filesystem cache background eviction pool running a task") \
     M(FilesystemCacheEvictionThreadsScheduled, "Number of queued or active jobs in the filesystem cache background eviction pool") \

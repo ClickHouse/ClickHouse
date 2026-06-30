@@ -1,4 +1,10 @@
+#include "config.h"
+
 #include <Interpreters/FileCache/FileCache.h>
+
+#if USE_ROCKSDB
+#include <Interpreters/FileCache/FileCacheRocksDBIndex.h>
+#endif
 
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
@@ -118,6 +124,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsDouble split_cache_ratio;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
+    extern const FileCacheSettingsBool use_rocksdb_metadata_index;
 }
 
 namespace
@@ -329,6 +336,26 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
         query_limit = std::make_unique<FileCacheQueryLimit>();
+
+#if USE_ROCKSDB
+    if (settings[FileCacheSetting::use_rocksdb_metadata_index])
+    {
+        try
+        {
+            rocksdb_index = std::make_shared<FileCacheRocksDBIndex>(settings[FileCacheSetting::path], cache_name);
+        }
+        catch (...)
+        {
+            /// `skip_cache_on_disk_failure` promises to bypass disk IO errors silently.
+            /// If the RocksDB metadata index cannot be opened, fall back to the directory-scan
+            /// load path (`rocksdb_index` stays null) instead of failing server startup.
+            if (!skip_cache_on_disk_failure)
+                throw;
+            tryLogCurrentException(log, "Failed to initialize RocksDB metadata index, falling back to filesystem directory scan");
+            rocksdb_index.reset();
+        }
+    }
+#endif
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSizeLimit, settings[FileCacheSetting::max_size]);
 }
@@ -1840,12 +1867,128 @@ void FileCache::loadMetadata()
             "Please, check log for error messages");
     }
 
-    loadMetadataImpl();
+
+#if USE_ROCKSDB
+    if (rocksdb_index)
+    {
+        auto entries = rocksdb_index->initializeAndLoadAll();
+        if (!entries.empty())
+        {
+            size_t entries_size = entries.size();
+            LOG_INFO(log, "Loading filesystem cache from RocksDB index ({} entries)", entries_size);
+            Stopwatch load_watch;
+            loadMetadataFromIndex(std::move(entries));
+            LOG_INFO(log, "Loaded filesystem cache from RocksDB index ({} entries) in {} seconds", entries_size, load_watch.elapsedSeconds());
+        }
+        else
+        {
+            /// TODO: It is possible to populate RocksDB index in batch and only then perform fsync without sync for each entry put
+            LOG_INFO(log, "RocksDB index is empty, loading from filesystem directories and populating index");
+            Stopwatch load_watch;
+            loadMetadataImpl();
+            LOG_INFO(log, "Loaded filesystem cache from metadata and populated RocksDB index in {} seconds", load_watch.elapsedSeconds());
+        }
+    }
+    else
+#endif
+    {
+        LOG_INFO(log, "Loading filesystem cache from filesystem directories");
+        Stopwatch load_watch;
+        loadMetadataImpl();
+        LOG_INFO(log, "Loaded filesystem cache from metadata in {} seconds", load_watch.elapsedSeconds());
+    }
 
     /// Shuffle file_segment_metadatas to have random order in LRUQueue
     /// as at startup all file_segment_metadatas have the same priority.
     main_priority->shuffle(cache_guard.writeLock());
 }
+
+#if USE_ROCKSDB
+void FileCache::loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> entries)
+{
+    chassert(rocksdb_index);
+
+    for (const auto & entry : entries)
+    {
+        if (stop_loading_metadata)
+            break;
+
+        OriginInfo origin = entry.origin;
+
+        auto key_metadata = metadata.getKeyMetadata(
+            entry.key,
+            CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY,
+            origin,
+            /* is_initial_load */ true);
+
+        auto cleanup_on_failure = [&]()
+        {
+            rocksdb_index->remove(entry.key, entry.offset);
+            /// Clean up the key metadata if it is empty (has no successfully loaded segments).
+            if (key_metadata->sizeUnlocked() == 0)
+                metadata.removeKey(entry.key, /* if_exists */ true, origin.user_id);
+        };
+
+        UInt64 size = 0;
+        if (entry.size >= 0)
+        {
+            size = static_cast<UInt64>(entry.size);
+
+            /// Validate that the file exists and has the expected size.
+            /// A missing file or a size mismatch is a legitimate crash-recovery scenario
+            /// (e.g. process killed between index write and disk flush), so drop the stale row.
+            auto path = metadata.getFileSegmentPath(entry.key, entry.offset, FileSegmentKind::Regular, origin);
+            std::error_code ec;
+            auto actual_file_size = fs::file_size(path, ec);
+            if (ec || actual_file_size != size)
+            {
+                LOG_WARNING(log, "File {} does not match index entry (size={}, actual={}, error={}), removing from index",
+                            path, size, ec ? 0 : actual_file_size, ec.message());
+                cleanup_on_failure();
+                continue;
+            }
+        }
+        else
+        {
+            /// Size unknown — segment was not fully downloaded. Stat the file.
+            auto path = metadata.getFileSegmentPath(entry.key, entry.offset, FileSegmentKind::Regular, origin);
+            std::error_code ec;
+            auto file_size = fs::file_size(path, ec);
+            if (ec)
+            {
+                /// A missing file is a legitimate crash-recovery scenario:
+                /// the index entry may have been written just before a crash that prevented the file creation.
+                /// Drop the stale index row and continue.
+                LOG_WARNING(log, "Cannot stat {}: {}, removing from index", path, ec.message());
+                cleanup_on_failure();
+                continue;
+            }
+            size = file_size;
+
+            /// Update RocksDB with the actual size so next startup does not need to stat again.
+            rocksdb_index->put(entry.key, entry.offset, static_cast<Int64>(size), origin, /* is_new_entry */ false);
+        }
+
+        if (!size)
+        {
+            auto path = metadata.getFileSegmentPath(entry.key, entry.offset, FileSegmentKind::Regular, origin);
+            fs::remove(path);
+            cleanup_on_failure();
+            continue;
+        }
+
+        if (!loadFileSegment(entry.key, entry.offset, size, key_metadata, origin, /* is_in_rocksdb_index */ true))
+        {
+            auto path = metadata.getFileSegmentPath(entry.key, entry.offset, FileSegmentKind::Regular, origin);
+            LOG_WARNING(log, "Cannot load file segment {}:{} (size: {}), removing {}", entry.key, entry.offset, size, path);
+            fs::remove(path);
+            cleanup_on_failure();
+        }
+    }
+
+    assertCacheCorrectness();
+}
+#endif
 
 void FileCache::loadMetadataImpl()
 {
@@ -1897,7 +2040,8 @@ void FileCache::loadMetadataImpl()
                     return std::nullopt;
                 }
 
-                if (user_it->path().filename() == "status")
+                if (user_it->path().filename() == "status"
+                    || user_it->path().filename().string().starts_with("."))
                     continue;
 
                 key_prefix_it = fs::directory_iterator{user_it->path()};
@@ -1967,7 +2111,8 @@ void FileCache::loadMetadataImpl()
             const std::string key_prefix_dir_name = path.filename();
             if (key_prefix_it->is_directory() &&
                 key_prefix_dir_name != getKeyTypePrefix(FileSegmentKeyType::Data) &&
-                key_prefix_dir_name != getKeyTypePrefix(FileSegmentKeyType::System)
+                key_prefix_dir_name != getKeyTypePrefix(FileSegmentKeyType::System) &&
+                !key_prefix_dir_name.starts_with(".")
             )
             {
                 key_prefix_it++;
@@ -2137,6 +2282,65 @@ void FileCache::loadMetadataImpl()
     assertCacheCorrectness();
 }
 
+bool FileCache::loadFileSegment(
+    const Key & key,
+    size_t offset,
+    size_t size,
+    const KeyMetadataPtr & key_metadata,
+    const OriginInfo & origin,
+    bool is_in_rocksdb_index)
+{
+    bool limits_satisfied = false;
+    IFileCachePriority::IteratorPtr cache_it;
+
+    {
+        auto lock = cache_guard.writeLock();
+        auto state_lock = cache_state_guard.lock();
+
+        limits_satisfied = main_priority->canFit(size, 1, state_lock, nullptr, origin, true);
+        if (limits_satisfied)
+            cache_it = main_priority->add(key_metadata, offset, size, lock, &state_lock, true);
+    }
+
+    if (!limits_satisfied)
+        return false;
+
+    try
+    {
+        auto file_segment = std::make_shared<FileSegment>(
+            key, offset, size,
+            FileSegment::State::DOWNLOADED,
+            CreateFileSegmentSettings(FileSegmentKind::Regular),
+            false,
+            this,
+            key_metadata,
+            cache_it);
+
+#if USE_ROCKSDB
+        file_segment->added_to_rocksdb = is_in_rocksdb_index;
+#else
+        UNUSED(is_in_rocksdb_index);
+#endif
+
+        bool inserted = key_metadata->emplaceUnlocked(
+            offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
+
+        if (!inserted)
+        {
+            cache_it->remove(cache_guard.writeLock());
+            return false;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        cache_it->remove(cache_guard.writeLock());
+        return false;
+    }
+
+    return true;
+}
+
 void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginInfo & origin_info)
 {
     /// Open the directory once and reuse the iterator for the scan below.
@@ -2252,6 +2456,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         if (segment.cache_it)
         {
             bool inserted = false;
+            FileSegment * file_segment_ptr = nullptr;
             try
             {
                 auto file_segment = std::make_shared<FileSegment>(
@@ -2265,6 +2470,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
                     key_metadata,
                     segment.cache_it);
 
+                file_segment_ptr = file_segment.get();
                 inserted = key_metadata->emplaceUnlocked(segment.offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
             }
             catch (...)
@@ -2276,6 +2482,23 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
             if (inserted)
             {
                 LOG_TEST(log, "Added file segment {}:{} (size: {}) with path: {}", key, segment.offset, segment.size, segment.path.string());
+#if USE_ROCKSDB
+                if (rocksdb_index)
+                {
+                    try
+                    {
+                        rocksdb_index->put(key, segment.offset, static_cast<Int64>(segment.size), origin_info, /* is_new_entry */ true);
+                        file_segment_ptr->added_to_rocksdb = true;
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        chassert(false);
+                    }
+                }
+#else
+                UNUSED(file_segment_ptr);
+#endif
             }
             else
             {
