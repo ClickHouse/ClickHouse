@@ -5335,22 +5335,37 @@ document.getElementById('download-button').addEventListener('click', async funct
 
     let downloadQuery = query.replaceAll(/\bFORMAT\s+\w+/ig, '');
 
-    // Create a form and submit it to trigger download
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = url;
-    form.enctype = 'multipart/form-data';
-    form.style.display = 'none';
+    // Fetch the result and save it. We use `fetch` (not a form submit) so we can
+    // send the `Authorization: never` header, which prevents the browser from
+    // attaching a cached Basic-auth header. That header would otherwise conflict
+    // with the `user`/`password` URL parameters and the server would reject the
+    // request with "Code: 516 ... not allowed to use Authorization HTTP header and
+    // authentication via parameters simultaneously" (a form submit cannot set
+    // headers, so it cannot suppress the cached credentials).
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            body: downloadQuery,
+            headers: { 'Authorization': 'never' },
+        });
 
-    const queryInput = document.createElement('input');
-    queryInput.type = 'hidden';
-    queryInput.name = 'query';
-    queryInput.value = downloadQuery;
-    form.appendChild(queryInput);
+        if (!response.ok) {
+            alert('Download failed:\n' + (await response.text()));
+            return;
+        }
 
-    document.body.appendChild(form);
-    form.submit();
-    document.body.removeChild(form);
+        const blob = await response.blob();
+        const object_url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = object_url;
+        a.download = `result.${extension}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(object_url);
+    } catch (e) {
+        alert('Download failed:\n' + e);
+    }
 
     // Close dropdown
     document.getElementById('download-dropdown').classList.remove('show');
