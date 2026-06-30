@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/copyData.h>
 #include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/ObjectStorageKeyGenerator.h>
@@ -98,11 +99,19 @@ namespace
     };
 }
 
-BorrowFromCacheObjectStorage::BorrowFromCacheObjectStorage(const std::string & name_, FileCachePtr file_cache_)
+BorrowFromCacheObjectStorage::BorrowFromCacheObjectStorage(const std::string & name_, std::string cache_name_)
     : name(name_)
-    , file_cache(std::move(file_cache_))
+    , cache_name(std::move(cache_name_))
     , log(getLogger("BorrowFromCacheObjectStorage"))
 {
+}
+
+FileCachePtr BorrowFromCacheObjectStorage::tryGetCache() const
+{
+    std::lock_guard lock(cache_mutex);
+    if (!file_cache)
+        file_cache = FileCacheFactory::instance().tryGet(cache_name);
+    return file_cache;
 }
 
 BorrowFromCacheObjectStorage::SegmentEntry * BorrowFromCacheObjectStorage::findEntry(const std::string & remote_path) const
@@ -163,8 +172,13 @@ std::unique_ptr<WriteBufferFromFileBase> BorrowFromCacheObjectStorage::writeObje
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "BorrowFromCacheObjectStorage doesn't support append to files");
 
+    auto cache = tryGetCache();
+    if (!cache)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Filesystem cache '{}' is not registered, so the borrow_from_cache object storage '{}' is read-only", cache_name, name);
+
     const auto key = FileSegment::Key::random();
-    std::shared_ptr<FileSegmentsHolder> segment_holder = file_cache->set(
+    std::shared_ptr<FileSegmentsHolder> segment_holder = cache->set(
         key, 0, std::max<size_t>(1, buf_size),
         CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonOrigin());
 
