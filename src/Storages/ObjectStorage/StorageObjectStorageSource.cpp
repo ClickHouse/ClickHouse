@@ -684,37 +684,59 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             const bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
             const auto propagated_metadata = object_info->getObjectMetadata();
-            /// `propagated_metadata` is populated only for an s3Cluster bucket-split worker task: the
-            /// coordinator captured the split-time generation (ETag) so this ranged read can be pinned
-            /// to it via `If-Match`. Honor it only where it actually helps:
-            ///   - only S3 enforces `StoredObject::etag` on the GET (other backends ignore it, so the
-            ///     pin is a no-op and we must fetch metadata ourselves exactly as before);
-            ///   - the propagated metadata carries no object tags, so when the `_tags` virtual column is
-            ///     requested we still fetch them, keeping the pinned ETag/size/timestamp and taking only
-            ///     the freshly listed tags so the generation pin is preserved.
-            const bool is_s3 = object_storage->getType() == ObjectStorageType::S3;
-            const bool honor_propagated = propagated_metadata && is_s3 && !with_tags;
-            if (!honor_propagated)
+
+            /// An s3Cluster bucket-split worker task carries the coordinator's split-time object
+            /// metadata, set together with `file_bucket_info` (the only path that propagates metadata,
+            /// see `ClusterFunctionReadTaskResponse`). Ordinary reads may already carry metadata from
+            /// listing / key iteration; that must keep its existing no-extra-fetch behavior, so the
+            /// special handling below is limited to the propagated bucket-split case.
+            const bool is_propagated_split_metadata = object_info->file_bucket_info && propagated_metadata.has_value();
+
+            if (is_propagated_split_metadata)
+            {
+                /// Honor the propagated metadata - pinning this ranged read to the coordinator's
+                /// generation via `If-Match` - only where it actually helps: only S3 enforces
+                /// `StoredObject::etag` on the GET (other backends ignore it, so the pin is a no-op),
+                /// and only when `_tags` was not requested (the propagated metadata carries no tags).
+                /// Otherwise fetch: for S3 keep the pinned ETag/size/timestamp and take only the freshly
+                /// listed tags so the pin is preserved; for any other backend fetch fresh as before.
+                const bool is_s3 = object_storage->getType() == ObjectStorageType::S3;
+                if (!(is_s3 && !with_tags))
+                {
+                    const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
+                    std::optional<ObjectMetadata> fetched;
+                    if (query_settings.ignore_non_existent_file)
+                    {
+                        fetched = object_storage->tryGetObjectMetadata(path, with_tags);
+                        if (!fetched)
+                            return {};
+                    }
+                    else
+                        fetched = object_storage->getObjectMetadata(path, with_tags);
+
+                    if (is_s3)
+                    {
+                        ObjectMetadata pinned = *propagated_metadata;
+                        pinned.tags = std::move(fetched->tags);
+                        object_info->setObjectMetadata(pinned);
+                    }
+                    else
+                        object_info->setObjectMetadata(*fetched);
+                }
+            }
+            else if (!propagated_metadata)
             {
                 const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
-                std::optional<ObjectMetadata> fetched;
                 if (query_settings.ignore_non_existent_file)
                 {
-                    fetched = object_storage->tryGetObjectMetadata(path, with_tags);
-                    if (!fetched)
+                    auto metadata = object_storage->tryGetObjectMetadata(path, with_tags);
+                    if (!metadata)
                         return {};
-                }
-                else
-                    fetched = object_storage->getObjectMetadata(path, with_tags);
 
-                if (propagated_metadata && is_s3)
-                {
-                    ObjectMetadata pinned = *propagated_metadata;
-                    pinned.tags = std::move(fetched->tags);
-                    object_info->setObjectMetadata(pinned);
+                    object_info->setObjectMetadata(metadata.value());
                 }
                 else
-                    object_info->setObjectMetadata(*fetched);
+                    object_info->setObjectMetadata(object_storage->getObjectMetadata(path, with_tags));
             }
         }
 
