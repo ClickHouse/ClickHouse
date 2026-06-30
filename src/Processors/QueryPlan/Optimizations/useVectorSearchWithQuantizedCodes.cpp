@@ -317,6 +317,17 @@ bool optimizeVectorSearchWithQuantizedCodes(
     }
     approx_dag.getOutputs().push_back(approx_node);
 
+    /// The codes column (and, for pq, the per-part codebook) are inputs to the distance function but are NOT needed
+    /// above this expression: the shortlist sort and the rescore only consume id / the heavy vector / _approx. Drop
+    /// them from the outputs so they are not carried into - and materialized by - the SortingStep. This is critical
+    /// for pq, whose codebook is a large FixedString broadcast as a ColumnConst: the MergeSortingTransform would
+    /// otherwise expand it to one full copy per buffered row, exhausting memory on a wide-vector corpus. The nodes
+    /// stay in the DAG as consumed inputs (the distance function above still references them).
+    std::erase_if(approx_dag.getOutputs(), [&](const ActionsDAG::Node * node)
+    {
+        return node->result_name == codes_column || (is_pq && node->result_name == codebook_column);
+    });
+
     /// 4. Allocate the inner shortlist nodes (expression -> sorting -> limit), bottom-up so headers chain correctly.
     auto & inner_expression_node = nodes.emplace_back();
     inner_expression_node.step = std::make_unique<ExpressionStep>(inner_input_header, std::move(approx_dag));
