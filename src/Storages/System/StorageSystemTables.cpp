@@ -974,7 +974,26 @@ protected:
                     std::optional<UInt128> modification_hash;
                     try
                     {
-                        if (table && metadata_snapshot)
+                        /// `getModificationHash` can perform credentialed I/O for external engines (`URL`,
+                        /// object storage, `Distributed`). A `system.tables` row only requires `SHOW TABLES`,
+                        /// so a user who can see the row but has no `SELECT` on the table must not be able to
+                        /// trigger those probes through this column. Require `SELECT` access (table-level, or
+                        /// at least one column - matching `InterpreterSelectQuery` and the query-cache helper);
+                        /// otherwise leave the value NULL.
+                        bool can_read = table && metadata_snapshot
+                            && access->isGranted(AccessType::SELECT, database_name, table_name);
+                        if (!can_read && table && metadata_snapshot)
+                        {
+                            for (const auto & column : metadata_snapshot->getColumns())
+                            {
+                                if (access->isGranted(AccessType::SELECT, database_name, table_name, column.name))
+                                {
+                                    can_read = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (can_read)
                         {
                             auto snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, context);
                             modification_hash = table->getModificationHash(snapshot, context);
