@@ -3003,21 +3003,42 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         /// already covered by the projection step, producing duplicated rows.
         const bool analysis_was_cached = analyzed_result_ptr != nullptr;
 
+        /// In `check_only` mode the dry-run must leave the step exactly as it found it: some
+        /// `ReadFromMerge` children can already carry an `input_order_info` from the legacy
+        /// `query_info.order_optimizer` path in `ReadFromMerge::createChildrenPlans`. Capture
+        /// the previous order so every `check_only` return path restores it instead of
+        /// clobbering it with `nullptr`, which would leave sibling children inconsistent if a
+        /// later child rejects and the parent falls back to a full sort.
+        const InputOrderInfoPtr prev_input_order_info = query_info.input_order_info;
+
         /// Set `input_order_info` before running index analysis, so that row-limit checks
         /// (`max_rows_to_read` / `max_rows_to_read_leaf`) inside `MergeTreeDataSelectExecutor::getRowLimits`
         /// are correctly skipped, and `read_type` is computed as `InOrder` / `InReverseOrder`.
         /// If the PK-selectivity guard below rejects read-in-order, we roll both back.
         query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
         const auto & analysis_result = getAnalysisResult();
-        const size_t effective_streams = output_streams_limit ? output_streams_limit : requested_num_streams;
-        /// Only reject when there is actual parallelism to recover. When `effective_streams <= 1`
+        /// The parallelism the parallel-reading fallback can actually recover is the number of
+        /// *read* streams, i.e. `requested_num_streams` — not the output width. With asynchronous
+        /// reads (`allow_asynchronous_read_from_io_pool_for_merge_tree = 1`) the constructor
+        /// intentionally bumps `requested_num_streams` up to `max_streams_for_merge_tree_reading`
+        /// and only resizes the *output* down to `output_streams_limit` to bound memory. So a query
+        /// with `max_streams_for_merge_tree_reading = 1` and `max_threads > 1` still reads with
+        /// multiple streams, and rejecting read-in-order lets each of them sort in parallel while the
+        /// output is resized exactly as before. Using `output_streams_limit` here would see a width of
+        /// `1`, hide that read parallelism, and wrongly keep the slow single-stream in-order plan that
+        /// this guard exists to avoid. In every non-async case `output_streams_limit` is `0`, so
+        /// `requested_num_streams` is the same width the planner already chose and this is a no-op.
+        const size_t read_streams = requested_num_streams;
+        /// Only reject when there is actual parallelism to recover. When `read_streams <= 1`
         /// (e.g. `max_threads = 1` or planner-chosen single-stream reads), disabling read-in-order
         /// just adds a full `MergeSortingTransform` on top of the same single stream — extra
         /// CPU/memory with no parallelism gain, and possibly `MEMORY_LIMIT_EXCEEDED` for queries
-        /// that previously streamed in PK order.
-        if (effective_streams > 1
+        /// that previously streamed in PK order. The small-table threshold below (`total_marks_pk >
+        /// read_streams`) likewise compares against the read parallelism, so we only fire when there
+        /// are enough marks for the parallel read to distribute work across those streams.
+        if (read_streams > 1
             && !analysis_result.readFromProjection()
-            && analysis_result.total_marks_pk > effective_streams
+            && analysis_result.total_marks_pk > read_streams
             && static_cast<double>(analysis_result.selected_marks_pk)
                 > static_cast<double>(analysis_result.total_marks_pk) * max_ratio)
         {
@@ -3026,7 +3047,9 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
                 analysis_result.selected_marks_pk, analysis_result.total_marks_pk,
                 static_cast<double>(analysis_result.selected_marks_pk) / static_cast<double>(analysis_result.total_marks_pk),
                 max_ratio);
-            query_info.input_order_info.reset();
+            /// In `check_only` mode this is only a probe, so restore the previous order; in a real
+            /// call the guard fired, so commit the "no read-in-order" decision by clearing it.
+            query_info.input_order_info = check_only ? prev_input_order_info : InputOrderInfoPtr{};
             if (!analysis_was_cached)
             {
                 /// We created the analysis result ourselves above with `input_order_info` set,
@@ -3042,13 +3065,13 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         }
 
         /// In `check_only` mode, the caller only wants to know whether the request would
-        /// succeed; do not commit any state. Roll back the temporary `input_order_info`
-        /// and the analysis result we created above. The caller is expected to call this
-        /// function again without `check_only` to actually apply, which will re-run the
-        /// analysis with consistent semantics.
+        /// succeed; do not commit any state. Restore the previous `input_order_info` (which may
+        /// be non-null for a legacy `ReadFromMerge` child) and drop the temporary analysis result
+        /// we created above. The caller is expected to call this function again without
+        /// `check_only` to actually apply, which will re-run the analysis with consistent semantics.
         if (check_only)
         {
-            query_info.input_order_info.reset();
+            query_info.input_order_info = prev_input_order_info;
             if (!analysis_was_cached)
                 analyzed_result_ptr.reset();
             return true;
