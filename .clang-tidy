@@ -26,6 +26,7 @@ Checks: [
   '-bugprone-easily-swappable-parameters',
   '-bugprone-exception-escape',
   '-bugprone-implicit-widening-of-multiplication-result',
+  '-bugprone-invalid-enum-default-initialization',
   '-bugprone-multi-level-implicit-pointer-conversion',
   '-bugprone-narrowing-conversions',
   '-bugprone-unchecked-optional-access',
