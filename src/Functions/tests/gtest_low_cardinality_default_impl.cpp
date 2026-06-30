@@ -187,3 +187,60 @@ TEST_F(LowCardinalityDefaultImpl, SingleLowCardinalityWithConstOrdinaryFastPath)
     /// Result must be a LowCardinality column (dictionary-encoded fast path).
     EXPECT_TRUE(typeid_cast<const ColumnLowCardinality *>(res.get()));
 }
+
+/// A LEADING constant argument on the full-materialization fallback path. With
+/// (const String, const String, LowCardinality(String)) the result type is LowCardinality, but at
+/// header evaluation arg0 stays a size-1 ColumnConst while arg1 lost its constness (empty non-const
+/// String) and input_rows_count = 0. The fallback must take the row count from input_rows_count, not
+/// from front() (the size-1 constant) which is only meaningful on the dictionary fast path;
+/// otherwise checkFunctionArgumentSizes aborts "№2 ... to have 1 rows, but it has 0".
+TEST_F(LowCardinalityDefaultImpl, LeadingConstWithNonConstOrdinaryHeaderEval)
+{
+    ColumnsWithTypeAndName build_args{
+        {constString("", 1), stringType(), "a"},
+        {constString("", 1), stringType(), "b"},
+        {nullptr, lcStringType(), "c"},
+    };
+    auto function = buildConcat(context, build_args);
+    ASSERT_TRUE(typeid_cast<const DataTypeLowCardinality *>(function->getResultType().get()));
+
+    /// arg0 keeps a size-1 ColumnConst; arg1 lost its constness (empty non-const String, size 0);
+    /// arg2 empty LowCardinality. input_rows_count = 0 emulates planner header evaluation.
+    ColumnsWithTypeAndName exec_args{
+        {constString("", 1), stringType(), "a"},
+        {ColumnString::create(), stringType(), "b"},
+        {lcStringType()->createColumn(), lcStringType(), "c"},
+    };
+    ColumnPtr res;
+    ASSERT_NO_THROW(res = function->execute(exec_args, function->getResultType(), 0, /*dry_run=*/true));
+    EXPECT_EQ(res->size(), 0u);
+    EXPECT_TRUE(typeid_cast<const ColumnLowCardinality *>(res.get()) || isColumnConst(*res));
+}
+
+/// Same leading-constant fallback shape with real (non-zero) rows: a constant sized to
+/// input_rows_count makes the row count happen to agree, so this guards that results stay correct
+/// through the fallback path (not just that it no longer aborts).
+TEST_F(LowCardinalityDefaultImpl, LeadingConstWithNonConstOrdinaryRealRows)
+{
+    ColumnsWithTypeAndName build_args{
+        {constString("p", 1), stringType(), "a"},
+        {constString("", 1), stringType(), "b"},
+        {nullptr, lcStringType(), "c"},
+    };
+    auto function = buildConcat(context, build_args);
+    auto result_type = function->getResultType();
+    ASSERT_TRUE(typeid_cast<const DataTypeLowCardinality *>(result_type.get()));
+
+    /// arg0 constant, arg1 non-constant ordinary, arg2 LowCardinality -> fallback path.
+    ColumnsWithTypeAndName exec_args{
+        {constString("p", 3), stringType(), "a"},
+        {fullString({"a", "b", "c"}), stringType(), "b"},
+        {lowCardinalityString({"1", "2", "3"}), lcStringType(), "c"},
+    };
+    ColumnPtr res;
+    ASSERT_NO_THROW(res = function->execute(exec_args, result_type, 3, /*dry_run=*/false));
+    ASSERT_EQ(res->size(), 3u);
+    EXPECT_EQ(resultAt(res, 0), "pa1");
+    EXPECT_EQ(resultAt(res, 1), "pb2");
+    EXPECT_EQ(resultAt(res, 2), "pc3");
+}

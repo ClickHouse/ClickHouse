@@ -495,14 +495,25 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             /// runtime and break that assumption. Fall back to full materialization when it no
             /// longer holds.
             ColumnPtr indexes;
+            size_t new_input_rows_count;
             if (!canShareLowCardinalityDictionary(columns_without_low_cardinality))
+            {
+                /// Full-materialization fallback: arguments keep their original row counts (constants
+                /// are not resized), so the row count is the original input_rows_count, just like the
+                /// non-LowCardinality result branch below.
                 convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
+                new_input_rows_count = input_rows_count;
+            }
             else
+            {
+                /// Fast path: the single LowCardinality column is replaced by its nested dictionary
+                /// and the constants are resized to the dictionary size, so the row count is taken
+                /// from a resulting (resized) column rather than input_rows_count.
                 indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
                     columns_without_low_cardinality, can_be_executed_on_default_arguments, input_rows_count);
-
-            size_t new_input_rows_count
-                = columns_without_low_cardinality.empty() ? input_rows_count : columns_without_low_cardinality.front().column->size();
+                new_input_rows_count
+                    = columns_without_low_cardinality.empty() ? input_rows_count : columns_without_low_cardinality.front().column->size();
+            }
             checkFunctionArgumentSizes(columns_without_low_cardinality, new_input_rows_count);
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
