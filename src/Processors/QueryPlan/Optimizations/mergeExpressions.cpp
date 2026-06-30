@@ -74,6 +74,10 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         const bool prevent_input_removal = child_expr->isInputRemovalPrevented() || parent_filter->isInputRemovalPrevented();
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
+        /// merge can drag materialize wrappers from a UNION child into the filter, fold through them (#78166)
+        /// only when the filter column will be removed, otherwise the predicate stays observable
+        if (parent_filter->removesFilterColumn())
+            merged.foldFilterPredicateThroughMaterialize(parent_filter->getFilterColumnName());
 
         merged.deduplicateSubtrees();
 

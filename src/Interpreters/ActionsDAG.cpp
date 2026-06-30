@@ -884,6 +884,76 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 namespace
 {
 
+struct FoldResult
+{
+    ColumnPtr column;
+    bool deterministic;
+};
+
+/// Fold a predicate: const COLUMN leaves, walk past alias/materialize, recurse into
+/// `isInvariantToConstness` functions
+std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
+{
+    while (node)
+    {
+        if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        {
+            node = node->children.front();
+            continue;
+        }
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && node->function_base
+            && node->function_base->getName() == "materialize"
+            && node->children.size() == 1)
+        {
+            node = node->children.front();
+            continue;
+        }
+        break;
+    }
+    if (!node)
+        return std::nullopt;
+
+    if (node->type == ActionsDAG::ActionType::COLUMN
+        && node->column && isColumnConst(*node->column))
+        return FoldResult{node->column, node->is_deterministic_constant};
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION
+        || !node->function_base
+        || !node->function
+        || !node->function_base->isDeterministic()
+        || !node->function_base->isInvariantToConstness())
+        return std::nullopt;
+
+    ColumnsWithTypeAndName args;
+    args.reserve(node->children.size());
+    bool all_det = true;
+    for (const auto * child : node->children)
+    {
+        auto folded = tryFoldPredicate(child);
+        if (!folded)
+            return std::nullopt;
+        ColumnPtr col = folded->column;
+        /// DAG consts are size 0, resize to 1 for `execute` (matches `getFunctionArguments`)
+        if (const auto * cc = typeid_cast<const ColumnConst *>(col.get()); cc && cc->empty())
+            col = ColumnConst::create(cc->getDataColumnPtr(), 1);
+        args.push_back({col, child->result_type, child->result_name});
+        all_det = all_det && folded->deterministic;
+    }
+
+    ColumnPtr result = node->function->execute(args, node->result_type, 1, true);
+    if (!result)
+        return std::nullopt;
+    const auto * column_const = typeid_cast<const ColumnConst *>(result.get());
+    if (!column_const)
+        return std::nullopt;
+
+    ColumnPtr canonical = column_const->empty()
+        ? result
+        : ColumnPtr{ColumnConst::create(column_const->getDataColumnPtr(), 0)};
+    return FoldResult{std::move(canonical), all_det};
+}
+
 /// dummy columns (ColumnSet for IN, ColumnFunction for lambdas) don't have a Field-representable value
 bool hasDummyInside(const ColumnConstPtr & col)
 {
@@ -1103,6 +1173,43 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
     return ec;
 }
 
+}
+
+void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filter_column_name)
+{
+    if (filter_column_name.empty())
+        return;
+    const Node * filter_node = tryFindInOutputs(filter_column_name);
+    if (!filter_node)
+        return;
+
+    auto folded = tryFoldPredicate(filter_node);
+    if (!folded || !folded->column)
+        return;
+    const auto * column_const = typeid_cast<const ColumnConst *>(folded->column.get());
+    if (!column_const)
+        return;
+
+    ColumnConstPtr canonical;
+    if (column_const->empty())
+        canonical = column_const->getPtr();
+    else
+        canonical = ColumnConst::create(column_const->getDataColumnPtr(), 0);
+
+    /// add a fresh const COLUMN and re-route the filter output, leave the original predicate
+    /// subtree intact so other parents that may share parts of it are unaffected -
+    /// `removeUnusedActions` prunes the now-orphan subtree later
+    const Node & new_const = addColumn(
+        std::move(canonical), filter_node->result_type,
+        std::string(filter_column_name), folded->deterministic);
+    for (auto & out : outputs)
+    {
+        if (out == filter_node)
+        {
+            out = &new_const;
+            break;
+        }
+    }
 }
 
 void ActionsDAG::deduplicateSubtrees()
