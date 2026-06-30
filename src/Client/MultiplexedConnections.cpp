@@ -167,8 +167,12 @@ void MultiplexedConnections::sendQuery(
     /// application on the shard based on the client-controlled `query_kind` — also means a client
     /// that spoofs `query_kind = secondary_query` cannot carry its own `query_rules` past the
     /// initiator to bypass a profile-enforced rule.
+    ///
+    /// Send the empty value as a `changed` override (do not reset `changed`) so it also overrides
+    /// any shard-side profile default for `query_rules`; otherwise a shard with a default would
+    /// re-enable rules for the fragment. An older shard that does not know the setting safely
+    /// ignores the unknown value.
     modified_settings[Setting::query_rules] = "";
-    modified_settings[Setting::query_rules].changed = false;
 
     modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
         modified_settings[Setting::interactive_delay],
