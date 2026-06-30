@@ -192,9 +192,9 @@ Block extractMinMax(const Block & block, const Block & keys)
     return min_max;
 }
 
-Columns extractColumnsByNames(const Block & src, const Block & names)
+std::vector<ColumnPtr> extractColumnsByNames(const Block & src, const Block & names)
 {
-    Columns columns;
+    std::vector<ColumnPtr> columns;
     columns.reserve(names.columns());
     for (size_t i = 0; i < names.columns(); ++i)
         columns.push_back(src.getByName(names.getByPosition(i).name).column);
@@ -410,7 +410,21 @@ private:
     size_t getEqualLength()
     {
         const size_t base_pos = impl.getPos();
-        return getEqualRangeEndAssumeSorted(impl.sort_columns, base_pos, impl.rows, 1) - base_pos;
+        size_t pos = base_pos + 1;
+        for (; pos < impl.rows; ++pos)
+            if (cmpPrev(base_pos, pos))
+                break;
+        return pos - base_pos;
+    }
+
+    int ALWAYS_INLINE cmpPrev(size_t base_pos, size_t pos) const
+    {
+        int res = impl.sort_columns[0]->compareAt(base_pos, pos, *(impl.sort_columns[0]), 1);
+
+        for (size_t i = 1; (!res) && i < impl.sort_columns_size; ++i)
+            res = impl.sort_columns[i]->compareAt(base_pos, pos, *(impl.sort_columns[i]), 1);
+
+        return res;
     }
 };
 
@@ -458,7 +472,7 @@ void copyLeftRange(const Block & block, MutableColumns & columns, size_t start, 
     }
 }
 
-void copyRightRange(const Columns & columns_to_add, MutableColumns & columns, size_t row_position, size_t rows_to_add)
+void copyRightRange(const std::vector<ColumnPtr> & columns_to_add, MutableColumns & columns, size_t row_position, size_t rows_to_add)
 {
     for (size_t i = 0; i < columns_to_add.size(); ++i)
     {
@@ -473,7 +487,7 @@ void copyRightRange(const Columns & columns_to_add, MutableColumns & columns, si
     }
 }
 
-void joinEqualsAnyLeft(const Columns & columns_to_add, MutableColumns & right_columns, const MergeJoinEqualRange & range)
+void joinEqualsAnyLeft(const std::vector<ColumnPtr> & columns_to_add, MutableColumns & right_columns, const MergeJoinEqualRange & range)
 {
     copyRightRange(columns_to_add, right_columns, range.right_start, range.left_length);
 }
@@ -481,7 +495,7 @@ void joinEqualsAnyLeft(const Columns & columns_to_add, MutableColumns & right_co
 template <bool is_all>
 bool joinEquals(
     const Block & left_block,
-    const Columns & columns_to_add,
+    const std::vector<ColumnPtr> & columns_to_add,
     MutableColumns & left_columns,
     MutableColumns & right_columns,
     MergeJoinEqualRange & range,

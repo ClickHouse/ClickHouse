@@ -272,7 +272,6 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "aiClassify",
     "aiExtract",
     "aiTranslate",
-    "aiEmbed",
     "naiveBayesClassifier",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
@@ -477,6 +476,15 @@ const std::unordered_set<std::string_view> excluded_functions = {
     /// Needs query context.
     "__applyFilter",
 
+    /// These functions do something weird with array offsets, making the result for one row depend on other rows sometimes.
+    /// E.g. this outputs ([],[NULL]) for the first row:
+    ///   SELECT kql_array_sort_desc(a, []::Array(Int8)) FROM system.one ARRAY JOIN CAST([[], [1]] AS Array(Array(UInt64))) AS a
+    /// but if you leave only the first row in the ARRAY JOIN (remove ", [1]"), it outputs ([],[]).
+    /// These functions are not documented and not meant to be called by users directly, so maybe
+    /// this behavior is intended and makes sense somehow.
+    "kql_array_sort_asc",
+    "kql_array_sort_desc",
+
     /// Slow, especially in TSAN build.
     "addressToLineWithInlines",
 };
@@ -548,6 +556,7 @@ ContextMutablePtr makeContext()
     context->setSetting("allow_suspicious_low_cardinality_types", 1);
     context->setSetting("allow_experimental_nlp_functions", 1);
     context->setSetting("allow_deprecated_error_prone_window_functions", 1);
+    context->setSetting("allow_deprecated_snowflake_conversion_functions", 1);
     context->setSetting("allow_not_comparable_types_in_comparison_functions", 1);
     context->setSetting("allow_experimental_time_time64_type", 1);
     context->setSetting("allow_introspection_functions", 1);
@@ -1149,7 +1158,7 @@ thread_local FunctionsStressTestThread constinit * current_stress_thread = nullp
 
 struct FunctionsStressTestThread
 {
-    size_t thread_idx{};
+    size_t thread_idx;
     std::thread thread;
     std::condition_variable thread_stop_cv;
     std::atomic<bool> thread_should_stop {false};
@@ -1443,10 +1452,6 @@ struct FunctionsStressTestThread
             }
         }
 
-        /// We mutate `context->setCurrentQueryId()` per iteration but never refresh
-        /// `ThreadStatus::query_id`, so detach before destroying `thread_status` to
-        /// keep the destructor's id-vs-context invariant happy.
-        CurrentThread::detachFromGroupIfNotDetached();
         thread_status.reset(); // must be done from this thread
 
         {
@@ -1555,26 +1560,16 @@ struct FunctionsStressTestThread
 
         if (constraints.integer_at_most.has_value())
         {
-            /// res = if(abs(res) > limit, 0, res)
-            /// abs() is applied so that large negative values are clamped too: a large negative value is
-            /// just as dangerous as a large positive one (e.g. a large negative arrayResize size pads the
-            /// array from the front), and the one-sided `res > limit` check would let it through.
+            /// res = if(res > limit, 0, res)
             /// (0 instead of limit or random just because it's less code)
             /// (why not use min2? because it always returns Float64)
 
+            ColumnsWithTypeAndName args {res};
+            args.emplace_back(ColumnConst::create(ColumnUInt64::create(1, *constraints.integer_at_most), options.rows_per_batch), std::make_shared<DataTypeUInt64>(), "limit");
             ColumnWithTypeAndName mask;
             try
             {
-                /// comparand = abs(res)
-                auto abs_func = FunctionFactory::instance().get("abs", context)->build({res});
-                ColumnWithTypeAndName comparand;
-                comparand.type = abs_func->getResultType();
-                comparand.column = abs_func->execute({res}, comparand.type, options.rows_per_batch, false);
-                comparand.name = "abs";
-
-                /// mask = greater(abs(res), limit)
-                ColumnsWithTypeAndName args {comparand};
-                args.emplace_back(ColumnConst::create(ColumnUInt64::create(1, *constraints.integer_at_most), options.rows_per_batch), std::make_shared<DataTypeUInt64>(), "limit");
+                /// mask = greater(res, limit)
                 auto func = FunctionFactory::instance().get("greater", context)->build(args);
                 mask.type = func->getResultType();
                 mask.column = func->execute(args, mask.type, options.rows_per_batch, false);
@@ -1591,7 +1586,7 @@ struct FunctionsStressTestThread
             if (mask.column)
             {
                 /// res = if(mask, 0, res)
-                ColumnsWithTypeAndName args = {
+                args = {
                     mask,
                     ColumnWithTypeAndName(res.type->createColumnConstWithDefaultValue(options.rows_per_batch), res.type, "zero"),
                     res};
@@ -1763,7 +1758,7 @@ struct FunctionsStressTestThread
 
         /// Execute on each row separately.
 
-        MutableColumns mutable_valid_args;
+        std::vector<MutableColumnPtr> mutable_valid_args;
         MutableColumnPtr mutable_result;
         std::optional<size_t> any_failed_row;
         for (size_t row_idx = 0; row_idx < options.rows_per_batch; ++row_idx)
@@ -2232,7 +2227,6 @@ struct FunctionsStressTestThread
 
 extern "C" {
 #pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wmissing-prototypes"
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 void __tsan_on_report(void * /*report*/) // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 {

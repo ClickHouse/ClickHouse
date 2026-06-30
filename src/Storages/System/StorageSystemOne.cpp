@@ -1,7 +1,5 @@
 #include <Storages/System/StorageSystemOne.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -74,6 +72,3 @@ void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, 
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemOne) }

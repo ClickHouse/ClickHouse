@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Processors/Port.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
@@ -215,7 +214,7 @@ public:
       * Note that file descriptor returned by schedule() will be polled for read (EPOLLIN event) and errors
       * but for ISink implementations that write data to network or to files it is necessary to poll for write (EPOLLOUT) events as well.
       */
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#ifdef OS_LINUX
     virtual std::pair<int, uint32_t> scheduleForEvent();
 #endif
 
