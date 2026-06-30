@@ -512,12 +512,13 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     if (squash_with_strict_limits)
     {
-        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
         {
             return std::make_shared<AddDeduplicationInfoTransform>(
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
-                settings[Setting::insert_deduplication_token].value,                in_header);
+                settings[Setting::insert_deduplication_token].value,
+                in_header);
         });
     }
 
@@ -780,7 +781,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
             std::make_shared<AddDeduplicationInfoTransform>(
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
-                settings[Setting::insert_deduplication_token].value,                chain.getInputSharedHeader())
+                settings[Setting::insert_deduplication_token].value,
+                chain.getInputSharedHeader())
         );
     }
 
@@ -813,7 +815,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
             std::make_shared<AddDeduplicationInfoTransform>(
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
-                settings[Setting::insert_deduplication_token].value,                chain.getInputSharedHeader()));
+                settings[Setting::insert_deduplication_token].value,
+                chain.getInputSharedHeader()));
     }
 
     auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota());
