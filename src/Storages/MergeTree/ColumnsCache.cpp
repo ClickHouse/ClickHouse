@@ -199,78 +199,106 @@ bool ColumnsCache::set(const Key & key, const MappedPtr & mapped, UInt64 expecte
         return false;
 
     PartIdentifier part_id{key.table_uuid, key.part_name};
-    auto & intervals = interval_index[part_id][key.column_name];
 
-    /// Maintain a non-overlapping invariant on the per-column interval map.
-    /// This keeps getIntersecting O(log N): with non-overlap, at most one
-    /// predecessor can extend into the query range, so the lookup only needs
-    /// to check the immediate predecessor instead of scanning from begin().
+    /// Scan the per-column interval map for ranges that overlap the new key, but
+    /// do NOT mutate `interval_index` or `Base` yet. A write can still fail
+    /// admission after this point: `Base::set` may evict the freshly inserted
+    /// entry (for example, SLRU does not admit a probationary entry once the
+    /// space left by a full protected segment is smaller than the entry, even
+    /// when the entry is within the overall size limit). Deferring every
+    /// destructive step until the entry is proven resident ensures such a failed
+    /// write neither erases useful overlapping cached ranges nor leaves an empty
+    /// side-index bucket behind.
     ///
-    /// When an existing interval fully contains the new range, the existing
-    /// entry is preserved (a wider cached range is more useful for future
-    /// lookups). Otherwise all overlapping entries are evicted from both
-    /// `interval_index` and `Base` before inserting the new one.
-    auto it = intervals.lower_bound({key.row_begin, 0});
+    /// We maintain a non-overlapping invariant on the per-column interval map.
+    /// This keeps getIntersecting O(log N): with non-overlap, at most one
+    /// predecessor can extend into the query range, so the lookup only needs to
+    /// check the immediate predecessor instead of scanning from begin(). When an
+    /// existing interval fully contains the new range, the existing entry is
+    /// preserved (a wider cached range is more useful for future lookups) and the
+    /// write is skipped. Otherwise all overlapping entries are scheduled to be
+    /// evicted from both `interval_index` and `Base`, applied only once the new
+    /// entry is admitted.
+    std::vector<std::pair<size_t, size_t>> index_ranges_to_erase;
+    std::vector<Key> base_keys_to_remove;
 
-    if (it != intervals.begin())
+    if (auto part_it = interval_index.find(part_id); part_it != interval_index.end())
     {
-        auto prev = std::prev(it);
-        const auto & prev_key = prev->second;
-        if (prev_key.row_end > key.row_begin)
+        if (auto col_it = part_it->second.find(key.column_name); col_it != part_it->second.end())
         {
-            if (prev_key.row_begin <= key.row_begin && prev_key.row_end >= key.row_end)
+            const auto & intervals = col_it->second;
+            auto it = intervals.lower_bound({key.row_begin, 0});
+
+            if (it != intervals.begin())
             {
-                /// The fast-path skip is only valid while the existing wider
-                /// interval is still in `Base`. LRU/SLRU eviction in `Base`
-                /// does not clean up `interval_index`, so a stale entry here
-                /// would otherwise cause us to skip the write indefinitely
-                /// (especially in writes-only mode, where `getIntersecting`
-                /// is not called and stale entries never get cleaned up
-                /// lazily).
-                if (Base::contains(prev_key))
-                    return false;
-                it = intervals.erase(prev);
+                auto prev = std::prev(it);
+                const auto & prev_key = prev->second;
+                if (prev_key.row_end > key.row_begin)
+                {
+                    if (prev_key.row_begin <= key.row_begin && prev_key.row_end >= key.row_end)
+                    {
+                        /// A wider interval already contains the new range. The
+                        /// skip is only valid while that interval is still in
+                        /// `Base`: LRU/SLRU eviction in `Base` does not clean up
+                        /// `interval_index`, so a stale entry here would otherwise
+                        /// make us skip the write indefinitely (especially in
+                        /// writes-only mode, where `getIntersecting` is not called
+                        /// and stale entries never get cleaned up lazily). If it is
+                        /// stale, schedule the index entry for removal.
+                        if (Base::contains(prev_key))
+                            return false;
+                        index_ranges_to_erase.push_back(prev->first);
+                    }
+                    else
+                    {
+                        index_ranges_to_erase.push_back(prev->first);
+                        base_keys_to_remove.push_back(prev_key);
+                    }
+                }
             }
-            else
+
+            /// `lower_bound({row_begin, 0})` can land directly on an existing entry
+            /// that shares `row_begin` with the new key. The predecessor check
+            /// above skips it (because that entry is at `it`, not `prev`), so
+            /// without this fast path the loop below would drop a wider containing
+            /// interval like `[100, 200)` in favor of a narrower `[100, 150)`,
+            /// reducing hit rate for later reads. The skip is only valid while the
+            /// existing entry is still in `Base`; see the predecessor branch above.
+            if (it != intervals.end() && it->first.first == key.row_begin && it->first.second >= key.row_end)
             {
-                Base::remove(prev_key);
-                it = intervals.erase(prev);
+                if (Base::contains(it->second))
+                    return false;
+                index_ranges_to_erase.push_back(it->first);
+                ++it;
+            }
+
+            for (; it != intervals.end() && it->first.first < key.row_end; ++it)
+            {
+                index_ranges_to_erase.push_back(it->first);
+                base_keys_to_remove.push_back(it->second);
             }
         }
     }
 
-    /// `lower_bound({row_begin, 0})` can land directly on an existing entry that
-    /// shares `row_begin` with the new key. The predecessor check above skips it
-    /// (because that entry is at `it`, not `prev`), so without this fast path the
-    /// erase loop below would drop a wider containing interval like `[100, 200)`
-    /// in favor of a narrower `[100, 150)`, reducing hit rate for later reads.
-    /// The skip is only valid while the existing entry is still in `Base`; see
-    /// the comment in the predecessor branch above.
-    if (it != intervals.end() && it->first.first == key.row_begin && it->first.second >= key.row_end)
-    {
-        if (Base::contains(it->second))
-            return false;
-        it = intervals.erase(it);
-    }
-
-    while (it != intervals.end() && it->first.first < key.row_end)
-    {
-        Base::remove(it->second);
-        it = intervals.erase(it);
-    }
-
-    /// Insert into base cache first so there is no window where the index
-    /// references a key that the cache does not yet contain (which would
-    /// cause getIntersecting to classify it as stale and erase it).
+    /// Insert into the base cache and verify the entry stayed resident before
+    /// touching any index or overlap state. Insert-first also avoids any window
+    /// where the index references a key the cache does not yet contain (which
+    /// `getIntersecting` would classify as stale and erase). If admission fails,
+    /// the overlapping ranges scheduled above are left untouched and no index
+    /// bucket is created, so the caller is not charged the write budget for bytes
+    /// that did not stay in the cache.
     Base::set(key, mapped);
-
-    /// Even after the weight pre-check above, Base::set can evict the entry it
-    /// just inserted (for example, SLRU may not admit an entry larger than its
-    /// probationary segment). Publish the interval only if the entry is actually
-    /// resident, and report failure so the caller does not charge the write
-    /// budget for bytes that did not stay in the cache.
     if (!Base::contains(key))
         return false;
+
+    /// Admission succeeded: apply the staged removals and publish the new
+    /// interval. `interval_index[part_id][column]` is materialized only here, so a
+    /// rejected write never grows side-index metadata.
+    auto & intervals = interval_index[part_id][key.column_name];
+    for (const auto & range : index_ranges_to_erase)
+        intervals.erase(range);
+    for (const auto & base_key : base_keys_to_remove)
+        Base::remove(base_key);
 
     intervals[{key.row_begin, key.row_end}] = key;
 
