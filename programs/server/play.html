@@ -508,6 +508,15 @@
             transition: opacity 0s 0.1s;
         }
 
+        /* Show the balloon when the row (or one of its links) is focused via
+           keyboard navigation, mirroring the hover behaviour above. */
+        .table:focus-within .table-addendum
+        {
+            opacity: 1;
+            pointer-events: auto;
+            transition: opacity 0s 0.1s;
+        }
+
         /* While suppress-balloons is set on the body (set on scroll, cleared on the
            next mousemove), no balloon may appear from a :hover state. This prevents
            a different table button from scrolling under a stationary cursor and
@@ -525,6 +534,10 @@
             cursor: pointer;
             &:hover {
                 text-decoration: 1px underline dotted var(--element-background-color);
+            }
+            &:focus {
+                outline: none;
+                text-decoration: 1px underline solid var(--element-background-color);
             }
         }
 
@@ -2871,16 +2884,12 @@ async function loadTables(server_address, user, password, database, container) {
         engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
         table_addendum.append(engine_elem);
 
-        table_name.addEventListener('mouseenter', function() {
-            /// Anchor the balloon to the end of the name (clamped to the button when the name
-            /// is truncated), so it stays next to the text rather than the far-right edge.
-            const rect = this.getBoundingClientRect();
-            const btn = table_link.getBoundingClientRect();
-            table_addendum.style.left = Math.min(rect.right, btn.right) + 'px';
-            table_addendum.style.top = (rect.top + rect.height / 2) + 'px';
-            table_addendum.style.visibility = '';
-            visible_balloon = table_addendum;
-        });
+        /// Make the balloon links reachable from the keyboard (Right arrow from the row).
+        for (const link of table_addendum.querySelectorAll('.table-addendum-elem')) link.tabIndex = -1;
+
+        table_name.addEventListener('mouseenter', () => positionTableBalloon(table));
+        /// Show the balloon when the row is focused via keyboard navigation, too.
+        table_link.addEventListener('focus', () => positionTableBalloon(table));
 
         /// Keep the addendum inside the button so the `.table-name ~ .table-addendum` hover
         /// selector works; it is position:fixed, so it is not clipped by the button overflow.
@@ -2920,7 +2929,33 @@ function hideTableBalloons() {
     }
     document.body.classList.add('suppress-balloons');
 }
-document.addEventListener('scroll', hideTableBalloons, { capture: true, passive: true });
+
+/// Anchor a table's balloon to the end of its name (clamped to the button when the
+/// name is truncated), so it sits next to the text rather than the far-right edge.
+/// Used on hover, on keyboard focus, and to keep it glued to the row across scrolls.
+function positionTableBalloon(table) {
+    const table_name = table.querySelector('.table-name');
+    const table_link = table.querySelector('button');
+    const table_addendum = table.querySelector('.table-addendum');
+    if (!table_name || !table_addendum) return;
+    const rect = table_name.getBoundingClientRect();
+    const btn = table_link.getBoundingClientRect();
+    table_addendum.style.left = Math.min(rect.right, btn.right) + 'px';
+    table_addendum.style.top = (rect.top + rect.height / 2) + 'px';
+    table_addendum.style.visibility = '';
+    visible_balloon = table_addendum;
+}
+
+document.addEventListener('scroll', () => {
+    /// When a table row (or one of its balloon links) is focused via the keyboard,
+    /// keep its balloon glued to the row across the scroll instead of hiding it.
+    const focused_table = document.activeElement?.closest?.('.table');
+    if (focused_table && document.getElementById('databases').contains(focused_table)) {
+        positionTableBalloon(focused_table);
+    } else {
+        hideTableBalloons();
+    }
+}, { capture: true, passive: true });
 document.addEventListener('mousemove', () => {
     /// Guard so the no-op case does not touch classList on every mouse pixel.
     if (document.body.classList.contains('suppress-balloons')) {
@@ -2978,15 +3013,40 @@ document.getElementById('databases-hide').addEventListener('click', e => {
     toggleDatabases();
 });
 
-/// Up/Down arrow keys move focus between the buttons inside the database panel
-/// (databases and their expanded tables), mirroring Tab/Shift+Tab but staying
-/// within the panel. The event bubbles here from the focused button.
+/// Keyboard navigation inside the database panel. The event bubbles here from the
+/// focused element.
+///   - Up/Down move focus between the rows (databases and expanded tables),
+///     mirroring Tab/Shift+Tab but staying within the panel.
+///   - Right enters the focused table's balloon (its size/rows/engine links);
+///     inside the balloon Up/Down move between links, Left returns to the row,
+///     and Enter/Space activate the focused link.
 document.getElementById('databases').addEventListener('keydown', e => {
+    const active = document.activeElement;
+
+    /// Within a table's balloon.
+    if (active.classList && active.classList.contains('table-addendum-elem')) {
+        const links = [...active.parentElement.querySelectorAll('.table-addendum-elem')];
+        const i = links.indexOf(active);
+        if (e.key === 'ArrowDown') { e.preventDefault(); links[Math.min(i + 1, links.length - 1)].focus({ preventScroll: true }); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); links[Math.max(i - 1, 0)].focus({ preventScroll: true }); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); active.closest('.table').querySelector('button').focus(); }
+        else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); active.click(); }
+        return;
+    }
+
+    /// Right arrow on a table row jumps into its balloon links.
+    if (e.key === 'ArrowRight') {
+        const link = active.querySelector && active.querySelector('.table-addendum-elem');
+        if (link) { e.preventDefault(); link.focus({ preventScroll: true }); }
+        return;
+    }
+
+    /// Up/Down move focus between the rows.
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
     const buttons = [...document.getElementById('databases').querySelectorAll('button')];
     if (buttons.length === 0) return;
     e.preventDefault();
-    let index = buttons.indexOf(document.activeElement);
+    let index = buttons.indexOf(active);
     if (e.key === 'ArrowDown') {
         index = index < 0 ? 0 : Math.min(index + 1, buttons.length - 1);
     } else {
