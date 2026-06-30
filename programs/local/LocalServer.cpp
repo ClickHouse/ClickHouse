@@ -1795,7 +1795,16 @@ void LocalServer::applyCmdSettings(ContextMutablePtr context)
 
 void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
-    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
+    /// Set the local display default as the first-class `default_format` *setting*, not the legacy
+    /// `Context::default_format` field. `Context::getDefaultFormat` consults the legacy field before
+    /// the setting, and this `global_context` is inherited by the query contexts created for the
+    /// embedded protocol listeners (`SYSTEM START LISTEN HTTP`). Were it the legacy field, the local
+    /// client's display default would mask an explicit per-request `?default_format=...` on those
+    /// listeners (the same request behaves differently on `clickhouse-server`, where the field is
+    /// empty). As a setting it is still the fallback (the local CLI itself formats from its own
+    /// `default_output_format`), but a per-request override now wins. The legacy field stays reserved
+    /// for the wire protocols (`MySQLWire` / `PostgreSQLWire` / gRPC), which must keep winning.
+    context->setSetting("default_format", getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
     applyCmdSettings(context);
 }
 
