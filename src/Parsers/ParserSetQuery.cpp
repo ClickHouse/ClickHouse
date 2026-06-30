@@ -17,7 +17,6 @@
 #include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
-#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -41,7 +40,6 @@ public:
 
     String operator() (const Array & x) const
     {
-        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '[';
@@ -58,7 +56,6 @@ public:
 
     String operator() (const Map & x) const
     {
-        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '{';
@@ -85,7 +82,6 @@ public:
 
     String operator() (const Tuple & x) const
     {
-        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '(';
@@ -155,7 +151,7 @@ protected:
 };
 
 /// Parse Identifier, Literal, Array/Tuple/Map of literals
-static bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
+bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
 {
     ASTPtr node;
 
@@ -216,16 +212,12 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
         return false;
 
     /// for SETTINGS disk=disk(type='s3', path='', ...)
+    if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
-        auto pos_before_func = pos;
-        if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
-        {
-            tryGetIdentifierNameInto(name, change.name);
-            change.value = createFieldFromAST(function_ast);
+        tryGetIdentifierNameInto(name, change.name);
+        change.value = createFieldFromAST(function_ast);
 
-            return true;
-        }
-        pos = pos_before_func;
+        return true;
     }
     if (!literal_or_map_p.parse(pos, value, expected))
         return false;
@@ -247,7 +239,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     ASTPtr node;
     String name;
     ASTPtr function_ast;
-    bool have_eq = false;
+    bool have_eq;
 
     if (!name_p.parse(pos, node, expected))
         return false;
@@ -289,16 +281,12 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         }
 
         /// Setting
+        if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
         {
-            auto pos_before_func = pos;
-            if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
-            {
-                change.name = name;
-                change.value = createFieldFromAST(function_ast);
+            change.name = name;
+            change.value = createFieldFromAST(function_ast);
 
-                return true;
-            }
-            pos = pos_before_func;
+            return true;
         }
 
         if (!value_p.parse(pos, node, expected))
@@ -341,30 +329,6 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Parse SET TRANSACTION ... queries using ParserTransactionControl
         if (ParserKeyword{Keyword::TRANSACTION}.check(pos, expected))
             return false;
-
-        /// Parse SET TIME ZONE 'tz' as an alias for SET session_timezone = 'tz'
-        if (ParserKeyword{Keyword::TIME_ZONE}.ignore(pos, expected))
-        {
-            ParserToken eq(TokenType::Equals);
-            eq.ignore(pos, expected); // optional, for PostgreSQL compatibility
-            ASTPtr value_node;
-            ParserLiteralOrMap literal_parser;
-
-            if (!literal_parser.parse(pos, value_node, expected))
-                return false;
-
-            auto query = make_intrusive<ASTSetQuery>();
-            node = query;
-
-            query->is_standalone = !parse_only_internals;
-
-            SettingChange change;
-            change.name = "session_timezone";
-            change.value = value_node->as<ASTLiteral &>().value;
-            query->changes.push_back(std::move(change));
-
-            return true;
-        }
     }
 
     SettingsChanges changes;
