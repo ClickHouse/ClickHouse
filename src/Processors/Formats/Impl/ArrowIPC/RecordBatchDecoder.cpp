@@ -1216,7 +1216,6 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
     prepareBuffers(batch, body, reachable_buffers);
 
     const bool case_insensitive = settings.arrow.case_insensitive_column_matching;
-    bool pruned = false;
 
     DecodedColumns result;
     result.reserve(fields.size());
@@ -1231,7 +1230,6 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
             /// Unrequested column: advance the node/buffer cursors past it without decoding, so a
             /// SELECT of a subset of columns neither pays for nor fails on columns it did not request.
             skipField(field);
-            pruned = true;
             continue;
         }
 
@@ -1252,20 +1250,20 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
         result.push_back(std::move(decoded));
     }
 
-    /// When columns were skipped, verify the skip math is exact: every FieldNode and buffer the batch
-    /// declares must have been consumed by the decoded-or-skipped fields. A mismatch means `skipField`
-    /// mis-counted a layout; fail loudly here (only on the pruning path) rather than risk reading a later
-    /// column from the wrong buffer.
-    if (pruned)
-    {
-        const size_t total_nodes = current_batch->nodes() ? current_batch->nodes()->size() : 0;
-        if (node_index != total_nodes || buffer_index != buffer_slices.size())
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Arrow IPC column pruning consumed {}/{} field nodes and {}/{} buffers; "
-                "the record batch layout does not match the schema",
-                node_index, total_nodes, buffer_index, buffer_slices.size());
-    }
+    /// Verify the layout math is exact: every FieldNode, buffer and variadic-buffer count the batch declares
+    /// must have been consumed by the decoded-or-skipped fields. This must run whether or not columns were
+    /// pruned: when pruning, a mismatch means `skipField` mis-counted a layout; when every column is decoded,
+    /// a surplus (e.g. an extra in-bounds buffer interposed before a requested column) would otherwise make
+    /// the decoder read a column from the injected buffer and silently ignore the real trailing buffer. Fail
+    /// loudly here rather than risk reading a column from the wrong buffer. (Dictionary value batches get the
+    /// same exactness from `validateBatchLayout`.)
+    const size_t total_nodes = current_batch->nodes() ? current_batch->nodes()->size() : 0;
+    if (node_index != total_nodes || buffer_index != buffer_slices.size() || variadic_index != variadic_counts.size())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC record batch consumed {}/{} field nodes, {}/{} buffers and {}/{} variadic counts; "
+            "the record batch layout does not match the schema",
+            node_index, total_nodes, buffer_index, buffer_slices.size(), variadic_index, variadic_counts.size());
 
     current_batch = nullptr;
     target_types = nullptr;
