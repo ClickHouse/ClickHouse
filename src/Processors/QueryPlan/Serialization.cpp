@@ -144,6 +144,10 @@ void QueryPlan::ensureSerialized(size_t max_supported_version) const
     serialized_plan = std::make_unique<WriteBufferFromOwnString>();
     serialize(*serialized_plan, max_supported_version);
     serialized_plan->finalize();
+    /// Remember the version the cache was actually written at (see QueryPlan::serialize, which clamps
+    /// to DBMS_QUERY_PLAN_SERIALIZATION_VERSION), so serializeForReceiver can tell whether a given
+    /// receiver can read the cached stream.
+    serialized_version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 }
 
 std::string_view QueryPlan::getSerializedData() const
@@ -158,6 +162,26 @@ std::string_view QueryPlan::getSerializedData() const
 bool QueryPlan::isSerialized() const
 {
     return serialized_plan != nullptr;
+}
+
+void QueryPlan::serializeForReceiver(WriteBuffer & out, size_t receiver_version) const
+{
+    /// Reuse the cached serialization only when the receiver understands the version it was cached at.
+    /// Otherwise re-serialize on the fly at the receiver's (lower) version: a not-yet-upgraded replica
+    /// in a rolling upgrade supports only an older plan serialization version and must receive a stream
+    /// at that version - with the newer settings omitted - rather than the cached newer-versioned stream,
+    /// which it would reject in deserialize() via the top-level version check. The cache is shared across
+    /// connections with different negotiated versions (the pre-serialized parallel-replicas path), so this
+    /// decision is made per receiver.
+    if (serialized_plan && serialized_version <= receiver_version)
+    {
+        auto data = serialized_plan->stringView();
+        out.write(data.data(), data.size());
+    }
+    else
+    {
+        serialize(out, receiver_version);
+    }
 }
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context)
