@@ -185,10 +185,11 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
             use_dynamic_filtering = false;
     }
 
-    /// The threshold tracker is needed for dynamic mark skipping during reads
-    /// (use_skip_indexes_on_data_read) or for the prewhere dynamic filter.
-    /// Initial top-k mark selection (getTopKMarks) does not require it.
-    if ((use_skip_index && settings.use_skip_indexes_on_data_read) || use_dynamic_filtering)
+    /// Initial TopK mark selection does not need a runtime threshold. Dynamic
+    /// TopK filtering does: sorting updates the threshold, reads can use it to
+    /// skip marks with the TopK minmax index, and `__topKFilter` can use it as
+    /// a row-level filter.
+    if (use_skip_index || use_dynamic_filtering)
     {
         threshold_tracker = std::make_shared<TopKThresholdTracker>(sort_col_desc);
         sorting_step->setTopKThresholdTracker(threshold_tracker);

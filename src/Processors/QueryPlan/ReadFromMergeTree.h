@@ -552,6 +552,7 @@ private:
 
     bool isParallelReplicasLocalPlanForInitiator() const;
     bool supportsSkipIndexesOnDataRead() const;
+    bool supportsTopKSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
