@@ -140,7 +140,7 @@ Pipe YTsaurusSourceFactory::createPipe(
         {
             size_t row_from = i * rows_batch_count;
             size_t row_to = (i + 1 == pipes_num) ? rows_count :  (i + 1) * rows_batch_count;
-            YTsaurusClientPtr client_for_source(new YTsaurusClient(*client));
+            auto client_for_source = std::make_shared<YTsaurusClient>(*client);
             pipes.emplace_back(std::make_shared<YTsaurusTableSourceStaticTable>(
                   client_for_source
                 , cypress_path
