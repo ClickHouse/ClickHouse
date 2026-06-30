@@ -291,6 +291,46 @@ SELECT count() FROM tab WHERE hasAnyToken(arr, NULL);
 
 DROP TABLE tab;
 
+SELECT 'Array(Nullable(String)) with postprocessor = lower(arr)';
+-- NULL elements are skipped during indexing and the postprocessor is applied per token.
+
+CREATE TABLE tab
+(
+    id  UInt32,
+    arr Array(Nullable(String)),
+    INDEX idx(arr) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(arr))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES
+    (1, ['Hello', 'World']),
+    (2, [NULL, 'FOO']),
+    (3, [NULL, NULL]),
+    (4, ['Bar', NULL]);
+
+SELECT '-- Array postprocessor + Nullable: row 1 has "hello" (postprocessor matches case-insensitively)';
+SELECT id FROM tab WHERE hasAnyTokens(arr, 'HELLO') ORDER BY id;
+
+SELECT '-- Array postprocessor + Nullable: row 2 has "foo" (NULL element still skipped after lower)';
+SELECT id FROM tab WHERE hasAnyTokens(arr, 'foo') ORDER BY id;
+
+SELECT '-- Array postprocessor + Nullable: hasAnyTokens rows 2 ("foo") and 4 ("bar") match, so count is 2';
+SELECT count() FROM tab WHERE hasAnyTokens(arr, 'FOO BAR');
+
+SELECT '-- Array postprocessor + Nullable: hasAllTokens only row 1 has both "hello" and "world"';
+SELECT id FROM tab WHERE hasAllTokens(arr, 'Hello World') ORDER BY id;
+
+SELECT '-- Array postprocessor + Nullable: row 3 (all NULLs) must not match';
+SELECT count() FROM tab WHERE hasAnyTokens(arr, 'hello') AND id = 3;
+
+SELECT '-- has[Any|All]Token on NULL should not match anything';
+SELECT count() FROM tab WHERE hasToken(arr, NULL);
+SELECT count() FROM tab WHERE hasAllToken(arr, NULL);
+SELECT count() FROM tab WHERE hasAnyToken(arr, NULL);
+
+DROP TABLE tab;
+
 SELECT 'Map(String, Nullable(String))';
 CREATE TABLE tab
 (

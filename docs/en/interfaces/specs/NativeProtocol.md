@@ -143,7 +143,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | JWT_IN_INTERSERVER              | 54476   | ClientInfo             | Adds a JWT-presence UInt8 + optional `String jwt` at the tail of ClientInfo. External clients (no JWT) send byte `0x00`. (Spelled `DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER` in C++ — note the typo in the constant name.) |
 | QUERY_PLAN_SERIALIZATION        | 54477   | ServerHello, QueryPlan packet | ServerHello appends `VarUInt query_plan_serialization_version` after server settings. Also introduces `ClientPacket::QueryPlan` (code `13`) for inter-server delivery of pre-built query plans — external clients never send. |
 | PARALLEL_BLOCK_MARSHALLING      | 54478   | Block (Column)         | Server may wrap columns in `ColumnBLOB` (compressed inline) for parallel processing. Gated on the query having compression enabled AND `rows > 1`; otherwise the regular column wire format applies. Clients that never enable compression on outgoing Query packets see no wire change. |
-| VERSIONED_CLUSTER_FUNCTION_PROTOCOL | 54479 | ServerHello           | Adds `VarUInt cluster_function_protocol_version` at the tail of ServerHello. Negotiates the separate cluster-function task protocol version (`DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION`) used for `*Cluster` table functions (`s3Cluster`, etc.); see [ReadTaskResponse](#readtaskresponse). External clients decode and ignore. |
+| VERSIONED_CLUSTER_FUNCTION_PROTOCOL | 54479 | ServerHello           | Adds `VarUInt cluster_function_protocol_version` at the tail of ServerHello. Negotiates the separate cluster-function task protocol version (`DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION`, current value `8`) used for `*Cluster` table functions (`s3Cluster`, etc.); see [ReadTaskResponse](#readtaskresponse). External clients decode and ignore. |
 | OUT_OF_ORDER_BUCKETS_IN_AGGREGATION | 54480 | BlockInfo              | Adds field 3 (`out_of_order_buckets: Vec<Int32>`) to BlockInfo's field-tagged stream. Decoded as `[VarUInt count][Int32]*count`. External clients don't emit this themselves; the decoder reads any non-empty list the server sends. |
 | COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS | 54481 | Log, ProfileEvents, TableColumns | Server may wrap [`Log`](#log), [`ProfileEvents`](#profileevents), and [`TableColumns`](#tablecolumns) packet bodies in the [compression frame](/interfaces/specs/NativeFormat#compression-frame). At this version all three bodies travel through the same optionally-compressed output path, which becomes a real compression frame only when the query has `compression = true`. Clients that never enable compression on outgoing Query packets see no wire change. |
 | REPLICATED_SERIALIZATION        | 54482   | Block (Column)         | Server may emit columns with kind_stack `0x04 = REPLICATED` — a dictionary-style compact form for repeated values — see [kind_stack and sparse encoding](/interfaces/specs/NativeFormat#kind-stack-and-sparse-encoding). Below this version the writer expanded such columns before sending. Decoded via index lookup (`elements[indexes[i]]` per row); leaf types plus `Nullable`/`Array`/`Tuple`/`Map`/`Nested`/`LowCardinality` inners supported. |
@@ -454,7 +454,7 @@ Server → Client. The reply to ClientHello on successful authentication.
 | 11 | nonce            | UInt64  | inter-server | INTERSERVER_SECRET_V2 (v54462) | 8-byte LE random nonce. The server's inter-server query-signing scheme uses it. External clients MUST decode it (to keep the stream aligned) and SHOULD ignore the value. |
 | 12 | server_settings  | Setting[] | universal | SERVER_SETTINGS (v54474)        | Server's non-default settings broadcast. Format: zero or more `(String key, VarUInt flags, String value)` triples, terminated by an empty key. Same as the [Query packet's settings list](#setting). |
 | 13 | query_plan_serialization_version | VarUInt | universal | QUERY_PLAN_SERIALIZATION (v54477) | Server's supported query-plan serialization version. External clients decode and ignore. |
-| 14 | cluster_function_protocol_version | VarUInt | universal | VERSIONED_CLUSTER_FUNCTION_PROTOCOL (v54479) | Server's `*Cluster` table-function protocol version. External clients decode and ignore. |
+| 14 | cluster_function_protocol_version | VarUInt | universal | VERSIONED_CLUSTER_FUNCTION_PROTOCOL (v54479) | Server's `*Cluster` table-function protocol version. Current: `7`. The value gates additive fields in the inter-server cluster read-task payload (the otherwise-unspecified `ReadTaskResponse` body); `7` adds an optional `read_source_index`. External clients do not participate in cluster reads — they decode and ignore this field. |
 
 **Rule** — an element of `password_complexity_rules`:
 
@@ -778,7 +778,8 @@ The `ReadTaskResponse` body is versioned by its own scheme, **separate from the 
 | 4       | `WITH_FILE_BUCKETS_INFO`         | A format-specific `FileBucketInfo` describing which slice of the object this task covers (see below). |
 | 5       | `WITH_EXCLUDED_ROWS`             | The data-lake `excluded_rows` payload (positional deletes / deletion vectors), written right after the schema transform. |
 | 6       | `WITH_ICEBERG_FILE_STATS`        | Per-file statistics inside the Iceberg metadata block. |
-| 7       | `WITH_PARQUET_FILE_ROW_GROUP_COUNT` | The `file_num_row_groups` field of `ParquetFileBucketInfo` (see below). |
+| 7       | `WITH_READ_SOURCE_INDEX`         | An optional `read_source_index` at the tail of the body (which wildcard URL shard a web task belongs to). |
+| 8       | `WITH_PARQUET_FILE_ROW_GROUP_COUNT` | The `file_num_row_groups` field of `ParquetFileBucketInfo` (see below). |
 
 Body layout, in wire order. Each block is present only when `cluster_function_protocol_version` is at least the listed version; the field order on the wire does **not** follow the numeric version order (file buckets at v4 precede the Iceberg block at v3):
 
@@ -790,6 +791,7 @@ Body layout, in wire order. Each block is present only when `cluster_function_pr
 | `excluded_rows` | opaque | v5 | Data-lake positional-deletes payload; a default (empty) payload when absent. Written immediately after `schema_transform` (inside the v2 block). |
 | `file_bucket_info` | format name `String` + payload | v4 | `FileBucketInfo` for the task. The format name (e.g. `Parquet`) is written first; an **empty** format name means no bucket info and nothing further for this block. Otherwise the format-specific payload follows. |
 | `iceberg_info` | VarUInt flag + payload | v3 | `1` followed by the serialized Iceberg object info, or `0` when absent. v6 extends the payload with per-file stats. |
+| `read_source_index` | VarUInt flag + VarUInt | v7 | Presence flag, then (when present) the index of the wildcard URL shard this task reads. Written last, after `iceberg_info`. A newer initiator that needs `read_source_index` but negotiates a version below v7 fails closed with `UNKNOWN_PROTOCOL` rather than dropping the field. |
 
 #### FileBucketInfo and ParquetFileBucketInfo {#filebucketinfo}
 
@@ -799,9 +801,9 @@ Body layout, in wire order. Each block is present only when `cluster_function_pr
 |-------|------|--------------|-------------|
 | `num_row_group_ids` | VarUInt | v4 | Count of row-group indices that follow. |
 | `row_group_ids[i]` | VarUInt | v4 | The row-group indices (into the file's footer) this task must read. |
-| `file_num_row_groups` | VarUInt | v7 | Total number of row groups the file had when the initiator split it. |
+| `file_num_row_groups` | VarUInt | v8 | Total number of row groups the file had when the initiator split it. |
 
-`file_num_row_groups` is a fail-close guard against a file changing between planning and reading: the reader compares it against the row-group count of the footer it actually opens and throws `FILE_CHANGED_WHILE_READING` on mismatch, rather than silently under-reading. A value of `0` means **unknown** and disables the check — this is what a v4–v6 peer (which does not send the field) deserializes to, and what `ParquetFileBucketInfo::deserialize` substitutes below v7. Because the field is gated on v7, an older peer reads the bytes that follow `row_group_ids` as the next body block, keeping the stream aligned across mixed-version clusters.
+`file_num_row_groups` is a fail-close guard against a file changing between planning and reading: the reader compares it against the row-group count of the footer it actually opens and throws `FILE_CHANGED_WHILE_READING` on mismatch, rather than silently under-reading. A value of `0` means **unknown** and disables the check — this is what a v4–v7 peer (which does not send the field) deserializes to, and what `ParquetFileBucketInfo::deserialize` substitutes below v8. Because the field is gated on v8, an older peer reads the bytes that follow `row_group_ids` as the next body block, keeping the stream aligned across mixed-version clusters.
 
 ### SSH challenge-response authentication (packet types 11, 12, 18) {#ssh-authentication}
 
