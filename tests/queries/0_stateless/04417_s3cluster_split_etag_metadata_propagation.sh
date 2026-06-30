@@ -43,3 +43,22 @@ ${CLICKHOUSE_CLIENT} -q "
     FROM system.query_log
     WHERE initial_query_id = '$qid' AND is_initial_query = 0 AND type = 'QueryFinish' AND event_date >= today() - 1
 "
+
+# When the `_tags` virtual column is requested, the propagated metadata (which carries no tags) is not
+# enough: the worker must still fetch the object's tags. Assert it does at least one HEAD in that case,
+# so propagation never silently returns empty `_tags` on the bucket-split path (it keeps the pinned
+# ETag and only adds the freshly fetched tags).
+qid_tags="04417_split_tags_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --query_id "$qid_tags" -q "
+    SELECT count() FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', '$parq', $auth, 'Parquet', 'n UInt64')
+    WHERE NOT ignore(_tags)
+    SETTINGS s3_validate_etag_on_read = 1, cluster_table_function_split_granularity = 'bucket', enable_filesystem_cache = 0
+" > /dev/null
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+
+${CLICKHOUSE_CLIENT} -q "
+    SELECT sum(ProfileEvents['S3HeadObject']) >= 1
+    FROM system.query_log
+    WHERE initial_query_id = '$qid_tags' AND is_initial_query = 0 AND type = 'QueryFinish' AND event_date >= today() - 1
+"
