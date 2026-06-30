@@ -57,10 +57,17 @@ namespace ErrorCodes
 }
 
 /// Escape special XML characters in a string so it can be safely embedded as text content in an XML document.
+///
+/// Uses the text/attribute-value escaping, which also escapes '>'. Escaping '>' is not optional here:
+/// the XML grammar (the `CharData` production) forbids the literal sequence `]]>` in character data,
+/// so a value such as `]]>` would otherwise produce `<from_env>]]></from_env>`, which the parser
+/// rejects as not well-formed before the substitution is read. Escaping '>' turns `]]>` into `]]&gt;`,
+/// which parses and decodes back to the exact original bytes. The extra escaping of `"` and `'` is
+/// harmless for text content — they round-trip to the same characters.
 static std::string escapeForXMLText(const std::string & s)
 {
     WriteBufferFromOwnString buf;
-    writeXMLStringForTextElement(s, buf);
+    writeXMLStringForTextElementOrAttributeValue(s, buf);
     return buf.str();
 }
 

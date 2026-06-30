@@ -91,6 +91,22 @@ node12 = cluster.add_instance(
     user_configs=["configs/config_zk_yaml_leaf.xml"],
     with_zookeeper=True,
 )
+# env var whose value contains the `]]>` sequence: the XML grammar forbids `]]>` in character
+# data, so it must be escaped (as `]]&gt;`) rather than embedded verbatim, otherwise the synthetic
+# document `<from_env>]]></from_env>` would be rejected as not well-formed before substitution.
+node13 = cluster.add_instance(
+    "node13",
+    user_configs=["configs/config_env_xml_chars.xml"],
+    env_variables={"LOG_COMMENT_VALUE": "a]]>b"},
+    instance_env_variables=True,
+)
+# from_zk leaf value that contains the `]]>` sequence: it uses the same escaping helper as
+# from_env, so it must be kept as literal text and not break config parsing.
+node14 = cluster.add_instance(
+    "node14",
+    user_configs=["configs/config_zk_leaf_cdata.xml"],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -140,6 +156,13 @@ def start_cluster():
             zk.create(
                 path="/leaf_yaml_mapping",
                 value=b"abc: def",
+                makepath=True,
+            )
+            # A leaf value containing the `]]>` sequence, which the XML grammar forbids in
+            # character data: it must be escaped and kept as literal text, not break parsing.
+            zk.create(
+                path="/leaf_with_cdata_end",
+                value=b"a]]>b",
                 makepath=True,
             )
 
@@ -465,4 +488,28 @@ def test_config_zk_leaf_yaml_mapping_keeps_literal_text(start_cluster):
     assert (
         node12.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
         == "abc: def\n"
+    )
+
+
+def test_config_env_cdata_end_sequence(start_cluster):
+    """An env var value containing `]]>` must be escaped, not break config parsing.
+
+    The XML grammar forbids the literal `]]>` in character data, so embedding the value verbatim
+    would yield the not-well-formed `<from_env>]]></from_env>`. The value must round-trip to its
+    exact original bytes.
+    """
+    assert (
+        node13.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
+        == "a]]>b\n"
+    )
+
+
+def test_config_zk_leaf_cdata_end_sequence(start_cluster):
+    """A from_zk leaf value containing `]]>` uses the same escaping helper as from_env.
+
+    It must be kept as literal text and must not break config parsing.
+    """
+    assert (
+        node14.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
+        == "a]]>b\n"
     )
