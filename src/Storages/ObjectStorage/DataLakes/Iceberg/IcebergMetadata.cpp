@@ -85,7 +85,6 @@
 #include <Storages/IStorage.h>
 #include <Common/FieldVisitorToString.h>
 
-#include <Storages/IStorage.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
