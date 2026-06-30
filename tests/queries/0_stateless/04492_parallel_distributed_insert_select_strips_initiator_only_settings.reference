@@ -1,0 +1,4 @@
+-- distributedWriteBetweenDistributedTables (Distributed source)
+1	0	0	0	0	0	0	0	0
+-- distributedWriteFromClusterStorage (fileCluster source)
+1	0	0	0	0	0	0	0	0

@@ -46,6 +46,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/parseQuery.h>
@@ -1138,6 +1139,31 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
 }
 
 
+/// Remove the initiator-only settings (see `ClusterProxy::stripInitiatorOnlySettings`) from a query's
+/// own `SETTINGS` clause. The optimized `parallel_distributed_insert_select` paths forward a *formatted
+/// query string* to each shard, so an initiator-only setting written by the user in the `SETTINGS`
+/// clause would otherwise be baked into that SQL and re-applied on the shard (or rejected as
+/// `UNKNOWN_SETTING` by an older shard for the settings new to the HTTP table-as-file feature). The
+/// settings packet is stripped separately, on the per-shard context.
+static void stripInitiatorOnlySettingsFromQueryText(ASTInsertQuery & query)
+{
+    if (!query.settings_ast)
+        return;
+
+    auto & set_query = query.settings_ast->as<ASTSetQuery &>();
+    std::erase_if(set_query.changes, [](const SettingChange & change) { return ClusterProxy::isInitiatorOnlySettingName(change.name); });
+
+    /// `ASTInsertQuery::formatImpl` always prints a bare `SETTINGS` keyword when `settings_ast` is set,
+    /// so drop an emptied clause entirely to keep the forwarded query valid.
+    if (set_query.changes.empty() && set_query.default_settings.empty() && set_query.query_parameters.empty())
+    {
+        query.children.erase(
+            std::remove(query.children.begin(), query.children.end(), query.settings_ast), query.children.end());
+        query.settings_ast.reset();
+    }
+}
+
+
 std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
@@ -1216,6 +1242,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 
     const auto & shards_info = dst_cluster->getShardsInfo();
 
+    /// Drop the initiator-only settings from the query text forwarded to the shards (the settings
+    /// packet is stripped separately, on `query_context` below).
+    stripInitiatorOnlySettingsFromQueryText(*new_query);
+
     String new_query_str;
     {
         WriteBufferFromOwnString buf;
@@ -1229,6 +1259,17 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
     query_context->setSetting("enable_parallel_replicas", Field{0}); // TODO: allow parallel inserts with PR for distributed tables
+
+    /// Strip the initiator-only settings (query-shaping/result-serialisation and the HTTP/path-only
+    /// settings) so the per-shard `INSERT SELECT` forwarded by `RemoteQueryExecutor` does not carry
+    /// them; this is the same contract the regular fan-out and `DistributedSink` paths apply via
+    /// `ClusterProxy::stripInitiatorOnlySettings`. The local-replica branch below shares this context
+    /// and is just another shard, so it must not re-apply these settings either.
+    {
+        Settings stripped_settings = query_context->getSettingsRef();
+        ClusterProxy::stripInitiatorOnlySettings(stripped_settings);
+        query_context->setSettings(stripped_settings);
+    }
 
     size_t available_shards = 0;
     for (size_t shard_index : collections::range(0, shards_info.size()))
@@ -1349,6 +1390,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         new_query->reset(new_query->table_function);
     }
 
+    /// Drop the initiator-only settings from the query text forwarded to the shards (the settings
+    /// packet is stripped separately, on `query_context` below).
+    stripInitiatorOnlySettingsFromQueryText(*new_query);
+
     String new_query_str;
     {
         WriteBufferFromOwnString buf;
@@ -1361,6 +1406,16 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
+
+    /// Strip the initiator-only settings (query-shaping/result-serialisation and the HTTP/path-only
+    /// settings) so the per-shard query forwarded by `RemoteQueryExecutor` does not carry them; this
+    /// is the same contract the regular fan-out and `DistributedSink` paths apply via
+    /// `ClusterProxy::stripInitiatorOnlySettings`.
+    {
+        Settings stripped_settings = query_context->getSettingsRef();
+        ClusterProxy::stripInitiatorOnlySettings(stripped_settings);
+        query_context->setSettings(stripped_settings);
+    }
 
     const auto & current_settings = query_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);

@@ -6,6 +6,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <optional>
+#include <string_view>
 
 namespace DB
 {
@@ -65,13 +66,23 @@ class SelectStreamFactory;
 void stripDatabaseSetting(Settings & settings);
 
 /// Reset every "initiator-only" setting — the query-shaping settings (`select`, `order`, `sort`,
-/// `filter`, `limit`, `offset`, `page`, `additional_result_filter`) and the result-serialisation
-/// settings (`format`, `output_format`, `default_format`, `compression`), plus `database` (via
-/// `stripDatabaseSetting`). These are materialized on the initiator and must not be forwarded to
-/// remote servers, where they would re-shape the per-shard subquery a second time or break it (see
-/// the `format = 'Null'` case in the implementation). Shared by the `Distributed` fan-out and the
-/// `*Cluster` table functions (`IStorageCluster`).
+/// `filter`, `limit`, `offset`, `page`, `additional_result_filter`), the result-serialisation
+/// settings (`format`, `output_format`, `default_format`, `compression`), and the HTTP/path-only
+/// settings (`http_allow_database_as_path`, `http_allow_table_as_file`, `http_allow_filters_as_path`,
+/// `http_allow_filters_as_unrecognized_url_parameters`, `implicit_table_at_top_level`), plus
+/// `database` (via `stripDatabaseSetting`). These are materialized on the initiator and must not be
+/// forwarded to remote servers, where they would re-shape the per-shard subquery a second time, break
+/// it (see the `format = 'Null'` case in the implementation), or — for the settings new to this
+/// feature — be rejected as `UNKNOWN_SETTING` by an older shard during a rolling upgrade. Shared by
+/// the `Distributed` fan-out, the `*Cluster` table functions (`IStorageCluster`), and the optimized
+/// `parallel_distributed_insert_select` paths in `StorageDistributed`.
 void stripInitiatorOnlySettings(Settings & settings);
+
+/// True for exactly the settings reset by `stripInitiatorOnlySettings`. Used to also strip those
+/// settings from a query's own `SETTINGS` clause before the query *text* is forwarded to a shard (the
+/// optimized `parallel_distributed_insert_select` paths in `StorageDistributed` send a formatted query
+/// string, not just a settings packet).
+bool isInitiatorOnlySettingName(std::string_view name);
 
 /// Update settings for Distributed query.
 ///
