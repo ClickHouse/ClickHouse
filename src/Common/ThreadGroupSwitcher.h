@@ -45,10 +45,12 @@ private:
     ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
     ThreadGroupPtr thread_group;
-    /// Only set when borrowing a thread that already owned a group (allow_existing_group=true and a
-    /// previous group existed): the name to restore in the destructor, since setThreadName(thread_name)
-    /// renamed the borrowed thread. UNKNOWN means "do not restore" (clean pool worker, no borrow).
+    /// When borrowing a thread that already owned a group (allow_existing_group=true), the switcher
+    /// renames it via setThreadName and must put the name back afterwards. prev_thread_name holds that
+    /// name; should_restore_prev_thread_name gates the restore. A bool is required because UNKNOWN is a
+    /// valid captured name (an initially-unnamed borrowed thread), not just a "nothing to restore" sentinel.
     ThreadName prev_thread_name = ThreadName::UNKNOWN;
+    bool should_restore_prev_thread_name = false;
 };
 
 

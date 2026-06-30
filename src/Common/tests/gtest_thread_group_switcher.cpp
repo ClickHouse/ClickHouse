@@ -78,6 +78,20 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
         }
         EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER)
             << "Post-attach failure must restore the original name after setThreadName renamed the thread";
+
+        /// --- Same post-attach failure, but the borrowed thread starts UNKNOWN (initially unnamed).
+        /// UNKNOWN is a valid previous name, not a "nothing to restore" sentinel, so the catch must
+        /// still put it back rather than leave the thread renamed to MERGE_MUTATE. ---
+        setThreadName(ThreadName::UNKNOWN); /// writes "Unknown" to the OS name; getThreadName() now reports UNKNOWN
+        ASSERT_EQ(getThreadName(), ThreadName::UNKNOWN);
+        FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_post_attach_failure);
+        {
+            ThreadGroupSwitcher switcher(G1, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+            EXPECT_EQ(getCurrentThreadGroup(), G0)
+                << "Post-attach failure must restore the original group for an initially-unnamed borrowed thread";
+        }
+        EXPECT_EQ(getThreadName(), ThreadName::UNKNOWN)
+            << "Post-attach failure must restore an UNKNOWN previous name; the restore is gated by a bool, not by the name value";
         CurrentThread::detachFromGroupIfNotDetached();
     });
     t.join();
@@ -126,6 +140,46 @@ TEST(ThreadGroupSwitcher, CallbackRunnerTaskDestroyedOnGroupOwningThread)
             << "~CallbackRunnerTask must restore the borrowed thread's original name, not leave it as the async-pool name";
 
         /// The dropped task satisfies its promise with a normal, catchable exception.
+        EXPECT_THROW(future.get(), DB::Exception);
+
+        CurrentThread::detachFromGroupIfNotDetached();
+    });
+    t.join();
+}
+
+/// Same destructor borrow path, but the scheduling thread is attached to a group while UNNAMED
+/// (getThreadName() == UNKNOWN). UNKNOWN is a legitimate previous name, not a "nothing to restore"
+/// sentinel: the switcher still renames the borrowed thread to the async-pool name, so the
+/// destructor must put the name back to UNKNOWN. Guarding the restore by the name value (!= UNKNOWN)
+/// would skip it here and leak the pool name onto an initially-unnamed thread.
+TEST(ThreadGroupSwitcher, CallbackRunnerTaskRestoresUnknownNameOnGroupOwningThread)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto query_group = std::make_shared<ThreadGroup>(context, 0);
+        auto task_group = std::make_shared<ThreadGroup>(context, 0);
+
+        /// Force an observable UNKNOWN name: setThreadName(UNKNOWN) writes "Unknown" to the OS name,
+        /// so getThreadName() parses back to UNKNOWN (a bare call on a fresh thread would be a no-op
+        /// and could inherit an unrelated OS name).
+        setThreadName(ThreadName::UNKNOWN);
+        CurrentThread::attachToGroupIfDetached(query_group);
+        ASSERT_EQ(getThreadName(), ThreadName::UNKNOWN);
+
+        std::future<void> future;
+        {
+            detail::CallbackRunnerTask<void, std::function<void()>> task(
+                task_group, ThreadName::S3_COPY_POOL, std::function<void()>([]{}));
+            future = task.promise.get_future();
+        } /// ~CallbackRunnerTask() borrows this UNKNOWN-named thread, renames it to S3_COPY_POOL.
+
+        EXPECT_EQ(getCurrentThreadGroup(), query_group)
+            << "~CallbackRunnerTask on a group-owning thread must restore that thread's group";
+        EXPECT_EQ(getThreadName(), ThreadName::UNKNOWN)
+            << "~CallbackRunnerTask must restore an UNKNOWN previous name, not leave it as the async-pool name";
+
         EXPECT_THROW(future.get(), DB::Exception);
 
         CurrentThread::detachFromGroupIfNotDetached();
