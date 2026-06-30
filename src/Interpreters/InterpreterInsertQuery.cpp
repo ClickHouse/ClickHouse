@@ -467,12 +467,13 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     if (!squash_with_strict_limits)
     {
-        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
         {
             return std::make_shared<AddDeduplicationInfoTransform>(
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
-                context->getSettingsRef()[Setting::insert_deduplication_token].value,                in_header);
+                context->getSettingsRef()[Setting::insert_deduplication_token].value,
+                in_header);
         });
     }
 
