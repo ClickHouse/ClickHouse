@@ -294,20 +294,50 @@ void RecordBatchEncoder::encodeValues(
                 return;
             }
             /// `output_fixed_string_as_fixed_byte_array = 0`: the schema advertises a variable-width
-            /// Utf8/Binary, so emit the int32 offsets buffer (each row is exactly N bytes) and the data
-            /// buffer, instead of a single fixed-width values buffer.
+            /// Utf8/Binary, so emit the int32 offsets buffer (each non-null row is exactly N bytes) and the
+            /// data buffer, instead of a single fixed-width values buffer.
             const size_t n = cfs.getN();
+            const auto & chars = cfs.getChars();
+            const NullMap * null_map
+                = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
             PODArray<Int32> arrow_offsets(num_rows + 1);
             arrow_offsets[0] = 0;
+            if (!null_map)
+            {
+                /// No null map: every row contributes exactly N bytes, so the offsets are regular and the
+                /// nested buffer can be copied in one shot.
+                for (size_t i = 0; i < num_rows; ++i)
+                {
+                    const UInt64 end = static_cast<UInt64>(i + 1) * n;
+                    if (end > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
+                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
+                    arrow_offsets[i + 1] = static_cast<Int32>(end);
+                }
+                appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
+                appendBuffer(chars.data(), num_rows * n);
+                return;
+            }
+            /// A null row carries an arbitrary nested value that the validity bitmap already masks as NULL;
+            /// emit a zero-length slot for it (matching the Apache Arrow writer's `AppendNull`, and the
+            /// `String` path above) so the bytes of a logically-NULL row never reach the IPC body.
+            PODArray<char> data;
+            Int64 cur = 0;
             for (size_t i = 0; i < num_rows; ++i)
             {
-                const UInt64 end = static_cast<UInt64>(i + 1) * n;
-                if (end > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
-                arrow_offsets[i + 1] = static_cast<Int32>(end);
+                if (!(*null_map)[i])
+                {
+                    cur += static_cast<Int64>(n);
+                    if (cur > std::numeric_limits<Int32>::max())
+                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
+                    const size_t old = data.size();
+                    data.resize(old + n);
+                    if (n)
+                        memcpy(data.data() + old, &chars[i * n], n);
+                }
+                arrow_offsets[i + 1] = static_cast<Int32>(cur);
             }
             appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
-            appendBuffer(cfs.getChars().data(), num_rows * n);
+            appendBuffer(data.data(), data.size());
             return;
         }
         case TypeIndex::IPv4: appendFixedWidth<ColumnVector<IPv4>>(*this, column, num_rows); return;
