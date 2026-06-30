@@ -689,7 +689,7 @@ void KeeperStorage::initializeSystemNodes()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes initialized twice");
 
     // insert root system path if it isn't already inserted
-    if (container.find(keeper_system_path) == container.end())
+    if (!container.contains(keeper_system_path))
     {
         Node system_node;
         container.insert(keeper_system_path, system_node);

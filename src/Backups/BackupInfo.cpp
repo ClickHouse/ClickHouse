@@ -123,7 +123,7 @@ namespace
     /// Returns the URL unchanged if there is nothing to remove.
     String removeCredentialsFromS3URL(const String & url)
     {
-        if (url.find('@') == String::npos && url.find('?') == String::npos)
+        if (!url.contains('@') && !url.contains('?'))
             return url;
 
         Poco::URI uri(url);

@@ -411,11 +411,11 @@ struct BloomFilterHash
 
         for (size_t bits_per_row = 1; bits_per_row < MAX_BITS_PER_ROW; ++bits_per_row)
         {
-            if (probability_lookup_table[bits_per_row][min_probability_index_each_bits[bits_per_row]] <= static_cast<double>(false_positive_rate))
+            if (probability_lookup_table[bits_per_row][min_probability_index_each_bits[bits_per_row]] <= false_positive_rate)
             {
                 size_t max_size_of_hash_functions = min_probability_index_each_bits[bits_per_row];
                 for (size_t size_of_hash_functions = max_size_of_hash_functions; size_of_hash_functions > 0; --size_of_hash_functions)
-                    if (probability_lookup_table[bits_per_row][size_of_hash_functions] > static_cast<double>(false_positive_rate))
+                    if (probability_lookup_table[bits_per_row][size_of_hash_functions] > false_positive_rate)
                         return std::pair<size_t, size_t>(bits_per_row, size_of_hash_functions + 1);
             }
         }
