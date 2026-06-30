@@ -72,8 +72,8 @@ def test_disk_hard_limit_hit(clickhouse_cluster):
         SELECT ProfileEvents['S3PutObject'], ProfileEvents['DiskConnectionsCreated'] FROM system.query_log WHERE query_id = '{insert_query_id}' AND type = 'QueryFinish'
     """
     ).strip().split("\t")
-    assert(int(puts) <= 10)
-    assert(int(connections) <= 10)
+    assert(int(puts) <= 11)
+    assert(int(connections) <= 11)
 
     select_query_id = f"select_compact_{int(random.random() * 1000000)}"
     result = node.query(

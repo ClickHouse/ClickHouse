@@ -1,0 +1,4 @@
+wide	s	['LZ4','ZSTD(3)']
+wide	t	['ZSTD(5)','ZSTD(5)']
+compact	s	['LZ4','ZSTD(3)']
+compact	t	['ZSTD(5)','ZSTD(5)']

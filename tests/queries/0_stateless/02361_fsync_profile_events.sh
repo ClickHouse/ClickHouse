@@ -24,6 +24,9 @@ $CLICKHOUSE_CLIENT -m -q "
 "
 
 ret=1
+# Includes the per-part `column_compression_codecs.txt` sidecar.
+expected_file_sync=10
+
 # Retry in case of fsync/fdatasync was too fast
 # (FileSyncElapsedMicroseconds/DirectorySyncElapsedMicroseconds was 0)
 for i in {1..100}; do
@@ -50,8 +53,8 @@ for i in {1..100}; do
     ")"
 
     # Non retriable errors
-    if [[ $FileSync -ne 9 ]]; then
-        echo "FileSync: $FileSync != 8" >&2
+    if [[ $FileSync -ne $expected_file_sync ]]; then
+        echo "FileSync: $FileSync != $expected_file_sync" >&2
         exit 2
     fi
     # Check that all files was synced

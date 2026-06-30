@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Compression/getCompressionCodecForFile.h>
 #include <DataTypes/NestedUtils.h>
 #include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
@@ -583,6 +584,33 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
     });
 
     return filename;
+}
+
+CompressionCodecPtr MergeTreeDataPartWide::getColumnCompressionCodec(const NameAndTypePair & column) const
+{
+    if (auto codec = tryGetColumnCompressionCodecFromFile(column))
+        return *codec;
+
+    String path_to_data_file;
+    getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    {
+        if (!path_to_data_file.empty())
+            return;
+
+        auto stream_name = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, getDataPartStorage(), storage.getSettings());
+        if (!stream_name)
+            return;
+
+        auto file_name = *stream_name + DATA_FILE_EXTENSION;
+        /// Some columns can have existing empty streams, for example `LowCardinality(Nullable(...))`.
+        if (getDataPartStorage().getFileSize(file_name) != 0)
+            path_to_data_file = file_name;
+    });
+
+    if (path_to_data_file.empty())
+        return IMergeTreeDataPart::getColumnCompressionCodec(column);
+
+    return getCompressionCodecForFile(getDataPartStorage(), path_to_data_file);
 }
 
 void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const

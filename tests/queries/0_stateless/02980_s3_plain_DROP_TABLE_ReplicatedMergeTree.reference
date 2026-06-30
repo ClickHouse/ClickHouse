@@ -5,6 +5,7 @@ all_X_X_X
 
 /backups/ordinary_default/data/ordinary_default/data_read/all_X_X_X:
 checksums.txt
+column_compression_codecs.txt
 columns.txt
 columns_substreams.txt
 count.txt
@@ -14,12 +15,12 @@ default_compression_codec.txt
 metadata_version.txt
 primary.cidx
 serialization.json
-
 Files after DETACH TABLE
 all_X_X_X
 
 /backups/ordinary_default/data/ordinary_default/data_read/all_X_X_X:
 checksums.txt
+column_compression_codecs.txt
 columns.txt
 columns_substreams.txt
 count.txt
@@ -29,4 +30,3 @@ default_compression_codec.txt
 metadata_version.txt
 primary.cidx
 serialization.json
-

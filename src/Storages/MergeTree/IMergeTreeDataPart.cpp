@@ -1560,6 +1560,9 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (getDataPartStorage().existsFile(DEFAULT_COMPRESSION_CODEC_FILE_NAME))
         result.emplace(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
 
+    if (getDataPartStorage().existsFile(COLUMN_COMPRESSION_CODECS_FILE_NAME))
+        result.emplace(COLUMN_COMPRESSION_CODECS_FILE_NAME);
+
     if (getDataPartStorage().existsFile(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME))
         result.emplace(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
 
@@ -1737,6 +1740,81 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
         result = CompressionCodecFactory::instance().getDefaultCodec();
 
     return result;
+}
+
+std::optional<CompressionCodecPtr> IMergeTreeDataPart::tryGetColumnCompressionCodecFromFile(const NameAndTypePair & column) const
+{
+    std::lock_guard lock(column_compression_codec_descriptions_mutex);
+    if (!column_compression_codec_descriptions_initialized)
+    {
+        if (auto file_buf = readFileIfExists(COLUMN_COMPRESSION_CODECS_FILE_NAME))
+        {
+            assertString("column compression codecs format version: 1\n", *file_buf);
+
+            size_t count = 0;
+            readText(count, *file_buf);
+            assertString(" columns:\n", *file_buf);
+
+            ParserCodec codec_parser;
+            for (size_t i = 0; i != count; ++i)
+            {
+                String column_name;
+                readBackQuotedStringWithSQLStyle(column_name, *file_buf);
+                assertChar(' ', *file_buf);
+
+                String codec_line;
+                readEscapedStringUntilEOL(codec_line, *file_buf);
+                assertChar('\n', *file_buf);
+
+                ReadBufferFromString buf(codec_line);
+                if (!checkString("CODEC", buf))
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot parse column codec for part {} from file {}, content '{}'", name, COLUMN_COMPRESSION_CODECS_FILE_NAME, codec_line);
+
+                column_compression_codec_descriptions.emplace(
+                    column_name,
+                    parseQuery(
+                        codec_parser,
+                        codec_line.data() + buf.getPosition(),
+                        codec_line.data() + codec_line.length(),
+                        "codec parser",
+                        0,
+                        DBMS_DEFAULT_MAX_PARSER_DEPTH,
+                        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
+            }
+        }
+
+        column_compression_codec_descriptions_initialized = true;
+    }
+
+    auto codec_it = column_compression_codec_descriptions.find(column.getNameInStorage());
+    if (codec_it == column_compression_codec_descriptions.end())
+        return {};
+
+    return CompressionCodecFactory::instance().get(codec_it->second, column.getTypeInStorage(), default_codec);
+}
+
+CompressionCodecPtr IMergeTreeDataPart::getColumnCompressionCodec(const NameAndTypePair & column) const
+{
+    if (auto codec = tryGetColumnCompressionCodecFromFile(column))
+        return *codec;
+
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto & storage_columns = metadata_snapshot->getColumns();
+    if (const auto column_description = storage_columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::AllPhysical, column.name))
+    {
+        if (column_description->codec)
+            return CompressionCodecFactory::instance().get(column_description->codec, column_description->type, default_codec);
+    }
+
+    return default_codec;
+}
+
+String IMergeTreeDataPart::getColumnCompressionCodecDescription(const NameAndTypePair & column) const
+{
+    if (auto codec = tryGetColumnCompressionCodecFromFile(column))
+        return (*codec)->getCodecDesc()->formatForLogging();
+
+    return {};
 }
 
 void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()

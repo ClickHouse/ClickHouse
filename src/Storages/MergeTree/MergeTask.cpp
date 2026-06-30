@@ -1914,6 +1914,9 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     const auto & columns_substreams = ctx->column_to->getColumnsSubstreams();
     global_ctx->gathered_data.columns_substreams = ColumnsSubstreams::merge(global_ctx->gathered_data.columns_substreams, columns_substreams, global_ctx->new_data_part->getColumns().getNames());
 
+    for (const auto & [column, codec] : ctx->column_to->getColumnCompressionCodecs())
+        global_ctx->column_compression_codecs[column] = codec;
+
     auto cached_marks = ctx->column_to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)
         global_ctx->cached_marks.emplace(name, std::move(marks));
@@ -2126,7 +2129,17 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, nullptr);
     else
-        global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, &global_ctx->storage_columns);
+    {
+        for (const auto & [column, codec] : global_ctx->to->getColumnCompressionCodecs())
+            global_ctx->column_compression_codecs[column] = codec;
+
+        global_ctx->to->finalizePart(
+            global_ctx->new_data_part,
+            global_ctx->gathered_data,
+            ctx->need_sync,
+            &global_ctx->storage_columns,
+            &global_ctx->column_compression_codecs);
+    }
 
     auto cached_marks = global_ctx->to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)

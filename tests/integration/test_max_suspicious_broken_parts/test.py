@@ -113,8 +113,8 @@ def test_max_suspicious_broken_parts_bytes():
     SETTINGS
         max_suspicious_broken_parts = 10,
         serialization_info_version = 'basic',
-        /* one part takes ~751 byte, so we allow failure of one part with these limit */
-        max_suspicious_broken_parts_bytes = 1000,
+        /* one part takes ~850 byte, so we allow failure of one part with these limit */
+        max_suspicious_broken_parts_bytes = 1200,
         /* Disable implicit index as it'd change the size */
         add_minmax_index_for_numeric_columns=0;
     """
@@ -152,8 +152,8 @@ def test_max_suspicious_broken_parts_bytes__wide():
         min_bytes_for_wide_part = 0,
         serialization_info_version = 'basic',
         max_suspicious_broken_parts = 10,
-        /* one part takes ~750 byte, so we allow failure of one part with these limit */
-        max_suspicious_broken_parts_bytes = 1000,
+        /* one part takes ~850 byte, so we allow failure of one part with these limit */
+        max_suspicious_broken_parts_bytes = 1200,
         /* Disable implicit index as it'd change the size */
         add_minmax_index_for_numeric_columns=0;
     """

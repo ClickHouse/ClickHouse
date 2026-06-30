@@ -166,6 +166,11 @@ ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_nam
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
 }
 
+void IMergeTreeDataPartWriter::addColumnCompressionCodec(const NameAndTypePair & column, const ASTPtr & codec_desc)
+{
+    column_compression_codecs.emplace(column.getNameInStorage(), codec_desc->formatWithSecretsOneLine());
+}
+
 
 IMergeTreeDataPartWriter::~IMergeTreeDataPartWriter() = default;
 

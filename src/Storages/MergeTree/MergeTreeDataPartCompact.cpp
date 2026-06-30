@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Compression/getCompressionCodecForFile.h>
 #include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
@@ -232,6 +233,71 @@ bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) co
 std::optional<time_t> MergeTreeDataPartCompact::getColumnModificationTime(const String & /* column_name */) const
 {
     return getDataPartStorage().getFileLastModified(DATA_FILE_NAME_WITH_EXTENSION).epochTime();
+}
+
+CompressionCodecPtr MergeTreeDataPartCompact::getColumnCompressionCodec(const NameAndTypePair & column) const
+{
+    if (auto codec = tryGetColumnCompressionCodecFromFile(column))
+        return *codec;
+
+    std::lock_guard lock(column_compression_codecs_mutex);
+    if (!column_compression_codecs_initialized)
+        loadColumnCompressionCodecs();
+
+    auto codec_it = column_compression_codecs.find(column.getNameInStorage());
+    if (codec_it != column_compression_codecs.end())
+        return codec_it->second;
+
+    return IMergeTreeDataPart::getColumnCompressionCodec(column);
+}
+
+void MergeTreeDataPartCompact::loadColumnCompressionCodecs() const
+{
+    if (getMarksCount() == 0 || !getDataPartStorage().existsFile(DATA_FILE_NAME_WITH_EXTENSION))
+    {
+        column_compression_codecs_initialized = true;
+        return;
+    }
+
+    if (index_granularity_info.mark_type.with_substreams && columns_substreams.empty())
+    {
+        column_compression_codecs_initialized = true;
+        return;
+    }
+
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    MergeTreeMarksLoader loader(
+        info_for_read,
+        /*mark_cache_=*/ nullptr,
+        index_granularity_info.getMarksFilePath(DATA_FILE_NAME),
+        index_granularity->getMarksCount(),
+        index_granularity_info,
+        /*save_marks_in_cache_=*/ false,
+        getReadSettings(),
+        /*load_marks_threadpool_=*/ nullptr,
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size());
+
+    auto marks_getter = loader.loadMarks();
+    std::unordered_map<String, CompressionCodecPtr> loaded_codecs;
+
+    size_t column_position = 0;
+    for (const auto & column : columns)
+    {
+        size_t mark_position = column_position;
+
+        if (index_granularity_info.mark_type.with_substreams)
+            mark_position = columns_substreams.getFirstSubstreamPosition(column_position);
+
+        auto mark = marks_getter->getMark(0, mark_position);
+        loaded_codecs.emplace(
+            column.getNameInStorage(),
+            getCompressionCodecForFile(getDataPartStorage(), DATA_FILE_NAME_WITH_EXTENSION, mark.offset_in_compressed_file));
+
+        ++column_position;
+    }
+
+    column_compression_codecs = std::move(loaded_codecs);
+    column_compression_codecs_initialized = true;
 }
 
 void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) const

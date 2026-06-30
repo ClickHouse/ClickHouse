@@ -94,6 +94,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
         else /// otherwise return only generic codecs and don't use info about data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
+        addColumnCompressionCodec(name_and_type, effective_codec_desc);
 
         UInt64 codec_id = compression_codec->getHash();
         /// Exception safety: if `make_shared` throws, the map is not modified, avoiding null entries in `cancel`.
