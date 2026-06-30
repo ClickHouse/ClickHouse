@@ -254,6 +254,8 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
             "that can provide a loop-free signal (e.g. MergeTree, Memory, Log) it never returns to an earlier "
             "value across a change-and-change-back; for URL and object storage it is the resource's strong ETag, "
             "which is best-effort, as it can repeat if the content is rewritten back to an identical state. "
+            "Merge and Distributed combine their underlying tables' values and are likewise best-effort if the "
+            "set of underlying tables changes during a query. "
             "NULL if the engine cannot tell whether its data has changed. Computing it may be expensive for some "
             "engines (e.g. Merge, Distributed, URL), so it is only calculated when this column is selected."
         },

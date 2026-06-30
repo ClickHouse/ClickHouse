@@ -36,8 +36,9 @@ makes the query cache consistent with respect to data changes: a cached result i
 were changed since the entry was cached. Once any referenced table changes, the query is recomputed. This relies on each table engine being
 able to report whether its data changed; if a query references a table that cannot do so (for example a table function such as `url`), the
 query cache is not used for that query. For `URL` and object-storage tables this report is based on the resource's strong `ETag` and is
-best-effort: a result could in rare cases be reused if the content is rewritten back to a byte-identical state during the read. Note that
-checking the referenced tables on each lookup may be expensive for some engines (e.g. `Merge`, `Distributed`, `URL`).
+best-effort: a result could in rare cases be reused if the content is rewritten back to a byte-identical state during the read. `Merge` and
+`Distributed` are likewise best-effort if the set of underlying tables changes during a query. Note that checking the referenced tables on
+each lookup may be expensive for some engines (e.g. `Merge`, `Distributed`, `URL`).
 
 ## Configuration settings and usage {#configuration-settings-and-usage}
 
