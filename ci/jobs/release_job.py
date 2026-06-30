@@ -478,13 +478,26 @@ def main():
         and not args.only_repo
         and not args.only_docker
     ):
+        # Restore the working tree after the changelog/version-bump steps, which
+        # dirty it (only when create_new_release ran, but the reset/checkout is a
+        # harmless no-op otherwise). The trailing --set-progress-completed is the
+        # closing half of the progress transaction opened by --set-progress-started
+        # in "Bump Docker Versions, Changelog, Security"; that opening is gated on
+        # create_new_release, so the close must be too. On a recovery / out-of-order
+        # run the opening never runs, progress_status stays OK, and an unconditional
+        # --set-progress-completed would fail its "must be FAILED before set to OK"
+        # assertion after everything was already published.
+        restore_commands = [
+            "git reset --hard HEAD",
+            f"git checkout {original_branch}",
+        ]
+        if create_new_release:
+            restore_commands.append(
+                "python3 ./ci/jobs/create_release.py --set-progress-completed"
+            )
         step(
             name="Complete Previous Steps and Restore Git State",
-            command=[
-                "git reset --hard HEAD",
-                f"git checkout {original_branch}",
-                "python3 ./ci/jobs/create_release.py --set-progress-completed",
-            ],
+            command=restore_commands,
             workdir=REPO_PATH,
         )
 
