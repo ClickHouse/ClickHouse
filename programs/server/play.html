@@ -2489,6 +2489,11 @@ class QueryResultElement extends HTMLElement
                 console.warn('no integrity for', src);
             }
             script.addEventListener('load', function() { resolve(true); });
+            /// Reject on a failed load (blocked/unavailable CDN, network error, or SRI mismatch)
+            /// so awaiting callers (the chart/graph renderers in the query lifecycle) fall into
+            /// their `catch` and report the error instead of hanging forever - the script `error`
+            /// event otherwise leaves this promise pending and the run stuck in flight.
+            script.addEventListener('error', function() { reject(new Error('Failed to load script: ' + src)); });
             document.head.appendChild(script);
         });
     }
@@ -2498,7 +2503,10 @@ class QueryResultElement extends HTMLElement
         if (QueryResultElement._vizInstance) { return QueryResultElement._vizInstance; }
         if (!QueryResultElement._loadVizPromise)
         {
-            QueryResultElement._loadVizPromise = this._loadJS('/js/viz-standalone.js');
+            /// Drop the cached promise on failure so a later attempt can retry the load
+            /// instead of re-awaiting a permanently rejected promise.
+            QueryResultElement._loadVizPromise = this._loadJS('/js/viz-standalone.js')
+                .catch((e) => { QueryResultElement._loadVizPromise = null; throw e; });
         }
         await QueryResultElement._loadVizPromise;
         if (typeof Viz === 'undefined')
@@ -2513,7 +2521,10 @@ class QueryResultElement extends HTMLElement
     {
         if (QueryResultElement._loadUplotPromise) { return QueryResultElement._loadUplotPromise; }
         QueryResultElement._loadUplotPromise = this._loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
-            'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA');
+            'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA')
+            /// Drop the cached promise on failure so a later attempt can retry the load
+            /// instead of re-awaiting a permanently rejected promise.
+            .catch((e) => { QueryResultElement._loadUplotPromise = null; throw e; });
         return QueryResultElement._loadUplotPromise;
     }
 
@@ -3396,6 +3407,24 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
                 targetResultEl.updateRaw(new_content);
             }
         }
+
+        if (targetResultEl.isExplainGraph) {
+            /// Bail inside renderGraph (after the Viz load, before mutating the DOM) if a tab
+            /// switch superseded this request during the load. Kept inside the `try` so a Viz
+            /// loader failure (like the uPlot one for charts) is reported as a normal error.
+            await targetResultEl.renderGraph(() => posted_request_num === request_num);
+        } else {
+            if (targetResultEl._extremes['min'] && targetResultEl._extremes['max']) targetResultEl.renderExtremes();
+            if (is_table) targetResultEl.renderTotals();
+            if (is_table) targetResultEl.transposeIfNeeded();
+        }
+
+        /// A tab switch during an awaited renderer (chart/graph loader) makes the render bail
+        /// without painting; report cancellation too, so the caller does not then update the
+        /// now-active tab's shared progress/download/history state for this stale run.
+        if (posted_request_num != request_num) { return { cancelled: true }; }
+
+        return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_image, is_error };
     } catch (e) {
         if (posted_request_num != request_num) { return { cancelled: true }; }
 
@@ -3410,23 +3439,6 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         targetResultEl.renderError(reply);
         return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
     }
-
-    if (targetResultEl.isExplainGraph) {
-        /// Bail inside renderGraph (after the Viz load, before mutating the DOM) if a tab
-        /// switch superseded this request during the load.
-        await targetResultEl.renderGraph(() => posted_request_num === request_num);
-    } else {
-        if (targetResultEl._extremes['min'] && targetResultEl._extremes['max']) targetResultEl.renderExtremes();
-        if (is_table) targetResultEl.renderTotals();
-        if (is_table) targetResultEl.transposeIfNeeded();
-    }
-
-    /// A tab switch during an awaited renderer (chart/graph loader) makes the render bail
-    /// without painting; report cancellation too, so the caller does not then update the
-    /// now-active tab's shared progress/download/history state for this stale run.
-    if (posted_request_num != request_num) { return { cancelled: true }; }
-
-    return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_image, is_error };
 }
 
 /// Execute a single query (legacy path, used for single-query mode).
@@ -3744,7 +3756,18 @@ async function restoreFromHistory(state, token) {
         /// renderChart awaits the uPlot loader on first use; the predicate makes it bail
         /// inside (right after the load, before mutating the DOM) if a tab switch superseded
         /// this activation, and we re-check here too.
-        await resultEl.renderChart(JSON.parse(result.data), () => token === request_num);
+        try {
+            await resultEl.renderChart(JSON.parse(result.data), () => token === request_num);
+        } catch (e) {
+            /// The external chart library failed to load (e.g. CDN blocked). Show the error
+            /// for this saved snapshot instead of throwing out of the activation half-rendered.
+            if (token !== request_num) return;
+            console.log(e);
+            resultEl.renderError(e.toString());
+            logoEl.style.display = 'none';
+            progressEl.clear();
+            return;
+        }
         if (token !== request_num) { return; }
     } else {
         is_raw = true;
@@ -3752,7 +3775,17 @@ async function restoreFromHistory(state, token) {
     }
 
     if (resultEl.isExplainGraph) {
-        await resultEl.renderGraph(() => token === request_num);
+        try {
+            await resultEl.renderGraph(() => token === request_num);
+        } catch (e) {
+            /// The Viz loader failed; show the error instead of throwing out of the activation.
+            if (token !== request_num) return;
+            console.log(e);
+            resultEl.renderError(e.toString());
+            logoEl.style.display = 'none';
+            progressEl.clear();
+            return;
+        }
         if (token !== request_num) return;
     } else {
         if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
