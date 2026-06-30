@@ -8,5 +8,7 @@ hello world
 SELECT 1\nSETTINGS max_threads = {threads:UInt64}
 BAD_QUERY_PARAMETER
 UNKNOWN_QUERY_PARAMETER
-SYNTAX_ERROR
+1
+BackupQuery
+RestoreQuery
 SYNTAX_ERROR

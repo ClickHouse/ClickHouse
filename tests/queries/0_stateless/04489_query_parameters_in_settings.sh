@@ -34,9 +34,20 @@ $CLICKHOUSE_CLIENT -q "SELECT formatQuery('SELECT 1 SETTINGS max_threads = {thre
 $CLICKHOUSE_CLIENT --param_bad='abc' -q "SELECT 1 SETTINGS max_threads = {bad:UInt64}" 2>&1 | grep -o "BAD_QUERY_PARAMETER" | head -n1
 $CLICKHOUSE_CLIENT -q "SELECT 1 SETTINGS max_threads = {nonexistent:UInt64}" 2>&1 | grep -o "UNKNOWN_QUERY_PARAMETER" | head -n1
 
-# The feature is scoped to the query SETTINGS clause and standalone SET queries (both parsed by
-# ParserSetQuery). The SETTINGS lists of BACKUP / RESTORE go through a separate parser path and do
-# not support query parameters, so the placeholder is rejected at parse time rather than silently
-# misbehaving.
-$CLICKHOUSE_CLIENT --param_threads=4 -q "BACKUP TABLE system.one TO Disk('backups', 'b') SETTINGS max_threads = {threads:UInt64}" 2>&1 | grep -o "SYNTAX_ERROR" | head -n1
-$CLICKHOUSE_CLIENT --param_threads=4 -q "RESTORE TABLE system.one FROM Disk('backups', 'b') SETTINGS max_threads = {threads:UInt64}" 2>&1 | grep -o "SYNTAX_ERROR" | head -n1
+# Query parameters work wherever setting values are parsed by ParserSetQuery. This includes the
+# storage SETTINGS clause of CREATE TABLE.
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS 04489_storage_setting"
+$CLICKHOUSE_CLIENT --param_g=4096 -q "CREATE TABLE 04489_storage_setting (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = {g:UInt64}"
+$CLICKHOUSE_CLIENT -q "SELECT create_table_query LIKE '%index_granularity = 4096%' FROM system.tables WHERE database = currentDatabase() AND name = '04489_storage_setting'"
+$CLICKHOUSE_CLIENT -q "DROP TABLE 04489_storage_setting"
+
+# It also covers the SETTINGS clause of BACKUP / RESTORE, which is the trailing SETTINGS clause of a
+# query (also parsed by ParserSetQuery), so the placeholder is accepted at parse time. Shown via
+# EXPLAIN AST to avoid actually running a backup.
+$CLICKHOUSE_CLIENT --param_threads=4 -q "EXPLAIN AST BACKUP TABLE system.one TO Disk('backups', 'b') SETTINGS max_threads = {threads:UInt64}" 2>&1 | grep -o "BackupQuery" | head -n1
+$CLICKHOUSE_CLIENT --param_threads=4 -q "EXPLAIN AST RESTORE TABLE system.one FROM Disk('backups', 'b') SETTINGS max_threads = {threads:UInt64}" 2>&1 | grep -o "RestoreQuery" | head -n1
+
+# The boundary is the separate ParserSetQuery::parseNameValuePair path (used by CREATE NAMED
+# COLLECTION, dictionaries, ...), which does not support query parameters: a placeholder there is
+# rejected at parse time with a SYNTAX_ERROR rather than silently misbehaving.
+$CLICKHOUSE_CLIENT --param_v='secret' -q "CREATE NAMED COLLECTION 04489_nc AS key1 = {v:String}" 2>&1 | grep -o "SYNTAX_ERROR" | head -n1

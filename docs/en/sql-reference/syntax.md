@@ -375,7 +375,7 @@ SELECT * FROM numbers(10) SETTINGS max_threads = {threads:UInt64};
 SET max_threads = {threads:UInt64};
 ```
 
-This is limited to the query `SETTINGS` clause and standalone `SET` queries. Query parameters are **not** supported as setting values in the `SETTINGS` clause of other statements, such as `CREATE TABLE ... SETTINGS ...` or `BACKUP` / `RESTORE`.
+This works wherever setting values are written through the standard `SETTINGS` syntax: standalone `SET` queries and the `SETTINGS` clause of a query, including `SELECT`, `INSERT`, the engine/storage `SETTINGS` of `CREATE TABLE`, and `BACKUP` / `RESTORE`. The exception is the separate name-value syntax used by `CREATE NAMED COLLECTION` and dictionary `SETTINGS`, where a query parameter as a setting value is rejected at parse time with a `SYNTAX_ERROR`.
 </details>
 
 :::note
