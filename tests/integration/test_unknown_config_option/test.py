@@ -227,6 +227,45 @@ node_graphite_nested_foreign = cluster_graphite_nested_foreign.add_instance(
 )
 caught_graphite_nested_foreign_exception = ""
 
+# Negative case: a `GraphiteMergeTree`-shaped section whose `<pattern>` has only a `<regexp>` and
+# neither a `<function>` nor a `<retention>`. `appendGraphitePattern` rejects such a rule with
+# `NO_ELEMENTS_IN_CONFIG`, so the validator must require each `<pattern>`/`<default>` rule to carry at
+# least one `<function>`/`<retention*>`, otherwise a typo'd section with only recognized child names
+# sneaks through.
+cluster_graphite_no_aggregation = ClickHouseCluster(
+    __file__, name="graphite_no_aggregation"
+)
+node_graphite_no_aggregation = cluster_graphite_no_aggregation.add_instance(
+    "node_graphite_no_aggregation",
+    main_configs=["configs/config.d/graphite_rule_no_aggregation.xml"],
+)
+caught_graphite_no_aggregation_exception = ""
+
+# Negative case: a `GraphiteMergeTree`-shaped section whose `<default>` rule sets a non-`all`
+# `<rule_type>`. `appendGraphitePattern` rejects a default whose `rule_type` is not `all` with
+# `BAD_ARGUMENTS`, so the validator must mirror that and reject the whole section.
+cluster_graphite_default_rule_type = ClickHouseCluster(
+    __file__, name="graphite_default_rule_type"
+)
+node_graphite_default_rule_type = cluster_graphite_default_rule_type.add_instance(
+    "node_graphite_default_rule_type",
+    main_configs=["configs/config.d/graphite_default_rule_type_not_all.xml"],
+)
+caught_graphite_default_rule_type_exception = ""
+
+# Negative case: a `GraphiteMergeTree`-shaped section whose `<pattern>` carries an unrecognized
+# `<rule_type>` value. `ruleType` (called by `appendGraphitePattern`) throws `BAD_ARGUMENTS` for any
+# value other than `all`/`plain`/`tagged`/`tag_list`, so the validator must mirror that and reject the
+# whole section.
+cluster_graphite_invalid_rule_type = ClickHouseCluster(
+    __file__, name="graphite_invalid_rule_type"
+)
+node_graphite_invalid_rule_type = cluster_graphite_invalid_rule_type.add_instance(
+    "node_graphite_invalid_rule_type",
+    main_configs=["configs/config.d/graphite_invalid_rule_type.xml"],
+)
+caught_graphite_invalid_rule_type_exception = ""
+
 # Negative case: a `<protocols>...<handlers>NAME</handlers>` reference whose handler prefix does
 # NOT exist. `createHTTPHandlerFactory` falls back to the default `http_handlers` when
 # `!config.has(NAME)` and never reads the named section, so the validator must NOT exempt the
@@ -474,6 +513,57 @@ def start_graphite_nested_foreign_cluster():
                 caught_graphite_nested_foreign_exception += "\n" + f.read()
     yield
     cluster_graphite_nested_foreign.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_graphite_no_aggregation_cluster():
+    global caught_graphite_no_aggregation_exception
+    try:
+        cluster_graphite_no_aggregation.start()
+    except Exception as e:
+        caught_graphite_no_aggregation_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_no_aggregation.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_no_aggregation_exception += "\n" + f.read()
+    yield
+    cluster_graphite_no_aggregation.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_graphite_default_rule_type_cluster():
+    global caught_graphite_default_rule_type_exception
+    try:
+        cluster_graphite_default_rule_type.start()
+    except Exception as e:
+        caught_graphite_default_rule_type_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_default_rule_type.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_default_rule_type_exception += "\n" + f.read()
+    yield
+    cluster_graphite_default_rule_type.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_graphite_invalid_rule_type_cluster():
+    global caught_graphite_invalid_rule_type_exception
+    try:
+        cluster_graphite_invalid_rule_type.start()
+    except Exception as e:
+        caught_graphite_invalid_rule_type_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_invalid_rule_type.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_invalid_rule_type_exception += "\n" + f.read()
+    yield
+    cluster_graphite_invalid_rule_type.shutdown()
 
 
 @pytest.fixture(scope="module")
@@ -908,6 +998,44 @@ def test_graphite_nested_foreign_child_rejected(start_graphite_nested_foreign_cl
     # key. The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
     assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_nested_foreign_exception
     assert "graphite_nested_foreign" in caught_graphite_nested_foreign_exception
+
+
+def test_graphite_rule_without_aggregation_rejected(
+    start_graphite_no_aggregation_cluster,
+):
+    # `<graphite_rule_no_aggregation>` carries a `<pattern>` whose only child is `<regexp>`: every child
+    # name is a recognized rollup key, but `appendGraphitePattern` rejects a rule with neither a
+    # `<function>` nor a `<retention>` (`NO_ELEMENTS_IN_CONFIG`). The validator must mirror that and
+    # reject the whole section as an unknown top-level key, otherwise such a typo sneaks through. The
+    # node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_no_aggregation_exception
+    assert "graphite_rule_no_aggregation" in caught_graphite_no_aggregation_exception
+
+
+def test_graphite_default_rule_type_not_all_rejected(
+    start_graphite_default_rule_type_cluster,
+):
+    # `<graphite_default_rule_type_not_all>` carries a valid-looking `<default>` rule (function +
+    # retention) but sets `<rule_type>plain</rule_type>`. `appendGraphitePattern` rejects a `<default>`
+    # whose `rule_type` is not `all` (`BAD_ARGUMENTS`), so the validator must mirror that and reject the
+    # whole section. The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_default_rule_type_exception
+    assert (
+        "graphite_default_rule_type_not_all"
+        in caught_graphite_default_rule_type_exception
+    )
+
+
+def test_graphite_invalid_rule_type_rejected(
+    start_graphite_invalid_rule_type_cluster,
+):
+    # `<graphite_invalid_rule_type>` carries a `<pattern>` with function + regexp but an unrecognized
+    # `<rule_type>not_a_rule_type</rule_type>`. `ruleType` (called by `appendGraphitePattern`) throws
+    # `BAD_ARGUMENTS` for any value other than `all`/`plain`/`tagged`/`tag_list`, so the validator must
+    # mirror that and reject the whole section. The node must fail to start with
+    # `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_invalid_rule_type_exception
+    assert "graphite_invalid_rule_type" in caught_graphite_invalid_rule_type_exception
 
 
 def test_protocols_missing_handler_prefix_not_exempted(start_protocols_missing_cluster):

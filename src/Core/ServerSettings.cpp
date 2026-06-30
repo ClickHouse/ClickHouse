@@ -2558,29 +2558,54 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// contain a `<pattern>` (alongside an unrelated child the parser rejects) pass validation — a
     /// false negative for exactly the unknown top-level sections this check is meant to catch.
     ///
-    /// The check is recursive: a `<pattern>`/`<default>` rule must itself contain only the children
-    /// `appendGraphitePattern` accepts — `regexp`, `function`, `rule_type`, or a `retention*` block —
-    /// otherwise the parser throws on the foreign nested key. Validating only the section's immediate
-    /// children would accept e.g. `<default><not_a_graphite_key>...</not_a_graphite_key></default>`,
-    /// which `appendGraphitePattern` rejects: another false negative.
-    auto graphite_rule_children_recognized = [&config](const String & rule_element) -> bool
+    /// The check is also recursive into each rollup rule.
+    /// A `<pattern>`/`<default>` rollup rule is accepted by `appendGraphitePattern` only when it is
+    /// structurally *and* semantically valid. Mirror all of its config-level checks so a typo'd
+    /// section that merely resembles a rollup rule is not exempted from the unknown-key check:
+    ///  - every child is `regexp`, `function`, `rule_type` or a `retention*` block (anything else
+    ///    throws `UNKNOWN_ELEMENT_IN_CONFIG`). `<retention>` is read only as `.age`/`.precision`, so
+    ///    its grandchildren are not checked;
+    ///  - the rule carries at least one `function` or `retention*` child, otherwise the parser throws
+    ///    `NO_ELEMENTS_IN_CONFIG` ("at least one of an aggregate function or retention rules is
+    ///    mandatory");
+    ///  - every `rule_type` value parses to a known type (`all`/`plain`/`tagged`/`tag_list`), otherwise
+    ///    `ruleType` throws `BAD_ARGUMENTS`;
+    ///  - the `<default>` rule keeps `rule_type` as `all` (it defaults to `all` when absent), otherwise
+    ///    the parser throws `BAD_ARGUMENTS` ("Default must have rule_type all").
+    /// Mirroring only the child *names* (as an earlier version did) would exempt e.g.
+    /// `<pattern><regexp>.*</regexp></pattern>` — a rule the parser rejects — while never rejecting a
+    /// section the parser would accept.
+    auto graphite_rule_valid = [&config](const String & rule_element, bool is_default) -> bool
     {
         Poco::Util::AbstractConfiguration::Keys rule_children;
         config.keys(rule_element, rule_children);
+        bool has_function_or_retention = false;
         for (const auto & rule_child : rule_children)
         {
-            /// Mirror `appendGraphitePattern`: it accepts `regexp`, `function`, `rule_type` and any
-            /// `retention*` block (`startsWith(key, "retention")`), throwing on anything else. It
-            /// reads `<retention>` only as `.age`/`.precision`, so its grandchildren are not checked.
             const bool ok = rule_child == "regexp" || rule_child == "function"
                 || rule_child == "rule_type" || rule_child.starts_with("retention");
             if (!ok)
                 return false;
+
+            if (rule_child == "function" || rule_child.starts_with("retention"))
+                has_function_or_retention = true;
+
+            if (rule_child == "rule_type")
+            {
+                const String rule_type = config.getString(rule_element + ".rule_type");
+                const bool known_rule_type = rule_type == "all" || rule_type == "plain"
+                    || rule_type == "tagged" || rule_type == "tag_list";
+                if (!known_rule_type)
+                    return false;
+                /// `appendGraphitePattern` rejects a `<default>` whose `rule_type` is not `all`.
+                if (is_default && rule_type != "all")
+                    return false;
+            }
         }
-        return true;
+        return has_function_or_retention;
     };
 
-    auto looks_like_graphite_rollup = [&config, &graphite_rule_children_recognized](const String & section) -> bool
+    auto looks_like_graphite_rollup = [&config, &graphite_rule_valid](const String & section) -> bool
     {
         Poco::Util::AbstractConfiguration::Keys children;
         config.keys(section, children);
@@ -2601,9 +2626,10 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             if (!is_pattern && !is_default && !is_column)
                 return false;
 
-            /// Recurse into rollup rules: a `<pattern>`/`<default>` carrying a foreign nested key is
-            /// rejected by `appendGraphitePattern`, so the whole section is an unknown top-level key.
-            if ((is_pattern || is_default) && !graphite_rule_children_recognized(section + "." + child))
+            /// Recurse into rollup rules: a `<pattern>`/`<default>` that `appendGraphitePattern` would
+            /// reject (a foreign nested key, no `function`/`retention`, or an invalid or
+            /// `default`-incompatible `rule_type`) makes the whole section an unknown top-level key.
+            if ((is_pattern || is_default) && !graphite_rule_valid(section + "." + child, is_default))
                 return false;
         }
         return true;
