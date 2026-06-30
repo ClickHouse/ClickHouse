@@ -221,8 +221,11 @@ public:
 
     void writePrefix() override
     {
-        executeSQLite(sqlite_db.get(), makeCreateTableQuery(*header, settings.sqlite.output_table_name));
+        /// Start the transaction before the DDL so that the table creation and the row inserts commit or roll back together.
+        /// Otherwise `CREATE TABLE` would be autocommitted, and a later failure during inserts would leave an empty table
+        /// behind in the direct local-file output path.
         executeSQLite(sqlite_db.get(), "BEGIN");
+        executeSQLite(sqlite_db.get(), makeCreateTableQuery(*header, settings.sqlite.output_table_name));
         insert_statement = prepareSQLiteStatement(sqlite_db.get(), makeInsertQuery(*header, settings.sqlite.output_table_name));
     }
 
