@@ -4,6 +4,7 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
@@ -705,7 +706,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     /// Holds the real probationary evictions that free room for the downgraded
     /// protected entries (empty if probationary already has room). The downgrade
     /// move itself is committed in the afterEvict* callbacks.
-    EvictionCandidates eviction_candidates(&FileCache::onSegmentEvicted);
+    EvictionCandidates eviction_candidates(getOnEvictCallback());
     FileCacheReserveStat downgrade_stat;
     InvalidatedEntriesInfos invalidated_entries;
 
