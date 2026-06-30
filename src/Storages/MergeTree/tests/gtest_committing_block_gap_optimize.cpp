@@ -9,11 +9,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/registerDatabases.h>
-#include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
-#include <Formats/registerFormats.h>
-#include <Functions/registerFunctions.h>
-#include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Storages/registerStorages.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/SharedThreadPools.h>
@@ -27,6 +23,7 @@
 #include <Common/QueryScope.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 using namespace DB;
@@ -67,13 +64,16 @@ ContextMutablePtr setUpContext()
         getPartsCleaningThreadPool().initializeWithDefaultSettingsIfNotInitialized();
 
         registerInterpreters();
-        registerFunctions();
-        registerAggregateFunctions();
+        /// Functions, aggregate functions and formats register into process-wide factories that
+        /// other gtests in this same unit_tests_dbms binary also populate. The plain register*()
+        /// helpers throw on a second registration, so go through the shared try-once wrappers
+        /// (gtest_global_register.h) which register at most once per process.
+        tryRegisterFunctions();
+        tryRegisterAggregateFunctions();
+        tryRegisterFormats();
         registerDatabases();
         registerStorages();
-        registerDictionaries();
         registerDisks(/*global_skip_access_check=*/true);
-        registerFormats();
 
         /// A default profile and user are required before running queries: ProcessList and settings
         /// application resolve them. Use the same minimal users config clickhouse-local uses.
