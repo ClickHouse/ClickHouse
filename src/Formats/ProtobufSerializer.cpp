@@ -1482,6 +1482,9 @@ namespace
             }
             reader->endNestedMessage();
 
+            if (nanos < 0 || nanos >= nanos_per_second)
+                cannotConvertValue(toString(nanos), field_descriptor.message_type()->full_name(), is_datetime64 ? "DateTime64" : "DateTime");
+
             Int64 ticks = 0;
             if (!DecimalUtils::multiplyAdd<Int64, false>(seconds, ticks_per_second, nanos / nanos_per_tick, ticks))
                 cannotConvertValue(toString(seconds), field_descriptor.message_type()->full_name(), is_datetime64 ? "DateTime64" : "DateTime");
@@ -1505,6 +1508,7 @@ namespace
 
     private:
         static constexpr bool is_datetime64 = std::is_same_v<ColumnType, ColumnDecimal<DateTime64>>;
+        static constexpr Int64 nanos_per_second = 1'000'000'000;
 
         Int64 getTicks(size_t row_num) const
         {
