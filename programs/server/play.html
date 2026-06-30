@@ -2090,8 +2090,12 @@ class QueryResultElement extends HTMLElement
             if (!m) { return NaN; }
             const base = Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
             /// Add the fractional seconds OUTSIDE `Date.UTC`, whose millisecond argument is truncated
-            /// to an integer, as a fractional number of milliseconds. This keeps sub-millisecond
-            /// `DateTime64` values ordered and scalable (down to the precision of a JS double).
+            /// to an integer, as a fractional number of milliseconds. The result is a JS double, so
+            /// it is exact to roughly microsecond precision near modern timestamps (the ULP of a
+            /// ~1.7e12 ms value is ~2e-4 ms). That covers `Date`, `DateTime` and `DateTime64` up to
+            /// microseconds; `DateTime64(9)` differences below a microsecond are not distinguished
+            /// in the color scale, which is acceptable for a visualization (such a span is not
+            /// visually meaningful) and would otherwise require BigInt arithmetic throughout.
             const frac_ms = m[7] ? Number('0.' + m[7]) * 1000 : 0;
             return base + frac_ms;
         }
