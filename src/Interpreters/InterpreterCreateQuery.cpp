@@ -2832,8 +2832,11 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
                 /// is later misread as a rolled-back transaction (see
                 /// `VersionMetadataOnDisk::loadMetadata`) and wrongly discarded as `Outdated`,
                 /// which resurrects pre-mutation data after `ATTACH AS REPLICATED`.
-                for (const auto * file_name : {VersionMetadata::TXN_VERSION_METADATA_FILE_NAME,
-                                               VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME})
+                /// Remove the temporary file first so the cleanup is fail-closed: if removing the
+                /// main file then throws, the part is left with a valid `txn_version.txt` (still a
+                /// committed part) rather than the dangerous tmp-only state described above.
+                for (const auto * file_name : {VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME,
+                                               VersionMetadata::TXN_VERSION_METADATA_FILE_NAME})
                 {
                     String txn_file = fs::path(part_path) / file_name;
                     if (disk->existsFile(txn_file))
