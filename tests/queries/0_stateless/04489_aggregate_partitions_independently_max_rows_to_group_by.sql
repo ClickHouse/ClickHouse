@@ -28,6 +28,12 @@ SET enable_parallel_replicas = 0;
 -- via the merge phase that the optimization skips.
 SET optimize_aggregation_in_order = 0;
 
+-- The CI test profile (`tests/config/users.d/limits.yaml`) sets `max_rows_to_group_by = 10G` as a
+-- high "won't limit anything" safety net. That value is non-zero, so the optimization's guard would
+-- already disable independent aggregation here and make the first check below return 0 instead of 1.
+-- Reset the limit to 0 so the no-limit case is actually exercised.
+SET max_rows_to_group_by = 0;
+
 -- Without a limit the optimization is applied: each partition is read through a separate port and
 -- the cross-partition merge is skipped. This makes sure the setup actually triggers the
 -- optimization, so the check below is not vacuous. Expected: 1.
