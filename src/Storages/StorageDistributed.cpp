@@ -1783,17 +1783,31 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
             return {};
         auto metadata = storage->getInMemoryMetadataPtr(context, false);
         auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
-        return storage->getModificationHash(snapshot, context);
+        auto table_hash = storage->getModificationHash(snapshot, context);
+        if (!table_hash)
+            return {};
+        /// Fold the child table's UUID so that a dropped/recreated same-name child is distinguished even
+        /// for engines whose own hash does not fold it: URL and object-storage hashes are derived only
+        /// from the resource (its `ETag`), so without the UUID a `Distributed` over such a child could not
+        /// tell a re-incarnation that happens to report the same resource hash from the original table.
+        SipHash with_identity;
+        with_identity.update(storage->getStorageID().uuid);
+        with_identity.update(*table_hash);
+        return with_identity.get128();
     }
 
-    /// Ask the shard for the modification hash of the underlying table through system.tables.
-    const String query = "SELECT modification_hash FROM system.tables WHERE database = "
+    /// Ask the shard for the modification hash and the UUID of the underlying table through system.tables.
+    /// The UUID is folded for the same reason as on the local path above.
+    const String query = "SELECT modification_hash, toString(uuid) AS uuid FROM system.tables WHERE database = "
         + quoteString(table_id.database_name) + " AND name = " + quoteString(table_id.table_name);
 
     auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), table_id);
 
-    auto type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt128>());
-    auto sample_block = std::make_shared<const Block>(Block{{type->createColumn(), type, "modification_hash"}});
+    auto hash_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt128>());
+    auto uuid_type = std::make_shared<DataTypeString>();
+    auto sample_block = std::make_shared<const Block>(Block{
+        {hash_type->createColumn(), hash_type, "modification_hash"},
+        {uuid_type->createColumn(), uuid_type, "uuid"}});
 
     RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
     executor.setPoolMode(PoolMode::GET_ONE);
@@ -1801,16 +1815,20 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
     std::optional<UInt128> result;
     for (Block current = executor.readBlock(); !current.empty(); current = executor.readBlock())
     {
-        const auto & column = current.getByName("modification_hash").column;
-        for (size_t i = 0; i < column->size(); ++i)
+        const auto & hash_column = current.getByName("modification_hash").column;
+        const auto & uuid_column = current.getByName("uuid").column;
+        for (size_t i = 0; i < hash_column->size(); ++i)
         {
-            Field value = (*column)[i];
+            Field value = (*hash_column)[i];
             if (value.isNull())
             {
                 executor.finish();
                 return {}; /// The shard cannot tell whether its table changed.
             }
-            result = value.safeGet<UInt128>();
+            SipHash with_identity;
+            with_identity.update((*uuid_column)[i].safeGet<String>());
+            with_identity.update(value.safeGet<UInt128>());
+            result = with_identity.get128();
         }
     }
     executor.finish();
