@@ -620,6 +620,17 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
     }
 
+    /// Column matchers (`*`, `COLUMNS(...)`) in default/materialized/alias expressions are stored unexpanded and
+    /// re-expanded against the table's `ColumnsDescription` every time the default is evaluated. The metadata is
+    /// flattened below (with `flatten_nested = 1`), so a matcher in a default expression is expanded at execution
+    /// time against the flattened schema. Validate against the same flattened schema, otherwise a matcher could
+    /// expand differently (or to nothing) at runtime than during validation — e.g. `length(COLUMNS('^n$'))` over a
+    /// `Nested` column `n` would validate against `n` but execute against `n.x`, persisting a default that throws on
+    /// insert. Flatten the validation columns under the same condition as `res` below.
+    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
+        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
+        columns_for_default_validation.flattenNested();
+
     Block defaults_sample_block;
     /// Set missing types and wrap default_expression's in a conversion-function if necessary.
     /// We try to avoid that validation while restoring from a backup because it might be slow or troublesome
