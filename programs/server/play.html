@@ -556,6 +556,17 @@
             color: var(--text-color);
         }
 
+        /* The rule above removes the default outline; re-add a clear one for
+           keyboard focus only (Tab), so the controls show where focus is while a
+           mouse click does not draw a ring. Covers the real <button>s (Run, Run
+           all, Download) and the icon "buttons" (copy, download, theme switcher). */
+        button:focus-visible,
+        [role="button"]:focus-visible
+        {
+            outline: 2px solid var(--link-color);
+            outline-offset: 2px;
+        }
+
         .monospace
         {
             /* Prefer fonts that have full hinting info. This is important for non-retina displays.
@@ -5335,6 +5346,25 @@ document.getElementById('toggle-light').onclick = function() {
 document.getElementById('toggle-dark').onclick = function() {
     setColorTheme('dark', true);
 }
+
+/// Make the icon "buttons" (copy, download) and the theme switcher reachable and
+/// operable from the keyboard: Tab focuses them, Enter/Space activates them.
+/// (Real <button> elements like Run already get this for free.)
+function makeButtonLike(elem, action)
+{
+    elem.setAttribute('tabindex', '0');
+    elem.setAttribute('role', 'button');
+    elem.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            action();
+        }
+    });
+}
+
+makeButtonLike(document.getElementById('copy-div'), () => document.getElementById('copy-div').click());
+makeButtonLike(document.getElementById('download-div'), () => document.getElementById('download-div').click());
+makeButtonLike(document.getElementById('theme'), () => setColorTheme(theme === 'dark' ? 'light' : 'dark', true));
 
 // Copy raw result to clipboard
 document.getElementById('copy-div').addEventListener('click', function() {
