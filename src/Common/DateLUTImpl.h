@@ -310,7 +310,7 @@ private:
     /// saturate to the nearest boundary.
     static Time addSaturating(Time base, Time offset)
     {
-        Time res;
+        Time res = 0;
         if (unlikely(__builtin_add_overflow(base, offset, &res)))
             return offset < 0 ? std::numeric_limits<Time>::min() : std::numeric_limits<Time>::max();
         return res;
