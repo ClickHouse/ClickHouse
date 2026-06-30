@@ -255,6 +255,59 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
         ast.checkSize(settings[Setting::max_ast_elements]);
 }
 
+static void rejectUnsupportedSourceInsertReturningSettings(const ASTPtr & source_select_settings_ast)
+{
+    const auto & source_settings = source_select_settings_ast->as<ASTSetQuery &>();
+
+    static const std::unordered_set<std::string_view> unsupported_settings = {
+        "max_memory_usage",
+        "max_memory_usage_for_user",
+        "memory_overcommit_ratio_denominator",
+        "memory_overcommit_ratio_denominator_for_user",
+        "memory_usage_overcommit_max_wait_microseconds",
+        "max_execution_time",
+        "timeout_overflow_mode",
+        "max_temporary_data_on_disk_size_for_query",
+        "max_temporary_data_on_disk_size_for_user",
+        "max_network_bandwidth_for_user",
+        "max_network_bandwidth_for_all_users",
+        "max_remote_read_network_bandwidth",
+        "max_remote_write_network_bandwidth",
+        "max_local_read_bandwidth",
+        "max_local_write_bandwidth",
+        "max_concurrent_queries_for_user",
+        "max_concurrent_queries_for_all_users",
+        "queue_max_wait_ms",
+        "replace_running_query",
+        "replace_running_query_max_wait_ms",
+        "priority",
+        "low_priority_query_wait_time_ms",
+        "workload",
+        "reserve_memory",
+        "temporary_files_codec",
+        "temporary_files_buffer_size",
+        "profile",
+    };
+
+    for (const auto & change : source_settings.changes)
+    {
+        if (unsupported_settings.contains(change.name))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting '{}' is not supported in source SETTINGS of INSERT ... RETURNING because it affects query-global state",
+                change.name);
+    }
+
+    for (const auto & default_setting : source_settings.default_settings)
+    {
+        if (unsupported_settings.contains(default_setting))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting '{}' is not supported in source SETTINGS of INSERT ... RETURNING because it affects query-global state",
+                default_setting);
+    }
+}
+
 
 /// Log query into text log (not into system table).
 static void logQuery(const String & query, ContextPtr context, bool internal, QueryProcessingStage::Enum stage)
@@ -1505,6 +1558,7 @@ static BlockIO executeQueryImpl(
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
             if (auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->source_select_settings_ast)
             {
+                rejectUnsupportedSourceInsertReturningSettings(insert_query->source_select_settings_ast);
                 Settings settings_before_source = context->getSettingsRef();
                 InterpreterSetQuery::applySettingsFromQuery(insert_query->source_select_settings_ast, context);
 

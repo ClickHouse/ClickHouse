@@ -36,6 +36,8 @@ unset
 source default settings merged with trailing settings
 3
 3
+source query global settings are rejected
+0
 trailing settings do not affect returning planning
 1
 1

@@ -291,8 +291,11 @@ bool replacePipelineWithInsertReturningAfterPush(
     /// Source-only settings are applied to the outer query context for the INSERT phase in `executeQueryImpl`.
     /// Restore them before swapping to the RETURNING pipeline, because transport output paths (TCP / gRPC)
     /// read settings such as `use_concurrency_control` from this outer context.
-    if (insert_query.source_select_settings_restore_ast)
-        InterpreterSetQuery::applySettingsFromQuery(insert_query.source_select_settings_restore_ast, context);
+    if (auto query_context = context->hasQueryContext() ? context->getQueryContext() : ContextMutablePtr{};
+        query_context && insert_query.source_select_settings_restore_ast)
+    {
+        InterpreterSetQuery::applySettingsFromQuery(insert_query.source_select_settings_restore_ast, query_context);
+    }
 
     io.pipeline.reset();
     io.pipeline = buildReturningSelectPipeline(insert_query.returning_select, context, io.query_metadata_cache, insert_query.source_select_settings_restore_ast);
@@ -328,8 +331,11 @@ QueryPipeline buildInsertReturningPipeline(
     insert_executor.execute();
 
     /// Keep outer context settings consistent with RETURNING phase consumers in transport/output layers.
-    if (source_select_settings_restore_ast)
-        InterpreterSetQuery::applySettingsFromQuery(source_select_settings_restore_ast, context);
+    if (auto query_context = context->hasQueryContext() ? context->getQueryContext() : ContextMutablePtr{};
+        query_context && source_select_settings_restore_ast)
+    {
+        InterpreterSetQuery::applySettingsFromQuery(source_select_settings_restore_ast, query_context);
+    }
 
     return buildReturningSelectPipeline(returning_select, context, out_metadata_cache, source_select_settings_restore_ast);
 }
