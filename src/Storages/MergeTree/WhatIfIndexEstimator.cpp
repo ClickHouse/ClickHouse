@@ -378,17 +378,13 @@ bool tryEstimateEmpirical(
     const size_t skip_index_granularity = index_helper->index.granularity;
     auto index_expression = index_helper->index.expression;
 
-    /// Running global mark id across parts, so each candidate survival bitmap uses same
-    /// coordinates and run() can intersect them. Advanced for every part
-    size_t marks_so_far = 0;
+    /// Position of the next baseline mark, gives every candidate's bitmap the same coordinates
+    size_t baseline_mark_pos = 0;
 
     for (const auto & part_with_ranges : saved_parts)
     {
         auto part = part_with_ranges.data_part;
         const auto & mark_ranges = part_with_ranges.ranges;
-
-        const size_t part_first_mark = marks_so_far;
-        marks_so_far += part->getMarksCount();
 
         if (mark_ranges.empty())
             continue;
@@ -470,8 +466,8 @@ bool tryEstimateEmpirical(
                 if (!condition->mayBeTrueOnGranule(granule, {}))
                     skipped_data_granules += baseline_marks_in_window;
                 else if (surviving_marks)
-                    for (size_t m : window_baseline_marks)
-                        (*surviving_marks)[part_first_mark + m] = 1;
+                    for (size_t pos : window_baseline_marks)
+                        (*surviving_marks)[pos] = 1;
             };
 
             auto on_mark_finished = [&]
@@ -481,7 +477,7 @@ bool tryEstimateEmpirical(
                 {
                     ++baseline_marks_in_window;
                     if (surviving_marks)
-                        window_baseline_marks.push_back(current_mark);
+                        window_baseline_marks.push_back(baseline_mark_pos++);
                 }
 
                 if (data_granules_in_window >= skip_index_granularity)
@@ -864,11 +860,9 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         return result;
     }
 
-    /// To also report the *combined* benefit of having several candidates at once, we intersect
-    /// surviving-granule sets of the empirical candidates (a granule is pruned if any index prunes it)
-    size_t total_part_marks = 0;
-    for (const auto & part_with_ranges : baseline_parts)
-        total_part_marks += part_with_ranges.data_part->getMarksCount();
+    /// Only track per-candidate surviving marks when a combined row could actually be produced
+    const bool want_combined = settings.empirical && !query_with_final
+        && hypo_indexes.size() >= 2 && result.baseline_marks > 0;
 
     std::vector<UInt8> combined_surviving_marks;
     bool combined_started = false;
@@ -890,11 +884,14 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             continue;
         }
 
-        std::vector<UInt8> surviving_marks(total_part_marks, 0);
-        auto index_result = evaluateIndex(index_desc, read_step, analysis, baseline_parts, settings, &surviving_marks, plan_context);
+        std::vector<UInt8> surviving_marks;
+        if (want_combined)
+            surviving_marks.assign(result.baseline_marks, 0);
+        auto index_result = evaluateIndex(
+            index_desc, read_step, analysis, baseline_parts, settings, want_combined ? &surviving_marks : nullptr, plan_context);
 
         /// push empirically-evaluated candidates in a per-mark survival set we can intersect
-        if (index_result.status == IndexResult::Applicable && index_result.estimate_source == "empirical")
+        if (want_combined && index_result.status == IndexResult::Applicable && index_result.estimate_source == "empirical")
         {
             if (!combined_started)
             {
@@ -902,7 +899,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
                 combined_started = true;
             }
             else
-                for (size_t m = 0; m < total_part_marks; ++m)
+                for (size_t m = 0; m < combined_surviving_marks.size(); ++m)
                     combined_surviving_marks[m] &= surviving_marks[m];
             combined_names.push_back(index_result.index_name);
             combined_total_parts = index_result.total_parts;
