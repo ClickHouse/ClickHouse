@@ -2766,6 +2766,20 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     /// between this read and `getConsistentMetadataSnapshotImpl`'s own initial read can
     /// advance both the value and the `czxid` to the new database, after which all
     /// in-function checks compare new-to-new and silently substitute the wrong instance.
+    ///
+    /// The residual window *before* this first read — where the backup collector still holds a
+    /// stale `DatabaseReplicated` object (looked up earlier in the same attempt) and a `DROP`+recreate
+    /// completes before we read `/max_log_ptr` here — cannot make the *written* backup substitute a
+    /// different database. `BackupEntriesCollector` re-gathers all metadata from scratch on every
+    /// attempt: it clears `database_infos`/`table_infos` and re-fetches a fresh `DatabasePtr` from
+    /// `DatabaseCatalog`, so a stale object never carries across attempts, and `compareWithPrevious`
+    /// requires two consecutive attempts to agree on both the database `CREATE` text and the full
+    /// table set. A transitional attempt that mixes the stale object's old `CREATE` (different UUID)
+    /// with the recreated subtree's new tables therefore disagrees with the next (all-new) attempt
+    /// and is discarded; the loop converges to a consistent snapshot of the current database or fails
+    /// with `INCONSISTENT_METADATA_FOR_BACKUP` at the deadline. The `czxid` pinning below only has to
+    /// close the narrower intra-operation window between this read and the reads inside
+    /// `getConsistentMetadataSnapshotImpl`.
     /// Use `tryGet` (not `get`): a concurrent `DROP DATABASE` can remove the Keeper subtree after
     /// the backup captured this (now stale) `DatabaseReplicated` object but before this read. Map
     /// the missing node to the same `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` that
