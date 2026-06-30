@@ -468,6 +468,14 @@ String normalizeDiskRelativePath(const String & input)
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
             "Path `{}` escapes user files directory", input);
 
+    /// `lexically_normal` preserves a trailing separator (e.g. `dir/` -> `dir/`).
+    /// Strip it so disk-relative paths are always in canonical no-trailing-slash form.
+    /// Otherwise a directory expansion joins `dir/` + `/` + name into `dir//name`, and
+    /// object-storage disks (e.g. `s3_plain`) treat that as a distinct, non-existent key,
+    /// so `file('dir/', ...)` would silently miss objects that `file('dir', ...)` finds.
+    if (result.size() > 1 && result.back() == '/')
+        result.pop_back();
+
     return result;
 }
 
@@ -704,17 +712,16 @@ Strings getPathsListOnDisk(
     const Disks disks = volume->getDisks();
 
     /// A `{_partition_id}` wildcard denotes a partitioned write, not a glob to expand.
-    /// Mirror the local `getPathsList`: return the pattern unmodified so the wildcard is
-    /// preserved in `path_for_partitioned_write` and the explicit "partitioned writes are
-    /// not supported with user_files_policy" rejection fires. Otherwise `expandSelectionGlob`
-    /// would expand `{_partition_id}` as an ordinary `{...}` enum glob to the literal
-    /// `_partition_id`; if a file matching that expansion (e.g. `part__partition_id.csv`)
-    /// already exists on disk, the pattern would resolve to that single file, dropping the
-    /// wildcard, bypassing the rejection and writing all data into the wrong file.
-    if (path_with_globs.contains(PartitionedSink::PARTITION_ID_WILDCARD))
-        return {path_with_globs};
+    /// It must never be expanded by `expandSelectionGlob`: that would turn `{_partition_id}`
+    /// into an ordinary `{...}` enum glob matching the literal `_partition_id`, and if a file
+    /// matching that expansion (e.g. `part__partition_id.csv`) already existed on disk, the
+    /// pattern would resolve to that single file, drop the wildcard, bypass the "partitioned
+    /// writes are not supported with user_files_policy" rejection, and write all data into the
+    /// wrong file. The path is resolved against the disk below but the wildcard is kept verbatim.
+    const bool has_partition_wildcard = path_with_globs.contains(PartitionedSink::PARTITION_ID_WILDCARD);
 
-    const bool has_globs = path_with_globs.find_first_of("*?{") != std::string::npos;
+    /// `{_partition_id}` also matches `find_first_of("*?{")`, so exclude it explicitly.
+    const bool has_globs = !has_partition_wildcard && path_with_globs.find_first_of("*?{") != std::string::npos;
 
     /// A path is treated as "disk-qualified" (already carrying a configured disk's
     /// root prefix) only when it is host-absolute. For local disks the root is
@@ -752,6 +759,19 @@ Strings getPathsListOnDisk(
     {
         /// Relative path: always resolved against the disk root below.
         relative_pattern = normalizeDiskRelativePath(path_with_globs);
+    }
+
+    if (has_partition_wildcard)
+    {
+        /// Mirror the local `getPathsList`, which pushes the resolved absolute path (not the
+        /// raw user input) for a `{_partition_id}` pattern. Return a disk-qualified path
+        /// (`<disk_path>/<relative>`) with the wildcard preserved verbatim: `path_for_partitioned_write`
+        /// keeps the wildcard so the partitioned-write rejection fires, while a literal,
+        /// non-partitioned file name containing `{_partition_id}` can still be split back to its
+        /// disk by `splitUserFilesAbsolutePath` on the read/write path (returning the raw relative
+        /// name here would leave no disk prefix to recover, and the file would look missing).
+        const DiskPtr partition_disk = assigned_disk ? assigned_disk : disks.front();
+        return {getDiskPathWithSlash(partition_disk) + relative_pattern};
     }
 
     Strings absolute_paths;

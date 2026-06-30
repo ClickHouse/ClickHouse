@@ -740,3 +740,80 @@ def test_encrypted_disk_read_through_idisk_and_reject_local_consumers():
     # A local-only consumer must reject the encrypted disk (fail closed), not read ciphertext.
     err = node_encrypted.query_and_get_error("SELECT count() FROM filesystem()")
     assert "not a plain local filesystem disk" in err, err
+
+
+def test_local_literal_partition_id_filename():
+    """A literal file name that merely contains the `{_partition_id}` substring, read without
+    `INSERT ... PARTITION BY`, must resolve to a real disk-qualified path.
+
+    Regression for the `{_partition_id}` fast path in `getPathsListOnDisk`: it returned the raw
+    user input instead of the internal `<disk_path>/<relative>` form, so on the read path
+    `splitUserFilesAbsolutePath` could not recover a disk and the file was reported missing
+    (`FILE_DOESNT_EXIST`), unlike the local `user_files_path` implementation which pushes the
+    resolved absolute path."""
+    # The single-quotes keep the literal `{_partition_id}` in the file name (bash does not
+    # brace-expand a single-element `{...}`, but quoting makes the intent explicit).
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'literal_part' > '/test_user_files_disk1/lit_{_partition_id}.csv'",
+        ]
+    )
+
+    result = node_local.query(
+        "SELECT * FROM file('lit_{_partition_id}.csv', 'CSV', 'x String')"
+    )
+    assert result.strip() == "literal_part", result
+
+
+def test_s3_non_glob_directory_trailing_slash():
+    """A non-glob directory path with a trailing slash (`file('dir/', ...)`) must read the same
+    objects as without the slash (`file('dir', ...)`) on an S3-backed disk.
+
+    Regression for the directory expansion in `getPathsListOnDisk`: `normalizeDiskRelativePath`
+    preserved a trailing slash, so `relative_pattern` was `dir/` and the per-entry join produced
+    `dir//name`. POSIX local disks collapse the double slash, but `s3_plain` object keys are exact,
+    so `file('dir/', ...)` silently missed objects that `file('dir', ...)` finds."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('trail_dir/a.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('trail_dir/b.csv', 'CSV', 'x UInt64') SELECT 2"
+    )
+
+    without_slash = node_s3.query(
+        "SELECT * FROM file('trail_dir', 'CSV', 'x UInt64') ORDER BY x"
+    ).strip()
+    with_slash = node_s3.query(
+        "SELECT * FROM file('trail_dir/', 'CSV', 'x UInt64') ORDER BY x"
+    ).strip()
+
+    assert without_slash == "1\n2", without_slash
+    assert with_slash == without_slash, with_slash
+
+
+def test_encrypted_disk_rejects_embedded_rocksdb():
+    """`EmbeddedRocksDB` with an explicit `rocksdb_dir` opens RocksDB via local POSIX APIs
+    (`fs::create_directories` / `rocksdb::DB::Open`) under `user_files_path`, so it must reject a
+    `user_files_policy` disk that is not plain local. A local `DiskEncrypted` is not remote, so a
+    guard testing only `disk->isRemote()` would accept it and operate on the ciphertext backing
+    files; the guard must use `isPlainLocalDisk` instead.
+
+    A plain local `user_files_policy` disk (here `node_local`) must still be accepted."""
+    node_encrypted.query("DROP TABLE IF EXISTS rocksdb_enc")
+    err = node_encrypted.query_and_get_error(
+        "CREATE TABLE rocksdb_enc (k UInt64, v String) "
+        "ENGINE = EmbeddedRocksDB(0, 'rocksdb_enc_dir') PRIMARY KEY(k)"
+    )
+    assert "not a plain local filesystem disk" in err, err
+
+    # The plain local policy disk must not be over-rejected: the same statement succeeds there.
+    node_local.query("DROP TABLE IF EXISTS rocksdb_plain_local")
+    node_local.query(
+        "CREATE TABLE rocksdb_plain_local (k UInt64, v String) "
+        "ENGINE = EmbeddedRocksDB(0, 'rocksdb_plain_local_dir') PRIMARY KEY(k)"
+    )
+    node_local.query("INSERT INTO rocksdb_plain_local VALUES (1, 'a')")
+    assert node_local.query("SELECT v FROM rocksdb_plain_local WHERE k = 1").strip() == "a"
+    node_local.query("DROP TABLE rocksdb_plain_local")

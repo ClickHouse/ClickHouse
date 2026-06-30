@@ -259,20 +259,24 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     {
         bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
 
-        /// `rocksdb::DB::Open` and `fs::create_directories` require a local-filesystem
-        /// path. With `user_files_policy` configured on a non-local disk (e.g. `s3_plain`),
-        /// `user_files_path` resolves to a disk root that is not usable via local APIs.
-        /// Reject up front instead of failing later with an opaque I/O error.
+        /// `rocksdb::DB::Open` and `fs::create_directories` require a plain local
+        /// filesystem path. With `user_files_policy` configured on a disk that is not
+        /// plain local - a remote disk (e.g. `s3_plain`), or a local `DiskEncrypted` /
+        /// cached disk - `user_files_path` resolves to a disk root that is not usable
+        /// via local APIs. Testing only `isRemote` would let a local `DiskEncrypted`
+        /// through and operate directly on its ciphertext backing files instead of
+        /// going through `IDisk`, so reject any non-plain-local disk up front instead
+        /// of failing later with an opaque I/O error.
         if (!is_local)
         {
             if (auto user_files_volume = context_->getUserFilesVolume())
             {
                 for (const auto & disk : user_files_volume->getDisks())
                 {
-                    if (disk->isRemote())
+                    if (!isPlainLocalDisk(*disk))
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                         "EmbeddedRocksDB engine is not supported "
-                                        "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                                        "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
                                         disk->getName());
                 }
             }
