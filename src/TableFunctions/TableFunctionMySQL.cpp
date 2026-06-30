@@ -27,6 +27,7 @@ namespace Setting
 {
     extern const SettingsUInt64 external_storage_connect_timeout_sec;
     extern const SettingsUInt64 external_storage_rw_timeout_sec;
+    extern const SettingsMySQLDataTypesSupport mysql_datatypes_support_level;
 }
 
 namespace MySQLSetting
@@ -98,7 +99,11 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
 ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    return StorageMySQL::getTableStructureFromData(*pool, configuration->database, configuration->table, context);
+    /// The table function has no persistent engine settings, so the type-mapping level is taken from
+    /// the query context (including any query-level `SET mysql_datatypes_support_level = '...'`).
+    return StorageMySQL::getTableStructureFromData(
+        *pool, configuration->database, configuration->table, context,
+        context->getSettingsRef()[Setting::mysql_datatypes_support_level]);
 }
 
 StoragePtr TableFunctionMySQL::executeImpl(

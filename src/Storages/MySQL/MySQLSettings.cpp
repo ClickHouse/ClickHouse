@@ -30,7 +30,7 @@ namespace ErrorCodes
     DECLARE(UInt64, connect_timeout, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, "Connect timeout (in seconds)", 0) \
     DECLARE(UInt64, read_write_timeout, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, "Read/write timeout (in seconds)", 0) \
     DECLARE(Bool, enable_compression, false, "Enable MySQL protocol compression (MYSQL_OPT_COMPRESS).", 0) \
-    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", "Which MySQL types should be converted to corresponding ClickHouse types. All modern mappings (decimal, datetime64, date2Date32) are enabled by default. Can be set to any combination of 'decimal', 'datetime64', 'date2Date32', or 'date2String'.", 0) \
+    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32,geometry", "Which MySQL types should be converted to corresponding ClickHouse types. All modern mappings (decimal, datetime64, date2Date32, geometry) are enabled by default. Can be set to any combination of 'decimal', 'datetime64', 'date2Date32', 'date2String', or 'geometry'. Must match the default of the 'mysql_datatypes_support_level' server setting, so that creating a MySQL database or table engine with the default settings does not persist a redundant SETTINGS clause.", 0) \
 
 DECLARE_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MYSQL_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MySQLSettings, MySQLSetting)

@@ -1071,6 +1071,33 @@ def test_mysql_geometry(started_cluster):
     assert node1.query("SELECT geo FROM test_geometry").strip() == "[(5,5),(6,6)]"
     node1.query("DROP TABLE IF EXISTS test_geometry")
 
+    # The MySQL table engine infers the columns from MySQL when they are omitted. By default the
+    # `geometry` mapping is on, so a concrete spatial column is inferred as its geometric type.
+    node1.query("DROP TABLE IF EXISTS test_geometry_inferred")
+    node1.query(
+        f"CREATE TABLE test_geometry_inferred Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+    assert (
+        node1.query("SELECT toTypeName(ls) FROM test_geometry_inferred LIMIT 1").strip()
+        == "LineString"
+    )
+    node1.query("DROP TABLE IF EXISTS test_geometry_inferred")
+
+    # Regression test: disabling `geometry` through the table engine's own SETTINGS must be honored
+    # during schema inference, falling the concrete spatial types back to `String` (raw WKB). This is
+    # the per-engine opt-out; before the fix it was ignored because schema inference read the global
+    # query-context setting instead of the engine setting.
+    node1.query("DROP TABLE IF EXISTS test_geometry_no_geo")
+    node1.query(
+        f"CREATE TABLE test_geometry_no_geo Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}') "
+        "SETTINGS mysql_datatypes_support_level = 'decimal,datetime64,date2Date32'"
+    )
+    assert (
+        node1.query("SELECT toTypeName(ls) FROM test_geometry_no_geo LIMIT 1").strip()
+        == "String"
+    )
+    node1.query("DROP TABLE IF EXISTS test_geometry_no_geo")
+
     drop_mysql_table(conn, table_name)
     conn.close()
 

@@ -4,6 +4,8 @@
 
 #if USE_MYSQL
 
+#include <Core/MultiEnum.h>
+#include <Core/SettingsEnums.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
@@ -90,7 +92,8 @@ public:
         mysqlxx::PoolWithFailover & pool_,
         const String & database,
         const String & table,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        MultiEnum<MySQLDataTypesSupport> type_support);
 
 private:
     friend class StorageMySQLSink;
