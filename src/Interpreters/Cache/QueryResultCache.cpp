@@ -6,6 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessType.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -271,6 +273,31 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
             return {};
 
         auto metadata = storage->getInMemoryMetadataPtr(context, false);
+
+        /// `getModificationHash` is computed here, before the query's regular access checks in the
+        /// interpreter/planner. For external engines (`URL`, object storage, `Distributed`) it performs
+        /// credentialed I/O - an HTTP request, an object listing, a remote `system.tables` query. Only
+        /// probe a table the current user is allowed to read; otherwise bail out so the cache is bypassed
+        /// (fail closed) and the query is rejected later by the normal access check with the usual error.
+        /// SELECT access is granted when at least one column is readable, matching `InterpreterSelectQuery`.
+        {
+            const auto access = context->getAccess();
+            bool can_read = access->isGranted(AccessType::SELECT, resolved_id.database_name, resolved_id.table_name);
+            if (!can_read)
+            {
+                for (const auto & column : metadata->getColumns())
+                {
+                    if (access->isGranted(AccessType::SELECT, resolved_id.database_name, resolved_id.table_name, column.name))
+                    {
+                        can_read = true;
+                        break;
+                    }
+                }
+            }
+            if (!can_read)
+                return {};
+        }
+
         auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
         auto table_hash = storage->getModificationHash(snapshot, context);
         if (!table_hash)
