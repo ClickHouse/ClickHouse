@@ -54,7 +54,9 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d 
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d GROUP BY x SET y = max(y)'), '"group_by_key":[', '"group_by_key":{},"_unused":[')); -- { serverError BAD_ARGUMENTS }
 
 -- `FETCH PARTITION` without the `FROM` path.
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t FETCH PARTITION 1 FROM \'/zk\''), ',"from":"/zk"', '')); -- { serverError BAD_ARGUMENTS }
+-- The serializer escapes the forward slash (`escape_forward_slashes` is on by default), so the path is
+-- emitted as `"from":"\/zk"`; the `replace` target must use that escaped form to actually strip the field.
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t FETCH PARTITION 1 FROM \'/zk\''), ',"from":"\\/zk"', '')); -- { serverError BAD_ARGUMENTS }
 -- `ATTACH/REPLACE PARTITION ... FROM` without the source table.
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t ATTACH PARTITION 1 FROM src'), ',"from_table":"src"', '')); -- { serverError BAD_ARGUMENTS }
 -- `UNFREEZE PARTITION` without the `WITH NAME` backup name.
