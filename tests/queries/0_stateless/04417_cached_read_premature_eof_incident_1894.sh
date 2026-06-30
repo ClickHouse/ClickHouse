@@ -9,6 +9,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 url="http://localhost:11111/test/04417_premature_eof_${CLICKHOUSE_DATABASE}.bin"
 
+# The failpoint is process-global; always disable it on exit so a timeout or interrupt
+# cannot leak it into later S3/cache reads on the shared stateless server.
+cleanup() { $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT s3_read_buffer_force_premature_eof" 2>/dev/null; }
+trap cleanup EXIT
+
 # Uncompressed object (RawBLOB) read through the filesystem cache hits readFromFileSegment directly;
 # a compressed column would trip the decompressor's own check first and never reach this invariant.
 $CLICKHOUSE_CLIENT -q "
@@ -24,5 +29,3 @@ SELECT length(c)
 FROM s3('${url}', 'clickhouse', 'clickhouse', 'RawBLOB', 'c String')
 SETTINGS filesystem_cache_name = 'cache_for_readbigat', enable_filesystem_cache = 1, max_download_threads = 1" 2>&1 \
     | grep -o -m1 -E "CANNOT_READ_ALL_DATA|LOGICAL_ERROR" | head -n1
-
-$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT s3_read_buffer_force_premature_eof"
