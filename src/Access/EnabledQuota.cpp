@@ -412,7 +412,7 @@ void EnabledQuota::usedForQuery(UInt64 normalized_query_hash, QuotaType quota_ty
 }
 
 
-void EnabledQuota::usedForQuery(UInt64 normalized_query_hash, const std::vector<std::pair<QuotaType, QuotaValue>> & usages, bool check_exceeded) const
+void EnabledQuota::usedForQuery(UInt64 normalized_query_hash, std::initializer_list<std::pair<QuotaType, QuotaValue>> usages, bool check_exceeded) const
 {
     if (empty)
         return;
