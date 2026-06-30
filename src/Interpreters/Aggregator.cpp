@@ -115,7 +115,7 @@ DB::AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(DB::AggregatedD
 void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
-    if (params.top_k_keys > 0)
+    if (params.top_k)
     {
         result.init(method_chosen);
         ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
@@ -547,19 +547,19 @@ void Aggregator::Params::explain(ExplainFormatSettings & settings) const
         }
     }
 
-    if (top_k_keys > 0)
+    if (top_k)
     {
-        out << prefix << "Top-K: limit=" << top_k_keys
-            << ", columns=" << top_k_key_columns
+        out << prefix << "Top-K: limit=" << top_k->keys
+            << ", columns=" << top_k->key_columns
             << ", directions=[";
-        for (size_t i = 0; i < top_k_keys_directions.size(); ++i)
+        for (size_t i = 0; i < top_k->directions.size(); ++i)
         {
             if (i > 0)
                 out << ',';
-            out << top_k_keys_directions[i];
+            out << top_k->directions[i];
         }
         out << "]";
-        if (top_k_requires_pruning)
+        if (top_k->requires_pruning)
             out << ", requires_pruning=1";
         out << "\n";
     }
@@ -588,16 +588,16 @@ void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
         map.add("Aggregates", std::move(aggregates_array));
     }
 
-    if (top_k_keys > 0)
+    if (top_k)
     {
         auto top_k_map = std::make_unique<JSONBuilder::JSONMap>();
-        top_k_map->add("Limit", top_k_keys);
-        top_k_map->add("Columns", top_k_key_columns);
+        top_k_map->add("Limit", top_k->keys);
+        top_k_map->add("Columns", top_k->key_columns);
         auto directions = std::make_unique<JSONBuilder::JSONArray>();
-        for (int direction : top_k_keys_directions)
+        for (int direction : top_k->directions)
             directions->add(direction);
         top_k_map->add("Directions", std::move(directions));
-        if (top_k_requires_pruning)
+        if (top_k->requires_pruning)
             top_k_map->add("Requires Pruning", true);
         map.add("Top-K", std::move(top_k_map));
     }
@@ -1024,7 +1024,7 @@ void Aggregator::executeImpl(
     /// invalidate, so erasing a key would leave the State handing back a
     /// destroyed `AggregateDataPtr` for a later row with the same index.  It
     /// therefore never prunes (see `trimHeapAndPruneHashTable`), which also
-    /// disables the heap for it under `top_k_requires_pruning`.
+    /// disables the heap for it under `top_k->requires_pruning`.
     constexpr bool can_prune
         = requires(typename Method::Data d, typename Method::Key k) { d.erase(k); }
         && !Method::low_cardinality_optimization;
@@ -1036,12 +1036,13 @@ void Aggregator::executeImpl(
     ///     every remaining group with a complete state, which is safe when a sort
     ///     follows the aggregation (Pattern 1: the downstream `LIMIT` discards any
     ///     evicted-rank key regardless).  Without a downstream sort
-    ///     (`top_k_requires_pruning`, Pattern 2) it is only safe if nothing was
+    ///     (`top_k->requires_pruning`, Pattern 2) it is only safe if nothing was
     ///     evicted yet, since a re-admitted evicted key would carry a partial state
     ///     the unsorted `LIMIT` could return.
+    const bool requires_pruning = params.top_k && params.top_k->requires_pruning;
     const bool tie_overflow_freeze_safe
-        = !params.top_k_requires_pruning || method.top_k_heap.evicted_keys == 0;
-    if (params.top_k_keys > 0 && !method.top_k_heap.frozen
+        = !requires_pruning || method.top_k_heap.evicted_keys == 0;
+    if (params.top_k && !method.top_k_heap.frozen
         && (method.top_k_heap.shouldFreeze()
             || (method.top_k_heap.tie_overflow && tie_overflow_freeze_safe)))
     {
@@ -1049,16 +1050,16 @@ void Aggregator::executeImpl(
         ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
     }
 
-    const bool top_k = params.top_k_keys > 0
-        && (can_prune || !params.top_k_requires_pruning)
+    const bool top_k = params.top_k
+        && (can_prune || !params.top_k->requires_pruning)
         && !method.top_k_heap.frozen;
 
     if (top_k)
         method.top_k_heap.initIfNeeded(
-            key_columns, params.top_k_key_columns,
+            key_columns, params.top_k->key_columns,
             params.keys.size(),
-            params.top_k_keys, params.top_k_keys_directions,
-            params.top_k_keys_nulls_directions);
+            params.top_k->keys, params.top_k->directions,
+            params.top_k->nulls_directions);
 
     auto call = [&]<bool prefetch_v, bool top_k_v>(
         bool no_more_keys_arg, bool use_compiled_functions)
@@ -1312,7 +1313,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     [[maybe_unused]] ColumnRawPtrs heap_key_cols;
     if constexpr (top_k)
     {
-        size_t heap_key_count = params.top_k_key_columns;
+        size_t heap_key_count = params.top_k->key_columns;
         heap_key_cols.assign(key_columns.begin(), key_columns.begin() + heap_key_count);
     }
 
@@ -1367,7 +1368,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
             if constexpr (top_k)
             {
-                if (method.top_k_heap.size() >= params.top_k_keys)
+                if (method.top_k_heap.size() >= params.top_k->keys)
                     skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
             }
 
@@ -1389,7 +1390,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 {
                     if (skip_bitmap
                         ? bool(skip_bitmap[i])
-                        : (method.top_k_heap.size() >= params.top_k_keys && heap_should_skip(i)))
+                        : (method.top_k_heap.size() >= params.top_k->keys && heap_should_skip(i)))
                     {
                         ++top_k_rows_skipped;
                         continue;
@@ -1488,7 +1489,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
         if constexpr (top_k)
         {
-            if (method.top_k_heap.size() >= params.top_k_keys)
+            if (method.top_k_heap.size() >= params.top_k->keys)
                 skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
         }
 
@@ -1514,7 +1515,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if (skip_bitmap
                     ? bool(skip_bitmap[i])
-                    : (method.top_k_heap.size() >= params.top_k_keys && heap_should_skip(i)))
+                    : (method.top_k_heap.size() >= params.top_k->keys && heap_should_skip(i)))
                 {
                     places[i] = nullptr;
                     ++top_k_rows_skipped;

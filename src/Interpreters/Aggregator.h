@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <type_traits>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
@@ -134,20 +135,15 @@ public:
 
         bool serialize_string_with_zero_byte = false;
 
-        size_t top_k_keys = 0;
-        std::vector<int> top_k_keys_directions;            // per-column ORDER BY directions
-        std::vector<int> top_k_keys_nulls_directions;      // per-column NULLS/NaNs directions
-        /// How many leading GROUP BY key columns the heap compares on.
-        /// Equals the number of ORDER BY columns (which is a prefix of GROUP BY keys).
-        size_t top_k_key_columns = 0;
-        /// True when the heap is only sound if evicted keys are erased from the
-        /// hash table.  `GROUP BY ... LIMIT` without `ORDER BY` requires this:
-        /// there is no downstream sort to rank stale partially-aggregated groups
-        /// below complete ones, so a group evicted from the heap but left in the
-        /// hash table could surface in the result.  When the chosen aggregation
-        /// method cannot erase (`FixedHashTable`-based ones), the heap is
-        /// disabled at runtime instead.
-        bool top_k_requires_pruning = false;
+        struct TopKParams
+        {
+            size_t keys = 0;                        /// the LIMIT N (heap capacity)
+            std::vector<int> directions;            /// per-column ORDER BY directions
+            std::vector<int> nulls_directions;      /// per-column NULLS/NaNs directions
+            size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
+            bool requires_pruning = false;          /// Pattern 2: must erase evicted keys
+        };
+        std::optional<TopKParams> top_k;
 
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 

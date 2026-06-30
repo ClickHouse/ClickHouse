@@ -185,11 +185,13 @@ void AggregatingStep::applyLimitPushdown(
     size_t num_key_columns,
     bool requires_pruning)
 {
-    params.top_k_keys = top_k;
-    params.top_k_keys_directions = std::move(directions_);
-    params.top_k_keys_nulls_directions = std::move(nulls_directions_);
-    params.top_k_key_columns = num_key_columns;
-    params.top_k_requires_pruning = requires_pruning;
+    params.top_k = Aggregator::Params::TopKParams{
+        .keys = top_k,
+        .directions = std::move(directions_),
+        .nulls_directions = std::move(nulls_directions_),
+        .key_columns = num_key_columns,
+        .requires_pruning = requires_pruning,
+    };
 
     /// Pattern 2 (no ORDER BY) is only correct if evicted keys are erased from
     /// the hash table; an external-aggregation spill would flush partial states
@@ -404,7 +406,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
 
     /// Pattern 2 of the top-K pushdown (`GROUP BY ... LIMIT` without `ORDER BY`,
-    /// marked by `top_k_requires_pruning`) prunes by erasing evicted keys from the
+    /// marked by `top_k->requires_pruning`) prunes by erasing evicted keys from the
     /// hash table.  That is only globally correct when every row for a key reaches
     /// the same heap.  With several independent aggregating streams a key can be
     /// pruned in one stream yet kept in another, and the merge would retain only the
@@ -413,8 +415,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// safe; a single stream is safe trivially.  Otherwise disable the heap.
     /// (Pattern 1 — with `ORDER BY` — is unaffected: its downstream global sort+limit
     /// discards any key whose rank lost in some stream.)
-    if (params.top_k_requires_pruning && pipeline.getNumStreams() > 1 && !use_sharded_aggregation)
-        params.top_k_keys = 0;
+    if (params.top_k && params.top_k->requires_pruning && pipeline.getNumStreams() > 1 && !use_sharded_aggregation)
+        params.top_k.reset();
 
     /** Two-level aggregation is useful in two cases:
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
