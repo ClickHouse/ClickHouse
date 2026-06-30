@@ -41,14 +41,19 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.7",
         {
+            {"input_format_csv_missing_nullable_as_empty_string", false, false, "New setting to read a missing value of `Nullable(String)` from CSV as an empty string instead of NULL."},
             {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"query_plan_lift_predicate_across_join", false, true, "New setting that lifts filter conjuncts across equi-join keys so primary-key pruning fires on both sides."},
+            {"use_text_index_tokens_cache", false, true, "Enabled the text index tokens cache globally."},
+            {"use_text_index_header_cache", false, true, "Enabled the text index header cache globally."},
             {"optimize_aggregation_in_order_limit", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."},
             {"explain_query_plan_default", "legacy", "pretty", "From 26.7, `EXPLAIN PLAN` defaults to `actions=1, compact=1, pretty=1`. Set this to `legacy` to restore the pre-26.7 output."},
             {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
+            {"allow_experimental_url_wildcard_from_index_pages", false, false, "New setting to enable expanding wildcards in the `url` table function by listing HTTP index pages."},
+            {"url_wildcard_max_directories_to_read", 100000, 100000, "New setting to limit the number of directories read when expanding wildcards in the `url` table function."},
             {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
         });
 
