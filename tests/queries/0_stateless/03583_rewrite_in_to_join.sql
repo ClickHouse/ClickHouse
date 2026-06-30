@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer=1;
 SET rewrite_in_to_join=1;
 SET allow_experimental_correlated_subqueries=1;
@@ -11,7 +12,6 @@ SELECT explain FROM (
     SETTINGS enable_join_runtime_filters = 0
 ) WHERE explain ILIKE '%join%';
 
--- ORDER BY number: the decorrelation join kind is internal, so result row order is not guaranteed.
 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3) ORDER BY number;
 
 SELECT number IN (SELECT number FROM numbers(2)) FROM numbers(3) ORDER BY number;

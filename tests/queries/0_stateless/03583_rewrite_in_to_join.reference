@@ -5,7 +5,6 @@ SELECT explain FROM (
     SETTINGS enable_join_runtime_filters = 0
 ) WHERE explain ILIKE '%join%';
   JoinLogical
--- ORDER BY number: the decorrelation join kind is internal, so result row order is not guaranteed.
 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3) ORDER BY number;
 1
 1
