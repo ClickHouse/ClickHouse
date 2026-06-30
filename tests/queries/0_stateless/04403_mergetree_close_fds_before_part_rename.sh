@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-fasttest, no-shared-merge-tree
+# Tags: no-replicated-database, no-fasttest, no-shared-merge-tree, no-ordinary-database
 # Tag no-replicated-database: relies on a single local replica and reads its /proc fds
 # Tag no-shared-merge-tree: SharedMergeTree does not honor sleep_before_commit_local_part_in_replicated_table_ms
+# Tag no-ordinary-database: the fd scan locates the part files by the table's UUID, which is
+#   the nil UUID under the Ordinary engine, so the globs would match nothing and the test
+#   would pass vacuously even on an unfixed build (the part path has no UUID under Ordinary).
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/56288
 #
@@ -45,6 +48,15 @@ SETTINGS
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP MERGES t_fd_leak"
 
 uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_fd_leak'")
+
+# The fd scan globs the /proc symlink targets by this UUID; without a real UUID the part
+# path is not matched and the check would pass vacuously. The no-ordinary-database tag
+# guarantees a non-nil UUID, but assert it explicitly so a future change cannot silently
+# turn the test into a no-op.
+if [ -z "$uuid" ] || [ "$uuid" = "00000000-0000-0000-0000-000000000000" ]; then
+    echo "could not determine a non-nil table UUID for the fd scan" >&2
+    exit 1
+fi
 
 # Insert in the background; the server will pause for several seconds during the commit.
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_fd_leak SELECT number, toString(number) FROM numbers(100)" >/dev/null 2>&1 &
