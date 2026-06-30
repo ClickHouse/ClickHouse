@@ -36,6 +36,7 @@
 #include <Storages/TableZnodeInfo.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/EventNotifier.h>
+#include <Common/MultiVersion.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/Throttler.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -527,16 +528,11 @@ private:
 
     Coordination::WatchCallbackPtr export_merge_tree_partition_watch_callback;
 
-    std::mutex export_merge_tree_partition_mutex;
-
     BackgroundSchedulePoolTaskHolder export_merge_tree_partition_select_task;
 
-    ExportPartitionTaskEntriesContainer export_merge_tree_partition_task_entries;
-    
-    // Convenience references to indexes
-    ExportPartitionTaskEntriesContainer::index<ExportPartitionTaskEntryTagByCompositeKey>::type & export_merge_tree_partition_task_entries_by_key;
-    ExportPartitionTaskEntriesContainer::index<ExportPartitionTaskEntryTagByTransactionId>::type & export_merge_tree_partition_task_entries_by_transaction_id;
-    ExportPartitionTaskEntriesContainer::index<ExportPartitionTaskEntryTagByCreateTime>::type & export_merge_tree_partition_task_entries_by_create_time;
+    /// Immutable snapshot republished after each writer batch (part_references stripped). Readers
+    /// (system table, scheduler, KILL) get() a consistent version with no lock and no ZooKeeper.
+    MultiVersion<ExportPartitionTaskEntriesContainer> export_partition_manifests;
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 

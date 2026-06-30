@@ -45,6 +45,11 @@ private:
 
     std::mutex status_changes_mutex;
     std::queue<std::string> status_changes;
+
+    /// M_task: serializes poll() and handleStatusChanges(). Each builds a private mutable copy of
+    /// the current read-model, mutates it, and atomically publishes it via export_read_model.set().
+    /// Held across ZooKeeper I/O; no reader takes it (readers use export_read_model.get()).
+    std::mutex background_task_serialization_mutex;
 };
 
 }

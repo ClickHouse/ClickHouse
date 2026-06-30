@@ -498,9 +498,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , merge_strategy_picker(*this)
     , queue(*this, merge_strategy_picker)
     , fetcher(*this)
-    , export_merge_tree_partition_task_entries_by_key(export_merge_tree_partition_task_entries.get<ExportPartitionTaskEntryTagByCompositeKey>())
-    , export_merge_tree_partition_task_entries_by_transaction_id(export_merge_tree_partition_task_entries.get<ExportPartitionTaskEntryTagByTransactionId>())
-    , export_merge_tree_partition_task_entries_by_create_time(export_merge_tree_partition_task_entries.get<ExportPartitionTaskEntryTagByCreateTime>())
+    , export_partition_manifests(std::make_unique<const ExportPartitionTaskEntriesContainer>())
     , cleanup_thread(*this)
     , deduplication_hashes_cache(*this, "deduplication_hashes")
     , async_block_ids_cache(*this, "async_blocks")
@@ -6272,10 +6270,7 @@ void StorageReplicatedMergeTree::shutdown(bool)
         std::lock_guard lock(data_parts_exchange_ptr->rwlock);
     }
 
-    {
-        std::lock_guard lock(export_merge_tree_partition_mutex);
-        export_merge_tree_partition_task_entries.clear();
-    }
+    export_partition_manifests.set(std::make_unique<const ExportPartitionTaskEntriesContainer>());
 
     {
         std::lock_guard lock(export_manifests_mutex);
@@ -10295,8 +10290,20 @@ CancellationCode StorageReplicatedMergeTree::killExportPartition(const String & 
     /// Called from a query thread (KILL EXPORT PARTITION via InterpreterKillQueryQuery), which does not have a component set.
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::killExportPartition");
 
+    /// KILL is serialized against the commit phase via commit_lock (see below), so a kill that
+    /// succeeds cannot be overwritten by a concurrent commit.
+
     auto try_set_status_to_killed = [this](const zkutil::ZooKeeperPtr & zk, const std::string & status_path)
     {
+        /// Serialize against commit(): if a commit holds the lock, it is too late to cancel.
+        auto commit_lock = zkutil::EphemeralNodeHolder::tryCreate(
+            fs::path(status_path).parent_path() / "commit_lock", *zk, replica_name);
+        if (!commit_lock)
+        {
+            LOG_INFO(log, "Commit in progress, can not cancel export partition task");
+            return CancellationCode::CancelCannotBeSent;
+        }
+
         Coordination::Stat stat;
         std::string status_from_zk_string;
 
@@ -10330,23 +10337,38 @@ CancellationCode StorageReplicatedMergeTree::killExportPartition(const String & 
         return CancellationCode::CancelSent;
     };
 
-    std::lock_guard lock(export_merge_tree_partition_mutex);
-
     const auto zk = getZooKeeper();
 
+    /// Read the published snapshot (shared_ptr copy, no lock, no ZooKeeper). The KILLED status set
+    /// below propagates back into the mirror via the status watch -> handleStatusChanges.
+    bool local_entry_found = false;
+    bool local_entry_pending = false;
+    std::string local_composite_key;
+
+    if (const auto model = export_partition_manifests.get())
+    {
+        const auto & by_transaction_id = model->get<ExportPartitionTaskEntryTagByTransactionId>();
+        const auto entry = by_transaction_id.find(transaction_id);
+        if (entry != by_transaction_id.end())
+        {
+            local_entry_found = true;
+            local_entry_pending = entry->status == ExportReplicatedMergeTreePartitionTaskEntry::Status::PENDING;
+            local_composite_key = entry->getCompositeKey();
+        }
+    }
+
     /// if we have the entry locally, no need to list from zk. we can save some requests.
-    const auto & entry = export_merge_tree_partition_task_entries_by_transaction_id.find(transaction_id);
-    if (entry != export_merge_tree_partition_task_entries_by_transaction_id.end())
+    if (local_entry_found)
     {
         LOG_INFO(log, "Export partition task found locally, trying to cancel it");
         /// found locally, no need to get children on zk
-        if (entry->status != ExportReplicatedMergeTreePartitionTaskEntry::Status::PENDING)
+        if (!local_entry_pending)
         {
             LOG_INFO(log, "Export partition task is not pending, can not cancel it");
             return CancellationCode::CancelCannotBeSent;
         }
 
-        return try_set_status_to_killed(zk, fs::path(zookeeper_path) / "exports" / entry->getCompositeKey() / "status");
+        return try_set_status_to_killed(zk, fs::path(zookeeper_path) / "exports" / local_composite_key / "status");
     }
     else
     {

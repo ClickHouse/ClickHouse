@@ -200,6 +200,18 @@ namespace ExportPartitionUtils
         }
         LOG_INFO(log, "ExportPartition: commit_lock for {} acquired by replica {}", entry_path, replica_name);
 
+        /// Honor a concurrent KILL: commit_lock serializes us against killExportPartition,
+        /// so a non-PENDING status here means cancel won the race.
+        std::string status_str;
+        if (!zk->tryGet(fs::path(entry_path) / "status", status_str))
+            return;
+        const auto status = magic_enum::enum_cast<ExportReplicatedMergeTreePartitionTaskEntry::Status>(status_str);
+        if (!status || *status != ExportReplicatedMergeTreePartitionTaskEntry::Status::PENDING)
+        {
+            LOG_INFO(log, "ExportPartition: {} not PENDING, skipping commit", entry_path);
+            return;
+        }
+
         const auto exported_paths = ExportPartitionUtils::getExportedPaths(log, zk, entry_path);
 
         if (exported_paths.empty())
