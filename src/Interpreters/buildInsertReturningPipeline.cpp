@@ -288,6 +288,12 @@ bool replacePipelineWithInsertReturningAfterPush(
     if (!insert_query.returning_select)
         return false;
 
+    /// Source-only settings are applied to the outer query context for the INSERT phase in `executeQueryImpl`.
+    /// Restore them before swapping to the RETURNING pipeline, because transport output paths (TCP / gRPC)
+    /// read settings such as `use_concurrency_control` from this outer context.
+    if (insert_query.source_select_settings_restore_ast)
+        InterpreterSetQuery::applySettingsFromQuery(insert_query.source_select_settings_restore_ast, context);
+
     io.pipeline.reset();
     io.pipeline = buildReturningSelectPipeline(insert_query.returning_select, context, io.query_metadata_cache, insert_query.source_select_settings_restore_ast);
     setupPullingQueryPipeline(io.pipeline, context, stage, insert_query.returning_select, insert_query.source_select_settings_restore_ast);
@@ -320,6 +326,10 @@ QueryPipeline buildInsertReturningPipeline(
         insert_executor.setCancelCallback(
             std::move(callback), context->getSettingsRef()[Setting::interactive_delay] / 1000);
     insert_executor.execute();
+
+    /// Keep outer context settings consistent with RETURNING phase consumers in transport/output layers.
+    if (source_select_settings_restore_ast)
+        InterpreterSetQuery::applySettingsFromQuery(source_select_settings_restore_ast, context);
 
     return buildReturningSelectPipeline(returning_select, context, out_metadata_cache, source_select_settings_restore_ast);
 }
