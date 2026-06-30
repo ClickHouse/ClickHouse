@@ -378,3 +378,59 @@ GTEST_TEST(FunctionSignature, AdditionMultiplicationResult)
     EXPECT_THAT(checkSignature(sig, {makeColumn("Array(String)"), makeColumn("Array(String)")}), ::testing::StartsWith("FAIL:"));
     EXPECT_THAT(checkSignature(sig, {makeColumn("Array(Decimal(10, 2))"), makeColumn("Array(Decimal(10, 2))")}), ::testing::StartsWith("FAIL:"));
 }
+
+GTEST_TEST(FunctionSignature, ThrowIfExplicitPrefixes)
+{
+    /// `throwIf`'s legal shapes are spelled out as explicit prefixes rather than two independent
+    /// optional groups `(NativeNumber, [const String], [const Int8 | ...])`. With the optional-group
+    /// form the matcher could skip the message and bind a non-String second argument as the error
+    /// code, so `throwIf(cond, toInt8(1))` would match the advertised shape even though the real
+    /// validator rejects it. The explicit prefixes keep the metadata honest.
+    const String sig =
+        "(NativeNumber) -> UInt8"
+        " OR (NativeNumber, const String) -> UInt8"
+        " OR (NativeNumber, const String, const Int8 | Int16 | Int32) -> UInt8";
+
+    EXPECT_EQ(checkSignature(sig, {makeColumn("UInt8")}), "UInt8");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("UInt8"), makeConstColumn("String", Field(String("msg")))}), "UInt8");
+    EXPECT_EQ(
+        checkSignature(
+            sig, {makeColumn("UInt8"), makeConstColumn("String", Field(String("msg"))), makeConstColumn("Int32", Field(Int64(7)))}),
+        "UInt8");
+
+    /// `throwIf(cond, toInt8(1))` must NOT match: the second argument is not a String, and the
+    /// three-argument alternative requires a message before the error code.
+    EXPECT_THAT(checkSignature(sig, {makeColumn("UInt8"), makeConstColumn("Int8", Field(Int64(1)))}), ::testing::StartsWith("FAIL:"));
+    /// A non-constant message is rejected on the column path.
+    EXPECT_THAT(checkSignature(sig, {makeColumn("UInt8"), makeColumn("String")}), ::testing::StartsWith("FAIL:"));
+
+    /// Without `allow_custom_error_code_in_throwif` the three-argument form is not part of the contract.
+    const String sig_no_error_code = "(NativeNumber) -> UInt8 OR (NativeNumber, const String) -> UInt8";
+    FunctionSignature checker_no_error_code(sig_no_error_code);
+    EXPECT_EQ(checker_no_error_code.minArguments(), 1u);
+    EXPECT_EQ(checker_no_error_code.maxArguments(), 2u);
+    EXPECT_FALSE(checker_no_error_code.isArgumentCountInRange(3));
+}
+
+GTEST_TEST(FunctionSignature, ToStartOfIntervalArgumentShapes)
+{
+    /// The 2/3/4-argument shapes of `toStartOfInterval` are spelled out explicitly so the
+    /// `system.functions.signature` metadata matches the validator, including the four-argument
+    /// `(time, interval, origin, timezone)` overload and the constant interval/origin/timezone
+    /// positions. The result type is computed by the legacy `getReturnTypeImpl`, so the signature is
+    /// documentation-only; here we assert the structural argument-count contract.
+    const String sig =
+        "(DateOrDateTime, const Interval) -> DateOrDateTime"
+        " OR (DateOrDateTime, const Interval, const String) -> DateOrDateTime"
+        " OR (DateOrDateTime, const Interval, const DateOrDateTime) -> DateOrDateTime"
+        " OR (DateOrDateTime, const Interval, const DateOrDateTime, const String) -> DateOrDateTime";
+
+    FunctionSignature checker(sig);
+    EXPECT_EQ(checker.minArguments(), 2u);
+    EXPECT_EQ(checker.maxArguments(), 4u);
+    EXPECT_FALSE(checker.isArgumentCountInRange(1));
+    EXPECT_TRUE(checker.isArgumentCountInRange(2));
+    EXPECT_TRUE(checker.isArgumentCountInRange(3));
+    EXPECT_TRUE(checker.isArgumentCountInRange(4));
+    EXPECT_FALSE(checker.isArgumentCountInRange(5));
+}

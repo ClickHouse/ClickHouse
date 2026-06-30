@@ -51,9 +51,15 @@ public:
         /// when the setting is off, calls with three arguments must be rejected by the
         /// analyzer (matching the legacy `getNumberOfArguments() == 1`/`2` contract that
         /// the test exercises).
+        /// The legal prefixes are spelled out explicitly (rather than as two independent optional
+        /// groups `[const String], [const Int8 | …]`) because the latter would also match
+        /// `throwIf(cond, toInt8(1))` — the matcher could skip the message and bind the second
+        /// argument as the error code — while the real validator below rejects that call.
         if (allow_custom_error_code_argument)
-            return "(NativeNumber, [const String], [const Int8 | Int16 | Int32]) -> UInt8";
-        return "(NativeNumber, [const String]) -> UInt8";
+            return "(NativeNumber) -> UInt8"
+                   " OR (NativeNumber, const String) -> UInt8"
+                   " OR (NativeNumber, const String, const Int8 | Int16 | Int32) -> UInt8";
+        return "(NativeNumber) -> UInt8 OR (NativeNumber, const String) -> UInt8";
     }
 
     /// The signature above documents the arity and types, but the legacy diagnostics that this
