@@ -35,7 +35,6 @@ namespace DB::Setting
     extern const SettingsBool filesystem_cache_prefer_bigger_buffer_size;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsUInt64 remote_read_min_bytes_for_seek;
-    extern const SettingsBool remote_filesystem_read_prefetch;
 }
 
 namespace DB::FileCacheSetting
@@ -344,10 +343,6 @@ TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
     const_cast<DB::Settings &>(settings)[DB::Setting::filesystem_cache_prefer_bigger_buffer_size] = false;
     //const_cast<DB::Settings &>(settings)[DB::Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache] = true;
     const_cast<DB::Settings &>(settings)[DB::Setting::remote_read_min_bytes_for_seek] = 0;
-    /// This test drives prefetch() manually and asserts an exact read/seek sequence; disable the
-    /// automatic initial prefetch that createReadBuffer() now issues for small objects so it does
-    /// not inject an extra prefetch and change the observed sequence.
-    const_cast<DB::Settings &>(settings)[DB::Setting::remote_filesystem_read_prefetch] = false;
 
     DB::FileCacheSettings cache_settings;
     cache_settings[DB::FileCacheSetting::path] = cache_base_path;

@@ -1272,12 +1272,14 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     /// For small objects prefetch the file ahead of consumption: when reading lots of tiny files
     /// this almost doubles throughput; bigger objects use parallel reading instead (`use_prefetch`
-    /// already implies the object is small, see `object_too_small` above). The prefetch is issued
-    /// for all small objects, including random-access formats (Parquet/ORC/Arrow) that read via
-    /// `readBigAt`: AsynchronousBoundedReadBuffer::readBigAt serves the requested range from the
-    /// prefetched buffer when it is covered (the common case for a fully prefetched small file)
-    /// and otherwise drops the prefetch and falls back to a positioned read.
-    if (use_prefetch && impl)
+    /// already implies the object is small, see `object_too_small` above). This covers random-access
+    /// formats (Parquet/ORC/Arrow) too: AsynchronousBoundedReadBuffer::readBigAt serves the requested
+    /// range from the prefetched buffer when it is covered (the common case for a fully prefetched
+    /// small file) and otherwise drops the prefetch and falls back to a positioned read.
+    ///
+    /// Skip it when the filesystem cache is in use: the cache manages its own read-ahead and segment
+    /// ranges, so an extra initial prefetch over it is redundant and interferes with that handling.
+    if (use_prefetch && impl && !use_filesystem_cache)
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
