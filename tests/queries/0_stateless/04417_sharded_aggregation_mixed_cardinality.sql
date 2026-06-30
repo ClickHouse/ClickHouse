@@ -6,6 +6,7 @@
 -- this does not guarantee the mix, but it stresses the cross-mode merge; results must match non-sharded.
 
 SET max_rows_to_group_by = 0;
+SET max_rows_to_read = 0;
 SET max_threads = 8;
 
 DROP TABLE IF EXISTS test;
