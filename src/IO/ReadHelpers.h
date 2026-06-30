@@ -893,11 +893,16 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     {
         if (s[4] < '0' || s[4] > '9')
         {
-            /// Validate before parsing as YYYY-MM-DD. Without this throw path blindly consumed
+            /// Validate before parsing as YYYY-MM-DD. Without this the throw path blindly consumed
             /// non-date bytes ("0.0,true,...") as year/month/day, advancing the buffer by 10 chars
-            /// and corrupting subsequent field parsing
+            /// and corrupting subsequent field parsing.
+            ///
+            /// Also detect dt64 decimal timestamps like "3333.77\n..." where s[4]='.' but s[7]='\n':
+            /// a real dotted date like "2025.08.31" has the same separator at both positions.
+            const bool is_decimal_dt64 = dt64_mode && s[4] == '.' && s[7] != '.';
             const bool looks_like_date
-                = isNumericASCII(s[0]) && isNumericASCII(s[1]) && isNumericASCII(s[2]) && isNumericASCII(s[3])
+                = !is_decimal_dt64
+                && isNumericASCII(s[0]) && isNumericASCII(s[1]) && isNumericASCII(s[2]) && isNumericASCII(s[3])
                 && isNumericASCII(s[5]) && isNumericASCII(s[6]) && isNumericASCII(s[8]) && isNumericASCII(s[9])
                 && isSymbolIn(s[4], allowed_date_delimiters) && isSymbolIn(s[7], allowed_date_delimiters);
 
