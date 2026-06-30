@@ -1,5 +1,6 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/Metadata.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Common/CurrentMetrics.h>
@@ -64,6 +65,20 @@ KeyMetadataPtr IFileCachePriority::Entry::getKeyMetadata() const
     if (!locked)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key metadata is expired for entry {}", toString());
     return locked;
+}
+
+void IFileCachePriority::notifyUsageChange(const KeyMetadataWeakPtr & key_metadata, Int64 size_delta, Int64 elements_delta) const
+{
+    /// Resolve the user id from the key metadata only when the callback is installed,
+    /// so this stays zero-overhead (no weak pointer lock) when the feature is disabled.
+    if (queue_type != QueueType::Main || !on_usage_change_callback || (!size_delta && !elements_delta))
+        return;
+
+    /// Entries with non-zero size are kept alive by the metadata bucket, so locking is expected to succeed.
+    /// If the metadata has already expired, skip the update instead of throwing: this is also reached from
+    /// noexcept paths such as `LRUIterator::invalidateImpl`, and a missed update is harmless for a gauge.
+    if (auto locked = key_metadata.lock())
+        on_usage_change_callback(locked->origin.user_id, size_delta, elements_delta);
 }
 
 void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const

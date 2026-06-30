@@ -90,8 +90,24 @@ SLRUFileCachePriority::SLRUFileCachePriority(
 
 FileCachePriorityPtr SLRUFileCachePriority::copy() const
 {
-    return std::make_unique<SLRUFileCachePriority>(
-        getQueueType(), max_size, max_elements, size_ratio, description, probationary_queue.state, protected_queue.state);
+    auto result = std::make_unique<SLRUFileCachePriority>(
+        getQueueType(),
+        max_size,
+        max_elements,
+        size_ratio,
+        description,
+        probationary_queue.state,
+        protected_queue.state);
+    if (getOnUsageChangeCallback())
+        result->setOnUsageChangeCallback(getOnUsageChangeCallback());
+    return result;
+}
+
+void SLRUFileCachePriority::setOnUsageChangeCallback(OnUsageChangeCallback callback)
+{
+    IFileCachePriority::setOnUsageChangeCallback(std::move(callback));
+    protected_queue.setOnUsageChangeCallback(getOnUsageChangeCallback());
+    probationary_queue.setOnUsageChangeCallback(getOnUsageChangeCallback());
 }
 
 size_t SLRUFileCachePriority::getSize(const CacheStateGuard::Lock & lock) const
