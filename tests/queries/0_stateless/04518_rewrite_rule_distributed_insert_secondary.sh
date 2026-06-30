@@ -31,8 +31,10 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE t_dist (x UInt64) ENGINE = Distributed(
 $CLICKHOUSE_CLIENT --query "CREATE RULE ${RULE} AS (SELECT 'never matches this insert') REJECT WITH 'rejected'"
 
 # Foreground distributed INSERT through RemoteInserter, with query_rules active on the initiator.
-# It must succeed and land one row.
-$CLICKHOUSE_CLIENT --query_rules "${RULE}" --prefer_localhost_replica 0 --distributed_foreground_insert 1 --query "INSERT INTO t_dist VALUES (1)"
+# It must succeed and land one row. A unique `log_comment` tags the initiator's initial query so
+# its row can be located in `system.query_log`.
+LOG_COMMENT="04518_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT --query_rules "${RULE}" --prefer_localhost_replica 0 --distributed_foreground_insert 1 --log_comment "${LOG_COMMENT}" --query "INSERT INTO t_dist VALUES (1)"
 
 echo "rows in t_local:"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM t_local"
@@ -42,13 +44,33 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 # The secondary INSERT fragment sent to the shard must carry no rules: `query_rules` was stripped
 # from the forwarded settings. Before the fix it forwarded the initiator's `query_rules` unchanged,
 # so the fragment's logged settings would contain the rule name.
+#
+# Secondary queries on the shard run with `current_database = default`, not the test database, so
+# they cannot be filtered by `current_database = currentDatabase()` directly. Instead, locate the
+# coordinator's initial query (which does have `current_database = currentDatabase()` — the filter
+# the style check requires in any test that reads from `system.query_log`) by its `log_comment` and
+# match the secondary fragments by `initial_query_id`.
 echo "secondary fragments / fragments carrying query_rules:"
 $CLICKHOUSE_CLIENT --query "
-    SELECT count() AS secondary_fragments, countIf(Settings['query_rules'] != '') AS fragments_with_rules
+    WITH initial_query AS
+    (
+        SELECT query_id
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+            AND log_comment = '${LOG_COMMENT}'
+            AND type = 'QueryFinish'
+            AND is_initial_query = 1
+            AND event_date >= yesterday()
+    )
+    SELECT
+        count() AS secondary_fragments,
+        countIf(Settings['query_rules'] != '') AS fragments_with_rules
     FROM system.query_log
-    WHERE is_initial_query = 0
-      AND type = 'QueryFinish'
-      AND query LIKE 'INSERT INTO ' || currentDatabase() || '.t_local%'"
+    WHERE initial_query_id IN (SELECT query_id FROM initial_query)
+        AND is_initial_query = 0
+        AND type = 'QueryFinish'
+        AND query LIKE '%t_local%'
+        AND event_date >= yesterday()"
 
 $CLICKHOUSE_CLIENT --query "DROP RULE ${RULE}"
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_dist"
