@@ -2991,11 +2991,12 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         auto future_parts = initCoverageWithNewEmptyParts(src_parts);
         auto [new_empty_covering_src_parts, _] = createEmptyDataParts(*this, future_parts, txn);
 
+        auto dest_data_parts_lock = dest_table_storage->lockParts();
+        auto src_data_parts_lock = lockParts();
+
         Transaction dest_transaction(*dest_table_storage, txn.get());
         std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
         {
-            auto dest_data_parts_lock = dest_table_storage->lockParts();
-
             for (auto & part : dst_parts)
             {
                 block_holders.push_back(dest_table_storage->fillNewPartName(part, dest_data_parts_lock));
@@ -3005,8 +3006,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
         Transaction src_transaction(*this, txn.get());
         {
-            auto src_data_parts_lock = lockParts();
-
             for (auto & part : new_empty_covering_src_parts)
             {
                 renameTempPartAndReplaceUnlocked(part, src_data_parts_lock, src_transaction, /*rename_in_transaction=*/true);
@@ -3014,10 +3013,10 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         }
 
         dest_transaction.renameParts();
-        dest_transaction.commit();
+        dest_transaction.commit(dest_data_parts_lock);
 
         src_transaction.renameParts();
-        src_transaction.commit();
+        src_transaction.commit(src_data_parts_lock);
 
         clearOldPartsFromFilesystem();
 
