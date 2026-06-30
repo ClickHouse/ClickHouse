@@ -59,6 +59,20 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
     bool require_full_header = ast->hasNonDefaultUnionMode();
 
+    /// INTERSECT/EXCEPT children always return their full header (they ignore
+    /// required_result_column_names), so the whole UNION must keep the full header too.
+    if (!require_full_header)
+    {
+        for (const auto & select : ast->list_of_selects->children)
+        {
+            if (select->as<ASTSelectIntersectExceptQuery>())
+            {
+                require_full_header = true;
+                break;
+            }
+        }
+    }
+
     size_t num_children = ast->list_of_selects->children.size();
     if (!num_children)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No children in ASTSelectWithUnionQuery");
