@@ -1,3 +1,4 @@
+#include <mutex>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionConstantBase.h>
@@ -62,11 +63,23 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
-        UInt64 snapshot = latest
-            ? TransactionLog::instance().getLatestSnapshot()
-            : TransactionLog::instance().getOldestSnapshot();
+        /// Capture the snapshot once per function instance (i.e. once per query) so that every block
+        /// produced by a single query observes the same value, even when the function is not
+        /// constant-folded (e.g. a distributed query) and the transaction log advances while the
+        /// query is running. The lookup is still deferred out of the constructor so the function can
+        /// be instantiated without a configured transaction log (e.g. by `system.functions`).
+        std::call_once(snapshot_initialized, [this]
+        {
+            snapshot = latest
+                ? TransactionLog::instance().getLatestSnapshot()
+                : TransactionLog::instance().getOldestSnapshot();
+        });
         return result_type->createColumnConst(input_rows_count, snapshot);
     }
+
+private:
+    mutable std::once_flag snapshot_initialized;
+    mutable UInt64 snapshot = 0;
 };
 
 using FunctionTransactionLatestSnapshot = FunctionTransactionSnapshot<true>;
