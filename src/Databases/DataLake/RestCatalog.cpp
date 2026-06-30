@@ -2,6 +2,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
@@ -49,6 +50,11 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FailPoint.h>
+#include <Poco/DateTime.h>
+#include <Poco/DateTimeFormat.h>
+#include <Poco/DateTimeParser.h>
+#include <Poco/StringTokenizer.h>
+#include <Poco/Timestamp.h>
 
 
 namespace DB::ErrorCodes
@@ -69,6 +75,12 @@ namespace DB::FailPoints
     extern const char check_database_datalake_negative[];
 }
 
+namespace ProfileEvents
+{
+    extern const Event DataLakeRestCatalogCredentialsVended;
+    extern const Event DataLakeRestCatalogCredentialsCacheHits;
+}
+
 namespace DataLake
 {
 
@@ -77,6 +89,13 @@ static constexpr auto NAMESPACES_ENDPOINT = "namespaces";
 
 namespace
 {
+
+String parseTableUuid(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    if (metadata_object && metadata_object->has("table-uuid"))
+        return metadata_object->get("table-uuid").extract<String>();
+    return {};
+}
 
 std::pair<std::string, std::string> parseCatalogCredential(const std::string & catalog_credential)
 {
@@ -1035,20 +1054,33 @@ void RestCatalog::getTableMetadata(
 bool RestCatalog::getTableMetadataImpl(
     const std::string & namespace_name,
     const std::string & table_name,
-    TableMetadata & result) const
+    TableMetadata & result,
+    bool allow_credentials_cache) const
 {
     LOG_DEBUG(log, "Checking table {} in namespace {}", table_name, namespace_name);
 
     DB::HTTPHeaderEntries headers;
-    if (result.requiresCredentials())
+
+    const bool want_credentials = result.requiresCredentials();
+
+    /// Reuse previously vended credentials is possible
+    std::optional<VendedStorageCredentials> cached_credentials;
+    if (want_credentials)
     {
+        if (allow_credentials_cache)
+            cached_credentials = tryGetCachedCredentials(namespace_name, table_name);
+
         /// Header `X-Iceberg-Access-Delegation` tells catalog to include storage credentials in LoadTableResponse.
         /// Value can be one of the two:
         /// 1. `vended-credentials`
         /// 2. `remote-signing`
         /// Currently we support only the first.
         /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L1832
-        headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
+        if (!cached_credentials)
+        {
+            ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogCredentialsVended);
+            headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
+        }
     }
 
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
@@ -1077,6 +1109,8 @@ bool RestCatalog::getTableMetadataImpl(
     if (!metadata_object)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
 
+    const std::string table_uuid = parseTableUuid(metadata_object);
+
     std::string location;
     if (result.requiresLocation())
     {
@@ -1102,16 +1136,39 @@ bool RestCatalog::getTableMetadataImpl(
         result.setSchema(*schema);
     }
 
-    if (result.isDefaultReadableTable() && result.requiresCredentials() && object->has("config"))
+    if (want_credentials && result.isDefaultReadableTable())
     {
-        auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
-        if (!config_object)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse config result");
-        auto [parsed_credentials, parsed_endpoint] = getCredentialsAndEndpoint(config_object, location);
-        if (parsed_credentials)
-            result.setStorageCredentials(parsed_credentials);
-        if (!parsed_endpoint.empty())
-            result.setEndpoint(parsed_endpoint);
+        if (cached_credentials)
+        {
+            /// Reuse the cached credentials only for the very same table with the very same UUID.
+            if (table_uuid.empty() || cached_credentials->table_uuid != table_uuid)
+            {
+                {
+                    std::lock_guard lock(credentials_cache_mutex);
+                    credentials_cache.erase({namespace_name, table_name});
+                }
+                return getTableMetadataImpl(namespace_name, table_name, result, /* allow_credentials_cache */ false);
+            }
+            ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogCredentialsCacheHits);
+            result.setStorageCredentials(cached_credentials->credentials);
+            if (!cached_credentials->endpoint.empty())
+                result.setEndpoint(cached_credentials->endpoint);
+        }
+        else if (object->has("config"))
+        {
+            auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
+            if (!config_object)
+                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse config result");
+            auto parsed = getCredentialsAndEndpoint(config_object, location);
+            parsed.table_uuid = table_uuid;
+            if (parsed.credentials)
+            {
+                result.setStorageCredentials(parsed.credentials);
+                cacheCredentials(namespace_name, table_name, parsed);
+            }
+            if (!parsed.endpoint.empty())
+                result.setEndpoint(parsed.endpoint);
+        }
     }
 
     if (result.requiresDataLakeSpecificProperties())
@@ -1123,8 +1180,8 @@ bool RestCatalog::getTableMetadataImpl(
         }
     }
 
-    if (metadata_object->has("table-uuid"))
-        result.setTableUUID(metadata_object->get("table-uuid").extract<String>());
+    if (!table_uuid.empty())
+        result.setTableUUID(table_uuid);
 
     return true;
 }
@@ -1382,7 +1439,68 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     }
 }
 
-std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const
+namespace
+{
+/// Parse a "...-expires-at-ms" value (ms since epoch); nullopt if absent, epoch (= don't cache) if invalid.
+std::optional<std::chrono::system_clock::time_point>
+parseExpiresAtMs(const Poco::JSON::Object::Ptr & object, const std::string & key)
+{
+    if (!object->has(key))
+        return std::nullopt;
+    try
+    {
+        static constexpr Int64 max_representable_sec
+            = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::duration::max()).count();
+        const Int64 expires_at_ms = object->get(key).convert<Int64>();
+        if (expires_at_ms <= 0)
+            return std::chrono::system_clock::time_point{};
+        if (expires_at_ms / 1000 < max_representable_sec)
+            return std::chrono::system_clock::from_time_t(static_cast<std::time_t>(expires_at_ms / 1000));
+        return std::nullopt;
+    }
+    catch (...) // NOLINT(bugprone-empty-catch) Ok: fail close below
+    {
+    }
+    return std::chrono::system_clock::time_point{};
+}
+
+std::chrono::system_clock::time_point parseSasTokenExpiry(const std::string & sas_token)
+{
+    std::string token = sas_token;
+    if (!token.empty() && token.front() == '?')
+        token.erase(0, 1);
+
+    Poco::StringTokenizer params(token, "&", Poco::StringTokenizer::TOK_IGNORE_EMPTY | Poco::StringTokenizer::TOK_TRIM);
+    for (const auto & param : params)
+    {
+        if (!param.starts_with("se="))
+            continue;
+
+        try
+        {
+            std::string decoded;
+            Poco::URI::decode(param.substr(3), decoded);
+
+            int time_zone_differential = 0;
+            Poco::DateTime date_time;
+            if (Poco::DateTimeParser::tryParse(Poco::DateTimeFormat::ISO8601_FORMAT, decoded, date_time, time_zone_differential))
+            {
+                date_time.makeUTC(time_zone_differential);
+                return std::chrono::system_clock::from_time_t(date_time.timestamp().epochTime());
+            }
+        }
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: handled by the fail-close return below
+        {
+        }
+
+        break;
+    }
+    /// Absent or unparseable 'se': do not cache.
+    return std::chrono::system_clock::time_point{};
+}
+}
+
+VendedStorageCredentials RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const
 {
     auto storage_type = parseStorageTypeFromLocation(location);
     switch (storage_type)
@@ -1390,22 +1508,27 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
         case StorageType::S3:
         {
             static constexpr auto gcs_token_str = "gcs.oauth2.token";
+            static constexpr auto gcs_token_expires_at_str = "gcs.oauth2.token-expires-at";
             static constexpr auto access_key_id_str = "s3.access-key-id";
             static constexpr auto secret_access_key_str = "s3.secret-access-key";
             static constexpr auto session_token_str = "s3.session-token";
             static constexpr auto storage_endpoint_str = "s3.endpoint";
+            static constexpr auto session_token_expires_at_ms_str = "s3.session-token-expires-at-ms";
 
             if (object->has(gcs_token_str))
             {
                 auto gcs_token = object->get(gcs_token_str).extract<String>();
                 LOG_DEBUG(log, "Using GCS OAuth2 token for location {}", location);
-                return {std::make_shared<GCSCredentials>(gcs_token), ""};
+                /// Do not cache if expiry was not parsed.
+                auto expires_at = parseExpiresAtMs(object, gcs_token_expires_at_str).value_or(std::chrono::system_clock::time_point{});
+                return {std::make_shared<GCSCredentials>(gcs_token), "", expires_at};
             }
 
             std::string access_key_id;
             std::string secret_access_key;
             std::string session_token;
             std::string storage_endpoint;
+            std::optional<std::chrono::system_clock::time_point> expires_at;
             if (object->has(access_key_id_str))
                 access_key_id = object->get(access_key_id_str).extract<String>();
             if (object->has(secret_access_key_str))
@@ -1414,9 +1537,10 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
                 session_token = object->get(session_token_str).extract<String>();
             if (object->has(storage_endpoint_str))
                 storage_endpoint = object->get(storage_endpoint_str).extract<String>();
+            expires_at = parseExpiresAtMs(object, session_token_expires_at_ms_str);
 
             LOG_DEBUG(log, "get tokens for location {}", location);
-            return {std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token), storage_endpoint};
+            return {std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token), storage_endpoint, expires_at};
         }
         case StorageType::Azure:
         {
@@ -1438,15 +1562,63 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
             }
 
             if (!sas_token.empty())
-            {
-                return {std::make_shared<AzureCredentials>(sas_token), ""};
-            }
+                return {std::make_shared<AzureCredentials>(sas_token), "", parseSasTokenExpiry(sas_token)};
             break;
         }
         default:
             break;
     }
-    return {nullptr, ""};
+    return {nullptr, "", std::nullopt};
+}
+
+std::optional<VendedStorageCredentials> RestCatalog::tryGetCachedCredentials(
+    const std::string & namespace_name, const std::string & table_name) const
+{
+    if (vended_credentials_cache_ttl.load(std::memory_order_relaxed) <= std::chrono::seconds::zero())
+        return std::nullopt;
+
+    std::lock_guard lock(credentials_cache_mutex);
+    auto it = credentials_cache.find({namespace_name, table_name});
+    if (it == credentials_cache.end())
+        return std::nullopt;
+    if (std::chrono::system_clock::now() >= it->second.expires_at.value())
+    {
+        credentials_cache.erase(it); /// Drop the stale entry.
+        return std::nullopt;
+    }
+
+    return it->second;
+}
+
+void RestCatalog::cacheCredentials(
+    const std::string & namespace_name, const std::string & table_name, const VendedStorageCredentials & parsed) const
+{
+    const auto ttl = vended_credentials_cache_ttl.load(std::memory_order_relaxed);
+    if (ttl <= std::chrono::seconds::zero())
+        return;
+
+    if (!parsed.credentials || parsed.credentials->isEmpty())
+        return;
+
+    const auto now = std::chrono::system_clock::now();
+
+    /// Cap at the configured TTL so an entry never outlives the documented maximum lifetime.
+    auto refresh_after = now + ttl;
+    if (parsed.expires_at)
+    {
+        const auto safe_expiry = parsed.expires_at.value() - credentials_expiry_safety_window;
+        if (safe_expiry < refresh_after)
+            refresh_after = safe_expiry;
+    }
+    if (refresh_after <= now)
+        return;
+
+    std::lock_guard lock(credentials_cache_mutex);
+
+    if (credentials_cache.size() >= credentials_cache_cleanup_threshold)
+        std::erase_if(credentials_cache, [&now](const auto & entry) { return now >= entry.second.expires_at.value(); });
+    credentials_cache[{namespace_name, table_name}]
+        = VendedStorageCredentials{parsed.credentials, parsed.endpoint, refresh_after, parsed.table_uuid};
 }
 
 ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCallback(const DB::StorageID & storage_id)
@@ -1500,8 +1672,12 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot read table {}, because no 'metadata-location' in response", table_name);
         }
 
-        auto [new_credentials, _] = getCredentialsAndEndpoint(config_object, location);
-        return new_credentials;
+        auto parsed = getCredentialsAndEndpoint(config_object, location);
+        if (object->has("metadata"))
+            parsed.table_uuid = parseTableUuid(object->get("metadata").extract<Poco::JSON::Object::Ptr>());
+        /// Refresh the per-table cache so subsequent queries reuse these freshly vended credentials.
+        cacheCredentials(namespace_name, table_name, parsed);
+        return parsed.credentials;
     };
 }
 

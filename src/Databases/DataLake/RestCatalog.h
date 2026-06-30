@@ -8,7 +8,13 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/defines.h>
+#include <atomic>
+#include <chrono>
 #include <filesystem>
+#include <map>
+#include <mutex>
+#include <optional>
 #include <Poco/JSON/Object.h>
 
 namespace DB
@@ -30,6 +36,14 @@ struct AccessToken
             return false;
         return std::chrono::system_clock::now() >= expires_at.value();
     }
+};
+
+struct VendedStorageCredentials
+{
+    std::shared_ptr<IStorageCredentials> credentials;
+    std::string endpoint;
+    std::optional<std::chrono::system_clock::time_point> expires_at;
+    std::string table_uuid = {};
 };
 
 class RestCatalog : public ICatalog, public DB::WithContext
@@ -87,6 +101,8 @@ public:
 
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
 
+    void setVendedCredentialsCacheTTL(std::chrono::seconds ttl) override { vended_credentials_cache_ttl.store(ttl, std::memory_order_relaxed); }
+
     String getClientId() const { return client_id; }
     String getClientSecret() const { return client_secret; }
 
@@ -131,6 +147,18 @@ protected:
     bool oauth_server_use_request_body;
     mutable MultiVersion<AccessToken> access_token;
 
+    /// TTL for caching vended credentials per table (0 means no caching).
+    std::atomic<std::chrono::seconds> vended_credentials_cache_ttl{std::chrono::seconds::zero()};
+
+    /// Sweep trigger threshold, not capacity!
+    static constexpr size_t credentials_cache_cleanup_threshold = 1000;
+
+    static constexpr std::chrono::seconds credentials_expiry_safety_window{60};
+    mutable std::mutex credentials_cache_mutex;
+
+    mutable std::map<std::pair<std::string, std::string>, VendedStorageCredentials> credentials_cache
+        TSA_GUARDED_BY(credentials_cache_mutex);
+
     Poco::Net::HTTPBasicCredentials credentials{};
 
     DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
@@ -160,7 +188,8 @@ protected:
     bool getTableMetadataImpl(
         const std::string & namespace_name,
         const std::string & table_name,
-        TableMetadata & result) const;
+        TableMetadata & result,
+        bool allow_credentials_cache = true) const;
 
     Config loadConfig();
     virtual DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const;
@@ -172,7 +201,13 @@ protected:
         const String & method = Poco::Net::HTTPRequest::HTTP_POST,
         bool ignore_result = false) const;
 
-    std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
+    VendedStorageCredentials getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
+
+    std::optional<VendedStorageCredentials> tryGetCachedCredentials(
+        const std::string & namespace_name, const std::string & table_name) const;
+
+    void cacheCredentials(
+        const std::string & namespace_name, const std::string & table_name, const VendedStorageCredentials & parsed) const;
 
     AccessToken retrieveAccessToken() const;
 };

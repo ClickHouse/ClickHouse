@@ -4,6 +4,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/MultiVersion.h>
@@ -25,6 +26,7 @@ class AzureObjectStorage : public IObjectStorage
 public:
     using ClientPtr = std::unique_ptr<AzureBlobStorage::ContainerClient>;
     using SettingsPtr = std::unique_ptr<AzureBlobStorage::RequestSettings>;
+    using AzureClientRefreshCallback = ReadBufferFromAzureBlobStorage::AzureClientRefreshCallback;
 
     AzureObjectStorage(
         const String & name_,
@@ -34,7 +36,8 @@ public:
         const AzureBlobStorage::ConnectionParams & connection_params_,
         const String & object_namespace_,
         const String & description_,
-        const String & common_key_prefix_);
+        const String & common_key_prefix_,
+        AzureClientRefreshCallback client_refresh_callback_ = {});
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
@@ -143,10 +146,13 @@ private:
 
     std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient> buildDataLakeFileClient(const String & blob_path) const;
 
+    /// On an auth failure, swap in a client rebuilt with refreshed credentials; returns true to retry.
+    bool tryRefreshClient(const Azure::Core::RequestFailedException & e) const;
+
     const String name;
     AzureBlobStorage::AuthMethod auth_method;
-    /// client used to access the files in the Blob Storage cloud
-    MultiVersion<AzureBlobStorage::ContainerClient> client;
+    /// client used to access the files in the Blob Storage cloud (mutable: tryRefreshClient swaps it).
+    mutable MultiVersion<AzureBlobStorage::ContainerClient> client;
     MultiVersion<AzureBlobStorage::RequestSettings> settings;
     const String object_namespace; /// container + prefix
 
@@ -156,6 +162,9 @@ private:
     const String common_key_prefix;
 
     const AzureBlobStorage::ConnectionParams connection_params;
+
+    /// Empty unless the storage was created for a catalog that vends refreshable credentials.
+    const AzureClientRefreshCallback client_refresh_callback;
 
     LoggerPtr log;
 };

@@ -11,6 +11,7 @@
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Formats/FormatFactory.h>
 #include <azure/storage/blobs.hpp>
@@ -89,12 +90,37 @@ StorageObjectStorageQuerySettings StorageAzureConfiguration::getQuerySettings(co
     };
 }
 
-ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback /*refresh_credentials_callback*/) /// NOLINT
+ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) /// NOLINT
 {
     assertInitialized();
 
     auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     auto client = AzureBlobStorage::getContainerClient(connection_params, is_readonly);
+
+    /// For catalogs that vend refreshable SAS tokens, rebuild the client with a fresh token on auth failure.
+    AzureObjectStorage::AzureClientRefreshCallback client_refresher;
+    if (refresh_credentials_callback)
+    {
+        client_refresher = [refresh_credentials_callback, params = connection_params]() -> std::unique_ptr<const AzureBlobStorage::ContainerClient>
+        {
+            auto new_credentials = (*refresh_credentials_callback)();
+            if (!new_credentials)
+                return nullptr;
+
+            auto azure_credentials = std::dynamic_pointer_cast<DataLake::AzureCredentials>(new_credentials);
+            if (!azure_credentials)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected credentials type for Azure storage");
+            if (azure_credentials->isEmpty())
+                return nullptr;
+
+            auto new_params = params;
+            std::string sas = azure_credentials->getToken();
+            if (!sas.empty() && sas.front() == '?')
+                sas.erase(0, 1);
+            new_params.endpoint.sas_auth = std::move(sas);
+            return new_params.createForContainer();
+        };
+    }
 
     return std::make_unique<AzureObjectStorage>(
         "AzureBlobStorage",
@@ -104,7 +130,8 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
         connection_params,
         connection_params.getContainer(),
         connection_params.getConnectionURL(),
-        /*common_key_prefix*/ "");
+        /*common_key_prefix*/ "",
+        std::move(client_refresher));
 }
 
 AzureBlobStorage::ConnectionParams getAzureConnectionParams(
