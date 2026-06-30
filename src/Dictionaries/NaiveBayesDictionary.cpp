@@ -198,6 +198,10 @@ void NaiveBayesDictionary::loadData()
             DictionaryPipelineExecutor executor(io.pipeline, false);
             io.pipeline.setConcurrencyControl(false);
 
+            /// TODO (nihalzp): We are processing it single threaded and one chunk at a time. This should be okay because
+            /// the training data is already pre-aggregated and is supposed to be small for most cases. However, we can theoretically
+            /// parallelize this by having multiple threads processing different chunks and a smart merge of processed intermediate data.
+            /// This could be useful if the training data is huge like millions of rows.
             Block block;
             while (executor.pull(block))
             {
@@ -208,6 +212,9 @@ void NaiveBayesDictionary::loadData()
 
                 for (size_t i = 0; i < rows; ++i)
                 {
+                    /// TODO (nihalzp): Currently, it does virtual call every row. We can optimize by downcasting
+                    /// each column to its concrete type once per block and reading the raw buffer instead of the
+                    /// per-row getDataAt/getUInt.
                     const std::string_view ngram_sv = ngram_col->getDataAt(i);
                     const UInt64 raw_class_id = class_id_col->getUInt(i);
                     if (raw_class_id > std::numeric_limits<UInt32>::max())
