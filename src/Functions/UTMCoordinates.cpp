@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 
@@ -210,18 +211,15 @@ UTMCoordinate wgs84ToUTM(Float64 longitude, Float64 latitude, UInt8 forced_zone)
     const Float64 lat_rad = latitude * DEG_TO_RAD;
     const Float64 lon_rad = longitude * DEG_TO_RAD;
 
-    int zone;
+    int zone = 0;
     if (forced_zone >= 1 && forced_zone <= 60)
     {
         zone = forced_zone;
     }
     else
     {
-        zone = static_cast<int>(std::floor((longitude + 180.0) / 6.0)) + 1;
-        if (zone > 60)
-            zone = 60;   /// longitude == 180
-        if (zone < 1)
-            zone = 1;
+        /// std::clamp guards the longitude == 180 boundary, which would otherwise give zone 61.
+        zone = std::clamp(static_cast<int>(std::floor((longitude + 180.0) / 6.0)) + 1, 1, 60);
 
         /// Western Norway: zone 32 is widened to cover the coast.
         if (latitude >= 56.0 && latitude < 64.0 && longitude >= 3.0 && longitude < 12.0)
@@ -327,8 +325,7 @@ void utmToWGS84(Float64 easting, Float64 northing, UInt8 zone, bool is_north, Fl
 
 std::string mgrsEncode(Float64 longitude, Float64 latitude, UInt8 precision)
 {
-    if (precision > 5)
-        precision = 5;
+    precision = std::min<UInt8>(precision, 5);
 
     const UTMCoordinate utm = wgs84ToUTM(longitude, latitude);
 
