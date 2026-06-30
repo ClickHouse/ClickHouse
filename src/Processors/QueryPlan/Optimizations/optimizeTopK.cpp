@@ -16,6 +16,37 @@
 namespace DB::QueryPlanOptimizations
 {
 
+/// Resolve a column name through the DAG of an intermediate step (`Expression` or
+/// `Filter`) between `Sort` and the reading step. Both steps build their output header
+/// with `ActionsDAG::updateHeader`: a column present in the DAG outputs is produced by
+/// the DAG, while a column not mentioned in the DAG at all passes through unchanged.
+/// Follow `ALIAS` nodes from the output down to the underlying node to undo renames
+/// (e.g. the analyzer's `__table1.time` -> `time`). Returns the column name at the
+/// step's input, or `std::nullopt` when the column is computed by the step (a
+/// `FUNCTION` node), in which case it cannot be mapped to a storage column.
+static std::optional<String> resolveColumnThroughDAG(const ActionsDAG & dag, const String & name)
+{
+    const ActionsDAG::Node * node = dag.tryFindInOutputs(name);
+    if (!node)
+    {
+        /// A column consumed as a DAG input but not re-output does not pass through
+        /// (`updateHeader` removes it), so the name cannot come from below this step.
+        for (const auto * input : dag.getInputs())
+            if (input->result_name == name)
+                return std::nullopt;
+
+        return name;
+    }
+
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+
+    if (node->type != ActionsDAG::ActionType::INPUT)
+        return std::nullopt;
+
+    return node->result_name;
+}
+
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     /// The dynamic-filtering path injects an internal `__topKFilter` function that
@@ -41,6 +72,30 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         return 0;
 
     node = node->children.front();
+
+    /// `tryExecuteFunctionsAfterSorting` (the `liftUpFunctions` optimization, which runs
+    /// earlier in the same pass) lifts expressions that don't depend on the sort columns
+    /// above `Sort`, placing `ExpressionStep`s between `Limit` and `Sort`. This happens,
+    /// for example, when selecting an `ALIAS` column with `ORDER BY ... LIMIT` (issue
+    /// #96452): the `ALIAS` is computed from a physical column that is not part of the
+    /// sort key, so its expression is lifted above the `Sort`. Walk through such
+    /// expressions so the top-K optimization still recognizes the underlying `Sort`.
+    /// The lifted expressions never touch the sort columns, so they do not affect either
+    /// the sort-column resolution below or the threshold tracking on the read step.
+    while (auto * above_expr = typeid_cast<ExpressionStep *>(node->step.get()))
+    {
+        if (node->children.size() != 1)
+            return 0;
+        /// `arrayJoin` changes the number of rows, so it is not enough to read just the
+        /// top-K source rows: `LIMIT` must be applied to the rows produced by `arrayJoin`,
+        /// not to the source rows. Enabling skip-index / dynamic top-K filtering here could
+        /// discard source rows that are still needed to produce `LIMIT` rows after the
+        /// expansion. Bail out, consistent with the same check in `optimizeLazyMaterialization2`.
+        if (above_expr->getExpression().hasArrayJoin())
+            return 0;
+        node = node->children.front();
+    }
+
     auto * sorting_step = typeid_cast<SortingStep *>(node->step.get());
     if (!sorting_step)
         return 0;
@@ -106,30 +161,34 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     const bool where_clause = filter_step || read_from_mergetree_step->getPrewhereInfo();
 
-    ///remove alias
-    if (sort_column_name.contains('.'))
+    /// The sort column may be renamed between `Sort` and the reading step (e.g. the
+    /// analyzer's "Change column names to column identifiers" stage turns `time` into
+    /// `__table1.time`). Resolve the name through the DAG of each intermediate step,
+    /// top to bottom. The renames are not necessarily all in one step: when selecting
+    /// an `ALIAS` column with `WHERE ... ORDER BY ... LIMIT` (issue #96452),
+    /// `liftUpFunctions` splits the expression below `Sort` and leaves the renaming
+    /// `ExpressionStep` separate from the `FilterStep` below it, so resolving through
+    /// only one of them loses the optimization.
+    if (expression_step)
     {
-        if (!expression_step && !filter_step)
-            return 0;
-
-        const ActionsDAG::Node * column_node = nullptr;
-        if (filter_step)
-            column_node = filter_step->getExpression().tryFindInOutputs(sort_column_name);
-        else
-            column_node = expression_step->getExpression().tryFindInOutputs(sort_column_name);
-
-        if (unlikely(!column_node))
-            return 0;
-
-        if (column_node->type == ActionsDAG::ActionType::ALIAS)
+        auto resolved = resolveColumnThroughDAG(expression_step->getExpression(), sort_column_name);
+        if (!resolved)
         {
-            sort_column_name = column_node->children.at(0)->result_name;
-        }
-        else
-        {
-            LOG_DEBUG(getLogger("optimizeTopK"), "Could not resolve column alias {} {}", sort_column_name, column_node->type);
+            LOG_DEBUG(getLogger("optimizeTopK"), "Could not resolve sort column {} through ExpressionStep", sort_column_name);
             return 0;
         }
+        sort_column_name = std::move(*resolved);
+    }
+
+    if (filter_step)
+    {
+        auto resolved = resolveColumnThroughDAG(filter_step->getExpression(), sort_column_name);
+        if (!resolved)
+        {
+            LOG_DEBUG(getLogger("optimizeTopK"), "Could not resolve sort column {} through FilterStep", sort_column_name);
+            return 0;
+        }
+        sort_column_name = std::move(*resolved);
     }
 
     const auto & read_columns = read_from_mergetree_step->getAllColumnNames();

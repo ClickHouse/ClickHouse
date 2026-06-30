@@ -438,7 +438,32 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (limit_step->withTies())
         return false;
 
-    auto * sorting_step = typeid_cast<SortingStep *>(root.children.front()->step.get());
+    auto expected_output_header = root.step->getOutputHeader();
+
+    const auto limit = limit_step->getLimit();
+    if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
+        return false;
+
+    /// `tryExecuteFunctionsAfterSorting` may lift expressions that don't depend on
+    /// sort columns above Sort, placing ExpressionSteps between Limit and Sort.
+    /// Collect their DAGs so we can reapply them after the lazy join.
+    std::list<ActionsDAG> above_sort_dags;
+    auto * sorting_node = root.children.front();
+    while (auto * above_expr = typeid_cast<ExpressionStep *>(sorting_node->step.get()))
+    {
+        if (sorting_node->children.size() != 1)
+            return false;
+        /// `arrayJoin` changes the number of rows, so reapplying it after the lazy
+        /// join (i.e. after `LIMIT` was already applied) would change the query
+        /// semantics: `LIMIT` must be applied to the rows produced by `arrayJoin`,
+        /// not to the source rows. Bail out, consistent with the checks below the sort.
+        if (above_expr->getExpression().hasArrayJoin())
+            return false;
+        above_sort_dags.push_front(above_expr->getExpression().clone());
+        sorting_node = sorting_node->children.front();
+    }
+
+    auto * sorting_step = typeid_cast<SortingStep *>(sorting_node->step.get());
     if (!sorting_step)
         return false;
 
@@ -447,13 +472,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     bool reading_in_order = sorting_step->getType() == SortingStep::Type::FinishSorting;
 
-    const auto limit = limit_step->getLimit();
-    if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
-        return false;
-
     StepStack steps_to_update;
-
-    auto * sorting_node = root.children.front();
     auto * reading_step = findReadingStep(*sorting_node->children.front(), steps_to_update);
     if (!reading_step)
         return false;
@@ -636,7 +655,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         }
     }
 
-    auto new_sorting_step = std::move(root.children.front()->step); // = std::make_unique<SortingStep>(main_plan.getCurrentHeader(), sorting_step->getSortDescription(), sorting_step->getLimit(), sorting_step->getSettings());
+    auto new_sorting_step = std::move(sorting_node->step);
     new_sorting_step->updateInputHeader(main_plan.getCurrentHeader());
     main_plan.addStep(std::move(new_sorting_step));
 
@@ -688,6 +707,28 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         if (!lazy_steps.empty())
             removeDanglingNodes(dag);
         result_plan.addStep(std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag)));
+    }
+
+    /// Reapply expressions that were lifted above Sort by `tryExecuteFunctionsAfterSorting`.
+    /// At this point both main-path and lazily-read columns are available after the join.
+    for (auto & dag : above_sort_dags)
+        result_plan.addStep(std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag)));
+
+    /// When PREWHERE adds extra columns to ReadFromMergeTree that are not consumed
+    /// by the split expression DAGs, they pass through and pollute the output header.
+    /// This causes block structure mismatch in UnionStep with parallel replicas.
+    /// Add a projection step to strip extra columns if needed.
+    auto result_header = result_plan.getCurrentHeader();
+    if (result_header->columns() != expected_output_header->columns())
+    {
+        Names expected_columns;
+        expected_columns.reserve(expected_output_header->columns());
+        for (const auto & col : *expected_output_header)
+            expected_columns.push_back(col.name);
+
+        ActionsDAG projection_dag(result_header->getColumnsWithTypeAndName());
+        projection_dag.getOutputs() = projection_dag.findInOutputs(expected_columns);
+        result_plan.addStep(std::make_unique<ExpressionStep>(result_header, std::move(projection_dag)));
     }
 
     query_plan.replaceNodeWithPlan(&root, std::move(result_plan));
