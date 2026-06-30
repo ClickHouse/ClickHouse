@@ -2,6 +2,7 @@
 #include <DataTypes/Serializations/SerializationDateTime.h>
 
 #include <Columns/ColumnVector.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeTime.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
@@ -9,7 +10,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
+#include <IO/readDecimalText.h>
 #include <Common/assert_cast.h>
+#include <base/arithmeticOverflow.h>
+
+#include <limits>
 
 namespace DB
 {
@@ -59,21 +64,31 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
     x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
 }
 
-/// Accept and discard the fractional part of a Unix timestamp, e.g. `1703363853.5`. `DateTime` has
-/// no sub-second precision, so the fraction is truncated to whole seconds, matching `CAST` and the
-/// `Values` format.
-inline void skipTimestampFraction(ReadBuffer & istr)
+/// An unquoted number in JSON or the Quoted format is a Unix timestamp (seconds since the epoch),
+/// e.g. `1703363853`, `1703363853.5` or `1.703363853e9`. It is parsed as a decimal value exactly like
+/// `DateTime64` (see `SerializationDateTime64.cpp`), but at scale 0: `DateTime` has whole-second
+/// resolution, so any sub-second part is truncated to whole seconds, matching `CAST`, `toDateTime` and
+/// the `Values` format. Using `readDecimalText` (instead of the previous `readIntText`) makes the
+/// fractional and exponent forms parse the same way they do for `DateTime64`, rather than leaving the
+/// `.`/`e...` suffix unread. As before, parsing stops at the first character that is not part of the
+/// number (e.g. the `,` or `}` that follows the value in JSON), and an out-of-range number is clamped
+/// to the `DateTime` range.
+static constexpr UInt32 datetime_number_precision = DecimalUtils::max_precision<Decimal128>;
+
+inline time_t timestampNumberToSeconds(Int128 value, UInt32 unread_scale)
 {
-    if (checkChar('.', istr))
-        while (!istr.eof() && isNumericASCII(*istr.position()))
-            ++istr.position();
+    if (common::mulOverflow(value, DecimalUtils::scaleMultiplier<Int128>(unread_scale), value))
+        value = value > 0 ? std::numeric_limits<Int128>::max() : std::numeric_limits<Int128>::min();
+    value = std::clamp<Int128>(value, 0, static_cast<Int128>(0xFFFFFFFF));
+    return static_cast<time_t>(value);
 }
 
 inline void readAsIntText(time_t & x, ReadBuffer & istr)
 {
-    readIntText(x, istr);
-    skipTimestampFraction(istr);
-    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
+    Decimal128 tmp;
+    UInt32 unread_scale = 0;
+    readDecimalText(istr, tmp, datetime_number_precision, unread_scale);
+    x = timestampNumberToSeconds(tmp.value, unread_scale);
 }
 
 inline bool tryReadText(
@@ -99,10 +114,11 @@ inline bool tryReadText(
 
 inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr)
 {
-    if (!tryReadIntText(x, istr))
+    Decimal128 tmp;
+    UInt32 unread_scale = 0;
+    if (!readDecimalText<Decimal128, bool>(istr, tmp, datetime_number_precision, unread_scale, /*digits_only=*/false))
         return false;
-    skipTimestampFraction(istr);
-    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
+    x = timestampNumberToSeconds(tmp.value, unread_scale);
     return true;
 }
 
