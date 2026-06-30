@@ -378,6 +378,9 @@
 [submodule "contrib/antlr4-cpp-runtime"]
 	path = contrib/antlr4-cpp-runtime
 	url = https://github.com/antlr/antlr4.git
+[submodule "contrib/darts-clone"]
+	path = contrib/darts-clone
+	url = https://github.com/s-yata/darts-clone
 [submodule "contrib/base64"]
 	path = contrib/base64
 	url = https://github.com/ClickHouse/base64.git
@@ -399,3 +402,6 @@
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
 	url = https://github.com/xtensor-stack/xsimd
+[submodule "contrib/jieba_cpp"]
+	path = contrib/jieba_cpp
+	url = https://github.com/ClickHouse/jieba_cpp

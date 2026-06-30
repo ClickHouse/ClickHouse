@@ -1,5 +1,7 @@
 #include <Interpreters/TokenizerFactory.h>
 
+#include "config.h"
+
 #include <Common/Exception.h>
 #include <Interpreters/ITokenizer.h>
 #include <Parsers/ASTFunction.h>
@@ -281,6 +283,34 @@ static void registerTokenizers(TokenizerFactory & factory)
 
     factory.registerTokenizer(AsciiCJKTokenizer::getName(), ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
     factory.registerTokenizer("unicodeWord", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+
+#if USE_JIEBA
+    auto chinese_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        const auto * tokenizer_name = ChineseTokenizer::getExternalName();
+        assertParamsCount(args.size(), 1, tokenizer_name);
+
+        ChineseTokenizationGranularity granularity = ChineseTokenizationGranularity::Coarse;
+        if (!args.empty())
+        {
+            auto granularity_str = castAs<String>(args[0], "granularity");
+            if (granularity_str == "fine_grained")
+                granularity = ChineseTokenizationGranularity::Fine;
+            else if (granularity_str == "coarse_grained")
+                granularity = ChineseTokenizationGranularity::Coarse;
+            else
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Tokenizer '{}' supports only granularities 'coarse_grained' or 'fine_grained', got: '{}'",
+                    tokenizer_name,
+                    granularity_str);
+        }
+
+        return std::make_unique<ChineseTokenizer>(granularity);
+    };
+
+    factory.registerTokenizer(ChineseTokenizer::getName(), ITokenizer::Type::Chinese, chinese_creator);
+#endif
 }
 
 }

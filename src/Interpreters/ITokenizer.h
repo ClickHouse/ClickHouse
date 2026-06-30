@@ -9,6 +9,11 @@
 #include <base/types.h>
 #include <fmt/format.h>
 
+#include "config.h"
+#if USE_JIEBA
+#  include <Interpreters/JiebaSegmenter.h>
+#endif
+
 #if defined(__SSE2__)
 #  include <emmintrin.h>
 #  if defined(__SSE4_2__)
@@ -31,6 +36,9 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+#if USE_JIEBA
+        Chinese,
+#endif
     };
 
     ITokenizer() = default;
@@ -434,6 +442,45 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     bool supportsStringLike() const override { return true; }
 };
 
+#if USE_JIEBA
+/// Parser segmenting Chinese text using the cppjieba library.
+/// Two granularities are supported:
+///   - "coarse_grained" (default): jieba's standard MP-segmentation result
+///   - "fine_grained": jieba's full segmentation (cutAll), enumerating overlapping word candidates
+struct ChineseTokenizer final : public ITokenizerHelper<ChineseTokenizer>
+{
+    explicit ChineseTokenizer(ChineseTokenizationGranularity granularity_)
+        : ITokenizerHelper(Type::Chinese)
+        , granularity(granularity_)
+    {
+    }
+
+    static const char * getName() { return "chinese"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override
+    {
+        return fmt::format("{}({})", getName(), granularity == ChineseTokenizationGranularity::Fine ? "fine_grained" : "coarse_grained");
+    }
+
+    bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+    bool supportsStringLike() const override { return false; }
+    /// Hot-path methods bypass `nextInString` and invoke the segmenter directly with
+    /// per-call local state. `MergeTreeIndexText` shares one `ChineseTokenizer` between
+    /// concurrent aggregators and conditions, so the streaming `nextInString` iterator
+    /// (which would have to keep `tokens_cache` between calls) is not safe to use here.
+    void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const override;
+    void stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const override;
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    ChineseTokenizationGranularity getGranularity() const { return granularity; }
+
+private:
+    ChineseTokenizationGranularity granularity;
+};
+#endif
+
 namespace detail
 {
 
@@ -502,6 +549,19 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
             return;
         }
+#if USE_JIEBA
+        case ITokenizer::Type::Chinese:
+        {
+            const auto & chinese_tokenizer = assert_cast<const ChineseTokenizer &>(tokenizer);
+            auto words = JiebaSegmenter::instance().tokenize({data, length}, chinese_tokenizer.getGranularity());
+            for (const auto & word : words)
+            {
+                if (callback(word.data(), word.size()))
+                    return;
+            }
+            return;
+        }
+#endif
     }
 }
 

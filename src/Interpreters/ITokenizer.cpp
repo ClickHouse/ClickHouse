@@ -734,4 +734,63 @@ void AsciiCJKTokenizer::substringToTokens(
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
 
+#if USE_JIEBA
+bool ChineseTokenizer::nextInString(const char *, size_t, size_t &, size_t &, size_t &) const
+{
+    /// All hot-path tokenization for `ChineseTokenizer` goes through `stringToTokens` /
+    /// `stringToBloomFilter` (and the substring variants which delegate to them), each of
+    /// which calls the segmenter directly with per-call local state. There is no
+    /// streaming, stateful entry point for this tokenizer.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::nextInString is not supported");
+}
+
+bool ChineseTokenizer::nextInStringLike(const char *, size_t, size_t &, String &) const
+{
+    /// LIKE/ILIKE tokenization is intentionally unsupported for the `chinese` tokenizer
+    /// (`supportsStringLike()` returns `false`). `nextInStringLike` is the streaming entry
+    /// point that extracts index tokens from a LIKE pattern, splitting it on the `%`/`_`
+    /// wildcards and emitting the literal fragments between them. That model assumes a
+    /// tokenizer whose tokens are delimited by characters in the text (splitByNonAlpha,
+    /// ngrams, ...). Chinese word segmentation has no such delimiters: words are inferred
+    /// from a dictionary/HMM over a whole sentence, and a LIKE fragment cut at an arbitrary
+    /// wildcard boundary is generally not a word boundary, so the fragments would not match
+    /// the indexed tokens. We therefore reject it instead of producing wrong tokens; use
+    /// `tokens(value, 'chinese')` with `hasAnyTokens`/`hasAllTokens` instead of LIKE.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::nextInStringLike is not supported");
+}
+
+void ChineseTokenizer::stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const
+{
+    const auto tokens = JiebaSegmenter::instance().tokenize({data, length}, granularity);
+    for (const auto & token : tokens)
+        bloom_filter.add(token.data(), token.size());
+}
+
+void ChineseTokenizer::stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const
+{
+    const auto words = JiebaSegmenter::instance().tokenize({data, length}, granularity);
+    tokens.reserve(tokens.size() + words.size());
+    for (const auto & word : words)
+        tokens.emplace_back(word);
+}
+
+void ChineseTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    /// Substring/prefix/suffix paths are gated by `supportsStringLike()` everywhere
+    /// they are called from (`startsWith`, `endsWith`, `like`, `match`,
+    /// `multiSearchAny`, `multiMatchAny` in `MergeTreeIndexConditionText`), and
+    /// `ChineseTokenizer::supportsStringLike()` returns `false`. Reaching this
+    /// method indicates a bug in the index-condition machinery, not a user error,
+    /// so fail loud rather than silently returning an empty filter that would
+    /// over-prune granules.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::substringToBloomFilter is not supported");
+}
+
+void ChineseTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    /// See the comment on `substringToBloomFilter`.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::substringToTokens is not supported");
+}
+#endif
+
 }

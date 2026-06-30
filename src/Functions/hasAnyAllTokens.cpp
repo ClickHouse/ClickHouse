@@ -467,7 +467,7 @@ hasAnyTokens(input, needles)
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
         {"input", "The input column.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "Array(String)", "Array(FixedString)", "Array(Nullable(String))", "Array(Nullable(FixedString))"}},
         {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAnyTokens = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAnyTokens = {
@@ -608,7 +608,7 @@ hasAllTokens(input, needles)
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
         {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
         {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAllTokens = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAllTokens = {

@@ -80,6 +80,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
@@ -114,6 +115,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
@@ -149,6 +151,8 @@ ALTER TABLE table DROP INDEX text_idx;
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
+- `chinese[(granularity)]` segments Chinese text into words using a dictionary and a hidden Markov model (the algorithm follows [jieba](https://github.com/fxsjy/jieba); the embedded dictionary and model data are derived from [cppjieba](https://github.com/yanyiwu/cppjieba)). Unlike `asciiCJK`, which treats every non-ASCII character as a single-character token, `chinese` groups consecutive Chinese characters into words (for example `北京大学` becomes one token `北京大学` rather than four single-character tokens). This yields more meaningful tokens for Chinese text and higher search quality. For general/mixed text, please use `asciiCJK`, for Chinese-only text, please use `chinese`. The optional `granularity` argument is either `'coarse_grained'` (the default if not specified) or `'fine_grained'`. The latter additionally enumerates overlapping sub-words for example `北京邮电大学` also yields `北京`, `邮电`, `大学`. Fine-grained tokenization improves recall at the cost of a larger index.
+  Search a `chinese` text index with [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) / [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) (which tokenize the needle with the `chinese` tokenizer), not `hasToken` (which splits on ASCII separators only).
 - `ngrams(N)` splits strings into equally large `N`-grams (see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)).
   The ngram length can be specified using an optional integer parameter between 1 and 8, for example, `tokenizer = ngrams(3)`.
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.

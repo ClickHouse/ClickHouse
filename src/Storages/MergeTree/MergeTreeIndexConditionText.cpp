@@ -953,6 +953,30 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
+        /// `hasToken` splits its needle on ASCII separators (`splitByNonAlpha` semantics) at
+        /// row level. A text index can only answer it correctly when the index tokenizer is
+        /// `splitByNonAlpha` too: only then do the index tokens match what `hasToken` looks for.
+        ///
+        /// For every other tokenizer the index tokens differ from `splitByNonAlpha` tokens, so
+        /// using the index is unsound — and not only via `Exact` direct read (which trusts the
+        /// posting lists as the final per-row answer), but even for granule pruning, which can
+        /// drop granules that actually contain matching rows. Examples:
+        ///   - `array`/`splitByString`/`asciiCJK` index `'config x'` / `'a.b'` as a single token,
+        ///     so the needle token `'config'` / `'a'` is absent from the dictionary and the
+        ///     granule is pruned even though `hasToken` matches at row level (false negative);
+        ///   - `ngrams(2)` indexes every bigram, so `hasToken(s, 'Click')` matches a row
+        ///     `'Clack lick'` that contains all of `Click`'s bigrams but not the token (false
+        ///     positive);
+        ///   - `chinese` segments CJK runs into words that a `splitByNonAlpha` needle never
+        ///     equals.
+        ///
+        /// So we bypass the index entirely for `hasToken` unless the tokenizer is
+        /// `splitByNonAlpha`, letting the row-level predicate run as documented. Users who want
+        /// tokenizer-aware matching should use `hasAllTokens` / `hasAnyTokens`, which tokenize
+        /// the needle with the index tokenizer and are therefore consistent with the index.
+        if (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha)
+            return false;
+
         /// A needle containing a token separator is invalid for hasToken and raises BAD_ARGUMENTS during a
         /// brute-force scan. hasToken uses Exact direct read, so the index would tokenize the needle and
         /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception;
@@ -969,13 +993,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             const String & string_needle = value_field.safeGet<String>();
             if (!string_needle.empty())
             {
-                /// hasToken uses splitByNonAlpha as its tokenizer, so:
-                ///  - A needle without any word character (alphanumeric or non-ASCII) is invalid.
-                ///  - Bypass the index in that case so the row-level evaluation throws BAD_ARGUMENTS (or returns NULL for hasTokenOrNull)
-                ///  -- Consistnt with the no-index behaviour.
-                /// If the needle does contain word characters (e.g. "abc" with ngrams(4)):
-                ///  - It is valid but too short for the index's tokenizer:
-                ///  -- Fall through to push "" so all granules are pruned and the query returns 0 rows.
+                /// Only `splitByNonAlpha` reaches here (every other tokenizer returned above).
+                /// `splitByNonAlpha` yields no tokens for a non-empty needle only when the needle
+                /// has no word character (alphanumeric or non-ASCII), e.g. all ASCII punctuation.
+                /// Such a needle is invalid for `hasToken`, so bypass the index and let row-level
+                /// evaluation throw BAD_ARGUMENTS (or return NULL for `hasTokenOrNull`), matching
+                /// the no-index behaviour.
                 if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
                     return false;
             }
