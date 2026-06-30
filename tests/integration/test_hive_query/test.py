@@ -11,6 +11,14 @@ logging.getLogger().addHandler(logging.StreamHandler())
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
+# The Hive cluster brings up a full Hadoop + Hive metastore + HiveServer2 JVM stack, which on a
+# loaded (cpus=3) CI runner can take longer than the default per-test timeout of 900s to become
+# reachable - the `started_cluster` fixture then exhausts the budget while polling the metastore in
+# `prepare_hive_data.sh` and the test fails before any assertion runs. Give the whole module a more
+# generous budget (matching other heavy external-service tests such as `test_storage_rabbitmq` and
+# `test_backup_restore_new`), so a slow-but-eventually-ready metastore no longer flakes the tests.
+pytestmark = pytest.mark.timeout(1800)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
