@@ -98,7 +98,7 @@ TYPED_TEST_SUITE(PForRoundTrip, ElementTypes);
 TYPED_TEST(PForRoundTrip, RandomBoundaries)
 {
     using T = TypeParam;
-    std::mt19937_64 rng(0xC0FFEE);
+    std::mt19937_64 rng(0xC0FFEE); // NOLINT(cert-msc32-c,cert-msc51-cpp)
     for (size_t n : testSizes())
     {
         std::vector<T> v(n);
@@ -130,7 +130,7 @@ TYPED_TEST(PForRoundTrip, ConstantBlocks)
 TYPED_TEST(PForRoundTrip, ForHighBase)
 {
     using T = TypeParam;
-    std::mt19937_64 rng(0x1234);
+    std::mt19937_64 rng(0x1234); // NOLINT(cert-msc32-c,cert-msc51-cpp)
     std::vector<T> v(600);
     std::uniform_int_distribution<uint64_t> d(0, 63);
     for (auto & x : v)
@@ -142,7 +142,7 @@ TYPED_TEST(PForRoundTrip, ForHighBase)
 TYPED_TEST(PForRoundTrip, PForOutliers)
 {
     using T = TypeParam;
-    std::mt19937_64 rng(0x5678);
+    std::mt19937_64 rng(0x5678); // NOLINT(cert-msc32-c,cert-msc51-cpp)
     std::vector<T> v(2000);
     std::uniform_int_distribution<uint32_t> small(0, 15);
     for (auto & x : v)
@@ -178,7 +178,7 @@ TYPED_TEST(PForRoundTrip, BitmapNibbles)
 TYPED_TEST(PForRoundTrip, DeltaNonDecreasing)
 {
     using T = TypeParam;
-    std::mt19937_64 rng(0xD0C1D);
+    std::mt19937_64 rng(0xD0C1D); // NOLINT(cert-msc32-c,cert-msc51-cpp)
 
     std::vector<T> gaps(10000);
     std::uniform_int_distribution<uint32_t> g(1, 50);
@@ -202,7 +202,7 @@ TYPED_TEST(PForRoundTrip, DeltaNonDecreasing)
 TYPED_TEST(PForRoundTrip, DeltaStrictlyIncreasing)
 {
     using T = TypeParam;
-    std::mt19937_64 rng(0x1AC1D);
+    std::mt19937_64 rng(0x1AC1D); // NOLINT(cert-msc32-c,cert-msc51-cpp)
     std::vector<T> v(5000);
     std::uniform_int_distribution<uint32_t> g(1, 40);
     T acc = 0;
@@ -219,7 +219,7 @@ TYPED_TEST(PForRoundTrip, DeltaStrictlyIncreasing)
 TYPED_TEST(PForRoundTrip, VbxFirstValue)
 {
     using T = TypeParam;
-    std::mt19937_64 rng(0xFADE);
+    std::mt19937_64 rng(0xFADE); // NOLINT(cert-msc32-c,cert-msc51-cpp)
     for (T first : {T(127), T(128), T(16383), T(16384), T((T(1) << 27) + 1), static_cast<T>(std::numeric_limits<T>::max() / 2)})
     {
         std::vector<T> v(700);
@@ -238,7 +238,7 @@ TYPED_TEST(PForRoundTrip, U64CrossBoundaryAndFullWidth)
     using T = TypeParam;
     if constexpr (sizeof(T) == 8)
     {
-        std::mt19937_64 rng(0xB16B00);
+        std::mt19937_64 rng(0xB16B00); // NOLINT(cert-msc32-c,cert-msc51-cpp)
         std::vector<T> v(900);
         T acc = 0xFFFFFF00ull; /// crosses 2^32 within the first block
         std::uniform_int_distribution<uint32_t> g(1, 9);
