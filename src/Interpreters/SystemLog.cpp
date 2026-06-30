@@ -848,6 +848,13 @@ void SystemLog<LogElement>::prepareTable()
             /// such tables writable so background TTL still runs. In the default open-source configuration
             /// most system logs (including `query_log`) have no TTL, so their rotated tables are frozen as
             /// readonly; only the few logs configured with a TTL stay writable.
+            ///
+            /// Marking the old table read-only is purely an optimization and must never break log rotation.
+            /// The rename has already succeeded above, so if applying the setting throws (for example, a
+            /// transient error, or the table being dropped concurrently), swallow it, log it, and continue
+            /// to create the new table. Letting the exception propagate would abort `flushImpl` and discard
+            /// the current batch of log entries.
+            try
             {
                 StorageID old_table_id(table_id.database_name, table_id.table_name + "_" + toString(suffix));
                 auto old_table = DatabaseCatalog::instance().tryGetTable(old_table_id, getContext());
@@ -886,6 +893,10 @@ void SystemLog<LogElement>::prepareTable()
 
                     InterpreterAlterQuery(alter_query, alter_context).execute();
                 }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to mark the rotated system log table as readonly; continuing with rotation");
             }
 
             /// The required table will be created.
