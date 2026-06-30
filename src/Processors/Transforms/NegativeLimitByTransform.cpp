@@ -183,6 +183,14 @@ template <typename Method>
 void NegativeLimitByTransform::consumeImpl(
     Method & method, const ColumnRawPtrs & key_columns, const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 num_rows)
 {
+    /// Stores a group index in the cell's mapped slot, so void-mapped (set-mode) methods are unsupported
+    /// (and never selected here); the branch only exists because the dispatch macro covers every variant.
+    if constexpr (!Method::State::has_mapped)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "NegativeLimitByTransform does not support void-mapped aggregation methods");
+    }
+    else
+    {
     typename Method::State state(key_columns, data.key_sizes, hash_method_context);
 
     UInt64 run_start = 0;
@@ -210,6 +218,7 @@ void NegativeLimitByTransform::consumeImpl(
         }
     }
     appendRun(columns_ptr, run_start, num_rows - run_start, run_group);
+    }
 }
 
 void NegativeLimitByTransform::consume(Chunk chunk)

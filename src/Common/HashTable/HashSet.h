@@ -28,7 +28,9 @@ template <
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrowerWithPrecalculation<>,
     typename Allocator = HashTableAllocator>
-class HashSetTable final : public HashTable<Key, TCell, Hash, Grower, Allocator>
+/// Not `final`: `AggregationDataWithNullKey` derives from it for nullable set-mode GROUP BY (mirrors how
+/// the non-final `HashMapTable` is wrapped by `HashTableWithNullKey`).
+class HashSetTable : public HashTable<Key, TCell, Hash, Grower, Allocator>
 {
 public:
     using Self = HashSetTable;
@@ -65,6 +67,15 @@ public:
             if (!rhs.buf[i].isZero(*this))
                 this->insert(rhs.buf[i]);
     }
+
+    /// Call func(const Key &) for each set element. Mirrors HashMapTable::forEachValue (which passes the
+    /// mapped value too); used by the Aggregator to emit keys for `GROUP BY` without aggregate functions.
+    template <typename Func>
+    void forEachValue(Func && func)
+    {
+        for (auto & cell : *this)
+            func(cell.getKey());
+    }
 };
 
 
@@ -74,7 +85,7 @@ template <
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator>
-class TwoLevelHashSetTable final
+class TwoLevelHashSetTable
     : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>
 {
 public:

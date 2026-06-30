@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
 #include <Common/HashTable/FixedHashMap.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 #include <Common/HashTable/TwoLevelStringHashMap.h>
@@ -38,156 +39,45 @@ using AggregatedDataWithUInt16Key = FixedImplicitZeroHashMap<UInt16, AggregateDa
 using AggregatedDataWithUInt32Key = HashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 
-/** Cell for the special case when there are no aggregate functions (`GROUP BY` without aggregates,
-  * i.e. effectively `DISTINCT`). The Aggregator stores an `AggregateDataPtr` per key only to mark a
-  * cell as occupied (a `0x1` sentinel) and to satisfy generic code that binds `AggregateDataPtr &` to
-  * `getMapped`. We don't actually need per-key storage, so this cell keeps only the key (halving the
-  * cell footprint for `UInt64`: 8 bytes instead of 16) and routes `getMapped` to a per-thread dummy.
-  * The dummy is `thread_local` so the parallel two-level merge - where `dst` and `src` both resolve to
-  * the same dummy within a worker thread - is free of data races; with zero aggregate functions nothing
-  * meaningful is ever read from it.
+/** For `GROUP BY` without aggregate functions (effectively `DISTINCT`) there is no per-key state to
+  * store, so the "data" is a plain set rather than a map: we reuse the existing `HashSet` family instead
+  * of a map with a dead `AggregateDataPtr` slot. The set cells report `VoidMapped`, and the
+  * `AggregationMethod`s present that as `Mapped = void` (see `AggregationMethod.h`), which puts
+  * `ColumnsHashing` in set mode. The key methods (`OneNumber`/`KeysFixed`/`Serialized`), two-level
+  * conversion and the better-hash external-merge upgrade all work exactly as for the map variants.
   */
-template <typename Key, typename Hash, typename TState = HashTableNoState>
-struct AggregatedDataVoidCell
-{
-    using State = TState;
-
-    using key_type = Key;
-    using value_type = Key;
-    using mapped_type = AggregateDataPtr;
-    using Mapped = AggregateDataPtr;
-
-    Key key;
-
-    AggregatedDataVoidCell() {} /// NOLINT
-    AggregatedDataVoidCell(const Key & key_, const State &) : key(key_) {}
-
-    static AggregateDataPtr & dummyMapped()
-    {
-        static thread_local AggregateDataPtr dummy = nullptr;
-        return dummy;
-    }
-
-    const Key & getKey() const { return key; }
-    AggregateDataPtr & getMapped() { return dummyMapped(); }
-    const AggregateDataPtr & getMapped() const { return dummyMapped(); }
-    const value_type & getValue() const { return key; }
-
-    static const Key & getKey(const value_type & value) { return value; } /// NOLINT(bugprone-return-const-ref-from-parameter)
-
-    bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
-    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
-    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
-
-    void setHash(size_t /*hash_value*/) {}
-    size_t getHash(const Hash & hash) const { return hash(key); }
-
-    bool isZero(const State & state) const { return isZero(key, state); }
-    static bool isZero(const Key & key_, const State & /*state*/) { return ZeroTraits::check(key_); }
-    void setZero() { ZeroTraits::set(key); }
-    static constexpr bool need_zero_value_storage = true;
-
-    void setMapped(const value_type & /*value*/) {}
-
-    void write(DB::WriteBuffer & wb) const         { DB::writeBinaryLittleEndian(key, wb); }
-    void writeText(DB::WriteBuffer & wb) const     { DB::writeDoubleQuoted(key, wb); }
-    void read(DB::ReadBuffer & rb)                 { DB::readBinaryLittleEndian(key, rb); }
-    void readText(DB::ReadBuffer & rb)             { DB::readDoubleQuoted(key, rb); }
-};
-
-/// Void-mapped single-level maps (no per-key `AggregateDataPtr`). Selected for `GROUP BY` without
-/// aggregate functions. The UInt32 and UInt64 maps back several `AggregationMethod` instantiations:
-/// the UInt64 map is shared by `key32`/`key64` (`AggregationMethodOneNumber`) and `keys64`
-/// (`AggregationMethodKeysFixed`); the UInt32 map backs `keys32`; the wide maps back `keys128`/`keys256`.
-using AggregatedDataWithUInt32KeyVoid = HashMapTable<UInt32, AggregatedDataVoidCell<UInt32, HashCRC32<UInt32>>, HashCRC32<UInt32>>;
-using AggregatedDataWithUInt64KeyVoid = HashMapTable<UInt64, AggregatedDataVoidCell<UInt64, HashCRC32<UInt64>>, HashCRC32<UInt64>>;
-
-/** Like `AggregatedDataVoidCell`, but stores the hash alongside the key (mirrors `HashMapCellWithSavedHash`).
-  * Used for `std::string_view` keys (serialized `GROUP BY` keys held in an Arena), where recomputing the
-  * hash on every probe/rehash would be expensive. Still routes `getMapped` to the per-thread dummy.
-  */
-template <typename Key, typename Hash, typename TState = HashTableNoState>
-struct AggregatedDataVoidCellWithSavedHash
-{
-    using State = TState;
-
-    using key_type = Key;
-    using value_type = Key;
-    using mapped_type = AggregateDataPtr;
-    using Mapped = AggregateDataPtr;
-
-    Key key;
-    size_t saved_hash;
-
-    AggregatedDataVoidCellWithSavedHash() {} /// NOLINT
-    /// `saved_hash` is set by `setHash` immediately after placement construction on insert; on the hot
-    /// aggregation path we avoid the redundant store (mirrors `HashMapCellWithSavedHash`).
-    /// NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-    AggregatedDataVoidCellWithSavedHash(const Key & key_, const State &) : key(key_) {}
-
-    static AggregateDataPtr & dummyMapped()
-    {
-        static thread_local AggregateDataPtr dummy = nullptr;
-        return dummy;
-    }
-
-    const Key & getKey() const { return key; }
-    AggregateDataPtr & getMapped() { return dummyMapped(); }
-    const AggregateDataPtr & getMapped() const { return dummyMapped(); }
-    const value_type & getValue() const { return key; }
-
-    static const Key & getKey(const value_type & value) { return value; } /// NOLINT(bugprone-return-const-ref-from-parameter)
-
-    bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
-    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(key, key_); }
-    bool keyEquals(const Key & key_, size_t hash_, const State & /*state*/) const { return keyEquals(key_, hash_); }
-
-    void setHash(size_t hash_value) { saved_hash = hash_value; }
-    size_t getHash(const Hash & /*hash*/) const { return saved_hash; }
-
-    bool isZero(const State & state) const { return isZero(key, state); }
-    static bool isZero(const Key & key_, const State & /*state*/) { return ZeroTraits::check(key_); }
-    void setZero() { ZeroTraits::set(key); }
-    static constexpr bool need_zero_value_storage = true;
-
-    void setMapped(const value_type & /*value*/) {}
-
-    void write(DB::WriteBuffer & wb) const         { DB::writeBinary(key, wb); }
-    void writeText(DB::WriteBuffer & wb) const     { DB::writeDoubleQuoted(key, wb); }
-    void read(DB::ReadBuffer & rb)                 { DB::readBinary(key, rb); }
-    void readText(DB::ReadBuffer & rb)             { DB::readDoubleQuoted(key, rb); }
-};
+using AggregatedDataWithUInt32KeyVoid = HashSet<UInt32, HashCRC32<UInt32>>;
+using AggregatedDataWithUInt64KeyVoid = HashSet<UInt64, HashCRC32<UInt64>>;
 
 using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
 
 using AggregatedDataWithStringKey = HashMapWithSavedHash<std::string_view, AggregateDataPtr>;
-/// Void-mapped string-key map (serialized / prealloc_serialized methods), key-only saved-hash cell.
-using AggregatedDataWithStringKeyVoid
-    = HashMapTable<std::string_view, AggregatedDataVoidCellWithSavedHash<std::string_view, DefaultHash<std::string_view>>, DefaultHash<std::string_view>>;
+/// Void (set) string-key data for the serialized / prealloc_serialized methods. The saved-hash set cell
+/// avoids recomputing the hash of the Arena-held serialized key on every probe.
+using AggregatedDataWithStringKeyVoid = HashSetWithSavedHash<std::string_view, DefaultHash<std::string_view>>;
 
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
-using AggregatedDataWithKeys128Void = HashMapTable<UInt128, AggregatedDataVoidCell<UInt128, UInt128HashCRC32>, UInt128HashCRC32>;
-using AggregatedDataWithKeys256Void = HashMapTable<UInt256, AggregatedDataVoidCell<UInt256, UInt256HashCRC32>, UInt256HashCRC32>;
+using AggregatedDataWithKeys128Void = HashSet<UInt128, UInt128HashCRC32>;
+using AggregatedDataWithKeys256Void = HashSet<UInt256, UInt256HashCRC32>;
 
 using AggregatedDataWithUInt32KeyTwoLevel = TwoLevelHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 
-using AggregatedDataWithUInt32KeyVoidTwoLevel = TwoLevelHashMapTable<UInt32, AggregatedDataVoidCell<UInt32, HashCRC32<UInt32>>, HashCRC32<UInt32>>;
-using AggregatedDataWithUInt64KeyVoidTwoLevel = TwoLevelHashMapTable<UInt64, AggregatedDataVoidCell<UInt64, HashCRC32<UInt64>>, HashCRC32<UInt64>>;
+using AggregatedDataWithUInt32KeyVoidTwoLevel = TwoLevelHashSet<UInt32, HashCRC32<UInt32>>;
+using AggregatedDataWithUInt64KeyVoidTwoLevel = TwoLevelHashSet<UInt64, HashCRC32<UInt64>>;
 
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
 
 using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<std::string_view, AggregateDataPtr>;
-using AggregatedDataWithStringKeyVoidTwoLevel
-    = TwoLevelHashMapTable<std::string_view, AggregatedDataVoidCellWithSavedHash<std::string_view, DefaultHash<std::string_view>>, DefaultHash<std::string_view>>;
+using AggregatedDataWithStringKeyVoidTwoLevel = TwoLevelHashSetWithSavedHash<std::string_view, DefaultHash<std::string_view>>;
 
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
-using AggregatedDataWithKeys128VoidTwoLevel = TwoLevelHashMapTable<UInt128, AggregatedDataVoidCell<UInt128, UInt128HashCRC32>, UInt128HashCRC32>;
-using AggregatedDataWithKeys256VoidTwoLevel = TwoLevelHashMapTable<UInt256, AggregatedDataVoidCell<UInt256, UInt256HashCRC32>, UInt256HashCRC32>;
+using AggregatedDataWithKeys128VoidTwoLevel = TwoLevelHashSet<UInt128, UInt128HashCRC32>;
+using AggregatedDataWithKeys256VoidTwoLevel = TwoLevelHashSet<UInt256, UInt256HashCRC32>;
 
 /** Variants with better hash function, using more than 32 bits for hash.
   * Using for merging phase of external aggregation, where number of keys may be far greater than 4 billion,
@@ -201,15 +91,14 @@ using AggregatedDataWithStringKeyHash64 = HashMapWithSavedHash<std::string_view,
 using AggregatedDataWithKeys128Hash64 = HashMap<UInt128, AggregateDataPtr, UInt128Hash>;
 using AggregatedDataWithKeys256Hash64 = HashMap<UInt256, AggregateDataPtr, UInt256Hash>;
 
-/// Void-mapped counterparts of the better-hash maps above, used as the external-aggregation merge target
+/// Void (set) counterparts of the better-hash data above, used as the external-aggregation merge target
 /// for the void `GROUP BY` methods: the merged key count can exceed 4 billion, so - exactly like the regular
 /// key64/keys128/keys256 -> *_hash64 upgrade in `Aggregator::mergeBlocks` - the merge must use a full-width
-/// hash instead of `HashCRC32` to avoid collision-driven blowup, while still keeping the key-only cell.
-using AggregatedDataWithUInt64KeyVoidHash64 = HashMapTable<UInt64, AggregatedDataVoidCell<UInt64, DefaultHash<UInt64>>, DefaultHash<UInt64>>;
-using AggregatedDataWithKeys128VoidHash64 = HashMapTable<UInt128, AggregatedDataVoidCell<UInt128, UInt128Hash>, UInt128Hash>;
-using AggregatedDataWithKeys256VoidHash64 = HashMapTable<UInt256, AggregatedDataVoidCell<UInt256, UInt256Hash>, UInt256Hash>;
-using AggregatedDataWithStringKeyVoidHash64
-    = HashMapTable<std::string_view, AggregatedDataVoidCellWithSavedHash<std::string_view, StringViewHash64>, StringViewHash64>;
+/// hash instead of `HashCRC32` to avoid collision-driven blowup.
+using AggregatedDataWithUInt64KeyVoidHash64 = HashSet<UInt64, DefaultHash<UInt64>>;
+using AggregatedDataWithKeys128VoidHash64 = HashSet<UInt128, UInt128Hash>;
+using AggregatedDataWithKeys256VoidHash64 = HashSet<UInt256, UInt256Hash>;
+using AggregatedDataWithStringKeyVoidHash64 = HashSetWithSavedHash<std::string_view, StringViewHash64>;
 
 template <typename Base>
 struct AggregationDataWithNullKey : public Base
@@ -262,6 +151,8 @@ struct AggregationDataWithNullKeyTwoLevel : public Base
 template <typename ... Types>
 using HashTableWithNullKey = AggregationDataWithNullKey<HashMapTable<Types ...>>;
 template <typename ... Types>
+using HashSetWithNullKey = AggregationDataWithNullKey<HashSetTable<Types ...>>;
+template <typename ... Types>
 using StringHashTableWithNullKey = AggregationDataWithNullKey<StringHashMap<Types ...>>;
 
 using AggregatedDataWithNullableUInt8Key = AggregationDataWithNullKey<AggregatedDataWithUInt8Key>;
@@ -288,15 +179,22 @@ using AggregatedDataWithNullableStringKeyTwoLevel = AggregationDataWithNullKeyTw
         TwoLevelHashMapWithSavedHash<std::string_view, AggregateDataPtr, DefaultHash<std::string_view>,
         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
 
-/// Void-mapped nullable single-number maps for `GROUP BY` without aggregate functions. The null group's
-/// presence is still tracked by `AggregationDataWithNullKey` (one bool + one dead ptr, O(1)); only the
-/// non-null keys live in the void cells.
+/// Void (set) nullable single-number data for `GROUP BY` without aggregate functions. The null group's
+/// presence is tracked by `AggregationDataWithNullKey` (one bool + one dead ptr, O(1)); only the non-null
+/// keys live in the set.
 using AggregatedDataWithNullableUInt32KeyVoid = AggregationDataWithNullKey<AggregatedDataWithUInt32KeyVoid>;
 using AggregatedDataWithNullableUInt64KeyVoid = AggregationDataWithNullKey<AggregatedDataWithUInt64KeyVoid>;
+/// The per-bucket impl of a nullable two-level set: a `HashSet` bucket that also tracks the null key.
+/// `TwoLevelHashTable`'s `ImplTable` parameter is a type (unlike `TwoLevelHashMapTable`'s template-template),
+/// so it has to be instantiated explicitly here.
+template <typename Key, typename Hash>
+using TwoLevelHashSetWithNullKeyImpl
+    = HashSetWithNullKey<Key, HashTableCell<Key, Hash>, Hash, TwoLevelHashTableGrower<>, HashTableAllocator>;
+
 using AggregatedDataWithNullableUInt32KeyVoidTwoLevel = AggregationDataWithNullKeyTwoLevel<
-    TwoLevelHashMapTable<UInt32, AggregatedDataVoidCell<UInt32, HashCRC32<UInt32>>, HashCRC32<UInt32>,
-                         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
+    TwoLevelHashTable<UInt32, HashTableCell<UInt32, HashCRC32<UInt32>>, HashCRC32<UInt32>,
+                      TwoLevelHashTableGrower<>, HashTableAllocator, TwoLevelHashSetWithNullKeyImpl<UInt32, HashCRC32<UInt32>>>>;
 using AggregatedDataWithNullableUInt64KeyVoidTwoLevel = AggregationDataWithNullKeyTwoLevel<
-    TwoLevelHashMapTable<UInt64, AggregatedDataVoidCell<UInt64, HashCRC32<UInt64>>, HashCRC32<UInt64>,
-                         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
+    TwoLevelHashTable<UInt64, HashTableCell<UInt64, HashCRC32<UInt64>>, HashCRC32<UInt64>,
+                      TwoLevelHashTableGrower<>, HashTableAllocator, TwoLevelHashSetWithNullKeyImpl<UInt64, HashCRC32<UInt64>>>>;
 }
