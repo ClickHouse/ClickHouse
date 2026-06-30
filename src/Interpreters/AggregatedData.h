@@ -120,6 +120,9 @@ struct AggregatedDataVoidCellWithSavedHash
     size_t saved_hash;
 
     AggregatedDataVoidCellWithSavedHash() {} /// NOLINT
+    /// `saved_hash` is set by `setHash` immediately after placement construction on insert; on the hot
+    /// aggregation path we avoid the redundant store (mirrors `HashMapCellWithSavedHash`).
+    /// NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     AggregatedDataVoidCellWithSavedHash(const Key & key_, const State &) : key(key_) {}
 
     static AggregateDataPtr & dummyMapped()
