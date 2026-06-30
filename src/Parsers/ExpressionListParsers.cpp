@@ -1182,8 +1182,52 @@ public:
             if (ParserToken(TokenType::Comma).ignore(pos, expected))
             {
                 action = Action::OPERAND;
-                return mergeElement();
+
+                if (!mergeElement())
+                    return false;
+
+
+                // If there was BY keyword, the expression belongs to by_columns
+                if (has_by)
+                {
+                    by_columns->children.push_back(
+                        std::move(elements.back()));
+                    elements.pop_back();
+                }
+                return true;
             }
+
+            // TOTALS and BY are combinators only when they follow an aggregate argument
+            // and only at most one of them can be applied to a single aggregate call.
+            const bool has_argument = !isCurrentElementEmpty() || !elements.empty();
+            const bool no_combinator_yet = !has_totals && !has_by;
+
+            if (has_argument && no_combinator_yet)
+            {
+                ParserKeyword totals_kw(Keyword::TOTALS);
+                if (totals_kw.ignore(pos, expected))
+                {
+                    has_totals = true;
+                }
+                else
+                {
+                    ParserKeyword by_kw(Keyword::BY);
+                    if (by_kw.ignore(pos, expected))
+                    {
+                        has_by = true;
+                        by_columns = make_intrusive<ASTExpressionList>();
+                        if (!mergeElement())
+                            return false;
+                        action = Action::OPERAND;
+                        return true;
+                    }
+                }
+            }
+
+
+            // Only one of the TOTALS and BY combinators can be at the one time
+            if (has_totals && has_by)
+                return false;
 
             if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             {
@@ -1192,6 +1236,13 @@ public:
                 if (!isCurrentElementEmpty() || !elements.empty())
                     if (!mergeElement())
                         return false;
+
+                if (has_by)
+                {
+                    by_columns->children.push_back(
+                        std::move(elements.back()));
+                    elements.pop_back();
+                }
 
                 contents_end = pos->begin;
 
@@ -1316,6 +1367,19 @@ public:
                     return false;
             }
 
+            if (has_totals)
+            {
+                function_node->totals_combinator = true;
+            }
+            if (has_by)
+            {
+                function_node->by_combinator = true;
+                function_node->by_combinator_columns
+                    = std::move(by_columns);
+                function_node->children.push_back(
+                    function_node->by_combinator_columns);
+            }
+
             elements = {std::move(function_node)};
             finished = true;
         }
@@ -1330,8 +1394,12 @@ private:
     const char * contents_begin{};
     const char * contents_end{};
 
+    bool has_totals = false;
+    bool has_by = false;
+
     String function_name;
     ASTPtr parameters;
+    ASTPtr by_columns;
 
     bool allow_function_parameters;
     bool is_compound_name;

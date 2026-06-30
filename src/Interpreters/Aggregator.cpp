@@ -74,6 +74,7 @@ namespace ErrorCodes
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 }
@@ -676,7 +677,15 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     if (params.aggregates_size == 1)
     {
         /// Check if COUNT() or COUNT(non-nullable column) which can be verified by simply casting to `AggregateFunctionCount *`.
-        if (typeid_cast<const AggregateFunctionCount *>(params.aggregates[0].function.get()))
+        /// Additionally, the TOTALS/BY combinator path is incompatible with the inline count
+        /// optimization: simple count writes counts directly through finalizeChunk, bypassing
+        /// insertResultsIntoColumns where post-aggregation states are finalized. Without this
+        /// guard, queries like `SELECT k, count(v TOTALS) FROM t GROUP BY k` would return
+        /// per-group counts instead of the global count.
+        const auto & agg = params.aggregates[0];
+        const bool has_combinator = agg.totals_combinator || agg.by_columns.has_value();
+
+        if (!has_combinator && typeid_cast<const AggregateFunctionCount *>(agg.function.get()))
             is_simple_count = true;
     }
 
@@ -710,7 +719,10 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 #if USE_EMBEDDED_COMPILER
     compileAggregateFunctionsIfNeeded();
 #endif
-}
+
+
+    /// Initialize post-aggregation for TOTALS/BY combinators.
+    post_aggregation.init(params.aggregates, aggregate_functions, offsets_of_aggregate_states, params.keys);}
 
 Aggregator::~Aggregator() = default;
 
@@ -1805,6 +1817,16 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
+    /// TOTALS/BY combinators are not yet supported in distributed merge path
+    /// (MergingAggregatedTransform / ConvertingAggregatedToChunksWithMergingSource).
+    /// The current implementation requires the complete data variant before any
+    /// bucket conversion, which does not fit the bucket-by-bucket merge architecture
+    /// used here. See PR #103540 for discussion.
+    if (final && !post_aggregation.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "TOTALS/BY aggregate function combinators are not yet supported "
+            "in distributed merge path. This is a known limitation.");
+
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
     AggregatedChunk agg_chunk;
@@ -1870,6 +1892,9 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
 
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const
 {
+    if (final)
+        computePostAggregationStates(variants);
+
     const auto method = variants.type;
     AggregatedChunk agg_chunk;
 
@@ -2202,10 +2227,13 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
     {
         /// Insert final values of aggregate functions into columns.
         for (; insert_i < params.aggregates_size; ++insert_i)
-            aggregate_functions[insert_i]->insertResultInto(
-                mapped + offsets_of_aggregate_states[insert_i],
-                *final_aggregate_columns[insert_i],
-                arena);
+        {
+            aggregate_functions[insert_i]
+                ->insertResultInto(
+                    mapped + offsets_of_aggregate_states[insert_i],
+                    *final_aggregate_columns[insert_i],
+                    arena);
+        }
     }
     catch (...)
     {
@@ -2277,6 +2305,47 @@ Chunk Aggregator::insertResultsIntoColumns(
             callJITFunction(insert_aggregates_into_columns_function, 0, places.size(), columns_data.data(), places.data());
         }
 #endif
+        /// Apply post-aggregation states for TOTALS/BY combinators.
+        /// Pre-computed states have been filled in prepareChunkAndFill*; here we
+        /// only finalize them into the output column(s).
+        if (!post_aggregation.empty())
+        {
+            /// Build a const IColumn* array from out_cols.raw_key_columns for BY lookups.
+            /// (raw_key_columns is already a vector of IColumn* in the same order as params.keys.)
+            std::vector<const IColumn *> out_key_cols(params.keys_size);
+            for (size_t i = 0; i < params.keys_size; ++i)
+                out_key_cols[i] = out_cols.raw_key_columns[i];
+
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+            {
+                PostAggregationState * post_state = post_aggregation.find(i);
+                if (!post_state)
+                    continue;
+
+                auto & final_col = out_cols.final_aggregate_columns[i];
+
+                if (post_state->getKind() == PostAggregationState::Kind::Totals)
+                {
+                    /// TOTALS: same value for every row. Finalize once, replicate.
+                    auto scratch_col = final_col->cloneEmpty();
+                    post_state->finalizeInto(*scratch_col, nullptr, 0, arena);
+
+                    final_col = final_col->cloneEmpty();
+                    final_col->reserve(places.size());
+                    for (size_t row = 0; row < places.size(); ++row)
+                        final_col->insertFrom(*scratch_col, 0);
+                }
+                else /// By
+                {
+                    /// BY: different value per row, based on BY-key columns in the output.
+                    final_col = final_col->cloneEmpty();
+                    final_col->reserve(places.size());
+                    for (size_t row = 0; row < places.size(); ++row)
+                        post_state->finalizeInto(*final_col, out_key_cols.data(), row, arena);
+                }
+            }
+        }
+
 
         for (; aggregate_functions_destroy_index < params.aggregates_size;)
         {
@@ -2287,6 +2356,16 @@ Chunk Aggregator::insertResultsIntoColumns(
                 continue;
             }
 #endif
+
+            /// Skip aggregates with combinators — their result was written by
+            /// post_aggregation above; their per-group states will still be
+            /// destroyed by the final destroy loop below (destroyBatch), so we
+            /// don't need to do it here.
+            if (post_aggregation.find(aggregate_functions_destroy_index) != nullptr)
+            {
+                ++aggregate_functions_destroy_index;
+                continue;
+            }
 
             auto & final_aggregate_column = out_cols.final_aggregate_columns[aggregate_functions_destroy_index];
             size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
@@ -2586,6 +2665,13 @@ template <bool return_single_block>
 std::conditional_t<return_single_block, Aggregator::AggregatedChunk, Aggregator::AggregatedChunks>
 Aggregator::prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
 {
+    /// For TOTALS/BY: pre-compute post-aggregation states by iterating over the full
+    /// hash table once, before any chunk conversion starts. This has to happen here
+    /// (and in prepareChunksAndFillTwoLevel), because insertResultsIntoColumns sees
+    /// only per-chunk places and cannot merge globally.
+    if (final)
+        computePostAggregationStates(data_variants);
+
     Chunks res_variant;
     const size_t rows = data_variants.sizeWithoutOverflowRow();
 #define M(NAME) \
@@ -2616,6 +2702,13 @@ Aggregator::prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variant
 
 Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const
 {
+    /// For TOTALS/BY: pre-compute post-aggregation states by iterating over all buckets
+    /// of the two-level hash table sequentially, BEFORE the thread pool in
+    /// prepareChunksAndFillTwoLevelImpl kicks in. This guarantees no race between
+    /// post-state accumulation and parallel bucket-to-chunk conversion.
+    if (final)
+        computePostAggregationStates(data_variants);
+
 #define M(NAME) \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
         return prepareChunksAndFillTwoLevelImpl(data_variants, *data_variants.NAME, final);
@@ -2686,6 +2779,150 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
     return chunks;
 }
 
+void Aggregator::computePostAggregationStates(AggregatedDataVariants & data_variants) const
+{
+    if (post_aggregation.empty())
+        return;
+
+    post_aggregation.computeOnce([&] {
+        Arena * keys_arena = data_variants.aggregates_pool;
+
+        const bool two_level = data_variants.isTwoLevel();
+
+        if (!post_aggregation.hasByStates())
+        {
+            /// FAST PATH: only TOTALS combinators, keys are not needed.
+
+            if (!two_level)
+            {
+                /// Single-level: walk the only hash table.
+
+                #define COMPUTE_POST_TOTALS_ONLY_SL(NAME) \
+                    else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+                    { \
+                        data_variants.NAME->data.forEachValue([&](const auto & /*key*/, auto & mapped) \
+                        { \
+                            if (mapped) \
+                                for (size_t idx = 0; idx < params.aggregates_size; ++idx) \
+                                    if (auto * ps = post_aggregation.find(idx)) \
+                                        ps->absorb(mapped, nullptr, 0, keys_arena); \
+                        }); \
+                    }
+
+                if (false) {} // NOLINT
+                APPLY_FOR_VARIANTS_SINGLE_LEVEL(COMPUTE_POST_TOTALS_ONLY_SL)
+                #undef COMPUTE_POST_TOTALS_ONLY_SL
+            }
+            else
+            {
+                /// Two-level: walk all 256 buckets sequentially.
+
+                #define COMPUTE_POST_TOTALS_ONLY_TL(NAME) \
+                    else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+                    { \
+                        auto & method_ref = *data_variants.NAME; \
+                        for (size_t bucket = 0; bucket < method_ref.data.NUM_BUCKETS; ++bucket) \
+                        { \
+                            method_ref.data.impls[bucket].forEachValue([&](const auto & /*key*/, auto & mapped) \
+                            { \
+                                if (mapped) \
+                                    for (size_t idx = 0; idx < params.aggregates_size; ++idx) \
+                                        if (auto * ps = post_aggregation.find(idx)) \
+                                            ps->absorb(mapped, nullptr, 0, keys_arena); \
+                            }); \
+                        } \
+                    }
+
+                if (false) {} // NOLINT
+                APPLY_FOR_VARIANTS_TWO_LEVEL(COMPUTE_POST_TOTALS_ONLY_TL)
+                #undef COMPUTE_POST_TOTALS_ONLY_TL
+            }
+        }
+        else
+        {
+            /// SLOW PATH: at least one BY combinator, keys must be materialized.
+
+            IColumn::SerializationSettings serialization_settings{
+                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+
+            if (!two_level)
+            {
+                /// Single-level: materialize keys into temporary columns once for the whole table.
+
+                MutableColumns tmp_key_cols;
+                tmp_key_cols.reserve(params.keys_size);
+                for (size_t i = 0; i < params.keys_size; ++i)
+                    tmp_key_cols.emplace_back(key_types[i]->createColumn());
+
+                std::vector<IColumn *> raw_key_cols(params.keys_size);
+                for (size_t i = 0; i < params.keys_size; ++i)
+                    raw_key_cols[i] = tmp_key_cols[i].get();
+
+                #define COMPUTE_POST_WITH_KEYS_SL(NAME) \
+                    else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+                    { \
+                        auto & method_ref = *data_variants.NAME; \
+                        std::vector<AggregateDataPtr> places_vec; \
+                        method_ref.data.forEachValue([&](const auto & key, auto & mapped) \
+                        { \
+                            if (!mapped) return; \
+                            method_ref.insertKeyIntoColumns(key, raw_key_cols, key_sizes, &serialization_settings); \
+                            places_vec.push_back(mapped); \
+                        }); \
+                        std::vector<const IColumn *> const_key_cols(params.keys_size); \
+                        for (size_t i = 0; i < params.keys_size; ++i) \
+                            const_key_cols[i] = tmp_key_cols[i].get(); \
+                        for (size_t row = 0; row < places_vec.size(); ++row) \
+                            for (size_t idx = 0; idx < params.aggregates_size; ++idx) \
+                                if (auto * ps = post_aggregation.find(idx)) \
+                                    ps->absorb(places_vec[row], const_key_cols.data(), row, keys_arena); \
+                    }
+
+                if (false) {} // NOLINT
+                APPLY_FOR_VARIANTS_SINGLE_LEVEL(COMPUTE_POST_WITH_KEYS_SL)
+                #undef COMPUTE_POST_WITH_KEYS_SL
+            }
+            else
+            {
+                /// Two-level: process each bucket with its own temporary key columns.
+
+                #define COMPUTE_POST_WITH_KEYS_TL(NAME) \
+                    else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+                    { \
+                        auto & method_ref = *data_variants.NAME; \
+                        for (size_t bucket = 0; bucket < method_ref.data.NUM_BUCKETS; ++bucket) \
+                        { \
+                            MutableColumns tmp_key_cols; \
+                            tmp_key_cols.reserve(params.keys_size); \
+                            for (size_t i = 0; i < params.keys_size; ++i) \
+                                tmp_key_cols.emplace_back(key_types[i]->createColumn()); \
+                            std::vector<IColumn *> raw_key_cols(params.keys_size); \
+                            for (size_t i = 0; i < params.keys_size; ++i) \
+                                raw_key_cols[i] = tmp_key_cols[i].get(); \
+                            std::vector<AggregateDataPtr> places_vec; \
+                            method_ref.data.impls[bucket].forEachValue([&](const auto & key, auto & mapped) \
+                            { \
+                                if (!mapped) return; \
+                                method_ref.insertKeyIntoColumns(key, raw_key_cols, key_sizes, &serialization_settings); \
+                                places_vec.push_back(mapped); \
+                            }); \
+                            std::vector<const IColumn *> const_key_cols(params.keys_size); \
+                            for (size_t i = 0; i < params.keys_size; ++i) \
+                                const_key_cols[i] = tmp_key_cols[i].get(); \
+                            for (size_t row = 0; row < places_vec.size(); ++row) \
+                                for (size_t idx = 0; idx < params.aggregates_size; ++idx) \
+                                    if (auto * ps = post_aggregation.find(idx)) \
+                                        ps->absorb(places_vec[row], const_key_cols.data(), row, keys_arena); \
+                        } \
+                    }
+
+                if (false) {} // NOLINT
+                APPLY_FOR_VARIANTS_TWO_LEVEL(COMPUTE_POST_WITH_KEYS_TL)
+                #undef COMPUTE_POST_WITH_KEYS_TL
+            }
+        }
+    });
+}
 
 Aggregator::AggregatedChunks Aggregator::convertToChunks(AggregatedDataVariants & data_variants, bool final) const
 {
