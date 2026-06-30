@@ -40,6 +40,18 @@ SparseOffsetsShare::findBucket(const std::string & part_name, const std::string 
     return &col_it->second;
 }
 
+bool SparseOffsetsShare::empty() const
+{
+    std::shared_lock lock(mutex);
+    return store.empty();
+}
+
+void SparseOffsetsShare::retainOnlyParts(const std::unordered_set<std::string> & surviving_part_names)
+{
+    std::unique_lock lock(mutex);
+    std::erase_if(store, [&](const auto & entry) { return !surviving_part_names.contains(entry.first); });
+}
+
 std::unique_ptr<SubstreamsCacheSparseOffsetsElement>
 SparseOffsetsShare::sliceFromBucket(
     const Bucket & bucket,

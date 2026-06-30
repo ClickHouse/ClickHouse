@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 
@@ -54,11 +55,18 @@ public:
         ColumnPtr offsets);
 
     /// Resolve `(part, column)` to a stable pointer into the share. The pointer remains
-    /// valid for the lifetime of `*this` (entries are never erased and `unordered_map`
-    /// guarantees pointer stability under rehash). Acquires the shared lock once; callers
-    /// should cache the result and call `sliceFromBucket` on the cached pointer to skip
-    /// the lock on every subsequent slice.
+    /// valid for the lifetime of `*this`; entries are only erased once by `retainOnlyParts`,
+    /// which the caller must run before any scan reader resolves a bucket. Acquires the
+    /// shared lock once; callers should cache the result and call `sliceFromBucket` on the
+    /// cached pointer to skip the lock on every subsequent slice.
     const Bucket * findBucket(const std::string & part_name, const std::string & column_name) const;
+
+    /// True when no bucket has been inserted (no sparse columns / no recognised conjuncts).
+    bool empty() const;
+
+    /// One-shot pruning, before any scan reader looks up buckets: drop buckets for parts
+    /// that did not survive sparsity pruning.
+    void retainOnlyParts(const std::unordered_set<std::string> & surviving_part_names);
 
     /// Build a cache element for the row window
     /// `[abs_row_start, abs_row_start + rows_offset + limit)` from a previously-resolved

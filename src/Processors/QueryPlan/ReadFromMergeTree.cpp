@@ -2702,6 +2702,19 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             result.parts_with_ranges = MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
                 result.parts_with_ranges, query_info_, mutations_snapshot, data, metadata_snapshot, context_, result.sparse_offsets_share.get(), log, result.index_stats);
 
+            /// Discard the share unless it carries offsets a surviving part will actually
+            /// consume: no buckets, or only buckets for parts pruned by the analyzer.
+            if (result.sparse_offsets_share)
+            {
+                std::unordered_set<std::string> surviving_parts;
+                surviving_parts.reserve(result.parts_with_ranges.size());
+                for (const auto & p : result.parts_with_ranges)
+                    surviving_parts.insert(p.data_part->getNameWithParent());
+                result.sparse_offsets_share->retainOnlyParts(surviving_parts);
+                if (result.sparse_offsets_share->empty())
+                    result.sparse_offsets_share.reset();
+            }
+
             if (final_second_pass)
             {
                 result.parts_with_ranges
