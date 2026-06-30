@@ -637,9 +637,8 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     /// current query tracker.
     // The merge path can't use this because it recieves pre-allocated state that can not be covered by
     // the memory tracker, so it falls back to the delta in query memory.
-    if (params.only_merge)
-        memory_usage_before_aggregation = getCurrentQueryMemoryUsage();
-    else
+    memory_usage_before_aggregation = getCurrentQueryMemoryUsage();
+    if (!params.only_merge)
         memory_tracker = tryCreateMemoryTrackerUnderCurrentQuery();
 
     aggregate_functions.resize(params.aggregates_size);
@@ -1689,7 +1688,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
 
     /// Here all the results in the sum are taken into account, from different threads.
-    Int64 result_size_bytes = use_own_tracker ? memory_tracker->get() : current_memory_usage;
+    Int64 result_size_bytes = use_own_tracker ? memory_tracker->get() : current_memory_usage - memory_usage_before_aggregation;
 
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
         params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
