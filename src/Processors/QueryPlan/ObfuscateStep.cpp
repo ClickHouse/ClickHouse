@@ -49,6 +49,17 @@ ObfuscateStep::ObfuscateStep(
     if (markov_model_params.order == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'obfuscate_markov_order' must be greater than zero");
 
+    /// The Markov model preallocates a vector of `order` code points and performs work proportional to
+    /// `order` for every code point it consumes and generates, so an unbounded value would either exhaust
+    /// memory or throw `std::length_error` from the allocation. Reject absurd values with a clear error.
+    static constexpr UInt64 max_markov_order = 1000;
+    if (markov_model_params.order > max_markov_order)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'obfuscate_markov_order' must not exceed {}, got {}",
+            max_markov_order,
+            markov_model_params.order);
+
     markov_model_params.frequency_cutoff = settings[Setting::obfuscate_markov_frequency_cutoff];
     markov_model_params.num_buckets_cutoff = settings[Setting::obfuscate_markov_num_buckets_cutoff];
     markov_model_params.frequency_add = settings[Setting::obfuscate_markov_frequency_add];

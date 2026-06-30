@@ -4419,7 +4419,7 @@ Use connection pooling in ODBC bridge. If set to false, a new connection is crea
 Seed for the `obfuscate` table function. Arbitrary string (treated like a password) — the seed for each column is derived from it and the column name, so the same seed always produces the same obfuscation. Empty string means a random seed is generated for each query.
 )", 0) \
     DECLARE(UInt64, obfuscate_markov_order, 5, R"(
-Order of the Markov model used by the `obfuscate` table function to generate obfuscated strings.
+Order of the Markov model used by the `obfuscate` table function to generate obfuscated strings. Must be in the range `[1, 1000]`.
 )", 0) \
     DECLARE(UInt64, obfuscate_markov_frequency_cutoff, 5, R"(
 Frequency cutoff for the Markov model used by the `obfuscate` table function: buckets with count less than this value are discarded.
