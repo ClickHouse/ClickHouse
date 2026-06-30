@@ -394,7 +394,7 @@ TEST(PostingListCodecTest, LargeDataWithTail)
 
 TEST(PostingListCodecTest, StressRandomSizes)
 {
-    std::mt19937 rng(12345); // NOLINT(cert-msc32-c, cert-msc51-cpp)
+    std::mt19937 rng(12345); // NOLINT(bugprone-random-generator-seed,cert-msc32-c, cert-msc51-cpp)
     std::uniform_int_distribution<size_t> size_dist(1, 500);
     std::uniform_int_distribution<uint32_t> bits_dist(0, 32);
 
@@ -463,7 +463,7 @@ TEST(PostingListCodecTest, Bit32TightTailNoPadding)
 
 TEST(PostingListCodecTest, SmallBitsRandomMonotonicManySizes)
 {
-    std::mt19937 rng(12345); // NOLINT(cert-msc32-c, cert-msc51-cpp)
+    std::mt19937 rng(12345); // NOLINT(bugprone-random-generator-seed,cert-msc32-c, cert-msc51-cpp)
     std::uniform_int_distribution<uint32_t> delta_dist(0, 15);
 
     auto gen = [&](size_t n)
@@ -488,7 +488,7 @@ TEST(PostingListCodecTest, SmallBitsRandomMonotonicManySizes)
 
 TEST(PostingListCodecTest, MixedRandomMonotonicLarger)
 {
-    std::mt19937 rng(20240601); // NOLINT(cert-msc32-c, cert-msc51-cpp)
+    std::mt19937 rng(20240601); // NOLINT(bugprone-random-generator-seed,cert-msc32-c, cert-msc51-cpp)
     std::uniform_int_distribution<uint32_t> delta_dist(0, 100000);
 
     for (int t = 0; t < 20; ++t)

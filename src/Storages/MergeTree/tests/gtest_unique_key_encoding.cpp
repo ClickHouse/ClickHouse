@@ -114,7 +114,7 @@ bool agrees(const Columns & cols, size_t ra, size_t rb, size_t max_size = 4096)
 TEST(UniqueKeyEncoding, UInt64Ordering)
 {
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(0xDEADBEEF);
+    std::mt19937_64 rng(0xDEADBEEF); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
 
     auto col = ColumnUInt64::create();
     /// Boundary values first.
@@ -153,7 +153,7 @@ TEST(UniqueKeyEncoding, AllUnsignedWidths)
 TEST(UniqueKeyEncoding, SignedIntOrdering)
 {
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(0xCAFEBABE);
+    std::mt19937_64 rng(0xCAFEBABE); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
 
     auto col = ColumnInt64::create();
     for (Int64 v : {std::numeric_limits<Int64>::min(), Int64(-1), Int64(0), Int64(1), std::numeric_limits<Int64>::max()})
@@ -504,7 +504,7 @@ TEST(UniqueKeyEncoding, StringEncoderByteEquivalent)
     /// No-NUL widths spanning cache-line boundaries — fast path.
     {
         // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-        std::mt19937_64 rng(0xA5A5A5A5);
+        std::mt19937_64 rng(0xA5A5A5A5); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
         for (size_t width : {size_t(0), size_t(1), size_t(7), size_t(8), size_t(15),
                               size_t(16), size_t(17), size_t(31), size_t(32),
                               size_t(33), size_t(63), size_t(64), size_t(65),
@@ -533,7 +533,7 @@ TEST(UniqueKeyEncoding, StringEncoderByteEquivalent)
 
     /// Fuzz — 500 random widths, ~25% '\0' density.
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(0x1234567890ABCDEFULL);
+    std::mt19937_64 rng(0x1234567890ABCDEFULL); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (size_t trial = 0; trial < 500; ++trial)
     {
         String s(rng() % 257, 0);
@@ -551,7 +551,7 @@ TEST(UniqueKeyEncoding, StringBlockEncoderByteEquivalent)
     /// Block-level path: `encodeBlock` → `appendStringColumn`. Mix of edge
     /// cases and varying widths in a single block.
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(0xB10C);
+    std::mt19937_64 rng(0xB10C); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     std::vector<String> rows = {
         String(),
         String("hello", 5),
@@ -618,7 +618,7 @@ TEST(UniqueKeyEncoding, FixedStringEncoderByteEquivalent)
     /// bytes (no escape — width-prefixed). Verify direct memcpy for widths
     /// 8 / 16 / 24 / 32 / 64.
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(0xFEEDFACE);
+    std::mt19937_64 rng(0xFEEDFACE); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (size_t width : {size_t(8), size_t(16), size_t(24), size_t(32), size_t(64)})
     {
         auto col = ColumnFixedString::create(width);
@@ -795,7 +795,7 @@ TEST(UniqueKeyEncoding, NullableOrdering)
 TEST(UniqueKeyEncoding, CompoundKeyShuffleSort)
 {
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(0x12345678);
+    std::mt19937_64 rng(0x12345678); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
 
     auto col_u = ColumnUInt32::create();
     auto col_s = ColumnString::create();
@@ -931,7 +931,7 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchUInt641M)
     constexpr size_t N = 1'000'000;
     auto col = ColumnUInt64::create();
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(42);
+    std::mt19937_64 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (size_t i = 0; i < N; ++i)
         col->insert(Field(rng()));
     Columns cols{std::move(col)};
@@ -950,7 +950,7 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchString321M)
     constexpr size_t N = 1'000'000;
     auto col = ColumnString::create();
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(43);
+    std::mt19937_64 rng(43); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (size_t i = 0; i < N; ++i)
     {
         String s(32, 0);
@@ -975,7 +975,7 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchCompoundUInt64String1M)
     auto col_u = ColumnUInt64::create();
     auto col_s = ColumnString::create();
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(44);
+    std::mt19937_64 rng(44); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (size_t i = 0; i < N; ++i)
     {
         col_u->insert(Field(rng()));
