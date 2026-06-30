@@ -686,12 +686,12 @@ profiles:
             if not (self.wait_ready(replica_num=1) and self.wait_ready(replica_num=2)):
                 return False
         if replica_num == 0:
-            # Flush system logs now that the server is ready and listening. This
-            # pre-creates the system log tables (system.query_log, etc.), which
-            # are otherwise not materialized until the first flush, so individual
-            # tests can read them without hitting "table does not exist". Doing it
-            # here (not in start()) avoids the Code 210 race against the TCP
-            # listener; the result is best-effort and does not gate readiness.
+            # _flush_system_logs() fans out to every running replica; the
+            # replica_num == 0 guard only stops the recursive wait_ready(1/2)
+            # calls above from re-running that fan-out (replicas 1 and 2 are
+            # already confirmed ready there). Flushing pre-creates the system log
+            # tables so tests don't hit "table does not exist". Kept here, not in
+            # start(), to avoid the Code 210 race against the TCP listener.
             self._flush_system_logs()
         return True
 
