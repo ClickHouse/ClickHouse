@@ -6,6 +6,10 @@ CREATE TABLE t (`x` Tuple(a UInt8, UInt16)) ENGINE = Memory
 CREATE TABLE t (`t` Tuple(JSON, f1 Array(Float64))) ENGINE = Memory
 ALTER TABLE t (MODIFY COLUMN `s` Tuple(a UInt8, UInt16))
 CREATE TABLE t (`x` Tuple(a Tuple(b UInt8, UInt16), c String)) ENGINE = Memory
+CREATE TABLE t (`x` Tuple(a UInt8, UInt16)) ENGINE = Memory
+CREATE TABLE t (`t` Tuple(JSON, f1 Array(Float64))) ENGINE = Memory
+ALTER TABLE t (MODIFY COLUMN `s` Tuple(a UInt8, UInt16))
+CREATE TABLE t (`x` Tuple(a Tuple(b UInt8, UInt16), c String)) ENGINE = Memory
 Syntax error
 Syntax error
 Syntax error

@@ -19,6 +19,15 @@ $CLICKHOUSE_FORMAT --oneline --query "CREATE TABLE t (\`t\` Tuple(JSON, f1 Array
 $CLICKHOUSE_FORMAT --oneline --query "ALTER TABLE t MODIFY COLUMN s Tuple(a UInt8, UInt16)" | $CLICKHOUSE_FORMAT --oneline
 $CLICKHOUSE_FORMAT --oneline --query "CREATE TABLE t (x Tuple(a Tuple(b UInt8, UInt16), c String)) ENGINE = Memory" | $CLICKHOUSE_FORMAT --oneline
 
+# Same mixed named/unnamed tuples, but formatted without --oneline so the first
+# pass takes the pretty (multi-line) branch of ASTTupleDataType::formatImpl
+# (print_pretty_type_names = true, more than one element). The multi-line output
+# must reparse cleanly; re-format it with --oneline to assert a stable result.
+$CLICKHOUSE_FORMAT --query "CREATE TABLE t (x Tuple(a UInt8, UInt16)) ENGINE = Memory" | $CLICKHOUSE_FORMAT --oneline
+$CLICKHOUSE_FORMAT --query "CREATE TABLE t (\`t\` Tuple(JSON, f1 Array(Float64))) ENGINE = Memory" | $CLICKHOUSE_FORMAT --oneline
+$CLICKHOUSE_FORMAT --query "ALTER TABLE t MODIFY COLUMN s Tuple(a UInt8, UInt16)" | $CLICKHOUSE_FORMAT --oneline
+$CLICKHOUSE_FORMAT --query "CREATE TABLE t (x Tuple(a Tuple(b UInt8, UInt16), c String)) ENGINE = Memory" | $CLICKHOUSE_FORMAT --oneline
+
 # These invalid queries don't parse and this is normal.
 $CLICKHOUSE_FORMAT --oneline --query "ALTER TABLE alter_compression_codec1 MODIFY COLUMN alter_column CODEC((2 + ignore(1, toUInt128(materialize(2)), 2 + toNullable(toNullable(3))), 3), NONE)" 2>&1 | grep -o -F 'Syntax error'
 $CLICKHOUSE_FORMAT --oneline --query "ALTER TABLE test_table ADD COLUMN \`array\` Array(('110', 3, toLowCardinality(3), 3, toNullable(3), toLowCardinality(toNullable(3)), 3), UInt8) DEFAULT [1, 2, 3]" 2>&1 | grep -o -F 'Syntax error'
