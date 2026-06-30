@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <IO/ParallelReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -23,6 +24,7 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Core/Field.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 
@@ -254,6 +256,63 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.local_time_as_utc = settings[Setting::input_format_parquet_local_time_as_utc];
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
+    {
+        /// `output_format_parquet_column_field_ids` is a `Map(String, Int32)`. We parse the
+        /// `field_id` to a real `Int32` here, at FormatSettings build time, so the setting
+        /// is rejected as soon as it's set rather than only when Parquet output is invoked.
+        const auto & raw = settings[Setting::output_format_parquet_column_field_ids].value;
+        format_settings.parquet.column_field_ids.clear();
+        format_settings.parquet.column_field_ids.reserve(raw.size());
+        for (const auto & entry : raw)
+        {
+            if (entry.getType() != Field::Types::Tuple || entry.safeGet<Tuple>().size() != 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids must be a Map(String, Int32)");
+
+            const auto & tuple = entry.safeGet<Tuple>();
+            if (tuple.at(0).getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids key must be a String");
+
+            const Field & value_field = tuple.at(1);
+            Int64 id_value = 0;
+            switch (value_field.getType())
+            {
+                case Field::Types::Int64:
+                    id_value = value_field.safeGet<Int64>();
+                    break;
+                case Field::Types::UInt64:
+                {
+                    const UInt64 u = value_field.safeGet<UInt64>();
+                    if (u > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "output_format_parquet_column_field_ids value out of Int32 range");
+                    id_value = static_cast<Int64>(u);
+                    break;
+                }
+                case Field::Types::String:
+                {
+                    /// Tolerate integers passed as strings (e.g. `{'a': '1'}`) so that the
+                    /// setting can be set from contexts that quote everything.
+                    const String & s = value_field.safeGet<String>();
+                    if (!tryParse<Int64>(id_value, s))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "output_format_parquet_column_field_ids value '{}' is not an integer", s);
+                    break;
+                }
+                default:
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "output_format_parquet_column_field_ids value must be an Int32");
+            }
+            if (id_value < std::numeric_limits<Int32>::min() || id_value > std::numeric_limits<Int32>::max())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids value {} out of Int32 range", id_value);
+
+            format_settings.parquet.column_field_ids.emplace_back(
+                tuple.at(0).safeGet<String>(), static_cast<Int32>(id_value));
+        }
+    }
+    format_settings.parquet.auto_assign_field_ids = settings[Setting::output_format_parquet_auto_assign_field_ids];
     if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
     {
         /// Use 90% of the hard limit as the budget for computing caps. This ensures the pipeline's

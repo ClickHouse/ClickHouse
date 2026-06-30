@@ -39,6 +39,7 @@ class SettingsChanges;
     M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
+    M(CLASS_NAME, Map) \
     M(CLASS_NAME, MsgPackUUIDRepresentation) \
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, ObjectStorageQueueAction) \

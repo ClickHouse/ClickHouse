@@ -6,9 +6,19 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Columns/IColumn.h>
+#include <Common/WKB.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Formats/FormatFactory.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Processors/Port.h>
+
+#include <limits>
+#include <unordered_set>
 
 
 namespace CurrentMetrics
@@ -23,9 +33,178 @@ namespace DB
 
 using namespace Parquet;
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+    /// Enumerate, in the same DFS order that `prepareColumnRecursive` visits them, the dotted
+    /// `field_id`-bearing paths under a column named `name` of type `type`. `Nullable` and
+    /// `LowCardinality` wrappers don't add a path segment; `Array` adds `.element`, `Map` adds
+    /// `.key` / `.value`, and `Tuple` adds the subfield names.
+    void enumerateFieldPaths(const String & name, const DataTypePtr & type, std::vector<String> & out)
+    {
+        out.push_back(name);
+
+        DataTypePtr inner = type;
+        while (true)
+        {
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(inner.get()))
+            {
+                inner = nullable_type->getNestedType();
+                continue;
+            }
+            if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(inner.get()))
+            {
+                inner = lc_type->getDictionaryType();
+                continue;
+            }
+            break;
+        }
+
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner.get()))
+        {
+            enumerateFieldPaths(name + ".element", array_type->getNestedType(), out);
+        }
+        else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(inner.get()))
+        {
+            for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+                enumerateFieldPaths(name + "." + tuple_type->getNameByPosition(i + 1), tuple_type->getElement(i), out);
+        }
+        else if (const auto * map_type = typeid_cast<const DataTypeMap *>(inner.get()))
+        {
+            enumerateFieldPaths(name + ".key", map_type->getKeyType(), out);
+            enumerateFieldPaths(name + ".value", map_type->getValueType(), out);
+        }
+    }
+
+    /// Build the per-column Parquet `field_id` map from the user-facing settings.
+    /// Returns nullopt when the output should carry no field_ids (both overrides empty
+    /// and auto-assign disabled).
+    ///
+    ///   1. The flattened schema paths must themselves be unique — if two output columns or
+    ///      nested fields flatten to the same dotted key, the build is rejected.
+    ///   2. Every entry in `overrides` is applied verbatim. Negative ids, unknown paths,
+    ///      duplicate paths and duplicate ids are rejected so users get a clear signal when
+    ///      the setting drifts from the query's schema. Keys may be top-level column names
+    ///      or dotted nested paths (e.g. `arr.element`, `m.key`, `m.value`, `t.subfield`).
+    ///   3. If `auto_assign` is true, the remaining paths — top-level and nested — are given
+    ///      the smallest unused positive ids in schema DFS order (Iceberg writers
+    ///      conventionally start at 1 and go up).
+    ///   4. If `auto_assign` is false, the override map must cover every path produced by
+    ///      the schema (top-level and nested).
+    std::optional<std::unordered_map<String, Int64>> buildColumnFieldIds(
+        const Block & header,
+        const std::vector<std::pair<String, Int32>> & overrides,
+        bool auto_assign,
+        bool write_geometadata)
+    {
+        if (overrides.empty() && !auto_assign)
+            return std::nullopt;
+
+        std::vector<String> all_paths;
+        for (const auto & col : header)
+        {
+            /// A geo column collapses to a single WKB `String` field when GeoParquet output is on,
+            /// so the schema has only the top-level path — enumerating the ClickHouse-side nested
+            /// shape here would assign ids to fields that are never written and reject valid
+            /// top-level overrides as non-covering.
+            if (write_geometadata && isGeoColumnWrittenAsWKBScalar(col.type))
+                all_paths.push_back(col.name);
+            else
+                enumerateFieldPaths(col.name, col.type, all_paths);
+        }
+
+        /// Path identity is a dotted string, so a top-level column literally named `a.b` and the
+        /// nested field `b` under `a Tuple(b ...)` would flatten to the same key. Letting that slide
+        /// silently would either emit duplicate `field_id`s in auto-assign mode or make full coverage
+        /// in override-only mode impossible. Detect the collision and reject it up front.
+        std::unordered_set<String> known_paths;
+        known_paths.reserve(all_paths.size());
+        for (const auto & path : all_paths)
+        {
+            if (!known_paths.insert(path).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids / output_format_parquet_auto_assign_field_ids "
+                    "cannot disambiguate Parquet schema path '{}': two output columns or nested fields flatten "
+                    "to the same dotted path. Rename the conflicting top-level column (or nested subfield) so "
+                    "no name contains a '.' that collides with another column's nested path.",
+                    path);
+        }
+
+        std::unordered_map<String, Int64> result;
+        std::unordered_set<Int32> used_ids;
+
+        for (const auto & [name, id] : overrides)
+        {
+            if (id < 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids value {} must be non-negative", id);
+            if (!known_paths.contains(name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids references unknown column '{}'", name);
+            if (!result.emplace(name, id).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids has duplicate column '{}'", name);
+            if (!used_ids.insert(id).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids assigns id {} to more than one column", id);
+        }
+
+        if (auto_assign)
+        {
+            Int32 next_id = 1;
+            for (const auto & path : all_paths)
+            {
+                if (result.contains(path))
+                    continue;
+                while (used_ids.contains(next_id))
+                    ++next_id;
+                result.emplace(path, next_id);
+                used_ids.insert(next_id);
+                ++next_id;
+            }
+        }
+        else
+        {
+            /// If auto-assign is off we require the map to cover every path so that the
+            /// resulting Parquet file isn't a mix of "has field_id" and "no field_id" fields.
+            if (result.size() != all_paths.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids is non-empty but does not cover every output column "
+                    "or nested field (enable output_format_parquet_auto_assign_field_ids to fill the gaps automatically)");
+        }
+
+        return result;
+    }
+}
+
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_)
     : IOutputFormat(header_, out_), format_settings{format_settings_}, format_filter_info(format_filter_info_)
 {
+    const bool has_metadata_mapping = format_filter_info_ && format_filter_info_->column_mapper;
+    const bool user_set_field_ids = !format_settings.parquet.column_field_ids.empty()
+        || format_settings.parquet.auto_assign_field_ids;
+
+    /// When a datalake (e.g. Iceberg) writer hands us a column-id mapping, that mapping is
+    /// the source of truth — letting session settings override it would produce Parquet files
+    /// whose `field_id`s no longer match the table metadata, breaking subsequent reads.
+    if (has_metadata_mapping && user_set_field_ids)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "output_format_parquet_column_field_ids / output_format_parquet_auto_assign_field_ids "
+            "cannot be used when writing to a datalake table that provides its own column-id mapping");
+
+    /// Resolve Parquet `field_id`s from the user-facing settings (explicit overrides and/or
+    /// the Iceberg-style auto-assign toggle). Used only when there is no metadata mapping.
+    column_field_ids = buildColumnFieldIds(
+        *header_,
+        format_settings.parquet.column_field_ids,
+        format_settings.parquet.auto_assign_field_ids,
+        format_settings.parquet.write_geometadata);
+
     if (format_settings.parquet.parallel_encoding && format_settings.max_threads > 1)
         pool = std::make_unique<ThreadPool>(
             CurrentMetrics::ParquetEncoderThreads,
@@ -60,10 +239,12 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
     options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
-    if (format_filter_info_ && format_filter_info_->column_mapper)
-        schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding());
-    else
-        schema = convertSchema(*header_, options, std::nullopt);
+    /// Datalake (Iceberg) metadata mapping wins over user settings — see the check above.
+    const auto & effective_field_ids = has_metadata_mapping
+        ? std::optional<std::unordered_map<String, Int64>>(format_filter_info_->column_mapper->getStorageColumnEncoding())
+        : column_field_ids;
+
+    schema = convertSchema(*header_, options, effective_field_ids);
 }
 
 ParquetBlockOutputFormat::~ParquetBlockOutputFormat()
