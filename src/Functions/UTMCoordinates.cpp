@@ -447,6 +447,18 @@ MGRSCoordinate mgrsDecode(std::string_view mgrs)
 
     MGRSCoordinate result;
     utmToWGS84(easting, northing, static_cast<UInt8>(zone), is_north, result.longitude, result.latitude);
+
+    /// Reject squares whose decoded latitude does not fall within the declared band. A row letter that does
+    /// not occur in the band (e.g. '1LAB') otherwise decodes, after the northing roll-over, to a point a whole
+    /// 2000km cycle away in a different band. The tolerance covers cells that straddle a band boundary (a 100km
+    /// cell reaches at most ~0.5° beyond it), while a misplaced square lands a full cycle (~18°) away.
+    const size_t band_index = BAND_LETTERS.find(band);
+    const Float64 band_min_lat = -80.0 + 8.0 * static_cast<Float64>(band_index);
+    const Float64 band_max_lat = (band == 'X') ? 84.0 : band_min_lat + 8.0;
+    if (result.latitude < band_min_lat - 1.0 || result.latitude > band_max_lat + 1.0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "MGRS 100km square does not intersect latitude band '{}' in string '{}'", String(1, band), String(mgrs));
+
     return result;
 }
 
