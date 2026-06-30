@@ -1,7 +1,7 @@
 # docker build -t clickhouse/stateless-test .
 ARG FROM_TAG=latest
 ARG REDPANDA_VERSION=v25.1.3
-FROM redpandadata/redpanda:${REDPANDA_VERSION} AS redpanda
+FROM docker.redpanda.com/redpandadata/redpanda:${REDPANDA_VERSION} AS redpanda
 
 FROM clickhouse/test-base:$FROM_TAG
 
@@ -102,7 +102,7 @@ ENV HOME="/home"
 
 # Download azurite-rs (Azure Blob Storage emulator in Rust)
 # https://github.com/ClickHouse/azurite-rs
-ARG AZURITE_RS_VERSION=v0.1.0-1bc0ba9
+ARG AZURITE_RS_VERSION=v0.1.0-3a51c3f
 RUN arch=${TARGETARCH:-amd64} \
     && curl -fsSL "https://github.com/ClickHouse/azurite-rs/releases/download/${AZURITE_RS_VERSION}/azurite-rs-linux-${arch}.tar.gz" | tar -xz -C /usr/local/bin/ \
     && mv /usr/local/bin/azurite-rs-linux-${arch} /usr/local/bin/azurite-rs \

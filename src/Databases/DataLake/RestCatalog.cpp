@@ -2,8 +2,6 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
-#include <Common/RemoteHostFilter.h>
-#include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -23,7 +21,6 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Base64.h>
 #include <Common/checkStackSize.h>
-#include <Common/HTTPHeaderFilter.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/GCPOAuth.h>
@@ -47,7 +44,6 @@
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/StreamCopier.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FailPoint.h>
 
 
@@ -57,11 +53,6 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
-}
-
-namespace DB::Setting
-{
-    extern const SettingsBool allow_experimental_geo_types_in_iceberg;
 }
 
 namespace DB::FailPoints
@@ -132,22 +123,6 @@ String encodeNamespaceForURI(const String & namespace_name)
     return encoded;
 }
 
-std::unordered_set<std::string> getAllowedBigLakeMetadataServiceHosts(
-    const Poco::Util::AbstractConfiguration & config)
-{
-    static constexpr auto SECTION = "iceberg_biglake_metadata_service_hosts";
-    std::unordered_set<std::string> allowed;
-    if (!config.has(SECTION))
-        return allowed;
-
-    std::vector<std::string> keys;
-    config.keys(SECTION, keys);
-    for (const auto & key : keys)
-        allowed.insert(config.getString(std::string(SECTION) + "." + key));
-    return allowed;
-}
-
-
 }
 
 std::string RestCatalog::Config::toString() const
@@ -188,14 +163,6 @@ RestCatalog::RestCatalog(
     else if (!auth_header_.empty())
     {
         auth_header = parseAuthHeader(auth_header_);
-        /// `registerDatabaseDataLake` validates `auth_header` on CREATE only, so that a database
-        /// persisted with a forbidden or malformed header does not block server startup on ATTACH.
-        /// The catalog is built lazily on first use instead; this is where the user-provided
-        /// `auth_header` first becomes a header sent to the catalog, so enforce `http_forbid_headers`
-        /// here, before `loadConfig` issues any request. Mirrors the CREATE-path check: a copy is
-        /// validated and the original parsed header is kept.
-        DB::HTTPHeaderEntries header_to_check{auth_header.value()};
-        getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
     }
     config = loadConfig();
 }
@@ -275,15 +242,13 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
     /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
     if (!client_id.empty())
     {
-        auto current = access_token.get();
-        if (!current || update_token)
+        if (!access_token.has_value() || update_token)
         {
-            access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
-            current = access_token.get();
+            access_token = retrieveAccessToken();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + current->token);
+        headers.emplace_back("Authorization", "Bearer " + access_token.value().token);
         return headers;
     }
     return {};
@@ -308,16 +273,9 @@ OneLakeCatalog::OneLakeCatalog(
     // Get token before loading config so getAuthHeaders() can work
     if (!client_id.empty() && !client_secret.empty())
     {
-        access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
+        access_token = retrieveAccessToken();
     }
     config = loadConfig();
-}
-
-DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(bool update_token) const
-{
-    auto headers = RestCatalog::getAuthHeaders(update_token);
-    headers.emplace_back("User-Agent", fmt::format("ClickHouse/{}{} OneLake-Catalog", VERSION_STRING, VERSION_OFFICIAL));
-    return headers;
 }
 
 AccessToken RestCatalog::retrieveAccessToken() const
@@ -370,7 +328,6 @@ AccessToken RestCatalog::retrieveAccessToken() const
     }
 
     const auto & context = getContext();
-    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
 
@@ -431,7 +388,7 @@ BigLakeCatalog::BigLakeCatalog(
     // Get token before loading config so getAuthHeaders() can work
     if (!google_project_id.empty() || !google_adc_client_id.empty())
     {
-        access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
+        access_token = retrieveGoogleCloudAccessToken();
     }
     config = loadConfig();
 }
@@ -444,15 +401,13 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(bool update_token) const
     /// https://developers.google.com/identity/protocols/oauth2
     if (!google_project_id.empty() || !google_adc_client_id.empty())
     {
-        auto current = access_token.get();
-        if (!current || update_token || current->isExpired())
+        if (!access_token.has_value() || update_token || access_token->isExpired())
         {
-            access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
-            current = access_token.get();
+            access_token = retrieveGoogleCloudAccessToken();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + current->token);
+        headers.emplace_back("Authorization", "Bearer " + access_token->token);
 
         std::string project_id = google_project_id;
         if (project_id.empty() && !google_adc_quota_project_id.empty())
@@ -506,23 +461,6 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
     /// https://cloud.google.com/compute/docs/metadata/overview
     static constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "/computeMetadata/v1/instance/service-accounts";
 
-    const auto & context = getContext();
-
-    const auto allowed_metadata_hosts = getAllowedBigLakeMetadataServiceHosts(context->getConfigRef());
-    if (allowed_metadata_hosts.empty())
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "BigLake metadata service requests are disabled. To enable, configure "
-            "<iceberg_biglake_metadata_service_hosts> in server config with the allowed metadata "
-            "hosts (typically `metadata.google.internal` and `169.254.169.254`).");
-
-    if (!allowed_metadata_hosts.contains(google_metadata_service))
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "google_metadata_service host `{}` is not in the server-side allow-list "
-            "<iceberg_biglake_metadata_service_hosts>",
-            google_metadata_service);
-
     Poco::URI url;
     url.setScheme("http");
     url.setHost(google_metadata_service);
@@ -533,7 +471,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 
     LOG_DEBUG(log, "Requesting Google Cloud access token from metadata service: {}", url.toString());
 
-    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
+    const auto & context = getContext();
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
 
@@ -645,23 +583,19 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
 bool RestCatalog::empty() const
 {
+    /// TODO: add a test with empty namespaces and zero namespaces.
     bool found_table = false;
     auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
-        if (found_table)
-            return true;
-
         const auto tables = getTables(namespace_name, /* limit */1);
-        if (!tables.empty())
-            found_table = true;
-
+        found_table = !tables.empty();
         return found_table;
     };
 
     Namespaces namespaces;
     getNamespacesRecursive("", namespaces, stop_condition, /* execute_func */{});
 
-    return !found_table;
+    return found_table;
 }
 
 DB::Names RestCatalog::getTables() const
@@ -1094,9 +1028,8 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (result.requiresSchema())
     {
-        const bool allow_geo_parser
-            = getContext()->getSettingsRef()[DB::Setting::allow_experimental_geo_types_in_iceberg].value;
-        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
+        // int format_version = metadata_object->getValue<int>("format-version");
+        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor();
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
         auto schema = schema_processor.getClickhouseTableSchemaById(id);
         result.setSchema(*schema);
@@ -1122,9 +1055,6 @@ bool RestCatalog::getTableMetadataImpl(
             result.setDataLakeSpecificProperties(DataLakeSpecificProperties{ .iceberg_metadata_file_location = metadata_location });
         }
     }
-
-    if (metadata_object->has("table-uuid"))
-        result.setTableUUID(metadata_object->get("table-uuid").extract<String>());
 
     return true;
 }
@@ -1222,10 +1152,6 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     request_body->set("stage-create", false);
     Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-
-    if (metadata_content->has("format-version"))
-        properties->set("format-version", std::to_string(metadata_content->getValue<int>("format-version")));
-
     request_body->set("properties", properties);
 
     try
@@ -1297,71 +1223,8 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     {
         sendRequest(endpoint, request_body);
     }
-    catch (const DB::HTTPException & ex)
+    catch (const DB::HTTPException &)
     {
-        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
-        return false;
-    }
-    return true;
-}
-
-bool RestCatalog::updateSchema(
-    const String & namespace_name,
-    const String & table_name,
-    const String & /*new_metadata_path*/,
-    Poco::JSON::Object::Ptr new_schema,
-    Int32 previous_schema_id) const
-{
-    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
-
-    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    {
-        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
-
-        request_body->set("identifier", identifier);
-    }
-
-    {
-        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
-        requirement->set("type", "assert-current-schema-id");
-        requirement->set("current-schema-id", previous_schema_id);
-
-        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
-        requirements->add(requirement);
-        request_body->set("requirements", requirements);
-    }
-
-    {
-        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
-
-        {
-            Poco::JSON::Object::Ptr add_schema = new Poco::JSON::Object;
-            add_schema->set("action", "add-schema");
-            add_schema->set("schema", new_schema);
-            updates->add(add_schema);
-        }
-
-        {
-            Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
-            set_current_schema->set("action", "set-current-schema");
-            set_current_schema->set("schema-id", -1);
-            updates->add(set_current_schema);
-        }
-
-        request_body->set("updates", updates);
-    }
-
-    try
-    {
-        sendRequest(endpoint, request_body);
-    }
-    catch (const DB::HTTPException & ex)
-    {
-        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
         return false;
     }
     return true;
