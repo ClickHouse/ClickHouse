@@ -1480,8 +1480,18 @@ static BlockIO executeQueryImpl(
         /// `wipeSensitiveDataAndCutToLength` only applies regex masking and would leave such
         /// secrets visible — in particular for a query rejected by a `REJECT` rule, whose
         /// `query_for_logging` was already computed with AST masking before `astTraversal` threw.
-        if (out_ast && out_ast->hasSecretParts())
-            query_for_logging = out_ast->formatForLogging(log_queries_cut_to_length);
+        ///
+        /// Prefer the pre-rewrite AST (`ast_for_formatted_query`, saved just before `astTraversal`)
+        /// over `out_ast`: a `REWRITE` rule replaces `out_ast` with its result template in place, so
+        /// if a later rule then rejects the query, formatting `out_ast` here would record the
+        /// rewritten rule output (its structure, with masked secrets) in `system.query_log.query`
+        /// and `normalized_query_hash` instead of the query the user submitted. This keeps the
+        /// exception path consistent with the success path, which logs the original query.
+        /// `ast_for_formatted_query` is null only when parsing failed before the rewrite step, in
+        /// which case `out_ast` is the right (and only) AST to mask.
+        const ASTPtr & ast_for_query_logging = ast_for_formatted_query ? ast_for_formatted_query : out_ast;
+        if (ast_for_query_logging && ast_for_query_logging->hasSecretParts())
+            query_for_logging = ast_for_query_logging->formatForLogging(log_queries_cut_to_length);
         else
             query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
         logQuery(query_for_logging, context, internal, stage);
