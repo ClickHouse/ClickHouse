@@ -3,6 +3,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/BernoulliGranuleFilter_fwd.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
@@ -107,6 +108,8 @@ struct RangesInDataPart
     MarkRanges ranges;
     MarkRanges exact_ranges;
     RangesInDataPartReadHints read_hints;
+
+    BernoulliGranuleFilterPtr bernoulli_filter;
 
     /// The above "ranges" member is the selected ranges after index analysis.
     /// Index analysis has 2 steps : 1) Filter by primary key   2) Filter by skip indexes

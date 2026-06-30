@@ -258,6 +258,9 @@ public:
                 initial_ranges_in_data_parts[part_index].part_starting_offset_in_query,
                 MarkRanges{mark_range},
                 initial_ranges_in_data_parts[part_index].read_hints);
+            /// Preserve the per-part Bernoulli sampling filter across primary-key range splitting,
+            /// the same way `read_hints` is preserved above; otherwise the sample is lost on this path.
+            ranges_in_data_parts.back().bernoulli_filter = initial_ranges_in_data_parts[part_index].bernoulli_filter;
             part_index_to_initial_ranges_in_data_parts_index[it->second] = part_index;
             return;
         }

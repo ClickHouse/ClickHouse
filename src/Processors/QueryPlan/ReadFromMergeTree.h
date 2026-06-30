@@ -33,6 +33,10 @@ struct MergeTreeDataSelectSamplingData
     Float64 used_sample_factor = 1.0;
     boost::intrusive_ptr<ASTFunction> filter_function;
     std::shared_ptr<const ActionsDAG> filter_expression;
+
+    bool use_bernoulli_sampling = false;
+    Float64 bernoulli_probability = 0.0;
+    std::optional<UInt64> bernoulli_seed;
 };
 
 struct UsefulSkipIndexes

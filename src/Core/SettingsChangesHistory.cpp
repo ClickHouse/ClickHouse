@@ -71,6 +71,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_float_precision", 0, 0, "A new setting to control decimal digits in float output"},
             {"file_like_engine_default_partition_strategy", "wildcard", "hive", "Change the default partition strategy for file-like table engines (S3, AzureBlobStorage, etc.) from `wildcard` to `hive` when no `partition_strategy` is provided."},
             {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
+            {"allow_experimental_bernoulli_sample", false, false, "New setting to enable experimental Bernoulli sampling for tables without a SAMPLE BY key."},
+            {"bernoulli_sample_seed", 1, 1, "New setting for the seed of the experimental Bernoulli sampling path. 0 re-seeds randomly per query; any nonzero value is deterministic per part."},
             {"optimize_limit_by_function_keys", false, true, "New setting that eliminates LIMIT BY keys that are functions of other LIMIT BY keys."},
             {"optimize_injective_functions_in_limit_by", false, true, "New setting that replaces injective functions by their arguments in the LIMIT BY keys."},
             {"optimize_rewrite_has_to_in", false, true, "New setting"},

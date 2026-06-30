@@ -211,6 +211,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
     read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
     read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(read_task_info.data_part, mutations_snapshot, getContext());
     read_task_info.read_hints = part_with_ranges.read_hints;
+    read_task_info.bernoulli_filter = part_with_ranges.bernoulli_filter;
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)

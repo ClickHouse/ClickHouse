@@ -98,6 +98,10 @@ The sampling expression must result in an unsigned integer.
 
 Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
+Tables created without a `SAMPLE BY` key can still use the `SAMPLE` clause via
+the experimental [Bernoulli Sampling](/sql-reference/statements/select/sample#bernoulli-sampling)
+mode (`allow_experimental_bernoulli_sample`).
+
 ####  TTL {#ttl}
 
 `TTL` — A list of rules that specify the storage duration of rows and the logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes). Optional.

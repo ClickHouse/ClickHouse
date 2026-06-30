@@ -245,7 +245,6 @@ public:
         NamesAndTypesList available_real_columns,
         const RangesInDataParts & parts,
         KeyCondition & key_condition,
-        const MergeTreeData & data,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         LoggerPtr log);

@@ -77,6 +77,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_bernoulli_sample;
+    extern const SettingsUInt64 bernoulli_sample_seed;
     extern const SettingsBool per_part_index_stats;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indices;
@@ -221,7 +223,6 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     NamesAndTypesList available_real_columns,
     const RangesInDataParts & parts,
     KeyCondition & key_condition,
-    const MergeTreeData & data,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     LoggerPtr log)
@@ -337,7 +338,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     /// Parallel replicas has been requested but there is no way to sample data.
     /// Select all data from first replica and no data from other replicas.
     if (can_use_sampling_key_parallel_replicas && settings[Setting::parallel_replicas_count] > 1
-        && !data.supportsSampling() && settings[Setting::parallel_replica_offset] > 0)
+        && !metadata_snapshot->hasSamplingKey() && settings[Setting::parallel_replica_offset] > 0)
     {
         LOG_DEBUG(
             log,
@@ -347,7 +348,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         return sampling;
     }
 
-    sampling.use_sampling = relative_sample_size > 0 || (can_use_sampling_key_parallel_replicas && settings[Setting::parallel_replicas_count] > 1 && data.supportsSampling());
+    sampling.use_sampling = relative_sample_size > 0 || (can_use_sampling_key_parallel_replicas && settings[Setting::parallel_replicas_count] > 1 && metadata_snapshot->hasSamplingKey());
     bool no_data = false; /// There is nothing left after sampling.
 
     if (sampling.use_sampling)
@@ -356,12 +357,35 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             sampling.used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
         RelativeSize size_of_universum = 0;
-        const auto & sampling_key = metadata_snapshot->getSamplingKey();
 
         if (!metadata_snapshot->hasSamplingKey())
-            throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
-                "Sampling is not supported: the table does not have a sampling key");
+        {
+            if (!settings[Setting::allow_experimental_bernoulli_sample])
+                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
+                    "Sampling is not supported: the table does not have a sampling key. "
+                    "Set allow_experimental_bernoulli_sample = 1 to enable Bernoulli sampling");
 
+            if (relative_sample_offset > 0)
+                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
+                    "SAMPLE OFFSET is not supported for tables without a SAMPLE BY key");
+
+            Float64 probability = boost::rational_cast<Float64>(relative_sample_size);
+            if (probability <= 0.0 || probability >= 1.0)
+            {
+                sampling.use_sampling = false;
+                return sampling;
+            }
+
+            sampling.use_sampling = false;
+            sampling.use_bernoulli_sampling = true;
+            sampling.bernoulli_probability = probability;
+            UInt64 seed_setting = settings[Setting::bernoulli_sample_seed];
+            if (seed_setting != 0)
+                sampling.bernoulli_seed = seed_setting;
+            return sampling;
+        }
+
+        const auto & sampling_key = metadata_snapshot->getSamplingKey();
         DataTypePtr sampling_column_type = sampling_key.data_types.at(0);
 
         if (sampling_key.data_types.size() == 1)

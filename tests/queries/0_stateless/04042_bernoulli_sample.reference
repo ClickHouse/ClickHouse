@@ -1,0 +1,73 @@
+error without experimental setting
+basic sample 0.1
+9913
+basic sample 0.5
+49926
+basic sample 0.9
+89772
+sample_factor
+10
+offset without sample by key
+sample 0 (no-op)
+100000
+sample 1 (no-op)
+100000
+absolute sample exceeding table size
+100000
+absolute sample 50000
+49926
+sample_factor absolute
+2
+sample_factor absolute exceeding table size
+1
+empty table
+0
+parallel replicas sampling_key mode without sample by
+9913
+0
+non-MergeTree engine rejected
+very small probability
+82
+multi-part table
+14936
+thread-count independence
+1
+multi-part thread-count independence
+1
+large table with granule skipping (p=0.001)
+large count in range
+2045
+large bit-exact determinism (checksum)
+1
+very small probability
+171
+nonadaptive granularity
+1
+bernoulli with skip index
+4955
+bernoulli with merge table
+9913
+bernoulli through alias to merge tree
+9913
+prewhere with bernoulli
+4955
+sample by key dominates the experimental flag
+1
+1
+1
+parallel replicas read_tasks mode with bernoulli
+1
+projection disabled by bernoulli
+1
+0
+9913
+bernoulli survives FINAL merge-path reconstruction
+1
+1
+bernoulli survives read-in-order split across streams
+1
+1
+bernoulli survives join-by-shards layer reconstruction
+1
+1
+bernoulli sample with STREAM is rejected

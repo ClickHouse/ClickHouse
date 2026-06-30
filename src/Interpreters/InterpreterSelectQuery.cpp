@@ -133,6 +133,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+    extern const SettingsBool allow_experimental_bernoulli_sample;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool async_socket_for_remote;
@@ -928,15 +929,24 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (!options.only_analyze)
         {
-            if (query.sampleSize() && (input_pipe || !storage || !storage->supportsSampling()))
             {
-                if (storage)
+                const bool has_sample_clause = query.sampleSize() != nullptr;
+                const bool supports_native_sampling = !input_pipe && storage && storage->supportsSampling();
+                /// Bernoulli sampling only works when reading directly from MergeTree (not via input_pipe).
+                const bool supports_bernoulli_sampling = !input_pipe && storage && storage->isMergeTree()
+                    && context->getSettingsRef()[Setting::allow_experimental_bernoulli_sample];
+
+                if (has_sample_clause && !supports_native_sampling && !supports_bernoulli_sampling)
+                {
+                    if (storage)
+                        throw Exception(
+                            ErrorCodes::SAMPLING_NOT_SUPPORTED,
+                            "Storage {} doesn't support sampling",
+                            storage->getStorageID().getNameForLogs());
                     throw Exception(
                         ErrorCodes::SAMPLING_NOT_SUPPORTED,
-                        "Storage {} doesn't support sampling",
-                        storage->getStorageID().getNameForLogs());
-                throw Exception(
-                    ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: sampling is only allowed with the table engines that support it");
+                        "Illegal SAMPLE: sampling is only allowed with the table engines that support it");
+                }
             }
 
             if (query.final() && (input_pipe || !storage || !storage->supportsFinal()))

@@ -100,6 +100,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_experimental_bernoulli_sample;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
@@ -862,7 +863,12 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                     "Storage {} doesn't support FINAL",
                     storage->getName());
 
-            if (table_expression_modifiers->hasSampleSizeRatio() && !storage->supportsSampling())
+            const bool has_sample_clause = table_expression_modifiers->hasSampleSizeRatio();
+            const bool supports_native_sampling = storage->supportsSampling();
+            const bool supports_bernoulli_sampling = storage->isMergeTree()
+                && scope.context->getSettingsRef()[Setting::allow_experimental_bernoulli_sample];
+
+            if (has_sample_clause && !supports_native_sampling && !supports_bernoulli_sampling)
                 throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
                     "Storage {} doesn't support sampling",
                     storage->getStorageID().getFullNameNotQuoted());
