@@ -856,13 +856,15 @@ namespace
         return select_list;
     }
 
-    /// Builds the `FROM` element that the multi-table reads are anchored on, always wrapped as
-    /// Builds the table expression `(SELECT * FROM tags [WHERE <index_filter>] LIMIT 1 BY id) AS __tags`. The
-    /// `LIMIT 1 BY id` deduplicates series: the "tags" table is AggregatingMergeTree, so until a background merge
-    /// runs, several unmerged parts can each hold a row for the same series `id` (whose identity columns are
-    /// identical across them); without this the read would return a series once per part. When set, `index_filter`
-    /// is applied at the scan (before `LIMIT BY`) so the primary key can still skip granules.
-    ASTPtr makeTagsTableExpression(const StorageID & tags_table_id, const ASTPtr & index_filter)
+    /// Builds the table expression `(SELECT * FROM tags [WHERE <index_filter>] [LIMIT 1 BY id]) AS __tags`. When
+    /// `deduplicate_by_id` is set, `LIMIT 1 BY id` deduplicates series: the "tags" table is AggregatingMergeTree, so
+    /// until a background merge runs, several unmerged parts can each hold a row for the same series `id` (whose
+    /// identity columns are identical across them); without this an anchored tags read would return a series once
+    /// per part. It is not needed when this expression is the right side of a `SEMI LEFT JOIN … USING id` (the SEMI
+    /// strictness keeps each left row once regardless of the number of right matches, so per-part rows never fan
+    /// out, and the exposed identity columns are identical across them). When set, `index_filter` is applied at the
+    /// scan (before `LIMIT BY`) so the primary key can still skip granules.
+    ASTPtr makeTagsTableExpression(const StorageID & tags_table_id, const ASTPtr & index_filter, bool deduplicate_by_id)
     {
         auto inner = make_intrusive<ASTSelectQuery>();
         auto select_list = make_intrusive<ASTExpressionList>();
@@ -872,10 +874,13 @@ namespace
         if (index_filter)
             inner->setExpression(ASTSelectQuery::Expression::WHERE, index_filter->clone());
 
-        inner->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, make_intrusive<ASTLiteral>(static_cast<UInt8>(1)));
-        auto limit_by = make_intrusive<ASTExpressionList>();
-        limit_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-        inner->setExpression(ASTSelectQuery::Expression::LIMIT_BY, limit_by);
+        if (deduplicate_by_id)
+        {
+            inner->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, make_intrusive<ASTLiteral>(static_cast<UInt8>(1)));
+            auto limit_by = make_intrusive<ASTExpressionList>();
+            limit_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            inner->setExpression(ASTSelectQuery::Expression::LIMIT_BY, limit_by);
+        }
 
         auto tags_exp = make_intrusive<ASTTableExpression>();
         tags_exp->subquery = make_intrusive<ASTSubquery>(wrapInUnionQuery(std::move(inner)));
@@ -887,7 +892,7 @@ namespace
     /// The deduplicated "tags" subquery as a plain `FROM` element — the anchor of a tags-anchored read.
     ASTPtr makeTagsTableElement(const StorageID & tags_table_id, const ASTPtr & index_filter)
     {
-        return makeTableElement(makeTagsTableExpression(tags_table_id, index_filter));
+        return makeTableElement(makeTagsTableExpression(tags_table_id, index_filter, /* deduplicate_by_id= */ true));
     }
 
     /// The deduplicated "tags" subquery as a `SEMI LEFT JOIN … USING id` element, attaching a series'
@@ -905,7 +910,7 @@ namespace
         join->using_expression_list = using_list;
         join->children.push_back(join->using_expression_list);
 
-        auto tags_exp = makeTagsTableExpression(tags_table_id, index_filter);
+        auto tags_exp = makeTagsTableExpression(tags_table_id, index_filter, /* deduplicate_by_id= */ false);
         auto tags_elem = make_intrusive<ASTTablesInSelectQueryElement>();
         tags_elem->table_join = join;
         tags_elem->table_expression = tags_exp;
