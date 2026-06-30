@@ -182,13 +182,15 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
         return CannotPollReason::NoMetadata;
     }
 
-    // Apply partition affinity filter: only keep partitions where partition_id % shard_count == partition_num
+    // Apply partition affinity filter: only keep partitions where partition_id % shard_count == partition_num % shard_count
+    // The extra modulo on partition_num allows both 0-based and 1-based shard numbering to work correctly.
     if (shard_count > 0)
     {
+        const auto effective_shard_num = partition_num % shard_count;
         const auto total_before = all_topic_partitions.size();
         std::erase_if(all_topic_partitions, [&](const auto & tp)
         {
-            return static_cast<UInt64>(tp.partition_id) % shard_count != partition_num;
+            return static_cast<UInt64>(tp.partition_id) % shard_count != effective_shard_num;
         });
         LOG_TRACE(log, "Partition affinity filter: {} -> {} partitions (partition_num={}, shard_count={})",
             total_before, all_topic_partitions.size(), partition_num, shard_count);

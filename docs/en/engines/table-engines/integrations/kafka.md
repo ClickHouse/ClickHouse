@@ -105,7 +105,7 @@ Optional parameters:
 - `kafka_compression_codec` — Compression codec used for producing messages. Supported: empty string, `none`, `gzip`, `snappy`, `lz4`, `zstd`. In case of empty string the compression codec is not set by the table, thus values from the config files or default value from `librdkafka` will be used. Default: empty string.
 - `kafka_compression_level` — Compression level parameter for algorithm selected by kafka_compression_codec. Higher values will result in better compression at the cost of more CPU usage. Usable range is algorithm-dependent: `[0-9]` for `gzip`; `[0-12]` for `lz4`; only `0` for `snappy`; `[0-12]` for `zstd`; `-1` = codec-dependent default compression level. Default: `-1`.
 - `kafka_map_virtual_columns_on_write` — If enabled, columns with special names `_key`, `_timestamp`, `_headers.name` and `_headers.value` in the table schema are mapped to the corresponding Kafka message metadata on `INSERT` and are excluded from the message payload. See [Mapping columns to Kafka message metadata](#mapping-columns-to-kafka-message-metadata). Default: `false`.
-- `kafka_partition_shard_num` — The current shard number (0-based) for static partition-to-shard affinity. Partitions are assigned by the formula `partition_id % kafka_shard_count == kafka_partition_shard_num`. Supports macro expansion (e.g., `'{shard}'`). Must be used together with `kafka_shard_count`. Only supported with StorageKafka2 (requires `kafka_keeper_path` and `kafka_replica_name`). Default: `''` (disabled).
+- `kafka_partition_shard_num` — The current shard number for static partition-to-shard affinity. Supports both 0-based and 1-based numbering. Partitions are assigned by the formula `partition_id % kafka_shard_count == kafka_partition_shard_num % kafka_shard_count`. Supports macro expansion (e.g., `'{shard}'`). Must be used together with `kafka_shard_count`. Only supported with StorageKafka2 (requires `kafka_keeper_path` and `kafka_replica_name`). Default: `''` (disabled).
 - `kafka_shard_count` — Total number of shards participating in consumption. Used together with `kafka_partition_shard_num` to statically assign partitions. Must be used together with `kafka_partition_shard_num`. Only supported with StorageKafka2. Default: `0` (disabled).
 
 Examples:
@@ -453,10 +453,10 @@ Either both of the settings must be specified or neither of them. When both of t
 When using StorageKafka2, you can optionally enable static partition-to-shard affinity by specifying `kafka_partition_shard_num` and `kafka_shard_count`. This allows multiple ClickHouse instances (shards) to consume from the same Kafka topic, with each shard only processing a deterministic subset of partitions based on the formula:
 
 ```
-partition_id % kafka_shard_count == kafka_partition_shard_num
+partition_id % kafka_shard_count == kafka_partition_shard_num % kafka_shard_count
 ```
 
-Both settings must be specified together; specifying only one raises an exception. The `kafka_partition_shard_num` value must be a non-negative integer less than `kafka_shard_count`. It supports macro expansion (e.g., `'{shard}'`), which is resolved at table creation time — validation is performed both before and after macro expansion.
+Both settings must be specified together; specifying only one raises an exception. The `kafka_partition_shard_num` value must be a non-negative integer not greater than `kafka_shard_count` (values equal to `kafka_shard_count` are allowed to support 1-based shard numbering). It supports macro expansion (e.g., `'{shard}'`), which is resolved at table creation time — validation is performed both before and after macro expansion.
 
 Example with 3 shards consuming a 12-partition topic:
 

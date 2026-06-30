@@ -634,10 +634,10 @@ void StorageKafka2::parsePartitionAffinitySettings()
     partition_num = parsed_partition_num;
     shard_count = shard_count_val;
 
-    if (partition_num >= shard_count)
+    if (partition_num > shard_count)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "'kafka_partition_shard_num' ({}) must be less than 'kafka_shard_count' ({}) after macro expansion",
+            "'kafka_partition_shard_num' ({}) must not be greater than 'kafka_shard_count' ({}) after macro expansion",
             partition_num,
             shard_count);
 

@@ -25,7 +25,7 @@ SETTINGS kafka_broker_list = '127.0.0.1:9092',
          kafka_replica_name = 'r1',
          kafka_shard_count = 3; -- { serverError BAD_ARGUMENTS }
 
--- Case 3: kafka_partition_shard_num >= kafka_shard_count should fail
+-- Case 3: kafka_partition_shard_num > kafka_shard_count should fail
 CREATE TABLE test_kafka_partition_affinity_3 (id UInt64)
 ENGINE = Kafka
 SETTINGS kafka_broker_list = '127.0.0.1:9092',
@@ -34,7 +34,7 @@ SETTINGS kafka_broker_list = '127.0.0.1:9092',
          kafka_format = 'JSONEachRow',
          kafka_keeper_path = '/clickhouse/test/partition_affinity_3',
          kafka_replica_name = 'r1',
-         kafka_partition_shard_num = '3',
+         kafka_partition_shard_num = '4',
          kafka_shard_count = 3; -- { serverError BAD_ARGUMENTS }
 
 -- Case 4: kafka_partition_shard_num is not a valid integer should fail

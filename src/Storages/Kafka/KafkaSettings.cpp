@@ -173,10 +173,10 @@ void KafkaSettings::sanityCheck(ContextPtr global_context) const
                     partition_num_str);
             }
 
-            if (parsed_partition_num >= shard_count)
+            if (parsed_partition_num > shard_count)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "'kafka_partition_shard_num' ({}) must be less than 'kafka_shard_count' ({})",
+                    "'kafka_partition_shard_num' ({}) must not be greater than 'kafka_shard_count' ({})",
                     parsed_partition_num,
                     shard_count);
         }
