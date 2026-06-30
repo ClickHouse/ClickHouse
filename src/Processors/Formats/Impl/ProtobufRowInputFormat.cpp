@@ -207,7 +207,7 @@ ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on
 
 Nested messages are suitable for input or output of a [nested data structures](/sql-reference/data-types/nested-data-structures/index.md).
 
-Default values defined in a protobuf schema like the one that follows are not applied, rather the [table defaults](/sql-reference/statements/create/table#default_values) are used instead of them:
+Default values defined in a protobuf schema like the one that follows are not applied, rather the [table defaults](/sql-reference/statements/create/table#default-values) are used instead of them:
 
 ```capnp
 syntax = "proto2";

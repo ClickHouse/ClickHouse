@@ -104,7 +104,7 @@ REGISTER_FUNCTION(IsNull)
     FunctionDocumentation::Description description = R"(
 Checks if the argument is `NULL`.
 
-Also see: operator [`IS NULL`](/sql-reference/operators#is_null).
+Also see: operator [`IS NULL`](/sql-reference/operators#is-null).
     )";
     FunctionDocumentation::Syntax syntax = "isNull(x)";
     FunctionDocumentation::Arguments arguments = {

@@ -573,7 +573,7 @@ During import, ClickHouse treats the top level dimension as an array of rows wit
 
 The table below gives the supported Npy data types and their corresponding type in ClickHouse:
 
-## Data types matching {#data_types-matching}
+## Data types matching {#data-types-matching}
 
 | Npy data type (`INSERT`) | ClickHouse data type                                            | Npy data type (`SELECT`) |
 |--------------------------|-----------------------------------------------------------------|-------------------------|

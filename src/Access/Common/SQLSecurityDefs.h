@@ -2,7 +2,7 @@
 #include <Core/Types.h>
 
 
-/// SQL security enum. Used in ASTSQLSecurity::type. For more info, please refer to the docs/sql-reference/statements/create/view.md#sql_security
+/// SQL security enum. Used in ASTSQLSecurity::type. For more info, please refer to the docs/sql-reference/statements/create/view.md#sql-security
 enum class SQLSecurityType : uint8_t
 {
     INVOKER,  /// All queries will be executed with the current user's context.
