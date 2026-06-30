@@ -103,7 +103,14 @@ FileSegment::FileSegment(
         case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
-            chassert(fs::file_size(getPath()) == size_);
+            /// When the size was read from the file name (`<offset>_<size>`), we deliberately trust it
+            /// without a `stat` — that is the whole point of the optimization (see `loadMetadataForKey`).
+            /// An externally truncated or corrupted `<offset>_<size>` file is handled lazily on read:
+            /// `getCacheReadBuffer` already has the file open, so it compares the on-disk size against
+            /// the recorded one and discards the broken entry (re-fetching from the source) rather than
+            /// raising a server-bug-class error. Asserting the on-disk size here would both re-introduce
+            /// the `stat` and turn that discardable inconsistency into an abort in debug/sanitizer builds.
+            chassert(size_in_filename || fs::file_size(getPath()) == size_);
             chassert(queue_iterator);
             chassert(key_metadata.lock());
             break;
