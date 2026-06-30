@@ -636,12 +636,14 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
 
         /// Bypass the dropped-table size limits so CREATE OR REPLACE can drop a large leftover temp
         /// table from a previous failed refresh instead of leaking it as `_tmp_replace_*` (issue #104900).
-        /// doCreateOrReplaceTable's internal drop inherits this context.
-        auto create_context = Context::createCopy(refresh_context);
-        create_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
-        create_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+        /// Set the settings on refresh_context itself rather than on a copy: createCopy does not preserve
+        /// the refresh DDL metadata (parent table UUID, DDL cancellation, enqueue checks) that
+        /// RefreshTask set on refresh_context, and DatabaseReplicated needs it to skip stale temp-table
+        /// entries. doCreateOrReplaceTable's internal drop inherits these settings via the create context.
+        refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+        refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
 
-        InterpreterCreateQuery create_interpreter(create_query, create_context);
+        InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);
         /// Notice that we discard the BlockIO that execute() returns. This means that in case of DatabaseReplicated we don't wait
         /// for other replicas to execute the query, only the current replica. Same in exchangeTargetTable() and dropTempTable().
@@ -700,11 +702,13 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
 void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context, String & out_exception)
 {
     /// Don't apply dropped table size limits to tables produced by refreshable materialized views.
-    auto drop_context = Context::createCopy(refresh_context);
-    drop_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
-    drop_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+    /// Set the settings on refresh_context itself rather than on a copy: createCopy does not preserve
+    /// the refresh DDL metadata (parent table UUID, DDL cancellation, enqueue checks) that RefreshTask
+    /// set on refresh_context, and DatabaseReplicated needs it to skip stale temp-table entries.
+    refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+    refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
 
-    auto query_scope = QueryScope::create(drop_context);
+    auto query_scope = QueryScope::create(refresh_context);
 
     auto drop_query = make_intrusive<ASTDropQuery>();
     drop_query->setDatabase(table_id.database_name);
@@ -716,13 +720,13 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     Stopwatch stopwatch;
     try
     {
-        InterpreterDropQuery(drop_query, drop_context).execute();
+        InterpreterDropQuery(drop_query, refresh_context).execute();
     }
     catch (...)
     {
-        auto query_for_logging = drop_query->formatForLogging(drop_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
+        auto query_for_logging = drop_query->formatForLogging(refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
         UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, drop_context, drop_query, nullptr, stopwatch.elapsedMilliseconds(), /*internal*/ true);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds(), /*internal*/ true);
         LOG_ERROR(getLogger("StorageMaterializedView"),
             "{}: Failed to drop temporary table after refresh. Table {} is left behind and requires manual cleanup.",
             getStorageID().getFullTableName(), table_id.getFullTableName());
