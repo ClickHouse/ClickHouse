@@ -22,11 +22,11 @@ namespace ErrorCodes
 namespace
 {
 
-/// utmToGeo(easting, northing, zone, is_north) => (longitude Float64, latitude Float64)
+/// UTMToGeo(easting, northing, zone, is_north) => (longitude Float64, latitude Float64)
 class FunctionUTMToGeo final : public IFunction
 {
 public:
-    static constexpr auto name = "utmToGeo";
+    static constexpr auto name = "UTMToGeo";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUTMToGeo>(); }
 
     String getName() const override { return name; }
@@ -96,7 +96,7 @@ REGISTER_FUNCTION(UTMToGeo)
     FunctionDocumentation::Description description = R"(
 Converts [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) coordinates back to WGS84 geographic coordinates (longitude, latitude). This is the inverse of [`geoToUTM`](#geotoutm).
     )";
-    FunctionDocumentation::Syntax syntax = "utmToGeo(easting, northing, zone, is_north)";
+    FunctionDocumentation::Syntax syntax = "UTMToGeo(easting, northing, zone, is_north)";
     FunctionDocumentation::Arguments arguments = {
         {"easting", "Easting in metres (includes the 500000 m false easting).", {"(U)Int*", "Float*"}},
         {"northing", "Northing in metres (includes the 10000000 m false northing on the southern hemisphere).", {"(U)Int*", "Float*"}},
@@ -105,7 +105,7 @@ Converts [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Uni
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns a named tuple `(longitude, latitude)` in degrees.", {"Tuple(Float64, Float64)"}};
     FunctionDocumentation::Examples examples = {
-        {"Basic usage", "SELECT utmToGeo(448251.6, 5411935.13, 31, 1)", "(2.2944970289079203,48.85822204127082)"}};
+        {"Basic usage", "SELECT UTMToGeo(448251.6, 5411935.13, 31, 1)", "(2.2944970289079203,48.85822204127082)"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

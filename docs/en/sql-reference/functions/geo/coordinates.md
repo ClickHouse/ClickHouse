@@ -142,12 +142,12 @@ SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
 (448251.5978370684,5411935.125629659,31,'U')
 ```
 
-## utmToGeo {#utmtogeo}
+## UTMToGeo {#utmtogeo}
 
 Converts [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) coordinates back to WGS84 geographic coordinates `(longitude, latitude)`. This is the inverse of [`geoToUTM`](#geotoutm).
 
 ```sql
-utmToGeo(easting, northing, zone, is_north)
+UTMToGeo(easting, northing, zone, is_north)
 ```
 
 **Arguments**
@@ -164,7 +164,7 @@ A named tuple `(longitude, latitude)` in degrees. [`Tuple(Float64, Float64)`](..
 **Example**
 
 ```sql
-SELECT utmToGeo(448251.6, 5411935.13, 31, 1) AS coord;
+SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
 ```
 
 ```text
@@ -203,14 +203,14 @@ SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3)
 └─────────────────┴─────────────┘
 ```
 
-## mgrsToGeo {#mgrstogeo}
+## MGRSToGeo {#mgrstogeo}
 
 Decodes an [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) string into WGS84 geographic coordinates `(longitude, latitude)`. This is the inverse of [`geoToMGRS`](#geotomgrs).
 
 The returned point is the centre of the referenced grid square, so the precision of the result matches the precision encoded in the string. Whitespace in the input is ignored and letters are case-insensitive.
 
 ```sql
-mgrsToGeo(mgrs)
+MGRSToGeo(mgrs)
 ```
 
 **Arguments**
@@ -224,7 +224,7 @@ A named tuple `(longitude, latitude)` in degrees. [`Tuple(Float64, Float64)`](..
 **Example**
 
 ```sql
-SELECT mgrsToGeo('31UDQ4825111935') AS coord;
+SELECT MGRSToGeo('31UDQ4825111935') AS coord;
 ```
 
 ```text

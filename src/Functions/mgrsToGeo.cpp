@@ -23,11 +23,11 @@ namespace ErrorCodes
 namespace
 {
 
-/// mgrsToGeo(mgrs) => (longitude Float64, latitude Float64)
+/// MGRSToGeo(mgrs) => (longitude Float64, latitude Float64)
 class FunctionMGRSToGeo final : public IFunction
 {
 public:
-    static constexpr auto name = "mgrsToGeo";
+    static constexpr auto name = "MGRSToGeo";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMGRSToGeo>(); }
 
     String getName() const override { return name; }
@@ -104,13 +104,13 @@ Decodes a [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/
 
 The returned point is the centre of the referenced grid square, so the precision of the result matches the precision encoded in the string. Whitespace in the input is ignored and letters are case-insensitive.
     )";
-    FunctionDocumentation::Syntax syntax = "mgrsToGeo(mgrs)";
+    FunctionDocumentation::Syntax syntax = "MGRSToGeo(mgrs)";
     FunctionDocumentation::Arguments arguments = {
         {"mgrs", "MGRS reference string to decode.", {"String", "FixedString"}}};
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns a named tuple `(longitude, latitude)` in degrees.", {"Tuple(Float64, Float64)"}};
     FunctionDocumentation::Examples examples = {
-        {"Basic usage", "SELECT mgrsToGeo('31UDQ4825111935')", "(2.294495618908297,48.85822536113692)"}};
+        {"Basic usage", "SELECT MGRSToGeo('31UDQ4825111935')", "(2.294495618908297,48.85822536113692)"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

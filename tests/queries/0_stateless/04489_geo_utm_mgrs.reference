@@ -10,7 +10,7 @@
 31
 -- geoToUTM: forced zone
 8303.806	5433409.649	32	U
--- utmToGeo: inverse conversion round-trips back to the input (within 1e-6 degrees)
+-- UTMToGeo: inverse conversion round-trips back to the input (within 1e-6 degrees)
 1
 1
 1
@@ -21,11 +21,11 @@
 31UDQ
 40RCN2613287898
 56HLH3436850948
--- mgrsToGeo: decoding to the centre of the grid square
+-- MGRSToGeo: decoding to the centre of the grid square
 2.2945	48.85823
 1
 1
--- mgrsToGeo(geoToMGRS(...)) re-encodes to the same string
+-- MGRSToGeo(geoToMGRS(...)) re-encodes to the same string
 1
 -- vectorized over a table
 31UDQ48251193
