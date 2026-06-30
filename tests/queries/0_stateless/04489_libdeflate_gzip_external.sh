@@ -23,7 +23,7 @@ done
 
 echo "== INTO OUTFILE *.gz, decoded by external gunzip =="
 for level in 1 6 9; do
-    out="${CLICKHOUSE_TMP}/04403_out_${level}.gz"
+    out="${CLICKHOUSE_TMP}/04489_out_${level}.gz"
     rm -f "$out"
     ${CLICKHOUSE_LOCAL} -q "$query INTO OUTFILE '$out' FORMAT TSV SETTINGS output_format_compression_level=${level}" >/dev/null
     got=$(gunzip -c "$out" | md5sum)
