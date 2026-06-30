@@ -16,25 +16,14 @@ SETTINGS index_granularity = 8;
 -- selects every group with a = 0 (the 3rd row's a), i.e. 100 rows.
 INSERT INTO t_agg_in_order_limit_with_ties SELECT number % 10 AS a, number AS b FROM numbers(1000) ORDER BY a, b;
 
-SELECT
-(
-    SELECT count() FROM (
-        SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC LIMIT 3 WITH TIES
-        SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1
-    )
-)
-=
-(
-    SELECT count() FROM (
-        SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC LIMIT 3 WITH TIES
-        SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 0
-    )
-) AS with_ties_results_match;
-
--- Pin the actual row count so the equality above is not vacuously satisfied.
+-- Push-down enabled: the WITH TIES guard must keep the full tie group (100 rows, not 3).
 SELECT count() FROM (
     SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC LIMIT 3 WITH TIES
-    SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1
-);
+) SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1;
+
+-- Push-down disabled: control producing the same 100 rows.
+SELECT count() FROM (
+    SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC LIMIT 3 WITH TIES
+) SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 0;
 
 DROP TABLE t_agg_in_order_limit_with_ties;
