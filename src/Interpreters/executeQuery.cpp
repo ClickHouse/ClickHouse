@@ -16,6 +16,7 @@
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -85,9 +86,18 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/WriteToQueryResultCacheStep.h>
+#include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Common/QueryFuzzer.h>
@@ -172,7 +182,13 @@ namespace Setting
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsString polyglot_dialect;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
+    extern const SettingsBool query_cache_before_limit_and_order_by;
     extern const SettingsBool query_cache_compress_entries;
+    extern const SettingsBool query_cache_partial_results;
+    extern const SettingsUInt64 query_cache_partial_results_max_bytes;
+    extern const SettingsUInt64 query_cache_partial_results_max_levels;
+    extern const SettingsBool query_cache_partial_results_adaptive_eviction;
+    extern const SettingsString query_cache_tag;
     extern const SettingsUInt64 query_cache_max_entries;
     extern const SettingsUInt64 query_cache_max_size_in_bytes;
     extern const SettingsMilliseconds query_cache_min_query_duration;
@@ -1718,6 +1734,9 @@ static BlockIO executeQueryImpl(
             || settings[Setting::distinct_overflow_mode] != OverflowMode::THROW))
             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE, "use_query_cache and overflow_mode != 'throw' cannot be used together");
 
+        if (settings[Setting::query_cache_before_limit_and_order_by] && settings[Setting::query_cache_partial_results])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`query_cache_before_limit_and_order_by` and `query_cache_partial_results` are mutually exclusive and cannot be enabled together");
+
         /// If the query runs with "use_query_cache = 1", we first probe if the query result cache already contains the query result (if
         /// yes: return result from cache). If doesn't, we execute the query normally and write the result into the query result cache. Both
         /// steps use a hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places
@@ -1733,7 +1752,9 @@ static BlockIO executeQueryImpl(
             /// then set a pipeline with a source populated by the query result cache.
             auto get_result_from_query_result_cache = [&]()
             {
-                if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
+                if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache]
+                    && !settings[Setting::query_cache_before_limit_and_order_by]
+                    && !settings[Setting::query_cache_partial_results])
                 {
                     QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
                     QueryResultCacheReader reader = query_result_cache->createReader(key);
@@ -1843,10 +1864,403 @@ static BlockIO executeQueryImpl(
                         span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                     }
 
+                    /// If query_cache_before_limit_and_order_by is enabled, insert cache read/write into the QueryPlan
+                    /// before SortingStep/LimitStep, rather than at the pipeline output. This is done before
+                    /// interpreter->execute() which converts the plan into a pipeline.
+                    if (can_use_query_result_cache && settings[Setting::query_cache_before_limit_and_order_by])
+                    {
+                        auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get());
+                        if (interpreter_with_analyzer)
+                        {
+                            auto & plan = interpreter_with_analyzer->getQueryPlan();
+
+                            /// Walk the plan tree (DFS) to find:
+                            /// 1. SortingStep (Type::Full) — preferred target
+                            /// 2. LimitStep — fallback if no SortingStep found
+                            /// SortingStep is searched first across the entire tree because
+                            /// a preliminary LimitStep may appear above SortingStep in the plan.
+                            std::function<QueryPlan::Node *(QueryPlan::Node *)> find_sorting_node =
+                                [&](QueryPlan::Node * node) -> QueryPlan::Node *
+                            {
+                                if (!node)
+                                    return nullptr;
+                                if (auto * sorting = dynamic_cast<SortingStep *>(node->step.get()))
+                                    if (sorting->getType() == SortingStep::Type::Full)
+                                        return node;
+                                for (auto * child : node->children)
+                                    if (auto * result = find_sorting_node(child))
+                                        return result;
+                                return nullptr;
+                            };
+
+                            std::function<QueryPlan::Node *(QueryPlan::Node *)> find_limit_node =
+                                [&](QueryPlan::Node * node) -> QueryPlan::Node *
+                            {
+                                if (!node)
+                                    return nullptr;
+                                if (dynamic_cast<LimitStep *>(node->step.get()))
+                                    return node;
+                                for (auto * child : node->children)
+                                    if (auto * result = find_limit_node(child))
+                                        return result;
+                                return nullptr;
+                            };
+
+                            auto * target_node = find_sorting_node(plan.getRootNode());
+                            if (!target_node)
+                                target_node = find_limit_node(plan.getRootNode());
+
+                            if (target_node && !target_node->children.empty())
+                            {
+                                auto * child_node = target_node->children[0];
+                                const auto & pre_sort_header = child_node->step->getOutputHeader();
+                                Block pre_sort_header_block = *pre_sort_header;
+
+                                /// Check cache for a matching entry
+                                bool cache_hit = false;
+                                if (settings[Setting::enable_reads_from_query_cache])
+                                {
+                                    QueryResultCache::Key read_key(
+                                        out_ast, context->getCurrentDatabase(), *settings_copy,
+                                        context->getCurrentQueryId(),
+                                        context->getUserID(), context->getCurrentRoles(),
+                                        /*is_subquery=*/false,
+                                        /*strip_order_by_and_limit=*/true, &pre_sort_header_block);
+
+                                    QueryResultCacheReader reader = query_result_cache->createReader(read_key);
+                                    if (reader.hasCacheEntryForKey())
+                                    {
+                                        result_details.query_cache_entry_created_at = reader.entryCreatedAt();
+                                        result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
+
+                                        /// Replace the sub-plan below the target step with a source that reads from cache.
+                                        /// Preserve totals/extremes streams for WITH TOTALS / WITH EXTREMES queries.
+                                        auto source = reader.getSource();
+                                        Pipe pipe(std::move(source));
+                                        if (auto totals_source = reader.getSourceTotals())
+                                            pipe.addTotalsSource(std::move(totals_source));
+                                        if (auto extremes_source = reader.getSourceExtremes())
+                                            pipe.addExtremesSource(std::move(extremes_source));
+                                        QueryPlan source_plan;
+                                        source_plan.addStep(std::make_unique<ReadFromPreparedSource>(std::move(pipe)));
+                                        plan.replaceNodeWithPlan(child_node, std::move(source_plan));
+
+                                        query_result_cache_usage = QueryResultCacheUsage::Read;
+                                        cache_hit = true;
+                                    }
+                                }
+
+                                /// On cache miss, insert a write step to populate the cache
+                                if (!cache_hit && checkCanWriteQueryResultCache(out_ast, context))
+                                {
+                                        auto created_at = std::chrono::system_clock::now();
+                                        auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+
+                                        auto pre_sort_shared_header = std::make_shared<const Block>(pre_sort_header_block);
+                                        QueryResultCache::Key write_key(
+                                            out_ast, context->getCurrentDatabase(), *settings_copy, pre_sort_shared_header,
+                                            context->getCurrentQueryId(),
+                                            context->getUserID(), context->getCurrentRoles(),
+                                            settings[Setting::query_cache_share_between_users],
+                                            created_at, expires_at,
+                                            settings[Setting::query_cache_compress_entries],
+                                            /*is_subquery=*/false,
+                                            /*strip_order_by_and_limit=*/true, &pre_sort_header_block);
+
+                                        const size_t num_query_runs = settings[Setting::query_cache_min_query_runs]
+                                            ? query_result_cache->recordQueryRun(write_key) : 1;
+
+                                        if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
+                                        {
+                                            LOG_TRACE(getLogger("QueryResultCache"),
+                                                "Skipped insert (before limit) because the query ran {} times but the minimum required number is {}",
+                                                num_query_runs, settings[Setting::query_cache_min_query_runs].value);
+                                        }
+                                        else
+                                        {
+                                            auto writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
+                                                write_key,
+                                                std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                                                settings[Setting::query_cache_squash_partial_results],
+                                                settings[Setting::max_block_size],
+                                                settings[Setting::query_cache_max_size_in_bytes],
+                                                settings[Setting::query_cache_max_entries]));
+
+                                            auto write_step = std::make_unique<WriteToQueryResultCacheStep>(pre_sort_shared_header, writer);
+                                            plan.insertStep(target_node, 0, std::move(write_step));
+                                            query_result_cache_usage = QueryResultCacheUsage::Write;
+                                        }
+
+                                        if (settings[Setting::enable_reads_from_query_cache])
+                                            result_details.query_cache_entry_expires_at = expires_at;
+                                }
+                            }
+                        }
+                    }
+
+                    /// Partial results caching: insert cache steps at every non-leaf level of the QueryPlan,
+                    /// keyed by prefix hash (step type + parameters + children hashes).
+                    if (can_use_query_result_cache && settings[Setting::query_cache_partial_results])
+                    {
+                        auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get());
+                        if (interpreter_with_analyzer)
+                        {
+                            query_result_cache->setAdaptiveEviction(settings[Setting::query_cache_partial_results_adaptive_eviction]);
+
+                            auto & plan = interpreter_with_analyzer->getQueryPlan();
+
+                            /// Compute a prefix hash for a sub-plan rooted at `node`.
+                            /// The hash includes step type, parameters (via describeActions), output header, and children hashes.
+                            std::unordered_map<QueryPlan::Node *, IASTHash> prefix_hash_cache;
+                            std::function<IASTHash(QueryPlan::Node *)> compute_prefix_hash =
+                                [&](QueryPlan::Node * node) -> IASTHash
+                            {
+                                if (auto it = prefix_hash_cache.find(node); it != prefix_hash_cache.end())
+                                    return it->second;
+
+                                SipHash hash;
+                                hash.update(node->step->getName());
+                                hash.update(settings[Setting::query_cache_tag].toString());
+
+                                /// Hash step parameters via describeActions
+                                WriteBufferFromOwnString desc_buf;
+                                ExplainFormatSettings fmt{.out = desc_buf, .header_prefix = "", .detail_prefix = "", .pretty_names = {}, .runtime_filter_names = {}};
+                                node->step->describeActions(fmt);
+                                hash.update(desc_buf.str());
+
+                                /// Hash output header (column names and types)
+                                const auto & hdr = node->step->getOutputHeader();
+                                for (const auto & col : *hdr)
+                                {
+                                    hash.update(col.name);
+                                    hash.update(col.type->getName());
+                                }
+
+                                /// Chain: include children hashes
+                                for (auto * child : node->children)
+                                {
+                                    auto child_hash = compute_prefix_hash(child);
+                                    hash.update(child_hash.low64);
+                                    hash.update(child_hash.high64);
+                                }
+
+                                auto result = getSipHash128AsPair(hash);
+                                prefix_hash_cache[node] = result;
+                                return result;
+                            };
+
+                            /// Try to read from cache: walk top-down, find highest-level cache hit.
+                            bool partial_cache_hit = false;
+
+                            std::function<bool(QueryPlan::Node *)> try_cache_read =
+                                [&](QueryPlan::Node * node) -> bool
+                            {
+                                if (!node || node->children.empty())
+                                    return false;
+
+                                for (auto * child : node->children)
+                                {
+                                    if (child->children.empty())
+                                        continue;
+
+                                    auto prefix_hash = compute_prefix_hash(child);
+                                    QueryResultCache::Key read_key(
+                                        prefix_hash,
+                                        context->getCurrentQueryId(),
+                                        context->getUserID(), context->getCurrentRoles(),
+                                        settings[Setting::query_cache_tag]);
+
+                                    auto reader = query_result_cache->createReader(read_key);
+                                    if (reader.hasCacheEntryForKey())
+                                    {
+                                        query_result_cache->recordCacheHit(read_key);
+                                        auto source = reader.getSource();
+                                        Pipe pipe(std::move(source));
+                                        if (auto totals_source = reader.getSourceTotals())
+                                            pipe.addTotalsSource(std::move(totals_source));
+                                        if (auto extremes_source = reader.getSourceExtremes())
+                                            pipe.addExtremesSource(std::move(extremes_source));
+                                        QueryPlan source_plan;
+                                        source_plan.addStep(std::make_unique<ReadFromPreparedSource>(std::move(pipe)));
+                                        plan.replaceNodeWithPlan(child, std::move(source_plan));
+                                        query_result_cache_usage = QueryResultCacheUsage::Read;
+                                        return true; /// found a hit, stop
+                                    }
+                                }
+
+                                /// No hit at this level, try children
+                                for (auto * child : node->children)
+                                    if (try_cache_read(child))
+                                        return true;
+
+                                return false;
+                            };
+
+                            if (settings[Setting::enable_reads_from_query_cache])
+                                partial_cache_hit = try_cache_read(plan.getRootNode());
+
+                            /// On cache miss: insert write steps at the top-scoring non-leaf nodes.
+                            /// With max_levels=1 (default), this picks a single best node.
+                            /// With max_levels>1, multiple plan nodes get cached for finer-grained reuse.
+                            if (!partial_cache_hit && checkCanWriteQueryResultCache(out_ast, context))
+                            {
+                                    auto created_at = std::chrono::system_clock::now();
+                                    auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+
+                                    auto step_type_weight = [](const String & name) -> size_t
+                                    {
+                                        if (name == "Join" || name == "FilledJoin"
+                                            || name == "JoinLogical" || name == "JoinStepLogicalLookup")
+                                            return 100;
+                                        if (name == "Aggregating" || name == "MergingAggregated"
+                                            || name == "AggregatingProjection")
+                                            return 80;
+                                        if (name == "Window" || name == "Cube" || name == "Rollup")
+                                            return 60;
+                                        if (name == "Distinct" || name == "IntersectOrExcept")
+                                            return 40;
+                                        if (name == "Sorting")
+                                            return 20;
+                                        if (name == "Filter" || name == "Expression")
+                                            return 5;
+                                        return 10;
+                                    };
+
+                                    struct ScoredNode
+                                    {
+                                        QueryPlan::Node * node = nullptr;
+                                        size_t score = 0;
+                                        size_t depth = 0;
+                                    };
+
+                                    std::vector<ScoredNode> candidates;
+
+                                    /// Walk the tree bottom-up, accumulating subtree weight and collecting all scored nodes.
+                                    std::function<size_t(QueryPlan::Node *, size_t)> score_nodes =
+                                        [&](QueryPlan::Node * node, size_t depth) -> size_t
+                                    {
+                                        if (!node || node->children.empty())
+                                            return 0;
+
+                                        size_t subtree_weight = step_type_weight(node->step->getName());
+                                        for (auto * child : node->children)
+                                            subtree_weight += score_nodes(child, depth + 1);
+
+                                        size_t output_cols = node->step->hasOutputHeader()
+                                            ? node->step->getOutputHeader()->columns() : 0;
+                                        size_t input_cols = 0;
+                                        for (const auto & hdr : node->step->getInputHeaders())
+                                            input_cols += hdr->columns();
+                                        size_t reduction_bonus = (input_cols > output_cols)
+                                            ? (input_cols - output_cols) * 10 : 0;
+
+                                        candidates.push_back({node, subtree_weight + reduction_bonus, depth});
+                                        return subtree_weight;
+                                    };
+
+                                    for (auto * child : plan.getRootNode()->children)
+                                    {
+                                        if (!child->children.empty())
+                                            score_nodes(child, 1);
+                                    }
+
+                                    /// Sort by score descending, take top N.
+                                    std::sort(candidates.begin(), candidates.end(),
+                                        [](const ScoredNode & a, const ScoredNode & b) { return a.score > b.score; });
+                                    size_t max_levels = settings[Setting::query_cache_partial_results_max_levels];
+                                    if (max_levels > 0 && candidates.size() > max_levels)
+                                        candidates.resize(max_levels);
+
+                                    /// Precompute prefix hashes before any plan mutations (insertStep below
+                                    /// adds synthetic nodes that would pollute the hash).
+                                    std::unordered_map<QueryPlan::Node *, IASTHash> candidate_hashes;
+                                    for (const auto & c : candidates)
+                                        candidate_hashes[c.node] = compute_prefix_hash(c.node);
+
+                                    /// Process deepest nodes first so that insertStep doesn't invalidate
+                                    /// parent pointers for shallower nodes.
+                                    std::sort(candidates.begin(), candidates.end(),
+                                        [](const ScoredNode & a, const ScoredNode & b) { return a.depth > b.depth; });
+
+                                    std::function<QueryPlan::Node *(QueryPlan::Node *, QueryPlan::Node *)> find_parent =
+                                        [&](QueryPlan::Node * node, QueryPlan::Node * target) -> QueryPlan::Node *
+                                    {
+                                        if (!node)
+                                            return nullptr;
+                                        for (size_t i = 0; i < node->children.size(); ++i)
+                                            if (node->children[i] == target)
+                                                return node;
+                                        for (auto * child : node->children)
+                                        {
+                                            auto * found = find_parent(child, target);
+                                            if (found)
+                                                return found;
+                                        }
+                                        return nullptr;
+                                    };
+
+                                    for (const auto & candidate : candidates)
+                                    {
+                                        auto * cache_target = candidate.node;
+                                        if (!cache_target || cache_target->children.empty())
+                                            continue;
+
+                                        auto prefix_hash = candidate_hashes.at(cache_target);
+                                        auto target_header = cache_target->step->getOutputHeader();
+                                        auto shared_header = std::make_shared<const Block>(*target_header);
+
+                                        QueryResultCache::Key write_key(
+                                            prefix_hash, shared_header,
+                                            context->getCurrentQueryId(),
+                                            context->getUserID(), context->getCurrentRoles(),
+                                            settings[Setting::query_cache_share_between_users],
+                                            created_at, expires_at,
+                                            settings[Setting::query_cache_compress_entries],
+                                            settings[Setting::query_cache_tag]);
+
+                                        const size_t num_query_runs = settings[Setting::query_cache_min_query_runs]
+                                            ? query_result_cache->recordQueryRun(write_key) : 1;
+
+                                        if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
+                                            continue;
+
+                                        size_t recompute_cost = settings[Setting::query_cache_partial_results_adaptive_eviction]
+                                            ? candidate.score : 0;
+                                        auto writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
+                                            write_key,
+                                            std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                                            settings[Setting::query_cache_squash_partial_results],
+                                            settings[Setting::max_block_size],
+                                            settings[Setting::query_cache_max_size_in_bytes],
+                                            settings[Setting::query_cache_max_entries],
+                                            settings[Setting::query_cache_partial_results_max_bytes],
+                                            recompute_cost));
+
+                                        auto * parent = find_parent(plan.getRootNode(), cache_target);
+                                        if (parent)
+                                        {
+                                            for (size_t i = 0; i < parent->children.size(); ++i)
+                                            {
+                                                if (parent->children[i] == cache_target)
+                                                {
+                                                    auto write_step = std::make_unique<WriteToQueryResultCacheStep>(shared_header, writer);
+                                                    plan.insertStep(parent, i, std::move(write_step));
+                                                    break;
+                                                }
+                                            }
+                                            query_result_cache_usage = QueryResultCacheUsage::Write;
+                                        }
+                                    }
+                            }
+                        }
+                    }
+
                     res = interpreter->execute();
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
-                    if (checkCanWriteQueryResultCache(out_ast, context))
+                    if (checkCanWriteQueryResultCache(out_ast, context)
+                        && !settings[Setting::query_cache_before_limit_and_order_by]
+                        && !settings[Setting::query_cache_partial_results])
                     {
                             auto created_at = std::chrono::system_clock::now();
                             auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());

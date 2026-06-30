@@ -1,5 +1,11 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 
+#include <Formats/NativeWriter.h>
+#include <Formats/NativeReader.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -337,6 +343,31 @@ ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
     return ast;
 }
 
+/// Strips ORDER BY, LIMIT and OFFSET clauses from ASTSelectQuery nodes so that queries differing only in these clauses
+/// produce the same cache key.
+void removeOrderByAndLimit(ASTPtr & ast)
+{
+    if (auto * select = ast->as<ASTSelectQuery>())
+    {
+        select->setExpression(ASTSelectQuery::Expression::ORDER_BY, nullptr);
+        select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, nullptr);
+        select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, nullptr);
+    }
+    else if (auto * union_query = ast->as<ASTSelectWithUnionQuery>())
+    {
+        if (union_query->list_of_selects)
+        {
+            for (auto & child : union_query->list_of_selects->children)
+                removeOrderByAndLimit(child);
+        }
+    }
+}
+
+bool isSettingIgnoredForBeforeLimitCache(const String & setting_name)
+{
+    return setting_name == "limit" || setting_name == "offset";
+}
+
 /// The Analyzer/Planner generates synthetic table aliases of the exact form `__table<N>`
 /// (see `createUniqueAliasesIfNecessary.cpp`), where `N` is a non-empty sequence of digits.
 /// Only strip aliases that match this exact pattern, otherwise user-visible identifiers
@@ -407,7 +438,14 @@ ASTPtr removeTableAliases(ASTPtr ast)
 /// When `pre_cleaned` is true, the caller has already cloned the AST and stripped planner table
 /// aliases (`removeTableAliases`). Skip both steps to avoid mutating the original AST or running
 /// `removeTableAliases` twice (which would over-strip chains like `__table1.__table2.x` -> `x`).
-IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Settings & settings, const bool is_subquery, const bool pre_cleaned = false)
+IASTHash calculateASTHash(
+    ASTPtr ast,
+    const String & current_database,
+    const Settings & settings,
+    bool is_subquery,
+    bool pre_cleaned = false,
+    bool strip_order_by_and_limit = false,
+    const Block * pre_sort_header = nullptr)
 {
     if (!pre_cleaned)
     {
@@ -416,6 +454,9 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
             ast = removeTableAliases(ast);
     }
     ast = removeQueryResultCacheSettings(ast);
+
+    if (strip_order_by_and_limit)
+        removeOrderByAndLimit(ast);
 
     /// Hash the AST, we must consider aliases (issue #56258)
     SipHash hash;
@@ -433,8 +474,9 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isSettingIgnoredInQueryResultCache(name)) /// see removeQueryResultCacheSettings() and isSubquerySpecificSetting() for why this is a good idea
-            changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
+        if (!isSettingIgnoredInQueryResultCache(name))
+            if (!(strip_order_by_and_limit && isSettingIgnoredForBeforeLimitCache(name)))
+                changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
 
     /// The Planner forcibly sets `extremes`, `max_result_bytes`, `max_result_rows` for subqueries, which makes them
@@ -458,6 +500,17 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
     {
         hash.update(setting.first);
         hash.update(setting.second);
+    }
+
+    /// When caching before LIMIT/ORDER BY, also hash the pre-sort header to ensure queries needing different column sets
+    /// (due to different ORDER BY columns) get separate cache entries.
+    if (strip_order_by_and_limit && pre_sort_header)
+    {
+        for (const auto & col : *pre_sort_header)
+        {
+            hash.update(col.name);
+            hash.update(col.type->getName());
+        }
     }
 
     return getSipHash128AsPair(hash);
@@ -500,7 +553,9 @@ QueryResultCache::Key::Key(
     std::chrono::time_point<std::chrono::system_clock> created_at_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_,
-    bool is_subquery_)
+    bool is_subquery_,
+    bool strip_order_by_and_limit_,
+    const Block * pre_sort_header_)
     : header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
@@ -512,11 +567,17 @@ QueryResultCache::Key::Key(
     , tag(settings[Setting::query_cache_tag])
     , is_subquery(is_subquery_)
 {
-    /// For subqueries, both hashing and display need a cloned AST with table aliases stripped.
-    /// Compute both from a single clone via `calculateASTHashAndQueryString`.
-    auto [hash, qs] = calculateASTHashAndQueryString(ast_, current_database, settings, is_subquery_);
-    ast_hash = hash;
-    query_string = std::move(qs);
+    if (strip_order_by_and_limit_)
+    {
+        ast_hash = calculateASTHash(ast_, current_database, settings, is_subquery_, false, true, pre_sort_header_);
+        query_string = queryStringFromAST(ast_);
+    }
+    else
+    {
+        auto [hash, qs] = calculateASTHashAndQueryString(ast_, current_database, settings, is_subquery_);
+        ast_hash = hash;
+        query_string = std::move(qs);
+    }
 }
 
 QueryResultCache::Key::Key(
@@ -526,7 +587,9 @@ QueryResultCache::Key::Key(
     const String & query_id_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_,
-    bool is_subquery_)
+    bool is_subquery_,
+    bool strip_order_by_and_limit_,
+    const Block * pre_sort_header_)
     : QueryResultCache::Key(
             ast_,
             current_database,
@@ -539,8 +602,83 @@ QueryResultCache::Key::Key(
             std::chrono::system_clock::from_time_t(1),
             std::chrono::system_clock::from_time_t(1),
             false,
-            is_subquery_)
+            is_subquery_,
+            strip_order_by_and_limit_,
+            pre_sort_header_)
     /// ^^ dummy values for everything except AST, current database, query_id, user name/roles
+{
+}
+
+QueryResultCache::Key::Key(
+    IASTHash precomputed_hash,
+    SharedHeader header_,
+    const String & query_id_,
+    std::optional<UUID> user_id_,
+    const std::vector<UUID> & current_user_roles_,
+    bool is_shared_,
+    std::chrono::time_point<std::chrono::system_clock> created_at_,
+    std::chrono::time_point<std::chrono::system_clock> expires_at_,
+    bool is_compressed_,
+    const String & tag_)
+    : ast_hash(precomputed_hash)
+    , header(header_)
+    , user_id(user_id_)
+    , current_user_roles(current_user_roles_)
+    , is_shared(is_shared_)
+    , created_at(created_at_)
+    , expires_at(expires_at_)
+    , is_compressed(is_compressed_)
+    , query_string("partial_result")
+    , query_id(query_id_)
+    , tag(tag_)
+    , is_subquery(false)
+{
+}
+
+QueryResultCache::Key::Key(
+    IASTHash precomputed_hash,
+    const String & query_id_,
+    std::optional<UUID> user_id_,
+    const std::vector<UUID> & current_user_roles_,
+    const String & tag_)
+    : QueryResultCache::Key(
+            precomputed_hash,
+            std::make_shared<const Block>(Block{}),
+            query_id_,
+            user_id_,
+            current_user_roles_,
+            false,
+            std::chrono::system_clock::from_time_t(1),
+            std::chrono::system_clock::from_time_t(1),
+            false,
+            tag_)
+{
+}
+
+QueryResultCache::Key::Key(
+    IASTHash precomputed_hash,
+    SharedHeader header_,
+    std::optional<UUID> user_id_,
+    const std::vector<UUID> & current_user_roles_,
+    bool is_shared_,
+    std::chrono::time_point<std::chrono::system_clock> created_at_,
+    std::chrono::time_point<std::chrono::system_clock> expires_at_,
+    bool is_compressed_,
+    const String & tag_,
+    const String & query_string_,
+    bool is_subquery_)
+    : ast_hash(precomputed_hash)
+    , header(header_)
+    , user_id(user_id_)
+    , current_user_roles(current_user_roles_)
+    , is_shared(is_shared_)
+    , created_at(created_at_)
+    , expires_at(expires_at_)
+    , is_compressed(is_compressed_)
+    , query_string(query_string_)
+    , query_id{}
+    , tag(tag_)
+    , is_subquery(is_subquery_)
 {
 }
 
@@ -574,12 +712,14 @@ bool QueryResultCache::IsStale::operator()(const Key & key) const
 
 QueryResultCacheWriter::QueryResultCacheWriter(
     Cache & cache_,
+    QueryResultCache & result_cache_,
     const QueryResultCache::Key & key_,
     size_t max_entry_size_in_bytes_,
     size_t max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_runtime_,
     bool squash_partial_results_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    size_t recompute_cost_)
     : cache(cache_)
     , key(key_)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
@@ -587,6 +727,8 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     , min_query_runtime(min_query_runtime_)
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
+    , result_cache(result_cache_)
+    , recompute_cost(recompute_cost_)
 {
     if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
     {
@@ -603,6 +745,8 @@ QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & ot
     , min_query_runtime(other.min_query_runtime)
     , squash_partial_results(other.squash_partial_results)
     , max_block_size(other.max_block_size)
+    , result_cache(other.result_cache)
+    , recompute_cost(other.recompute_cost)
 {
 }
 
@@ -767,7 +911,13 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
+    if (recompute_cost > 0)
+        result_cache.adaptiveEvict(new_entry_size_in_bytes);
+
     cache.set(key, query_result);
+
+    if (recompute_cost > 0)
+        result_cache.registerEvictionMetadata(key, recompute_cost, new_entry_size_in_bytes);
 
     LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
 }
@@ -944,17 +1094,18 @@ QueryResultCacheWriter QueryResultCache::createWriter(
     bool squash_partial_results,
     size_t max_block_size,
     size_t max_query_result_cache_size_in_bytes_quota,
-    size_t max_query_result_cache_entries_quota)
+    size_t max_query_result_cache_entries_quota,
+    size_t per_query_max_entry_size_in_bytes,
+    size_t recompute_cost)
 {
-    /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
-    /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
-    /// users.xml change.
-    /// user_id == std::nullopt is the internal user for which no quota can be configured
     if (key.user_id.has_value())
         cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
 
     std::lock_guard lock(mutex);
-    return QueryResultCacheWriter(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
+    size_t effective_max = max_entry_size_in_bytes;
+    if (per_query_max_entry_size_in_bytes > 0 && per_query_max_entry_size_in_bytes < effective_max)
+        effective_max = per_query_max_entry_size_in_bytes;
+    return QueryResultCacheWriter(cache, *this, key, effective_max, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size, recompute_cost);
 }
 
 void QueryResultCache::clear(const std::optional<String> & tag)
@@ -971,6 +1122,64 @@ void QueryResultCache::clear(const std::optional<String> & tag)
 
     std::lock_guard lock(mutex);
     times_executed.clear();
+    eviction_metadata.clear();
+}
+
+void QueryResultCache::adaptiveEvict(size_t needed_bytes)
+{
+    std::lock_guard lock(mutex);
+    if (!adaptive_eviction_enabled)
+        return;
+
+    while (cache.sizeInBytes() + needed_bytes > cache.maxSizeInBytes()
+           || cache.count() + 1 > cache.maxCount())
+    {
+        if (eviction_metadata.empty())
+            break;
+
+        const Key * victim_key = nullptr;
+        double lowest_priority = std::numeric_limits<double>::max();
+
+        for (const auto & [k, meta] : eviction_metadata)
+        {
+            double p = meta.priority();
+            if (p < lowest_priority)
+            {
+                lowest_priority = p;
+                victim_key = &k;
+            }
+        }
+
+        if (!victim_key)
+            break;
+
+        Key victim_copy = *victim_key;
+        eviction_metadata.erase(victim_copy);
+        cache.remove(victim_copy);
+    }
+}
+
+void QueryResultCache::registerEvictionMetadata(const Key & key, size_t cost, size_t size_bytes)
+{
+    std::lock_guard lock(mutex);
+    auto & meta = eviction_metadata[key];
+    meta.recompute_cost = cost;
+    meta.size_bytes = size_bytes;
+    meta.hit_count = 0;
+}
+
+void QueryResultCache::recordCacheHit(const Key & key)
+{
+    std::lock_guard lock(mutex);
+    auto it = eviction_metadata.find(key);
+    if (it != eviction_metadata.end())
+        ++it->second.hit_count;
+}
+
+void QueryResultCache::setAdaptiveEviction(bool enabled)
+{
+    std::lock_guard lock(mutex);
+    adaptive_eviction_enabled = enabled;
 }
 
 size_t QueryResultCache::maxSizeInBytes() const
@@ -1002,6 +1211,319 @@ size_t QueryResultCache::recordQueryRun(const Key & key)
 std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dump() const
 {
     return cache.dump();
+}
+
+static constexpr std::string_view SNAPSHOT_MAGIC = "CHQCSNP";
+static constexpr UInt32 SNAPSHOT_VERSION = 1;
+
+void QueryResultCache::saveSnapshot(const std::string & path) const
+{
+    auto entries = cache.dump();
+    if (entries.empty())
+    {
+        if (std::filesystem::exists(path))
+            std::filesystem::remove(path);
+        return;
+    }
+
+    auto logger = getLogger("QueryResultCache");
+
+    size_t non_stale = 0;
+    for (const auto & entry : entries)
+        if (!IsStale()(entry.key))
+            ++non_stale;
+
+    if (non_stale == 0)
+    {
+        if (std::filesystem::exists(path))
+            std::filesystem::remove(path);
+        return;
+    }
+
+    std::string tmp_path = path + ".tmp";
+    WriteBufferFromFile buf(tmp_path);
+
+    writeString(SNAPSHOT_MAGIC, buf);
+    writeBinaryLittleEndian(SNAPSHOT_VERSION, buf);
+    writeBinaryLittleEndian(static_cast<UInt64>(non_stale), buf);
+
+    size_t written = 0;
+    for (const auto & [entry_key, entry_mapped] : entries)
+    {
+        if (IsStale()(entry_key))
+            continue;
+
+        /// Key fields
+        writeBinaryLittleEndian(entry_key.ast_hash.low64, buf);
+        writeBinaryLittleEndian(entry_key.ast_hash.high64, buf);
+        writeBinary(static_cast<UInt8>(entry_key.is_subquery), buf);
+        writeBinary(static_cast<UInt8>(entry_key.is_shared), buf);
+        writeBinary(static_cast<UInt8>(entry_key.is_compressed), buf);
+
+        UInt8 has_user_id = entry_key.user_id.has_value() ? 1 : 0;
+        writeBinary(has_user_id, buf);
+        if (entry_key.user_id.has_value())
+            writeBinaryLittleEndian(*entry_key.user_id, buf);
+
+        writeVarUInt(entry_key.current_user_roles.size(), buf);
+        for (const auto & role : entry_key.current_user_roles)
+            writeBinaryLittleEndian(role, buf);
+
+        auto created_ms = std::chrono::duration_cast<std::chrono::milliseconds>(entry_key.created_at.time_since_epoch()).count();
+        auto expires_ms = std::chrono::duration_cast<std::chrono::milliseconds>(entry_key.expires_at.time_since_epoch()).count();
+        writeBinaryLittleEndian(static_cast<Int64>(created_ms), buf);
+        writeBinaryLittleEndian(static_cast<Int64>(expires_ms), buf);
+
+        writeStringBinary(entry_key.query_string, buf);
+        writeStringBinary(entry_key.tag, buf);
+
+        /// Header as zero-row block
+        Block header_block = *entry_key.header;
+        header_block.clear();
+        {
+            auto header_shared = std::make_shared<const Block>(header_block);
+            NativeWriter native(buf, 0, header_shared);
+            native.write(*entry_key.header);
+        }
+
+        /// Entry chunks
+        writeVarUInt(entry_mapped->chunks.size(), buf);
+        for (const auto & chunk : entry_mapped->chunks)
+        {
+            Block data_block = entry_key.header->cloneWithColumns(chunk.getColumns());
+            auto header_shared = std::make_shared<const Block>(*entry_key.header);
+            NativeWriter native(buf, 0, header_shared);
+            native.write(data_block);
+        }
+
+        UInt8 has_totals = entry_mapped->totals.has_value() ? 1 : 0;
+        writeBinary(has_totals, buf);
+        if (entry_mapped->totals.has_value())
+        {
+            Block totals_block = entry_key.header->cloneWithColumns(entry_mapped->totals->getColumns());
+            auto header_shared = std::make_shared<const Block>(*entry_key.header);
+            NativeWriter native(buf, 0, header_shared);
+            native.write(totals_block);
+        }
+
+        UInt8 has_extremes = entry_mapped->extremes.has_value() ? 1 : 0;
+        writeBinary(has_extremes, buf);
+        if (entry_mapped->extremes.has_value())
+        {
+            Block extremes_block = entry_key.header->cloneWithColumns(entry_mapped->extremes->getColumns());
+            auto header_shared = std::make_shared<const Block>(*entry_key.header);
+            NativeWriter native(buf, 0, header_shared);
+            native.write(extremes_block);
+        }
+
+        /// Eviction metadata
+        {
+            std::lock_guard lock(mutex);
+            auto it = eviction_metadata.find(entry_key);
+            if (it != eviction_metadata.end())
+            {
+                writeBinary(static_cast<UInt8>(1), buf);
+                writeVarUInt(it->second.hit_count, buf);
+                writeVarUInt(it->second.recompute_cost, buf);
+                writeVarUInt(it->second.size_bytes, buf);
+            }
+            else
+            {
+                writeBinary(static_cast<UInt8>(0), buf);
+            }
+        }
+
+        ++written;
+    }
+
+    buf.finalize();
+    std::filesystem::rename(tmp_path, path);
+
+    LOG_INFO(logger, "Saved query result cache snapshot: {} entries to {}", written, path);
+}
+
+void QueryResultCache::loadSnapshot(const std::string & path)
+{
+    auto logger = getLogger("QueryResultCache");
+
+    if (!std::filesystem::exists(path))
+    {
+        LOG_DEBUG(logger, "No query result cache snapshot found at {}", path);
+        return;
+    }
+
+    ReadBufferFromFile buf(path);
+
+    String magic;
+    magic.resize(SNAPSHOT_MAGIC.size());
+    buf.readStrict(magic.data(), magic.size());
+    if (magic != SNAPSHOT_MAGIC)
+    {
+        LOG_WARNING(logger, "Invalid snapshot magic in {}, skipping load", path);
+        return;
+    }
+
+    UInt32 version = 0;
+    readBinaryLittleEndian(version, buf);
+    if (version > SNAPSHOT_VERSION)
+    {
+        LOG_WARNING(logger, "Snapshot version {} is newer than supported ({}), skipping load", version, SNAPSHOT_VERSION);
+        return;
+    }
+
+    UInt64 entry_count = 0;
+    readBinaryLittleEndian(entry_count, buf);
+
+    auto now = std::chrono::system_clock::now();
+    size_t loaded = 0;
+    size_t skipped_stale = 0;
+
+    for (UInt64 i = 0; i < entry_count && !buf.eof(); ++i)
+    {
+        try
+        {
+            /// Key fields
+            UInt64 hash_low = 0, hash_high = 0;
+            readBinaryLittleEndian(hash_low, buf);
+            readBinaryLittleEndian(hash_high, buf);
+            IASTHash ast_hash{hash_low, hash_high};
+
+            UInt8 is_subquery_u8 = 0, is_shared_u8 = 0, is_compressed_u8 = 0;
+            readBinary(is_subquery_u8, buf);
+            readBinary(is_shared_u8, buf);
+            readBinary(is_compressed_u8, buf);
+
+            UInt8 has_user_id = 0;
+            readBinary(has_user_id, buf);
+            std::optional<UUID> user_id;
+            if (has_user_id)
+            {
+                UUID uid{};
+                readBinaryLittleEndian(uid, buf);
+                user_id = uid;
+            }
+
+            UInt64 role_count = 0;
+            readVarUInt(role_count, buf);
+            std::vector<UUID> roles(role_count);
+            for (auto & role : roles)
+                readBinaryLittleEndian(role, buf);
+
+            Int64 created_ms = 0, expires_ms = 0;
+            readBinaryLittleEndian(created_ms, buf);
+            readBinaryLittleEndian(expires_ms, buf);
+
+            auto created_at = std::chrono::system_clock::time_point(std::chrono::milliseconds(created_ms));
+            auto expires_at = std::chrono::system_clock::time_point(std::chrono::milliseconds(expires_ms));
+
+            if (expires_at <= now)
+            {
+                /// Skip the rest of this entry — need to read through it to advance the buffer
+                /// For simplicity, just skip stale entries by breaking early and noting it.
+                /// Since the format has variable-length fields, we can't easily skip; read and discard.
+                ++skipped_stale;
+            }
+
+            String query_string, tag;
+            readStringBinary(query_string, buf);
+            readStringBinary(tag, buf);
+
+            /// Header
+            NativeReader header_reader(buf, 0);
+            Block header_block = header_reader.read();
+            auto shared_header = std::make_shared<const Block>(std::move(header_block));
+
+            /// Entry chunks
+            UInt64 chunk_count = 0;
+            readVarUInt(chunk_count, buf);
+
+            Chunks chunks;
+            for (UInt64 c = 0; c < chunk_count; ++c)
+            {
+                NativeReader data_reader(buf, 0);
+                Block data_block = data_reader.read();
+                chunks.emplace_back(data_block.getColumns(), data_block.rows());
+            }
+
+            /// Totals
+            UInt8 has_totals = 0;
+            readBinary(has_totals, buf);
+            std::optional<Chunk> totals;
+            if (has_totals)
+            {
+                NativeReader totals_reader(buf, 0);
+                Block totals_block = totals_reader.read();
+                totals = Chunk(totals_block.getColumns(), totals_block.rows());
+            }
+
+            /// Extremes
+            UInt8 has_extremes = 0;
+            readBinary(has_extremes, buf);
+            std::optional<Chunk> extremes;
+            if (has_extremes)
+            {
+                NativeReader extremes_reader(buf, 0);
+                Block extremes_block = extremes_reader.read();
+                extremes = Chunk(extremes_block.getColumns(), extremes_block.rows());
+            }
+
+            /// Eviction metadata
+            UInt8 has_meta = 0;
+            readBinary(has_meta, buf);
+            size_t hit_count = 0, recompute_cost = 0, size_bytes = 0;
+            if (has_meta)
+            {
+                readVarUInt(hit_count, buf);
+                readVarUInt(recompute_cost, buf);
+                readVarUInt(size_bytes, buf);
+            }
+
+            if (expires_at <= now)
+                continue;
+
+            /// Re-compress columns if the original entry was compressed
+            if (is_compressed_u8)
+            {
+                for (auto & chunk : chunks)
+                {
+                    const Columns & columns = chunk.getColumns();
+                    Columns compressed;
+                    for (const auto & col : columns)
+                        compressed.push_back(col->compress(false));
+                    chunk = Chunk(std::move(compressed), chunk.getNumRows());
+                }
+            }
+
+            Key key(ast_hash, shared_header, user_id, roles,
+                    is_shared_u8 != 0, created_at, expires_at, is_compressed_u8 != 0,
+                    tag, query_string, is_subquery_u8 != 0);
+
+            auto entry = std::make_shared<Entry>();
+            entry->chunks = std::move(chunks);
+            entry->totals = std::move(totals);
+            entry->extremes = std::move(extremes);
+
+            cache.set(key, entry);
+
+            if (has_meta && recompute_cost > 0)
+            {
+                std::lock_guard lock(mutex);
+                auto & meta = eviction_metadata[key];
+                meta.hit_count = hit_count;
+                meta.recompute_cost = recompute_cost;
+                meta.size_bytes = size_bytes;
+            }
+
+            ++loaded;
+        }
+        catch (...)
+        {
+            LOG_WARNING(logger, "Error reading snapshot entry {}/{}, stopping load: {}", i, entry_count, getCurrentExceptionMessage(false));
+            break;
+        }
+    }
+
+    LOG_INFO(logger, "Loaded query result cache snapshot: {} entries from {} ({} stale entries skipped)", loaded, path, skipped_stale);
 }
 
 }

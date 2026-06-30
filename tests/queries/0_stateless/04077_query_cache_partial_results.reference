@@ -1,0 +1,10 @@
+--- Query 1: SUM aggregation (populates cache at all levels) ---
+Europe	16867
+--- Cache has entries ---
+1
+--- Query 2: same WHERE, different aggregation (should reuse filter result from cache) ---
+Europe	149.5
+--- Verify mutual exclusion: normal cache path is disabled ---
+--- Correctness check ---
+Europe	16867
+Europe	149.5

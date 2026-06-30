@@ -1229,4 +1229,15 @@ void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader ex
     resources = std::move(plan.resources);
 }
 
+void QueryPlan::insertStep(Node * parent, size_t child_index, QueryPlanStepPtr step)
+{
+    chassert(parent);
+    chassert(child_index < parent->children.size());
+
+    auto & new_node = nodes.emplace_back();
+    new_node.step = std::move(step);
+    new_node.children = {parent->children[child_index]};
+    parent->children[child_index] = &new_node;
+}
+
 }
