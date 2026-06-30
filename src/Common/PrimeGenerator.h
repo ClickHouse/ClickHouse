@@ -30,7 +30,7 @@ extern const int LOGICAL_ERROR;
 /// `r*r <= x < (r+1)*(r+1)` (checked via divisions to avoid overflow).
 inline UInt64 integerSqrt(UInt64 x)
 {
-    UInt64 r = static_cast<UInt64>(std::sqrt(static_cast<long double>(x)));
+    UInt64 r = static_cast<UInt64>(std::sqrt(static_cast<double>(x)));
     while (r > 0 && r > x / r)
         --r;
     while (r + 1 > r && (r + 1) <= x / (r + 1))

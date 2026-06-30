@@ -42,7 +42,7 @@ public:
     using KeyMapped = typename CachePolicy::KeyMapped;
 
     static constexpr auto NO_MAX_COUNT = 0uz;
-    static constexpr auto DEFAULT_SIZE_RATIO = 0.5l;
+    static constexpr auto DEFAULT_SIZE_RATIO = 0.5;
 
     /// Use this ctor if you only care about the cache size but not internals like the cache policy.
     explicit CacheBase(
