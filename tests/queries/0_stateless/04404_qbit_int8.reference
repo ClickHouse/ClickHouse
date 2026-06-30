@@ -1,0 +1,24 @@
+TEST Int8 QBit, dimension % 8 == 0
+1	[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+2	[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-32]
+3	[-128,127,-1,1,-64,64,-100,100,-2,2,-3,3,-4,4,-5,5]
+4	[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+TEST Int8 QBit, dimension % 8 != 0
+1	[1,2,3,4,5,6,7,8,9]
+2	[0,0,0,0,0,0,0,0,-32]
+3	[0,0,0,0,0,0,0,0,0]
+TEST Int8 QBit subcolumns (bit planes, MSB first)
+1	00000000
+2	11111111
+TEST INSERTS THROUGH convertFieldToType
+1	[5]
+2	[7]
+3	[-9]
+TEST CAST between Array and Int8 QBit
+[-128,-100,-50,-10,-1,0,1,10,50,100,126,127]
+TEST out-of-range values wrap to Int8, consistently with Int8 / Array(Int8)
+-128	127	0	44
+[-128,127,0,44]
+[-128,127,0,44]
+[-128,127,0,44]
+TEST non-finite floats are rejected (consistent with Array(Int8))

@@ -51,6 +51,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
@@ -61,6 +62,13 @@ namespace CurrentMetrics
     extern const Metric TaskTrackerThreads;
     extern const Metric TaskTrackerThreadsActive;
     extern const Metric TaskTrackerThreadsScheduled;
+}
+
+namespace ProfileEvents
+{
+    extern const Event DistributedPlanRemoteTasks;
+    extern const Event DistributedPlanLocalExecution;
+    extern const Event DistributedPlanHostsUsed;
 }
 
 
@@ -571,8 +579,15 @@ ExchangeLookupPtr createExchangeLookup(
             "set it, force `distributed_plan_force_exchange_kind = 'Persisted'`, or enable "
             "`distributed_plan_execute_locally` for in-process testing");
 
+    /// A task from an older initiator (version 1) ships no per-stream ports; fall back to this
+    /// node's configured exchange port to preserve the previous single-port behavior.
+    ExchangeStreamSources sources_with_ports = exchange_stream_sources;
+    for (auto & [stream, address] : sources_with_ports.stream_hosts)
+        if (address.port == 0)
+            address.port = static_cast<UInt16>(streaming_exchange_port);
+
     auto streaming_exchanges = createStreamingExchangeLookup(
-        query_id, ExchangeConnections::instance(), exchange_stream_sources, static_cast<UInt16>(streaming_exchange_port));
+        query_id, ExchangeConnections::instance(), sources_with_ports);
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 #else
     UNUSED(exchange_stream_sources);
@@ -919,18 +934,57 @@ private:
 };
 
 
+/// Resolve a worker's endpoint on the initiator from the cluster config (with server-level
+/// fallbacks). The single place a future port source would plug in.
+static WorkerAddress resolveWorkerAddress(
+    const String & host, UInt16 cluster_stateless_worker_port, UInt16 cluster_streaming_exchange_port, ContextPtr context)
+{
+    WorkerAddress address;
+    address.host = host;
+
+    auto server_level_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
+    /// Reject out-of-range values instead of silently narrowing them to a different or unset port.
+    if (server_level_exchange_port > 65535)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "`distributed_query.streaming_exchange_port` must be in range 0..65535, got {}", server_level_exchange_port);
+    address.streaming_exchange_port = cluster_streaming_exchange_port != 0
+        ? cluster_streaming_exchange_port
+        : static_cast<UInt16>(server_level_exchange_port);
+
+    /// Fall back to the global client port, then the interserver port (read lazily, since
+    /// getInterserverIOAddress throws when unconfigured, so an explicit per-node port avoids it).
+    UInt64 dispatch_port = cluster_stateless_worker_port;
+    if (dispatch_port == 0)
+        dispatch_port = context->getConfigRef().getUInt("stateless_worker_client.port", 0);
+    if (dispatch_port == 0)
+        dispatch_port = context->getInterserverIOAddress().second;
+    if (dispatch_port == 0 || dispatch_port > 65535)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Resolved stateless worker port for host '{}' must be in range 1..65535, got {}", host, dispatch_port);
+    address.stateless_worker_port = static_cast<UInt16>(dispatch_port);
+
+    return address;
+}
+
+UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 server_exchange_port)
+{
+    for (const auto & stream : exchange_stream_sources.stream_hosts)
+        if (stream.second.port != server_exchange_port)
+            return 2;
+    return 1;
+}
+
 TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
 {
-    fillHostnames(context_);
+    fillWorkerAddresses(context_);
     assignHostsForTasks(distributed_query_plan_);
 }
 
-void TaskToHostMap::fillHostnames(ContextPtr context)
+void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
 {
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
 
-    String host;
     String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
     if (!cluster_name.empty())
     {
@@ -946,16 +1000,17 @@ void TaskToHostMap::fillHostnames(ContextPtr context)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
         for (const auto & replica : shard_addresses[0])
-            hostnames.push_back(replica.host_name);
+            worker_addresses.push_back(
+                resolveWorkerAddress(replica.host_name, replica.stateless_worker_port, replica.streaming_exchange_port, context));
     }
     else
     {
-        host = context->getConfigRef().getString("stateless_worker_client.host");
+        String host = context->getConfigRef().getString("stateless_worker_client.host");
         if (!host.empty())
-            hostnames.push_back(host);
+            worker_addresses.push_back(resolveWorkerAddress(host, 0, 0, context));
     }
 
-    if (hostnames.empty())
+    if (worker_addresses.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No hosts specified for stateless worker client");
 }
 
@@ -966,11 +1021,11 @@ void TaskToHostMap::assignHostsForTasks(const DistributedQueryPlan & distributed
     {
         for (const auto & task : stage.tasks)
         {
-            const auto & assigned_host = hostnames[current_host];
-            current_host = (current_host + 1) % hostnames.size();
-            task_hosts[task.task_id] = assigned_host;
+            const auto & assigned_worker = worker_addresses[current_host];
+            current_host = (current_host + 1) % worker_addresses.size();
+            task_hosts[task.task_id] = assigned_worker;
             for (const auto & output_stream : task.output_exchange_streams)
-                exchange_stream_source_hosts[output_stream.toString()] = assigned_host;
+                exchange_stream_source_hosts[output_stream.toString()] = {assigned_worker.host, assigned_worker.streaming_exchange_port};
         }
     }
 }
@@ -991,7 +1046,14 @@ public:
         , running_tasks(8, context, is_cancelled, logger)
     {
         QueryStatusPtr query_status = context->getProcessListElement();
-        LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(task_to_host_map->getHostnames(), ", "));
+        Strings worker_hosts;
+        for (const auto & worker : task_to_host_map->getWorkerAddresses())
+            worker_hosts.push_back(worker.host);
+        LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(worker_hosts, ", "));
+        UnorderedSetWithMemoryTracking<String> distinct_hosts;
+        for (const auto & [task_id, host] : task_to_host_map->getTaskHosts())
+            distinct_hosts.insert(host.host);
+        ProfileEvents::increment(ProfileEvents::DistributedPlanHostsUsed, distinct_hosts.size());
     }
 
     void cleanup() override
@@ -1413,21 +1475,16 @@ protected:
 
     RunningTaskInfo buildTaskInfo(const DistributedQueryTaskDescription & task_description) const
     {
-        const String host = task_to_host_map->getTaskHosts().at(task_description.task.task_id);
+        const auto & worker = task_to_host_map->getTaskHosts().at(task_description.task.task_id);
         String stateless_worker_endpoint_uri;
         {
-            auto default_port = context->getInterserverIOAddress().second;
-            auto port = context->getConfigRef().getUInt("stateless_worker_client.port", default_port);
-            if (port == 0 || port > 65535)
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "`stateless_worker_client.port` must be in range 1..65535, got {}", port);
             String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
             auto endpoint = context->getConfigRef().getString("stateless_worker_client.endpoint", "stateless_worker/" + default_endpoint);
             Poco::URI stateless_worker_uri;
             /// Match the interserver scheme so a server with interserver_https_port is not sent plaintext.
             stateless_worker_uri.setScheme(context->getInterserverScheme());
-            stateless_worker_uri.setHost(host);
-            stateless_worker_uri.setPort(static_cast<UInt16>(port));
+            stateless_worker_uri.setHost(worker.host);
+            stateless_worker_uri.setPort(worker.stateless_worker_port);
             stateless_worker_uri.addQueryParameter("endpoint", endpoint);
             stateless_worker_endpoint_uri = stateless_worker_uri.toString();
         }
@@ -1445,6 +1502,7 @@ protected:
         task_description.settings_changes = context->getSettingsRef().changes();
 
         const String unique_temp_file_path = toString(unique_query_id);
+        const auto server_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
 
         for (const auto & task : stage.tasks)
         {
@@ -1459,6 +1517,7 @@ protected:
                 String input_stream_name = input_stream.toString();
                 task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
             }
+            task_description.serialization_version = chooseTaskSerializationVersion(task_description.exchange_stream_sources, server_exchange_port);
 
             /// Send the task before registering it: status polling does not tolerate
             /// UnknownTaskId, so a tracker poll racing the start would abort the query.
@@ -1476,6 +1535,7 @@ protected:
                 throw;
             }
             running_tasks.addTask(stage_name, task_info);
+            ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
         }
     }
 
@@ -1614,7 +1674,10 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     bool run_locally = context->getSettingsRef()[Setting::distributed_plan_execute_locally];
     std::unique_ptr<DistributedQueryPlanExecutor> executor;
     if (run_locally)
+    {
+        ProfileEvents::increment(ProfileEvents::DistributedPlanLocalExecution);
         executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context, is_cancelled);
+    }
     else
         executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, task_to_host_map, context, is_cancelled);
 
