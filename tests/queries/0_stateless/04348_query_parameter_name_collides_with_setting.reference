@@ -12,6 +12,8 @@ foo
 05
 -- colliding param 'limit' (a Double setting), non-numeric string value
 x>1
+-- colliding param 'enable_analyzer' (alias of 'allow_experimental_analyzer'), name preserved through alias resolution
+foo
 -- non-colliding custom param, value starting with a quote still works
 \'hello
 -- non-colliding custom param, ordinary value still works

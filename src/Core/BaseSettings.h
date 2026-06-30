@@ -392,7 +392,11 @@ void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
 template <typename TTraits>
 void BaseSettings<TTraits>::setCustom(std::string_view name, const Field & value)
 {
-    name = TTraits::resolveName(name);
+    /// Deliberately do NOT resolve aliases here. Custom fields carry user-chosen names — query
+    /// parameters are transported this way — and must be preserved exactly. Resolving an alias would
+    /// store e.g. a `--param_enable_analyzer` value under the canonical `allow_experimental_analyzer`,
+    /// so `SELECT {enable_analyzer:String}` could no longer find it. Genuine custom settings are not
+    /// aliases of built-in settings, so skipping resolution is a no-op for them.
     getCustomSetting(name) = value;
 }
 
@@ -708,7 +712,13 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
             /// as a string-valued custom field — otherwise a non-numeric value like `foo` would throw
             /// while being parsed as the setting's type. A correctly-formed real settings packet never
             /// flags a built-in setting as custom, so only such parameters take this branch.
-            getCustomSetting(name).parseFromString(BaseSettingsHelpers::readString(in));
+            ///
+            /// Store under the original wire name (`read_name`), not the alias-resolved `name`: a query
+            /// parameter whose name is a setting *alias* (e.g. `enable_analyzer`, an alias of
+            /// `allow_experimental_analyzer`) must round-trip under the user's chosen name so that
+            /// `SELECT {enable_analyzer:String}` can find it. `read_name` equals `name` for any
+            /// non-alias custom field, so this is exact for genuine custom settings.
+            getCustomSetting(read_name).parseFromString(BaseSettingsHelpers::readString(in));
         }
         else if (index != static_cast<size_t>(-1))
         {
