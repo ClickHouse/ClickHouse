@@ -1,0 +1,4 @@
+analyzer prewhere on joined-to table	1
+legacy prewhere on joined-to table	1
+result analyzer	x	a
+result legacy	x	a

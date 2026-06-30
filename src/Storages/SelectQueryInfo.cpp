@@ -15,6 +15,17 @@ bool SelectQueryInfo::isFinal() const
     if (table_expression_modifiers)
         return table_expression_modifiers->hasFinal();
 
+    /// With the analyzer, `table_expression_modifiers` is the authoritative per-table-read FINAL flag:
+    /// the planner sets it from each table expression in the join tree (see PlannerJoinTree). When it is
+    /// absent, the read simply has no FINAL modifier, so do not fall back to the whole-query AST below.
+    /// `ASTSelectQuery::final()` returns only the *first* table expression's FINAL flag, so for a query
+    /// like `t1 FINAL JOIN t2` the fallback would mark the read of `t2` as FINAL as well — disabling
+    /// PREWHERE on `t2` (MergeTreeWhereOptimizer keeps only sorting-key conditions under FINAL) and
+    /// forcing a needless in-order FINAL merge of `t2`. The legacy planner is unaffected: it reads each
+    /// joined table through its own per-table AST, so `select.final()` is already per-table-correct there.
+    if (query_tree)
+        return false;
+
     const auto & select = query->as<ASTSelectQuery &>();
     return select.final();
 }
