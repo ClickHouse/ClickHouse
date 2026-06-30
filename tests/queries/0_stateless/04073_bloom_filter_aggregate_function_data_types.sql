@@ -95,12 +95,16 @@ SELECT
     bloomFilterContains(int256_bf, toInt256('123456789012345678901234567890123456789012345678901234567890')),
     bloomFilterContains(int256_bf, toInt256('123456789012345678901234567890123456789012345678901234567891'));
 
--- Implicit type casting: UInt64 filter with narrower/wider numeric probes.
--- Regression test for exception when value type doesn't match bloom filter's element type.
-WITH (SELECT groupBloomFilterState(1000)(number) FROM numbers(1000)) AS bf
+-- Implicit type casting: `UInt64` filter with narrower/wider numeric probes.
+-- Inserted values must have no false negatives; absent probes may have bounded false positives.
+WITH
+    (SELECT groupBloomFilterState(1000)(number) FROM numbers(1000)) AS bf,
+    (SELECT countIf(bloomFilterContains(bf, number % 1000)) FROM numbers(100000)) AS exact_hits,
+    (SELECT countIf(bloomFilterContains(bf, number % 150000)) FROM numbers(100000)) AS maybe_hits
 SELECT
-    (SELECT countIf(bloomFilterContains(bf, number % 1000)) FROM numbers(100000)),
-    (SELECT countIf(bloomFilterContains(bf, number % 150000)) FROM numbers(100000));
+    exact_hits = 100000,
+    maybe_hits >= 1000,
+    maybe_hits < 10000;
 
 -- Implicit type casting: Int64 and Float64 filters with narrower expressions
 WITH
