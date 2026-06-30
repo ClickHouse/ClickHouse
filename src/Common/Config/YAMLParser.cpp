@@ -198,21 +198,6 @@ Poco::AutoPtr<Poco::XML::Document> YAMLParser::parseString(const String & yaml)
     return buildXMLFromYAMLNode(node_yml);
 }
 
-bool YAMLParser::isScalar(const String & yaml)
-{
-    try
-    {
-        YAML::Node node_yml = YAML::Load(yaml);
-        /// A null node (for example, an empty value) is also kept as literal text.
-        return node_yml.IsScalar() || node_yml.IsNull();
-    }
-    catch (const YAML::ParserException &)
-    {
-        /// The value is not valid YAML, so it cannot be a mapping or a sequence; treat it as literal text.
-        return true;
-    }
-}
-
 }
 #else
 
@@ -227,12 +212,6 @@ Poco::AutoPtr<Poco::XML::Document> DummyYAMLParser::parse(const String & path)
 Poco::AutoPtr<Poco::XML::Document> DummyYAMLParser::parseString(const String & /*yaml*/)
 {
     throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "Unable to parse YAML configuration without usage of yaml-cpp library");
-}
-
-bool DummyYAMLParser::isScalar(const String & /*yaml*/)
-{
-    /// Without yaml-cpp we cannot expand YAML subtrees, so every value is treated as literal text.
-    return true;
 }
 
 }

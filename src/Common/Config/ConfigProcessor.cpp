@@ -602,30 +602,32 @@ void ConfigProcessor::doIncludesRecursive(
 
                 /// Unlike `from_env` (which is always plain text), the contents of a ZooKeeper
                 /// node may be a whole subtree. The format is autodetected the same way as for
-                /// config files: if the value begins with '<' it is parsed as an XML fragment;
-                /// otherwise, if it is a YAML mapping or sequence it is expanded as a YAML subtree,
-                /// and a plain scalar is kept as literal text.
+                /// configuration files: if the value begins with '<' it is parsed as an XML fragment.
+                /// Otherwise, a structural `<include from_zk=.../>` (which splices a subtree) parses
+                /// the value as YAML, while any other (leaf) substitution — for example
+                /// `<password from_zk=.../>` or `<some_setting from_zk=.../>` — keeps the value as
+                /// literal text. A leaf value is never reinterpreted by the YAML parser, so an
+                /// existing scalar or secret keeps its exact bytes: a value such as `abc: def` is not
+                /// turned into an `<abc>def</abc>` sub-element, and `abc # rotated` keeps its
+                /// `# rotated` suffix instead of being treated as a YAML comment. XML special
+                /// characters (for example `&`, `<` or `>`) are escaped the same way as for
+                /// `from_env`, so a leaf value can contain any text.
                 const size_t pos = firstNonWhitespacePos(znode.contents);
                 if (pos != std::string::npos && znode.contents[pos] == '<')
                 {
                     /// Enclose the contents into a fake <from_zk> tag to allow pure text substitutions.
                     zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
                 }
-                else if (YAMLParser::isScalar(znode.contents))
+                else if (node->nodeName() == "include")
                 {
-                    /// A plain scalar (for example, a password or a port number) is kept as literal
-                    /// text using the exact original bytes. We do not route it through the YAML
-                    /// parser, because YAML is not identity-preserving for scalars: a value like
-                    /// `abc # rotated` would lose its `# rotated` suffix (a YAML comment), and
-                    /// `yes`/`no` would be coerced. This preserves the behavior of existing
-                    /// `from_zk` substitutions. The value is escaped so that XML special characters
-                    /// (for example, `&` or `<`) are taken as literal text, the same way as for `from_env`.
-                    zk_document = dom_parser.parseString("<from_zk>" + escapeForXMLText(znode.contents) + "</from_zk>");
+                    /// A structural `<include>` may reference a YAML subtree: expand it the same way
+                    /// as a configuration file.
+                    zk_document = YAMLParser::parseString(znode.contents);
                 }
                 else
                 {
-                    /// A YAML mapping or sequence is a real subtree: expand it the same way as a config file.
-                    zk_document = YAMLParser::parseString(znode.contents);
+                    /// A leaf substitution: keep the value as literal text using its exact original bytes.
+                    zk_document = dom_parser.parseString("<from_zk>" + escapeForXMLText(znode.contents) + "</from_zk>");
                 }
                 return getRootNode(zk_document.get());
             };

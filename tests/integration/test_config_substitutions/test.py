@@ -77,10 +77,18 @@ node10 = cluster.add_instance(
     env_variables={"LOG_COMMENT_VALUE": "<a>1</a>"},
     instance_env_variables=True,
 )
-# from_zk value that is a YAML subtree (does not start with '<'): it must be autodetected as YAML
+# from_zk value that is a YAML subtree, referenced from a structural <include>: it must be
+# autodetected as YAML and expanded. A leaf scalar with YAML comment syntax must stay literal.
 node11 = cluster.add_instance(
     "node11",
     user_configs=["configs/config_zk_yaml.xml"],
+    with_zookeeper=True,
+)
+# from_zk value that is a valid YAML mapping ("abc: def"), but used as a leaf substitution:
+# it must be kept as literal text, not expanded into an <abc>def</abc> sub-element.
+node12 = cluster.add_instance(
+    "node12",
+    user_configs=["configs/config_zk_yaml_leaf.xml"],
     with_zookeeper=True,
 )
 
@@ -124,6 +132,14 @@ def start_cluster():
             zk.create(
                 path="/scalar_with_yaml_syntax",
                 value=b"abc # rotated",
+                makepath=True,
+            )
+            # A value that is a valid YAML mapping ("abc: def"), used as a leaf substitution:
+            # it must be kept as literal text, not expanded into an <abc>def</abc> sub-element,
+            # so an existing scalar setting or secret is preserved unchanged on upgrade.
+            zk.create(
+                path="/leaf_yaml_mapping",
+                value=b"abc: def",
                 makepath=True,
             )
 
@@ -419,7 +435,7 @@ def test_config_env_xml_fragment_is_literal_text(start_cluster):
 
 
 def test_config_zk_yaml_is_autodetected(start_cluster):
-    """A from_zk value that does not start with '<' is autodetected and parsed as YAML."""
+    """A structural <include from_zk=...> whose value does not start with '<' is autodetected as YAML."""
     assert (
         node11.query("SELECT value FROM system.settings WHERE name = 'max_query_size'")
         == "99999\n"
@@ -427,7 +443,7 @@ def test_config_zk_yaml_is_autodetected(start_cluster):
 
 
 def test_config_zk_scalar_keeps_literal_text(start_cluster):
-    """A from_zk scalar that contains YAML syntax must be kept as literal text.
+    """A from_zk leaf scalar that contains YAML syntax must be kept as literal text.
 
     "abc # rotated" must not be reinterpreted by the YAML parser (which would drop the
     "# rotated" comment and yield just "abc"), so existing scalar substitutions such as
@@ -436,4 +452,17 @@ def test_config_zk_scalar_keeps_literal_text(start_cluster):
     assert (
         node11.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
         == "abc # rotated\n"
+    )
+
+
+def test_config_zk_leaf_yaml_mapping_keeps_literal_text(start_cluster):
+    """A from_zk leaf value that is a valid YAML mapping must be kept as literal text.
+
+    "abc: def" is a valid YAML mapping, but as a leaf substitution it must stay the literal
+    text "abc: def" instead of being expanded into an <abc>def</abc> sub-element. This keeps
+    existing scalar settings and secrets that happen to look like YAML working unchanged.
+    """
+    assert (
+        node12.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
+        == "abc: def\n"
     )

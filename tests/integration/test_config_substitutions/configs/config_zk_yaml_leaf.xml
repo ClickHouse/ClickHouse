@@ -1,0 +1,18 @@
+<clickhouse>
+  <profiles>
+    <default>
+        <!-- The ZooKeeper node holds a value that is a valid YAML mapping ("abc: def"), but it is
+             used as a leaf substitution (not a structural <include>), so it must be kept as literal
+             text and not expanded into an <abc>def</abc> sub-element. This is how existing scalar
+             settings and secrets that happen to look like YAML keep working unchanged. -->
+        <log_comment from_zk="/leaf_yaml_mapping" />
+    </default>
+  </profiles>
+  <users>
+      <default>
+          <password></password>
+          <profile>default</profile>
+          <quota>default</quota>
+      </default>
+  </users>
+</clickhouse>
