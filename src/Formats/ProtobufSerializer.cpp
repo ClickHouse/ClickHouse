@@ -1471,7 +1471,7 @@ namespace
             Int64 nanos = 0;
 
             reader->startNestedMessage();
-            int field_number;
+            int field_number = 0;
             while (reader->readFieldNumber(field_number))
             {
                 if (field_number == seconds_field_number)
@@ -1481,7 +1481,11 @@ namespace
             }
             reader->endNestedMessage();
 
-            setTicks(row_num, seconds * ticks_per_second + nanos / nanos_per_tick);
+            Int64 ticks = 0;
+            if (!DecimalUtils::multiplyAdd<Int64, false>(seconds, ticks_per_second, nanos / nanos_per_tick, ticks))
+                cannotConvertValue(toString(seconds), field_descriptor.message_type()->full_name(), is_datetime64 ? "DateTime64" : "DateTime");
+
+            setTicks(row_num, ticks);
         }
 
         void insertDefaults(size_t row_num) override
