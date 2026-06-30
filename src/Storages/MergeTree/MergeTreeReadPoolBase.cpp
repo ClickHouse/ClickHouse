@@ -412,7 +412,22 @@ void MergeTreeReadPoolBase::accountColumnsCacheWriteEstimate(
     /// parts. Estimating from the pool's result columns alone would let a query
     /// that reads a small result column set but heavy prewhere/mutation columns
     /// pass the gate while writing much more data than estimated.
-    const auto all_read_columns = read_task_info.task_columns.getAllColumnNames();
+    auto all_read_columns = read_task_info.task_columns.getAllColumnNames();
+
+    /// `getAllColumnNames` lists only the main and prewhere columns, but the
+    /// readers for patch parts (from lightweight updates) read `patch_columns`
+    /// too, and those reads are written to the cache through the same path.
+    /// Include them here, deduplicated against the columns already counted, so
+    /// their bytes contribute to the write-budget estimate; otherwise a query that
+    /// reads patch parts could pass the gate while caching more data than it
+    /// estimated.
+    {
+        NameSet seen(all_read_columns.begin(), all_read_columns.end());
+        for (const auto & step_columns : read_task_info.task_columns.patch_columns)
+            for (const auto & column : step_columns)
+                if (seen.insert(column.name).second)
+                    all_read_columns.push_back(column.name);
+    }
 
     /// Don't apply the estimate gate when there are no columns (e.g. some
     /// projection paths build the column list later). getSizeOfColumns falls back
