@@ -2,9 +2,11 @@
 //
 // Each exported C symbol is marked weak via LLVM-libc's per-function attribute
 // hook (LLVM_LIBC_FUNCTION_ATTR_<name>), so sanitizer interceptors can override
-// them and the strong glibc-compatibility `memcpy` keeps precedence. The first
-// token after the comma is the attribute placed on the public C symbol; the
-// leading LLVM_LIBC_EMPTY is the sentinel the LLVM-libc macro pipeline consumes.
+// them (the interceptor's strong definition wins the link). As the only
+// non-sanitizer definitions, the weak symbols resolve normally otherwise. The
+// first token after the comma is the attribute placed on the public C symbol;
+// the leading LLVM_LIBC_EMPTY is the sentinel the LLVM-libc macro pipeline
+// consumes.
 
 #define LLVM_LIBC_FUNCTION_ATTR_bcmp    LLVM_LIBC_EMPTY, __attribute__((weak))
 #define LLVM_LIBC_FUNCTION_ATTR_memcmp  LLVM_LIBC_EMPTY, __attribute__((weak))

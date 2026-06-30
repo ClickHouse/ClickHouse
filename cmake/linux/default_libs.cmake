@@ -6,7 +6,11 @@ set (DEFAULT_LIBS "-nodefaultlibs")
 # Wire compiler-rt runtimes (builtins/sanitizers/XRay) into the link flags.
 include (cmake/compiler_rt_link.cmake)
 
-option (ENABLE_LLVM_LIBC_MATH "Use math from llvm-libc instead of glibc" ON)
+# `libllvmlibc` supplies both the math functions and the SIMD memory functions
+# (`memcpy`/`memmove`/`memset`/`memcmp`/`bcmp`/`memmem`). Disabling it on
+# x86_64/aarch64 reverts all of them to the system libc, including `memcpy` —
+# which then carries a versioned glibc symbol again (no portability shim).
+option (ENABLE_LLVM_LIBC_MATH "Use math and memory functions from llvm-libc instead of glibc" ON)
 if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
     set(ENABLE_LLVM_LIBC_MATH OFF)
 endif()
@@ -45,13 +49,4 @@ if (NOT OS_ANDROID)
         enable_dummy_launchers_if_needed()
     endif ()
     add_subdirectory(base/harmful)
-endif ()
-
-# Force-link the strong glibc-compatibility `memcpy` so it wins over libllvmlibc's
-# weak `memcpy` regardless of archive order (the `weak` attribute alone does not
-# guarantee precedence). Skipped under sanitizers, where compiler_rt_link.cmake
-# force-links the sanitizer's own `memcpy` interceptor and that must win instead.
-if (TARGET memcpy AND NOT SANITIZE)
-    # Literal path, not a generator expression: CMAKE_EXE_LINKER_FLAGS does not expand them.
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive ${CMAKE_BINARY_DIR}/base/glibc-compatibility/memcpy/libmemcpy.a -Wl,--no-whole-archive")
 endif ()
