@@ -4073,6 +4073,9 @@ Possible values:
 
 - [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 )", 0) \
+    DECLARE(Bool, optimize_aggregation_in_order_limit, true, R"(
+When enabled and aggregation in order is active, pushes LIMIT into the aggregation step to enable early termination after producing enough groups. This reduces the amount of data read when ORDER BY matches the GROUP BY key prefix. May reduce the value reported by `rows_before_limit_at_least`; use `exact_rows_before_limit` if exact counts are needed.
+)", 0) \
     DECLARE(Bool, enable_sharding_aggregator, false, R"(
 Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
 
@@ -7718,11 +7721,8 @@ The size of the dynamic candidate list when searching the vector similarity inde
     DECLARE(Bool, vector_search_with_rescoring, false, R"(
 If ClickHouse performs rescoring for queries that use the vector similarity index.
 Without rescoring, the vector similarity index returns the rows containing the best matches directly.
-With rescoring, the vector similarity index fetches candidate rows and ClickHouse computes the exact distance
-for these rows from the original full-precision vectors in the regular SQL pipeline.
-When possible, ClickHouse filters the scan to candidate rows before the final distance computation.
-Increase `vector_search_index_fetch_multiplier` if more candidate rows are needed for better recall, especially
-with additional filters or quantized vector indexes.
+With rescoring, the rows are extrapolated to granule level and all rows in the granule are checked again.
+In most situations, rescoring helps only marginally with accuracy but it deteriorates performance of vector search queries significantly.
 Note: A query run without rescoring and with parallel replicas enabled may fall back to rescoring.
 )", 0) \
     DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
