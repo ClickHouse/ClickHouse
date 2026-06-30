@@ -93,7 +93,7 @@ SERVER_READINESS_POLL_S = 2
 # is honoured and the job fails fast (dumping the server log) instead.
 SERVER_READINESS_PROBE_TIMEOUT_S = 15
 
-LLVM_VERSION = "21"
+LLVM_VERSION = "22"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
