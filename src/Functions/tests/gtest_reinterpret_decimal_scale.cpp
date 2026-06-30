@@ -3,12 +3,19 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/validateColumnType.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 using namespace DB;
 
@@ -95,4 +102,34 @@ TEST(ReinterpretDecimalScale, SameWidthSameScalePreservesColumn)
     const auto & col_res = assert_cast<const ColumnDecimal<Decimal128> &>(*result);
     EXPECT_EQ(col_res.getScale(), 2u);
     EXPECT_EQ(col_res.getData()[0].value, Int128(321));
+}
+
+TEST(ReinterpretDecimalScale, DateTime64SameWidthDifferentScale)
+{
+    /// DateTime64 satisfies IsDataTypeDecimal and is a reachable reinterpret target
+    /// (canBeReinterpretedAsNumeric accepts isDateTime64), so DateTime64(9) -> DateTime64(2)
+    /// exercises the same scale-rebuild branch as the Decimal cases.
+    auto from_type = std::make_shared<DataTypeDateTime64>(9);
+    auto result = runReinterpret(from_type, makeOneRowDecimal<DateTime64>(9, Int64(1700000000123456789LL)), "DateTime64(2)");
+
+    const auto & col_res = assert_cast<const ColumnDecimal<DateTime64> &>(*result);
+    EXPECT_EQ(col_res.getScale(), 2u);
+    EXPECT_EQ(col_res.getData()[0].value, Int64(1700000000123456789LL));
+}
+
+TEST(ReinterpretDecimalScale, Time64IsNotAReinterpretTarget)
+{
+    /// Time64 also satisfies IsDataTypeDecimal, but unlike DateTime64 it is not in the
+    /// canBeReinterpretedAsNumeric gate, so reinterpret rejects it in getReturnTypeImpl
+    /// before the scale-rebuild branch is ever reached. Document that it throws.
+    auto from_type = std::make_shared<DataTypeDecimal<Decimal64>>(18, 9);
+    try
+    {
+        runReinterpret(from_type, makeOneRowDecimal<Decimal64>(9, Int64(1)), "Time64(2)");
+        FAIL() << "reinterpret to Time64 was expected to throw ILLEGAL_TYPE_OF_ARGUMENT";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT) << e.message();
+    }
 }
