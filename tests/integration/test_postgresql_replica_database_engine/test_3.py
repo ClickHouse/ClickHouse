@@ -1697,6 +1697,70 @@ def test_schema_aware_identity_slot_hyphen_distinct(started_cluster):
     cursor.execute('DROP SCHEMA IF EXISTS "a-b" CASCADE')
 
 
+def test_schema_aware_identity_long_database_name(started_cluster):
+    # Regression for the length-bound flagged in review of
+    # https://github.com/ClickHouse/ClickHouse/pull/107425. The schema-aware single-table identity keeps a
+    # human-readable database prefix before the fixed-length hash; if that prefix were the full PostgreSQL
+    # database name, a moderately long database name would push the default replication slot
+    # `<database>_<hash>_ch_replication_slot` past PostgreSQL's 63-character identifier limit, and
+    # checkReplicationSlot() would reject the table before replication starts. With a 39-character database
+    # name the unbounded slot would be 76 bytes; the database prefix must therefore be capped so the
+    # generated publication and slot names stay within the limit and a non-default-schema table still
+    # replicates.
+    long_pg_db = "postgres_database_long_schema_slot_test"
+    assert len(long_pg_db) >= 28
+    schema_name = "lng_schema"
+    table = "lng_table"
+
+    pg_manager.create_postgres_db(long_pg_db)
+    cursor = pg_manager.get_db_cursor(database_name=long_pg_db)
+    create_postgres_schema(cursor, schema_name)
+    create_postgres_table_with_schema(cursor, schema_name, table)
+    cursor.execute(
+        f'INSERT INTO "{schema_name}"."{table}" (key, value) SELECT g, g FROM generate_series(0, 49) AS g'
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', '{long_pg_db}', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema_name}'
+        """
+    )
+
+    # The initial snapshot can only complete if the generated slot name passed checkReplicationSlot().
+    assert_eq_with_retry(instance, f"SELECT count() FROM {table}", "50\n")
+
+    # The generated default publication and slot names must stay within PostgreSQL's 63-character limit
+    # despite the long database name, and keep only the capped 16-character database prefix.
+    expected_prefix = long_pg_db[:16]
+    cursor.execute(
+        f"SELECT slot_name FROM pg_replication_slots WHERE database = '{long_pg_db}'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    assert len(slots[0]) <= 63, f"slot name too long: {slots[0]} ({len(slots[0])})"
+    assert slots[0].startswith(f"{expected_prefix}_"), slots[0]
+    assert slots[0].endswith("_ch_replication_slot"), slots[0]
+
+    cursor.execute("SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'")
+    pubs = [row[0] for row in cursor.fetchall()]
+    assert len(pubs) == 1, f"expected exactly one publication, got {pubs}"
+    assert len(pubs[0]) <= 63, f"publication name too long: {pubs[0]} ({len(pubs[0])})"
+    assert pubs[0].startswith(f"{expected_prefix}_"), pubs[0]
+
+    # Ongoing replication (the consumer path) must work too.
+    cursor.execute(
+        f'INSERT INTO "{schema_name}"."{table}" (key, value) SELECT g, g FROM generate_series(50, 99) AS g'
+    )
+    assert_eq_with_retry(instance, f"SELECT count() FROM {table}", "100\n")
+
+    instance.query(f"DROP TABLE {table} SYNC")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

@@ -114,7 +114,7 @@ namespace
         return postgres_schema.empty() || postgres_schema == "public";
     }
 
-    /// A bounded, collision-resistant identity derived from the full (database, schema, table) triple.
+    /// A collision-resistant, fixed-length identity derived from the full (database, schema, table) triple.
     /// It is used in place of a plain `database_schema_table` concatenation in the schema-aware
     /// single-table names below. A plain concatenation with `_` is not injective: `schema = a_b`,
     /// `table = c` and `schema = a`, `table = b_c` both produce `..._a_b_c_...`. The replication slot name
@@ -123,9 +123,8 @@ namespace
     /// otherwise map to one slot. In either case two distinct source tables would share one publication or
     /// one replication slot and their consumers would cross-talk, the very failure this schema-aware
     /// identity is meant to remove. Hashing a length-prefixed (hence unambiguous) serialization of the
-    /// triple keeps the generated name injective in practice, fixed-length — independent of the schema and
-    /// table length, which keeps the slot within PostgreSQL's 63-character identifier limit — and inside
-    /// the `[a-z0-9_]` slot character set.
+    /// triple keeps the generated name injective in practice, of a fixed 16-character length independent
+    /// of the database, schema and table lengths, and inside the `[a-z0-9_]` slot character set.
     String getSchemaAwareIdentityHash(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
     {
         SipHash hash;
@@ -136,6 +135,27 @@ namespace
         hash.update(static_cast<UInt64>(postgres_table.size()));
         hash.update(postgres_table.data(), postgres_table.size());
         return fmt::format("{:016x}", hash.get64());
+    }
+
+    /// The base name of the schema-aware single-table publication and default replication slot. It keeps a
+    /// short, human-readable prefix taken from the PostgreSQL database name purely for recognizability in
+    /// `pg_replication_slots`/`pg_publication`, followed by the fixed-length identity hash. Only the prefix
+    /// length is bounded here: the full (database, schema, table) identity is carried by the hash, so the
+    /// prefix is cosmetic and capping it cannot reintroduce a collision. Bounding the whole base name keeps
+    /// the generated publication and replication-slot names within PostgreSQL's identifier length limit
+    /// regardless of how long the database name is — otherwise a moderately long database name would push
+    /// the slot name over the limit and checkReplicationSlot() would reject the table before replication
+    /// starts. The longest fixed suffix appended to this base name is the replication slot's
+    /// `_ch_replication_slot` (20 bytes), to which a temporary slot adds `_tmp` (4 bytes); a 16-byte prefix
+    /// plus the `_` separator and 16-byte hash therefore yields at most 57 bytes, comfortably inside the
+    /// 63-byte limit. The publication's `_ch_publication` suffix is shorter, so it is covered too.
+    String getSchemaAwareIdentityName(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
+    {
+        static constexpr size_t schema_aware_database_prefix_max_size = 16;
+        return fmt::format(
+            "{}_{}",
+            postgres_database.substr(0, schema_aware_database_prefix_max_size),
+            getSchemaAwareIdentityHash(postgres_database, postgres_schema, postgres_table));
     }
 
     String getPublicationName(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
@@ -159,8 +179,9 @@ namespace
             /// the same PostgreSQL database do not collide on a single publication (which would make
             /// their consumers cross-talk, because the publication carries only the bare relation name).
             /// A plain `database_schema_table` concatenation is not injective, so a collision-resistant
-            /// hash of the full identity is used instead (see getSchemaAwareIdentityHash()).
-            name = fmt::format("{}_{}", postgres_database, getSchemaAwareIdentityHash(postgres_database, postgres_schema, postgres_table));
+            /// hash of the full identity is used instead, with a bounded database prefix
+            /// (see getSchemaAwareIdentityName()).
+            name = getSchemaAwareIdentityName(postgres_database, postgres_schema, postgres_table);
         return fmt::format("{}_ch_publication", name);
     }
 
@@ -210,11 +231,11 @@ namespace
                 slot_name = fmt::format("{}_{}_ch_replication_slot", postgres_database, postgres_table);
             else
                 /// Include the schema for the same reason as in getPublicationName(), via the same
-                /// collision-resistant hash: otherwise two standalone tables replicating the same table
-                /// name from different schemas of the same PostgreSQL database would share the default
-                /// replication slot (and normalizeReplicationSlot() would additionally fold case- or
-                /// hyphen-distinct schema names together).
-                slot_name = fmt::format("{}_{}_ch_replication_slot", postgres_database, getSchemaAwareIdentityHash(postgres_database, postgres_schema, postgres_table));
+                /// collision-resistant and length-bounded identity: otherwise two standalone tables
+                /// replicating the same table name from different schemas of the same PostgreSQL database
+                /// would share the default replication slot (and normalizeReplicationSlot() would
+                /// additionally fold case- or hyphen-distinct schema names together).
+                slot_name = fmt::format("{}_ch_replication_slot", getSchemaAwareIdentityName(postgres_database, postgres_schema, postgres_table));
 
             slot_name = normalizeReplicationSlot(slot_name);
         }
