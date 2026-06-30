@@ -16,21 +16,21 @@ roundtrip() {
     local col_type="$1"
     local values="$2"
 
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS tbl_04062"
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS roundtrip_04062"
-    $CLICKHOUSE_CLIENT --query "CREATE TABLE tbl_04062 (ts ${col_type}) ENGINE = MergeTree ORDER BY tuple()"
-    $CLICKHOUSE_CLIENT --query "CREATE TABLE roundtrip_04062 (ts ${col_type}) ENGINE = MergeTree ORDER BY tuple()"
-    $CLICKHOUSE_CLIENT --query "INSERT INTO tbl_04062 VALUES ${values}"
+    $CLICKHOUSE_CLIENT --query "
+        DROP TABLE IF EXISTS tbl_04062;
+        DROP TABLE IF EXISTS roundtrip_04062;
+        CREATE TABLE tbl_04062 (ts ${col_type}) ENGINE = MergeTree ORDER BY tuple();
+        CREATE TABLE roundtrip_04062 (ts ${col_type}) ENGINE = MergeTree ORDER BY tuple();
+        INSERT INTO tbl_04062 VALUES ${values};
+    "
 
     local bin
     bin=$(mktemp "$CURDIR/04062_protobuf_timestamp.XXXXXX.binary")
     $CLICKHOUSE_CLIENT --query "SELECT * FROM tbl_04062 ORDER BY ts FORMAT Protobuf SETTINGS format_schema = '$SCHEMA'" > "$bin"
     $CLICKHOUSE_CLIENT --query "INSERT INTO roundtrip_04062 SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf" < "$bin"
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM roundtrip_04062 ORDER BY ts"
     rm "$bin"
 
-    $CLICKHOUSE_CLIENT --query "DROP TABLE tbl_04062"
-    $CLICKHOUSE_CLIENT --query "DROP TABLE roundtrip_04062"
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM roundtrip_04062 ORDER BY ts"
 }
 
 # Feed a google.protobuf.Timestamp whose seconds fall outside the target column's range and show the rejection.
@@ -38,16 +38,16 @@ expect_out_of_range() {
     local col_type="$1"
     local seconds="$2"
 
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS overflow_04062"
-    $CLICKHOUSE_CLIENT --query "CREATE TABLE overflow_04062 (ts ${col_type}) ENGINE = MergeTree ORDER BY tuple()"
+    $CLICKHOUSE_CLIENT --query "
+        DROP TABLE IF EXISTS overflow_04062;
+        CREATE TABLE overflow_04062 (ts ${col_type}) ENGINE = MergeTree ORDER BY tuple();
+    "
 
     local bin
     bin=$(mktemp "$CURDIR/04062_protobuf_timestamp.XXXXXX.binary")
     $CLICKHOUSE_CLIENT --query "SELECT toDateTime64(${seconds}, 0, 'UTC') AS ts FORMAT Protobuf SETTINGS format_schema = '$SCHEMA'" > "$bin"
     $CLICKHOUSE_CLIENT --query "INSERT INTO overflow_04062 SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf" < "$bin" 2>&1 | grep -o "Could not convert value.*column 'ts'" ||:
     rm "$bin"
-
-    $CLICKHOUSE_CLIENT --query "DROP TABLE overflow_04062"
 }
 
 # Feed a hand-crafted google.protobuf.Timestamp whose nanos fall outside [0, 999999999] and show the rejection.
@@ -55,16 +55,16 @@ expect_invalid_nanos() {
     local col_type="$1"
     local message_bytes="$2"
 
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS invalid_nanos_04062"
-    $CLICKHOUSE_CLIENT --query "CREATE TABLE invalid_nanos_04062 (ts ${col_type}) ENGINE = MergeTree ORDER BY tuple()"
+    $CLICKHOUSE_CLIENT --query "
+        DROP TABLE IF EXISTS invalid_nanos_04062;
+        CREATE TABLE invalid_nanos_04062 (ts ${col_type}) ENGINE = MergeTree ORDER BY tuple();
+    "
 
     local bin
     bin=$(mktemp "$CURDIR/04062_protobuf_timestamp.XXXXXX.binary")
     printf "$message_bytes" > "$bin"
     $CLICKHOUSE_CLIENT --query "INSERT INTO invalid_nanos_04062 SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf" < "$bin" 2>&1 | grep -o "Could not convert value.*column 'ts'" ||:
     rm "$bin"
-
-    $CLICKHOUSE_CLIENT --query "DROP TABLE invalid_nanos_04062"
 }
 
 echo "DateTime64(9):"
