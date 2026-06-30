@@ -1,13 +1,10 @@
 import json
 import time
-import logging
 
 import pytest
-from kafka import KafkaProducer
 
 from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
-from helpers.test_tools import TSV
 import helpers.kafka.common as k
 
 
@@ -24,6 +21,7 @@ instance = cluster.add_instance(
         "kafka_group_name_new": "affinity_group",
         "kafka_client_id": "instance",
         "kafka_format_json_each_row": "JSONEachRow",
+        "kafka_shard_num_bad": "2",
     },
 )
 
@@ -330,6 +328,27 @@ def test_partition_affinity_invalid_partition_num_fails(kafka_cluster):
             """
         )
     assert "must be a valid non-negative integer" in str(exc_info.value)
+
+
+def test_partition_affinity_macro_expanded_out_of_range_fails(kafka_cluster):
+    """
+    Regression test: when kafka_partition_shard_num uses a macro that expands
+    to a value >= kafka_shard_count, CREATE TABLE must fail with BAD_ARGUMENTS.
+    The macro {kafka_shard_num_bad} expands to '2', which is not < shard_count=2.
+    """
+    with pytest.raises(QueryRuntimeException) as exc_info:
+        instance.query(
+            f"""
+            CREATE TABLE test.kafka_bad_macro (value UInt64)
+            ENGINE = Kafka('{instance.cluster.kafka_host}:19092', 'some_topic', 'some_group', 'JSONEachRow', '\\n')
+            SETTINGS kafka_keeper_path = '/clickhouse/test/bad_macro',
+                     kafka_replica_name = 'r1',
+                     kafka_partition_shard_num = '{{kafka_shard_num_bad}}',
+                     kafka_shard_count = 2
+            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            """
+        )
+    assert "must be less than" in str(exc_info.value)
 
 
 def test_partition_affinity_fewer_partitions_than_shards(kafka_cluster):
