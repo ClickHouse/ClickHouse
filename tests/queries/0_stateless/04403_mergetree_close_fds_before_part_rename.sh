@@ -58,6 +58,18 @@ for _ in $(seq 1 200); do
     # table's part data/index/mark files (its glob matches '/' too, so "*$uuid*" spans
     # the store path).
     while read -r fd_link; do
+        # Only a descriptor into a *committed* part is the bug. While a part is still being
+        # written its data files live in a temporary directory ('tmp_insert_...') and the
+        # writer legitimately holds them open for writing -- that is normal and is exactly
+        # the descriptor that should be released by the rename. The bug is a descriptor that
+        # *survives* the rename of that directory to its final committed name, so its /proc
+        # symlink then resolves to the final path. Skip any target still pointing into a
+        # temporary part directory; otherwise, on a slow (sanitizer) build under load, the
+        # poll can catch the in-progress writer and report a spurious leak.
+        target=$(readlink "$fd_link" 2>/dev/null) || continue
+        case "$(basename "$(dirname "$target")")" in
+            tmp_*|tmp-*|delete_tmp_*) continue ;;
+        esac
         # /proc/PID/fdinfo/FD reports the open flags; the low two bits of the octal
         # 'flags' field are the access mode (0 = O_RDONLY, 1 = O_WRONLY, 2 = O_RDWR).
         # Ignore read-only descriptors (cache prewarming, the page cache, SELECTs).
