@@ -2684,16 +2684,22 @@ async function loadDatabases(server_address, user, password) {
 
         /// A per-row generation counter, bumped on every refresh and on collapse. An in-flight
         /// load captures the current value and, once its query returns, checks whether the row's
-        /// state changed in the meantime (it was collapsed, or a newer refresh superseded it) so
-        /// it can bail out before mutating the DOM. This invariant is local to one database row,
-        /// unlike the global `load_tables_request_num` (which only tracks the latest load across
-        /// all rows and would wrongly cancel a concurrent open of a different row).
+        /// state changed in the meantime (it was collapsed, a newer refresh superseded it, or the
+        /// whole panel was closed) so it can bail out before mutating the DOM. This invariant is
+        /// local to one database row, unlike the global `load_tables_request_num` (which only
+        /// tracks the latest load across all rows and would wrongly cancel a concurrent open of a
+        /// different row).
         let row_load_generation = 0;
 
         /// Reload tables, showing the hourglass (and hiding the refresh button) while loading.
         const refreshTables = () => {
             const generation = ++row_load_generation;
-            const is_current = () => generation == row_load_generation;
+            /// A load stays relevant only while its generation is still the latest for this row
+            /// and the row is still attached to the document. Closing the whole database panel
+            /// (or reloading the database list) detaches the row without bumping the generation,
+            /// so the `isConnected` check is what makes such a stale load drop quietly instead of
+            /// dereferencing a now-detached parent when its query returns.
+            const is_current = () => generation == row_load_generation && database.isConnected;
             refresh_button.style.visibility = 'hidden';
             let hourglass = document.createElement('span');
             hourglass.className = 'loading-hourglass';
