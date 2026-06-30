@@ -12,6 +12,10 @@
 -- Tags: shard
 
 SET enable_analyzer = 1;
+-- Pin the legacy EXPLAIN plan format: the pushdown checks below grep for the
+-- "Convert VIEW subquery result to VIEW table structure" step, which the default
+-- 'pretty' EXPLAIN format (explain_query_plan_default) does not print.
+SET explain_query_plan_default = 'legacy';
 SET prefer_localhost_replica = 0;
 
 DROP TABLE IF EXISTS data_04372;

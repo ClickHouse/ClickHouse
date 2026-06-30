@@ -11,6 +11,10 @@
 -- Tags: distributed
 
 SET enable_analyzer = 1;
+-- Pin the legacy EXPLAIN plan format: the pushdown checks below grep for the
+-- "Convert VIEW subquery result to VIEW table structure" step, which the default
+-- 'pretty' EXPLAIN format (explain_query_plan_default) does not print.
+SET explain_query_plan_default = 'legacy';
 SET enable_parallel_replicas = 0;
 SET prefer_localhost_replica = 0;
 
