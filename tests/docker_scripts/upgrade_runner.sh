@@ -340,13 +340,11 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #         line leaks.
 #       After the upgrade restart the broken mutation is retried in the background and logged to
 #       `clickhouse-server.upgrade.log`. `throwIf` is a user-level function that only ever raises when a query
-#       explicitly calls it with a truthy argument, but the default message alone is too generic to suppress
-#       globally: a real upgrade regression in any other background/persisted object that uses `throwIf` as an
-#       assertion would then silently disappear from `upgrade_error_messages.txt`. So, like the other scoped
-#       exclusions, it is paired with the mutation-task context in the secondary pipe below - requiring both the
-#       `MutatePlainMergeTreeTask` / `MergeTreeBackgroundExecutor` logger AND the message together (the replicated
-#       first line is already covered by the `MutateFromLogEntryTask` exclusion above) - so only the expected
-#       mutation-retry lines are dropped and `throwIf` errors from any other context still surface.
+#       explicitly calls it with a truthy argument, so this default message can only ever originate from such a
+#       test query, never from a background or internal assertion - matching it is therefore safe to suppress
+#       globally, exactly like the `Code: 236 ... Cancelled mutating parts` message that the same cancelled test
+#       mutations emit above. Matching the message rather than the task type also covers the wrapping
+#       `MergeTreeBackgroundExecutor` line of the replicated case in a single entry.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
@@ -498,8 +496,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
-    | grep -av -e "MutatePlainMergeTreeTask.*Value passed to 'throwIf' function is non-zero" \
-    | grep -av -e "MergeTreeBackgroundExecutor.*Value passed to 'throwIf' function is non-zero" \
+    | grep -av -e "Value passed to 'throwIf' function is non-zero" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
