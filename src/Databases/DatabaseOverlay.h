@@ -3,8 +3,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Databases/IDatabase.h>
 
-#include <unordered_set>
-
 namespace DB
 {
 
