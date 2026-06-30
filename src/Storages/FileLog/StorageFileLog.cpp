@@ -1094,6 +1094,12 @@ bool StorageFileLog::updateFileInfos()
 
                     onFileAppeared(file_name, inode);
 
+                    /// An added file is read from offset 0, so any on-disk meta
+                    /// under this name is stale. Drop it to stay consistent with
+                    /// the pos-0 meta set below, else serialize() sees a larger
+                    /// stored offset and raises LOGICAL_ERROR.
+                    disk->removeFileIfExists(getFullMetaPath(file_name));
+
                     if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
                         it->second = FileMeta{.file_name = file_name};
                     else
