@@ -37,7 +37,10 @@ EOF
 ${CLICKHOUSE_LOCAL} --path "${WORKDIR}" --query "SELECT name FROM system.databases WHERE name IN ('baddb', 'netdb') ORDER BY name"
 
 # First use of the malformed database must still report the error (lazy validation).
-${CLICKHOUSE_LOCAL} --path "${WORKDIR}" --query "CHECK DATABASE baddb" 2>&1 | grep -o 'Unexpected format of auth header'
+# `CHECK DATABASE` is not available in this branch, so the first use is a query against the
+# database. The referenced table need not exist: the catalog is constructed (and the malformed
+# `auth_header` rejected) before any table is resolved.
+${CLICKHOUSE_LOCAL} --path "${WORKDIR}" --query "SELECT * FROM baddb.t" 2>&1 | grep -o 'Unexpected format of auth header'
 
 # CREATE with a malformed auth_header must still be rejected up front.
 ${CLICKHOUSE_LOCAL} --query "
@@ -61,5 +64,7 @@ ENGINE = DataLakeCatalog('http://localhost:18181/v1')
 SETTINGS catalog_type = 'rest', auth_header = 'exact_header: some_value', warehouse = 'demo';
 "
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.databases WHERE name = '${FORBIDDEN_DB}'"
-${CLICKHOUSE_CLIENT} --query "CHECK DATABASE ${FORBIDDEN_DB}" 2>&1 | grep -o 'is forbidden'
+# First use must still reject the forbidden header (see the note on the malformed database above
+# for why a query against the database is used instead of `CHECK DATABASE`).
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${FORBIDDEN_DB}.t" 2>&1 | grep -o 'is forbidden'
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${FORBIDDEN_DB}"
