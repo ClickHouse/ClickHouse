@@ -791,6 +791,14 @@ private:
     /// pre-decryption.
     void maybePromote(CacheTier from_tier, ByteRange range, const ChainedBuffers & bytes, Stats & out_stats);
 
+    /// Down-promote: a served upper-tier hit that the schedule marked for cross-cache fill (an
+    /// `UpperCacheRead` retrieve) is written DOWN into its lower cell using the bytes just served -
+    /// the cache-as-buffer mirror of `maybePromote`'s up-promote. The bytes are in hand (no re-read
+    /// from a faster tier), so the lower segment completes ACROSS an embedded hit without a remote
+    /// over-read of bytes a faster tier already holds. Only scheduled `UpperCacheRead` targets are
+    /// filled - a bridged hole stays a remote over-read. `served_range`/`bytes` are physical.
+    void downFillScheduledLower(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats);
+
     /// Serve-front promote of a FETCHED range: the `Remote` fetch now fills only the bottom
     /// populatable tier (`writeTargetsFor`), so push its committed bytes UP into the faster
     /// tiers here, as the serve passes over `window` (physical). Reads the bottom tier's

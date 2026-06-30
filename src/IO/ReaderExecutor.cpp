@@ -766,6 +766,11 @@ ChainedBuffers ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, siz
         /// Promote this run up into any faster tier that misses it (no-op when served from
         /// the fastest tier or nothing faster populates), inline on the serve thread.
         maybePromote(run.tier, ByteRange{pos, got}, chunk, stats);
+        /// ...and (unified path only - the legacy path down-fills via `assembleAndWriteBack`) down-
+        /// fill it into any lower cell the schedule marked for cross-cache fill, so an embedded
+        /// upper-tier hit completes the lower segment without a remote over-read.
+        if (unified_foreground)
+            downFillScheduledLower(ByteRange{pos, got}, chunk, stats);
         chain.append(std::move(chunk));
         pos += got;
         if (pos < serve_end)
@@ -2190,18 +2195,21 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
             ? m->physical_window.offset
             : std::min(m->physical_window.end(), m->fill_chain.range().end());
         pushChainToWriters(m->writer_views, m->physical_window, m->fill_chain, m->stats);
-        /// Pin the partial segment under the just-written frontier until the
-        /// reap (see `fill_pin`): the foreground's finalize pinned BEFORE this
-        /// fill landed, so a fresh segment was not pinnable there.
-        for (const auto & view : m->writer_views)
-        {
-            if (view.writer && fill_end >= view.writer->range().offset && fill_end < view.writer->range().end())
-                if (auto pin = view.writer->pin(fill_end))
-                {
-                    m->fill_pin = std::move(pin);
-                    break;
-                }
-        }
+        /// Pin the partial segment under the just-written frontier until the reap (see `fill_pin`):
+        /// the foreground's finalize pinned BEFORE this fill landed, so a fresh segment was not
+        /// pinnable there. A `readBigAt` transient reads its bounded extent once and is destroyed,
+        /// so it pins NOTHING (mirrors `finalizeAssembledWindow`'s `!is_transient` guard) - else its
+        /// cell survives an eviction sweep that should drop it.
+        if (!is_transient)
+            for (const auto & view : m->writer_views)
+            {
+                if (view.writer && fill_end >= view.writer->range().offset && fill_end < view.writer->range().end())
+                    if (auto pin = view.writer->pin(fill_end))
+                    {
+                        m->fill_pin = std::move(pin);
+                        break;
+                    }
+            }
         m->fill_chain = {};
     }
     catch (...)
@@ -2284,6 +2292,42 @@ void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Ch
             out_stats.add(Stats::BytesPromoted, w.writer->write(std::move(slice)));
             HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
                 static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
+        }
+    }
+}
+
+void ReaderExecutor::downFillScheduledLower(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats)
+{
+    /// Down-promote a served upper-tier hit into the lower cells the schedule marked for cross-cache
+    /// fill (`UpperCacheRead` retrieves overlapping `served_range`). The serve already read these
+    /// bytes from the faster tier, so the lower segment completes across the embedded hit with NO
+    /// remote over-read. Only `UpperCacheRead` targets are touched (a bridged hole - no such
+    /// retrieve - stays a remote over-read). The writer's committed set makes the write idempotent.
+    for (const auto & r : read_plan.schedule.retrieves)
+    {
+        if (r.source != PlanSchedule::Source::UpperCacheRead)
+            continue;
+        if (!(r.range.offset < served_range.end() && served_range.offset < r.range.end()))
+            continue;
+        for (const auto & wt : r.into)
+        {
+            if (wt.entry >= read_plan.bufs.size() || !read_plan.bufs[wt.entry].provider)
+                continue;
+            for (auto & w : read_plan.bufs[wt.entry].writers)
+            {
+                if (!w.writer)
+                    continue;
+                const size_t lo = std::max({served_range.offset, r.range.offset, w.writer->range().offset, wt.cell.offset});
+                const size_t hi = std::min({served_range.end(), r.range.end(), w.writer->range().end(), wt.cell.end()});
+                if (lo >= hi)
+                    continue;
+                auto slice = bytes.slice(ByteRange{lo, hi - lo});
+                if (slice.empty())
+                    continue;
+                out_stats.add(Stats::CachePopulateRequests);
+                StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
+                w.writer->write(std::move(slice));
+            }
         }
     }
 }
@@ -2677,30 +2721,64 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
         return {};
     ByteRange window_phys{position_phys, want};
 
-    /// Unified foreground: with the machine slot free, run a one-window FetchMachine for this
-    /// window INLINE on the serve thread (the same flow as the prefetch, driven by a local
-    /// runner), then collect it - finalizing the cache fill and reclaiming the connection on this
-    /// thread, so the cell-serve below reads the just-committed cells. The inline fetch stops at
-    /// the first sibling-led segment, so it commits only the contiguous led prefix.
-    /// Collecting here rather than deferring to `maybeLaunchAhead` keeps it correct with or
-    /// without a pool. The guard is `!machine` (slot free), NOT `!machineFor(ri)`:
-    /// `launchMachineForWindow` overwrites the single slot, so a read-ahead machine in flight for
-    /// another retrieve must not be clobbered - that case keeps the existing cell-serve / fallback.
-    if (unified_foreground && !machine)
+    /// Unified foreground: run the fill INLINE on the serve thread (the same `FetchMachine` flow as
+    /// the background, driven by a local runner) until the cells cover the cursor window, then serve
+    /// from the just-committed cells. The fill starts at the cell's append-only frontier (see the
+    /// loop) and runs the plan's jobs locally - the foreground does not invent new jobs. A machine
+    /// already in flight for `ri` is joined (not relaunched); a machine for ANOTHER retrieve holds
+    /// the single slot, so we leave it and let the cell-serve / fallback below handle this window.
+    /// NOTE: `coordinatedPrefetch`'s tiling still over-counts GETs on the stateless arm for
+    /// fragmented reads - resolved by the planned Stage T (fetch the whole led run in one source
+    /// read; see UNIFIED_JOB_DAG.md). Tracked, not a regression in the live default.
+    if (unified_foreground)
     {
-        if (launchMachineForWindow(ri, window_phys, *local_runner))
+        const CoverageMap & geom = *read_plan.geometry();
+        while (!committedCellCovers(window_phys))
         {
-            collectInFlightInto(ri);
-            /// Narrow the serve to the committed led prefix: a sibling-led hole bounds the inline
-            /// fetch short, so only `[offset, prefix_end)` is in our cells. Serving that prefix as
-            /// a short non-EOF window lets the caller's next read resolve the sibling boundary
-            /// (elect/wait via the sync fallback) instead of this thread blocking past the first
-            /// loss. An EMPTY prefix (the cursor sits on a sibling-led segment) leaves the window
-            /// unchanged -> `committedCellCovers` is false below -> the sync fallback handles it.
-            const size_t prefix_end = committedCellPrefixEnd(window_phys);
-            if (prefix_end > window_phys.offset && prefix_end < window_phys.end())
-                window_phys = ByteRange{window_phys.offset, prefix_end - window_phys.offset};
+            /// The fetch starts at the CELL's append-only frontier - the first uncommitted byte of
+            /// the cell-aligned window (`fetchWindowAt`), NOT `r.range.offset + st.fetched`. The
+            /// retrieve's `r.range` can span an embedded faster-tier HIT (the schedule merges the
+            /// gaps around it), and that hit is served from the upper tier + down-filled, not
+            /// fetched - so the cell frontier advances PAST it while `st.fetched` does not. Keying
+            /// the base off the live cell state (which the down-fill updates) makes the next fill
+            /// resume after the hit instead of re-fetching it from source, and still fills a
+            /// mid-cell read from the cell floor (append-only). Fetch only to the cursor window's
+            /// end - filling the whole cell is the schedule's other (Remote/UpperCacheRead) jobs.
+            const ByteRange aligned = geom.fetchWindowAt(window_phys);
+            const size_t base = committedCellPrefixEnd(aligned);
+            if (base >= window_phys.end())
+                break;   /// the window is committed to its end (defensive: the while would exit)
+            if (machineFor(ri))
+                collectInFlightInto(ri);
+            else if (!machine)
+            {
+                if (reached_eof
+                    || !launchMachineForWindow(ri, ByteRange{base, window_phys.end() - base}, *local_runner))
+                    break;
+                /// The cell-alignment head fetched BELOW the cursor (`[base, cursor)`) is source
+                /// bytes the request did not ask for - over-read. Record the range as pending (the
+                /// collect's `assembleAndWriteBack` keys off the launched window, not the cursor, so
+                /// it does not see this head). A later read that consumes it removes the range
+                /// (`overread_pending.remove`); what is never read back is the net `OverReadBytes`.
+                if (base < window_phys.offset)
+                    overread_pending.add(ByteRange{base, window_phys.offset - base});
+                collectInFlightInto(ri);
+            }
+            else
+                break;   /// a read-ahead machine for another retrieve owns the slot
+            /// No progress means the frontier is stuck behind a sibling-led segment (the contended
+            /// collect commits only its led prefix inline, then revokes): stop and serve that prefix
+            /// below. Guards against re-launching forever.
+            if (committedCellPrefixEnd(aligned) <= base)
+                break;
         }
+        /// A sibling-led hole or EOF stopped the fill short of the window: narrow to the contiguous
+        /// committed prefix so the cell-serve returns it as a short window and the caller's next
+        /// read continues from there (an empty prefix - the cursor sits on a sibling-led segment -
+        /// leaves the window unchanged and the fallback below resolves it).
+        const size_t prefix_end = committedCellPrefixEnd(window_phys);
+        if (prefix_end > window_phys.offset && prefix_end < window_phys.end())
+            window_phys = ByteRange{window_phys.offset, prefix_end - window_phys.offset};
     }
 
     /// The in-flight machine fills the LEAD ahead of the cursor, committing cells progressively.
