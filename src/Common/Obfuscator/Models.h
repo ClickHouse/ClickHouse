@@ -184,8 +184,14 @@ class SignedIntegerModel : public IModel
 private:
     UInt64 seed;
 
+    /// The minimum representable value of the source integer type. Its magnitude is not representable
+    /// as a positive value of the same width, so permuting it within its log2 bucket and negating would
+    /// wrap the result into a positive number. Keep it unchanged to preserve the "keep sign" invariant
+    /// for narrow types as well, e.g. `Int8`'s `-128`.
+    Int64 min_value;
+
 public:
-    explicit SignedIntegerModel(UInt64 seed_) : seed(seed_) {}
+    SignedIntegerModel(UInt64 seed_, Int64 min_value_) : seed(seed_), min_value(min_value_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -200,7 +206,10 @@ public:
         res->reserve(size);
 
         for (size_t i = 0; i < size; ++i)
-            res->insert(transformSigned(column.getInt(i), seed));
+        {
+            Int64 value = column.getInt(i);
+            res->insert(value == min_value ? value : transformSigned(value, seed));
+        }
 
         return res;
     }
@@ -1046,10 +1055,27 @@ public:
     {
         if (isInteger(data_type))
         {
-            if (isUInt(data_type))
+            /// The integer models permute values inside their log2 bucket using 64-bit arithmetic
+            /// (`getUInt`/`getInt` and a `UInt64`/`Int64` `Field`), so they only support native widths.
+            /// Wide integers (`Int128`/`UInt128`/`Int256`/`UInt256`) would not round-trip through the
+            /// `Field` and would throw `BAD_GET` during generation, so reject them up front with a clean
+            /// `NOT_IMPLEMENTED` exception instead.
+            if (!isNativeInteger(data_type))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Obfuscation is not implemented for wide integer type {}", data_type.getName());
+
+            if (isNativeUInt(data_type))
                 return std::make_unique<UnsignedIntegerModel>(seed);
 
-            return std::make_unique<SignedIntegerModel>(seed);
+            Int64 min_value = std::numeric_limits<Int64>::min();
+            WhichDataType which(data_type);
+            if (which.isInt8())
+                min_value = std::numeric_limits<Int8>::min();
+            else if (which.isInt16())
+                min_value = std::numeric_limits<Int16>::min();
+            else if (which.isInt32())
+                min_value = std::numeric_limits<Int32>::min();
+
+            return std::make_unique<SignedIntegerModel>(seed, min_value);
         }
 
         if (typeid_cast<const DataTypeFloat32 *>(&data_type))
