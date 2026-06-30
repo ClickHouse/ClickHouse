@@ -28,3 +28,8 @@ SELECT
   > (SELECT count() FROM (EXPLAIN QUERY TREE SELECT a, b, c FROM t_compare_chain_budget WHERE (a < b) AND (b < c) AND (c < 5) SETTINGS optimize_and_compare_chain_max_hash_work = 1) WHERE explain LIKE '%function_name: less,%');
 
 DROP TABLE t_compare_chain_budget;
+
+-- `optimize_and_compare_chain_max_hash_work` was introduced in 26.7, so `compatibility` set to an
+-- earlier version must restore the pre-PR behavior where the optimization was uncapped: the budget
+-- reverts to `0` (unlimited).
+SELECT value FROM system.settings WHERE name = 'optimize_and_compare_chain_max_hash_work' SETTINGS compatibility = '26.6';
