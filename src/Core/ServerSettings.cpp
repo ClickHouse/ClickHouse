@@ -2279,7 +2279,16 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             if (config.has(handlers_key))
             {
                 String handler_section = config.getString(handlers_key);
-                if (!handler_section.empty())
+                /// `createHTTPHandlerFactory` consults the named handler prefix only when it
+                /// actually exists (`config.has(handler_section)`); otherwise it falls back to
+                /// the default `http_handlers` and never reads the named section. Exempting the
+                /// top-level component when the referenced prefix is absent would whitelist a
+                /// misspelled or missing section the server does not consume — a false negative
+                /// (e.g. `<handlers>custom.handlers</handlers>` while the config only has
+                /// `<custom><typo>...</typo></custom>`, so `custom.handlers` does not exist and
+                /// the top-level `<custom>` is a genuine unknown key). Gate the exemption (and
+                /// the `config://` scan below) on the prefix existing, mirroring the consumer.
+                if (!handler_section.empty() && config.has(handler_section))
                 {
                     handler_group_paths.insert(handler_section);
                     referenced_top_level_keys.insert(top_level_component(handler_section));
@@ -2333,9 +2342,20 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 String value = config.getRawString(path);
                 if (value.starts_with(config_prefix))
                 {
-                    String ref = top_level_component(value.substr(config_prefix.size()));
-                    if (!ref.empty())
-                        referenced_top_level_keys.insert(ref);
+                    /// `StaticRequestHandler::writeResponse` reads the referenced path with
+                    /// `getRawString(referenced_path, "Ok.\n")`: when the full path is absent it
+                    /// serves the default `Ok.\n` and never consumes the referenced section. So a
+                    /// `config://payload.suffix` whose exact path `payload.suffix` does not exist
+                    /// must not exempt the top-level `<payload>` — doing so would whitelist a
+                    /// section no server code reads (a false negative). Exempt the top-level
+                    /// component only when the full referenced path exists, mirroring the consumer.
+                    String referenced_path = value.substr(config_prefix.size());
+                    if (!referenced_path.empty() && config.has(referenced_path))
+                    {
+                        String ref = top_level_component(referenced_path);
+                        if (!ref.empty())
+                            referenced_top_level_keys.insert(ref);
+                    }
                 }
             }
         }

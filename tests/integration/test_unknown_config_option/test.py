@@ -227,6 +227,31 @@ node_graphite_nested_foreign = cluster_graphite_nested_foreign.add_instance(
 )
 caught_graphite_nested_foreign_exception = ""
 
+# Negative case: a `<protocols>...<handlers>NAME</handlers>` reference whose handler prefix does
+# NOT exist. `createHTTPHandlerFactory` falls back to the default `http_handlers` when
+# `!config.has(NAME)` and never reads the named section, so the validator must NOT exempt the
+# top-level component of a missing handler prefix. Here `<handlers>custom_missing.handlers</handlers>`
+# points at a prefix that is absent (the section has a mistyped `<handlerss>` child), so the
+# top-level `<custom_missing>` is a genuine unknown key and must be rejected.
+cluster_protocols_missing = ClickHouseCluster(__file__, name="protocols_missing")
+node_protocols_missing = cluster_protocols_missing.add_instance(
+    "node_protocols_missing",
+    main_configs=["configs/config.d/protocols_missing_handler_prefix.xml"],
+)
+caught_protocols_missing_exception = ""
+
+# Negative case: a static handler `config://missing_payload.suffix` whose full referenced path
+# does NOT exist. `StaticRequestHandler` reads it with `getRawString("missing_payload.suffix",
+# "Ok.\n")`, so a missing path falls back to the default response and never consumes the top-level
+# `<missing_payload>` section. The validator must therefore NOT exempt `<missing_payload>` just
+# because a `config://` value names it: the unread section is a genuine unknown key.
+cluster_static_missing_path = ClickHouseCluster(__file__, name="static_missing_path")
+node_static_missing_path = cluster_static_missing_path.add_instance(
+    "node_static_missing_path",
+    main_configs=["configs/config.d/static_handler_config_ref_missing_path.xml"],
+)
+caught_static_missing_path_exception = ""
+
 
 @pytest.fixture(scope="module")
 def start_bad_cluster():
@@ -449,6 +474,40 @@ def start_graphite_nested_foreign_cluster():
                 caught_graphite_nested_foreign_exception += "\n" + f.read()
     yield
     cluster_graphite_nested_foreign.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_protocols_missing_cluster():
+    global caught_protocols_missing_exception
+    try:
+        cluster_protocols_missing.start()
+    except Exception as e:
+        caught_protocols_missing_exception = str(e)
+        err_log = os.path.join(
+            node_protocols_missing.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_protocols_missing_exception += "\n" + f.read()
+    yield
+    cluster_protocols_missing.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_static_missing_path_cluster():
+    global caught_static_missing_path_exception
+    try:
+        cluster_static_missing_path.start()
+    except Exception as e:
+        caught_static_missing_path_exception = str(e)
+        err_log = os.path.join(
+            node_static_missing_path.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_static_missing_path_exception += "\n" + f.read()
+    yield
+    cluster_static_missing_path.shutdown()
 
 
 def test_unknown_config_option_rejected(start_bad_cluster):
@@ -849,3 +908,25 @@ def test_graphite_nested_foreign_child_rejected(start_graphite_nested_foreign_cl
     # key. The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
     assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_nested_foreign_exception
     assert "graphite_nested_foreign" in caught_graphite_nested_foreign_exception
+
+
+def test_protocols_missing_handler_prefix_not_exempted(start_protocols_missing_cluster):
+    # The endpoint references the handler prefix `custom_missing.handlers`, but the section has a
+    # mistyped `<handlerss>` child, so `custom_missing.handlers` does not exist. `createHTTPHandlerFactory`
+    # sees `!config.has("custom_missing.handlers")` and falls back to the default `http_handlers`,
+    # never reading `<custom_missing>`. The validator must therefore NOT exempt the top-level
+    # `<custom_missing>` section: it is a genuine unknown key, so the node must fail to start.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_protocols_missing_exception
+    assert "custom_missing" in caught_protocols_missing_exception
+
+
+def test_config_ref_missing_path_does_not_exempt_unknown_key(
+    start_static_missing_path_cluster,
+):
+    # The static handler references `config://missing_payload.suffix`, but `<missing_payload>` has no
+    # `<suffix>` child, so the full path does not exist. `StaticRequestHandler` reads it with
+    # `getRawString("missing_payload.suffix", "Ok.\n")`, serving the default and never consuming
+    # `<missing_payload>`. The validator must NOT exempt the top-level `<missing_payload>` just because
+    # a `config://` value names it: the unread section is a genuine unknown key, so the node must fail.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_static_missing_path_exception
+    assert "missing_payload" in caught_static_missing_path_exception
