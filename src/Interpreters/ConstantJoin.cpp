@@ -24,6 +24,19 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
+namespace
+{
+
+Block cutSingleRow(const Block & block, size_t row)
+{
+    Block result;
+    for (const auto & column : block)
+        result.insert({column.column->cut(row, 1), column.type, column.name});
+    return result;
+}
+
+}
+
 size_t ConstantJoin::StoredBlock::allocatedBytes() const
 {
     if (columns_info.columns.empty())
@@ -40,10 +53,11 @@ size_t ConstantJoin::StoredBlock::allocatedBytes() const
     return res * rows / column_rows;
 }
 
-ConstantJoin::ConstantJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_)
+ConstantJoin::ConstantJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_, bool any_take_last_row_)
     : table_join(std::move(table_join_))
     , right_sample_block(*right_sample_block_)
     , tmp_data(table_join->getTempDataOnDisk())
+    , any_take_last_row(any_take_last_row_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
     , log(getLogger("ConstantJoin"))
@@ -115,6 +129,12 @@ bool ConstantJoin::addBlockToJoin(const Block & source_block, size_t num_rows, b
     if (shrink_blocks)
         block_to_save = block_to_save.shrinkToFit();
 
+    if (rows)
+    {
+        if (any_take_last_row || !selected_right_columns_info)
+            selected_right_columns_info.emplace(cutSingleRow(block_to_save, any_take_last_row ? rows - 1 : 0).getColumns());
+    }
+
     size_t max_bytes_in_join = table_join->sizeLimits().max_bytes;
     size_t max_rows_in_join = table_join->sizeLimits().max_rows;
 
@@ -145,9 +165,6 @@ bool ConstantJoin::addBlockToJoin(const Block & source_block, size_t num_rows, b
     }
 
     doDebugAsserts();
-    if (rows && !first_right_columns_info)
-        first_right_columns_info.emplace(block_to_save.getColumns());
-
     right_blocks.emplace_back(ColumnsInfo(block_to_save.getColumns()), rows);
     auto & stored_block = right_blocks.back();
     allocated_size += stored_block.allocatedBytes();
@@ -305,45 +322,64 @@ bool ConstantJoin::constantPredicateMatches(const Block & left_block)
 namespace
 {
 
+enum class MatchingRowsOutput
+{
+    None,
+    All,
+    AllLeftRowsWithFirstRightRow,
+    AllLeftRowsWithLastRightRow,
+    FirstLeftRowWithAllRightRows,
+    FirstLeftRowWithFirstRightRow,
+    FirstLeftRowWithLastRightRow,
+};
+
 struct ConstantJoinOutputFlags
 {
-    bool output_left_rows = false;
-    bool output_right_rows = false;
-    bool use_defaults_for_left = false;
-    bool use_defaults_for_right = false;
-    bool output_only_first_right_row = false;
-
-    bool outputRowsAfterLeftBlocks() const
-    {
-        return output_right_rows && use_defaults_for_left;
-    }
+    MatchingRowsOutput output_matching_rows = MatchingRowsOutput::None;
+    bool output_non_matching_left_rows = false;
+    bool output_non_matching_right_rows = false;
 };
 
 ConstantJoinOutputFlags makeConstantJoinOutputFlags(
     JoinKind kind,
     JoinStrictness strictness,
     bool has_match,
-    bool has_matched_right_rows)
+    bool has_matched_right_rows,
+    bool any_take_last_row)
 {
     const bool is_right_semi = kind == JoinKind::Right && strictness == JoinStrictness::Semi;
     const bool is_right_anti = kind == JoinKind::Right && strictness == JoinStrictness::Anti;
 
-    const bool output_matching_rows = has_match
-        && (isCrossOrComma(kind) || strictness == JoinStrictness::All || strictness == JoinStrictness::Any);
-    const bool output_first_matching_right_row =
-        has_match && strictness == JoinStrictness::Semi && !is_right_semi;
-    const bool output_left_rows_with_default_right =
+    ConstantJoinOutputFlags flags;
+    if (has_match)
+    {
+        if (strictness == JoinStrictness::Any)
+        {
+            /// Intentionally mirrors `HashJoin`: `join_any_take_last_row` affects modes that select one right row,
+            /// but SQL `RIGHT ANY` joins the first matched left row with all right rows.
+            if (isRight(kind))
+                flags.output_matching_rows = MatchingRowsOutput::FirstLeftRowWithAllRightRows;
+            else if (isInner(kind) || isCrossOrComma(kind))
+                flags.output_matching_rows = any_take_last_row
+                    ? MatchingRowsOutput::FirstLeftRowWithLastRightRow
+                    : MatchingRowsOutput::FirstLeftRowWithFirstRightRow;
+            else
+                flags.output_matching_rows = any_take_last_row
+                    ? MatchingRowsOutput::AllLeftRowsWithLastRightRow
+                    : MatchingRowsOutput::AllLeftRowsWithFirstRightRow;
+        }
+        else if (strictness == JoinStrictness::Semi)
+            flags.output_matching_rows = is_right_semi ? MatchingRowsOutput::FirstLeftRowWithAllRightRows : MatchingRowsOutput::AllLeftRowsWithFirstRightRow;
+        else if (isCrossOrComma(kind) || strictness == JoinStrictness::All)
+            flags.output_matching_rows = MatchingRowsOutput::All;
+    }
+
+    flags.output_non_matching_left_rows =
         (strictness == JoinStrictness::Anti && !has_match && !is_right_anti)
         || (strictness != JoinStrictness::Semi && strictness != JoinStrictness::Anti && !has_match && isLeftOrFull(kind));
-    const bool output_right_rows_with_default_left = isRightOrFull(kind)
-        && ((is_right_semi && has_matched_right_rows) || (!is_right_semi && !has_matched_right_rows));
-
-    ConstantJoinOutputFlags flags;
-    flags.output_left_rows = output_matching_rows || output_first_matching_right_row || output_left_rows_with_default_right;
-    flags.output_right_rows = output_matching_rows || output_first_matching_right_row || output_right_rows_with_default_left;
-    flags.use_defaults_for_left = output_right_rows_with_default_left;
-    flags.use_defaults_for_right = output_left_rows_with_default_right;
-    flags.output_only_first_right_row = (strictness == JoinStrictness::Any && has_match) || output_first_matching_right_row;
+    flags.output_non_matching_right_rows = isRightOrFull(kind)
+        && !is_right_semi
+        && !has_matched_right_rows;
 
     return flags;
 }
@@ -357,8 +393,10 @@ bool ConstantJoin::alwaysReturnsEmptySet() const
 
     auto can_output = [&](bool has_match, bool has_matched_right_rows)
     {
-        const auto output_flags = makeConstantJoinOutputFlags(kind, strictness, has_match, has_matched_right_rows);
-        return output_flags.output_left_rows || (total_rows_to_join != 0 && output_flags.outputRowsAfterLeftBlocks());
+        const auto output_flags = makeConstantJoinOutputFlags(kind, strictness, has_match, has_matched_right_rows, any_take_last_row);
+        return output_flags.output_matching_rows != MatchingRowsOutput::None
+            || output_flags.output_non_matching_left_rows
+            || (total_rows_to_join != 0 && output_flags.output_non_matching_right_rows);
     };
 
     auto predicate_always_returns_empty_set = [&](bool predicate_matches)
@@ -403,7 +441,8 @@ public:
             join.table_join->kind(),
             join.table_join->strictness(),
             has_match_,
-            join.right_rows_matched.load()))
+            join.right_rows_matched.load(),
+            join.any_take_last_row))
     {
         left_positions.reserve(block.columns());
         for (size_t i = 0; i != block.columns(); ++i)
@@ -530,14 +569,14 @@ IJoinResult::JoinResultBlock ConstantJoinResult::next()
         update_bytes();
     };
 
-    auto process_first_right_row = [&]()
+    auto process_selected_right_row = [&](const std::optional<ColumnsInfo> & columns_info)
     {
-        if (!join.first_right_columns_info)
+        if (!columns_info)
             return;
-        process_right_block(*join.first_right_columns_info, 1);
+        process_right_block(*columns_info, 1);
     };
 
-    if (!output_flags.output_left_rows)
+    if (output_flags.output_matching_rows == MatchingRowsOutput::None && !output_flags.output_non_matching_left_rows)
         left_row = rows_total;
 
     for (; left_row < rows_total; ++left_row)
@@ -545,19 +584,29 @@ IJoinResult::JoinResultBlock ConstantJoinResult::next()
         if (enough_data())
             break;
 
-        if (output_flags.use_defaults_for_right)
+        if (output_flags.output_non_matching_left_rows)
         {
             process_default_right();
             continue;
         }
 
-        if (output_flags.output_only_first_right_row)
+        if (output_flags.output_matching_rows == MatchingRowsOutput::AllLeftRowsWithFirstRightRow
+            || output_flags.output_matching_rows == MatchingRowsOutput::FirstLeftRowWithFirstRightRow)
         {
-            process_first_right_row();
+            process_selected_right_row(join.selected_right_columns_info);
             continue;
         }
 
-        chassert(output_flags.output_right_rows && !output_flags.use_defaults_for_left);
+        if (output_flags.output_matching_rows == MatchingRowsOutput::AllLeftRowsWithLastRightRow
+            || output_flags.output_matching_rows == MatchingRowsOutput::FirstLeftRowWithLastRightRow)
+        {
+            process_selected_right_row(join.selected_right_columns_info);
+            continue;
+        }
+
+        chassert(
+            output_flags.output_matching_rows == MatchingRowsOutput::All
+            || output_flags.output_matching_rows == MatchingRowsOutput::FirstLeftRowWithAllRightRows);
         if (!right_block_it.has_value())
             right_block_it = join.right_blocks.begin();
 
@@ -742,7 +791,21 @@ JoinResultPtr ConstantJoin::joinBlock(Block block)
 {
     bool has_match = constantPredicateMatches(block) && total_rows_to_join != 0;
     if (has_match && block.rows())
-        right_rows_matched = true;
+    {
+        const auto kind = table_join->kind();
+        const auto strictness = table_join->strictness();
+        if ((kind == JoinKind::Right && (strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi))
+            || ((kind == JoinKind::Inner || isCrossOrComma(kind)) && strictness == JoinStrictness::Any))
+        {
+            bool expected = false;
+            if (right_rows_matched.compare_exchange_strong(expected, true))
+                block = cutSingleRow(block, 0);
+            else
+                block = block.cloneEmpty();
+        }
+        else
+            right_rows_matched = true;
+    }
 
     return std::make_unique<ConstantJoinResult>(*this, std::move(block), has_match);
 }
@@ -757,9 +820,10 @@ IBlocksStreamPtr ConstantJoin::getNonJoinedBlocks(const Block &, const Block & r
         kind,
         table_join->strictness(),
         /* has_match */ false,
-        right_rows_matched.load());
+        right_rows_matched.load(),
+        any_take_last_row);
 
-    if (!output_flags.outputRowsAfterLeftBlocks())
+    if (!output_flags.output_non_matching_right_rows)
         return {};
 
     auto filler = std::make_unique<ConstantJoinNotJoinedRightFiller>(*this, max_block_size);

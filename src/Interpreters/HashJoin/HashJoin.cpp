@@ -198,7 +198,7 @@ HashJoin::HashJoin(
     key_sizes.reserve(disjuncts_num);
 
     std::optional<Type> selected_join_method;
-    auto setJoinMethod = [&](Type current_join_method)
+    auto set_join_method = [&](Type current_join_method)
     {
         if (!selected_join_method)
             selected_join_method = current_join_method;
@@ -232,7 +232,7 @@ HashJoin::HashJoin(
             /// Therefore, add it back in such that it can be extracted appropriately from the full stored
             /// key_columns and key_sizes
             auto & asof_key_sizes = key_sizes.emplace_back();
-            setJoinMethod(chooseMethod(key_columns, asof_key_sizes, use_two_level_maps));
+            set_join_method(chooseMethod(key_columns, asof_key_sizes, use_two_level_maps));
             asof_key_sizes.push_back(asof_size);
         }
         else
@@ -244,7 +244,7 @@ HashJoin::HashJoin(
                 current_join_method = *low_cardinality_method;
                 LOG_TRACE(log, "Using a dictionary-aware hash map for the single LowCardinality join key");
             }
-            setJoinMethod(current_join_method);
+            set_join_method(current_join_method);
         }
     }
 

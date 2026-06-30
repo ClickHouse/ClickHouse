@@ -26,7 +26,7 @@ class TableJoin;
 class ConstantJoin final : public IJoin
 {
 public:
-    ConstantJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_);
+    ConstantJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_, bool any_take_last_row_ = false);
 
     std::string getName() const override { return "ConstantJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
@@ -41,7 +41,7 @@ public:
         SharedHeader,
         SharedHeader right_sample_block_) const override
     {
-        return std::make_shared<ConstantJoin>(table_join_, right_sample_block_);
+        return std::make_shared<ConstantJoin>(table_join_, right_sample_block_, any_take_last_row);
     }
 
     bool addBlockToJoin(const Block & source_block, bool check_limits) override;
@@ -80,8 +80,12 @@ private:
 
     enum class PredicateKind
     {
+        /// A predicate that always matches: explicit `CROSS`/comma join or a join without `ON`/`USING`.
         True,
+        /// The old analyzer can encode constant-false `JOIN ON` as no keys with an `ON` expression.
+        /// The new analyzer normally uses `CompareConstantKeys` with dummy constant keys for this case.
         False,
+        /// A constant `JOIN ON` represented as one equality between left and right dummy constant keys.
         CompareConstantKeys,
     };
 
@@ -100,7 +104,7 @@ private:
     size_t in_memory_rows = 0;
     size_t allocated_size = 0;
     bool have_compressed = false;
-    std::optional<ColumnsInfo> first_right_columns_info;
+    std::optional<ColumnsInfo> selected_right_columns_info;
 
     PredicateKind predicate_kind = PredicateKind::True;
     std::optional<String> left_constant_key_name;
@@ -108,6 +112,7 @@ private:
     std::optional<Field> right_constant_key_value;
     mutable std::atomic<Int32> constant_predicate_match = -1;
     mutable std::atomic_bool right_rows_matched = false;
+    const bool any_take_last_row;
 
     size_t max_joined_block_rows = 0;
     size_t max_joined_block_bytes = 0;

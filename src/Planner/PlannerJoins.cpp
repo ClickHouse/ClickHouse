@@ -1408,13 +1408,13 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
       * then the setting `cross_to_inner_join_rewrite` may be used, and unsupported cases will fail earlier.
       */
     if (isCrossOrComma(table_join->kind()))
-        return std::make_shared<ConstantJoin>(table_join, right_table_expression_header);
+        return std::make_shared<ConstantJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
 
     /** JOIN with constant.
       * Example: SELECT * FROM test_table AS t1 INNER JOIN test_table AS t2 ON 1;
       */
     if (table_join->isJoinWithConstant())
-        return std::make_shared<ConstantJoin>(table_join, right_table_expression_header);
+        return std::make_shared<ConstantJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
 
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
