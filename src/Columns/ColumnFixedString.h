@@ -230,6 +230,11 @@ public:
     std::string_view getRawData() const override { return {reinterpret_cast<const char *>(chars.data()), chars.size()}; }
     std::span<char> insertRawUninitialized(size_t count) override;
 
+    char * serializeValueIntoMemoryAsComparable(size_t row, char * memory) const override;
+    void batchSerializeComparableIntoMemory(PaddedPODArray<char *> & memories) const override;
+    void collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const override;
+    bool supportsComparableSerialization() const override { return true; }
+
     /// Specialized part of interface, not from IColumn.
     void insertString(const String & string) { insertData(string.c_str(), string.size()); }
     Chars & getChars() { return chars; }

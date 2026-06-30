@@ -1064,6 +1064,52 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
+ALWAYS_INLINE char * ColumnNullable::serializeValueIntoMemoryAsComparable(size_t n, char * memory) const
+{
+    const auto & null_map_data = getNullMapData();
+    /// NULL flag: 0x00 = non-NULL (sorts before), 0x01 = NULL (sorts after).
+    if (null_map_data[n])
+    {
+        *memory++ = 0x01;
+        return memory;
+    }
+    *memory++ = 0x00;
+    return nested_column->serializeValueIntoMemoryAsComparable(n, memory);
+}
+
+void ColumnNullable::batchSerializeComparableIntoMemory(
+    PaddedPODArray<char *> & memories) const
+{
+    const size_t num_rows = memories.size();
+    for (size_t i = 0; i < num_rows; ++i)
+        memories[i] = serializeValueIntoMemoryAsComparable(i, memories[i]);
+}
+
+void ColumnNullable::collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const
+{
+    const auto & null_map_data = getNullMapData();
+    size_t rows = size();
+    if (sizes.empty())
+        sizes.resize_fill(rows);
+    else if (sizes.size() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
+
+    /// 1 byte per row for null flag.
+    for (auto & sz : sizes)
+        sz += 1;
+
+    /// For non-null rows, accumulate nested column's per-row sizes.
+    /// First collect nested sizes, then add only for non-null rows.
+    PaddedPODArray<UInt64> nested_sizes;
+    nested_column->collectComparableSerializedRowSizes(nested_sizes);
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if (!null_map_data[i])
+            sizes[i] += nested_sizes[i];
+    }
+}
+
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
     if (isColumnNullable(*column))

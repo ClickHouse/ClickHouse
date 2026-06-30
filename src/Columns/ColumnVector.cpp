@@ -27,6 +27,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <bit>
+#include <cmath>
 #include <cstring>
 
 #include "config.h"
@@ -1413,6 +1414,134 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
     size_t start = data.size();
     data.resize(start + count);
     return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
+}
+
+template <typename T>
+ALWAYS_INLINE char * ColumnVector<T>::serializeValueIntoMemoryAsComparable(size_t n, char * memory) const
+{
+    if constexpr (std::is_integral_v<T>)
+    {
+        auto value = data[n];
+        if constexpr (std::endian::native == std::endian::little)
+            value = std::byteswap(value);
+        if constexpr (std::is_signed_v<T>)
+        {
+            /// Flip sign bit for correct unsigned byte ordering.
+            char * bytes = reinterpret_cast<char *>(&value);
+            bytes[0] ^= 0x80;
+        }
+        memcpy(memory, &value, sizeof(T));
+        return memory + sizeof(T);
+    }
+    else if constexpr (is_big_int_v<T>)
+    {
+        auto value = data[n];
+        constexpr unsigned item_count = sizeof(T) / sizeof(uint64_t);
+        for (unsigned i = 0; i < item_count; ++i)
+        {
+            uint64_t item = value.items[T::_impl::big(i)];
+            if constexpr (std::endian::native == std::endian::little)
+                item = std::byteswap(item);
+            memcpy(memory + i * sizeof(uint64_t), &item, sizeof(uint64_t));
+        }
+        if constexpr (is_signed_v<T>)
+            memory[0] ^= 0x80;
+        return memory + sizeof(T);
+    }
+    else if constexpr (std::is_same_v<T, Float32>)
+    {
+        UInt32 bits = std::bit_cast<UInt32>(data[n]);
+        if (std::isnan(data[n]))
+        {
+            /// NaN → all-0xff sentinel (sorts after ±Inf).
+            bits = 0xffffffffU;
+        }
+        else
+        {
+            /// Collapse -0.0 → +0.0.
+            if (bits == 0x80000000U)
+                bits = 0;
+            /// IEEE-754 total order: invert all bits when negative, else flip sign bit.
+            if (bits & 0x80000000U)
+                bits = ~bits;
+            else
+                bits ^= 0x80000000U;
+        }
+        if constexpr (std::endian::native == std::endian::little)
+            bits = std::byteswap(bits);
+        memcpy(memory, &bits, sizeof(UInt32));
+        return memory + sizeof(UInt32);
+    }
+    else if constexpr (std::is_same_v<T, Float64>)
+    {
+        UInt64 bits = std::bit_cast<UInt64>(data[n]);
+        if (std::isnan(data[n]))
+        {
+            bits = 0xffffffffffffffffULL;
+        }
+        else
+        {
+            if (bits == 0x8000000000000000ULL)
+                bits = 0;
+            if (bits & 0x8000000000000000ULL)
+                bits = ~bits;
+            else
+                bits ^= 0x8000000000000000ULL;
+        }
+        if constexpr (std::endian::native == std::endian::little)
+            bits = std::byteswap(bits);
+        memcpy(memory, &bits, sizeof(UInt64));
+        return memory + sizeof(UInt64);
+    }
+    else if constexpr (std::is_same_v<T, UUID>)
+    {
+        const auto & under = data[n].toUnderType();
+        constexpr unsigned item_count = sizeof(UInt128) / sizeof(uint64_t);
+        for (unsigned i = 0; i < item_count; ++i)
+        {
+            uint64_t item = under.items[UInt128::_impl::big(i)];
+            if constexpr (std::endian::native == std::endian::little)
+                item = std::byteswap(item);
+            memcpy(memory + i * sizeof(uint64_t), &item, sizeof(uint64_t));
+        }
+        return memory + sizeof(UInt128);
+    }
+    else
+    {
+        return IColumn::serializeValueIntoMemoryAsComparable(n, memory);
+    }
+}
+
+template <typename T>
+void ColumnVector<T>::batchSerializeComparableIntoMemory(
+    PaddedPODArray<char *> & memories) const
+{
+    const size_t num_rows = memories.size();
+    for (size_t i = 0; i < num_rows; ++i)
+        memories[i] = serializeValueIntoMemoryAsComparable(i, memories[i]);
+}
+
+template <typename T>
+void ColumnVector<T>::collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const
+{
+    size_t rows = data.size();
+    if (sizes.empty())
+        sizes.resize_fill(rows);
+    else if (sizes.size() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
+
+    for (auto & sz : sizes)
+        sz += sizeof(T);
+}
+
+template <typename T>
+bool ColumnVector<T>::supportsComparableSerialization() const
+{
+    return std::is_integral_v<T>
+        || is_big_int_v<T>
+        || std::is_same_v<T, Float32>
+        || std::is_same_v<T, Float64>
+        || std::is_same_v<T, UUID>;
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.

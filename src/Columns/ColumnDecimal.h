@@ -162,6 +162,11 @@ public:
 
     UInt32 getScale() const { return scale; }
 
+    char * serializeValueIntoMemoryAsComparable(size_t n, char * memory) const final;
+    void batchSerializeComparableIntoMemory(PaddedPODArray<char *> & memories) const final;
+    void collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const final;
+    bool supportsComparableSerialization() const final { return !std::is_same_v<T, Time64>; }
+
 protected:
     Container data;
     UInt32 scale;

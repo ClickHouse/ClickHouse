@@ -234,6 +234,23 @@ void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const 
     }
 }
 
+char * IColumn::serializeValueIntoMemoryAsComparable(size_t /* n */, char * /* memory */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemoryAsComparable is not supported for {}", getName());
+}
+
+void IColumn::collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & /* sizes */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method collectComparableSerializedRowSizes is not supported for {}", getName());
+}
+
+void IColumn::batchSerializeComparableIntoMemory(PaddedPODArray<char *> & memories) const
+{
+    const size_t num_rows = memories.size();
+    for (size_t i = 0; i < num_rows; ++i)
+        memories[i] = serializeValueIntoMemoryAsComparable(i, memories[i]);
+}
+
 void IColumn::updateAt(const IColumn &, size_t, size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAt is not supported for {}", getName());

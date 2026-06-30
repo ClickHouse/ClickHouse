@@ -363,6 +363,27 @@ public:
     /// in a single step. For more details, refer to the HashMethodSerialized implementation.
     virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
+    /// Serialize n-th element into memory in a byte-comparable format.
+    /// memcmp on the output preserves the same ordering as compareAt.
+    /// Returns pointer past the last written byte.
+    virtual char * serializeValueIntoMemoryAsComparable(size_t n, char * memory) const;
+
+    /// Batch serialize all rows in column-outer fashion.
+    /// memories[i] is advanced past the last written byte for row i.
+    /// Only one virtual dispatch per column; inner loop is tight.
+    /// Default implementation calls serializeValueIntoMemoryAsComparable in a loop.
+    virtual void batchSerializeComparableIntoMemory(PaddedPODArray<char *> & memories) const;
+
+    /// Accumulate per-row comparable serialized sizes into `sizes`.
+    /// sizes[i] += encoded_size_of_row(i). Used to pre-allocate a
+    /// contiguous buffer before column-outer serialization.
+    /// For fixed-width types, adds a constant per row.
+    /// For variable-width types (String), computes exact per-row overhead.
+    virtual void collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const;
+
+    /// Whether this column type supports comparable serialization.
+    virtual bool supportsComparableSerialization() const { return false; }
+
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Note that it needs to deal with user input
     virtual void deserializeAndInsertFromArena(ReadBuffer & in, const SerializationSettings * settings) = 0;
