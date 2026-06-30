@@ -23,8 +23,10 @@
 -- same IN result without the analyzer
 0
 1
--- conversion to a Variant prefers a lossless alternative, falling back to lossy only when needed
+-- the fall-through Variant conversion path prefers a lossless alternative, falling back to lossy only when needed
 [[9223372036854775807,-9223372036854775808],[0.9999,7]]
 [[0.1,0.2]]
+-- the exact-first preference does not extend to a directly-insertable field (pre-existing ColumnVariant order, unchanged)
+16777216	Float32
 -- INSERT ... VALUES with an inexact-float expression rounds to the nearest value, like the streaming literal path
 1

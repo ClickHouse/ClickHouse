@@ -804,6 +804,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (col->tryInsert(src))
             return src;
 
+        /// Note: the exact-alternative preference below applies only to fields that fall through to
+        /// the conversion loop. A field accepted by the two fast paths above keeps `ColumnVariant`'s
+        /// pre-existing alternative selection: the discriminator is chosen at column-insert time by
+        /// `ColumnVariant::tryInsert`, which scans variants in sorted order. So for a suspicious
+        /// `Variant(Float32, Float64)` (sorted: `Float32` before `Float64`), a `Float64` field that
+        /// is exact in `Float64` but inexact in `Float32` is still stored lossily in the earlier
+        /// `Float32` alternative. Making that selection lossless is a core `ColumnVariant::tryInsert`
+        /// change with a far broader blast radius and is intentionally out of the scope of this fix.
+        ///
         /// Otherwise try to convert field to any variant.
         /// Among the alternatives, prefer one that represents the value exactly: first try a
         /// strict (lossless) conversion across all variants, and only fall back to a lossy
