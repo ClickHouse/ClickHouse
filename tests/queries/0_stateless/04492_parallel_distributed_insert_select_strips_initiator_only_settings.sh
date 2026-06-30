@@ -50,9 +50,11 @@ check_no_leak() {
             countIf(Settings['input_format'] != '') AS leaked_input_format,
             countIf(Settings['output_format'] != '') AS leaked_output_format,
             countIf(Settings['default_format'] != '') AS leaked_default_format,
-            countIf(Settings['http_allow_database_as_path'] != '') AS leaked_http_allow_database_as_path,
-            countIf(Settings['http_allow_table_as_file'] != '') AS leaked_http_allow_table_as_file,
-            countIf(Settings['http_allow_filters_as_path'] != '') AS leaked_http_allow_filters_as_path,
+            -- these 3 are forced to '1' by the shard default profile (http_paths.xml); a leak forwards
+            -- the initiator explicit '0' and overrides that, so '0' (not mere presence) is the leak signal
+            countIf(Settings['http_allow_database_as_path'] = '0') AS leaked_http_allow_database_as_path,
+            countIf(Settings['http_allow_table_as_file'] = '0') AS leaked_http_allow_table_as_file,
+            countIf(Settings['http_allow_filters_as_path'] = '0') AS leaked_http_allow_filters_as_path,
             countIf(Settings['http_allow_filters_as_unrecognized_url_parameters'] != '') AS leaked_http_filters_as_url_params,
             countIf(Settings['implicit_table_at_top_level'] != '') AS leaked_implicit_table_at_top_level
         FROM system.query_log
@@ -70,9 +72,18 @@ check_no_leak() {
 # does not reach the shards. (`offset` / `limit` and `compression` are omitted: the former are
 # construction settings that materialize into the AST rather than ride along as plain settings, the
 # latter is rejected in an in-query `SETTINGS` clause — `04424` covers them for the sink path.)
+#
+# `http_allow_database_as_path` / `http_allow_table_as_file` / `http_allow_filters_as_path` are
+# force-enabled to `1` in the shard's own `<default>` profile (tests/config/users.d/http_paths.xml),
+# so the shard-side query carries them via that profile regardless of any leak — "is the setting
+# present" cannot distinguish a leak from the profile baseline. We therefore set them to `0` here (a
+# real change, since the profile baseline is `1`) and assert above that the shard did NOT receive
+# `'0'`: a working strip leaves the shard at its profile value `1`, while a regression that drops the
+# strip forwards `0` and overrides the profile. The remaining settings are in no profile, so the
+# plain "present at all" check stays valid for them.
 LEAK_SETTINGS="parallel_distributed_insert_select = 2, prefer_localhost_replica = 0, log_queries = 1, \
     input_format = 'CSV', output_format = 'CSV', default_format = 'CSV', \
-    http_allow_database_as_path = 1, http_allow_table_as_file = 1, http_allow_filters_as_path = 1, \
+    http_allow_database_as_path = 0, http_allow_table_as_file = 0, http_allow_filters_as_path = 0, \
     http_allow_filters_as_unrecognized_url_parameters = 1, implicit_table_at_top_level = 'src'"
 
 echo "-- distributedWriteBetweenDistributedTables (Distributed source)"
