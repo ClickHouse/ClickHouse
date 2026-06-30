@@ -103,9 +103,11 @@ def test_orc_split_skip_state_is_query_local(started_cluster):
     # excluded by the earlier predicate. The fix carries the skip set per query instead.
     #
     # `test.demo_orc` has two ORC files in the same partition with disjoint `score` ranges
-    # ([1, 2] and [10, 11]). With `enable_orc_stripe_minmax_index = 1` (and file-level minmax
-    # index off, which is the default), a filter on the non-partition `score` column prunes one
-    # file's stripe - a non-empty per-query split-skip set - while keeping the other. The split
+    # ([1, 2] and [10, 11]). The table enables stripe-level pruning (`enable_orc_stripe_minmax_index = 1`)
+    # and disables file-level pruning (`enable_orc_file_minmax_index = 0`, which is on by default): with
+    # file-level pruning on, a filter on `score` would discard a whole file before stripe pruning runs, so
+    # no per-query split-skip set is ever built. With it off, a filter on the non-partition `score` column
+    # prunes one file's stripe - a non-empty per-query split-skip set - while keeping the other. The split
     # filtering only matters here because the ORC reader honours `orc.skip_stripes`.
     node = started_cluster.instances["h0_0_0"]
 
@@ -114,7 +116,7 @@ def test_orc_split_skip_state_is_query_local(started_cluster):
         """
         CREATE TABLE default.hive_demo_orc (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String))
         ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo_orc') PARTITION BY(day)
-        SETTINGS enable_orc_stripe_minmax_index = 1
+        SETTINGS enable_orc_stripe_minmax_index = 1, enable_orc_file_minmax_index = 0
         """
     )
 
