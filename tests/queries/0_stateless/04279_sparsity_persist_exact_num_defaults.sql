@@ -42,18 +42,18 @@ SELECT 'parts:', count() FROM system.parts
 WHERE table = 't_persist' AND database = currentDatabase() AND active;
 
 -- 1. Freshly written parts.
-SELECT 'fresh x!=0',    trimLeft(explain) FROM (EXPLAIN SELECT count() FROM t_persist WHERE x != 0      SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
-SELECT 'fresh isNull',  trimLeft(explain) FROM (EXPLAIN SELECT count() FROM t_persist WHERE n IS NULL    SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
-SELECT 'fresh isNot',   trimLeft(explain) FROM (EXPLAIN SELECT count() FROM t_persist WHERE n IS NOT NULL SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
+SELECT 'fresh x!=0',    extract(explain, '[A-Za-z].*') FROM (EXPLAIN SELECT count() FROM t_persist WHERE x != 0      SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
+SELECT 'fresh isNull',  extract(explain, '[A-Za-z].*') FROM (EXPLAIN SELECT count() FROM t_persist WHERE n IS NULL    SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
+SELECT 'fresh isNot',   extract(explain, '[A-Za-z].*') FROM (EXPLAIN SELECT count() FROM t_persist WHERE n IS NOT NULL SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
 
 -- 2. After DETACH and ATTACH parts are reloaded from disk. The optimization can only
 -- still fire if the flag came back from `serialization.json`.
 DETACH TABLE t_persist;
 ATTACH TABLE t_persist;
 
-SELECT 'reload x!=0',   trimLeft(explain) FROM (EXPLAIN SELECT count() FROM t_persist WHERE x != 0      SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
-SELECT 'reload isNull', trimLeft(explain) FROM (EXPLAIN SELECT count() FROM t_persist WHERE n IS NULL    SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
-SELECT 'reload isNot',  trimLeft(explain) FROM (EXPLAIN SELECT count() FROM t_persist WHERE n IS NOT NULL SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
+SELECT 'reload x!=0',   extract(explain, '[A-Za-z].*') FROM (EXPLAIN SELECT count() FROM t_persist WHERE x != 0      SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
+SELECT 'reload isNull', extract(explain, '[A-Za-z].*') FROM (EXPLAIN SELECT count() FROM t_persist WHERE n IS NULL    SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
+SELECT 'reload isNot',  extract(explain, '[A-Za-z].*') FROM (EXPLAIN SELECT count() FROM t_persist WHERE n IS NOT NULL SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
 
 -- 3. OPTIMIZE FINAL merges the two parts. The merged stats must keep the flag set
 -- when every input part has it set.
@@ -63,9 +63,9 @@ OPTIMIZE TABLE t_persist FINAL;
 SELECT 'parts after merge:', count() FROM system.parts
 WHERE table = 't_persist' AND database = currentDatabase() AND active;
 
-SELECT 'merged x!=0',   trimLeft(explain) FROM (EXPLAIN SELECT count() FROM t_persist WHERE x != 0      SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
-SELECT 'merged isNull', trimLeft(explain) FROM (EXPLAIN SELECT count() FROM t_persist WHERE n IS NULL    SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
-SELECT 'merged isNot',  trimLeft(explain) FROM (EXPLAIN SELECT count() FROM t_persist WHERE n IS NOT NULL SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
+SELECT 'merged x!=0',   extract(explain, '[A-Za-z].*') FROM (EXPLAIN SELECT count() FROM t_persist WHERE x != 0      SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
+SELECT 'merged isNull', extract(explain, '[A-Za-z].*') FROM (EXPLAIN SELECT count() FROM t_persist WHERE n IS NULL    SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
+SELECT 'merged isNot',  extract(explain, '[A-Za-z].*') FROM (EXPLAIN SELECT count() FROM t_persist WHERE n IS NOT NULL SETTINGS optimize_trivial_count_with_sparsity_filter = 1) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
 
 -- 4. Granule level pruning (`Sparsity` step) on the merged part.
 SELECT 'planning x!=0',   trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_persist WHERE x != 0      SETTINGS use_sparsity_info_for_pruning = 'planning', optimize_trivial_count_with_sparsity_filter = 0) WHERE trimLeft(explain) LIKE 'Sparsity%';
@@ -92,7 +92,7 @@ SELECT 'conflict trivial m.null:'   , count() FROM t_null_conflict WHERE `m.null
 
 -- `WHERE m.null` must not produce an `Optimized trivial count...` step in the plan.
 -- The empty selection here means the rewrite did not fire.
-SELECT 'conflict plan m.null:', trimLeft(explain) FROM (
+SELECT 'conflict plan m.null:', extract(explain, '[A-Za-z].*') FROM (
     EXPLAIN SELECT count() FROM t_null_conflict WHERE `m.null`
     SETTINGS optimize_trivial_count_with_sparsity_filter = 1
 ) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';

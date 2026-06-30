@@ -51,8 +51,8 @@ SELECT trimLeft(explain) FROM (
   EXPLAIN indexes = 1 SELECT id FROM t_multi_conjunct WHERE a != 0 AND b != 0
   SETTINGS use_sparsity_info_for_pruning = 'planning'
 ) WHERE trimLeft(explain) LIKE 'Sparsity%'
-   OR trimLeft(explain) LIKE 'Parts: %'
-   OR trimLeft(explain) LIKE 'Granules: %'
+   OR trimLeft(explain) LIKE 'Parts: %/%'
+   OR trimLeft(explain) LIKE 'Granules: %/%'
    OR trimLeft(explain) IN ('a', 'b');
 
 -- A conjunct that doesn't classify (e.g. `id < 1000`) doesn't disable the others.

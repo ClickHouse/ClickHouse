@@ -52,10 +52,9 @@ SELECT 'u256_scan',    count() FROM t_sparse_bigint WHERE u256 != 0
     SETTINGS optimize_trivial_count_with_sparsity_filter = 0, use_sparsity_info_for_pruning = 'off';
 
 -- Confirm the rewrite physically fires (not the scan path).
-SELECT replaceRegexpAll(explain, '\\d+', '#') AS plan
-FROM (
+SELECT 'i256_plan', extract(explain, '[A-Za-z].*') FROM (
     EXPLAIN SELECT count() FROM t_sparse_bigint WHERE i256 = 0
     SETTINGS optimize_trivial_count_with_sparsity_filter = 1
-);
+) WHERE explain LIKE '%Optimized trivial count with sparsity filter%';
 
 DROP TABLE t_sparse_bigint;

@@ -54,8 +54,8 @@ SELECT trimLeft(explain) FROM (
   EXPLAIN indexes = 1 SELECT id FROM t_granule_prune WHERE x != 0
   SETTINGS use_sparsity_info_for_pruning = 'planning'
 ) WHERE trimLeft(explain) LIKE 'Sparsity%'
-   OR trimLeft(explain) LIKE 'Parts: %'
-   OR trimLeft(explain) LIKE 'Granules: %'
+   OR trimLeft(explain) LIKE 'Parts: %/%'
+   OR trimLeft(explain) LIKE 'Granules: %/%'
    OR trimLeft(explain) LIKE 'x';
 
 DROP TABLE t_granule_prune;
