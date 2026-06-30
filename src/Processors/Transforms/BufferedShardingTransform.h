@@ -1,20 +1,21 @@
 #pragma once
 
 #include <deque>
-#include <functional>
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+#include <Processors/Transforms/ChunkRouting.h>
 
 namespace DB
 {
 
 /// Shards input rows to N output ports using a caller-supplied selector.
-/// For every input chunk the selector decides the destination port of each row, and every column
-/// is physically split with IColumn::scatter so each output chunk holds only the rows of its port.
+/// For every input chunk the selector returns a routing: either the whole chunk to one output (forwarded
+/// as-is), or a per-row destination, in which case every column is physically split with IColumn::scatter
+/// so each output chunk holds only the rows of its port.
 ///
 /// Output ports can only accept one chunk at a time (canPush/push). But one input chunk produces up
 /// to N output chunks (one per port), and downstream consume them at different rates. Without
@@ -27,9 +28,8 @@ namespace DB
 class BufferedShardingTransform : public IProcessor
 {
 public:
-    /// Builds the per-row destination port for an input chunk. It must return a Selector of size
-    /// num_rows with every value in [0, num_outputs); columns are the input chunk's columns.
-    using SelectorBuilder = std::function<IColumn::Selector(const Columns & columns)>;
+    /// Builds the routing (see `ChunkRouting`) for one input chunk; `columns` are the input chunk's columns.
+    using SelectorBuilder = ChunkRoutingSelector;
 
     BufferedShardingTransform(SharedHeader header, size_t num_outputs_, SelectorBuilder selector_builder_);
 

@@ -15,10 +15,11 @@ namespace DB
 namespace
 {
 
-/// Detects the frequent keys in one input stream while it is still warming up. As the rows stream past we
-/// count each key by a fast 32-bit hash, and once a key's running count crosses the threshold we promote it
-/// into the shared hot set, taking the actual key values from the current row. Once the warmup window has
-/// passed we stop counting and free the memory.
+/// Analyzes one input stream while it is still warming up. It does two jobs over the same window: it
+/// detects the frequent ("hot") keys — counting each key by a fast 32-bit hash and promoting a key into the
+/// shared hot set once its running count crosses the threshold — and, from the distinct-key count it
+/// gathered, it decides the low-cardinality fallback. Once the window passes we stop counting and free the
+/// memory.
 ///
 /// Each input stream has its own detector, so the counting is lock-free; only promotion reaches into the
 /// shared `HotKeyState`, and that path is guarded by its mutex.
@@ -28,8 +29,14 @@ public:
     explicit WarmupDetector(size_t num_cold)
         : tau(computeTau(num_cold))
         , warmup_rows(computeWarmupRows(num_cold))
+        , fallback_max_distinct(computeFallbackMaxDistinct(warmup_rows, num_cold))
     {
     }
+
+    /// Whether the warmup decided the key cardinality is too low to be worth scattering, so the input
+    /// selector should route every row to the merge path instead. Set once when the window closes; read
+    /// lock-free by the selector on the same thread.
+    bool shouldRouteAllToMerge() const { return route_all_to_merge; }
 
     void observe(const PaddedPODArray<UInt32> & hashes, const Columns & key_columns, size_t num_rows, HotKeyState & state)
     {
@@ -63,6 +70,13 @@ public:
 
             if (total_rows >= warmup_rows)
             {
+                /// Decide the low-cardinality fallback from the distinct-key count gathered so far, before
+                /// the counter table is freed. Sharding makes every row pay a scatter copy to avoid a merge
+                /// that costs about `distinct_keys * num_cold` key-merges; when that merge is cheaper than
+                /// the rows we would copy, scattering is not worth it and we route everything to the merge
+                /// path.
+                route_all_to_merge = counts.size() < fallback_max_distinct;
+
                 done = true;
                 counts = HashMap<UInt32, UInt32>{}; // The window has closed, so we free the counter table.
                 promoted_local.clear();
@@ -87,6 +101,11 @@ private:
     /// on what would just be noise in its frequency estimate.
     static constexpr UInt64 MIN_HOT_COUNT = 512;
 
+    /// The low-cardinality fallback threshold (κ in the cost model). We fall back to the hot path when the
+    /// merge sharding avoids, about `distinct_keys * num_cold` key-merges, is cheaper than κ times the rows
+    /// the scatter would copy.
+    static constexpr double FALLBACK_MERGE_SCATTER_RATIO = 1.5;
+
     /// The length of the warmup window adapts to the shard count. A key right at the hot threshold appears
     /// in only a fraction (R - 1) / (S - 1) of the rows, and we need to see at least MIN_HOT_COUNT of its
     /// rows before we promote it. At that frequency, seeing MIN_HOT_COUNT of them takes about
@@ -108,15 +127,25 @@ private:
         return std::clamp<UInt64>(static_cast<UInt64>(rows), WARMUP_ROWS_MIN, WARMUP_ROWS_MAX);
     }
 
+    static UInt64 computeFallbackMaxDistinct(UInt64 warmup_rows, size_t num_cold)
+    {
+        return std::max<UInt64>(
+            1, static_cast<UInt64>(FALLBACK_MERGE_SCATTER_RATIO * static_cast<double>(warmup_rows) / static_cast<double>(num_cold)));
+    }
+
     /// The fraction of the rows a key must reach to be promoted.
     const double tau;
 
     const UInt64 warmup_rows;
 
+    /// The cardinality threshold for the low-cardinality fallback (see `computeFallbackMaxDistinct`).
+    const UInt64 fallback_max_distinct;
+
     HashMap<UInt32, UInt32> counts;
     std::unordered_set<UInt32> promoted_local;
     UInt64 total_rows = 0;
     bool done = false;
+    bool route_all_to_merge = false;
 };
 
 Columns gatherKeyColumns(const Columns & columns, const ColumnNumbers & key_positions)
@@ -148,16 +177,25 @@ void mapHashToColdShards(const PaddedPODArray<UInt32> & hash, size_t num_cold, I
 
 }
 
-std::function<IColumn::Selector(const Columns &)>
-makeInputHotColdSelector(HotKeyStatePtr state, ColumnNumbers key_positions, size_t num_cold_shards)
+ChunkRoutingSelector makeInputHotColdSelector(HotKeyStatePtr state, ColumnNumbers key_positions, size_t num_cold_shards, size_t merge_output)
 {
     auto detector = std::make_shared<WarmupDetector>(num_cold_shards);
 
-    return [state, positions = std::move(key_positions), num_cold = num_cold_shards, detector](const Columns & columns) -> IColumn::Selector
+    return [state, positions = std::move(key_positions), num_cold = num_cold_shards, merge_output, detector](
+               const Columns & columns) -> ChunkRouting
     {
         const size_t num_rows = columns.empty() ? 0 : columns.front()->size();
         if (num_rows == 0)
             return {};
+
+        /// The warmup found the key cardinality too low to be worth scattering: route the whole chunk to the
+        /// merge path (port `merge_output`).
+        if (detector->shouldRouteAllToMerge())
+        {
+            ChunkRouting routing;
+            routing.whole_chunk_output = merge_output;
+            return routing;
+        }
 
         const PaddedPODArray<UInt32> hash = computeKeyHash(columns, positions, num_rows);
 
@@ -167,22 +205,24 @@ makeInputHotColdSelector(HotKeyStatePtr state, ColumnNumbers key_positions, size
         IColumn::Selector selector(num_rows);
         mapHashToColdShards(hash, num_cold, selector);
 
-        /// Now override the hot rows to go to the hot shard (the last port).
+        /// Now override the hot rows to go to the merge path (the `merge_output` port).
         if (auto mask_column = state->buildHotMask(key_columns))
         {
             const auto & mask = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
             for (size_t i = 0; i < num_rows; ++i)
                 if (mask[i])
-                    selector[i] = num_cold;
+                    selector[i] = merge_output;
         }
 
-        return selector;
+        ChunkRouting routing;
+        routing.selector = std::move(selector);
+        return routing;
     };
 }
 
-std::function<IColumn::Selector(const Columns &)> makeColdHashSelector(ColumnNumbers key_positions, size_t num_cold_shards)
+ChunkRoutingSelector makeColdHashSelector(ColumnNumbers key_positions, size_t num_cold_shards)
 {
-    return [positions = std::move(key_positions), num_cold = num_cold_shards](const Columns & columns) -> IColumn::Selector
+    return [positions = std::move(key_positions), num_cold = num_cold_shards](const Columns & columns) -> ChunkRouting
     {
         const size_t num_rows = columns.empty() ? 0 : columns.front()->size();
         if (num_rows == 0)
@@ -192,7 +232,10 @@ std::function<IColumn::Selector(const Columns &)> makeColdHashSelector(ColumnNum
 
         IColumn::Selector selector(num_rows);
         mapHashToColdShards(hash, num_cold, selector);
-        return selector;
+
+        ChunkRouting routing;
+        routing.selector = std::move(selector);
+        return routing;
     };
 }
 

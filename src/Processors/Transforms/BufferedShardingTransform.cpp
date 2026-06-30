@@ -1,7 +1,5 @@
-#include <algorithm>
-
-#include <Columns/IColumn.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/IColumn.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardingTransform.h>
 
@@ -136,33 +134,28 @@ void BufferedShardingTransform::generateOutputChunks()
     for (auto & column : columns)
         column = recursiveRemoveSparse(column);
 
-    /// The caller-supplied selector decides the destination port of every row.
-    const IColumn::Selector selector = selector_builder(columns);
-
     const size_t num_rows = columns.front()->size();
 
     const auto & chunk_infos = pending_input_chunk.getChunkInfos();
 
-    /// Fast path: when every row goes to the same output, forward the whole chunk without the
-    /// O(rows * columns) split that would otherwise copy every (possibly large) aggregate-state
-    /// column. This is the common case for the residue divert — the hot set is empty, or a chunk
-    /// holds only cold keys — so nothing actually needs to be split off.
-    if (num_rows != 0)
+    /// The caller-supplied selector decides where the chunk's rows go.
+    const ChunkRouting routing = selector_builder(columns);
+
+    if (routing.whole_chunk_output)
     {
-        const auto only_output = selector.front();
-        if (std::all_of(selector.begin(), selector.end(), [only_output](auto bucket) { return bucket == only_output; }))
+        const size_t only_output = *routing.whole_chunk_output;
+        auto output_it = outputs.begin();
+        std::advance(output_it, only_output);
+        if (!output_it->isFinished())
         {
-            auto output_it = outputs.begin();
-            std::advance(output_it, only_output);
-            if (!output_it->isFinished())
-            {
-                Chunk chunk(std::move(columns), num_rows);
-                chunk.setChunkInfos(chunk_infos.clone());
-                output_queues[only_output].push_back(std::move(chunk));
-            }
-            return;
+            Chunk chunk(std::move(columns), num_rows);
+            chunk.setChunkInfos(chunk_infos.clone());
+            output_queues[only_output].push_back(std::move(chunk));
         }
+        return;
     }
+
+    const IColumn::Selector & selector = routing.selector;
 
     /// Physically split every column into N per-output mutable columns.
     /// Skip outputs that received no rows.
