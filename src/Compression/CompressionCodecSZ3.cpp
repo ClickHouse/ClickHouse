@@ -235,11 +235,46 @@ template <typename T>
 static void decompressSZ3(const char * source, UInt32 source_size, char * dest, size_t expected_num, UInt32 uncompressed_size)
 {
     SZ3::Config config;
+
+    /// Parse and validate the configuration BEFORE decompressing. SZ3 reads the compression algorithm,
+    /// dimensions and the element count from the (untrusted) compressed data and dispatches on them. A crafted
+    /// block could otherwise select an algorithm/encoder that this codec never produces and whose decoder is
+    /// not hardened against corrupted input (e.g. ALGO_BIOMD/ALGO_BIOMDXTC, the OpenMP path), or claim a huge
+    /// element count to force a large allocation. We only ever write the interpolation/Lorenzo algorithms in a
+    /// single-stream layout, so reject anything else here.
+    try
+    {
+        SZ_load_config(config, source, source_size);
+    }
+    catch (const std::exception & e)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot parse SZ3 configuration: {}", e.what());
+    }
+
+    /// We only ever compress with the interpolation/Lorenzo algorithms, but SZ3 transparently falls back to a
+    /// plain lossless (zstd) block for data that does not compress well (e.g. small or incompressible columns),
+    /// so ALGO_LOSSLESS is also produced by this codec and must be accepted. Everything else (ALGO_NOPRED,
+    /// ALGO_BIOMD, ALGO_BIOMDXTC) is never written here and routes into decoders that are not hardened against
+    /// corrupted input, so reject it before dispatch.
+    if (config.cmprAlgo != SZ3::ALGO_LORENZO_REG && config.cmprAlgo != SZ3::ALGO_INTERP_LORENZO
+        && config.cmprAlgo != SZ3::ALGO_INTERP && config.cmprAlgo != SZ3::ALGO_LOSSLESS)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA, "SZ3 compressed data requests an unsupported algorithm {}", static_cast<int>(config.cmprAlgo));
+
+    if (config.openmp)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "SZ3 compressed data requests the OpenMP path, which is not supported");
+
+    /// The element count comes from untrusted data; require it to match the trusted uncompressed size before
+    /// decompression so a corrupted count can not drive a large allocation or a buffer mismatch.
+    if (config.num != expected_num)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA, "SZ3 element count {} does not match the expected {}", config.num, expected_num);
+
     T * decompressed = nullptr;
     try
     {
-        /// `decompressed == nullptr` makes SZ3 allocate the output buffer itself, sized to the number
-        /// of elements stored in the compressed data, so a corrupted element count can not overflow `dest`.
+        /// `decompressed == nullptr` makes SZ3 allocate the output buffer itself, sized to the (now validated)
+        /// number of elements, so it can not overflow `dest`.
         SZ_decompress<T>(config, source, source_size, decompressed);
     }
     catch (const std::exception & e)
@@ -249,12 +284,6 @@ static void decompressSZ3(const char * source, UInt32 source_size, char * dest, 
     }
 
     std::unique_ptr<T[]> holder(decompressed);
-
-    /// The number of elements comes from untrusted data; it must match the trusted uncompressed size exactly.
-    if (config.num != expected_num)
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "SZ3 decompressed element count {} does not match the expected {}", config.num, expected_num);
 
     memcpy(dest, decompressed, uncompressed_size);
 }
