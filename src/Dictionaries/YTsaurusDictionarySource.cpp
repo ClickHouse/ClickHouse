@@ -90,7 +90,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
                 configuration->ytsaurus_columns_description = config.getString(config_prefix + ".ytsaurus_columns_description");
         }
 
-        return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), sample_block);
+        return std::make_unique<YTsaurusDictionarySource>(context, dict_struct, std::move(configuration), sample_block);
     };
 
     #else
@@ -124,7 +124,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 static const UInt64 max_block_size = 8192;
 
 
-YTsarususDictionarySource::YTsarususDictionarySource(
+YTsaurusDictionarySource::YTsaurusDictionarySource(
     ContextPtr context_,
     const DictionaryStructure & dict_struct_,
     std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
@@ -143,14 +143,14 @@ YTsarususDictionarySource::YTsarususDictionarySource(
 {
 }
 
-YTsarususDictionarySource::YTsarususDictionarySource(const YTsarususDictionarySource & other)
-    : YTsarususDictionarySource{other.context, other.dict_struct, other.configuration, *other.sample_block}
+YTsaurusDictionarySource::YTsaurusDictionarySource(const YTsaurusDictionarySource & other)
+    : YTsaurusDictionarySource{other.context, other.dict_struct, other.configuration, *other.sample_block}
 {
 }
 
-YTsarususDictionarySource::~YTsarususDictionarySource() = default;
+YTsaurusDictionarySource::~YTsaurusDictionarySource() = default;
 
-BlockIO YTsarususDictionarySource::loadAll()
+BlockIO YTsaurusDictionarySource::loadAll()
 {
     BlockIO io;
     io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
@@ -167,7 +167,7 @@ BlockIO YTsarususDictionarySource::loadAll()
     return io;
 }
 
-BlockIO YTsarususDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
+BlockIO YTsaurusDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -190,7 +190,7 @@ BlockIO YTsarususDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64
     return io;
 }
 
-BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
+BlockIO YTsaurusDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     if (!supportsSelectiveLoad())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't make selective update of YTsaurus dictionary because data source doesn't supports lookups.");
@@ -216,13 +216,13 @@ BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const V
     return io;
 }
 
-bool YTsarususDictionarySource::supportsSelectiveLoad() const
+bool YTsaurusDictionarySource::supportsSelectiveLoad() const
 {
     return client->getNodeType(configuration->cypress_path) == YTsaurusNodeType::DYNAMIC_TABLE;
 }
 
 
-std::string YTsarususDictionarySource::toString() const
+std::string YTsaurusDictionarySource::toString() const
 {
     return fmt::format("YTsaurus: {}", configuration->cypress_path);
 }
