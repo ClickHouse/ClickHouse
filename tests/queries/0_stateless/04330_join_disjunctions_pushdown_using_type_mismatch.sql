@@ -81,13 +81,17 @@ FORMAT TSV;
 -- one JOIN side; a statically-dead if/multiIf branch that references an unknown identifier
 -- throws UNKNOWN_IDENTIFIER, which the constant-fold path swallows. The push was not undone
 -- on that throw, so a later identifier lookup dereferenced a dangling pointer. Must not crash.
+-- Note: master phrases the dead branch with multiIf, but the analysis-time multiIf
+-- constant-branch folding it relies on is not present in 26.5. The if special-case (which
+-- swallows the dead branch identically) and the dangling-pointer crash path the fix guards
+-- both exist here, so the regression is expressed with if instead.
 SELECT '--- analyzer no crash ---';
 SELECT count() > 0
 FROM viewExplain('EXPLAIN', 'actions = 1', (
     SELECT DISTINCT l.x, r.y
     FROM l04330 AS l
     SEMI LEFT JOIN r04330 AS r USING (a)
-    WHERE xor(toLowCardinality(100), '1' = l.x, multiIf(toString(NULL),
+    WHERE xor(toLowCardinality(100), '1' = l.x, if(toString(NULL),
         plus(if(and(divide('9', NULL), toString(NULL, NULL)),
             isNull(toFixedString('9', t04330.x, 20)), notEquals('9', r.s)), 0),
         and(toString(NULL, NULL), divide(NULL, ';'))))
