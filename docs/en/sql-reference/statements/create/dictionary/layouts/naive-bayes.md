@@ -17,7 +17,15 @@ You query the dictionary with the [`naiveBayesClassifier`](/sql-reference/functi
 
 **Training (at load time).** Each source row is a `(n-gram, class, count)` observation. When the dictionary loads, the rows are compiled once into the model. Duplicate `(n-gram, class)` rows are summed, and rows with `count = 0` are ignored.
 
-**Classifying (at query time).** To classify a string, the model splits it into n-grams according to `mode` and `n` (see [Tokenization modes](#tokenization-modes)), then scores each class by combining the class prior with how often the input's n-grams were seen in that class. The `alpha` smoothing factor keeps an n-gram that was seen in training but not in a given class from ruling that class out. An n-gram that was not seen in training at all is ignored — it is not part of the model's vocabulary, so it contributes to no class (as in standard multinomial Naive Bayes). The class with the highest score is the prediction; the probability functions turn the scores into probabilities that sum to `1.0`. These are normalized model posteriors and, like most Naive Bayes probabilities, may be poorly calibrated.
+**Classifying (at query time).** To classify a string, the model:
+
+1. splits it into n-grams according to `mode` and `n` (see [Tokenization modes](#tokenization-modes));
+2. scores each class by combining the class prior with how often the input's n-grams were seen in that class;
+3. predicts the class with the highest score.
+
+Two things shape the per-class score. The `alpha` smoothing factor keeps an n-gram that was seen in training but not in a given class from ruling that class out. An n-gram that was not seen in training at all is ignored: it is not part of the model's vocabulary, so it contributes to no class, as in standard multinomial Naive Bayes.
+
+The probability functions `naiveBayesClassifierWithProb` and `naiveBayesClassifierWithAllProbs` turn the scores into probabilities that sum to `1.0`. These are normalized model posteriors and, like most Naive Bayes probabilities, may be poorly calibrated.
 
 For example, in the [quickstart](#quickstart) below `'good great love'` is classified as `0` because each of those words was seen far more often in class `0`'s counts than in class `1`'s, so class `0` scores much higher.
 
@@ -160,12 +168,23 @@ FROM (SELECT class_id, count() / sum(count()) OVER () AS frac FROM docs GROUP BY
 | `mode` | Tokenization method: `byte`, `codepoint`, or `token`. See [Tokenization modes](#tokenization-modes). | `'token'` | *Required* |
 | `alpha` | Additive (Lidstone) smoothing for n-gram likelihoods; `alpha = 1` is Laplace smoothing (must be finite and `> 0`). | `0.5` | `1.0` |
 | `priors_mode` | How class priors are determined: `uniform`, `proportional`, or `explicit`. See [Prior modes](#prior-modes). | `'uniform'` | `'proportional'` |
-| `priors` | Explicit per-class priors; required only when `priors_mode` is `explicit`. Must sum to `1.0`. | `'0=0.6,1=0.4'` | — |
+| `priors` | Explicit per-class priors. Valid only with `priors_mode 'explicit'`, where it is required; supplying it in any other mode is an error. Must sum to `1.0`. | `'0=0.6,1=0.4'` | — |
 | `store_source` | Retain the source rows so `SELECT * FROM dictionary` works. Roughly doubles memory. | `1` | `0` |
 | `start_token` | Boundary token prepended `(n-1)` times to the input. See [Boundary tokens](#boundary-tokens-padding). | `'0x01'` / `'<s>'` | — (no padding) |
 | `end_token` | Boundary token appended `(n-1)` times to the input. | `'0xFF'` / `'</s>'` | — (no padding) |
 
-The dictionary can be defined with `CREATE DICTIONARY ... LAYOUT(NAIVE_BAYES(...))` as shown here, or equivalently in an XML configuration file under `<layout><naive_bayes>...</naive_bayes></layout>`; see [Dictionary layouts](/sql-reference/statements/create/dictionary/layouts) for the configuration-file form. In a configuration file, `start_token` and `end_token` for `byte` and `codepoint` mode must be given as numbers (raw bytes cannot travel through the config), exactly as in the DDL form.
+The dictionary can be defined with `CREATE DICTIONARY ... LAYOUT(NAIVE_BAYES(...))` as shown here, or equivalently in an XML configuration file under `<layout><naive_bayes>...</naive_bayes></layout>`; see [Dictionary layouts](/sql-reference/statements/create/dictionary/layouts) for the configuration-file form. In a configuration file, `start_token` and `end_token` for `byte` and `codepoint` mode must be given as numbers (raw bytes cannot travel through the config), exactly as in the DDL form. For example, the `sentiment` dictionary's layout from the [quickstart](#quickstart) is written like this in a configuration file:
+
+```xml
+<layout>
+    <naive_bayes>
+        <class_attribute>class_id</class_attribute>
+        <n>1</n>
+        <mode>token</mode>
+        <alpha>1.0</alpha>
+    </naive_bayes>
+</layout>
+```
 
 ## Tokenization modes {#tokenization-modes}
 
@@ -336,5 +355,5 @@ SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sen
 ## Notes {#notes}
 
 - **Computational dictionary semantics.** This is a *computational* dictionary: `dictGet(dict, '<class_attribute>', text)` classifies `text` (the key is an input to classify, not a stored key), the count attribute is not queryable, and `dictHas` always returns `1`.
-- **Source validation at load.** Every source n-gram must match the configured `n` and `mode` (in `codepoint` mode it must also be valid UTF-8); a mismatch fails the load. A source whose every count is zero, or that is empty, also fails to load.
+- **Source validation at load.** Every source n-gram must match the configured `n` and `mode` (in `codepoint` mode it must also be valid UTF-8); a mismatch fails the load. Because zero-count rows are ignored (see [How it works](#how-it-works)), a source that is empty or has only zero counts has nothing to train on and fails to load.
 - **Query-time tokenization is lenient.** Unlike source validation, query input is never rejected. In `codepoint` mode, bytes that are not valid UTF-8 are decoded on a best-effort basis instead of failing the query; in `token` mode, only ASCII whitespace separates words (Unicode whitespace such as `U+00A0` stays inside a token). Malformed input still classifies — typically from the priors, since its n-grams will not match the trained ones.
