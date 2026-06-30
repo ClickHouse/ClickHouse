@@ -2991,14 +2991,13 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         auto future_parts = initCoverageWithNewEmptyParts(src_parts);
         auto [new_empty_covering_src_parts, _] = createEmptyDataParts(*this, future_parts, txn);
 
-        auto dest_data_parts_lock = dest_table_storage->lockParts();
-        auto src_data_parts_lock = lockParts();
-
         Transaction dest_transaction(*dest_table_storage, txn.get());
         Transaction src_transaction(*this, txn.get());
 
-        try
         {
+            auto dest_data_parts_lock = dest_table_storage->lockParts();
+            auto src_data_parts_lock = lockParts();
+
             std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
 
             for (auto & part : dst_parts)
@@ -3017,13 +3016,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
             src_transaction.renameParts();
             src_transaction.commit(src_data_parts_lock);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log.load());
-            dest_transaction.rollback(&dest_data_parts_lock);
-            src_transaction.rollback(&src_data_parts_lock);
-            throw;
         }
 
         /// Note: same elapsed time and profile events for all parts is used
