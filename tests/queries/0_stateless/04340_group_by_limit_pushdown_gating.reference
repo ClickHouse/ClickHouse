@@ -16,9 +16,3 @@ reordered ORDER BY: not optimized
 0
 non-prefix ORDER BY: result matches optimization off
 5
-aliased key passes through: still optimized
-1
-aliased key, prefer_column_name_to_alias = 1: result matches optimization off
-5
-aliased key, ORDER BY position: result matches optimization off
-5
