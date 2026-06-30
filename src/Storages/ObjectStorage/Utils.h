@@ -34,11 +34,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
-    const std::optional<ReadSettings> & read_settings = std::nullopt,
-    /// When the consumer will read the object via positioned reads (readBigAt), the small-object
-    /// initial prefetch must be skipped (the two are mutually exclusive). Defaults to true so all
-    /// callers stay on the safe no-initial-prefetch path unless they explicitly opt in.
-    bool format_supports_random_access = true);
+    const std::optional<ReadSettings> & read_settings = std::nullopt);
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args);
 std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context);

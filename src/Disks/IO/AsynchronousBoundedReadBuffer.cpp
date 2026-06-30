@@ -1,4 +1,7 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+
+#include <cstring>
+
 #include <Common/CurrentThread.h>
 
 #include <Common/Stopwatch.h>
@@ -466,9 +469,39 @@ void AsynchronousBoundedReadBuffer::resetPrefetch(FilesystemPrefetchState state)
 
 size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const
 {
-    /// If we plan to use readBigAt, then we should not call prefetch(),
-    /// because readBigAt by itself is already parallelized.
-    chassert(!prefetch_future.valid(), "Prefetch is valid for file " + file_name);
+    /// A small-object initial prefetch may be in flight even though the consumer reads via positioned
+    /// reads (e.g. a small Parquet/ORC/Arrow file read through an object storage table function).
+    /// readBigAt() and the sequential prefetch must not run against impl concurrently, so consume the
+    /// prefetch first: serve the requested range straight from the prefetched buffer when it is covered
+    /// (the common case for a fully prefetched small file), otherwise drop the prefetch and read directly.
+    if (prefetch_future.valid())
+    {
+        IAsynchronousReader::Result result;
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
+            CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
+            result = prefetch_future.get();
+        }
+        prefetch_future = {};
+        last_prefetch_info = {};
+
+        const size_t prefetched_bytes = result.size - result.offset;
+        const size_t prefetch_end = result.file_offset_of_buffer_end;
+        const size_t prefetch_begin = prefetch_end - prefetched_bytes;
+
+        if (prefetched_bytes != 0 && range_begin >= prefetch_begin && range_begin + n <= prefetch_end)
+        {
+            ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
+            ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, result.size);
+            memcpy(to, result.buf + result.offset + (range_begin - prefetch_begin), n);
+            if (progress_callback)
+                progress_callback(n);
+            return n;
+        }
+
+        /// The prefetched range does not cover the request; drop it and read directly.
+        ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
+    }
 
     if (impl->supportsReadAt())
         return impl->readBigAt(to, n, range_begin, progress_callback);

@@ -1176,12 +1176,6 @@ bool FormatFactory::checkIfFormatHasSchemaReader(const String & name) const
     return bool(target.schema_reader_creator);
 }
 
-bool FormatFactory::checkIfFormatHasRandomAccessInputCreator(const String & name) const
-{
-    const auto & target = getCreators(name);
-    return bool(target.random_access_input_creator) || bool(target.random_access_input_creator_with_metadata);
-}
-
 bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name) const
 {
     const auto & target = getCreators(name);

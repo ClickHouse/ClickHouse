@@ -788,14 +788,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
-            /// Random-access formats (Parquet/ORC/Arrow) read via readBigAt; do not start the
-            /// small-object initial prefetch for them. Sequential formats get it (restores
-            /// prefetching of many small files, e.g. tiny TSV/CSV/Native via the s3() function).
-            const bool format_supports_random_access
-                = FormatFactory::instance().checkIfFormatHasRandomAccessInputCreator(format_name);
-            read_buf = createReadBuffer(
-                object_info->relative_path_with_metadata, object_storage, context_, log,
-                /*read_settings=*/ std::nullopt, format_supports_random_access);
+            read_buf = createReadBuffer(object_info->relative_path_with_metadata, object_storage, context_, log);
         }
 
         Block initial_header = read_from_format_info.format_header;
@@ -1106,8 +1099,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
-    const std::optional<ReadSettings> & read_settings,
-    bool format_supports_random_access)
+    const std::optional<ReadSettings> & read_settings)
 {
     const auto & settings = context_->getSettingsRef();
     const auto & effective_read_settings = read_settings.has_value() ? read_settings.value() : context_->getReadSettings();
@@ -1278,19 +1270,14 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     auto impl = pipeline.build();
 
-    /// For small objects the initial sequential prefetch (reading the whole file ahead of
-    /// consumption) is the right strategy and almost doubles throughput when reading lots of
-    /// tiny files; `readBigAt`/parallel reading only helps bigger objects (`use_prefetch`
-    /// already implies the object is small, see `object_too_small` above).
-    ///
-    /// But only issue it for formats that read the object sequentially. Random-access formats
-    /// (Parquet/ORC/Arrow) probe `supportsReadAt()` and read via `readBigAt`, which must not run
-    /// while an initial prefetch is in flight (see AsynchronousBoundedReadBuffer::readBigAt).
-    /// Gate on the format's access pattern, not on the buffer's `supportsReadAt()` capability:
-    /// after the buffer learned `readBigAt`, gating on the capability disabled the prefetch for
-    /// sequential formats too (e.g. many tiny files via the s3() table function), making them
-    /// fall back to synchronous, latency-bound reads.
-    if (use_prefetch && impl && !format_supports_random_access)
+    /// For small objects prefetch the file ahead of consumption: when reading lots of tiny files
+    /// this almost doubles throughput; bigger objects use parallel reading instead (`use_prefetch`
+    /// already implies the object is small, see `object_too_small` above). The prefetch is issued
+    /// for all small objects, including random-access formats (Parquet/ORC/Arrow) that read via
+    /// `readBigAt`: AsynchronousBoundedReadBuffer::readBigAt serves the requested range from the
+    /// prefetched buffer when it is covered (the common case for a fully prefetched small file)
+    /// and otherwise drops the prefetch and falls back to a positioned read.
+    if (use_prefetch && impl)
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
