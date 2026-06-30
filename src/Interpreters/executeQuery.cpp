@@ -1467,7 +1467,19 @@ static BlockIO executeQueryImpl(
         /// `astTraversal` rewrites `out_ast` in place (replacing the pointer with the result
         /// template), so keep the original AST first for consistent `formatted_query` logging.
         ast_for_formatted_query = out_ast;
-        astTraversal(out_ast, context, applied_rewrite_rules);
+        /// Apply rules only to the initial user query, never to an internal helper query.
+        /// Several user-facing statements are implemented by copying the user's context and
+        /// re-entering `executeQuery(..., QueryFlags{ .internal = true })` with a different SQL
+        /// body — e.g. `SHOW PRIVILEGES` runs `SELECT * FROM system.privileges` and `SHOW TABLES`
+        /// runs a `SELECT` over `system.tables`. Such helper queries inherit the session's
+        /// `query_rules`, so without this guard a rule matching the implementation SQL could
+        /// rewrite or reject a `SHOW` even though the query the user actually submitted did not
+        /// match the rule, breaking the "apply once to the initial user query" contract. Unlike
+        /// the client-supplied `query_kind` (which is deliberately not trusted above for the
+        /// secondary-query case), `internal` is a server-side flag and cannot be spoofed, so it
+        /// is safe to skip rule application on it.
+        if (!internal)
+            astTraversal(out_ast, context, applied_rewrite_rules);
     }
     catch (...)
     {
