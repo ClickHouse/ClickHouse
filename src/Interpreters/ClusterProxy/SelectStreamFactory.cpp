@@ -1,6 +1,5 @@
 #include <Client/IConnections.h>
 #include <Core/Settings.h>
-#include <Core/SettingsEnums.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -40,7 +39,6 @@ namespace Setting
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool skip_unavailable_shards;
-    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
     extern const SettingsUInt64 distributed_group_by_no_merge;
 }
 
@@ -241,11 +239,8 @@ void SelectStreamFactory::createForShardImpl(
                     main_table.getNameForLogs(), shard_info.shard_num);
                 emplace_remote_stream();
             }
-            else if (settings[Setting::skip_unavailable_shards]
-                && settings[Setting::skip_unavailable_shards_mode] != SkipUnavailableShardsMode::UNAVAILABLE)
+            else if (settings[Setting::skip_unavailable_shards])
             {
-                /// A missing table is skipped only by modes that cover it. The `unavailable` mode ignores
-                /// only connection failures, so it must not silently drop a shard whose table is missing.
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "There is no table {} on local replica of shard {}, and no remote replicas configured. Skipping.",
                     main_table.getNameForLogs(), shard_info.shard_num);

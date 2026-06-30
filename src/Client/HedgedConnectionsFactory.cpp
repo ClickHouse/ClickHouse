@@ -5,7 +5,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Core/ProtocolDefines.h>
-#include <Core/Settings.h>
 
 namespace ProfileEvents
 {
@@ -16,17 +15,11 @@ namespace ProfileEvents
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
-}
-
 namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ALL_REPLICAS_ARE_STALE;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_TABLE;
 }
 
 HedgedConnectionsFactory::HedgedConnectionsFactory(
@@ -47,7 +40,6 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     , fallback_to_stale_replicas(fallback_to_stale_replicas_)
     , max_parallel_replicas(max_parallel_replicas_)
     , skip_unavailable_shards(skip_unavailable_shards_)
-    , skip_unavailable_shards_mode(settings_[Setting::skip_unavailable_shards_mode])
 {
     shuffled_pools = pool->getShuffledPools(settings_, priority_func, /* use_slowdown_count */ true);
 
@@ -138,16 +130,6 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown reason of not enough replicas.");
         }
     }
-
-    /// A shard whose table is missing on every reachable replica comes back as zero connections, which the
-    /// caller would silently skip. The `unavailable` mode must ignore only connection failures, not a missing
-    /// table, so surface it as an exception. A non-empty result means some replica had the table (failover
-    /// already handled it), so nothing to do.
-    if (connections.empty() && table_is_missing && skip_unavailable_shards
-        && skip_unavailable_shards_mode == SkipUnavailableShardsMode::UNAVAILABLE)
-        throw Exception(DB::ErrorCodes::UNKNOWN_TABLE,
-            "The requested table is missing on every usable replica of the shard, and `skip_unavailable_shards_mode` "
-            "is set to 'unavailable', which does not skip a shard because of a missing table");
 
     return connections;
 }
@@ -325,11 +307,6 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
     if (!result.entry.isNull())
     {
         ++entries_count;
-
-        /// Connected, but the table is absent on this replica. Remember it so the `unavailable` mode can
-        /// fail on a missing table rather than silently skip the shard if no usable replica is found.
-        if (result.table_is_missing)
-            table_is_missing = true;
 
         if (result.is_usable)
         {

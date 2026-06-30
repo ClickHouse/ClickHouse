@@ -10,7 +10,6 @@
 #include <Common/isLocalAddress.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
-#include <Core/SettingsEnums.h>
 
 #include <IO/ConnectionTimeouts.h>
 
@@ -27,14 +26,12 @@ namespace Setting
     extern const SettingsUInt64 load_balancing_first_offset;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool skip_unavailable_shards;
-    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ALL_CONNECTION_TRIES_FAILED;
-    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -170,30 +167,10 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     std::optional<bool> skip_unavailable_endpoints,
     GetPriorityForLoadBalancing::Func priority_func)
 {
-    bool table_is_missing = false;
     TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
-    {
-        auto result = tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check, async_callback);
-        if (result.table_is_missing)
-            table_is_missing = true;
-        return result;
-    };
+    { return tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check, async_callback); };
 
-    auto results = getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints, priority_func);
-
-    /// When `skip_unavailable_shards` is enabled a shard whose table is missing on every replica returns zero
-    /// usable connections here, which the caller would silently skip. The `unavailable` mode must ignore only
-    /// connection failures, not a missing table, so surface it as an exception instead of dropping the shard.
-    /// A non-empty result means some replica does have the table, so failover already handled it - nothing to do.
-    if (results.empty() && table_is_missing
-        && settings[Setting::skip_unavailable_shards]
-        && settings[Setting::skip_unavailable_shards_mode] == SkipUnavailableShardsMode::UNAVAILABLE)
-        throw DB::Exception(DB::ErrorCodes::UNKNOWN_TABLE,
-            "There is no table {} on any usable replica of the shard, and `skip_unavailable_shards_mode` is set "
-            "to 'unavailable', which does not skip a shard because of a missing table",
-            table_to_check.getFullName());
-
-    return results;
+    return getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints, priority_func);
 }
 
 std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyCheckedForInsert(
