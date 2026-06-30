@@ -912,7 +912,12 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                     return ReturnType(false);
                 if constexpr (!dt64_mode)
                     throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
-                /// dt64_mode + throw_exception: fall through to integer parsing below
+                /// For dt64_mode: only fall through when is_decimal_dt64 (s[4] is '.') or
+                /// when s[0..3] contains a non-digit (readIntTextImpl reads < 4 digits fine).
+                /// A bare 4-digit value like "1234\t..." with all-digit s[0..3] and s[4]!='.'
+                /// is ambiguous with a year; throw to match the fallback's too_short check.
+                else if (isNumericASCII(s[0]) && isNumericASCII(s[1]) && isNumericASCII(s[2]) && isNumericASCII(s[3]) && s[4] != '.')
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
             }
             else
             {

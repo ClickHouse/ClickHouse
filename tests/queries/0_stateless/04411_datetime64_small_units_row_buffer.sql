@@ -18,3 +18,11 @@ SELECT b, c FROM format(CSV, 'b DateTime64(2, UTC), c Bool', $$0.0,true$$);
 -- Regression: plain DateTime must still reject short (1-4 digit) positive timestamps
 -- when the optimistic path is active (buffer >= 19 bytes from the field).
 SELECT a FROM format(TSV, 'a DateTime, b String', $$1234	this_is_long_enough_padding$$); -- { serverError CANNOT_PARSE_DATETIME }
+
+-- Regression: bare 4-digit DateTime64 value (ambiguous with a year) must also be rejected
+-- when the optimistic path is active.
+SELECT a FROM format(TSV, 'a DateTime64(2, UTC), b String', $$1234	this_is_long_enough_padding$$); -- { serverError CANNOT_PARSE_DATETIME }
+
+-- Regression: fallback path for a dotted date "2025.08.31" (string is 10 bytes,
+-- so buffer has < 19 bytes from field start and the fallback is used).
+SELECT a FROM format(TSV, 'a DateTime64(2, \'UTC\')', $$2025.08.31$$);
