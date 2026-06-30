@@ -1,9 +1,11 @@
 #include <unistd.h>
 #include <cerrno>
+#include <fcntl.h>
 #include <poll.h>
 #include <sys/stat.h>
 #include <algorithm>
 
+#include <base/scope_guard.h>
 #include <Common/Throttler.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -80,20 +82,38 @@ void WriteBufferFromFileDescriptor::nextImpl()
 
     Stopwatch watch;
 
+    /// When a cancellation hook is installed (e.g. for the client output during a query) and the
+    /// descriptor can block (a pipe, socket or terminal), keep the write responsive to cancellation.
+    /// Otherwise a Ctrl+C would only set the cancellation flag while this thread stays stuck in a
+    /// blocking write() to a slow or stuck sink (a slow terminal, a paused pager, a stalled socket),
+    /// because the interrupting signal can be delivered to another thread and so not interrupt this
+    /// write() at all. To avoid that, switch the descriptor to non-blocking mode for the duration of
+    /// this call and wait for writability with a bounded timeout, checking the hook in between: a
+    /// non-blocking write() never sleeps, so the hook is always consulted promptly and the rest of
+    /// the buffer can be discarded once cancellation is requested. (Capping the chunk to PIPE_BUF
+    /// while keeping a blocking write is not enough: a poll() reporting POLLOUT guarantees room for
+    /// PIPE_BUF bytes only on a pipe, not on a socket or terminal, so a blocking write could still
+    /// sleep after poll() returned writable.) The original blocking mode is restored on every exit
+    /// path below.
+    const bool responsive_writes = cancellation_hook && cancellation_fd_can_block;
+    int original_fd_flags = -1;
+    if (responsive_writes)
+    {
+        original_fd_flags = ::fcntl(fd, F_GETFL, 0);
+        if (original_fd_flags != -1 && 0 == (original_fd_flags & O_NONBLOCK))
+            ::fcntl(fd, F_SETFL, original_fd_flags | O_NONBLOCK);
+    }
+    SCOPE_EXIT({
+        if (responsive_writes && original_fd_flags != -1 && 0 == (original_fd_flags & O_NONBLOCK))
+            ::fcntl(fd, F_SETFL, original_fd_flags);
+    });
+
     size_t bytes_written = 0;
     while (bytes_written != offset())
     {
         size_t bytes_to_write = offset() - bytes_written;
 
-        /// When a cancellation hook is installed (e.g. the client output during a query), avoid
-        /// blocking for a long time in write() on a slow or stuck sink such as a slow terminal.
-        /// Otherwise a Ctrl+C would only set the cancellation flag while we stay stuck in the
-        /// write(), because the interrupting signal can be delivered to another thread and thus
-        /// not interrupt this write() at all. Wait for the descriptor to become writable in small
-        /// steps, checking for cancellation in between, write only a bounded chunk at a time so a
-        /// single write() cannot block for long, and discard the rest of the buffer once
-        /// cancellation is requested.
-        if (cancellation_hook && cancellation_fd_can_block)
+        if (responsive_writes)
         {
             if (cancellation_hook())
                 return;
@@ -111,14 +131,6 @@ void WriteBufferFromFileDescriptor::nextImpl()
             /// Timed out or interrupted by a signal - the descriptor is not writable yet.
             if (poll_res <= 0)
                 continue;
-
-            /// After poll() reports the descriptor is writable, writing at most PIPE_BUF bytes is
-            /// guaranteed not to block on a pipe (and such a small write does not block on a socket
-            /// or terminal either). Bounding the chunk this way ensures a single write() cannot
-            /// sleep for long even if the sink stops draining right after becoming writable, so the
-            /// cancellation hook is consulted promptly. (A larger chunk could still block: poll()
-            /// only promises that some space is available, not space for the whole chunk.)
-            bytes_to_write = std::min(bytes_to_write, static_cast<size_t>(PIPE_BUF));
         }
 
         ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWrite);
@@ -128,6 +140,12 @@ void WriteBufferFromFileDescriptor::nextImpl()
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Write};
             res = ::write(fd, working_buffer.begin() + bytes_written, bytes_to_write);
         }
+
+        /// In the responsive path the descriptor is non-blocking, so a write to a sink that has no
+        /// room right now returns EAGAIN/EWOULDBLOCK instead of sleeping. Treat it like a poll()
+        /// timeout: go back to waiting for writability while checking the cancellation hook.
+        if (responsive_writes && -1 == res && (errno == EAGAIN || errno == EWOULDBLOCK))
+            continue;
 
         if ((-1 == res || 0 == res) && errno != EINTR)
         {

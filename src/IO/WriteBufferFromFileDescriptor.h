@@ -52,10 +52,11 @@ public:
     /// If set, the callback is consulted while writing the buffer: when it returns true, the
     /// buffered data is discarded instead of being written. To keep it responsive even when the
     /// sink blocks, writes to a descriptor that can block (a pipe, socket or terminal) are then
-    /// done by waiting for writability with a timeout (checking the callback in between) and in
-    /// bounded chunks, so that a single write() cannot block for long. This is used by the client
-    /// to abort the output of a result set promptly on Ctrl+C even while a write to a slow sink
-    /// (e.g. a slow terminal) would otherwise block. Passing an empty hook removes it.
+    /// made non-blocking for the duration of the write: we wait for writability with a timeout
+    /// (checking the callback in between) and a non-blocking write() never sleeps, so a single
+    /// write() cannot block for long. This is used by the client to abort the output of a result
+    /// set promptly on Ctrl+C even while a write to a slow sink (e.g. a slow terminal) would
+    /// otherwise block. Passing an empty hook removes it.
     void setCancellationHook(std::function<bool()> cancellation_hook_);
 
 protected:
