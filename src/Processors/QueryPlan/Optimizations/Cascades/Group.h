@@ -54,12 +54,20 @@ public:
     void updateBestImplementation(GroupExpressionPtr expression, const CostConfig & cost_config);
     ExpressionWithCost getBestImplementation(const ExpressionProperties & required_properties, const CostConfig & cost_config) const;
 
-    /// Find the cheapest implementation satisfying `required_properties`,
-    /// excluding expressions in `excluded`. Used for cycle detection in `buildBestPlan`.
-    ExpressionWithCost getBestImplementationExcluding(
+    /// Cheapest costed implementation of `required_properties` for an input edge, scanning the
+    /// best-implementation cache then `physical_expressions`, skipping anything in `active_path`
+    /// (the chain being built/costed) to break cycles.
+    ///
+    /// `input_is_self_referential` marks an input pointing back to its own group (a same-group
+    /// enforcer's input): an enforcer candidate that matches only by over-providing on a wildcard
+    /// axis (empty sort met by a sorted enforcer, or empty distribution columns met by a keyed
+    /// exchange) is rejected, so an enforcer cannot pick itself. Base candidates and productive
+    /// compositions (Gather -> Sort, Sort-per-node -> SortedGather) stay eligible.
+    ExpressionWithCost selectInputImplementation(
         const ExpressionProperties & required_properties,
         const CostConfig & cost_config,
-        const std::unordered_set<GroupExpression *> & excluded) const;
+        const std::unordered_set<GroupExpression *> & active_path,
+        bool input_is_self_referential) const;
 
     /// Returns the weighted subtree cost of the best implementation satisfying
     /// the given properties, or infinity if none exists.

@@ -163,43 +163,22 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
 {
     const auto & cost_config = memo.getCostConfig();
 
-    /// Track visited single-input expressions to detect cycles in the
-    /// best-implementation chain. A cycle occurs when enforcers (e.g.
-    /// ShuffleExchange) in the same group point back to the same group with
-    /// relaxed properties that match the enforcer itself, because
-    /// `isDistributionSatisfiedBy` treats empty required columns as "any
-    /// distribution is fine". When a cycle is detected, we skip the cycling
-    /// expression and pick the next-best alternative from the group.
-    std::unordered_set<GroupExpression *> visited_expressions;
+    /// Single-input expressions on the current DFS path, used to break enforcer self-reference
+    /// cycles. Path-local: added when a frame is pushed, removed when popped, so the same expression
+    /// can still be reused in an independent sibling branch.
+    std::unordered_set<GroupExpression *> active_path;
 
-    /// Select the best expression for a group, with cycle detection for
-    /// single-input enforcers.
-    auto selectBest = [&](GroupId group_id, const ExpressionProperties & props) -> GroupExpressionPtr
+    /// Select the cheapest eligible (acyclic) implementation for a group. `input_is_self_referential`
+    /// is true when this selection is for the self-referential input of a same-group enforcer.
+    auto selectBest = [&](GroupId group_id, const ExpressionProperties & props, bool input_is_self_referential) -> GroupExpressionPtr
     {
         auto group = memo.getGroup(group_id);
-        auto best = group->getBestImplementation(props, cost_config).expression;
+        auto best = group->selectInputImplementation(props, cost_config, active_path, input_is_self_referential).expression;
         if (!best)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Cascades optimizer: no implementation found for group #{} satisfying required properties {}.\n"
+                "Cascades optimizer: no acyclic implementation found for group #{} satisfying required properties {}.\n"
                 "Group state:\n{}",
                 group_id, props.dump(), group->dump(cost_config));
-
-        while (best->inputs.size() == 1
-               && visited_expressions.contains(best.get()))
-        {
-            auto alternative = group->getBestImplementationExcluding(props, cost_config, visited_expressions);
-            if (!alternative.expression)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Cascades optimizer: cycle detected in best-implementation chain at group #{} "
-                    "with no acyclic alternative. Expression '{}', properties {}.\n"
-                    "Group state:\n{}",
-                    group_id, best->dump(cost_config), props.dump(), group->dump(cost_config));
-            best = alternative.expression;
-        }
-
-        if (best->inputs.size() == 1)
-            visited_expressions.insert(best.get());
-
         return best;
     };
 
@@ -210,12 +189,22 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         GroupExpressionPtr expression;
         size_t next_child = 0;
         std::vector<QueryPlanPtr> child_plans;
+        bool on_active_path = false;  /// whether this frame's expression was added to `active_path`
     };
 
     std::vector<Frame> stack;
     QueryPlanPtr result;
 
-    stack.push_back({subtree_root_group_id, selectBest(subtree_root_group_id, required_properties), 0, {}});
+    /// Push a frame for `expression`, recording it on the active path if it is single-input.
+    auto pushFrame = [&](GroupId group_id, GroupExpressionPtr expression)
+    {
+        const bool on_active_path = expression->inputs.size() == 1;
+        if (on_active_path)
+            active_path.insert(expression.get());
+        stack.push_back({group_id, std::move(expression), 0, {}, on_active_path});
+    };
+
+    pushFrame(subtree_root_group_id, selectBest(subtree_root_group_id, required_properties, /*input_is_self_referential=*/false));
 
     while (!stack.empty())
     {
@@ -226,7 +215,9 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         {
             const auto & input = frame.expression->inputs[frame.next_child];
             ++frame.next_child;
-            stack.push_back({input.group_id, selectBest(input.group_id, input.required_properties), 0, {}});
+            const bool input_is_self_referential = input.group_id == frame.group_id;
+            auto child = selectBest(input.group_id, input.required_properties, input_is_self_referential);
+            pushFrame(input.group_id, std::move(child));
             continue;
         }
 
@@ -258,6 +249,9 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
                 .rows = memo.getGroup(frame.group_id)->statistics->estimated_row_count
             };
         LOG_TEST(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", frame.group_id, dumpQueryPlanShort(*result));
+
+        if (frame.on_active_path)
+            active_path.erase(frame.expression.get());
 
         stack.pop_back();
 

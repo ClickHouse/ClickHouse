@@ -66,20 +66,32 @@ void Group::updateBestImplementation(GroupExpressionPtr expression, const CostCo
     UInt64 key = distributionKey(expression->properties.distribution);
     auto & bucket = best_implementations[key];
 
+    /// An enforcer "satisfies" a weaker non-enforcer only by over-providing (e.g. a sorted gather
+    /// covers an empty-sort requirement). Dropping the base would leave a self-referential enforcer
+    /// chain with no acyclic alternative, so an enforcer never suppresses or evicts a distinct base.
+    auto enforcer_over_provides_for = [](const GroupExpressionPtr & enforcer_candidate, const GroupExpressionPtr & base_candidate)
+    {
+        return enforcer_candidate->enforcer_axis != EnforcerAxis::None
+            && base_candidate->enforcer_axis == EnforcerAxis::None
+            && !(enforcer_candidate->properties == base_candidate->properties);
+    };
+
     /// Remove all known best expressions with higher cost and properties satisfied by the new expression.
     /// Only the matching distribution-shape bucket needs checking — `isSatisfiedBy` requires
     /// exact match on (node_count, is_replicated).
     for (auto best_it = bucket.begin(); best_it != bucket.end();)
     {
         if (expression->properties.isSatisfiedBy((*best_it)->properties) &&
-            (*best_it)->cost->subtree_cost.total(cost_config) <= expression->cost->subtree_cost.total(cost_config))
+            (*best_it)->cost->subtree_cost.total(cost_config) <= expression->cost->subtree_cost.total(cost_config) &&
+            !enforcer_over_provides_for(*best_it, expression))
         {
             /// There is already a cheaper implementation that satisfies the same properties
             return;
         }
 
         if ((*best_it)->properties.isSatisfiedBy(expression->properties) &&
-            (*best_it)->cost->subtree_cost.total(cost_config) > expression->cost->subtree_cost.total(cost_config))
+            (*best_it)->cost->subtree_cost.total(cost_config) > expression->cost->subtree_cost.total(cost_config) &&
+            !enforcer_over_provides_for(expression, *best_it))
         {
             best_it = bucket.erase(best_it);
         }
@@ -115,27 +127,58 @@ ExpressionWithCost Group::getBestImplementation(const ExpressionProperties & req
     return {found_best, *found_best->cost};
 }
 
-ExpressionWithCost Group::getBestImplementationExcluding(
+ExpressionWithCost Group::selectInputImplementation(
     const ExpressionProperties & required_properties,
     const CostConfig & cost_config,
-    const std::unordered_set<GroupExpression *> & excluded) const
+    const std::unordered_set<GroupExpression *> & active_path,
+    bool input_is_self_referential) const
 {
-    UInt64 key = distributionKey(required_properties.distribution);
-    auto it = best_implementations.find(key);
-    if (it == best_implementations.end())
-        return {};
+    /// Eligibility for `selectInputImplementation` (see there). The wildcard-axis rejections below
+    /// are what stop a self-referential enforcer from picking itself.
+    auto is_eligible = [&](const GroupExpressionPtr & candidate)
+    {
+        if (!candidate->cost.has_value())
+            return false;
+        if (active_path.contains(candidate.get()))
+            return false;
+        if (!required_properties.isSatisfiedBy(candidate->properties))
+            return false;
+
+        if (input_is_self_referential && candidate->enforcer_axis != EnforcerAxis::None)
+        {
+            /// Empty sort requirement: reject a sorted enforcer (it over-provides on the sort axis).
+            if (required_properties.sorting.empty() && !candidate->properties.sorting.empty())
+                return false;
+            /// Empty distribution-columns requirement: reject a keyed exchange. A sorting enforcer
+            /// carrying keyed columns is still needed to feed a sorted gather, so keep it eligible.
+            if (candidate->enforcer_axis == EnforcerAxis::Distribution
+                && required_properties.distribution.columns.empty()
+                && (!candidate->properties.distribution.columns.empty()
+                    || !candidate->properties.distribution.hash_type_names.empty()))
+                return false;
+        }
+        return true;
+    };
 
     GroupExpressionPtr found_best;
-    for (const auto & expression : it->second)
+    auto consider = [&](const GroupExpressionPtr & candidate)
     {
-        if (excluded.contains(expression.get()))
-            continue;
-        if (required_properties.isSatisfiedBy(expression->properties) &&
-            (!found_best || found_best->cost->subtree_cost.total(cost_config) > expression->cost->subtree_cost.total(cost_config)))
-        {
-            found_best = expression;
-        }
-    }
+        if (is_eligible(candidate)
+            && (!found_best
+                || found_best->cost->subtree_cost.total(cost_config) > candidate->cost->subtree_cost.total(cost_config)))
+            found_best = candidate;
+    };
+
+    /// Fast path: the best-implementation cache for the matching distribution shape.
+    UInt64 key = distributionKey(required_properties.distribution);
+    if (auto it = best_implementations.find(key); it != best_implementations.end())
+        for (const auto & expression : it->second)
+            consider(expression);
+
+    /// Fallback: a costed acyclic implementation may live only in `physical_expressions` after a
+    /// cheaper over-providing enforcer evicted it from (or kept it out of) the cache.
+    for (const auto & expression : physical_expressions)
+        consider(expression);
 
     if (!found_best)
         return {};

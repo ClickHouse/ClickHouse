@@ -176,7 +176,16 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     /// Add input subtree costs. Unsatisfiable inputs produce infinity.
     for (const auto & input : expression->inputs)
     {
-        auto best = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties, memo.getCostConfig());
+        ExpressionWithCost best;
+        if (input.group_id == expression->group_id)
+            /// Self-referential enforcer input: price it against an acyclic source (excluding
+            /// itself), so the cost reflects a plan that can actually be built.
+            best = memo.getGroup(input.group_id)->selectInputImplementation(
+                input.required_properties, memo.getCostConfig(),
+                std::unordered_set<GroupExpression *>{expression.get()}, /*input_is_self_referential=*/true);
+        else
+            best = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties, memo.getCostConfig());
+
         if (!best.expression)
         {
             total_cost.subtree_cost = Cost::infinity();

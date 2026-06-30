@@ -66,6 +66,7 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
             enforcer_expr->group_id = expression->group_id;
             enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
             enforcer_expr->properties.distribution = required_properties.distribution;
+            enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
 
             enforcer_expr->setApplied(*this, required_properties);
             if (memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr))
@@ -88,6 +89,7 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
                 enforcer_expr->group_id = expression->group_id;
                 enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
                 enforcer_expr->properties.distribution = required_properties.distribution;
+                enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
                 /// Sorting is destroyed by a regular gather.
 
                 enforcer_expr->setApplied(*this, required_properties);
@@ -114,6 +116,7 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
                 enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
                 enforcer_expr->properties.distribution = required_properties.distribution;
                 enforcer_expr->properties.sorting = expression->properties.sorting;
+                enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
 
                 enforcer_expr->setApplied(*this, required_properties);
                 if (memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr))
@@ -184,6 +187,7 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
         enforcer_expr->group_id = expression->group_id;
         enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
         enforcer_expr->properties.distribution = required_properties.distribution;
+        enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
         /// Shuffle/scatter destroys sorting.
 
         enforcer_expr->setApplied(*this, required_properties);

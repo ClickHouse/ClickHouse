@@ -17,6 +17,17 @@ namespace DB
 class IOptimizationRule;
 using OptimizationRulePtr = std::shared_ptr<const IOptimizationRule>;
 
+/// Which physical property a self-referential enforcer adds; `None` for ordinary expressions. Lets
+/// the input resolver stop an enforcer from satisfying its own input by over-providing on a wildcard
+/// axis (empty sort / empty distribution columns), which would form a cycle. A sorted gather is a
+/// `Distribution` enforcer even though it preserves sorting.
+enum class EnforcerAxis : uint8_t
+{
+    None,
+    Sorting,
+    Distribution,
+};
+
 class GroupExpression final
 {
 public:
@@ -34,6 +45,7 @@ public:
         , strategy(other_.strategy)
         , description_suffix(other_.description_suffix)
         , inputs(other_.inputs)
+        , enforcer_axis(other_.enforcer_axis)
     {}
 
     String getName() const;
@@ -66,6 +78,9 @@ public:
     std::vector<Input> inputs;
 
     ExpressionProperties properties;
+
+    /// Non-`None` for self-referential enforcer expressions (see `EnforcerAxis`).
+    EnforcerAxis enforcer_axis = EnforcerAxis::None;
 
     std::unordered_set<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;
 

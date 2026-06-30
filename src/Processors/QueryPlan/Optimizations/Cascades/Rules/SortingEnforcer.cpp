@@ -59,6 +59,7 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
         .required_properties = input_required});
     sort_expr->properties = expression->properties;
     sort_expr->properties.sorting = sort_desc;
+    sort_expr->enforcer_axis = EnforcerAxis::Sorting;
 
     sort_expr->setApplied(*this, required_properties);
     /// Skip scheduling a structural duplicate so it does not consume optimizer task budget.
