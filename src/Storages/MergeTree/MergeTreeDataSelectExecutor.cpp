@@ -195,6 +195,31 @@ bool sparsityStatsUnsafeForQuery(
     return false;
 }
 
+/// Common preamble shared by `filterPartsBySparsityInfo` and `filterMarkRangesBySparsityInfo`:
+/// reliability checks against the storage/query state, plus the `WHERE`-conjunct collection.
+/// Returns an empty vector when any safety check fails or no recognised conjuncts are present,
+/// in which case the caller bails and returns the input parts untouched. The mode check is left
+/// to the caller because the two entry points require different modes
+/// (`!= Off` vs `== Planning`).
+std::vector<RecognisedSparsityPredicate> collectSparsityConjunctsIfApplicable(
+    const SelectQueryInfo & query_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const MergeTreeData & data,
+    const ContextPtr & context)
+{
+    if (sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot, data)
+        || queryHasJoinedTable(query_info.query_tree))
+        return {};
+
+    if (!query_info.query_tree)
+        return {};
+    auto * query_node = query_info.query_tree->as<QueryNode>();
+    if (!query_node || !query_node->hasWhere())
+        return {};
+
+    return collectSparsityConjuncts(query_node->getWhere(), query_info.table_expression);
+}
+
 }
 
 using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
@@ -862,25 +887,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
 
     const MergeTreeData & data = parts.front().data_part->storage;
 
-    /// Use the same defaultness-stats availability check as
-    /// `MergeTreeData::getColumnDefaultnessStats`; `FINAL` and joined tables are
-    /// additional query-shape constraints for pruning. Part-level pruning runs
-    /// whenever the mode isn't `Off`; granule-level pruning runs in `Planning` /
-    /// `DataRead` mode.
-    if (settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::Off
-        || sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot, data)
-        || queryHasJoinedTable(query_info.query_tree))
-    {
-        return parts;
-    }
-
-    if (!query_info.query_tree)
-        return parts;
-    auto * query_node = query_info.query_tree->as<QueryNode>();
-    if (!query_node || !query_node->hasWhere())
+    /// Part-level pruning runs whenever the mode isn't `Off`; granule-level pruning
+    /// runs in `Planning` mode. The rest of the gates (FINAL, joined tables, pending
+    /// mutations, masking, presence of a classifiable `WHERE`) are shared.
+    if (settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::Off)
         return parts;
 
-    auto conjuncts = collectSparsityConjuncts(query_node->getWhere(), query_info.table_expression);
+    auto conjuncts = collectSparsityConjunctsIfApplicable(query_info, mutations_snapshot, data, context);
     if (conjuncts.empty())
         return parts;
 
@@ -962,20 +975,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
     const auto & settings = context->getSettingsRef();
 
     /// `DataRead` mode defers granule analysis to scan time, so it skips this path.
-    if (settings[Setting::use_sparsity_info_for_pruning] != SparsityPruningMode::Planning
-        || sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot, data)
-        || queryHasJoinedTable(query_info.query_tree))
-    {
-        return parts;
-    }
-
-    if (!query_info.query_tree)
-        return parts;
-    auto * query_node = query_info.query_tree->as<QueryNode>();
-    if (!query_node || !query_node->hasWhere())
+    if (settings[Setting::use_sparsity_info_for_pruning] != SparsityPruningMode::Planning)
         return parts;
 
-    auto conjuncts = collectSparsityConjuncts(query_node->getWhere(), query_info.table_expression);
+    auto conjuncts = collectSparsityConjunctsIfApplicable(query_info, mutations_snapshot, data, context);
     if (conjuncts.empty())
         return parts;
 

@@ -177,16 +177,7 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
     /// stream for `(part, column)` pairs the planning-mode analyzer already cached.
     /// `MergeTreeReadTask::initializeIndexReader` will set the share again later for the
     /// `data_read`-mode path, which is harmless (the value is the same).
-    if (sparse_offsets_share)
-    {
-        if (readers.main)
-            readers.main->setSparseOffsetsShare(sparse_offsets_share);
-        for (auto & reader : readers.prewhere)
-        {
-            if (reader)
-                reader->setSparseOffsetsShare(sparse_offsets_share);
-        }
-    }
+    readers.setSparseOffsetsShare(sparse_offsets_share);
 
     task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, std::move(readers), task.priority, *this);
 }
