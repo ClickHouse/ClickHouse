@@ -3624,8 +3624,10 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     if (targetResultEl.isExplainGraph) {
         await targetResultEl.renderGraph();
     } else {
-        targetResultEl.applyColumnColors();
+        /// Render totals before coloring, so the totals row (which `_colorTargetRows` includes)
+        /// is colored on the first paint, exactly as it would be after a later toggle.
         if (is_table) targetResultEl.renderTotals();
+        targetResultEl.applyColumnColors();
         if (is_table) targetResultEl.transposeIfNeeded();
     }
 
@@ -4000,8 +4002,9 @@ async function restoreFromHistory(state) {
     if (resultEl.isExplainGraph) {
         await resultEl.renderGraph();
     } else {
-        resultEl.applyColumnColors();
+        /// Render totals before coloring, so the totals row is colored on first paint too.
         if (is_table) resultEl.renderTotals();
+        resultEl.applyColumnColors();
         if (is_table) resultEl.transposeIfNeeded();
         if (is_table) resultEl._changeTableLayout();
     }
