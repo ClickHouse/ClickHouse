@@ -120,6 +120,11 @@ MESSAGES_TO_RETRY = [
     # Transient Keeper errors that happen under heavy load (e.g. ARM ASan builds)
     "Coordination::Exception: Connection loss",
     "Coordination::Exception: Session expired",
+    # Server-wide RSS hard limit hit by the OvercommitTracker: the box is over
+    # its total memory budget (co-running tests), so an innocent query is killed.
+    # Uniquely worded "(total)" by the global tracker; per-query/user limits read
+    # "Query"/"User" and are NOT matched, so real per-query OOMs still fail.
+    "(total) memory limit exceeded",
 ]
 
 IGNORED_SANITIZER_ERRORS = [
