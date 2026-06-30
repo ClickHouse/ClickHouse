@@ -1099,16 +1099,13 @@ static QueryPlanNode buildPhysicalJoinImpl(
     auto & join_expression = join_operator.expression;
 
     bool is_join_without_expression = isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind);
-    /// When we do JOIN ON NULL or JOIN ON 1 we create dummy columns and in fact joining on 1 = 0 or 1 = 1.
-    /// For INNER JOIN we could just do CROSS, but for OUTER result depends on whether any table is empty or not.
-    if ((!is_join_without_expression && join_expression.empty()) ||
-        (join_expression.size() == 1
-            && join_expression[0].getType()->onlyNull()
-            && std::get<0>(join_expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown))
-    {
-        UInt8 rhs_value = join_expression.empty() ? 1 : 0;
-        join_expression.clear();
 
+    /// Build a constant equi-predicate `__lhs_const = __rhs_const` between the two sides.
+    /// It makes the hash join treat every pair of rows as a key match, so the actual matching is
+    /// decided by the residual (mixed) join condition rather than by the key. `rhs_value` controls
+    /// whether the keys always match (1) or never match (0).
+    auto add_constant_join_key = [&](UInt8 rhs_value) -> JoinActionRef
+    {
         auto actions_dag = expression_actions.getActionsDAG();
 
         auto dt = std::make_shared<DataTypeUInt8>();
@@ -1121,9 +1118,20 @@ static QueryPlanNode buildPhysicalJoinImpl(
         JoinActionRef rhs(&actions_dag->addColumn(std::move(rhs_column), dt, "__rhs_const"), expression_actions);
         rhs.setSourceRelations(BitSet().set(1));
 
-        join_expression.push_back(JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
-
         table_join->setIsJoinWithConstant(true);
+        return JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+    };
+
+    /// When we do JOIN ON NULL or JOIN ON 1 we create dummy columns and in fact joining on 1 = 0 or 1 = 1.
+    /// For INNER JOIN we could just do CROSS, but for OUTER result depends on whether any table is empty or not.
+    if ((!is_join_without_expression && join_expression.empty()) ||
+        (join_expression.size() == 1
+            && join_expression[0].getType()->onlyNull()
+            && std::get<0>(join_expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown))
+    {
+        UInt8 rhs_value = join_expression.empty() ? 1 : 0;
+        join_expression.clear();
+        join_expression.push_back(add_constant_join_key(rhs_value));
     }
 
     std::vector<JoinActionRef> used_expressions;
@@ -1145,23 +1153,55 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
         if (!has_keys && join_operator.strictness != JoinStrictness::Asof)
         {
-            bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind))
-                && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
+            const bool hash_enabled = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
                 && join_operator.strictness == JoinStrictness::All;
+
+            /// INNER/CROSS with no equi keys is equivalent to a CROSS join with the predicates
+            /// applied as a filter on top of the join result.
+            const bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind)) && hash_enabled;
+
+            /// OUTER joins must keep non-matching rows (NULL-extended), so a CROSS join + filter is
+            /// not equivalent. Instead we add a constant join key, which makes the hash join enumerate
+            /// every pair of rows, and keep the predicates as a residual (mixed) join condition that is
+            /// evaluated during the join. This is correct, but not efficient (it is a nested loop), so
+            /// it is gated behind the `allow_inequality_join_as_cross_join` setting.
+            const bool can_convert_to_constant_key = (isLeftOrRight(join_operator.kind) || isFull(join_operator.kind))
+                && hash_enabled && join_settings.allow_inequality_join_as_cross_join;
 
             table_join_clauses.pop_back();
             is_disjunctive_condition = tryAddDisjunctiveConditions(
-                join_expression, table_join_clauses, used_expressions, join_settings, planning_context, !can_convert_to_cross);
+                join_expression, table_join_clauses, used_expressions, join_settings, planning_context,
+                !can_convert_to_cross && !can_convert_to_constant_key);
 
             if (!is_disjunctive_condition)
             {
-                if (!can_convert_to_cross)
-                    throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
-                        formatJoinCondition(join_expression));
-
-                join_operator.kind = JoinKind::Cross;
-                join_operator.residual_filter.append_range(join_expression);
-                join_expression.clear();
+                if (can_convert_to_cross)
+                {
+                    join_operator.kind = JoinKind::Cross;
+                    join_operator.residual_filter.append_range(join_expression);
+                    join_expression.clear();
+                }
+                else if (can_convert_to_constant_key)
+                {
+                    join_expression.push_back(add_constant_join_key(1));
+                    bool has_constant_key = addJoinPredicatesToTableJoin(
+                        join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context);
+                    if (!has_constant_key)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add a constant join key for {} JOIN ON expression {}",
+                            toString(join_operator.kind), formatJoinCondition(join_expression));
+                }
+                else
+                {
+                    /// An outer join with such a condition can be run as a (slow) nested loop if the
+                    /// hash algorithm is enabled and `allow_inequality_join_as_cross_join` is set.
+                    bool suggest_cross_join = (isLeftOrRight(join_operator.kind) || isFull(join_operator.kind))
+                        && hash_enabled && !join_settings.allow_inequality_join_as_cross_join;
+                    throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}{}",
+                        formatJoinCondition(join_expression),
+                        suggest_cross_join
+                            ? ". Enable setting 'allow_inequality_join_as_cross_join' to run it as a CROSS JOIN (may be slow)"
+                            : "");
+                }
             }
         }
     }

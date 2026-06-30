@@ -7785,6 +7785,9 @@ Both database and table names have to be unquoted - only simple identifiers are 
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
+    DECLARE(Bool, allow_inequality_join_as_cross_join, false, R"(
+Allows a `JOIN` with no equality in its `ON` condition (for example `t1.a < t2.b`) to be executed as a `CROSS JOIN` with the condition applied as a filter. This is a nested loop and can be slow. Only works with the `hash` join algorithm.
+)", 0) \
     DECLARE(ObjectStorageGranularityLevel, cluster_table_function_split_granularity, ObjectStorageGranularityLevel::FILE, R"(
 Controls how data is split into tasks when executing a CLUSTER TABLE FUNCTION.
 

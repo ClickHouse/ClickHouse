@@ -51,6 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
             {"query_plan_merge_expression_into_join", false, true, "New setting. Allow to merge Expression step into JOIN step during join reordering optimization."},
             {"query_plan_merge_filters_into_join", false, false, "New setting. Allow to merge Filter step into JOIN step during join reordering optimization."},
+            {"allow_inequality_join_as_cross_join", false, false, "New setting. Allow a JOIN with no equality in its ON condition to be executed as a CROSS JOIN with the condition applied as a filter."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
