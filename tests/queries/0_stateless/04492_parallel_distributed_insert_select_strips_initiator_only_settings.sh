@@ -106,6 +106,41 @@ ${CLICKHOUSE_CLIENT} --query_id="${QID_CLUSTER}" -q "
     SELECT * FROM fileCluster('test_cluster_two_shards_localhost', '${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv', 'CSV', 'x UInt64')"
 check_no_leak "${QID_CLUSTER}"
 
+echo "-- initiator-only setting reset to DEFAULT must not ride along in the forwarded query text"
+# A `name = DEFAULT` entry lives in `ASTSetQuery::default_settings` (a list separate from `changes`) and is
+# serialized by `formatImpl`, so the query-text strip has to clear it too. The reset is applied with
+# `changed = false`, so it never travels in the settings packet — it is observable only in the forwarded SQL
+# text (`system.query_log.query`), which is precisely what an older shard would reject on parse. Hence this
+# case asserts on the query text rather than on the `Settings` map.
+QID_DEFAULT="04492-default-${CLICKHOUSE_DATABASE}-$$"
+${CLICKHOUSE_CLIENT} --query_id="${QID_DEFAULT}" -q "
+    INSERT INTO dist_dst
+    SETTINGS parallel_distributed_insert_select = 2, prefer_localhost_replica = 0, log_queries = 1,
+        http_allow_table_as_file = DEFAULT, input_format = DEFAULT
+    SELECT * FROM dist_src"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} -q "
+    WITH initial AS
+    (
+        SELECT query_id
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+          AND query_id = '${QID_DEFAULT}'
+          AND is_initial_query = 1
+          AND type = 'QueryFinish'
+          AND event_date >= today() - 1
+    )
+    SELECT
+        count() >= 1 AS ran_on_shards,
+        countIf(query LIKE '%http_allow_table_as_file%') AS leaked_http_allow_table_as_file_default,
+        countIf(query LIKE '%input_format%') AS leaked_input_format_default
+    FROM system.query_log
+    WHERE initial_query_id IN (SELECT query_id FROM initial)
+      AND is_initial_query = 0
+      AND query_kind = 'Insert'
+      AND type = 'QueryFinish'
+      AND event_date >= today() - 1"
+
 rm -f "${DATA_FILE}"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE dist_dst"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE dist_src"

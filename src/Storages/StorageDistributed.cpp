@@ -1151,7 +1151,12 @@ static void stripInitiatorOnlySettingsFromQueryText(ASTInsertQuery & query)
         return;
 
     auto & set_query = query.settings_ast->as<ASTSetQuery &>();
+    /// Strip from both lists, matching `stripQuerySettings`'s `ASTSetQuery` treatment: `changes` holds
+    /// `name = value` overrides and `default_settings` holds `name = DEFAULT` resets. `ASTSetQuery::formatImpl`
+    /// serializes both, so an initiator-only setting written as `... = DEFAULT` would otherwise still ride
+    /// along in the forwarded query text and trip `UNKNOWN_SETTING` on an older shard that lacks the name.
     std::erase_if(set_query.changes, [](const SettingChange & change) { return ClusterProxy::isInitiatorOnlySettingName(change.name); });
+    std::erase_if(set_query.default_settings, [](const String & name) { return ClusterProxy::isInitiatorOnlySettingName(name); });
 
     /// `ASTInsertQuery::formatImpl` always prints a bare `SETTINGS` keyword when `settings_ast` is set,
     /// so drop an emptied clause entirely to keep the forwarded query valid.
