@@ -61,17 +61,21 @@ node8 = cluster.add_instance(
     user_configs=["configs/config_include_from_yml.xml"],
     main_configs=["configs/include_from_source.yml"],
 )
-# env var with XML special characters (should be auto-escaped)
+# env var with XML special characters (should be auto-escaped).
+# `instance_env_variables=True` keeps `LOG_COMMENT_VALUE` exclusive to this node: env variables are
+# otherwise shared across the whole cluster, so node9 and node10 (same variable name) would collide.
 node9 = cluster.add_instance(
     "node9",
     user_configs=["configs/config_env_xml_chars.xml"],
     env_variables={"LOG_COMMENT_VALUE": "a&b<c>d"},
+    instance_env_variables=True,
 )
 # env var that looks like an XML fragment: it must be taken as literal text, not parsed as XML
 node10 = cluster.add_instance(
     "node10",
     user_configs=["configs/config_env_xml_chars.xml"],
     env_variables={"LOG_COMMENT_VALUE": "<a>1</a>"},
+    instance_env_variables=True,
 )
 # from_zk value that is a YAML subtree (does not start with '<'): it must be autodetected as YAML
 node11 = cluster.add_instance(
