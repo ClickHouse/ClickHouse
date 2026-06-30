@@ -8,15 +8,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The access-entity caches (QuotaCache, RoleCache, RowPolicyCache, SettingsProfilesCache)
 # recompute every enabled set on each access change, in a batch-finished callback that runs on
 # whichever client thread issued the DDL, and log the recompute size and duration. Those lines
-# are server-internal diagnostics emitted at TRACE (fast recompute) / DEBUG (slow, >= 1000 ms).
-# Both are below the default client level send_logs_level=warning, so at that default level they
-# are not forwarded onto the issuing client's stderr (which clickhouse-test treats as a failure).
-# Asserts, exercising all four caches at three client levels:
+# are server-internal diagnostics emitted at TRACE (fast recompute) / DEBUG (slow, >= 1000 ms),
+# both below the default client level send_logs_level=warning, so at that default level they are
+# not forwarded onto the issuing client's stderr (which clickhouse-test treats as a failure).
+# Asserts the guaranteed contract, exercising all four caches at two client levels:
 #   trace   -> forwarded (1)   the recompute path actually runs and the lines exist
 #   warning -> not forwarded (0)   the contract: the default client level no longer leaks them
-#   debug   -> not forwarded (0)   the fast path is TRACE, below debug
-# The slow >= 1000 ms DEBUG path stays visible to an explicit debug client by design and is not
-# asserted here (these tiny single-entity recomputes never cross the threshold).
+# debug is intentionally not probed: the slow >= 1000 ms path is LOG_DEBUG by design and so is
+# forwarded to an explicit debug client, so a debug assertion would flip whenever a recompute
+# crosses the threshold under load -- the exact flakiness this change removes.
 #
 # send_logs_level is connection-level (the recompute fires after the statement's per-query
 # settings are gone), so build a client per level by replacing the runner-injected value
@@ -30,7 +30,6 @@ make_client() {
 }
 CLIENT_TRACE=$(make_client trace)
 CLIENT_WARNING=$(make_client warning)
-CLIENT_DEBUG=$(make_client debug)
 
 USER="user_${CLICKHOUSE_DATABASE}"
 QUOTA="quota_${CLICKHOUSE_DATABASE}"
@@ -90,7 +89,6 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${POLICY_TABLE} (x UInt8) ENGINE = Memory"
 
 exercise "${CLIENT_TRACE}"      # 1: recompute lines ARE forwarded at trace (path is exercised)
 exercise "${CLIENT_WARNING}"    # 0: the contract -- not forwarded at the default client level
-exercise "${CLIENT_DEBUG}"      # 0: fast path is TRACE, below debug (the regression guard)
 
 drop_all
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${POLICY_TABLE}"
