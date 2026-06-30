@@ -429,7 +429,7 @@ namespace
 
     Note: the reservation is currently only applied to pipeline-executor threads, not to all `ThreadPool` users (e.g. background merges and fetches), so it covers the query-execution memory but not every job that runs in a `ThreadPool`.
 
-    The value should be equal to or slightly greater than `max_untracked_memory`. Setting it to `0` disables the speculative accounting.
+    The value should be equal to or slightly greater than `max_untracked_memory`. Setting it to `0` disables the speculative accounting. A value larger than the total server memory is clamped to it, because a per-thread reservation can never sensibly exceed the total RAM.
     )", 0) \
     DECLARE(Bool, allow_use_jemalloc_memory, true, R"(Allows to use jemalloc memory.)", 0) \
     DECLARE(Bool, use_separate_cache_arena, true, R"(

@@ -1347,13 +1347,15 @@ void LocalServer::processConfig()
     /// dynamic adjustment from racing. Setting it here too would just overwrite the same value.
 
     {
-        /// Mirror `Server.cpp`: the setting is `UInt64` but the atomic is `int64_t`, so clamp
-        /// at `INT64_MAX` so a huge misconfigured value does not wrap negative and disable
-        /// the speculative reservation via the `> 0` check.
+        /// Mirror `Server.cpp`: the setting is `UInt64` but the atomic is `int64_t` and the value is
+        /// added as a signed delta into the total `MemoryTracker`. Clamping at `INT64_MAX` is not
+        /// enough — a near-`INT64_MAX` reservation overflows the `size + amount` addition and corrupts
+        /// the tracker before the hard-limit check. Clamp to the physical server memory instead: a
+        /// per-thread reservation can never sensibly exceed the total RAM, and the result stays far
+        /// below `INT64_MAX`, so the tracker arithmetic cannot overflow.
         const UInt64 raw = server_settings[ServerSetting::additional_memory_tracking_per_thread];
-        const auto int64_max = static_cast<UInt64>(std::numeric_limits<int64_t>::max());
         additional_memory_tracking_per_thread.store(
-            static_cast<int64_t>(std::min(raw, int64_max)),
+            static_cast<int64_t>(std::min<UInt64>(raw, physical_server_memory)),
             std::memory_order_relaxed);
     }
 

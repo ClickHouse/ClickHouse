@@ -2417,14 +2417,18 @@ try
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
             {
-                /// The setting is `UInt64` but the atomic is `int64_t` (it is consumed as a
-                /// signed delta into the memory tracker). Clamp the value at `INT64_MAX` so a
-                /// misconfigured huge value does not silently wrap negative and disable the
-                /// feature via the `> 0` check.
+                /// The setting is `UInt64` but the atomic is `int64_t` and the value is added as a
+                /// signed delta into the total `MemoryTracker` (`will_be = size + amount.fetch_add(size)`).
+                /// Clamping merely at `INT64_MAX` is not enough: on a running server `amount`/`rss` are
+                /// already positive, so a near-`INT64_MAX` reservation overflows that signed addition,
+                /// wraps negative and corrupts the tracker before the hard-limit check can reject it.
+                /// Clamp to the physical server memory instead: a per-thread reservation can never
+                /// sensibly exceed the total RAM, and the result stays far below `INT64_MAX`, so the
+                /// tracker arithmetic cannot overflow.
                 const UInt64 raw = new_server_settings[ServerSetting::additional_memory_tracking_per_thread];
-                const auto int64_max = static_cast<UInt64>(std::numeric_limits<int64_t>::max());
+                const UInt64 reservation_upper_bound = getMemoryAmount();
                 additional_memory_tracking_per_thread.store(
-                    static_cast<int64_t>(std::min(raw, int64_max)),
+                    static_cast<int64_t>(std::min(raw, reservation_upper_bound)),
                     std::memory_order_relaxed);
             }
 
