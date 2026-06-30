@@ -5,6 +5,7 @@ sidebar_position: 23
 slug: /interfaces/web-ui-color-coding
 title: 'Web UI Color Coding'
 doc_type: 'reference'
+sidebar: false
 ---
 
 The built-in Web SQL UI (`play.html`, served at the [`/play`](/interfaces/http) path of any ClickHouse HTTP port) can color result cells to make patterns in a column easier to spot at a glance. Each column has its own, independently switchable color coding mode.
