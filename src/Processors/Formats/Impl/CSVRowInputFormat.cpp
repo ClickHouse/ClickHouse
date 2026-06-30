@@ -15,6 +15,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -378,8 +379,19 @@ bool CSVFormatReader::readField(
         /// they do not contain empty unquoted fields, so this check
         /// works for tuples as well (a Nullable(Tuple) is written as a
         /// single quoted field, so an empty field means the default).
-        column.insertDefault();
-        return false;
+        ///
+        /// Exception: with `input_format_csv_missing_nullable_as_empty_string`, a missing value of
+        /// `Nullable(String)` (including its low-cardinality form `LowCardinality(Nullable(String))`)
+        /// should be read as an empty string instead of NULL, so it must fall through to normal
+        /// deserialization.
+        bool keep_empty_value = format_settings.csv.missing_nullable_as_empty_string
+            && isNullableOrLowCardinalityNullable(type) && isString(removeLowCardinalityAndNullable(type));
+
+        if (!keep_empty_value)
+        {
+            column.insertDefault();
+            return false;
+        }
     }
 
     if (format_settings.csv.use_default_on_bad_values)
@@ -565,7 +577,8 @@ If input data contains only ENUM ids, it's recommended to enable the setting [in
 | [format_csv_allow_single_quotes](/operations/settings/settings-formats.md/#format_csv_allow_single_quotes)                                                 | allow strings in single quotes.                                                                                    | `true`  |                                                                                                                                                                                              |
 | [format_csv_allow_double_quotes](/operations/settings/settings-formats.md/#format_csv_allow_double_quotes)                                                 | allow strings in double quotes.                                                                                    | `true`  |                                                                                                                                                                                              | 
 | [format_csv_null_representation](/operations/settings/settings-formats.md/#format_tsv_null_representation)                                                 | custom NULL representation in CSV format.                                                                          | `\N`    |                                                                                                                                                                                              |   
-| [input_format_csv_empty_as_default](/operations/settings/settings-formats.md/#input_format_csv_empty_as_default)                                           | treat empty fields in CSV input as default values.                                                                 | `true`  | For complex default expressions, [input_format_defaults_for_omitted_fields](/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) must be enabled too. | 
+| [input_format_csv_empty_as_default](/operations/settings/settings-formats.md/#input_format_csv_empty_as_default)                                           | treat empty fields in CSV input as default values.                                                                 | `true`  | For complex default expressions, [input_format_defaults_for_omitted_fields](/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) must be enabled too. |
+| [input_format_csv_missing_nullable_as_empty_string](/operations/settings/settings-formats.md/#input_format_csv_missing_nullable_as_empty_string)                           | read a missing value of `Nullable(String)` as an empty string instead of NULL, regardless of `input_format_csv_empty_as_default`. | `false` |                                                                                                                                                                                              |
 | [input_format_csv_enum_as_number](/operations/settings/settings-formats.md/#input_format_csv_enum_as_number)                                               | treat inserted enum values in CSV formats as enum indices.                                                         | `false` |                                                                                                                                                                                              |
 | [input_format_csv_use_best_effort_in_schema_inference](/operations/settings/settings-formats.md/#input_format_csv_use_best_effort_in_schema_inference)     | use some tweaks and heuristics to infer schema in CSV format. If disabled, all fields will be inferred as Strings. | `true`  |                                                                                                                                                                                              |
 | [input_format_csv_arrays_as_nested_csv](/operations/settings/settings-formats.md/#input_format_csv_arrays_as_nested_csv)                                   | when reading Array from CSV, expect that its elements were serialized in nested CSV and then put into string.      | `false` |                                                                                                                                                                                              |
