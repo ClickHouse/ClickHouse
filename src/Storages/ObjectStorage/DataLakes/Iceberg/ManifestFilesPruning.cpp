@@ -16,6 +16,8 @@
 #include <Common/quoteString.h>
 #include <fmt/ranges.h>
 
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
@@ -51,7 +53,130 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
     return makeASTFunction(transform_and_argument->transform_name, make_intrusive<ASTIdentifier>(column_name));
 }
 
-std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const
+struct FunctionSubstitutionEntry
+{
+    String source_func;
+    String target_func;
+    std::function<bool(const DataTypePtr &)> accepts_const_type;
+    std::function<const ActionsDAG::Node *(ActionsDAG &, const ActionsDAG::Node *, const ContextPtr &)> convert_const;
+};
+
+static std::vector<FunctionSubstitutionEntry> buildSubstitutionTable(const ContextPtr & context)
+{
+    std::vector<FunctionSubstitutionEntry> entries;
+
+    auto apply_func_to_const = [&context](const String & func_name, ActionsDAG & dag, const ActionsDAG::Node * const_node) -> const ActionsDAG::Node *
+    {
+        auto builder = FunctionFactory::instance().tryGet(func_name, context);
+        if (!builder)
+            return nullptr;
+        ColumnsWithTypeAndName arguments{{const_node->column, const_node->result_type, const_node->result_name}};
+        auto func_base = builder->build(arguments);
+        if (!func_base)
+            return nullptr;
+        return &dag.addFunction(func_base, {const_node}, const_node->result_name);
+    };
+
+    entries.push_back({"toDate", "toRelativeDayNum",
+        [](const DataTypePtr & t) { return isDate(t); },
+        [apply_func_to_const](ActionsDAG & dag, const ActionsDAG::Node * sibling, const ContextPtr &) -> const ActionsDAG::Node *
+        {
+            return apply_func_to_const("toRelativeDayNum", dag, sibling);
+        }
+    });
+
+    entries.push_back({"toStartOfHour", "toRelativeHourNum",
+        [](const DataTypePtr & t) { return isDateTime(t) || isDateTime64(t); },
+        [apply_func_to_const](ActionsDAG & dag, const ActionsDAG::Node * sibling, const ContextPtr &) -> const ActionsDAG::Node *
+        {
+            return apply_func_to_const("toRelativeHourNum", dag, sibling);
+        }
+    });
+
+    entries.push_back({"toYear", "toYearNumSinceEpoch",
+        [](const DataTypePtr & t) { return isNumber(t); },
+        [](ActionsDAG & dag, const ActionsDAG::Node * sibling, const ContextPtr &) -> const ActionsDAG::Node *
+        {
+            auto year_val = (*sibling->column)[0].safeGet<UInt64>();
+            auto uint16_type = std::make_shared<DataTypeUInt16>();
+            auto new_col = uint16_type->createColumnConst(1, static_cast<UInt64>(static_cast<UInt16>(year_val - 1970)));
+            return &dag.addColumn({new_col, uint16_type, sibling->result_name});
+        }
+    });
+
+    return entries;
+}
+
+static void substituteFilterFunctionsForPartitionKey(DB::ActionsDAG & dag, const DB::ContextPtr & context)
+{
+    auto substitutions = buildSubstitutionTable(context);
+
+    std::unordered_map<String, size_t> source_to_idx;
+    for (size_t i = 0; i < substitutions.size(); ++i)
+        source_to_idx.emplace(substitutions[i].source_func, i);
+
+    std::unordered_map<const ActionsDAG::Node *, size_t> substituted_nodes;
+
+    for (auto & node : const_cast<ActionsDAG::Nodes &>(dag.getNodes()))
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION
+            || !node.function_base
+            || node.children.size() != 1)
+            continue;
+
+        auto it = source_to_idx.find(node.function_base->getName());
+        if (it == source_to_idx.end())
+            continue;
+
+        const auto * arg = node.children[0];
+        if (arg->column && isColumnConst(*arg->column))
+            continue;
+
+        const auto & entry = substitutions[it->second];
+        ColumnsWithTypeAndName arguments{{nullptr, arg->result_type, ""}};
+        auto target_builder = FunctionFactory::instance().tryGet(entry.target_func, context);
+        if (!target_builder)
+            continue;
+        auto new_function_base = target_builder->build(arguments);
+        if (!new_function_base)
+            continue;
+
+        node.function_base = std::move(new_function_base);
+        substituted_nodes.emplace(&node, it->second);
+    }
+
+    if (substituted_nodes.empty())
+        return;
+
+    for (auto & node : const_cast<ActionsDAG::Nodes &>(dag.getNodes()))
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || node.children.size() != 2)
+            continue;
+
+        for (size_t i = 0; i < 2; ++i)
+        {
+            auto sub_it = substituted_nodes.find(node.children[i]);
+            if (sub_it == substituted_nodes.end())
+                continue;
+
+            size_t j = 1 - i;
+            const auto * sibling = node.children[j];
+            if (!sibling->column || !isColumnConst(*sibling->column))
+                continue;
+
+            const auto & entry = substitutions[sub_it->second];
+            if (!entry.accepts_const_type(sibling->result_type))
+                continue;
+
+            const auto * new_node = entry.convert_const(dag, sibling, context);
+            if (new_node)
+                node.children[j] = new_node;
+        }
+    }
+}
+
+std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManifest(
+    const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter, const DB::ContextPtr & context) const
 {
     const auto & inputs = source_dag->getInputs();
 
@@ -88,6 +213,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
     }
     auto result = std::make_unique<DB::ActionsDAG>(DB::ActionsDAG::merge(std::move(dag_with_renames), source_dag->clone()));
     result->removeUnusedActions();
+    substituteFilterFunctionsForPartitionKey(*result, context);
     return result;
 }
 
@@ -110,7 +236,7 @@ ManifestFilesPruner::ManifestFilesPruner(
 
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
-    transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter);
+    transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter, context);
     chassert(transformed_dag != nullptr);
 
     if (manifest_file.hasPartitionKey())

@@ -11,6 +11,234 @@ from helpers.iceberg_utils import (
     "storage_type, run_on_cluster",
     [("s3", False), ("s3", True), ("azure", False), ("local", False), ("local", True)],
 )
+def test_partition_pruning_todate_filter(started_cluster_iceberg_with_spark, storage_type, run_on_cluster):
+    """Test that toDate(ts) = toDate('...') triggers partition pruning for days(ts) partitioned tables."""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_partition_pruning_todate_" + storage_type + "_" + get_uuid_str()
+
+    def execute_spark_query(query: str):
+        return execute_spark_query_general(
+            spark,
+            started_cluster_iceberg_with_spark,
+            storage_type,
+            TABLE_NAME,
+            query,
+            additional_nodes=["node2", "node3"] if storage_type == "local" else [],
+        )
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME} (
+                id INT,
+                ts TIMESTAMP
+            )
+            USING iceberg
+            PARTITIONED BY (days(ts))
+            OPTIONS('format-version'='2')
+        """
+    )
+
+    execute_spark_query(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES
+        (1, TIMESTAMP '2024-01-10 10:00:00'),
+        (2, TIMESTAMP '2024-01-10 22:00:00'),
+        (3, TIMESTAMP '2024-02-15 08:00:00'),
+        (4, TIMESTAMP '2024-02-15 20:00:00'),
+        (5, TIMESTAMP '2024-03-20 12:00:00')
+    """
+    )
+
+    creation_expression = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True, run_on_cluster=run_on_cluster
+    )
+
+    def check_validity_and_get_prunned_files(select_expression):
+        settings1 = {"use_iceberg_partition_pruning": 0}
+        settings2 = {"use_iceberg_partition_pruning": 1}
+        return check_validity_and_get_prunned_files_general(
+            instance, TABLE_NAME, settings1, settings2, "IcebergPartitionPrunedFiles", select_expression
+        )
+
+    # toDate(ts) = toDate('...') should prune files for other days
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE toDate(ts) = toDate('2024-01-10') ORDER BY ALL"
+        )
+        == 2
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE toDate(ts) = toDate('2024-02-15') ORDER BY ALL"
+        )
+        == 2
+    )
+
+    # No pruning when no filter
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} ORDER BY ALL"
+        )
+        == 0
+    )
+
+
+@pytest.mark.parametrize(
+    "storage_type, run_on_cluster",
+    [("s3", False), ("s3", True), ("azure", False), ("local", False), ("local", True)],
+)
+def test_partition_pruning_tostartofhour_filter(started_cluster_iceberg_with_spark, storage_type, run_on_cluster):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_partition_pruning_tostartofhour_" + storage_type + "_" + get_uuid_str()
+
+    def execute_spark_query(query: str):
+        return execute_spark_query_general(
+            spark,
+            started_cluster_iceberg_with_spark,
+            storage_type,
+            TABLE_NAME,
+            query,
+            additional_nodes=["node2", "node3"] if storage_type == "local" else [],
+        )
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME} (
+                id INT,
+                ts TIMESTAMP
+            )
+            USING iceberg
+            PARTITIONED BY (hours(ts))
+            OPTIONS('format-version'='2')
+        """
+    )
+
+    execute_spark_query(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES
+        (1, TIMESTAMP '2024-01-10 10:00:00'),
+        (2, TIMESTAMP '2024-01-10 10:30:00'),
+        (3, TIMESTAMP '2024-01-10 15:00:00'),
+        (4, TIMESTAMP '2024-01-10 15:45:00'),
+        (5, TIMESTAMP '2024-01-10 22:00:00')
+    """
+    )
+
+    creation_expression = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True, run_on_cluster=run_on_cluster
+    )
+
+    def check_validity_and_get_prunned_files(select_expression):
+        settings1 = {"use_iceberg_partition_pruning": 0}
+        settings2 = {"use_iceberg_partition_pruning": 1}
+        return check_validity_and_get_prunned_files_general(
+            instance, TABLE_NAME, settings1, settings2, "IcebergPartitionPrunedFiles", select_expression
+        )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE toStartOfHour(ts) = toStartOfHour(toDateTime('2024-01-10 10:00:00')) ORDER BY ALL"
+        )
+        == 2
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE toStartOfHour(ts) = toStartOfHour(toDateTime('2024-01-10 15:00:00')) ORDER BY ALL"
+        )
+        == 2
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} ORDER BY ALL"
+        )
+        == 0
+    )
+
+
+@pytest.mark.parametrize(
+    "storage_type, run_on_cluster",
+    [("s3", False), ("s3", True), ("azure", False), ("local", False), ("local", True)],
+)
+def test_partition_pruning_toyear_filter(started_cluster_iceberg_with_spark, storage_type, run_on_cluster):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_partition_pruning_toyear_" + storage_type + "_" + get_uuid_str()
+
+    def execute_spark_query(query: str):
+        return execute_spark_query_general(
+            spark,
+            started_cluster_iceberg_with_spark,
+            storage_type,
+            TABLE_NAME,
+            query,
+            additional_nodes=["node2", "node3"] if storage_type == "local" else [],
+        )
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME} (
+                id INT,
+                ts TIMESTAMP
+            )
+            USING iceberg
+            PARTITIONED BY (years(ts))
+            OPTIONS('format-version'='2')
+        """
+    )
+
+    execute_spark_query(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES
+        (1, TIMESTAMP '2022-06-15 10:00:00'),
+        (2, TIMESTAMP '2022-12-31 23:00:00'),
+        (3, TIMESTAMP '2023-03-10 08:00:00'),
+        (4, TIMESTAMP '2023-09-20 14:00:00'),
+        (5, TIMESTAMP '2024-01-05 07:00:00')
+    """
+    )
+
+    creation_expression = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True, run_on_cluster=run_on_cluster
+    )
+
+    def check_validity_and_get_prunned_files(select_expression):
+        settings1 = {"use_iceberg_partition_pruning": 0}
+        settings2 = {"use_iceberg_partition_pruning": 1}
+        return check_validity_and_get_prunned_files_general(
+            instance, TABLE_NAME, settings1, settings2, "IcebergPartitionPrunedFiles", select_expression
+        )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE toYear(ts) = 2022 ORDER BY ALL"
+        )
+        == 2
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE toYear(ts) = 2023 ORDER BY ALL"
+        )
+        == 2
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} ORDER BY ALL"
+        )
+        == 0
+    )
+
+
+@pytest.mark.parametrize(
+    "storage_type, run_on_cluster",
+    [("s3", False), ("s3", True), ("azure", False), ("local", False), ("local", True)],
+)
 def test_partition_pruning(started_cluster_iceberg_with_spark, storage_type, run_on_cluster):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
