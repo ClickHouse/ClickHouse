@@ -5637,7 +5637,7 @@ Possible values:
 - `'ignore'` - Don't cache the query result and don't throw an exception.
 )", 0) \
     DECLARE(Bool, query_cache_use_only_when_data_was_not_changed, false, R"(
-If turned on, a [query cache](../query-cache.md) entry is reused only if none of the tables referenced by the query were changed since the entry was cached. This makes the query cache always consistent at the cost of recomputing the result whenever the underlying data changes (and of an extra check of the referenced tables on each lookup, which may be expensive for `Merge`, `Distributed` and `URL` tables).
+If turned on, a [query cache](../query-cache.md) entry is reused only if none of the tables referenced by the query were changed since the entry was cached. This makes the query cache consistent with respect to data changes, at the cost of recomputing the result whenever the underlying data changes (and of an extra check of the referenced tables on each lookup, which may be expensive for `Merge`, `Distributed` and `URL` tables). For `URL` and object-storage tables this check is based on the resource's strong `ETag` and is best-effort: a result could in rare cases be reused if the content is rewritten back to a byte-identical state during the read.
 
 If the query references a table that cannot tell whether its data changed (e.g. a table function such as `url`), the query cache is not used.
 
