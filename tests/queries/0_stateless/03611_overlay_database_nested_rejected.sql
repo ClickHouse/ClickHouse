@@ -1,3 +1,10 @@
+-- Tags: no-parallel
+-- This test creates databases with fixed global names, so it cannot run concurrently with copies of
+-- itself (the flaky check runs a test many times in parallel): a concurrent run would drop a source
+-- database out from under another run between `CREATE DATABASE ov_nested_src` and the facade `CREATE`.
+-- The sibling `03611_overlay_database_server_side.sql` / `_restore_rename.sql` tests are `no-parallel`
+-- for the same reason.
+
 -- A read-only `Overlay` database cannot use another read-only `Overlay` database as a source.
 -- Nesting facades would let access checks and row policies bypass the intermediate facade: reading
 -- `top.t` with `top = Overlay('mid')` and `mid = Overlay('src')` resolves straight to `src.t`, so a
