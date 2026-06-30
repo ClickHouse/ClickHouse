@@ -167,63 +167,97 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
             /// Parse table[.format[.compression]] from the last component.
             const String & raw = components[table_index];
 
-            /// Try splitting from the right.
-            String table_part = raw;
-            String format_part;
-            String compression_part;
-            String disposition_filename = raw;
-
-            auto last_dot = table_part.rfind('.');
-            if (last_dot != String::npos)
+            /// A fully back-quoted component is a *literal* table name: its dots are part of the name
+            /// and no format/compression suffix is stripped from it. This mirrors SQL identifier quoting
+            /// (where `db.table` is always `database.identifier` and a dotted name must be back-quoted)
+            /// and is the escape hatch for a table whose name ends in (or contains) a registered format
+            /// or compression token. For example `` /db/`events.JSON` `` reads the table named
+            /// `events.JSON`, whereas the unquoted `/db/events.JSON` reads table `events` with format
+            /// `JSON`. When the name is back-quoted, specify the format/compression via the `format` /
+            /// `compression` URL parameters (or the `format` setting) instead of a path suffix.
+            /// A backtick travels in a URL percent-encoded as `%60`; `HTTPHandler` URL-decodes the path
+            /// before calling this, so `/db/%60events.JSON%60` arrives here as `` `events.JSON` ``.
+            if (raw.size() >= 2 && raw.front() == '`' && raw.back() == '`')
             {
-                String maybe_extension = table_part.substr(last_dot + 1);
-                String maybe_compression_name = canonicalizeCompressionExtension(maybe_extension);
-                if (!maybe_compression_name.empty())
+                /// Unescape a doubled backtick (`` `` `` -> `` ` ``), as in SQL identifier quoting.
+                const String inner = raw.substr(1, raw.size() - 2);
+                String unquoted;
+                unquoted.reserve(inner.size());
+                for (size_t i = 0; i < inner.size(); ++i)
                 {
-                    compression_part = maybe_compression_name;
-                    /// Canonicalize the compression extension in the disposition filename so an accepted
-                    /// alias (`.zstd` / `.gzip` / `.lzma` / `.bzip2`) is not duplicated when `HTTPHandler`
-                    /// appends the canonical suffix (`.zst` / `.gz` / `.xz` / `.bz2`). For example
-                    /// `/db/hits.Native.zstd` yields the filename `hits.Native.zst`, not `hits.Native.zstd.zst`.
-                    if (maybe_compression_name != maybe_extension)
-                        disposition_filename = raw.substr(0, last_dot + 1) + maybe_compression_name;
-                    table_part = table_part.substr(0, last_dot);
-                    last_dot = table_part.rfind('.');
-                    if (last_dot != String::npos)
+                    if (inner[i] == '`' && i + 1 < inner.size() && inner[i + 1] == '`')
                     {
-                        String fmt_candidate = table_part.substr(last_dot + 1);
-                        String canonical_format = findFormatCaseInsensitive(fmt_candidate);
-                        if (canonical_format.empty())
-                        {
-                            throw Exception(ErrorCodes::UNKNOWN_FORMAT,
-                                "Unknown format '{}' in URL path. Compression cannot be specified without a known format.", fmt_candidate);
-                        }
-                        format_part = canonical_format;
+                        unquoted += '`';
+                        ++i;
+                    }
+                    else
+                        unquoted += inner[i];
+                }
+                result.table = unquoted;
+                result.format = {};
+                result.compression = {};
+                result.filename_for_disposition = unquoted;
+            }
+            else
+            {
+                /// Try splitting from the right.
+                String table_part = raw;
+                String format_part;
+                String compression_part;
+                String disposition_filename = raw;
+
+                auto last_dot = table_part.rfind('.');
+                if (last_dot != String::npos)
+                {
+                    String maybe_extension = table_part.substr(last_dot + 1);
+                    String maybe_compression_name = canonicalizeCompressionExtension(maybe_extension);
+                    if (!maybe_compression_name.empty())
+                    {
+                        compression_part = maybe_compression_name;
+                        /// Canonicalize the compression extension in the disposition filename so an accepted
+                        /// alias (`.zstd` / `.gzip` / `.lzma` / `.bzip2`) is not duplicated when `HTTPHandler`
+                        /// appends the canonical suffix (`.zst` / `.gz` / `.xz` / `.bz2`). For example
+                        /// `/db/hits.Native.zstd` yields the filename `hits.Native.zst`, not `hits.Native.zstd.zst`.
+                        if (maybe_compression_name != maybe_extension)
+                            disposition_filename = raw.substr(0, last_dot + 1) + maybe_compression_name;
                         table_part = table_part.substr(0, last_dot);
+                        last_dot = table_part.rfind('.');
+                        if (last_dot != String::npos)
+                        {
+                            String fmt_candidate = table_part.substr(last_dot + 1);
+                            String canonical_format = findFormatCaseInsensitive(fmt_candidate);
+                            if (canonical_format.empty())
+                            {
+                                throw Exception(ErrorCodes::UNKNOWN_FORMAT,
+                                    "Unknown format '{}' in URL path. Compression cannot be specified without a known format.", fmt_candidate);
+                            }
+                            format_part = canonical_format;
+                            table_part = table_part.substr(0, last_dot);
+                        }
+                        else
+                        {
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Compression extension '{}' specified without a format in URL path.", compression_part);
+                        }
                     }
                     else
                     {
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Compression extension '{}' specified without a format in URL path.", compression_part);
+                        /// Maybe just a format extension (no compression).
+                        String canonical_format = findFormatCaseInsensitive(maybe_extension);
+                        if (!canonical_format.empty())
+                        {
+                            format_part = canonical_format;
+                            table_part = table_part.substr(0, last_dot);
+                        }
+                        /// Otherwise leave it as part of the table name.
                     }
                 }
-                else
-                {
-                    /// Maybe just a format extension (no compression).
-                    String canonical_format = findFormatCaseInsensitive(maybe_extension);
-                    if (!canonical_format.empty())
-                    {
-                        format_part = canonical_format;
-                        table_part = table_part.substr(0, last_dot);
-                    }
-                    /// Otherwise leave it as part of the table name.
-                }
-            }
 
-            result.table = table_part;
-            result.format = format_part;
-            result.compression = compression_part;
-            result.filename_for_disposition = disposition_filename;
+                result.table = table_part;
+                result.format = format_part;
+                result.compression = compression_part;
+                result.filename_for_disposition = disposition_filename;
+            }
         }
     }
 
