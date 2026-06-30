@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.hypothetical_indexes"
 echo "--- drop/recreate: old index applies before drop ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_lc;
-    CREATE TABLE t_hypo_lc (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_lc (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_lc SELECT number, number FROM numbers(100);
 
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_lc (b) TYPE minmax GRANULARITY 1;
@@ -24,7 +24,7 @@ $CLICKHOUSE_CLIENT -n -q "
 
     SELECT '--- drop/recreate: new table does NOT see old index ---';
     DROP TABLE t_hypo_lc;
-    CREATE TABLE t_hypo_lc (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_lc (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_lc SELECT number, number FROM numbers(100);
     EXPLAIN WHATIF SELECT * FROM t_hypo_lc WHERE b = 42;
 " | grep -E '^---|^With idx_b|^\(none\):'
@@ -34,10 +34,10 @@ $CLICKHOUSE_CLIENT -n -q "
 echo "--- drop/recreate: stale entry is removable by name ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_stale;
-    CREATE TABLE t_hypo_stale (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_stale (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_stale (b) TYPE minmax GRANULARITY 1;
     DROP TABLE t_hypo_stale;
-    CREATE TABLE t_hypo_stale (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_stale (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_stale';
     DROP HYPOTHETICAL INDEX idx_b ON t_hypo_stale;
     SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_stale';
@@ -46,10 +46,10 @@ $CLICKHOUSE_CLIENT -n -q "
 echo "--- drop/recreate: re-creating the index purges the stale entry ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_stale;
-    CREATE TABLE t_hypo_stale (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_stale (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_stale (b) TYPE minmax GRANULARITY 1;
     DROP TABLE t_hypo_stale;
-    CREATE TABLE t_hypo_stale (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_stale (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_stale (b) TYPE minmax GRANULARITY 1;
     SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_stale';
 " | grep -E '^[0-9]+$'
@@ -59,7 +59,7 @@ $CLICKHOUSE_CLIENT -n -q "
 echo "--- IF NOT EXISTS / DROP IF EXISTS edge cases ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_dup;
-    CREATE TABLE t_hypo_dup (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_dup (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     CREATE HYPOTHETICAL INDEX idx_a ON t_hypo_dup (a) TYPE minmax GRANULARITY 1;
     SELECT '--- IF NOT EXISTS is silent on duplicate ---';
     CREATE HYPOTHETICAL INDEX IF NOT EXISTS idx_a ON t_hypo_dup (a) TYPE minmax GRANULARITY 1;
@@ -69,14 +69,14 @@ $CLICKHOUSE_CLIENT -n -q "
     SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_dup';
 
     DROP TABLE IF EXISTS t_hypo_dup2;
-    CREATE TABLE t_hypo_dup2 (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_dup2 (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     CREATE HYPOTHETICAL INDEX idx_a ON t_hypo_dup2 (a) TYPE minmax GRANULARITY 1;
     SELECT '--- IF NOT EXISTS is a no-op with an invalid replacement declaration ---';
     CREATE HYPOTHETICAL INDEX IF NOT EXISTS idx_a ON t_hypo_dup2 (missing_col) TYPE minmax GRANULARITY 1;
     SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_dup2';
 
     DROP TABLE IF EXISTS t_hypo_dup3;
-    CREATE TABLE t_hypo_dup3 (a UInt64, b UInt64, INDEX idx_real b TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_dup3 (a UInt64, b UInt64, INDEX idx_real b TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     SELECT '--- IF NOT EXISTS is a no-op when the name matches a real secondary index ---';
     CREATE HYPOTHETICAL INDEX IF NOT EXISTS idx_real ON t_hypo_dup3 (b) TYPE minmax GRANULARITY 1;
     SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_dup3';
@@ -85,7 +85,7 @@ $CLICKHOUSE_CLIENT -n -q "
 echo "--- DROP TABLE hides the entry from system.hypothetical_indexes ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_orphan;
-    CREATE TABLE t_hypo_orphan (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_orphan (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_orphan (b) TYPE minmax GRANULARITY 1;
     SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_orphan';
     DROP TABLE t_hypo_orphan;
@@ -95,7 +95,7 @@ $CLICKHOUSE_CLIENT -n -q "
 echo "--- CREATE respects allow_suspicious_indices = 0 ---"
 $CLICKHOUSE_CLIENT --allow_suspicious_indices 0 -n -q "
     DROP TABLE IF EXISTS t_hypo_susp;
-    CREATE TABLE t_hypo_susp (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_susp (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     CREATE HYPOTHETICAL INDEX idx_dup ON t_hypo_susp (a, a) TYPE minmax GRANULARITY 1;
 " 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
 
@@ -103,7 +103,7 @@ echo "--- EXPLAIN WHATIF with FINAL reports not_applicable ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_final;
     CREATE TABLE t_hypo_final (a UInt64, b UInt64) ENGINE = ReplacingMergeTree ORDER BY a
-    SETTINGS index_granularity = 100;
+    SETTINGS index_granularity = 100, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_final SELECT number, number FROM numbers(100);
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_final (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_final FINAL WHERE b = 42;
@@ -112,14 +112,14 @@ $CLICKHOUSE_CLIENT -n -q "
 echo "--- CREATE rejects text index (explicit unsupported-type path) ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_text;
-    CREATE TABLE t_hypo_text (id UInt32, message String) ENGINE = MergeTree ORDER BY id;
+    CREATE TABLE t_hypo_text (id UInt32, message String) ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0;
     CREATE HYPOTHETICAL INDEX idx_text ON t_hypo_text (message) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1;
 " 2>&1 | grep -m1 -o "of type 'text' are not supported"
 
 echo "--- CREATE rejects vector_similarity index (explicit unsupported-type path) ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_vec;
-    CREATE TABLE t_hypo_vec (id UInt32, v Array(Float32)) ENGINE = MergeTree ORDER BY id;
+    CREATE TABLE t_hypo_vec (id UInt32, v Array(Float32)) ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0;
     CREATE HYPOTHETICAL INDEX idx_vec ON t_hypo_vec (v) TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 1;
 " 2>&1 | grep -m1 -o "of type 'vector_similarity' are not supported"
 
@@ -127,7 +127,7 @@ echo "--- force_data_skipping_indices: useful hypothetical index is accepted ---
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_force;
     CREATE TABLE t_hypo_force (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100;
+    SETTINGS index_granularity = 100, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_force SELECT number, number FROM numbers(100);
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_force (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_force WHERE b = 42 SETTINGS force_data_skipping_indices = 'idx_b';
@@ -150,7 +150,7 @@ echo "--- inner-SELECT SETTINGS apply on the effective query context ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_eff;
     CREATE TABLE t_hypo_eff (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100;
+    SETTINGS index_granularity = 100, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_eff SELECT number, number FROM numbers(100);
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_eff (b) TYPE minmax GRANULARITY 1;
 
@@ -176,7 +176,7 @@ echo "--- use_skip_indexes_on_data_read = 1 on the inner SELECT keeps the static
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_skipread;
     CREATE TABLE t_hypo_skipread (a UInt64, b UInt64, INDEX idx_real b TYPE minmax GRANULARITY 1)
-    ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
+    ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_skipread SELECT number, number FROM numbers(200);
     CREATE HYPOTHETICAL INDEX idx_h ON t_hypo_skipread (a) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_skipread WHERE b = 42 SETTINGS use_skip_indexes_on_data_read = 1;
@@ -187,7 +187,7 @@ echo "--- read limit (break mode) does not report partial empirical as ok ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_break;
     CREATE TABLE t_hypo_break (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100;
+    SETTINGS index_granularity = 100, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_break SELECT number, number FROM numbers(100);
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_break (b) TYPE minmax GRANULARITY 1;
     SET max_rows_to_read = 50, read_overflow_mode = 'break';
@@ -198,7 +198,7 @@ echo "--- EXPLAIN WHATIF with function-expression index ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_func;
     CREATE TABLE t_hypo_func (a UInt64, s String) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100;
+    SETTINGS index_granularity = 100, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_func SELECT number, if(number < 100, 'Hit', 'Miss') FROM numbers(100);
     CREATE HYPOTHETICAL INDEX idx_l ON t_hypo_func (lower(s)) TYPE set(100) GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_func WHERE lower(s) = 'hit';
@@ -216,14 +216,14 @@ $CLICKHOUSE_CLIENT -n -q "
 echo "--- CREATE rejects unknown index type ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_bad;
-    CREATE TABLE t_hypo_bad (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_bad (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     CREATE HYPOTHETICAL INDEX bad ON t_hypo_bad (b) TYPE no_such_type GRANULARITY 1;
 " 2>&1 | grep -m1 -oE 'INCORRECT_QUERY|UNKNOWN_FUNCTION|BAD_ARGUMENTS'
 
 echo "--- type_full distinguishes parametrized index types ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_tf;
-    CREATE TABLE t_hypo_tf (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_tf (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     CREATE HYPOTHETICAL INDEX i1 ON t_hypo_tf (b) TYPE bloom_filter(0.01)  GRANULARITY 1;
     CREATE HYPOTHETICAL INDEX i2 ON t_hypo_tf (b) TYPE bloom_filter(0.001) GRANULARITY 1;
     SELECT name, type, type_full FROM system.hypothetical_indexes
@@ -234,7 +234,7 @@ $CLICKHOUSE_CLIENT -n -q "
 echo "--- applicability: predicate doesn't reference index column ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_app;
-    CREATE TABLE t_hypo_app (a UInt64, b UInt64, c String) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_app (a UInt64, b UInt64, c String) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_app SELECT number, number, toString(number) FROM numbers(100);
 
     CREATE HYPOTHETICAL INDEX idx_b_set ON t_hypo_app (b) TYPE set(100) GRANULARITY 1;
@@ -254,7 +254,7 @@ echo "--- applicability: candidate usable via a standalone conjunct beside a mix
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_disj;
     CREATE TABLE t_hypo_disj (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100;
+    SETTINGS index_granularity = 100, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_disj SELECT number, number, number FROM numbers(100);
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_disj (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_disj WHERE (b = 1 OR c = 2) AND b = 1;
@@ -264,7 +264,7 @@ $CLICKHOUSE_CLIENT -n -q "
 echo "--- parallel replicas: EXPLAIN WHATIF still runs locally ---"
 $CLICKHOUSE_CLIENT --enable_parallel_replicas=1 --parallel_replicas_for_non_replicated_merge_tree=1 --cluster_for_parallel_replicas=parallel_replicas --parallel_replicas_local_plan=1 -n -q "
     DROP TABLE IF EXISTS t_hypo_pr;
-    CREATE TABLE t_hypo_pr (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_pr (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_pr SELECT number, number FROM numbers(100);
 
     CREATE HYPOTHETICAL INDEX idx_a ON t_hypo_pr (a) TYPE minmax GRANULARITY 1;
@@ -276,7 +276,7 @@ $CLICKHOUSE_CLIENT --enable_parallel_replicas=1 --parallel_replicas_for_non_repl
 echo "--- parallel replicas via inner SETTINGS: EXPLAIN WHATIF still runs locally ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_pr2;
-    CREATE TABLE t_hypo_pr2 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_pr2 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_pr2 SELECT number, number FROM numbers(100);
     CREATE HYPOTHETICAL INDEX idx_a ON t_hypo_pr2 (a) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_pr2 WHERE a > 50
@@ -289,7 +289,7 @@ echo "--- CREATE requires column-level SELECT on the index column ---"
 user="u_04223_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_priv;
-    CREATE TABLE t_hypo_priv (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_priv (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     DROP USER IF EXISTS ${user};
     CREATE USER ${user} NOT IDENTIFIED;
     GRANT SELECT(a) ON ${CLICKHOUSE_DATABASE}.t_hypo_priv TO ${user};
@@ -304,7 +304,7 @@ echo "--- column-level SELECT user can create and drop a hypothetical index ---"
 user2="u2_04223_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_priv2;
-    CREATE TABLE t_hypo_priv2 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_priv2 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     DROP USER IF EXISTS ${user2};
     CREATE USER ${user2} NOT IDENTIFIED;
     GRANT SELECT(b) ON ${CLICKHOUSE_DATABASE}.t_hypo_priv2 TO ${user2};
@@ -324,7 +324,7 @@ sess="sess_04223_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_priv3;
     CREATE TABLE t_hypo_priv3 (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100;
+    SETTINGS index_granularity = 100, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_priv3 SELECT number, number, number FROM numbers(100);
     DROP USER IF EXISTS ${user3};
     CREATE USER ${user3} NOT IDENTIFIED;
@@ -348,7 +348,7 @@ sessq="sessq_04223_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_quota;
     CREATE TABLE t_hypo_quota (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100;
+    SETTINGS index_granularity = 100, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_quota SELECT number, number FROM numbers(200);
     DROP USER IF EXISTS ${userq};
     CREATE USER ${userq} NOT IDENTIFIED;
