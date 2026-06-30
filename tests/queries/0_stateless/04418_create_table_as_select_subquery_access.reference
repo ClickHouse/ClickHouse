@@ -10,7 +10,9 @@ ACCESS_DENIED
 0
 -- [explicit columns] a retry must still be ACCESS_DENIED, not TABLE_ALREADY_EXISTS:
 ACCESS_DENIED
--- [if not exists, table exists] no-op must succeed (no ACCESS_DENIED) even though t2 is denied:
+-- [if not exists, table exists] no-op must succeed even though t2 is denied:
+succeeded
+-- [if not exists, table exists] and the no-op must not raise ACCESS_DENIED:
 -- [if not exists, table exists] the existing table must be left unchanged:
 42
 -- [if not exists, table missing] still denied because of missing SELECT on t2:

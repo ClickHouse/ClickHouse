@@ -60,8 +60,16 @@ check_denied "explicit columns" "${explicit_query}" "dst_explicit"
 # the SELECT is not executed and access to t2 must not be required. The statement must succeed and
 # leave the existing table untouched, not raise ACCESS_DENIED for the no-op.
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE dst_noop (y Int) ENGINE = Memory; INSERT INTO dst_noop VALUES (42);"
-echo "-- [if not exists, table exists] no-op must succeed (no ACCESS_DENIED) even though t2 is denied:"
-"${client[@]}" --query "CREATE TABLE IF NOT EXISTS dst_noop (y Int) ENGINE = Memory AS SELECT y FROM t0 WHERE y IN (SELECT y FROM t2 WHERE y < 2)" 2>&1 | grep -Fo "ACCESS_DENIED" | uniq
+# Capture both the exit status and the output. Asserting the exit status is 0 (not merely that the
+# output has no ACCESS_DENIED) is what proves the no-op succeeds: any other failure -- e.g.
+# TABLE_ALREADY_EXISTS or an analysis error -- also produces empty `grep` output and would otherwise
+# pass silently. The ACCESS_DENIED check is kept as a separate assertion.
+noop_output=$("${client[@]}" --query "CREATE TABLE IF NOT EXISTS dst_noop (y Int) ENGINE = Memory AS SELECT y FROM t0 WHERE y IN (SELECT y FROM t2 WHERE y < 2)" 2>&1)
+noop_status=$?
+echo "-- [if not exists, table exists] no-op must succeed even though t2 is denied:"
+if [ "${noop_status}" -eq 0 ]; then echo "succeeded"; else echo "FAILED (exit ${noop_status}): ${noop_output}"; fi
+echo "-- [if not exists, table exists] and the no-op must not raise ACCESS_DENIED:"
+echo -n "${noop_output}" | grep -Fo "ACCESS_DENIED" | uniq
 echo "-- [if not exists, table exists] the existing table must be left unchanged:"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM dst_noop"
 
