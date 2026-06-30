@@ -31,7 +31,7 @@ qid="04417_split_headcount_${CLICKHOUSE_DATABASE}"
 # metadata lookups.
 ${CLICKHOUSE_CLIENT} --query_id "$qid" -q "
     SELECT count() FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', '$parq', $auth, 'Parquet', 'n UInt64')
-    SETTINGS s3_validate_etag_on_read = 1, cluster_table_function_split_granularity = 'bucket', enable_filesystem_cache = 0
+    SETTINGS s3_validate_etag_on_read = 1, cluster_table_function_split_granularity = 'bucket', enable_filesystem_cache = 0, use_cache_for_count_from_files = 0
 " > /dev/null
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
@@ -52,7 +52,7 @@ qid_tags="04417_split_tags_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query_id "$qid_tags" -q "
     SELECT count() FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', '$parq', $auth, 'Parquet', 'n UInt64')
     WHERE NOT ignore(_tags)
-    SETTINGS s3_validate_etag_on_read = 1, cluster_table_function_split_granularity = 'bucket', enable_filesystem_cache = 0
+    SETTINGS s3_validate_etag_on_read = 1, cluster_table_function_split_granularity = 'bucket', enable_filesystem_cache = 0, use_cache_for_count_from_files = 0
 " > /dev/null
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"

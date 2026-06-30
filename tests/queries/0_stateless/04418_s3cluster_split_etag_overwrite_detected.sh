@@ -40,7 +40,7 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT $fp"
 out="${CLICKHOUSE_TMP}/04418_out_${CLICKHOUSE_DATABASE}.txt"
 ${CLICKHOUSE_CLIENT} -q "
     SELECT count() FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', '$parq', $auth, 'Parquet', 'n UInt64')
-    SETTINGS s3_validate_etag_on_read = 1, cluster_table_function_split_granularity = 'bucket', enable_filesystem_cache = 0
+    SETTINGS s3_validate_etag_on_read = 1, cluster_table_function_split_granularity = 'bucket', enable_filesystem_cache = 0, use_cache_for_count_from_files = 0
 " > "$out" 2>&1 &
 query_pid=$!
 

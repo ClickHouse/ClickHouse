@@ -695,13 +695,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             if (is_propagated_split_metadata)
             {
                 /// Honor the propagated metadata - pinning this ranged read to the coordinator's
-                /// generation via `If-Match` - only where it actually helps: only S3 enforces
-                /// `StoredObject::etag` on the GET (other backends ignore it, so the pin is a no-op),
-                /// and only when `_tags` was not requested (the propagated metadata carries no tags).
+                /// generation via `If-Match` - only where it actually helps and is safe:
+                ///   - only S3 enforces `StoredObject::etag` on the GET (other backends ignore it);
+                ///   - only when `_tags` was not requested (the propagated metadata carries no tags);
+                ///   - not in ignore-missing mode (`s3_ignore_file_doesnt_exist`), which must probe the
+                ///     object so a concurrently-deleted one is gracefully skipped instead of throwing.
                 /// Otherwise fetch: for S3 keep the pinned ETag/size/timestamp and take only the freshly
                 /// listed tags so the pin is preserved; for any other backend fetch fresh as before.
                 const bool is_s3 = object_storage->getType() == ObjectStorageType::S3;
-                if (!(is_s3 && !with_tags))
+                const bool honor = is_s3 && !with_tags && !query_settings.ignore_non_existent_file;
+                if (!honor)
                 {
                     const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
                     std::optional<ObjectMetadata> fetched;
