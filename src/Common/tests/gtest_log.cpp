@@ -7,6 +7,8 @@
 
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
+#include <Poco/CombinedRotateStrategy.h>
+#include <Poco/Exception.h>
 #include <Poco/FileChannel.h>
 #include <Poco/NullChannel.h>
 #include <Poco/StreamChannel.h>
@@ -256,4 +258,74 @@ TEST(Logger, Rotation)
     EXPECT_EQ(readLogFile(log_dir / "logger.log.1"), "A\nB\n" + std::string(201, 'C') + "\n");
     EXPECT_EQ(readLogFile(log_dir / "logger.log.0"), "D\nE\n");
     EXPECT_EQ(readLogFile(log_dir / "logger.log"), "F\n");
+}
+
+TEST(Logger, RotationParseValid)
+{
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("100M", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("100K", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("1G", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("1024", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("daily", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("weekly", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("monthly", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("10 minutes", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("2 hours", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("never", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("12:00", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("02:30", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("Sunday,12:00", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("100M,12:00", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("100M, 12:00", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("100M,daily", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("100M, daily", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("200, 100 milliseconds", ""));
+    EXPECT_NO_THROW(Poco::CombinedRotateStrategy("100M, 10 minutes", ""));
+}
+
+TEST(Logger, RotationParseInvalid)
+{
+    EXPECT_THROW(Poco::CombinedRotateStrategy("", ""), Poco::InvalidArgumentException);
+    EXPECT_THROW(Poco::CombinedRotateStrategy("abc", ""), Poco::InvalidArgumentException);
+    EXPECT_THROW(Poco::CombinedRotateStrategy("100X", ""), Poco::InvalidArgumentException);
+}
+
+TEST(Logger, RotationTimeNotMistakenForSize)
+{
+    Poco::TemporaryFile temp_dir;
+    temp_dir.createDirectories();
+
+    auto my_channel = Poco::AutoPtr<Poco::FileChannel>(new Poco::FileChannel());
+    std::filesystem::path log_dir = std::filesystem::path{temp_dir.path()};
+    my_channel->setProperty(Poco::FileChannel::PROP_PATH, log_dir / "logger.log");
+    my_channel->setProperty(Poco::FileChannel::PROP_ROTATION, "12:00");
+    auto log = createLogger("RotTimeLogger", my_channel.get());
+    log->setLevel("trace");
+
+    LOG_INFO(log, "{}", std::string(100, 'A'));
+
+    /// If "12:00" were mistakenly parsed as size=12, a 100-byte message would trigger rotation.
+    /// With the fix, it's parsed as a time-of-day schedule, so no rotation should happen.
+    std::vector<std::string> expected_log_file_names{"logger.log"};
+    EXPECT_EQ(getLogFileNames(log_dir), expected_log_file_names);
+}
+
+TEST(Logger, RotationSizeWithTime)
+{
+    Poco::TemporaryFile temp_dir;
+    temp_dir.createDirectories();
+
+    auto my_channel = Poco::AutoPtr<Poco::FileChannel>(new Poco::FileChannel());
+    std::filesystem::path log_dir = std::filesystem::path{temp_dir.path()};
+    my_channel->setProperty(Poco::FileChannel::PROP_PATH, log_dir / "logger.log");
+    my_channel->setProperty(Poco::FileChannel::PROP_ROTATION, "200, 12:00");
+    auto log = createLogger("RotSizeTimeLogger", my_channel.get());
+    log->setLevel("trace");
+
+    LOG_INFO(log, "{}", std::string(201, 'B'));
+
+    /// Size-based rotation should still trigger for a message exceeding 200 bytes.
+    LOG_INFO(log, "C");
+    std::vector<std::string> expected_log_file_names{"logger.log", "logger.log.0"};
+    EXPECT_EQ(getLogFileNames(log_dir), expected_log_file_names);
 }
