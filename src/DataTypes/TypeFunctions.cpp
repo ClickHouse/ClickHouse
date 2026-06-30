@@ -40,6 +40,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
@@ -74,6 +75,21 @@ static UInt32 fieldToScale(const Field & field, const std::string & type_functio
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Scale {} is out of range for type function {}", scale, type_function_name);
     return static_cast<UInt32>(scale);
+}
+
+/// A parameterised type function (`FixedString(N)`, `DateTime64(scale)`, `Time64(scale)`, ...) is
+/// sometimes spelled bare (e.g. `-> FixedString`) in a documentation-only signature whose
+/// authoritative result type is produced by the function's own `getReturnTypeImpl`. On the
+/// types-only `IFunction::getReturnTypeImpl(DataTypes)` fallback the DSL still evaluates that
+/// return type and reaches the type function with no arguments. Report this as a clean,
+/// user-facing `ILLEGAL_COLUMN` — the result type genuinely depends on a constant value that is
+/// unavailable on this path, the same condition `Variables::get` reports for an unavailable
+/// captured const — instead of the internal `LOGICAL_ERROR` a plain wrong-arity check would raise.
+[[noreturn]] static void throwParametricTypeFunctionNeedsValue(const std::string & type_function_name, const std::string & argument_name)
+{
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+        "Type function {} requires a constant {} argument to determine the result type",
+        type_function_name, argument_name);
 }
 
 class TypeFunctionLeastSupertype : public ITypeFunction
@@ -195,6 +211,8 @@ class TypeFunctionFixedString : public ITypeFunction
 public:
     Value apply(const Values & args) const override
     {
+        if (args.empty())
+            throwParametricTypeFunctionNeedsValue("FixedString", "size");
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function FixedString");
         return Value(DataTypePtr(std::make_shared<DataTypeFixedString>(args.front().field().safeGet<UInt64>())));
@@ -225,7 +243,9 @@ class TypeFunctionDateTime64 : public ITypeFunction
 public:
     Value apply(const Values & args) const override
     {
-        if (args.empty() || args.size() > 2)
+        if (args.empty())
+            throwParametricTypeFunctionNeedsValue("DateTime64", "scale");
+        if (args.size() > 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function DateTime64");
         const UInt32 scale = fieldToScale(args[0].field(), name());
         if (args.size() == 1)
@@ -242,6 +262,8 @@ class TypeFunctionTime64 : public ITypeFunction
 public:
     Value apply(const Values & args) const override
     {
+        if (args.empty())
+            throwParametricTypeFunctionNeedsValue("Time64", "scale");
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function Time64");
         return Value(DataTypePtr(std::make_shared<DataTypeTime64>(fieldToScale(args.front().field(), name()))));
