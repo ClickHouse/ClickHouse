@@ -2606,6 +2606,11 @@ async function getServerStatus(server_address, user, password) {
     }
 }
 
+/// Names of databases that the user has expanded. Persisted across panel
+/// open/close so that reopening the panel restores the previously expanded
+/// databases (those that still exist).
+let opened_databases = new Set();
+
 let load_databases_request_num = 0;
 async function loadDatabases(server_address, user, password) {
     ++load_databases_request_num;
@@ -2654,21 +2659,35 @@ async function loadDatabases(server_address, user, password) {
         database.appendChild(tables);
         databases_elem.appendChild(database);
 
+        function openDatabase(set_current = true) {
+            let hourglass = document.createElement('span');
+            hourglass.className = 'loading-hourglass';
+            hourglass.textContent = '\u29D7';
+            database_link.after(hourglass);
+            loadTables(server_address, user, password, elem.database, database, set_current).then(ok => {
+                hourglass.remove();
+                if (ok !== false) {
+                    database.dataset['opened'] = 1;
+                    opened_databases.add(elem.database);
+                }
+            });
+        }
+
         database_link.addEventListener('click', e => {
             if (!database.dataset['opened']) {
-                let hourglass = document.createElement('span');
-                hourglass.className = 'loading-hourglass';
-                hourglass.textContent = '\u29D7';
-                database_link.after(hourglass);
-                loadTables(server_address, user, password, elem.database, database).then(ok => {
-                    hourglass.remove();
-                    if (ok !== false) database.dataset['opened'] = 1;
-                });
+                openDatabase();
             } else {
                 delete database.dataset['opened'];
+                opened_databases.delete(elem.database);
                 while (tables.firstChild) tables.removeChild(tables.firstChild);
             }
         });
+
+        /// Restore the expanded state from before the panel was last closed,
+        /// without moving the current-database highlight.
+        if (opened_databases.has(elem.database)) {
+            openDatabase(false);
+        }
     }
 }
 
@@ -2790,10 +2809,14 @@ function getTableIcon(engine)
     return svg;
 }
 
-let load_tables_request_num = 0;
-async function loadTables(server_address, user, password, database, container) {
-    ++load_tables_request_num;
-    const current_load_tables_request_num = load_tables_request_num;
+/// Per-container staleness token. Several databases can be loading their tables
+/// at the same time (e.g. when restoring previously expanded databases), so the
+/// guard must be scoped to each container: a load is only superseded by a newer
+/// load of the same database, not by a concurrent load of a different one.
+let load_tables_request_nums = new WeakMap();
+async function loadTables(server_address, user, password, database, container, set_current = true) {
+    const request_num = (load_tables_request_nums.get(container) || 0) + 1;
+    load_tables_request_nums.set(container, request_num);
 
     let json = await auxiliaryQuery(server_address, user, password,
         `SELECT table, engine, total_rows, total_bytes FROM system.tables WHERE database = {database:String}
@@ -2801,10 +2824,14 @@ async function loadTables(server_address, user, password, database, container) {
         '&param_database=' + encodeURIComponent(database));
     if (!json) return false;
 
-    if (current_load_tables_request_num != load_tables_request_num) return false;
+    if (request_num != load_tables_request_nums.get(container)) return false;
 
-    container.parentElement.querySelector('.current').classList.remove('current');
-    container.firstChild.classList.add('current');
+    /// A user click marks the database as current; restoring the expanded state
+    /// must not move the highlight away from the actual currentDatabase().
+    if (set_current) {
+        container.parentElement.querySelector('.current').classList.remove('current');
+        container.firstChild.classList.add('current');
+    }
     let tables_elem = container.querySelector('.tables');
     while (tables_elem.firstChild) tables_elem.removeChild(tables_elem.firstChild);
 
