@@ -34,7 +34,7 @@ ${CLICKHOUSE_CLIENT} --offset=2 --query_id="${QUERY_ID}" -q "
 echo "-- data fully landed on the shards"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(x) FROM dst"
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 echo "-- at least one shard-side INSERT ran, and none of them carry the initiator-only settings"
 # The secondary (shard-side) INSERTs run as the `default` user, so their `current_database` is
