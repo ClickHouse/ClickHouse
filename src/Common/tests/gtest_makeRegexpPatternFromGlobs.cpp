@@ -62,9 +62,12 @@ TEST(Common, makeRegexpPatternFromGlobs)
     EXPECT_EQ(makeRegexpPatternFromGlobs("***/file.txt"), "[^/]*[^{}]*[^{}]*/file\\.txt");
     EXPECT_EQ(makeRegexpPatternFromGlobs("a***/b"), "a[^/]*[^{}]*[^{}]*/b");
 
-    /// `**/` after `*?` must still be recognized as globstar (the `?` is not part of a star run).
-    EXPECT_EQ(makeRegexpPatternFromGlobs("*?**/file.txt"), "[^/]*[^/]([^/]*/)*file\\.txt");
-    EXPECT_EQ(makeRegexpPatternFromGlobs("?**/file.txt"), "[^/]([^/]*/)*file\\.txt");
+    /// `**` is a globstar only when it forms a whole path segment (bounded by `/` or string
+    /// boundaries). A `**` adjacent to other characters in the segment (e.g. `?**`, `*?**`) is
+    /// not a globstar: it keeps the legacy `*`-expansion. This matches the local file listing in
+    /// `StorageFile`, which gives zero-level semantics only to a segment that is exactly `**`.
+    EXPECT_EQ(makeRegexpPatternFromGlobs("*?**/file.txt"), "[^/]*[^/][^{}]*[^{}]*/file\\.txt");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("?**/file.txt"), "[^/][^/]*[^{}]*/file\\.txt");
 
     /// Verify that `**/` patterns actually match expected paths
     {
@@ -77,5 +80,13 @@ TEST(Common, makeRegexpPatternFromGlobs)
         EXPECT_TRUE(RE2::FullMatch("data/{a}/{b}/part1.tsv", re));    /// multiple brace-containing segments
         EXPECT_FALSE(RE2::FullMatch("data/part2.tsv", re));           /// wrong filename
         EXPECT_FALSE(RE2::FullMatch("other/part1.tsv", re));          /// wrong prefix
+    }
+
+    /// A non-whole-segment `?**/` is not a globstar, so it does not match at zero directory
+    /// levels: the leading `?` requires at least one character in the directory component.
+    {
+        re2::RE2 re(makeRegexpPatternFromGlobs("data/?**/part1.tsv"));
+        EXPECT_FALSE(RE2::FullMatch("data/part1.tsv", re));           /// zero directory levels: not matched
+        EXPECT_TRUE(RE2::FullMatch("data/sub1/part1.tsv", re));       /// one directory level (name starts with any char)
     }
 }

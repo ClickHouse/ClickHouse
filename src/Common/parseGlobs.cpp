@@ -159,18 +159,23 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     char previous = ' ';
     for (size_t i = 0; i < almost_res.size();)
     {
-        /// `**/` (globstar followed by `/`) matches zero or more directory components.
-        /// Use `[^/]` so directory names containing `{` or `}` are still matched.
-        /// Require the preceding character not to be `*` so the rewrite does not overlap
-        /// with longer star runs (e.g. `***/file.txt` must keep its legacy three-star
-        /// expansion). We look at `almost_res[i - 1]` directly rather than tracking the
-        /// previous character, because the `?` branch below uses `continue` and does not
-        /// update `previous` — checking the source string is robust against that.
+        /// `**/` matches zero or more directory components, but only when `**` forms a whole
+        /// path segment: it must be bounded by `/` (or the start of the string) on the left and
+        /// by `/` on the right. This matches conventional glob semantics (e.g. Bash `globstar`,
+        /// where `**` is special only as a complete path component) and keeps this helper
+        /// consistent with the segment-by-segment local listing in `StorageFile`, which gives
+        /// zero-level semantics only to a path segment that is exactly `**`. A `**` adjacent to
+        /// other characters in a segment (e.g. `a**`, `?**`, or a run of 3+ stars like `***/`)
+        /// is not a globstar and keeps the legacy character-by-character expansion below.
+        /// Use `[^/]` so directory names containing `{` or `}` are still matched. We look at
+        /// `almost_res[i - 1]` directly rather than tracking the previous character, because the
+        /// `?` branch below uses `continue` and does not update `previous` — checking the source
+        /// string is robust against that.
         if (i + 2 < almost_res.size()
             && almost_res[i] == '*'
             && almost_res[i + 1] == '*'
             && almost_res[i + 2] == '/'
-            && (i == 0 || almost_res[i - 1] != '*'))
+            && (i == 0 || almost_res[i - 1] == '/'))
         {
             buf_final_processing << "([^/]*/)*";
             i += 3;
