@@ -3760,6 +3760,9 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
 
 #define APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M) \
         M(key64)                          \
+        M(key64_void)                     \
+        M(keys128_void)                   \
+        M(keys256_void)                   \
         M(key_string)                     \
         M(key_fixed_string)               \
         M(keys128)                        \

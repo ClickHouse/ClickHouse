@@ -111,6 +111,11 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKeyHash64>>         key_fixed_string_hash64;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128Hash64>>             keys128_hash64;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64>>             keys256_hash64;
+    /// Better-hash merge targets for the void methods (see AggregatedData.h). consecutive_keys_optimization
+    /// is disabled for the OneNumber one, matching key64_void.
+    std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoidHash64, false>> key64_void_hash64;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128VoidHash64>>         keys128_void_hash64;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256VoidHash64>>         keys256_void_hash64;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyHash64>>                  serialized_hash64;
     std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKeyHash64>>          nullable_serialized_hash64;
     std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKeyHash64>>          prealloc_serialized_hash64;
@@ -194,6 +199,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(prealloc_serialized_two_level,          true) \
         M(nullable_prealloc_serialized_two_level, true) \
         M(key64_hash64,               false) \
+        M(key64_void_hash64,          false) \
+        M(keys128_void_hash64,        false) \
+        M(keys256_void_hash64,        false) \
         M(key_string_hash64,          false) \
         M(key_fixed_string_hash64,    false) \
         M(keys128_hash64,             false) \
@@ -271,6 +279,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_key16) \
         M(keys16)           \
         M(key64_hash64)     \
+        M(key64_void_hash64) \
+        M(keys128_void_hash64) \
+        M(keys256_void_hash64) \
         M(key_string_hash64)\
         M(key_fixed_string_hash64) \
         M(keys128_hash64)   \

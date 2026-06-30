@@ -140,6 +140,14 @@ using AggregatedDataWithStringKeyHash64 = HashMapWithSavedHash<std::string_view,
 using AggregatedDataWithKeys128Hash64 = HashMap<UInt128, AggregateDataPtr, UInt128Hash>;
 using AggregatedDataWithKeys256Hash64 = HashMap<UInt256, AggregateDataPtr, UInt256Hash>;
 
+/// Void-mapped counterparts of the better-hash maps above, used as the external-aggregation merge target
+/// for the void `GROUP BY` methods: the merged key count can exceed 4 billion, so - exactly like the regular
+/// key64/keys128/keys256 -> *_hash64 upgrade in `Aggregator::mergeBlocks` - the merge must use a full-width
+/// hash instead of `HashCRC32` to avoid collision-driven blowup, while still keeping the key-only cell.
+using AggregatedDataWithUInt64KeyVoidHash64 = HashMapTable<UInt64, AggregatedDataVoidCell<UInt64, DefaultHash<UInt64>>, DefaultHash<UInt64>>;
+using AggregatedDataWithKeys128VoidHash64 = HashMapTable<UInt128, AggregatedDataVoidCell<UInt128, UInt128Hash>, UInt128Hash>;
+using AggregatedDataWithKeys256VoidHash64 = HashMapTable<UInt256, AggregatedDataVoidCell<UInt256, UInt256Hash>, UInt256Hash>;
+
 template <typename Base>
 struct AggregationDataWithNullKey : public Base
 {
