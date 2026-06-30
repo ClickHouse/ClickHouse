@@ -1611,26 +1611,43 @@ ReturnType readDateTimeTextFallback(
     /// Quick peek: if char 4 is '.' but char 7 (peeked 3 bytes ahead) is not '.', this is
     /// a decimal timestamp like "1234.5,..." not a dotted date like "2025.08.31". Skip the
     /// date branch; the integer branch + DateTime64 wrapper handle the fractional part.
+    /// When char 4 is '.' and fewer than 4 bytes are available (so we cannot confirm whether
+    /// the next chars form YYYY.MM.DD), treat as a decimal timestamp to avoid consuming across
+    /// buffer boundaries. Dotted dates with < 4 bytes at '.' are an accepted limitation.
     const bool peek_suggests_decimal
         = dt64_mode && !buf.eof() && *buf.position() == '.'
-        && buf.available() >= 4 && buf.position()[3] != '.';  // different delimiters confirm decimal
+        && (buf.available() < 4 || buf.position()[3] != '.');  // can't confirm dotted date
 
+    /// Date branch: entered only when the input looks like a YYYY-MM-DD date, not a decimal.
+    bool date_branch_entered = false;
     if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()) && !peek_suggests_decimal)
     {
         const auto already_read_length = s_pos - s;
         const size_t remaining_date_size = date_broken_down_length - already_read_length;
+        const size_t avail = buf.available();
 
-        size_t size = buf.read(s_pos, remaining_date_size);
-        if (size != remaining_date_size)
+        if (avail >= remaining_date_size)
         {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, already_read_length + size));
-            else
-                return false;
+            /// All bytes in the current chunk: peek without advancing so we can validate
+            /// before deciding whether to consume. This eliminates the need for a rewind.
+            std::memcpy(s_pos, buf.position(), remaining_date_size);
+        }
+        else
+        {
+            /// Cross-boundary read. peek_suggests_decimal is false, so avail >= 4 and
+            /// buf.position()[3]=='.', confirming a dotted date. looks_like_date will be
+            /// true so no rewind is needed.
+            size_t size = buf.read(s_pos, remaining_date_size);
+            if (size != remaining_date_size)
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, already_read_length + size));
+                else
+                    return false;
+            }
         }
 
-        /// Mirror the optimistic-path guard: dotted dates share the same separator at positions 4 and 7
-        /// ("2025.08.31"); decimal timestamps do not ("1234.5,true,...").
+        /// Mirror the optimistic-path guard: dotted dates share the same separator at both positions.
         const bool is_decimal_dt64 = dt64_mode && s[4] == '.' && s[7] != '.';
         const bool looks_like_date
             = !is_decimal_dt64
@@ -1643,20 +1660,19 @@ ReturnType readDateTimeTextFallback(
                 || !looks_like_date)
                 return false;
         }
-        else if (!looks_like_date)
-        {
-            /// Rewind the 6 over-consumed bytes, compute the 4-digit integer, and return it.
-            /// The DateTime64 wrapper then sees '.' and reads the fractional part.
-            if (static_cast<size_t>(buf.position() - buf.buffer().begin()) >= size)
-            {
-                buf.position() -= size;
-                datetime = (s[0]-'0')*1000 + (s[1]-'0')*100 + (s[2]-'0')*10 + (s[3]-'0');
-                datetime *= negative_multiplier;
-                return ReturnType(true);
-            }
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
-        }
 
+        if (looks_like_date)
+        {
+            if (avail >= remaining_date_size)
+                buf.position() += remaining_date_size;  // consume the non-destructively peeked bytes
+            date_branch_entered = true;
+        }
+        /// else (throw path + !looks_like_date + avail >= remaining_date_size):
+        /// buf.position() was not advanced; fall through to the integer branch below.
+    }
+
+    if (date_branch_entered)
+    {
         UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
         UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
         UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
@@ -1668,7 +1684,7 @@ ReturnType readDateTimeTextFallback(
         if (!buf.eof() && (*buf.position() == ' ' || *buf.position() == 'T'))
         {
             ++buf.position();
-            size = buf.read(s, time_broken_down_length);
+            size_t size = buf.read(s, time_broken_down_length);
 
             if (size != time_broken_down_length)
             {
@@ -1726,8 +1742,11 @@ ReturnType readDateTimeTextFallback(
                 datetime = *datetime_maybe;
             }
         }
+
+        return ReturnType(true);
     }
-    else
+
+    /// Integer branch: reached when outer condition was false, or looks_like_date was false.
     {
         datetime = 0;
         bool too_short = s_pos - s <= 4;
@@ -1755,7 +1774,6 @@ ReturnType readDateTimeTextFallback(
             else
                 return false;
         }
-
     }
 
     return ReturnType(true);

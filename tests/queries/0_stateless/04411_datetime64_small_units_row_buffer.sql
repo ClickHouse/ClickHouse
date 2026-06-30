@@ -26,3 +26,7 @@ SELECT a FROM format(TSV, 'a DateTime64(2, UTC), b String', $$1234	this_is_long_
 -- Regression: fallback path for a dotted date "2025.08.31" (string is 10 bytes,
 -- so buffer has < 19 bytes from field start and the fallback is used).
 SELECT a FROM format(TSV, 'a DateTime64(2, \'UTC\')', $$2025.08.31$$);
+
+-- Regression: "1234.5" alone (6 bytes total) forces buf.available()=2 after reading "1234",
+-- hitting the avail < 4 path in peek_suggests_decimal. The decimal must still parse correctly.
+SELECT a FROM format(TSV, 'a DateTime64(2, \'UTC\')', $$1234.5$$);
