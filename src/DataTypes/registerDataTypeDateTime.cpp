@@ -397,8 +397,8 @@ SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
 └─────────────────────────┴──────────┘
 ```
 
-Contrary to inserting, the `toDateTime64` function will treat all values as the decimal variant, so precision needs to
-be given after the decimal point.
+As with inserting a number, the `toDateTime64` function treats a numeric argument as a number of seconds, so sub-second
+precision needs to be given after the decimal point.
 
 3. Getting a time zone for a `DateTime64`-type value:
 
