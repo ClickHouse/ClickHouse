@@ -73,3 +73,11 @@ SELECT '-- a non-construction `= DEFAULT` reset on a subquery survives the const
 SET max_rows_to_read = 5;
 SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 10, max_rows_to_read = DEFAULT);
 SET max_rows_to_read = DEFAULT;
+
+SELECT '-- a `= DEFAULT` reset on an arm merged into the trailing query-level SETTINGS survives (returns 100)';
+-- The outer (query-level) SETTINGS survives stripping (it still carries `max_threads`), so the inner arm's
+-- `max_rows_to_read = DEFAULT` is merged into it rather than dropped. Under a session cap of 5 the merged
+-- reset keeps the inner count() read (100 rows) uncapped; if it were dropped, that read would throw.
+SET max_rows_to_read = 5;
+(SELECT count() FROM numbers(100) SETTINGS max_rows_to_read = DEFAULT) SETTINGS max_threads = 1, limit = 5;
+SET max_rows_to_read = DEFAULT;

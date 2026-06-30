@@ -1874,11 +1874,43 @@ static void applyQueryConstructionSettings(
                 else
                 {
                     /// Both can be present (e.g. `(SELECT … SETTINGS a = 1) SETTINGS b = 2`); the
-                    /// union-level clause is the outer one, so it wins on conflicts.
-                    auto & merged = base_settings->as<ASTSetQuery &>().changes;
-                    for (const auto & change : last_settings->as<ASTSetQuery &>().changes)
-                        if (!merged.tryGet(change.name))
-                            merged.push_back(change);
+                    /// union-level clause is the outer one, so it wins on conflicts. Merge all three
+                    /// `ASTSetQuery` carriers — `changes` (`name = value`), `default_settings`
+                    /// (`name = DEFAULT`) and `query_parameters` — so a reset or a query parameter carried
+                    /// only by the inner arm is not dropped from the wrapped query's settings contract.
+                    auto & base_set = base_settings->as<ASTSetQuery &>();
+                    auto & last_set = last_settings->as<ASTSetQuery &>();
+
+                    /// A setting named in `base` (as a value or a DEFAULT reset) already wins, so carry
+                    /// over only the inner arm's settings that `base` does not mention.
+                    auto base_mentions_setting = [&](std::string_view name)
+                    {
+                        if (base_set.changes.tryGet(name))
+                            return true;
+                        for (const auto & reset_name : base_set.default_settings)
+                            if (reset_name == name)
+                                return true;
+                        return false;
+                    };
+
+                    for (const auto & change : last_set.changes)
+                        if (!base_mentions_setting(change.name))
+                            base_set.changes.push_back(change);
+                    for (const auto & reset_name : last_set.default_settings)
+                        if (!base_mentions_setting(reset_name))
+                            base_set.default_settings.push_back(reset_name);
+                    for (const auto & param : last_set.query_parameters)
+                    {
+                        bool exists = false;
+                        for (const auto & base_param : base_set.query_parameters)
+                            if (base_param.first == param.first)
+                            {
+                                exists = true;
+                                break;
+                            }
+                        if (!exists)
+                            base_set.query_parameters.push_back(param);
+                    }
                 }
             }
         }
