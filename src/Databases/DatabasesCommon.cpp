@@ -580,28 +580,17 @@ void DatabaseWithOwnTablesBase::shutdown()
     if (tables_snapshot.empty())
         return;
 
-    /// IStorage::shutdown and flushAndPrepareForShutdown are documented as safe to call concurrently.
-    /// Lazy-init the pool so non-server binaries (client/keeper/etc.) that reach this path via
-    /// a Database destructor don't trip on an uninitialized StaticThreadPool.
+    /// Lazy-init for non-server binaries (client/keeper) that hit this via a Database destructor.
     auto & shared_pool = getDatabaseCatalogShutdownTablesThreadPool();
     shared_pool.initializeWithDefaultSettingsIfNotInitialized();
     auto & pool = shared_pool.get();
     const auto db_name = getDatabaseName();
-    /// If our tables carry UUIDs (Atomic-style), the database must too. Memory-backed
-    /// databases like `system` or `information_schema` have neither and skip the check.
-    if (!tables_snapshot.empty() && tables_snapshot.begin()->second->getStorageID().hasUUID())
+    /// Memory-backed databases (system, information_schema) have no UUIDs.
+    if (tables_snapshot.begin()->second->getStorageID().hasUUID())
         chassert(db_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
 
-    /// If a table throws while shutting down (e.g. a ZooKeeper timeout), we must still release the
-    /// references this catalog holds on every table: the UUID -> storage mapping keeps the storage
-    /// (and this database) alive otherwise, so it would be destroyed only when DatabaseCatalog is
-    /// destroyed at process exit - after the Poco logger registry and the static thread pools are
-    /// already gone, which aborts. Remember the first error and rethrow it after the cleanup.
-    ///
-    /// State that tasks need is held in a shared_ptr so an orphan task (scheduled but not tracked,
-    /// e.g. if tasks.emplace_back fails after the pool already accepted the job) cannot dangle
-    /// references into our stack frame. Capturing `this` and using by-ref captures would risk UB
-    /// when shutdown() returns before such a task completes.
+    /// Shared so a task can safely outlive shutdown() if it ends up scheduled-but-untracked.
+    /// Captures into the stack frame would dangle in that case.
     struct ErrorRecorder
     {
         std::mutex mutex;
@@ -616,9 +605,6 @@ void DatabaseWithOwnTablesBase::shutdown()
     };
     auto recorder = std::make_shared<ErrorRecorder>();
 
-    /// The prepare phase can throw too: e.g. StorageReplicatedMergeTree::flushAndPrepareForShutdown
-    /// catches preparation failures, sets an immediate deadline and rethrows. Keep going so the
-    /// cleanup below still runs for every table.
     {
         Stopwatch watch;
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::SHUTDOWN_TABLES);
@@ -626,8 +612,8 @@ void DatabaseWithOwnTablesBase::shutdown()
         {
             auto run_task = [log_ptr = log, table = kv.second, recorder]
             {
-                /// Widened try so that getStorageID() (and any other pre-flush call) is also caught
-                /// here rather than escaping into the task future, which waitForAllToFinish drops.
+                /// waitForAllToFinish drops exceptions stored in task futures, so this lambda
+                /// must not let anything escape.
                 try
                 {
                     auto table_id = table->getStorageID();
@@ -651,9 +637,7 @@ void DatabaseWithOwnTablesBase::shutdown()
             }
             catch (...)
             {
-                /// Scheduling itself failed (e.g. CannotAllocateThreadFaultInjector, pool exhausted).
-                /// Fall back to inline execution so the per-table cleanup still runs for this table
-                /// and the function reaches its tail cleanup (tables.clear(), rethrow recorder->first_error).
+                /// Scheduling failed (fault injector, pool exhausted). Run inline.
                 tryLogCurrentException(log, "Failed to schedule prepare-for-shutdown task, running inline");
                 run_task();
             }
@@ -670,12 +654,10 @@ void DatabaseWithOwnTablesBase::shutdown()
         {
             auto run_task = [log_ptr = log, table = kv.second, recorder]
             {
-                /// UUID mapping cleanup MUST run even if flushAndShutdown throws — otherwise the
-                /// catalog keeps holding the StoragePtr past Context::shutdown and the table is
-                /// only destroyed at process exit, after Poco loggers and static pools are gone.
-                /// So: separate try/catch blocks for the storage-ID lookup, the flush, and the
-                /// UUID mapping removal. Each records its exception via the shared recorder so
-                /// nothing escapes into the task future (which waitForAllToFinish discards).
+                /// UUID mapping removal must run even when flushAndShutdown throws, otherwise the
+                /// catalog holds the StoragePtr past Context::shutdown and the table is destroyed
+                /// at process exit, after Poco loggers and static pools are gone. Hence the
+                /// separate try blocks below.
                 std::optional<StorageID> table_id;
                 try
                 {
@@ -731,8 +713,7 @@ void DatabaseWithOwnTablesBase::shutdown()
             }
             catch (...)
             {
-                /// See comment above. Inline fallback so the UUID mapping still gets released
-                /// and the function reaches its tail cleanup.
+                /// Scheduling failed (fault injector, pool exhausted). Run inline.
                 tryLogCurrentException(log, "Failed to schedule shutdown task, running inline");
                 run_task();
             }
