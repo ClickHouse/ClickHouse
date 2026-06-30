@@ -183,6 +183,7 @@ Checks: [
   '-readability-magic-numbers',
   '-readability-named-parameter',
   '-readability-redundant-declaration',
+  '-readability-redundant-typename',
   '-readability-redundant-inline-specifier', # useful but incompatible with __attribute((always_inline))__ (aka. ALWAYS_INLINE, base/base/defines.h).
         # ALWAYS_INLINE only has an effect if combined with `inline`: https://godbolt.org/z/Eefd74qdM
   '-readability-redundant-member-init', # Useful but triggers another problem. Imagine a struct S with multiple String members. Structs are often instantiated via designated
