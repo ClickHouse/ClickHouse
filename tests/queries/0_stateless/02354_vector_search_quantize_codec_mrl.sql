@@ -8,6 +8,9 @@
 -- `Quantize('mrl', dimensions, leading_dimensions, 'int8'|'bf16')`.
 
 SET allow_experimental_codecs = 1;
+-- Lazy materialization (LazilyReadFromMergeTree) is an analyzer-only plan optimization, so the plan-shape assertion
+-- below needs the new analyzer (the old-analyzer CI config does not produce the lazy read).
+SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 1000000;
 

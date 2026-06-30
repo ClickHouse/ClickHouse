@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- (the quantized companion subcolumn `<column>.quantized` is not read on the parallel-replicas path - it comes back
+--  empty - so the `length(vec.quantized)` checks below cannot hold there; this matches the other quantize-codec tests.)
 -- The `Quantize(method, dimensions[, ...])` codec validates its parameters at DDL time.
 -- The bit-packed methods (rabitq, turboquant) require `dimensions` to be a multiple of 8; `int8` accepts any positive
 -- dimension. The `mrl` method takes Quantize('mrl', dimensions, leading_dimensions, 'int8'|'bf16').

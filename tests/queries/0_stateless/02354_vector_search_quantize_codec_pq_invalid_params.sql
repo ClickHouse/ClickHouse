@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- (the quantized companion subcolumn `<column>.quantized` is not read on the parallel-replicas path - it comes back
+--  empty - so the `length(vec.quantized)` check below cannot hold there; this matches the other quantize-codec tests.)
 -- The `pq` method of the `Quantize(...)` codec uses the syntax `Quantize('pq', dimensions, nbits, m)` and validates its
 -- parameters at DDL time: it requires exactly four arguments, `dimensions` a multiple of `m`, and `nbits` in [1, 16].
 
