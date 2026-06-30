@@ -46,7 +46,7 @@ sqlite3 "$NUM_DB" "CREATE TABLE blobs(x REAL);"
 sqlite3 "$NUM_DB" "INSERT INTO blobs VALUES (x'0102');"
 
 echo 'Float reads: REAL values'
-${CLICKHOUSE_LOCAL} --query "SELECT x FROM file('$NUM_DB', 'SQLite', 'x Float64') SETTINGS input_format_sqlite_table_name = 'reals' ORDER BY x"
+${CLICKHOUSE_LOCAL} --query "SELECT x FROM file('$NUM_DB', 'SQLite', 'x Float64') ORDER BY x SETTINGS input_format_sqlite_table_name = 'reals'"
 echo 'Float reads: INTEGER value as Float64'
 ${CLICKHOUSE_LOCAL} --query "SELECT x FROM file('$NUM_DB', 'SQLite', 'x Float64') SETTINGS input_format_sqlite_table_name = 'ints'"
 echo 'Float reads: BLOB value rejected'
