@@ -90,3 +90,47 @@ def test_select_without_where(started_cluster):
     assert node.query("SELECT count(*) FROM default.hive_demo").strip() == "4"
     assert node.query("SELECT count(*) FROM default.hive_demo WHERE day = '2021-11-01'").strip() == "1"
     assert node.query("SELECT count(*) FROM default.hive_demo").strip() == "4"
+
+
+def test_orc_split_skip_state_is_query_local(started_cluster):
+    # Regression test for the per-query split-skip set (ORC stripe pruning).
+    #
+    # The set of splits (Parquet row groups / ORC stripes) to skip while reading a file is
+    # derived from the query filter, but it used to be stored on the `IHiveFile` objects served
+    # from the process-wide `hive_files_cache`. Because those objects are shared between queries,
+    # a filtered read could leave a stale split-skip set on a cached file, so a later unfiltered
+    # read - or a concurrent query with a different filter - would silently drop the stripes
+    # excluded by the earlier predicate. The fix carries the skip set per query instead.
+    #
+    # `test.demo_orc` has two ORC files in the same partition with disjoint `score` ranges
+    # ([1, 2] and [10, 11]). With `enable_orc_stripe_minmax_index = 1` (and file-level minmax
+    # index off, which is the default), a filter on the non-partition `score` column prunes one
+    # file's stripe - a non-empty per-query split-skip set - while keeping the other. The split
+    # filtering only matters here because the ORC reader honours `orc.skip_stripes`.
+    node = started_cluster.instances["h0_0_0"]
+
+    node.query("DROP TABLE IF EXISTS default.hive_demo_orc")
+    node.query(
+        """
+        CREATE TABLE default.hive_demo_orc (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String))
+        ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo_orc') PARTITION BY(day)
+        SETTINGS enable_orc_stripe_minmax_index = 1
+        """
+    )
+
+    # Warm the file cache and establish the unfiltered baseline.
+    assert query_with_retry(node, "SELECT count(*) FROM default.hive_demo_orc").strip() == "4"
+
+    # A selective read on the non-partition `score` column prunes the [10, 11] file's stripe
+    # (a non-empty per-query split-skip set), returning only the [1, 2] file's rows.
+    assert node.query("SELECT count(*) FROM default.hive_demo_orc WHERE score < 5").strip() == "2"
+
+    # The split-skip set must not persist on the cached file: a later unfiltered read still
+    # returns all rows (before the fix this returned 2, because the stale skip set dropped the
+    # second file's stripe).
+    assert node.query("SELECT count(*) FROM default.hive_demo_orc").strip() == "4"
+
+    # The opposite filter prunes the other file; an unfiltered read must again return all rows.
+    assert node.query("SELECT count(*) FROM default.hive_demo_orc WHERE score > 5").strip() == "2"
+    assert node.query("SELECT count(*) FROM default.hive_demo_orc").strip() == "4"
+    assert node.query("SELECT id, score FROM default.hive_demo_orc ORDER BY score") == "a\t1\nb\t2\nc\t10\nd\t11\n"
