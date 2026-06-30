@@ -63,7 +63,8 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
 
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
     {{"greedy",             JoinOrderAlgorithm::GREEDY},
-     {"dpsize",             JoinOrderAlgorithm::DPSIZE}})
+     {"dpsize",             JoinOrderAlgorithm::DPSIZE},
+     {"dphyp",              JoinOrderAlgorithm::DPHYP}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
@@ -508,6 +509,10 @@ IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", S3UriStyle::AUTO},
      {"path", S3UriStyle::PATH},
      {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
+
+IMPLEMENT_SETTING_ENUM(ExplainQueryPlanDefault, ErrorCodes::BAD_ARGUMENTS,
+    {{"legacy", ExplainQueryPlanDefault::LEGACY},
+     {"pretty", ExplainQueryPlanDefault::PRETTY}})
 
 IMPLEMENT_SETTING_ENUM(
     FileLikeEngineDefaultPartitionStrategy,
