@@ -142,3 +142,35 @@ SELECT max(*) FROM (SELECT toLowCardinality('a') GROUP BY GROUPING SETS ((1)));
 SELECT '-- original fuzzer query ---';
 SELECT minDistinct(c0 >= (SELECT minSimpleState(*) FROM (SELECT DISTINCT toLowCardinality('1') GROUP BY GROUPING SETS ((1)))))
 FROM (SELECT 1 AS c0 LIMIT 197) AS t0;
+
+-- Contributed by @coderashed (the exact AST-fuzzer seed query from his duplicate PR #108714, which
+-- he closed in favour of this one): a correlated scalar subquery `toString(number)` inside a String
+-- function, over a `GROUPING SETS` key. Aborts on master with `Bad cast ColumnNullable to ColumnString`.
+SELECT '-- correlated toString in concat over GROUPING SETS ---';
+SELECT x FROM (
+    SELECT concat('s', (SELECT toString(number))) AS x
+    FROM numbers(5) GROUP BY GROUPING SETS ((number))
+) ORDER BY x;
+
+-- Contributed by @coderashed: a type-pinning regression check. The other cases above check query
+-- results, which still pass if a future change silently stops wrapping the correlated key as
+-- Nullable (the values are unchanged, only the declared type is wrong). These assert the analyzer
+-- types directly via EXPLAIN QUERY TREE, so a regression that drops the Nullable wrapping fails with
+-- a clean diff. `id`s are masked because they are not stable across runs.
+SELECT '-- type pin: bare correlated column is Nullable, outer key is not ---';
+SELECT replaceRegexpAll(trim(explain), 'id: [0-9]+', 'id: N') AS line
+FROM (EXPLAIN QUERY TREE
+    SELECT (SELECT c) FROM (SELECT toInt32(3) AS c) t GROUP BY c WITH ROLLUP)
+WHERE explain ILIKE '%column_name: c,%result_type%';
+
+SELECT '-- type pin: compound correlated key (modulo) is Nullable ---';
+SELECT replaceRegexpAll(trim(explain), 'id: [0-9]+', 'id: N') AS line
+FROM (EXPLAIN QUERY TREE
+    SELECT (SELECT c % 2) FROM (SELECT toInt32(3) AS c) t GROUP BY c % 2 WITH ROLLUP)
+WHERE explain ILIKE '%function_name: modulo%result_type%';
+
+SELECT '-- type pin: aggregate argument stays non-Nullable ---';
+SELECT replaceRegexpAll(trim(explain), 'id: [0-9]+', 'id: N') AS line
+FROM (EXPLAIN QUERY TREE
+    SELECT * APPLY x -> argMax(x, number) FROM numbers(1) GROUP BY number WITH ROLLUP)
+WHERE explain ILIKE '%column_name: number,%result_type%';
