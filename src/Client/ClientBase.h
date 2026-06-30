@@ -293,10 +293,27 @@ protected:
     public:
         /// Store how much interrupt signals can be before stopping the query
         /// by default stop after the first interrupt signal.
-        void start(Int32 signals_before_stop = 1) { exit_after_signals.store(signals_before_stop); }
+        void start(Int32 signals_before_stop = 1)
+        {
+            exit_after_signals.store(signals_before_stop);
+            running.store(true);
+        }
 
         /// Set value not greater then 0 to mark the query as stopped.
-        void stop() { exit_after_signals.store(0); }
+        void stop()
+        {
+            /// Clear `running` before `exit_after_signals` so a concurrent reader of the output
+            /// cancellation hook (the parallel-formatting collector) never observes a
+            /// running-and-cancelled state while we are stopping the handler during teardown.
+            running.store(false);
+            exit_after_signals.store(0);
+        }
+
+        /// Return true while the handler is armed for an in-flight query, i.e. between start() and
+        /// stop(). This lets the output cancellation hook tell a genuine Ctrl+C (the handler is
+        /// running and cancelled) apart from a handler that has merely been stopped during query
+        /// teardown - where cancelled() also becomes true, see ClientBase::resetOutput.
+        bool isRunning() { return running.load(); }
 
         /// Return true if the query was stopped.
         /// Query was stopped if it received at least "signals_before_stop" interrupt signals.
@@ -308,6 +325,7 @@ protected:
 
     private:
         std::atomic<Int32> exit_after_signals = 0;
+        std::atomic<bool> running = false;
     };
 
     QueryInterruptHandler query_interrupt_handler;

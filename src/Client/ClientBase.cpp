@@ -719,10 +719,12 @@ try
             /// With `--pager` the result set is written through the pager's stdin pipe rather than
             /// through `std_out`, so install the cancellation hook here too. Otherwise a stuck or
             /// slow pager could fill its stdin pipe and the first Ctrl+C would appear to have no
-            /// effect. The hook is re-pointed during teardown in resetOutput() (and `pager_cmd`,
-            /// recreated per query, destroyed there), so it is never finalized with a stale
-            /// handler-based hook.
-            pager_cmd->in.setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
+            /// effect. The `isRunning()` guard keeps this hook honest for its whole lifetime: once
+            /// the interrupt handler is stopped during teardown, cancelled() becomes unconditionally
+            /// true, so without the guard the final flush in resetOutput() would discard
+            /// already-produced output on an exception path (where the query was never cancelled).
+            pager_cmd->in.setCancellationHook(
+                [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
         }
         else
         {
@@ -809,11 +811,14 @@ try
                     /// In `INTO OUTFILE ... AND STDOUT` mode the result is written to this separate
                     /// stdout buffer rather than through `std_out`, so install the same cancellation
                     /// hook here. Otherwise Ctrl+C would not promptly abort the output when the
-                    /// stdout sink (e.g. a slow terminal) is blocked. The hook is re-pointed during
-                    /// teardown in resetOutput() (and the buffer, recreated per query, destroyed
-                    /// there), so it is never finalized with a stale handler-based hook.
+                    /// stdout sink (e.g. a slow terminal) is blocked. The `isRunning()` guard keeps
+                    /// the hook honest for its whole lifetime: once the interrupt handler is stopped
+                    /// during teardown, cancelled() becomes unconditionally true, so without the
+                    /// guard the final flush in resetOutput() would discard already-produced output
+                    /// on an exception path (where the query was never cancelled).
                     auto stdout_buf = std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd);
-                    stdout_buf->setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
+                    stdout_buf->setCancellationHook(
+                        [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
 
                     /// Keep a handle so resetOutput() can re-point the hook before finalizing it.
                     select_into_file_and_stdout_buf = stdout_buf;
@@ -1446,11 +1451,16 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             /// Abort writing the result set to the output promptly when the query is cancelled.
             /// Without this, a write to a slow or stuck sink (e.g. a slow terminal) blocks the
             /// client, so the first Ctrl+C appears to have no effect until the whole block is
-            /// written. The hook lets the output buffer stop waiting and discard the rest. It is
-            /// re-pointed and then cleared in resetOutput(), after the parallel-formatting collector
-            /// that also reads it has been joined, so the hook is never mutated while that thread
-            /// reads it.
-            std_out->setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
+            /// written. The hook lets the output buffer stop waiting and discard the rest. The
+            /// `isRunning()` guard keeps it honest for its whole lifetime: once the interrupt handler
+            /// is stopped during teardown, cancelled() becomes unconditionally true, so without the
+            /// guard the output_format->finalize() flush in resetOutput() (which runs before the hook
+            /// can be safely re-pointed - that has to wait until the parallel-formatting collector
+            /// reading the hook is joined) would discard already-produced output on an exception path
+            /// where the query was never cancelled. It is finally cleared in resetOutput() after that
+            /// collector has been joined, so the hook is never mutated while that thread reads it.
+            std_out->setCancellationHook(
+                [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
 
             /// Allow cancellation during query analysis (e.g. scalar subqueries).
             /// For TCP connections this is handled by receivePacketsExpectCancel;
@@ -1856,6 +1866,13 @@ void ClientBase::resetOutput()
 
     /// Order is important: format, compression, file
 
+    /// This finalize() flushes any pending formatted bytes through std_out / the pager / the
+    /// `INTO OUTFILE ... AND STDOUT` stdout buffer, all of which still carry the live cancellation
+    /// hook installed for the query (it cannot be re-pointed yet: the parallel-formatting collector
+    /// that also reads it is only joined by this very finalize()/the reset() below, and re-pointing
+    /// it while that thread reads it would be a data race). On an exception path the interrupt
+    /// handler is already stopped, so the hook must not treat that as a cancellation and discard the
+    /// already-produced output - that is exactly what the hook's isRunning() guard ensures.
     try
     {
         if (output_format)
