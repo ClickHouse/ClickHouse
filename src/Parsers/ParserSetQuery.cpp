@@ -17,7 +17,6 @@
 #include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
-#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -41,7 +40,6 @@ public:
 
     String operator() (const Array & x) const
     {
-        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '[';
@@ -58,7 +56,6 @@ public:
 
     String operator() (const Map & x) const
     {
-        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '{';
@@ -85,7 +82,6 @@ public:
 
     String operator() (const Tuple & x) const
     {
-        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '(';
@@ -155,7 +151,7 @@ protected:
 };
 
 /// Parse Identifier, Literal, Array/Tuple/Map of literals
-static bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
+bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
 {
     ASTPtr node;
 
@@ -247,7 +243,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     ASTPtr node;
     String name;
     ASTPtr function_ast;
-    bool have_eq = false;
+    bool have_eq;
 
     if (!name_p.parse(pos, node, expected))
         return false;

@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1;
 DROP TABLE IF EXISTS mytable;
 

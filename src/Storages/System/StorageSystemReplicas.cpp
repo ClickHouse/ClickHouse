@@ -1,5 +1,4 @@
 #include <future>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <memory>
 
 #include <Columns/ColumnString.h>
@@ -231,7 +230,7 @@ void StorageSystemReplicas::readImpl(
     query_plan.addStep(std::move(reading));
 }
 
-class SystemReplicasSource final : public ISource
+class SystemReplicasSource : public ISource
 {
 public:
     SystemReplicasSource(
@@ -389,7 +388,7 @@ Chunk SystemReplicasSource::generate()
             }
         }
 
-        const TStatus * status = nullptr;
+        const TStatus * status;
         try
         {
             status = &futures[i].get();
@@ -466,6 +465,3 @@ Chunk SystemReplicasSource::generate()
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemReplicas) }

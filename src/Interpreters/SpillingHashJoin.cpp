@@ -21,8 +21,7 @@ SpillingHashJoin::SpillingHashJoin(
     SharedHeader right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t initial_num_buckets_,
-    size_t max_num_buckets_,
-    const StatsCollectingParams & stats_collecting_params_)
+    size_t max_num_buckets_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
     , left_sample_block(std::move(left_sample_block_))
@@ -32,9 +31,7 @@ SpillingHashJoin::SpillingHashJoin(
     , max_num_buckets(max_num_buckets_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
-    hash_join = std::make_shared<HashJoin>(
-        table_join, right_sample_block_, /*any_take_last_row_=*/false, /*reserve_num_=*/0, /*instance_id_=*/"",
-        /*use_two_level_maps_=*/false, stats_collecting_params_);
+    hash_join = std::make_shared<HashJoin>(table_join, right_sample_block_);
 }
 
 SpillingHashJoin::SpillingHashJoin(
@@ -269,14 +266,6 @@ void SpillingHashJoin::onBuildPhaseFinish()
     }
 
     chosen_join->onBuildPhaseFinish();
-}
-
-void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
-{
-    if (hash_join)
-        hash_join->setEnableLazyColumnsIndexing(value);
-    if (concurrent_join)
-        concurrent_join->setEnableLazyColumnsIndexing(value);
 }
 
 void SpillingHashJoin::checkTypesOfKeys(const Block & block) const
