@@ -256,6 +256,8 @@ struct ALPFloatTraits<Float64>
 
     static constexpr Float64 ROUND_MAGIC = 6755399441055744.0; // 2^51 + 2^52
 
+    /// `AUTO` falls back to `RD` when the best estimated `STD` size per sampled value exceeds this threshold.
+    /// The 48-bit (`Float64`) / 22-bit (`Float32`) limit follows the ALP paper (https://ir.cwi.nl/pub/33334 §3.4).
     static constexpr size_t RD_SIZE_THRESHOLD_LIMIT = 48 * ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS;
 
     /**
@@ -286,6 +288,7 @@ struct ALPFloatTraits<Float32>
 
     static constexpr Float32 ROUND_MAGIC = 12582912.0f; // 2^22 + 2^23
 
+    /// `AUTO` selection threshold for `Float32`. See `RD_SIZE_THRESHOLD_LIMIT` in `ALPFloatTraits<Float64>`.
     static constexpr size_t RD_SIZE_THRESHOLD_LIMIT = 22 * ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS;
 
     /**
