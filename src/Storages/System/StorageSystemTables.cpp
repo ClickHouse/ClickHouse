@@ -255,7 +255,9 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
             "value across a change-and-change-back; for URL and object storage it is the resource's strong ETag, "
             "which is best-effort, as it can repeat if the content is rewritten back to an identical state. "
             "Merge and Distributed combine their underlying tables' values and are likewise best-effort if the "
-            "set of underlying tables changes during a query. "
+            "set of underlying tables changes during a query. It covers the table's regular columns and data "
+            "only, not query-visible virtual columns that expose placement or external metadata (e.g. _disk_name, "
+            "_tags, _headers). "
             "NULL if the engine cannot tell whether its data has changed. Computing it may be expensive for some "
             "engines (e.g. Merge, Distributed, URL), so it is only calculated when this column is selected."
         },

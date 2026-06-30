@@ -730,6 +730,12 @@ public:
     /// values, and the value may also change without the data changing. Conceptually it is similar to an
     /// HTTP ETag.
     ///
+    /// It tracks the table's regular columns, data and structure. It does not cover query-visible virtual
+    /// columns that expose placement or external metadata - for example `_disk_name` (a MergeTree part's
+    /// disk), or `_tags` / `_headers` for object storage and URL - so a change affecting only such a virtual
+    /// column (moving a part between disks, or changes to object tags or HTTP response headers) may not be
+    /// detected.
+    ///
     /// For engines that can provide it the value is loop-free (no-ABA): it never returns to an earlier
     /// value across a change-and-change-back (an A -> B -> A transition). The consistency consumers below
     /// rely on this. Engines that cannot guarantee it must return nullopt (fail closed) - the exception is
