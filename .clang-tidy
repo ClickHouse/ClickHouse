@@ -174,6 +174,7 @@ Checks: [
   '-readability-function-cognitive-complexity',
   '-readability-function-size',
   '-readability-identifier-length',
+  '-readability-inconsistent-declaration-parameter-name',
   '-readability-identifier-naming', # useful but too slow
   '-readability-implicit-bool-conversion',
   '-readability-inconsistent-ifelse-braces',
