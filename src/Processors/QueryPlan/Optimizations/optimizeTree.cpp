@@ -485,9 +485,8 @@ void optimizeTreeSecondPass(
         materializeConstantsForSetOperationBranches(root, nodes);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
-    /// In the 2nd pass, we optimize further by attempting to do an "index-only scan"
-    /// or by filtering rescoring queries to vector-index candidate rows.
-    if (optimization_settings.try_use_vector_search)
+    /// In the 2nd pass, we optimize further by attempting to do an "index-only scan".
+    if (optimization_settings.try_use_vector_search && !extra_settings.vector_search_with_rescoring)
     {
         chassert(stack.empty());
         stack.push_back({.node = &root});
@@ -580,6 +579,11 @@ void optimizeTreeSecondPass(
 
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
+
+    /// Push LIMIT into aggregation-in-order when ORDER BY matches GROUP BY.
+    /// Must run after applyOrder, which converts SortingStep to FinishSorting.
+    if (optimization_settings.optimize_aggregation_in_order_limit)
+        optimizeLimitForAggregationInOrder(root);
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
