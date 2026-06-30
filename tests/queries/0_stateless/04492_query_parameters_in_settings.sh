@@ -36,10 +36,10 @@ $CLICKHOUSE_CLIENT -q "SELECT 1 SETTINGS max_threads = {nonexistent:UInt64}" 2>&
 
 # Query parameters work wherever setting values are parsed by ParserSetQuery. This includes the
 # storage SETTINGS clause of CREATE TABLE.
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS 04489_storage_setting"
-$CLICKHOUSE_CLIENT --param_g=4096 -q "CREATE TABLE 04489_storage_setting (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = {g:UInt64}"
-$CLICKHOUSE_CLIENT -q "SELECT create_table_query LIKE '%index_granularity = 4096%' FROM system.tables WHERE database = currentDatabase() AND name = '04489_storage_setting'"
-$CLICKHOUSE_CLIENT -q "DROP TABLE 04489_storage_setting"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS 04492_storage_setting"
+$CLICKHOUSE_CLIENT --param_g=4096 -q "CREATE TABLE 04492_storage_setting (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = {g:UInt64}"
+$CLICKHOUSE_CLIENT -q "SELECT create_table_query LIKE '%index_granularity = 4096%' FROM system.tables WHERE database = currentDatabase() AND name = '04492_storage_setting'"
+$CLICKHOUSE_CLIENT -q "DROP TABLE 04492_storage_setting"
 
 # It also covers the SETTINGS clause of BACKUP / RESTORE when that clause contains only core query
 # settings: such a clause falls through to the trailing SETTINGS clause of a query (also parsed by
@@ -60,4 +60,4 @@ $CLICKHOUSE_CLIENT --param_threads=4 -q "BACKUP TABLE system.one TO Disk('backup
 # The boundary is the separate ParserSetQuery::parseNameValuePair path (used by CREATE NAMED
 # COLLECTION, dictionaries, ...), which does not support query parameters: a placeholder there is
 # rejected at parse time with a SYNTAX_ERROR rather than silently misbehaving.
-$CLICKHOUSE_CLIENT --param_v='secret' -q "CREATE NAMED COLLECTION 04489_nc AS key1 = {v:String}" 2>&1 | grep -o "SYNTAX_ERROR" | head -n1
+$CLICKHOUSE_CLIENT --param_v='secret' -q "CREATE NAMED COLLECTION 04492_nc AS key1 = {v:String}" 2>&1 | grep -o "SYNTAX_ERROR" | head -n1
