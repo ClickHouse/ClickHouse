@@ -58,9 +58,9 @@ String resultAt(const ColumnPtr & column, size_t row)
 
 /// Build concat over the given argument types and return its (resolver-decided) result type and
 /// the executable function. concat uses the default LowCardinality implementation.
-FunctionBasePtr buildConcat(const ContextPtr & context, const ColumnsWithTypeAndName & build_args)
+FunctionBasePtr buildConcat(const ColumnsWithTypeAndName & build_args)
 {
-    auto resolver = FunctionFactory::instance().get("concat", context);
+    auto resolver = FunctionFactory::instance().get("concat", getContext().context);
     return resolver->build(build_args);
 }
 
@@ -78,10 +78,7 @@ protected:
     void SetUp() override
     {
         tryRegisterFunctions();
-        context = getContext().context;
     }
-
-    ContextPtr context;
 };
 
 /// A single LowCardinality argument together with a NON-constant ordinary argument, while the
@@ -94,7 +91,7 @@ TEST_F(LowCardinalityDefaultImpl, SingleLowCardinalityWithNonConstOrdinaryHeader
         {constString("", 1), stringType(), "a"},
         {nullptr, lcStringType(), "b"},
     };
-    auto function = buildConcat(context, build_args);
+    auto function = buildConcat(build_args);
     ASSERT_TRUE(typeid_cast<const DataTypeLowCardinality *>(function->getResultType().get()));
 
     /// Runtime: arg0 lost its constness (non-const empty String, size 0); arg1 empty LowCardinality.
@@ -118,7 +115,7 @@ TEST_F(LowCardinalityDefaultImpl, SingleLowCardinalityWithNonConstOrdinaryRealRo
         {constString("", 1), stringType(), "a"},
         {nullptr, lcStringType(), "b"},
     };
-    auto function = buildConcat(context, build_args);
+    auto function = buildConcat(build_args);
     auto result_type = function->getResultType();
     ASSERT_TRUE(typeid_cast<const DataTypeLowCardinality *>(result_type.get()));
 
@@ -145,7 +142,7 @@ TEST_F(LowCardinalityDefaultImpl, TwoLowCardinalityColumnsRealRows)
         {ColumnConst::create(lowCardinalityString({"p"}), 1), lcStringType(), "a"},
         {nullptr, lcStringType(), "b"},
     };
-    auto function = buildConcat(context, build_args);
+    auto function = buildConcat(build_args);
     auto result_type = function->getResultType();
     ASSERT_TRUE(typeid_cast<const DataTypeLowCardinality *>(result_type.get()));
 
@@ -170,7 +167,7 @@ TEST_F(LowCardinalityDefaultImpl, SingleLowCardinalityWithConstOrdinaryFastPath)
         {constString("p", 1), stringType(), "a"},
         {nullptr, lcStringType(), "b"},
     };
-    auto function = buildConcat(context, build_args);
+    auto function = buildConcat(build_args);
     auto result_type = function->getResultType();
     ASSERT_TRUE(typeid_cast<const DataTypeLowCardinality *>(result_type.get()));
 
@@ -201,7 +198,7 @@ TEST_F(LowCardinalityDefaultImpl, LeadingConstWithNonConstOrdinaryHeaderEval)
         {constString("", 1), stringType(), "b"},
         {nullptr, lcStringType(), "c"},
     };
-    auto function = buildConcat(context, build_args);
+    auto function = buildConcat(build_args);
     ASSERT_TRUE(typeid_cast<const DataTypeLowCardinality *>(function->getResultType().get()));
 
     /// arg0 keeps a size-1 ColumnConst; arg1 lost its constness (empty non-const String, size 0);
@@ -227,7 +224,7 @@ TEST_F(LowCardinalityDefaultImpl, LeadingConstWithNonConstOrdinaryRealRows)
         {constString("", 1), stringType(), "b"},
         {nullptr, lcStringType(), "c"},
     };
-    auto function = buildConcat(context, build_args);
+    auto function = buildConcat(build_args);
     auto result_type = function->getResultType();
     ASSERT_TRUE(typeid_cast<const DataTypeLowCardinality *>(result_type.get()));
 
