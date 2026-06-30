@@ -685,8 +685,9 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     /// Special case of `GROUP BY` with no aggregate functions (effectively `DISTINCT`): use a void-mapped hash
     /// table that stores only keys (no dead `AggregateDataPtr` slot, e.g. 16 -> 8 bytes per cell for UInt64,
     /// 32 -> 16 for keys128, 32 -> 24 for serialized). Covers single numbers (key32/key64), packed fixed keys
-    /// (keys32/keys64/keys128/keys256) and serialized keys (serialized/prealloc_serialized and their nullable
-    /// forms); single string/FixedString, single nullable number and LowCardinality keys are not covered yet.
+    /// (keys32/keys64/keys128/keys256), serialized keys (serialized/prealloc_serialized and their nullable
+    /// forms) and nullable fixed-width keys (nullable_key32/64, nullable_keys128/256); single string/FixedString
+    /// and LowCardinality keys are not covered yet.
     /// This is an internal data-structure choice only: results are identical to the regular path, so - like the
     /// key8/key16/.../keys256 selection above - it is unconditional rather than gated by a setting.
     if (params.aggregates_size == 0)
@@ -704,6 +705,10 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             case Type::nullable_serialized:          method_chosen = Type::nullable_serialized_void;          break;
             case Type::prealloc_serialized:          method_chosen = Type::prealloc_serialized_void;          break;
             case Type::nullable_prealloc_serialized: method_chosen = Type::nullable_prealloc_serialized_void; break;
+            case Type::nullable_key32:   method_chosen = Type::nullable_key32_void;   break;
+            case Type::nullable_key64:   method_chosen = Type::nullable_key64_void;   break;
+            case Type::nullable_keys128: method_chosen = Type::nullable_keys128_void; break;
+            case Type::nullable_keys256: method_chosen = Type::nullable_keys256_void; break;
             default: break;
         }
     }

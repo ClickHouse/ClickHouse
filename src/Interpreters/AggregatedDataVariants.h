@@ -141,6 +141,12 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64Key, true, true>>         nullable_key64;
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32KeyTwoLevel, true, true>>         nullable_key32_two_level;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyTwoLevel, true, true>>         nullable_key64_two_level;
+    /// Void-mapped nullable single-number variants (GROUP BY without aggregates). consecutive_keys_optimization
+    /// disabled (void cells have no value.second cache), nullable=true.
+    std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32KeyVoid, false, true>>         nullable_key32_void;
+    std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyVoid, false, true>>         nullable_key64_void;
+    std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32KeyVoidTwoLevel, false, true>> nullable_key32_void_two_level;
+    std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyVoidTwoLevel, false, true>> nullable_key64_void_two_level;
 
     std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithNullableShortStringKey, true>> nullable_key_string;
     std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithNullableShortStringKey, true>> nullable_key_fixed_string;
@@ -151,6 +157,12 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256, true>>             nullable_keys256;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, true>>     nullable_keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, true>>     nullable_keys256_two_level;
+    /// Void-mapped nullable packed-keys variants (null bitmap packed into the key, so the existing void maps
+    /// are reused with has_nullable_keys=true).
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128Void, true>>         nullable_keys128_void;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256Void, true>>         nullable_keys256_void;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128VoidTwoLevel, true>> nullable_keys128_void_two_level;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256VoidTwoLevel, true>> nullable_keys256_void_two_level;
 
     /// Support for low cardinality.
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false>>> low_cardinality_key8;
@@ -241,6 +253,10 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_key64,             false) \
         M(nullable_key32_two_level,   true) \
         M(nullable_key64_two_level,   true) \
+        M(nullable_key32_void,             false) \
+        M(nullable_key64_void,             false) \
+        M(nullable_key32_void_two_level,   true) \
+        M(nullable_key64_void_two_level,   true) \
         M(nullable_key_string,        false) \
         M(nullable_key_fixed_string,  false) \
         M(nullable_key_string_two_level, true) \
@@ -249,6 +265,10 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_keys256,           false) \
         M(nullable_keys128_two_level, true) \
         M(nullable_keys256_two_level, true) \
+        M(nullable_keys128_void,           false) \
+        M(nullable_keys256_void,           false) \
+        M(nullable_keys128_void_two_level, true) \
+        M(nullable_keys256_void_two_level, true) \
         M(low_cardinality_key8, false) \
         M(low_cardinality_key16, false) \
         M(low_cardinality_key32, false) \
@@ -289,10 +309,14 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_prealloc_serialized_void) \
         M(nullable_key32) \
         M(nullable_key64) \
+        M(nullable_key32_void) \
+        M(nullable_key64_void) \
         M(nullable_key_string) \
         M(nullable_key_fixed_string) \
         M(nullable_keys128) \
         M(nullable_keys256) \
+        M(nullable_keys128_void) \
+        M(nullable_keys256_void) \
         M(low_cardinality_key32) \
         M(low_cardinality_key64) \
         M(low_cardinality_keys128) \
@@ -357,10 +381,14 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_prealloc_serialized_void_two_level)       \
         M(nullable_key32_two_level) \
         M(nullable_key64_two_level) \
+        M(nullable_key32_void_two_level) \
+        M(nullable_key64_void_two_level) \
         M(nullable_key_string_two_level) \
         M(nullable_key_fixed_string_two_level) \
         M(nullable_keys128_two_level) \
         M(nullable_keys256_two_level) \
+        M(nullable_keys128_void_two_level) \
+        M(nullable_keys256_void_two_level) \
         M(low_cardinality_key32_two_level) \
         M(low_cardinality_key64_two_level) \
         M(low_cardinality_keys128_two_level) \

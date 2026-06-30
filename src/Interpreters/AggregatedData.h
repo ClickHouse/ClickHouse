@@ -284,4 +284,16 @@ using AggregatedDataWithNullableShortStringKeyTwoLevel = AggregationDataWithNull
 using AggregatedDataWithNullableStringKeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
         TwoLevelHashMapWithSavedHash<std::string_view, AggregateDataPtr, DefaultHash<std::string_view>,
         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
+
+/// Void-mapped nullable single-number maps for `GROUP BY` without aggregate functions. The null group's
+/// presence is still tracked by `AggregationDataWithNullKey` (one bool + one dead ptr, O(1)); only the
+/// non-null keys live in the void cells.
+using AggregatedDataWithNullableUInt32KeyVoid = AggregationDataWithNullKey<AggregatedDataWithUInt32KeyVoid>;
+using AggregatedDataWithNullableUInt64KeyVoid = AggregationDataWithNullKey<AggregatedDataWithUInt64KeyVoid>;
+using AggregatedDataWithNullableUInt32KeyVoidTwoLevel = AggregationDataWithNullKeyTwoLevel<
+    TwoLevelHashMapTable<UInt32, AggregatedDataVoidCell<UInt32, HashCRC32<UInt32>>, HashCRC32<UInt32>,
+                         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
+using AggregatedDataWithNullableUInt64KeyVoidTwoLevel = AggregationDataWithNullKeyTwoLevel<
+    TwoLevelHashMapTable<UInt64, AggregatedDataVoidCell<UInt64, HashCRC32<UInt64>>, HashCRC32<UInt64>,
+                         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
 }
