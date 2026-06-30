@@ -87,3 +87,11 @@ def test_wrong_key():
         "configs/users_wrong_key.xml",
         "DB::Exception: Key WRONG not found in secret username of vault",
     )
+
+
+def test_unsupported_url_scheme():
+    start_clickhouse(
+        "configs/config_unsupported_url_scheme.xml",
+        "configs/users.xml",
+        "Unsupported URL scheme for vault: ftp",
+    )

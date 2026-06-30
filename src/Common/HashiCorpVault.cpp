@@ -145,6 +145,8 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error in parsing url for vault.");
         }
+        if (scheme != "http" && scheme != "https")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported URL scheme for vault: {}. Must be http or https.", scheme);
         if (port == 0)
         {
             if (scheme == "https")
