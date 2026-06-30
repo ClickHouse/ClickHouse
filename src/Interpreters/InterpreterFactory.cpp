@@ -5,6 +5,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
+#include <Parsers/ASTCreateTypeQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
@@ -14,6 +15,7 @@
 #include <Parsers/ASTDropResourceQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTDropTypeQuery.h>
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTParallelWithQuery.h>
@@ -33,6 +35,8 @@
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTShowSettingQuery.h>
+#include <Parsers/ASTShowTypesQuery.h>
+#include <Parsers/ASTShowTypeQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
@@ -400,6 +404,22 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTParallelWithQuery>())
     {
         interpreter_name = "InterpreterParallelWithQuery";
+    }
+    else if (query->as<ASTCreateTypeQuery>())
+    {
+        interpreter_name = "InterpreterCreateTypeQuery";
+    }
+    else if (query->as<ASTDropTypeQuery>())
+    {
+        interpreter_name = "InterpreterDropTypeQuery";
+    }
+    else if (query->as<ASTShowTypesQuery>())
+    {
+        interpreter_name = "InterpreterShowTypesQuery";
+    }
+    else if (query->as<ASTShowTypeQuery>())
+    {
+        interpreter_name = "InterpreterShowTypeQuery";
     }
     else if (query->as<ASTExecuteAsQuery>())
     {

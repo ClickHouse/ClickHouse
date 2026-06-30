@@ -1,0 +1,8 @@
+UserId	UInt64	\N	toUInt64(assumeNotNull(value))	toString(value)	0	CREATE TYPE UserId AS UInt64 INPUT \'toUInt64(assumeNotNull(value))\' OUTPUT \'toString(value)\' DEFAULT \'0\'
+ComplexArray	Array(Tuple(String, UInt64))	\N	\N	\N	\N	CREATE TYPE ComplexArray AS Array(Tuple(String, UInt64))
+ParameterizedType	Tuple(T, Array(U))	T, U	\N	\N	\N	CREATE TYPE ParameterizedType(T, U) AS Tuple(T, Array(U))
+UserIdArray	Array(UserId)	\N	\N	\N	\N	CREATE TYPE UserIdArray AS Array(UserId)
+ParameterizedType
+ComplexArray
+UserIdArray
+UserId

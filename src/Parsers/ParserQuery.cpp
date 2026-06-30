@@ -2,6 +2,7 @@
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/ParserCreateWorkloadQuery.h>
 #include <Parsers/ParserCreateResourceQuery.h>
+#include <Parsers/ParserCreateTypeQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserCreateIndexQuery.h>
 #include <Parsers/ParserDropFunctionQuery.h>
@@ -11,6 +12,7 @@
 #include <Parsers/ParserDropNamedCollectionQuery.h>
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
 #include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserDropTypeQuery.h>
 #include <Parsers/ParserParallelWithQuery.h>
 #include <Parsers/ParserHypotheticalIndexQuery.h>
 #include <Parsers/ParserInsertQuery.h>
@@ -25,6 +27,8 @@
 #include <Parsers/ParserDeleteQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
 #include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserShowTypesQuery.h>
+#include <Parsers/ParserShowTypeQuery.h>
 #include <Parsers/ParserCopyQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -62,6 +66,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateMaskingPolicy create_masking_policy_p;
     ParserCreateSettingsProfileQuery create_settings_profile_p;
     ParserCreateFunctionQuery create_function_p;
+    ParserCreateTypeQuery create_type_p;
     ParserDropFunctionQuery drop_function_p;
     ParserCreateWorkloadQuery create_workload_p;
     ParserDropWorkloadQuery drop_workload_p;
@@ -74,6 +79,9 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDropIndexQuery drop_index_p;
     ParserHypotheticalIndexQuery hypothetical_index_p;
     ParserDropAccessEntityQuery drop_access_entity_p;
+    ParserDropTypeQuery drop_type_p;
+    ParserShowTypesQuery show_types_p;
+    ParserShowTypeQuery show_type_p;
     ParserMoveAccessEntityQuery move_access_entity_p;
     ParserGrantQuery grant_p;
     ParserCheckGrantQuery check_grant_p;
@@ -96,6 +104,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_masking_policy_p.parse(pos, node, expected)
         || create_settings_profile_p.parse(pos, node, expected)
         || create_function_p.parse(pos, node, expected)
+        || create_type_p.parse(pos, node, expected)
         || drop_function_p.parse(pos, node, expected)
         || create_workload_p.parse(pos, node, expected)
         || drop_workload_p.parse(pos, node, expected)
@@ -108,6 +117,9 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || drop_index_p.parse(pos, node, expected)
         || hypothetical_index_p.parse(pos, node, expected)
         || drop_access_entity_p.parse(pos, node, expected)
+        || drop_type_p.parse(pos, node, expected)
+        || show_types_p.parse(pos, node, expected)
+        || show_type_p.parse(pos, node, expected)
         || move_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
         || check_grant_p.parse(pos, node, expected)
