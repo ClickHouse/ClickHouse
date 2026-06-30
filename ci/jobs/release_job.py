@@ -296,21 +296,25 @@ def main():
             workdir=REPO_PATH,
         )
 
-    # only-repo / only-docker are recovery runs against an already-released tag:
-    # origin/<release_branch> has been version-bumped since, so prepare's
-    # out-of-order guard must be relaxed (as the legacy workflow did).
-    skip_out_of_order_check_flag = (
-        "--skip-out-of-order-check" if (args.only_repo or args.only_docker) else ""
-    )
     step(
         name="Prepare Release Info",
         command=[
             f"python3 ./ci/jobs/create_release.py --prepare-release-info"
             f" --ref {shlex.quote(args.ref)} --release-type {args.release_type}"
-            f" {skip_out_of_order_check_flag} {dry_run_flag}".strip()
+            f" {dry_run_flag}".strip()
         ],
         workdir=REPO_PATH,
     )
+
+    # Prepare decides whether this run creates a new release (push tag, bump
+    # version, changelog PR) or only re-publishes artifacts for an existing /
+    # out-of-order ref. The creation steps below run only when it does; a
+    # recovery (only-repo/only-docker) or an out-of-order full run skips them
+    # without erroring and just re-exports repos / rebuilds docker.
+    create_new_release = False
+    if ok:
+        with open(RELEASE_INFO_FILE) as f:
+            create_new_release = json.load(f)["create_new_release"]
 
     if args.release_type == "patch" and not args.only_docker:
         step(
@@ -322,7 +326,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if not args.only_repo and not args.only_docker:
+    if create_new_release:
         step(
             name="Push Git Tag for the Release",
             command=[
@@ -332,7 +336,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "new" and not args.only_repo and not args.only_docker:
+    if args.release_type == "new" and create_new_release:
         step(
             name="Push New Release Branch",
             command=[
@@ -342,7 +346,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if not args.only_repo and not args.only_docker:
+    if create_new_release:
         step(
             name="Bump CH Version and Update Contributors' List",
             command=[
@@ -352,12 +356,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if (
-        ok
-        and args.release_type == "patch"
-        and not args.only_repo
-        and not args.only_docker
-    ):
+    if ok and args.release_type == "patch" and create_new_release:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
         uid = os.getuid()
@@ -390,13 +389,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if (
-        ok
-        and args.release_type == "patch"
-        and not args.dry_run
-        and not args.only_repo
-        and not args.only_docker
-    ):
+    if ok and args.release_type == "patch" and not args.dry_run and create_new_release:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
 
@@ -719,11 +712,10 @@ def main():
     # into ok — so if --merge-prs fails, the release is NOT marked completed and
     # the Slack post below reports the actual failing step.
     #
-    # Only a normal release creates the changelog/version-bump PRs; recovery
-    # runs (only-repo/only-docker) skip tagging/bump/changelog, so there is
-    # nothing to merge — running --merge-prs there would fail looking up a
-    # non-existent changelog PR.
-    if not args.only_repo and not args.only_docker:
+    # Only a release that created the changelog/version-bump PRs has anything to
+    # merge; a recovery / out-of-order run did not create them, so skip
+    # --merge-prs there (it would fail looking up a non-existent changelog PR).
+    if create_new_release:
         step(
             name="Update Release Info and Merge Created PRs",
             command=[
