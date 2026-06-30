@@ -83,6 +83,40 @@ SELECT 'sub sorted', (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELECT t.
                    = (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELECT t.a, ts FROM t_sub ORDER BY t.a, toStartOfDay(ts)));
 DROP TABLE t_sub;
 
+-- Mutation path: the same violation is reachable through ALTER TABLE ... MATERIALIZE TTL.
+-- The mutation runs the GROUP BY ... SET aggregation through the mutation pipeline and the
+-- full-rewrite writer also rebuilds the primary index from the stream, so the post-SET stream
+-- must be re-sorted there too (the merge fix only covers the merge pipeline). STOP TTL MERGES
+-- keeps the background TTL merge from applying the TTL first, so the mutation is the only path
+-- that runs it. Plain Float64 and the subcolumn case (which exercises the storage-name mapping).
+DROP TABLE IF EXISTS t_mut;
+CREATE TABLE t_mut (k Float64, ts DateTime, v Float64)
+ENGINE = MergeTree ORDER BY (k, toStartOfDay(ts))
+TTL ts + toIntervalDay(1) GROUP BY k, toStartOfDay(ts)
+    SET ts = max(ts) + interval 100 years, k = max(v)
+SETTINGS min_bytes_for_full_part_storage = 128, materialize_ttl_recalculate_only = 0;
+SYSTEM STOP TTL MERGES t_mut;
+INSERT INTO t_mut VALUES (1.0, '2000-06-09 10:00', 96827), (1.0, '2000-06-10 10:00', 41302);
+ALTER TABLE t_mut MATERIALIZE TTL SETTINGS mutations_sync = 2;
+SELECT 'mut data', k, ts, v FROM t_mut ORDER BY ALL;
+SELECT 'mut sorted', (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_mut SETTINGS optimize_read_in_order = 0))
+                   = (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_mut ORDER BY k, toStartOfDay(ts)));
+DROP TABLE t_mut;
+
+DROP TABLE IF EXISTS t_mut_sub;
+CREATE TABLE t_mut_sub (t Tuple(a UInt32, b UInt32), ts DateTime, cand Tuple(a UInt32, b UInt32), v UInt32)
+ENGINE = MergeTree ORDER BY (t.a, toStartOfDay(ts))
+TTL ts + toIntervalDay(1) GROUP BY t.a, toStartOfDay(ts)
+    SET ts = max(ts) + interval 100 years, t = argMax(cand, v)
+SETTINGS min_bytes_for_full_part_storage = 128, materialize_ttl_recalculate_only = 0;
+SYSTEM STOP TTL MERGES t_mut_sub;
+INSERT INTO t_mut_sub VALUES ((5, 0), '2000-06-09 10:00', (900, 0), 10), ((5, 0), '2000-06-10 10:00', (100, 0), 20);
+ALTER TABLE t_mut_sub MATERIALIZE TTL SETTINGS mutations_sync = 2;
+SELECT 'mut sub data', t.a, ts FROM t_mut_sub ORDER BY ALL;
+SELECT 'mut sub sorted', (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELECT t.a, ts FROM t_mut_sub SETTINGS optimize_read_in_order = 0))
+                       = (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELECT t.a, ts FROM t_mut_sub ORDER BY t.a, toStartOfDay(ts)));
+DROP TABLE t_mut_sub;
+
 -- Control: SET only a non-sort-key column. The re-sort must not be needed and the merge
 -- must work exactly as before.
 DROP TABLE IF EXISTS t_nonkey;

@@ -40,6 +40,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/TTLResortUtils.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/Statistics.h>
@@ -2179,6 +2180,15 @@ private:
                 true);
             subqueries = transform->getSubqueries();
             builder->addTransform(std::move(transform));
+
+            /// A `TTL ... GROUP BY ... SET` that assigns a sort-key column leaves the stream
+            /// unordered (the materialized sort-key expression is also stale). This full-rewrite
+            /// path rebuilds the primary index from the stream, so recompute the sorting key and
+            /// re-sort to keep the written part consistent with its index. Gated to a no-op
+            /// otherwise. Mirrors the merge path in MergeTask.
+            if (groupByTTLAssignsSortKeyColumn(ctx->metadata_snapshot))
+                resortPipelineAfterTTLGroupBySet(
+                    *builder, ctx->metadata_snapshot, ctx->new_data_part->getColumns(), ctx->context);
         }
 
         if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)

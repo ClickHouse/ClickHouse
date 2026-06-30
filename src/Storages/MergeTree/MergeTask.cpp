@@ -52,6 +52,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/TTLResortUtils.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
@@ -356,43 +357,6 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
 
     /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
-}
-
-/// A `TTL ... GROUP BY ... SET col = agg(...)` clause can assign a column that the table's
-/// sorting key depends on (directly, or through an expression such as `toStartOfDay(ts)`).
-/// `TTLAggregationAlgorithm` emits aggregated groups in the input (already-sorted) order, so
-/// when such a SET rewrites a sort-key column the produced stream is no longer ordered by the
-/// sorting key. The merge writer trusts the stream order, so the resulting part would have a
-/// primary index inconsistent with the data (a debug-only `CheckSortedTransform` catches it as
-/// a LOGICAL_ERROR; release builds write a corrupt part). Detect this so we can re-sort.
-///
-/// A `SET` target is always a physical storage column, while a sorting-key dependency can be a
-/// subcolumn (e.g. `ORDER BY t.a` requires `t.a`, whose storage column is `t`). Map each
-/// dependency to its storage column before comparing, the same way
-/// `extractMergingAndGatheringColumns` does via `getColumnNameInStorage`.
-static bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot)
-{
-    if (!metadata_snapshot->hasSortingKey())
-        return false;
-
-    const auto group_by_ttls = metadata_snapshot->getGroupByTTLs();
-    if (group_by_ttls.empty())
-        return false;
-
-    const auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
-    const auto virtual_columns
-        = metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNameSet();
-
-    NameSet sort_key_dependencies;
-    for (const auto & column : metadata_snapshot->getSortingKey().expression->getRequiredColumns())
-        sort_key_dependencies.insert(getColumnNameInStorage(column, storage_columns, virtual_columns));
-
-    for (const auto & ttl : group_by_ttls)
-        for (const auto & set_part : ttl.set_parts)
-            if (sort_key_dependencies.contains(set_part.column_name))
-                return true;
-
-    return false;
 }
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
