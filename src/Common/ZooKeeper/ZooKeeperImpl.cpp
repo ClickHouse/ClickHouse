@@ -1900,34 +1900,26 @@ void ZooKeeper::list(
     bool with_stat,
     bool with_data)
 {
-    std::shared_ptr<ZooKeeperListRequest> request{nullptr};
-
     if (with_stat || with_data)
-    {
         if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA) || !isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "List with stat/data cannot be used because it's not supported by the server");
 
-        auto list_with_stats_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
-        list_with_stats_request->list_request_type = list_request_type;
-        list_with_stats_request->with_stat = with_stat;
-        list_with_stats_request->with_data = with_data;
-        request = std::move(list_with_stats_request);
-    }
-    else if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
-    {
-        if (list_request_type != ListRequestType::ALL)
+    if (list_request_type != ListRequestType::ALL)
+        if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "Filtered list request type cannot be used because it's not supported by the server");
 
-        request = std::make_shared<ZooKeeperListRequest>();
-    }
-    else
-    {
-        auto filtered_list_request = std::make_shared<ZooKeeperFilteredListRequest>();
-        filtered_list_request->list_request_type = list_request_type;
-        request = std::move(filtered_list_request);
-    }
-
+    auto request = std::make_shared<ZooKeeperListRequest>();
     request->path = path;
+
+    if (list_request_type != ListRequestType::ALL)
+        request->list_request_type = list_request_type;
+
+    if (with_stat || with_data)
+    {
+        request->list_request_type = list_request_type;
+        request->with_stat = with_stat;
+        request->with_data = with_data;
+    }
 
     instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
 
