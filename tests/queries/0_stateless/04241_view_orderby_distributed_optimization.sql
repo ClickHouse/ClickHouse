@@ -50,7 +50,11 @@ SELECT 'View query has merge sort:',
 -- EXPLAIN PLAN: after pushdown the merge-sorted-streams step must appear in
 -- the plan. Match only the merge step to keep the reference stable across
 -- builds (the surrounding plan shape depends on `Distributed` internals).
-SELECT trim(replaceRegexpAll(explain, '^\\s+', '')) AS step
+-- Strip both leading whitespace and the pretty tree-drawing prefix
+-- (`explain_query_plan_default = 'pretty'` is the default and decorates each
+-- step with characters like `└──`/`├──`/`│`), so the reference stays stable
+-- regardless of the step's depth and position in the plan tree.
+SELECT trim(replaceRegexpAll(explain, '^[\\s│├└─]+', '')) AS step
 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10)
 WHERE explain LIKE '%Merge sorted streams%';
 
