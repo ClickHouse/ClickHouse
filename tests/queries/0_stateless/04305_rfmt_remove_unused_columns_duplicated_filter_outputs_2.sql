@@ -13,6 +13,8 @@
 -- when the LOGICAL_ERROR reappears, but also when the policy stops being
 -- enforced (e.g. if a future change accidentally bypasses the bare-column
 -- filter): the falsy `c0 = 0` row must be excluded from every output.
+SET enable_analyzer = 1;
+SET query_plan_remove_unused_columns = 1;
 
 DROP TABLE IF EXISTS t_106099;
 DROP ROW POLICY IF EXISTS pol_106099 ON t_106099;
@@ -75,8 +77,6 @@ SELECT count() FROM t_106099 SETTINGS additional_table_filters = {'t_106099':'c0
 
 DROP TABLE t_106099;
 
--- `UInt8` bare-column passthrough must not be rewritten to constant `1` by
--- projection optimization. Issue #106099.
 DROP TABLE IF EXISTS t_106099_u8;
 DROP ROW POLICY IF EXISTS pol_106099_u8 ON t_106099_u8;
 CREATE TABLE t_106099_u8 (c0 UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
