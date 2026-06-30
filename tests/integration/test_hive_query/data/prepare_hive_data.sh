@@ -5,15 +5,43 @@
 set -ex
 
 # The hive CLI can hang for a long time when the metastore / HiveServer2 is not ready
-# yet. Wrap every invocation in a timeout so a stuck command aborts the script (with
-# `set -e`) and lets the caller retry, instead of consuming the whole test budget. Fall
-# back to the previous (untimed) behaviour if `timeout` is unavailable in the image.
+# yet: it blocks on the metastore connection (the previous runs were killed with exit code
+# 124 on the very first statement). Wrap every invocation in a timeout so a stuck command
+# aborts the script (with `set -e`) and lets the caller retry, instead of consuming the
+# whole test budget. Fall back to the previous (untimed) behaviour if `timeout` is
+# unavailable in the image.
 if command -v timeout >/dev/null 2>&1; then
+    HAVE_TIMEOUT=1
     HIVE_TIMEOUT="timeout 150"
 else
+    HAVE_TIMEOUT=""
     HIVE_TIMEOUT=""
 fi
 run_hive() { $HIVE_TIMEOUT hive -e "$1"; }
+
+# Wait for the metastore to answer a trivial query before running the heavier statements.
+# While the metastore is still starting the hive CLI blocks on the connection, so a single
+# long-timeout statement wastes the whole budget on one stuck attempt. Probing with a short
+# timeout instead lets many cheap connection attempts fit into the budget: a stuck probe is
+# killed quickly and we poll again, while a successful one (a trivial query once the
+# metastore is up) returns fast. This is best effort - if `timeout` is unavailable we skip
+# straight to the statements below.
+if [ -n "$HAVE_TIMEOUT" ]; then
+    metastore_ready=""
+    for _ in {1..12}; do
+        if timeout 30 hive -e "show databases" >/dev/null 2>&1; then
+            metastore_ready=1
+            break
+        fi
+        sleep 2
+    done
+    # If the metastore still isn't answering, abort (via `set -e`) so the caller retries from
+    # scratch rather than blocking on the long-timeout statements below.
+    if [ -z "$metastore_ready" ]; then
+        echo "Hive metastore is not ready yet, aborting for retry" >&2
+        exit 1
+    fi
+fi
 
 run_hive "create database if not exists test"
 
