@@ -46,6 +46,8 @@ private:
     ThreadFromGlobalPool session_cleaner_thread;
     /// TTL expiry: leader enqueues TryRemove for expired empty nodes
     ThreadFromGlobalPool ttl_garbage_collector_thread;
+    /// Container cleanup: leader enqueues TryRemove for childless container nodes
+    ThreadFromGlobalPool container_garbage_collector_thread;
     /// Dumping new snapshots to disk
     ThreadFromGlobalPool snapshot_thread;
     /// Apply or wait for configuration changes
@@ -93,6 +95,7 @@ private:
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
     void garbageCollectorThread(size_t batch_size);
+    void containerGarbageCollectorThread(size_t batch_size);
 
     void onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept;
 

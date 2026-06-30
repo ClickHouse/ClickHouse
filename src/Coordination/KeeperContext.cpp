@@ -632,6 +632,7 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
         case Coordination::OpNum::Close:
         case Coordination::OpNum::Error:
         case Coordination::OpNum::Create:
+        case Coordination::OpNum::CreateContainer:
         case Coordination::OpNum::Remove:
         case Coordination::OpNum::Exists:
         case Coordination::OpNum::Get:

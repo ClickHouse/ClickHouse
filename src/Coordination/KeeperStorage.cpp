@@ -522,6 +522,7 @@ struct CreateNodeDelta
     ACLId acl_id;
     String data;
     std::optional<int64_t> ttl;
+    bool is_container = false;
 };
 
 struct RemoveNodeDelta
@@ -1145,7 +1146,7 @@ Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
             {
                 if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
                 {
-                    if (!createNode(path, operation.data, operation.stat, operation.acl_id, digest_on_commit, operation.ttl))
+                    if (!createNode(path, operation.data, operation.stat, operation.acl_id, digest_on_commit, operation.ttl, operation.is_container))
                         onStorageInconsistency("Failed to create a node");
 
                     return Coordination::Error::ZOK;
@@ -1251,7 +1252,8 @@ bool KeeperStorage::createNode(
     const Coordination::Stat & stat,
     ACLId acl_id,
     bool update_digest,
-    std::optional<int64_t> ttl) TSA_NO_THREAD_SAFETY_ANALYSIS
+    std::optional<int64_t> ttl,
+    bool is_container) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     auto parent_path = Coordination::parentNodePath(path);
     auto node_it = container.find(parent_path);
@@ -1275,6 +1277,12 @@ bool KeeperStorage::createNode(
         created_node.stats.setTTL(*ttl);
         ttl_paths.insert(path);
         committed_ttl_nodes.fetch_add(1);
+    }
+    if (is_container)
+    {
+        created_node.stats.setContainer();
+        container_paths.insert(path);
+        committed_container_nodes.fetch_add(1);
     }
 
     auto [map_key, _] = container.insert(path, std::move(created_node));
@@ -1320,6 +1328,12 @@ bool KeeperStorage::removeNode(const std::string & path, int32_t version, bool u
         committed_ttl_nodes.fetch_sub(1);
     }
 
+    if (node_it->value.stats.isContainer())
+    {
+        container_paths.erase(path);
+        committed_container_nodes.fetch_sub(1);
+    }
+
     container.updateValue(
         Coordination::parentNodePath(path),
         [child_basename = Coordination::getBaseNodeName(node_it->key)](KeeperMemNode & parent)
@@ -1333,7 +1347,7 @@ bool KeeperStorage::removeNode(const std::string & path, int32_t version, bool u
     if (update_digest)
         removeDigest(prev_node, path);
 
-    if (prev_node.stats.ephemeralOwner() != 0)
+    if (prev_node.stats.isEphemeral())
     {
         chassert(committed_ephemeral_nodes != 0);
         --committed_ephemeral_nodes;
@@ -1357,6 +1371,7 @@ auto callOnConcreteRequestType(Coordination::ZooKeeperRequest & zk_request, F fu
             return function(static_cast<Coordination::ZooKeeperGetRequest &>(zk_request));
         case Coordination::OpNum::Create:
         case Coordination::OpNum::Create2:
+        case Coordination::OpNum::CreateContainer:
         case Coordination::OpNum::CreateIfNotExists:
         case Coordination::OpNum::CreateTTL:
             return function(static_cast<Coordination::ZooKeeperCreateRequest &>(zk_request));
@@ -1640,7 +1655,8 @@ static Coordination::Error preprocess(
     storage.prepareCreateNode(
         parent_path, parent_node_ref, new_parent_stats, new_parent_num_children,
         path_created, child_node_ref, stat, acl_id, zk_request.data,
-        zk_request.include_ttl ? std::optional(zk_request.ttl) : std::nullopt);
+        zk_request.include_ttl ? std::optional(zk_request.ttl) : std::nullopt,
+        zk_request.is_container);
 
     return Coordination::Error::ZOK;
 }
@@ -1761,9 +1777,10 @@ static Coordination::Error preprocess(
         return Coordination::Error::ZBADARGUMENTS;
     }
 
-    /// The internal TTL garbage collector session has no ACLs and is server-issued;
-    /// it must be allowed to expire a node regardless of user-level Delete ACLs.
+    /// The internal TTL/container garbage collector sessions have no ACLs and are server-issued;
+    /// they must be allowed to remove a node regardless of user-level Delete ACLs.
     const bool is_ttl_gc_remove = zk_request.try_remove && session_id == keeper_internal_ttl_garbage_collector_session_id;
+    const bool is_container_gc_remove = zk_request.try_remove && session_id == keeper_internal_container_garbage_collector_session_id;
 
     auto parent_path = Coordination::parentNodePath(zk_request.path);
     auto parent_node_ref = storage.uncommitted_state.getNode(parent_path);
@@ -1772,7 +1789,8 @@ static Coordination::Error preprocess(
     if (!parent_node)
         return zk_request.try_remove ? Coordination::Error::ZOK : Coordination::Error::ZNONODE;
 
-    if (check_acl && !is_ttl_gc_remove && !storage.checkACL(parent_node->acl_id, Coordination::ACL::Delete, session_id, /*committed=*/ false))
+    const bool is_internal_gc_remove = is_ttl_gc_remove || is_container_gc_remove;
+    if (check_acl && !is_internal_gc_remove && !storage.checkACL(parent_node->acl_id, Coordination::ACL::Delete, session_id, /*committed=*/ false))
         return Coordination::Error::ZNOAUTH;
 
     NodeStats new_parent_stats = parent_node->stats;
@@ -1798,7 +1816,7 @@ static Coordination::Error preprocess(
         return Coordination::Error::ZNONODE;
     }
 
-    if (check_acl && !is_ttl_gc_remove &&
+    if (check_acl && !is_internal_gc_remove &&
         storage.keeper_context->getCoordinationSettings()[CoordinationSetting::check_node_acl_on_remove] &&
         !storage.checkACL(node->acl_id, Coordination::ACL::Delete, session_id, /*committed=*/ false))
         return Coordination::Error::ZNOAUTH;
@@ -1816,6 +1834,13 @@ static Coordination::Error preprocess(
     if (is_ttl_gc_remove)
     {
         if (!node->stats.isTTL() || time < node->stats.destroyTime())
+            return {};
+    }
+    /// Re-check that the node is still a container with no children; the child count
+    /// may have changed between when the GC thread sampled it and now.
+    if (is_container_gc_remove)
+    {
+        if (!node->stats.isContainer() || node->numChildren() != 0)
             return {};
     }
     if (node->numChildren() != 0)
@@ -3082,7 +3107,8 @@ KeeperDigest KeeperStorage::preprocessRequest(
         uncommitted_state.addDeltas(std::move(staging_deltas));
         staging_deltas.clear();
 
-        if (zk_request->getOpNum() == Coordination::OpNum::Create)
+        if (zk_request->getOpNum() == Coordination::OpNum::Create
+            || zk_request->getOpNum() == Coordination::OpNum::CreateContainer)
         {
             fiu_do_on(FailPoints::keeper_leader_sets_invalid_digest, staging_digest.value = 42);
         }
@@ -3788,6 +3814,33 @@ std::vector<std::pair<std::string, Int32>> KeeperStorage::collectExpiredTTLPaths
     return result;
 }
 
+std::vector<std::pair<std::string, Int32>> KeeperStorage::collectContainerCandidates(size_t batch_size) const
+{
+    std::vector<std::pair<std::string, Int32>> result;
+
+    {
+        /// `container_paths` and `container` are mutated by commit under exclusive
+        /// `storage_mutex`. Take it shared to read them consistently.
+        SharedLockGuard storage_lock(storage_mutex);
+
+        for (const auto & container_path : container_paths)
+        {
+            auto node_it = container.find(container_path);
+            if (node_it == container.end())
+                continue;
+            const Node & node = node_it->value;
+            /// A container is eligible for deletion when it has had at least one child (cversion > 0)
+            /// but currently has no children — matching ZooKeeper's ContainerManager semantics.
+            if (node.stats.isContainer() && node.stats.cversion > 0 && node.numChildren() == 0)
+                result.emplace_back(container_path, node.stats.version);
+            if (result.size() >= batch_size)
+                break;
+        }
+    }
+
+    return result;
+}
+
 bool KeeperStorage::containsTTLPath(const std::string & path) const
 {
     SharedLockGuard storage_lock(storage_mutex);
@@ -4238,7 +4291,7 @@ void KeeperStorage::prepareCreateNode(
     std::string_view parent_path, UncommittedNodeRef parent,
     const NodeStats & new_parent_stats, int32_t new_parent_num_children,
     std::string_view path, UncommittedNodeRef node, const Coordination::Stat & stat,
-    ACLId acl_id, std::string_view data, std::optional<int64_t> ttl)
+    ACLId acl_id, std::string_view data, std::optional<int64_t> ttl, bool is_container)
 {
     /// (prepareCreateNode combines parent node update and new node creation. Currently these
     ///  operations are independent here, and we could equally well remove the parent update from
@@ -4257,7 +4310,7 @@ void KeeperStorage::prepareCreateNode(
     staging_deltas.emplace_back(
         std::string{path},
         staging_zxid,
-        CreateNodeDelta{stat, acl_id, std::string{data}, ttl});
+        CreateNodeDelta{stat, acl_id, std::string{data}, ttl, is_container});
 
     auto node_it = *node.it;
     chassert(!node_it->second.node);
@@ -4268,6 +4321,8 @@ void KeeperStorage::prepareCreateNode(
     node_ptr->acl_id = acl_id;
     if (ttl)
         node_ptr->stats.setTTL(*ttl);
+    if (is_container)
+        node_ptr->stats.setContainer();
 }
 
 void KeeperStorage::prepareRemoveNodeWithoutUpdatingParent(
