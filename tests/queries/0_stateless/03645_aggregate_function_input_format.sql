@@ -163,3 +163,26 @@ SELECT '=== Test 24: Zero-argument aggregate function (count) - array format ===
 SET aggregate_function_input_format = 'array';
 INSERT INTO test_agg_count VALUES (801, '[(), (), ()]'), (802, '[]');
 SELECT user_id, countMerge(c) FROM test_agg_count GROUP BY user_id ORDER BY user_id;
+
+-- The setting was released in v25.12 and v26.1 accepting the value/array encoded as a JSON string holding its
+-- textual representation. The following tests guard that legacy form against regressions while the native JSON
+-- form (added later) keeps working. Both forms are mixed in a single batch to verify they coexist.
+SELECT '=== Test 25: JSONEachRow array - legacy string-wrapped form and native form ===';
+SET aggregate_function_input_format = 'array';
+TRUNCATE TABLE test_agg_single;
+INSERT INTO test_agg_single SELECT * FROM format(JSONEachRow, 'user_id UInt64, avg_session_length AggregateFunction(avg, UInt32)',
+$$
+{"user_id": 900, "avg_session_length": "[700,800,900]"}
+{"user_id": 901, "avg_session_length": [100,200,300]}
+$$);
+SELECT user_id, avgMerge(avg_session_length) FROM test_agg_single GROUP BY user_id ORDER BY user_id;
+
+SELECT '=== Test 26: JSONEachRow value - legacy string-wrapped form and native form ===';
+SET aggregate_function_input_format = 'value';
+TRUNCATE TABLE test_agg_single;
+INSERT INTO test_agg_single SELECT * FROM format(JSONEachRow, 'user_id UInt64, avg_session_length AggregateFunction(avg, UInt32)',
+$$
+{"user_id": 902, "avg_session_length": "999"}
+{"user_id": 903, "avg_session_length": 555}
+$$);
+SELECT user_id, avgMerge(avg_session_length) FROM test_agg_single GROUP BY user_id ORDER BY user_id;

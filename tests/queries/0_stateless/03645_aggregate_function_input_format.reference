@@ -74,3 +74,9 @@
 800	1
 801	3
 802	0
+=== Test 25: JSONEachRow array - legacy string-wrapped form and native form ===
+900	800
+901	200
+=== Test 26: JSONEachRow value - legacy string-wrapped form and native form ===
+902	999
+903	555

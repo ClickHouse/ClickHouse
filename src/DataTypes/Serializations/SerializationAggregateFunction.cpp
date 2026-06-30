@@ -368,6 +368,21 @@ void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadB
         return;
     }
 
+    /// Backward compatibility: `aggregate_function_input_format` was released in `v25.12` and `v26.1` accepting the
+    /// value/array as a JSON string holding its textual representation, e.g. `{"x": "[1,2,3]"}` in `array` mode.
+    /// The native JSON form `{"x": [1,2,3]}` added by this change reads `[` directly, so a string-wrapped array would
+    /// otherwise be rejected. Keep accepting the legacy string-wrapped form alongside the native one.
+    skipWhitespaceIfAny(istr);
+    if (!istr.eof() && *istr.position() == '"')
+    {
+        String s;
+        readJSONString(s, istr, settings.json);
+        ReadBufferFromString str_buf(s);
+        auto method = DESERIALIZE_METHOD(deserializeWholeText);
+        deserializeFromValues<method>(column, str_buf, settings, function);
+        return;
+    }
+
     auto method = DESERIALIZE_METHOD(deserializeTextJSON);
     deserializeFromValues<method>(column, istr, settings, function);
 }
