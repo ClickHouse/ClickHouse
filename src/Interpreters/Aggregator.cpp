@@ -2874,7 +2874,10 @@ void NO_INLINE Aggregator::mergeDataImpl(
         if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
             mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
-        table_dst.merge(table_src);
+        if (prefetch)
+            table_src.template mergeToViaEmplace<true>(table_dst);
+        else
+            table_src.template mergeToViaEmplace<false>(table_dst);
         table_src.clearAndShrink();
         return;
     }

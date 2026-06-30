@@ -3,6 +3,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableAllocator.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
 
 #include <IO/WriteBuffer.h>
@@ -75,6 +76,55 @@ public:
     {
         for (auto & cell : *this)
             func(cell.getKey());
+    }
+
+    /// Merge every key of *this into `that`, growing `that` incrementally (with optional prefetch), reusing
+    /// each source cell's stored hash. Unlike `merge`, it does NOT preemptively resize to dst+src - that
+    /// over-allocates and triggers a full rehash for high-overlap aggregation merges. The set analogue of
+    /// HashMapTable::mergeToViaEmplace (there is simply no mapped value to combine).
+    template <bool prefetch = false>
+    void ALWAYS_INLINE mergeToViaEmplace(Self & that)
+    {
+        DB::PrefetchingHelper prefetching;
+        size_t prefetch_look_ahead = DB::PrefetchingHelper::getInitialLookAheadValue();
+
+        size_t i = 0;
+        auto prefetch_it = advanceIterator(this->begin(), prefetch_look_ahead);
+
+        for (auto it = this->begin(), end = this->end(); it != end; ++it, ++i)
+        {
+            if constexpr (prefetch)
+            {
+                if (i == DB::PrefetchingHelper::iterationsToMeasure())
+                {
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - DB::PrefetchingHelper::getInitialLookAheadValue());
+                }
+
+                if (prefetch_it != end)
+                {
+                    that.prefetchByHash(prefetch_it.getHash());
+                    ++prefetch_it;
+                }
+            }
+
+            typename Self::LookupResult res_it;
+            bool inserted = false;
+            that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
+        }
+    }
+
+private:
+    using Iterator = typename Base::iterator;
+    Iterator advanceIterator(Iterator it, size_t n)
+    {
+        size_t i = 0;
+        while (i < n && it != this->end())
+        {
+            ++i;
+            ++it;
+        }
+        return it;
     }
 };
 
