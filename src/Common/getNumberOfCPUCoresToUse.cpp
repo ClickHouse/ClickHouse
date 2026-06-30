@@ -77,7 +77,7 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
                 cpuset_cpus_file >> cpuset_line;
                 if (cpuset_line.empty())
                     continue;
-                boost::split(cpu_ranges, cpuset_line, boost::is_any_of(","));
+                boost::split(cpu_ranges, cpuset_line, boost::is_any_of(",")); // NOLINT(clang-analyzer-cplusplus.NewDelete)
                 uint32_t cpus_count = 0;
                 for (const std::string& cpu_number_or_range : cpu_ranges)
                 {

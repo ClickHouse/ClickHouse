@@ -41,7 +41,7 @@ public:
         while (std::getline(file, line))
         {
             Synset synset;
-            boost::split(synset, line, boost::is_any_of("\t "));
+            boost::split(synset, line, boost::is_any_of("\t ")); // NOLINT(clang-analyzer-cplusplus.NewDelete)
             if (!synset.empty())
             {
                 synsets.emplace_back(std::move(synset));

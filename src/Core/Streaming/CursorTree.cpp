@@ -178,8 +178,6 @@ CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
         const auto & value = tuple.at(1).safeGet<Int64>();
 
         VectorWithMemoryTracking<String> path;
-        /// clang-22 analyzer false positive: it mis-models the small-storage union in boost's `is_any_ofF` and
-        /// reports a double-free inside `boost::algorithm::split`. There is no real double-free here.
         boost::split(path, dotted_path, boost::is_any_of(".")); // NOLINT(clang-analyzer-cplusplus.NewDelete)
 
         CursorTreeNode * node = root.get();

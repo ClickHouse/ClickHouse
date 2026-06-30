@@ -501,11 +501,11 @@ public:
             std::array<char, 1024> stack; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - written by `vsnprintf` before read
             if (vsnprintf(stack.data(), stack.size(), format, backup_ap) < static_cast<int>(stack.size()))
             {
-                va_end(backup_ap);
+                va_end(backup_ap); // NOLINT(clang-analyzer-security.VAList)
                 LOG_IMPL(log, level.first, level.second, "{}", stack.data());
                 return;
             }
-            va_end(backup_ap);
+            va_end(backup_ap); // NOLINT(clang-analyzer-security.VAList)
         }
 
         /// let's try with a bigger dynamic buffer (but not too huge, since

@@ -76,7 +76,7 @@ size_t getLogNumber(const std::string & path_str)
     std::filesystem::path path(path_str);
     std::string filename = path.stem();
     Strings filename_parts;
-    boost::split(filename_parts, filename, boost::is_any_of("_"));
+    boost::split(filename_parts, filename, boost::is_any_of("_")); // NOLINT(clang-analyzer-cplusplus.NewDelete)
 
     return parse<size_t>(filename_parts[2]);
 }

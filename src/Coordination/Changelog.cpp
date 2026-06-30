@@ -1706,7 +1706,7 @@ ChangelogFileDescriptionPtr Changelog::getChangelogFileDescription(const std::fi
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid changelog file {}", path.generic_string());
 
     Strings filename_parts;
-    boost::split(filename_parts, filename_with_extension_view.substr(0, first_dot), boost::is_any_of("_"));
+    boost::split(filename_parts, filename_with_extension_view.substr(0, first_dot), boost::is_any_of("_")); // NOLINT(clang-analyzer-cplusplus.NewDelete)
     if (filename_parts.size() < 3)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid changelog {}", path.generic_string());
 

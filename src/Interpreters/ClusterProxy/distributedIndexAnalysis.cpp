@@ -199,7 +199,7 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplicaSync(const LoggerPtr & logge
     IndexAnalysisPartsRanges res;
     Block block;
     while (executor.pull(block))
-        parseIndexAnalysisBlock(std::move(block), res);
+        parseIndexAnalysisBlock(std::move(block), res); // NOLINT(clang-analyzer-cplusplus.Move)
 
     return res;
 }

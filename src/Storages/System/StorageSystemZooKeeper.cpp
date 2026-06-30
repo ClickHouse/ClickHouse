@@ -195,7 +195,7 @@ public:
                 zookeeper_name = zkutil::DEFAULT_ZOOKEEPER_NAME;
 
             std::vector<String> path_vec;
-            boost::split(path_vec, path, boost::is_any_of("/"));
+            boost::split(path_vec, path, boost::is_any_of("/")); // NOLINT(clang-analyzer-cplusplus.NewDelete)
             path_vec.push_back(name);
             auto zookeeper = getZooKeeper(zookeeper_name);
             auto & cache = caches[zookeeper_name];

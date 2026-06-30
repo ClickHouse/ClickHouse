@@ -242,7 +242,7 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
         configuration.collection = checkAndGetLiteralArgument<String>(engine_args[1], "database");
         configuration.uri =  std::make_unique<mongocxx::uri>(checkAndGetLiteralArgument<String>(engine_args[0], "host"));
         if (engine_args.size() == 3)
-            boost::split(configuration.oid_fields,
+            boost::split(configuration.oid_fields, // NOLINT(clang-analyzer-cplusplus.NewDelete)
                 checkAndGetLiteralArgument<String>(engine_args[2], "oid_columns"), boost::is_any_of(","));
     }
     else

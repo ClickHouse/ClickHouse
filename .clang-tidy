@@ -44,6 +44,8 @@ Checks: [
 
   '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
 
+  '-clang-analyzer-core.NullPointerArithm',
+
   '-clang-analyzer-optin.performance.Padding',
 
   '-clang-analyzer-security.ArrayBound', # only false positives

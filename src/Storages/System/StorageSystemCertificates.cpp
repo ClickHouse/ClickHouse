@@ -55,7 +55,7 @@ ColumnsDescription StorageSystemCertificates::getColumnsDescription()
 static std::unordered_set<std::string> parse_dir(const std::string & dir)
 {
     std::unordered_set<std::string> ret;
-    boost::split(ret, dir, boost::is_any_of(":"), boost::token_compress_on);
+    boost::split(ret, dir, boost::is_any_of(":"), boost::token_compress_on); // NOLINT(clang-analyzer-cplusplus.NewDelete)
     return ret;
 }
 
