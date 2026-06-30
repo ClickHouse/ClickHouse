@@ -79,6 +79,37 @@ TEST(BorrowedThreadGroupLifetime, IncrementThroughBorrowedChildAfterParentDroppe
     t.join();
 }
 
+/// Same hazard for the OTHER borrowed ctor: ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent),
+/// used by createForFlushAsyncInsertQueue. It takes its own query context and master thread id, but borrows
+/// the SAME raw pointers into the parent's performance_counters / memory_tracker, so it must keep the parent
+/// alive identically. Drop the only external parent reference, then verify the parent is still alive and that
+/// incrementing through the borrowed counters does not touch freed memory.
+TEST(BorrowedThreadGroupLifetime, TwoArgCtorChildKeepsParentAlive)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+
+        auto parent = std::make_shared<ThreadGroup>(context, 0);
+        std::weak_ptr<ThreadGroup> parent_weak = parent;
+
+        /// Borrowed child via the two-arg ctor (own context + parent). Same borrowed counter pointers.
+        auto child = std::make_shared<ThreadGroup>(context, parent);
+
+        /// Drop the only external owner of the parent. With the fix the child still owns it.
+        parent.reset();
+
+        EXPECT_FALSE(parent_weak.expired())
+            << "Two-arg borrowed child must keep its parent ThreadGroup alive (raw counter pointers would dangle otherwise)";
+
+        /// Walks child->performance_counters then up into the (still-alive) parent group's counters.
+        child->performance_counters.increment(ProfileEvents::Query, 1);
+        child->performance_counters.incrementNoTrace(ProfileEvents::Query, 1);
+    });
+    t.join();
+}
+
 /// Same lifetime hazard exercised through the real attach path: attachToGroupImpl calls
 /// performance_counters.setParent(&thread_group->performance_counters) and
 /// memory_tracker.setParent(&thread_group->memory_tracker), i.e. it dereferences the borrowed child's
