@@ -17,6 +17,33 @@ from ci.praktika.utils import Shell, Utils
 
 ARCH = ("amd64", "arm64")
 
+# The `Docker server image` job talks to two flaky external services while running
+# `buildx`: Docker Hub (registry-1.docker.io), which intermittently returns transient
+# HTTP 5xx / rate-limiting responses while resolving helper images such as
+# `docker/buildkit-syft-scanner` (pulled by `--sbom=true`) and while pushing image
+# layers; and the distribution mirrors hit by `apt-get` inside the build, which
+# transiently refuse connections. Retry `buildx` on these errors so that a brief
+# infrastructure hiccup does not fail the whole job. Matching is substring-based
+# against the command's stderr and only fires on these signatures, so a genuine build
+# error still fails fast. See `Shell.run` for the matching and exponential backoff.
+TRANSIENT_BUILD_ERRORS = [
+    # Docker Hub registry
+    "500 Internal Server Error",
+    "502 Bad Gateway",
+    "503 Service Unavailable",
+    "504 Gateway Timeout",
+    "429 Too Many Requests",
+    "TLS handshake timeout",
+    "i/o timeout",
+    "connection reset by peer",
+    "unexpected EOF",
+    # apt-get package mirrors
+    "Failed to fetch",
+    "Connection failed",
+    "Connection timed out",
+]
+BUILDX_RETRIES = 5
+
 temp_path = Path(f"{Utils.cwd()}/ci/tmp")
 
 GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
@@ -331,7 +358,12 @@ def build_and_push_image(
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.name, tag, arch, cmd)
         result.append(
-            Result.from_commands_run(name=f"{image.name}:{tag}-{arch}", command=cmd)
+            Result.from_commands_run(
+                name=f"{image.name}:{tag}-{arch}",
+                command=cmd,
+                retries=BUILDX_RETRIES,
+                retry_errors=TRANSIENT_BUILD_ERRORS,
+            )
         )
         if not result[-1].is_ok():
             return result
@@ -344,7 +376,14 @@ def build_and_push_image(
             f"--tag {image.name}:{tag} {' '.join(digests)}"
         )
         logging.info("Pushing merged %s:%s image: %s", image.name, tag, cmd)
-        result.append(Result.from_commands_run(name=f"{image.name}:{tag}", command=cmd))
+        result.append(
+            Result.from_commands_run(
+                name=f"{image.name}:{tag}",
+                command=cmd,
+                retries=BUILDX_RETRIES,
+                retry_errors=TRANSIENT_BUILD_ERRORS,
+            )
+        )
         if not result[-1].is_ok():
             return result
     else:
