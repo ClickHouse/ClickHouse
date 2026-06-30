@@ -245,15 +245,20 @@ void NaiveBayesDictionary::loadData()
 
                 if (configuration.store_source)
                 {
+                    /// A source column may arrive in sparse serialization; inserting it into a dense accumulator
+                    /// would fail, so materialize each column to full before retaining it.
+                    const auto ngram_full = ngram_col->convertToFullColumnIfSparse();
+                    const auto class_id_full = class_id_col->convertToFullColumnIfSparse();
+                    const auto count_full = count_col->convertToFullColumnIfSparse();
                     if (!ngram_accumulator)
                     {
-                        ngram_accumulator = ngram_col->cloneEmpty();
-                        class_id_accumulator = class_id_col->cloneEmpty();
-                        count_accumulator = count_col->cloneEmpty();
+                        ngram_accumulator = ngram_full->cloneEmpty();
+                        class_id_accumulator = class_id_full->cloneEmpty();
+                        count_accumulator = count_full->cloneEmpty();
                     }
-                    ngram_accumulator->insertRangeFrom(*ngram_col, 0, rows);
-                    class_id_accumulator->insertRangeFrom(*class_id_col, 0, rows);
-                    count_accumulator->insertRangeFrom(*count_col, 0, rows);
+                    ngram_accumulator->insertRangeFrom(*ngram_full, 0, rows);
+                    class_id_accumulator->insertRangeFrom(*class_id_full, 0, rows);
+                    count_accumulator->insertRangeFrom(*count_full, 0, rows);
                 }
             }
         });
