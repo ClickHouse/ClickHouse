@@ -53,6 +53,13 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
 {
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
+        /// A STREAM read returns parts in commit order, not sorting-key order, so its output is not
+        /// sorted by the sorting key even though the key is non-empty. Requesting read-in-order would
+        /// make it advertise that order and feed unsorted data to order-dependent transforms (DISTINCT,
+        /// aggregation and LIMIT BY in order), which then return wrong results or hit a sort assertion.
+        if (reading->getQueryInfo().isStream())
+            return nullptr;
+
         /// Already read-in-order, skip.
         if (!allow_existing_order && reading->getQueryInfo().input_order_info)
             return nullptr;
