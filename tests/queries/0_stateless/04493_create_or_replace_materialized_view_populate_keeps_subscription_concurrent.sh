@@ -6,7 +6,7 @@
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/108726
 # `CREATE OR REPLACE MATERIALIZED VIEW ... POPULATE` used to leave the new view unsubscribed from
 # its source table, so every row inserted after the replace was silently dropped. This is the
-# concurrent variant of 04489: the source is hammered with inserts while the replace is in progress
+# concurrent variant of 04492: the source is hammered with inserts while the replace is in progress
 # (`merge_tree_storage_snapshot_sleep_ms` widens the replace's snapshot window so the inserts
 # reliably overlap it), and once the replace has completed the new view must still be subscribed.
 #
