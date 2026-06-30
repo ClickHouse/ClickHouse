@@ -693,32 +693,45 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 chassert(ports.size() == num_streams * ports_per_stream);
                 Processors processors;
 
-                /// Hot-path block (the future swap point). For each cold shard `c`, `hot_states_for[c]`
-                /// collects the output ports that carry the hot-key intermediate states whose key hashes to
-                /// `c`. Everything downstream consumes only these ports and is agnostic to how they were
-                /// produced (today: one isolated hot aggregator per stream; a planned follow-up: a single
-                /// shared parallel GROUP BY path).
+                /// Hot-path block. For each cold shard `c`, `hot_states_for[c]` collects the output ports that
+                /// carry the hot-key intermediate states whose key hashes to `c`. The cold path below consumes
+                /// only these ports and is agnostic to how many states per key arrive.
                 std::vector<OutputPortRawPtrs> hot_states_for(num_cold_shards);
 
-                /// 2. Aggregate the hot keys sent to each stream's hot shard, without finalizing, then scatter
-                ///    each hot key's state to the cold shard that owns it (the same cold hash as the input
-                ///    routing), so it lands in the shard that holds the key's residue.
+                /// 2. Aggregate the hot keys through the standard parallel GROUP BY path: one
+                ///    AggregatingTransform per stream sharing `ManyAggregatedData`, so the same hot key
+                ///    aggregated in several streams is merged into a single intermediate state. The merged
+                ///    states surface on one of the aggregators' output ports (the rest finish empty), so we
+                ///    gather them into a single stream and scatter each hot key's state to the cold shard that
+                ///    owns it (the same cold hash as the input routing), where its residue waits.
+                auto hot_data = std::make_shared<ManyAggregatedData>(num_streams);
+                OutputPortRawPtrs hot_aggregator_outputs;
+                hot_aggregator_outputs.reserve(num_streams);
                 for (size_t stream = 0; stream < num_streams; ++stream)
                 {
-                    auto hot_aggregator
-                        = std::make_shared<AggregatingTransform>(input_header, intermediate_transform_params, dataflow_cache_updater);
+                    auto hot_aggregator = std::make_shared<AggregatingTransform>(
+                        input_header, intermediate_transform_params, hot_data, stream, new_merge_threads,
+                        new_temporary_data_merge_threads, /*should_produce_results_in_order_of_bucket_number=*/false,
+                        /*skip_merging=*/false, dataflow_cache_updater);
                     connect(*ports[stream * ports_per_stream + num_cold_shards], hot_aggregator->getInputs().front());
+                    hot_aggregator_outputs.push_back(&hot_aggregator->getOutputs().front());
                     processors.push_back(hot_aggregator);
-
-                    auto hot_scatter = std::make_shared<BufferedShardingTransform>(
-                        intermediate_header, num_cold_shards, makeColdHashSelector(intermediate_key_positions, num_cold_shards));
-                    connect(hot_aggregator->getOutputs().front(), hot_scatter->getInputs().front());
-
-                    size_t shard = 0;
-                    for (auto & out : hot_scatter->getOutputs())
-                        hot_states_for[shard++].push_back(&out);
-                    processors.push_back(hot_scatter);
                 }
+
+                auto hot_gather = std::make_shared<ResizeProcessor>(intermediate_header, num_streams, 1);
+                auto hot_gather_input = hot_gather->getInputs().begin();
+                for (auto * out : hot_aggregator_outputs)
+                    connect(*out, *hot_gather_input++);
+                processors.push_back(hot_gather);
+
+                auto hot_scatter = std::make_shared<BufferedShardingTransform>(
+                    intermediate_header, num_cold_shards, makeColdHashSelector(intermediate_key_positions, num_cold_shards));
+                connect(hot_gather->getOutputs().front(), hot_scatter->getInputs().front());
+                processors.push_back(hot_scatter);
+
+                size_t dst_shard = 0;
+                for (auto & out : hot_scatter->getOutputs())
+                    hot_states_for[dst_shard++].push_back(&out);
 
                 /// 3. Each cold shard aggregates its raw cold rows (including the hot-key residue), injects the
                 ///    hot states routed to it, and finalizes. Cold keys are disjoint across shards, so no
