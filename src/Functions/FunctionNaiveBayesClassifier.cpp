@@ -264,14 +264,22 @@ public:
         return "(StringOrFixedString, StringOrFixedString) -> UInt32";
     }
 
-    /// A dry run is used to compute headers / partial results during query planning
-    /// (e.g. constant folding in `tryMergeExpressions`). It must not access the model registry
-    /// via `getContext`: the context the function was created with may already have expired by
-    /// plan-optimization time, which would otherwise raise a `Context has expired` logical error.
-    /// Classification only needs to happen at execution time, so the dry run returns a column of
-    /// the right type without loading any model.
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & result_type, size_t input_rows_count) const override
+    /// A dry run executes the function during plan-time partial-result evaluation and constant
+    /// folding (`ActionsDAG::addFunctionImpl` / `evaluatePartialResult`). For all-constant
+    /// arguments the folded value becomes the real query result, so the dry run must perform the
+    /// actual classification — otherwise a constant expression such as
+    /// `naiveBayesClassifier('model', 'text')` silently folds to a default `0` and the argument
+    /// validation (unknown model, empty input) never fires.
+    /// The only reason this cannot unconditionally defer to `executeImpl` is that the captured
+    /// query context may already have expired by plan-optimization time (e.g. a nested
+    /// table-function context), in which case `getContext` would raise a `Context has expired`
+    /// logical error. When that happens there is no model registry to consult, so we return a
+    /// column of the right type without loading any model; real execution still goes through
+    /// `executeImpl`.
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        if (context.lock())
+            return executeImpl(arguments, result_type, input_rows_count);
         return result_type->createColumn()->cloneResized(input_rows_count);
     }
 
