@@ -47,18 +47,36 @@ static DataTypePtr convertSQLiteDataType(String type)
 }
 
 
-std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connection, const String & sqlite_table_name)
+namespace
 {
-    auto columns = NamesAndTypesList();
+
+struct FetchTableStructureContext
+{
+    NamesAndTypesList columns;
+    std::unordered_set<String> * generated_columns = nullptr;
+};
+
+}
+
+std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(
+    sqlite3 * connection,
+    const String & sqlite_table_name,
+    std::unordered_set<String> * out_generated_columns)
+{
+    FetchTableStructureContext context;
+    context.generated_columns = out_generated_columns;
+
     /// Use `table_xinfo` rather than `table_info` so that generated columns (which `SELECT *` returns) are
     /// included; `table_info` omits them, which would silently drop visible columns from the table structure.
     auto query = fmt::format("pragma table_xinfo({});", quoteStringSQLite(sqlite_table_name));
 
     auto callback_get_data = [](void * res, int col_num, char ** data_by_col, char ** col_names) -> int
     {
+        auto & ctx = *static_cast<FetchTableStructureContext *>(res);
+
         NameAndTypePair name_and_type;
         bool is_nullable = false;
-        bool is_hidden = false;
+        int hidden = 0;
 
         for (int i = 0; i < col_num; ++i)
         {
@@ -76,26 +94,31 @@ std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connectio
             }
             else if (col_names[i] == "hidden"sv)
             {
-                /// `table_xinfo` reports hidden = 1 for columns that `SELECT *` does not return (e.g. the
-                /// hidden columns of virtual tables). Generated columns use hidden = 2 (VIRTUAL) or 3 (STORED)
-                /// and are visible, so only hidden = 1 columns are skipped.
-                is_hidden = (data_by_col[i][0] == '1');
+                hidden = data_by_col[i][0] - '0';
             }
         }
 
-        if (is_hidden)
+        /// `table_xinfo` reports hidden = 1 for columns that `SELECT *` does not return (e.g. the
+        /// hidden columns of virtual tables); skip them. Generated columns use hidden = 2 (VIRTUAL) or
+        /// 3 (STORED) and are returned by `SELECT *`, so they stay in the structure to keep them
+        /// readable, but they are recorded as generated so the write path can omit them (SQLite rejects
+        /// explicit inserts into generated columns).
+        if (hidden == 1)
             return 0;
 
         if (is_nullable)
             name_and_type.type = std::make_shared<DataTypeNullable>(name_and_type.type);
 
-        static_cast<NamesAndTypesList *>(res)->push_back(name_and_type);
+        if ((hidden == 2 || hidden == 3) && ctx.generated_columns)
+            ctx.generated_columns->insert(name_and_type.name);
+
+        ctx.columns.push_back(name_and_type);
 
         return 0;
     };
 
     char * err_message = nullptr;
-    int status = sqlite3_exec(connection, query.c_str(), callback_get_data, &columns, &err_message);
+    int status = sqlite3_exec(connection, query.c_str(), callback_get_data, &context, &err_message);
 
     if (status != SQLITE_OK)
     {
@@ -107,10 +130,10 @@ std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connectio
                         status, err_msg);
     }
 
-    if (columns.empty())
+    if (context.columns.empty())
         return nullptr;
 
-    return std::make_shared<NamesAndTypesList>(columns);
+    return std::make_shared<NamesAndTypesList>(context.columns);
 }
 
 }

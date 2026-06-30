@@ -144,12 +144,14 @@ public:
         const StorageSQLite & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         StorageSQLite::SQLitePtr sqlite_db_,
-        const String & remote_table_name_)
+        const String & remote_table_name_,
+        std::unordered_set<String> generated_columns_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage{storage_}
         , metadata_snapshot(metadata_snapshot_)
         , sqlite_db(sqlite_db_)
         , remote_table_name(remote_table_name_)
+        , generated_columns(std::move(generated_columns_))
     {
     }
 
@@ -158,23 +160,32 @@ public:
     void consume(Chunk & chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
+
+        /// SQLite rejects explicit writes into generated columns, so omit them from the INSERT. They
+        /// are still present in the table structure to keep them readable. When there are no generated
+        /// columns (the common case) this is the full block.
+        Block insertable_block;
+        for (const auto & elem : block)
+            if (!generated_columns.contains(elem.name))
+                insertable_block.insert(elem);
+
         WriteBufferFromOwnString sqlbuf;
 
         sqlbuf << "INSERT INTO ";
         sqlbuf << doubleQuoteString(remote_table_name);
         sqlbuf << " (";
 
-        for (auto it = block.begin(); it != block.end(); ++it)
+        for (auto it = insertable_block.begin(); it != insertable_block.end(); ++it)
         {
-            if (it != block.begin())
+            if (it != insertable_block.begin())
                 sqlbuf << ", ";
             sqlbuf << quoteString(it->name);
         }
 
         sqlbuf << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.write_context);
-        writer->write(block);
+        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, insertable_block.cloneEmpty(), storage.write_context);
+        writer->write(insertable_block);
 
         sqlbuf << ";";
 
@@ -196,6 +207,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     StorageSQLite::SQLitePtr sqlite_db;
     String remote_table_name;
+    std::unordered_set<String> generated_columns;
 };
 
 
@@ -203,7 +215,13 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageM
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
-    return std::make_shared<SQLiteSink>(*this, metadata_snapshot, sqlite_db, remote_table_name);
+
+    /// Collect the generated columns of the target SQLite table so that the sink can omit them from
+    /// the explicit insert column list (SQLite rejects writes into generated columns).
+    std::unordered_set<String> generated_columns;
+    fetchSQLiteTableStructure(sqlite_db.get(), remote_table_name, &generated_columns);
+
+    return std::make_shared<SQLiteSink>(*this, metadata_snapshot, sqlite_db, remote_table_name, std::move(generated_columns));
 }
 
 

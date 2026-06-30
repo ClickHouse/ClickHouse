@@ -1,0 +1,8 @@
+Schema exposes the generated columns for reads:
+a	Nullable(Int64)					
+b	Nullable(Int64)					
+c	Nullable(Int64)					
+Insert through the SQLite storage path writes only base columns; SQLite computes the generated columns:
+a	b	c
+1	2	2
+2	3	4
