@@ -2,6 +2,7 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -17,6 +18,34 @@ ASTPtr ASTShowTablesQuery::clone() const
 
     cloneOutputOptions(*res);
     return res;
+}
+
+void ASTShowTablesQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold in the semantic fields that are not part of `children` (the base implementation only
+    /// hashes `getID`, and `from` is hashed through `children`). Two `SHOW` queries that differ
+    /// only in these fields must not share a tree hash — see the header comment.
+    hash_state.update(databases);
+    hash_state.update(clusters);
+    hash_state.update(cluster);
+    hash_state.update(dictionaries);
+    hash_state.update(m_settings);
+    hash_state.update(merges);
+    hash_state.update(changed);
+    hash_state.update(temporary);
+    hash_state.update(caches);
+    hash_state.update(full);
+    hash_state.update(cluster_str);
+    hash_state.update(like);
+    hash_state.update(not_like);
+    hash_state.update(case_insensitive_like);
+    hash_state.update(where_expression != nullptr);
+    if (where_expression)
+        where_expression->updateTreeHash(hash_state, ignore_aliases);
+    hash_state.update(limit_length != nullptr);
+    if (limit_length)
+        limit_length->updateTreeHash(hash_state, ignore_aliases);
 }
 
 String ASTShowTablesQuery::getFrom() const
