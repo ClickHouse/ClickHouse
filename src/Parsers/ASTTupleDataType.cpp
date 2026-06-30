@@ -81,8 +81,11 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
                     ostr << ',';
                 ostr << indent_str;
 
-                /// Print element name if present
-                if (i < element_names.size())
+                /// Print element name if present.
+                /// An empty name is the placeholder for an unnamed element in a
+                /// mixed named/unnamed tuple; formatting it as `` (an empty
+                /// backquoted identifier) is not parseable back, so skip it.
+                if (i < element_names.size() && !element_names[i].empty())
                     ostr << backQuoteIfNeed(element_names[i]) << ' ';
 
                 /// Print the type
@@ -97,8 +100,8 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
                 if (i > 0)
                     ostr << ", ";
 
-                /// Print element name if present
-                if (i < element_names.size())
+                /// See the multiline branch above: skip an empty placeholder name.
+                if (i < element_names.size() && !element_names[i].empty())
                     ostr << backQuoteIfNeed(element_names[i]) << ' ';
 
                 /// Print the type
