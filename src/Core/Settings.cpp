@@ -8887,6 +8887,11 @@ void Settings::set(std::string_view name, const Field & value)
     impl->set(name, value);
 }
 
+void Settings::setCustom(std::string_view name, const Field & value)
+{
+    impl->setCustom(name, value);
+}
+
 void Settings::setDefaultValue(std::string_view name)
 {
     impl->resetToDefault(name);
@@ -9028,17 +9033,18 @@ NameToNameMap Settings::toNameToNameMap() const
 {
     /// This is used to convert the `Settings` packet that the TCP protocol carries query
     /// parameters in (see `Connection::sendQuery`) into a name→value map. The client side calls
-    /// `params.set(name, value)` for each query parameter, which produces a `SettingFieldCustom`
-    /// for undeclared names (whose `toString()` SQL-quotes the value, e.g. `'default'`) but a typed
-    /// field for declared settings (whose `toString()` returns the raw value).
+    /// `params.setCustom(name, value)` for each query parameter, producing a `SettingFieldCustom`
+    /// (whose `toString()` SQL-quotes the value, e.g. `'default'`) even when the parameter name
+    /// collides with a built-in setting — query parameters are user-chosen names, not settings, and
+    /// must not be parsed as a setting's type.
     ///
     /// Branch on `isCustom()` — the exact per-entry type — rather than guessing from the first byte:
     /// a query parameter whose name collides with a real setting (e.g. `format` / `database` /
-    /// `filter` / `select`) is stored as a typed field, and its raw value may legitimately start with
-    /// `'` (e.g. `--param_format="'abc"`). The old "starts with a quote → SQL-quoted" heuristic would
-    /// then call `readQuoted` on a value that is not a complete SQL-quoted string, corrupting it or
-    /// throwing `CANNOT_PARSE_QUOTED_STRING`. Custom entries are SQL-unquoted; typed entries are
-    /// copied as-is.
+    /// `filter` / `select` / `page`) arrives as a custom field whose raw value may legitimately start
+    /// with `'` (e.g. `--param_format="'abc"`). The old "starts with a quote → SQL-quoted" heuristic
+    /// would then call `readQuoted` on a value that is not a complete SQL-quoted string, corrupting it
+    /// or throwing `CANNOT_PARSE_QUOTED_STRING`. Custom entries are SQL-unquoted; a typed entry (from
+    /// an older client that sent a non-colliding setting in this packet) is copied as-is.
     NameToNameMap query_parameters;
     for (const auto & param : *impl)
     {
