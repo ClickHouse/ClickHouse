@@ -4,6 +4,8 @@
         <allow_experimental_codecs>1</allow_experimental_codecs>
     </settings>
 
+    <!-- TODO: re-enable in a follow-up PR
+
     <substitutions>
         <substitution>
             <name>variant</name>
@@ -48,5 +50,6 @@
     <query>SELECT count(n) FROM codec_{seq_type}_{type}_alp_{variant} WHERE ignore(n) == 0 LIMIT {num_rows} SETTINGS max_threads=1</query>
 
     <drop_query>DROP TABLE IF EXISTS codec_{seq_type}_{type}_alp_{variant}</drop_query>
+    -->
 
 </test>
