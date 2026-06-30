@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-debug, no-sanitizers
-#       no-fasttest/no-debug/no-sanitizers: building the deeply nested literal is quadratic and
-#       only fast enough in an optimized build; the stack guard it exercises is build-independent.
+# Tags: no-fasttest
+#       no-fasttest: test pipes a 40KB query string through stdin and uses very high 
+#       max_parser_depth, which is awkward in fasttest's constrained environment
 # A deeply nested literal lives inside a single ASTLiteral::value, and formatting/hashing it
 # walks that nested Field through recursive Field visitors. Reaching the format path without
-# type inference (formatQuery) used to overflow the native stack and crash the server. The
-# literal Field is built in quadratic time, so this is only fast enough in optimized builds;
-# the stack guard it exercises is build-independent, so an optimized build is sufficient.
+# type inference (formatQuery) used to overflow the native stack and crash the server.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
