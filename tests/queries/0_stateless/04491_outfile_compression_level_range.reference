@@ -1,0 +1,12 @@
+== gzip: LEVEL accepted through 12, output round-trips via external gunzip ==
+level 1: OK
+level 9: OK
+level 10: OK
+level 12: OK
+== gzip: LEVEL 13 rejected before writing ==
+Invalid compression level
+file not written: OK
+== deflate (zlib): LEVEL 12 accepted, output round-trips via ClickHouse ==
+deflate level 12: OK
+== deflate (zlib): LEVEL 13 rejected ==
+Invalid compression level

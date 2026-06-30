@@ -129,6 +129,14 @@ std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod &
             return {1, 22};
         case CompressionMethod::Lz4:
             return {1, 12};
+#if USE_LIBDEFLATE
+        case CompressionMethod::Gzip:
+        case CompressionMethod::Zlib:
+            /// libdeflate compresses up to level 12; keep the `INTO OUTFILE ... COMPRESSION ... LEVEL`
+            /// validation in line with the writer in `createWriteCompressedWrapper` and with the
+            /// `output_format_compression_level` / `http_zlib_compression_level` paths.
+            return {1, 12};
+#endif
         default:
             return {1, 9};
     }
