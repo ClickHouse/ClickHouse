@@ -738,28 +738,32 @@ function resetCredentialsStatus() {
     for (const id of ['user', 'password']) $(id).classList.remove('ok', 'fail');
 }
 
-/// The credential status - and the offer to store credentials - must describe the values
-/// that were actually probed. Snapshot the `url` / `user` / `password` a request is about
-/// to use; the returned predicate reports whether the fields still hold those exact values,
-/// so a result that arrives after the user edits a field, or after another load runs with
-/// different credentials, cannot repaint or store the now-stale outcome. `chQuery` reads
-/// these fields synchronously when it builds the request, so the snapshot is exactly what
-/// was queried.
-function credentialSnapshot() {
+/// Capture the connection (`url` / `user` / `password`) a load is about to use. The captured
+/// values are passed to `chQuery` for every request in the batch, so the whole batch is bound
+/// to the target the user committed to when they triggered the load: a cross-origin URL pasted
+/// into the field mid-load cannot redirect the remaining automatic queries — and their
+/// credentials — to a new server without an explicit `Load`. The returned `isCurrent` predicate
+/// additionally reports whether the fields still hold those exact values, so a result that
+/// arrives after the user edits a field, or after another load runs with different credentials,
+/// cannot repaint or store the now-stale credential status.
+function connectionSnapshot() {
     const url = $('url').value;
     const user = $('user').value;
     const password = $('password').value;
-    return () => $('url').value === url && $('user').value === user && $('password').value === password;
+    return {
+        url, user, password,
+        isCurrent: () => $('url').value === url && $('user').value === user && $('password').value === password,
+    };
 }
 
 let checkCredentialsNum = 0;
 async function checkCredentials() {
     const num = ++checkCredentialsNum;
-    const isCurrent = credentialSnapshot();
+    const conn = connectionSnapshot();
     /// A newer probe also supersedes this one, even when the field values are unchanged.
-    const stillProbing = () => num === checkCredentialsNum && isCurrent();
+    const stillProbing = () => num === checkCredentialsNum && conn.isCurrent();
     try {
-        const res = await chQuery('SELECT version() AS v');
+        const res = await chQuery('SELECT version() AS v', conn);
         if (stillProbing()) setCredentialStatus(true, res.rows[0] && res.rows[0].v);
     } catch (e) {
         if (stillProbing()) setCredentialStatus(false);
@@ -839,10 +843,13 @@ function backQuoteIfNeed(s) {
 }
 function quotedFullName(db, t) { return backQuoteIfNeed(db) + '.' + backQuoteIfNeed(t); }
 
-async function chQuery(query) {
-    const host = $('url').value.replace(/\/+$/, '');
-    const user = $('user').value;
-    const password = $('password').value;
+async function chQuery(query, conn) {
+    /// `conn` binds the request to a connection captured by `connectionSnapshot` so a whole
+    /// load batch targets one server even if the fields change mid-load; without it we read
+    /// the live fields, as the single-shot credential probe does.
+    const host = (conn ? conn.url : $('url').value).replace(/\/+$/, '');
+    const user = conn ? conn.user : $('user').value;
+    const password = conn ? conn.password : $('password').value;
     const params = new URLSearchParams();
     params.set('default_format', 'JSONCompactEachRowWithNamesAndTypes');
     /// Always request CORS headers: covers both `file://` and the case where the
@@ -945,33 +952,35 @@ async function loadAll() {
         FROM system.view_refreshes
     `;
 
-    /// Snapshot the credentials this load uses, so a result that arrives after the fields
-    /// change cannot paint or store a stale outcome (see `credentialSnapshot`).
-    const isCurrent = credentialSnapshot();
+    /// Bind every query in this load to one captured connection (see `connectionSnapshot`):
+    /// the whole batch targets the server the user committed to, and a URL pasted mid-load
+    /// cannot redirect later queries — or their credentials — to a different origin. The same
+    /// snapshot decides whether a result may paint or store a now-stale credential status.
+    const conn = connectionSnapshot();
     let tablesRes;
     try {
-        tablesRes = await chQuery(tablesQ);
+        tablesRes = await chQuery(tablesQ, conn);
     } catch (e) {
         setStatus('Failed: ' + e.message, true);
-        if (isCurrent()) setCredentialStatus(false);
+        if (conn.isCurrent()) setCredentialStatus(false);
         return;
     }
     /// The probe succeeded, so the credentials are valid: reflect that, and offer to
     /// remember them through the Credential Management API - but only while the fields
     /// still hold the values that were actually validated.
-    if (isCurrent()) {
+    if (conn.isCurrent()) {
         setCredentialStatus(true);
         storeCredentials();
     }
 
     let columnsRes = { rows: [] };
-    try { columnsRes = await chQuery(columnsQ); } catch (e) { console.warn(e); }
+    try { columnsRes = await chQuery(columnsQ, conn); } catch (e) { console.warn(e); }
 
     let dictsRes = { rows: [] };
-    try { dictsRes = await chQuery(dictsQ); } catch (e) { console.warn(e); }
+    try { dictsRes = await chQuery(dictsQ, conn); } catch (e) { console.warn(e); }
 
     let refreshesRes = { rows: [] };
-    try { refreshesRes = await chQuery(refreshesQ); } catch (e) { /// table may not exist
+    try { refreshesRes = await chQuery(refreshesQ, conn); } catch (e) { /// table may not exist
         console.info('system.view_refreshes not available:', e.message);
     }
 
@@ -996,7 +1005,7 @@ async function loadAll() {
     setStatus(`Loaded ${state.tables.length} tables, ${columnsRes.rows.length} columns.`);
     buildGraph();
     updateDbFilter();
-    await loadViewsLoad();
+    await loadViewsLoad(conn);
     render();
 }
 
@@ -1004,7 +1013,11 @@ async function loadAll() {
 /// lookback window and stores it on `state.loadByMv` / `state.loadByEdge`. Best-effort:
 /// if the table is empty, missing, or query_views_log is disabled, we silently fall back
 /// to an empty heat-map.
-async function loadViewsLoad() {
+async function loadViewsLoad(conn) {
+    /// Reuse the load batch's captured connection when called from `loadAll`; when the user
+    /// changes the lookback period interactively, capture the connection at that point so this
+    /// query, too, is bound to one target (see `connectionSnapshot`).
+    conn = conn || connectionSnapshot();
     state.loadByMv = new Map();
     state.loadByEdge = new Map();
     state.loadMax = { byMv: {}, byEdge: {} };
@@ -1042,7 +1055,7 @@ async function loadViewsLoad() {
 
     let rows;
     try {
-        const res = await chQuery(q);
+        const res = await chQuery(q, conn);
         rows = res.rows;
     } catch (e) {
         console.info('system.query_views_log not available:', e.message);
