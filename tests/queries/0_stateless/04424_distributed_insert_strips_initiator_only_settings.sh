@@ -24,11 +24,13 @@ QUERY_ID="04424-${CLICKHOUSE_DATABASE}-$$"
 # before sending); `distributed_foreground_insert = 1` makes the shard INSERTs run synchronously so
 # they are logged before we flush. `offset` (a construction setting) is passed as a session setting
 # via the command line — it cannot sit on the INSERT statement (rejected on a write query) — while the
-# format settings sit on the statement.
+# `input_format` / `output_format` / `default_format` settings sit on the statement. (`compression` is
+# omitted: it is an HTTP-response-body setting that is rejected in an in-query SETTINGS clause, so it
+# cannot be set on a native-client INSERT — `DistributedSink` still strips it alongside the others.)
 ${CLICKHOUSE_CLIENT} --offset=2 --query_id="${QUERY_ID}" -q "
     INSERT INTO dist
     SETTINGS distributed_foreground_insert = 1, prefer_localhost_replica = 0, log_queries = 1,
-             input_format = 'CSV', output_format = 'CSV', default_format = 'CSV', compression = 'gz'
+             input_format = 'CSV', output_format = 'CSV', default_format = 'CSV'
     SELECT number FROM numbers(10)"
 
 echo "-- data fully landed on the shards"
@@ -57,7 +59,6 @@ ${CLICKHOUSE_CLIENT} -q "
         countIf(Settings['input_format'] != '') AS leaked_input_format,
         countIf(Settings['output_format'] != '') AS leaked_output_format,
         countIf(Settings['default_format'] != '') AS leaked_default_format,
-        countIf(Settings['compression'] != '') AS leaked_compression,
         countIf(Settings['offset'] != '') AS leaked_offset
     FROM system.query_log
     WHERE initial_query_id IN (SELECT query_id FROM initial)
