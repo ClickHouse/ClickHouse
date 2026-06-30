@@ -818,7 +818,8 @@ try
                     /// on an exception path (where the query was never cancelled).
                     auto stdout_buf = std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd);
                     stdout_buf->setCancellationHook(
-                        [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
+                        [this]()
+                        { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
 
                     /// Keep a handle so resetOutput() can re-point the hook before finalizing it.
                     select_into_file_and_stdout_buf = stdout_buf;
