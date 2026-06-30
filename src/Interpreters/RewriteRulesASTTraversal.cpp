@@ -71,6 +71,20 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
         return false;
     }
 
+    /// Enforce the AST size/depth limits on the query as the user submitted it, before the
+    /// matcher walks it and a rule can replace it. The generic post-rewrite limit check in
+    /// `executeQuery` (`checkASTSizeLimits`) runs only after this function returns, so it sees
+    /// the rewrite result, not the submitted query. Without this guard a rule could match an
+    /// oversized source query and rewrite it to a tiny one, letting a user with a low
+    /// `max_ast_depth` / `max_ast_elements` bypass the AST resource guard for the query they sent
+    /// (and forcing the matcher to walk an unbounded tree). The rewrite result stays bounded by
+    /// the post-rewrite check, and the rule templates themselves are bounded at `CREATE` / `ALTER`
+    /// time (`checkRewriteRuleTemplateLimits`).
+    if (const UInt64 max_ast_depth = settings[Setting::max_ast_depth])
+        ast->checkDepth(max_ast_depth);
+    if (const UInt64 max_ast_elements = settings[Setting::max_ast_elements])
+        ast->checkSize(max_ast_elements);
+
     /// Build a name -> rule lookup once, then apply the requested rules in the order they
     /// are listed in `query_rules`. A listed rule that does not exist is an error, so a
     /// typo in `query_rules` fails the query instead of silently applying nothing.
