@@ -244,18 +244,36 @@ UInt32 CompressionCodecPco::doDecompressData(const char * source, UInt32 source_
     if (source_size < 2)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress PCO-encoded data: header too small");
 
+    /// Block layout written by `doCompressData` (documented in `docs/en/interfaces/specs/NativeFormat.md`):
+    /// `[1 byte: W][1 byte: B][B raw leading bytes][standalone .pco stream]`, where `W` is the element
+    /// width and `B = uncompressed_size mod W`. The `PCO` method byte `0x9d` is dispatched by the shared
+    /// `CompressedReadBuffer` and can therefore reach this decoder from unchecked external framed input
+    /// (notably the HTTP `decompress=1` path). So validate the stored header fields strictly and fail
+    /// closed rather than silently recomputing or ignoring them.
     UInt8 bytes_size = static_cast<UInt8>(source[0]);
-    if (bytes_size == 0)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress PCO-encoded data: invalid element width");
+    if (bytes_size != 1 && bytes_size != 2 && bytes_size != 4 && bytes_size != 8)
+        throw Exception(
+            ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress PCO-encoded data: invalid element width {}", static_cast<UInt16>(bytes_size));
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
+    UInt8 stored_bytes_to_skip = static_cast<UInt8>(source[1]);
+    if (stored_bytes_to_skip != bytes_to_skip)
+        throw Exception(
+            ErrorCodes::CANNOT_DECOMPRESS,
+            "Cannot decompress PCO-encoded data: the stored leading-byte count {} does not match the {} implied by the output size",
+            static_cast<UInt16>(stored_bytes_to_skip),
+            static_cast<UInt16>(bytes_to_skip));
+
     if (static_cast<UInt32>(2 + bytes_to_skip) > source_size || bytes_to_skip > uncompressed_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress PCO-encoded data: wrong header");
 
     memcpy(dest, &source[2], bytes_to_skip);
-    if (bytes_to_skip == uncompressed_size)
-        return uncompressed_size;
 
+    /// Always decode and validate the trailing standalone stream, even when the whole output is a single
+    /// leading partial value (`uncompressed_size < W`, so `expected == 0`): a well-formed block still
+    /// carries a header-only standalone stream after the raw prefix. Requiring it to decode to exactly
+    /// `expected` bytes rejects a truncated body that omits the stream, which an early return here would
+    /// otherwise accept.
     /// Copy the standalone stream into a padded buffer so the bit reader's per-batch positional
     /// reads can safely overshoot past the logical end (see DECODE_BATCH_OVERSHOOT).
     size_t comp_len = source_size - 2 - bytes_to_skip;
