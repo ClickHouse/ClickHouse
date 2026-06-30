@@ -4222,8 +4222,15 @@ window.onpopstate = function(event) {
     /// If the entry named a now-closed tab and we recreated a fresh one, adopt the new id into
     /// this history entry so repeated Back/Forward to it lands on the same recreated tab instead
     /// of spawning a duplicate each time. (Normal and legacy title-only entries keep their id.)
+    /// Restamp the recreated tab's (disambiguated) title into BOTH the history state and the
+    /// URL's `tab=` key as well: otherwise the entry/URL keep pointing at the closed tab's old
+    /// title, and a later reload of this URL would make startup reconciliation match a live tab
+    /// that has since taken that title and overwrite it with this entry's query.
     if (event.state.tabId && event.state.tabId !== tab.id) {
-        history.replaceState({ ...event.state, tabId: tab.id }, document.title, location.href);
+        const recreated_url = new URL(location.href);
+        recreated_url.searchParams.set('tab', tab.title);
+        history.replaceState({ ...event.state, tabId: tab.id, tabName: tab.title },
+            document.title, recreated_url.href);
     }
     activeTabId = tab.id;
     tab.query = event.state.query;
