@@ -24,6 +24,7 @@
 -- mgrsToGeo: decoding to the centre of the grid square
 2.2945	48.85823
 1
+1
 -- mgrsToGeo(geoToMGRS(...)) re-encodes to the same string
 1
 -- vectorized over a table

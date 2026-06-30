@@ -9,6 +9,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <type_traits>
+
 
 namespace DB
 {
@@ -60,7 +62,17 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const MGRSCoordinate coordinate = mgrsDecode(mgrs->getDataAt(i));
+            std::string_view value = mgrs->getDataAt(i);
+            if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
+            {
+                /// FixedString null-pads values shorter than N; drop the trailing padding before decoding.
+                size_t length = value.size();
+                while (length > 0 && value[length - 1] == '\0')
+                    --length;
+                value = value.substr(0, length);
+            }
+
+            const MGRSCoordinate coordinate = mgrsDecode(value);
             longitude_data[i] = coordinate.longitude;
             latitude_data[i] = coordinate.latitude;
         }

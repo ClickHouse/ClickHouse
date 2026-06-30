@@ -34,6 +34,7 @@ SELECT geoToMGRS(151.2093, -33.8688);        -- Sydney, southern hemisphere
 SELECT '-- mgrsToGeo: decoding to the centre of the grid square';
 WITH mgrsToGeo('31UDQ4825111935') AS g SELECT round(g.1, 5), round(g.2, 5);
 SELECT mgrsToGeo('31UDQ4825111935') = mgrsToGeo('31u dq 48251 11935');  -- whitespace and case insensitive
+SELECT mgrsToGeo(toFixedString('31UDQ4825111935', 20)) = mgrsToGeo('31UDQ4825111935');  -- null-padded FixedString decodes identically
 
 SELECT '-- mgrsToGeo(geoToMGRS(...)) re-encodes to the same string';
 SELECT geoToMGRS(mgrsToGeo('31UDQ4825111935').1, mgrsToGeo('31UDQ4825111935').2) = '31UDQ4825111935';
