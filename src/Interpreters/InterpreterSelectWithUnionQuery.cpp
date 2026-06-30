@@ -278,11 +278,16 @@ SharedHeader InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const 
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
 InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_, const Names & current_required_result_column_names)
 {
+    /// Each branch must plan in its own settings scope: a branch may disable parallel replicas
+    /// for itself (e.g. on FINAL), and that must not retroactively change a sibling's already
+    /// decided processing stage through a shared mutable context.
+    auto child_context = Context::createCopy(context);
+
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
+        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, child_context, options, current_required_result_column_names);
     if (ast_ptr_->as<ASTSelectQuery>())
-        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
-    return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, child_context, options, current_required_result_column_names);
+    return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, child_context, options);
 }
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
