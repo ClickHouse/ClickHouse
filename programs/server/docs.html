@@ -1155,6 +1155,19 @@
         'native-protocol', 'chdb', 'faq', 'tutorial', 'about-us',
     ]);
 
+    /// Canonical docs route for a standalone documentation page that is neither a documented entity nor a
+    /// section directory: a bare page name whose section the relative path does not reveal (the entity's
+    /// embedded `source` is a code path, not a docs path). The embedded documentation links to a handful of
+    /// such pages with source-relative paths — e.g. `../syntax.md#string`, `../query-cache.md`, and
+    /// `type-conversion-functions.md#parseDateTime64BestEffort` — that would otherwise fall back to the docs
+    /// root and lose the target page and anchor. Mapping each to its route resolves it (keeping the leading
+    /// path segment's `#fragment`/`?query`) to the intended page instead.
+    const DOCS_PAGE_ROUTE = {
+        'syntax': '/sql-reference/syntax',
+        'query-cache': '/operations/query-cache',
+        'type-conversion-functions': '/sql-reference/functions/type-conversion-functions',
+    };
+
     function toDocsURL(href) {
         const base = 'https://clickhouse.com/docs';
         /// The embedded documentation links to source files by their repository path, keeping the
@@ -1170,7 +1183,8 @@
         /// A relative path (`./x`, `../section/x`): its `./`/`../` segments cannot be resolved against the
         /// docs root, because the page they come from lives under a section route that the embedded `source`
         /// (a code path, not a docs path) does not reveal. Drop the leading `./`/`../` and resolve the first
-        /// remaining segment to its canonical route when it names a known section or is already a route root.
+        /// remaining segment to its canonical route when it names a known section, is already a route root, or
+        /// names a standalone page mapped in `DOCS_PAGE_ROUTE`.
         /// A bare same-directory link (e.g. `textindexes.md`), or any leading segment we cannot map, has no
         /// determinable route: rather than emit a fabricated path that 404s, fall back to the docs root.
         const rel = cleanPath.replace(/^(\.\.?\/)+/, '');
@@ -1179,6 +1193,7 @@
         const tail = slash === -1 ? '' : rel.slice(slash); /// keeps its leading '/'
         if (DOCS_ROUTE_ROOTS.has(head)) return base + '/' + rel + suffix;
         if (DOCS_SECTION_ROUTE[head]) return base + DOCS_SECTION_ROUTE[head] + tail + suffix;
+        if (DOCS_PAGE_ROUTE[head]) return base + DOCS_PAGE_ROUTE[head] + tail + suffix;
         return base;
     }
 
