@@ -14,7 +14,7 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     MergeTreeIndexGranuleMinMax(
         const String & index_name_,
         const Block & index_sample_block_,
-        std::vector<Range> && hyperrectangle_);
+        Ranges && hyperrectangle_);
 
     ~MergeTreeIndexGranuleMinMax() override = default;
 
@@ -28,7 +28,7 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     const String & index_name;
     const Block & index_sample_block;
 
-    std::vector<Range> hyperrectangle;
+    Ranges hyperrectangle;
     Serializations serializations;
     DataTypes datatypes;
     FormatSettings format_settings;
@@ -46,7 +46,7 @@ struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
 
     String index_name;
     Block index_sample_block;
-    std::vector<Range> hyperrectangle;
+    Ranges hyperrectangle;
 };
 
 

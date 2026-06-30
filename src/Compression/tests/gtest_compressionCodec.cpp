@@ -1358,7 +1358,7 @@ TEST(LZ4Test, DecompressMalformedInput)
 
 TEST(DoubleDeltaTest, TranscodeRawInput)
 {
-    std::vector<DataTypePtr> types = {
+    DataTypes types = {
         std::make_shared<DataTypeInt8>(),
         std::make_shared<DataTypeInt16>(),
         std::make_shared<DataTypeInt32>(),
@@ -1401,7 +1401,7 @@ TEST(DoubleDeltaTest, TranscodeRawInput)
 
 TEST(T64Test, TranscodeRawInput)
 {
-    std::vector<DataTypePtr> types = {
+    DataTypes types = {
         std::make_shared<DataTypeInt8>(),
         std::make_shared<DataTypeInt16>(),
         std::make_shared<DataTypeInt32>(),
@@ -1781,7 +1781,7 @@ protected:
 
 TEST_F(ALPTest, SupportedFloatTypes)
 {
-    std::vector<DataTypePtr> supported_types = {
+    DataTypes supported_types = {
         std::make_shared<DataTypeFloat32>(),
         std::make_shared<DataTypeFloat64>()
     };
@@ -1792,7 +1792,7 @@ TEST_F(ALPTest, SupportedFloatTypes)
 
 TEST_F(ALPTest, UnsupportedFloatTypes)
 {
-    std::vector<DataTypePtr> unsupported_types = {
+    DataTypes unsupported_types = {
         std::make_shared<DataTypeUInt32>(),
         std::make_shared<DataTypeInt32>(),
         std::make_shared<DataTypeUInt64>(),

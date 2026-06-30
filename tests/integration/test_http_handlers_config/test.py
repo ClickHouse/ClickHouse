@@ -223,6 +223,39 @@ def test_predefined_query_handler():
         )
 
 
+def test_predefined_handler_absent_header():
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__),
+            "predefined_handler_absent_header",
+            "test_predefined_handler_absent_header",
+        )
+    ) as cluster:
+
+        def get(headers):
+            return cluster.instance.http_request(
+                "test_predefined_handler_absent_header", method="GET", headers=headers
+            )
+
+        # The header regex (?P<value_from_header>.*) matches any value, including the empty string, so
+        # the rule matches even when header XXX is absent. The captured value is passed to the query as
+        # the parameter value_from_header. A missing header must be treated as an empty string instead
+        # of raising an exception after the rule has already matched.
+        response = get({"XXX": "hello"})
+        assert response.status_code == 200, response.content
+        assert response.content == b"hello\n"
+
+        # Header absent: the rule still matches and the captured parameter is empty.
+        response = get({})
+        assert response.status_code == 200, response.content
+        assert response.content == b"\n"
+
+        # Header present but empty: same as absent.
+        response = get({"XXX": ""})
+        assert response.status_code == 200, response.content
+        assert response.content == b"\n"
+
+
 def test_fixed_static_handler():
     with contextlib.closing(
         SimpleCluster(
