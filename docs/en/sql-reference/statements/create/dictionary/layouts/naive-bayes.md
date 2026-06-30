@@ -119,7 +119,7 @@ SYSTEM RELOAD DICTIONARY sentiment;
 
 ## Build training data from raw text {#build-training-data-from-raw-text}
 
-If you start from raw labelled text rather than pre-aggregated counts, the [`naiveBayesNgrams`](/sql-reference/functions/machine-learning-functions#naivebayesngrams) function tokenizes text into exactly the n-grams this layout expects — the same `mode`, `n`, and boundary tokens — so the training data matches what the dictionary produces at query time. Pass it the same `n` / `mode` / `start_token` / `end_token` you use in the layout.
+If you start from raw labelled text rather than pre-aggregated counts, the [`naiveBayesNgrams`](/sql-reference/functions/splitting-merging-functions#naivebayesngrams) function tokenizes text into exactly the n-grams this layout expects — the same `mode`, `n`, and boundary tokens — so the training data matches what the dictionary produces at query time. Pass it the same `n` / `mode` / `start_token` / `end_token` you use in the layout.
 
 Given a table of `(class_id, text)` rows, build the `(ngram, class_id, count)` source with one `GROUP BY`:
 
