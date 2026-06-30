@@ -18,7 +18,10 @@ SETTINGS s3_truncate_on_insert = 1;
 
 -- Read them back single-threaded with the prefetch path enabled. The filesystem cache is
 -- disabled so every read goes to object storage and is accounted in RemoteFSPrefetches.
-SELECT count() FROM s3(s3_conn, filename='04000_prefetch_*.tsv', format='TSV', structure='a UInt64, b String')
+-- Read the data with FORMAT Null (a real read of every file); count() can be answered without
+-- reading the data (optimize_count_from_files) and would not exercise the prefetch path.
+SELECT * FROM s3(s3_conn, filename='04000_prefetch_*.tsv', format='TSV', structure='a UInt64, b String')
+FORMAT Null
 SETTINGS max_threads = 1,
          remote_filesystem_read_method = 'threadpool',
          remote_filesystem_read_prefetch = 1,
