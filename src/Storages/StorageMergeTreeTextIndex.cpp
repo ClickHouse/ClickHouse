@@ -4,11 +4,9 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Core/Range.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -36,7 +34,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class MergeTreeTextIndexSource final : public ISource
+class MergeTreeTextIndexSource : public ISource
 {
 public:
     MergeTreeTextIndexSource(
@@ -67,8 +65,6 @@ protected:
     Chunk generate() override
     {
         using enum PostingsSerialization::Flags;
-
-        auto component_guard = Coordination::setCurrentComponent("MergeTreeTextIndexSource::generate");
 
         size_t total_rows = 0;
         size_t num_columns = header->columns();
@@ -104,12 +100,12 @@ protected:
                 else if (column_name == "part_name")
                 {
                     auto column = col_with_type.type->createColumnConst(block_size, current_part_name);
-                    result_columns[pos]->insertManyFrom(column->getDataColumn(), 0, block_size);
+                    result_columns[pos]->insertManyFrom(assert_cast<const ColumnConst &>(*column).getDataColumn(), 0, block_size);
                 }
                 else if (column_name == "dictionary_compression")
                 {
                     auto column = col_with_type.type->createColumnConst(block_size, static_cast<Int8>(dict_block->tokens_format));
-                    result_columns[pos]->insertManyFrom(column->getDataColumn(), 0, block_size);
+                    result_columns[pos]->insertManyFrom(assert_cast<const ColumnConst &>(*column).getDataColumn(), 0, block_size);
                 }
                 else if (column_name == "num_posting_blocks")
                 {
@@ -224,7 +220,7 @@ private:
                 auto idx_file = storage.readFile(sparse_file_name, read_settings, part->checksums.files.at(sparse_file_name).file_size);
 
                 CompressedReadBufferFromFile idx_buf(std::move(idx_file));
-                sparse_index = TextIndexSerialization::deserializeHeader(idx_buf).sparse_index;
+                sparse_index = TextIndexSerialization::deserializeSparseIndex(idx_buf);
 
                 if (sparse_index.empty())
                     continue;
@@ -347,7 +343,7 @@ void ReadFromMergeTreeTextIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 
         /// Build a KeyCondition for the `token` column to skip dictionary blocks
         /// whose token range does not match the filter.
-        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().at(0), context, /* boolean_context */ true);
+        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().at(0), context);
 
         auto token_column = ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "token");
         auto key_expr = std::make_shared<ExpressionActions>(ActionsDAG({token_column}));
@@ -402,7 +398,7 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
     const StoragePtr & source_table_,
     MergeTreeIndexPtr text_index_,
     const ColumnsDescription & columns)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , source_table(source_table_)
     , text_index(std::move(text_index_))
 {
@@ -415,19 +411,10 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
-
-void StorageMergeTreeTextIndex::readImpl(
+void StorageMergeTreeTextIndex::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -8,7 +7,6 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Formats/ParseError.h>
 #include <Core/Block.h>
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
@@ -21,9 +19,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <IO/ReadBufferFromString.h>
 
 namespace DB
 {
@@ -126,7 +121,7 @@ Chunk ValuesBlockInputFormat::read()
     {
         try
         {
-            skipWhitespaceAndSQLComments(*buf);
+            skipWhitespaceIfAny(*buf);
             if (buf->eof() || *buf->position() == ';')
                 break;
             if (need_only_count)
@@ -299,7 +294,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     try
     {
         bool read = true;
-        if (checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
+        if (bool default_value = checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf); default_value)
         {
             column.insertDefault();
             read = false;
@@ -317,6 +312,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 
         rollback_on_exception = true;
 
+        skipWhitespaceIfAny(*buf);
         assertDelimiterAfterValue(column_idx);
         return read;
     }
@@ -329,35 +325,9 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         if (rollback_on_exception)
             column.popBack(1);
 
-        buf->rollbackToCheckpoint();
-
-        /// We might hit something like ('{\'key1\':1, \'key2\':10}') which is valid, but escaped text
-        /// for Map/Array/Tuple. Try reading it here rather than falling back to the more expensive
-        /// expression parser.
-        if (!buf->eof() && *buf->position() == '\'')
-        {
-            WhichDataType which(removeNullable(removeLowCardinality(types[column_idx])));
-            if (which.isMap() || which.isArray() || which.isTuple())
-            {
-                String string_value;
-                const bool parsed_string = tryReadQuotedStringWithSQLStyle(string_value, *buf)
-                    && checkDelimiterAfterValue(column_idx);
-
-                if (parsed_string)
-                {
-                    ReadBufferFromString in_buffer(string_value);
-                    if (serializations[column_idx]->tryDeserializeWholeText(column, in_buffer, format_settings))
-                        return true;
-                }
-
-                /// Deserialization failed or delimiter not found after the string
-                /// Rollback and let the SQL parser handle it.
-                buf->rollbackToCheckpoint();
-            }
-        }
-
         /// Switch to SQL parser and don't try to use streaming parser for complex expressions
         /// Note: Throwing exceptions for each expression may be very slow because of stacktraces
+        buf->rollbackToCheckpoint();
         return parseExpression(column, column_idx);
     }
 }
@@ -590,7 +560,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings);
 
     /// Check that we are indeed allowed to insert a NULL.
-    if (value.isNull() && !canContainNull(type))
+    if (value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
     {
         if (format_settings.null_as_default)
         {
@@ -608,7 +578,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Instead try to create a column with single element and cast it to the destination type.
     if (type.hasDynamicStructure())
     {
-        ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
+        auto const_column = value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
     }
@@ -753,7 +723,7 @@ std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
         first_row = false;
     }
 
-    skipWhitespaceAndSQLComments(buf);
+    skipWhitespaceIfAny(buf);
     if (buf.eof() || end_of_data)
         return {};
 
@@ -795,7 +765,6 @@ void ValuesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::Data
     transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
-void registerInputFormatValues(FormatFactory & factory);
 void registerInputFormatValues(FormatFactory & factory)
 {
     factory.registerInputFormat("Values", [](
@@ -806,46 +775,8 @@ void registerInputFormatValues(FormatFactory & factory)
     {
         return std::make_shared<ValuesBlockInputFormat>(buf, std::make_unique<const Block>(header), params, settings);
     });
-
-    factory.setDocumentation("Values", Documentation{
-        .description = R"DOCS_MD(
-| Input | Output | Alias |
-|-------|--------|-------|
-| ✔     | ✔      |       |
-
-## Description {#description}
-
-The `Values` format prints every row in brackets. 
-
-- Rows are separated by commas without a comma after the last row. 
-- The values inside the brackets are also comma-separated. 
-- Numbers are output in a decimal format without quotes. 
-- Arrays are output in `[]`.
-- Strings, dates, and dates with times are output in quotes. 
-- Escaping rules and parsing are similar to the [TabSeparated](TabSeparated/TabSeparated.md) format.
-
-During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). 
-[`NULL`](/sql-reference/syntax.md) is represented as `NULL`.
-
-The minimum set of characters that you need to escape when passing data in the `Values` format: 
-- single quotes
-- backslashes
-
-This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
-
-## Example usage {#example-usage}
-
-## Format settings {#format-settings}
-
-| Setting                                                                                                                                                     | Description                                                                                                                                                                                   | Default |
-|-------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`input_format_values_interpret_expressions`](../../operations/settings/settings-formats.md/#input_format_values_interpret_expressions)                     | if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.                                                                               | `true`  |
-| [`input_format_values_deduce_templates_of_expressions`](../../operations/settings/settings-formats.md/#input_format_values_deduce_templates_of_expressions) | if the field could not be parsed by streaming parser, run SQL parser, deduce template of the SQL expression, try to parse all rows using template and then interpret expression for all rows. | `true`  |
-| [`input_format_values_accurate_types_of_literals`](../../operations/settings/settings-formats.md/#input_format_values_accurate_types_of_literals)           | when parsing and interpreting expressions using template, check actual type of literal to avoid possible overflow and precision issues.                                                       | `true`  |
-)DOCS_MD"});
 }
 
-void registerValuesSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)
