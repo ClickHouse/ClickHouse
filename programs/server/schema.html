@@ -771,7 +771,13 @@ for (const id of ['url', 'user', 'password']) {
     /// a green probe against one server must not stay green after the target changes.
     $(id).addEventListener('input', resetCredentialsStatus);
     /// The URL and credentials are usually pasted; re-check shortly after so we read the new value.
-    $(id).addEventListener('paste', () => setTimeout(checkCredentials, 100));
+    /// Only auto-probe a same-origin target: `checkCredentials` sends `user`/`password` to the
+    /// current `url`, so pasting a cross-origin URL into a trusted page that carries
+    /// password-manager-filled credentials must not contact it until an explicit `Load` — the
+    /// same invariant `isSameOriginTarget` enforces for page-load auto-load.
+    $(id).addEventListener('paste', () => setTimeout(() => {
+        if (isSameOriginTarget($('url').value)) checkCredentials();
+    }, 100));
 }
 
 let theme = window.localStorage.getItem('theme') || 'light';
