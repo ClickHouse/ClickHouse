@@ -1369,6 +1369,18 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     /// foreground only needs to know WHETHER a sibling lead exists, to revoke to the sync path).
     m.contended = !sibling_led.empty();
 
+    /// "Stop at the first loss" (inline serve only): bound the fetch at the first sibling-led
+    /// segment so this thread fetches just the contiguous LED PREFIX `[window.offset, fetch_bound)`.
+    /// The serve reads that prefix (we are its downloader, so it is committed to our cells) as a
+    /// short window; the caller's next read resolves the sibling boundary (elect/wait). A led
+    /// segment past the boundary was elected above but is NOT fetched here - the SCOPE_EXIT below
+    /// resets its downloader. A pool worker leaves `fetch_bound` at the window end (it fetches the
+    /// whole led set and revokes on contention at collect), keeping its read-ahead behavior.
+    size_t fetch_bound = window.end();
+    if (m.inline_serve)
+        for (const auto & sl : sibling_led)
+            fetch_bound = std::min(fetch_bound, sl.sub.offset);
+
     /// A window byte that no fill-target writer covers cannot be deduped (no cache tier
     /// populates it): fetch it plainly. Add the window remainder (minus elected + sibling-led)
     /// to the led set.
@@ -1421,9 +1433,12 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     const size_t tile = std::max<size_t>(effectiveWindowSize(level), 1);
     for (const auto & led : mergeRanges(led_disjoint, min_bytes_for_seek))
     {
-        for (size_t off = led.offset; off < led.end() && !m.reached_eof; off += tile)
+        /// Clamp the run to the led prefix: an inline serve stops at `fetch_bound` (the first
+        /// sibling); a pool worker has `fetch_bound == window.end()`, so this is a no-op for it.
+        const size_t run_hi = std::min(led.end(), fetch_bound);
+        for (size_t off = led.offset; off < run_hi && !m.reached_eof; off += tile)
         {
-            const ByteRange piece{off, std::min(tile, led.end() - off)};
+            const ByteRange piece{off, std::min(tile, run_hi - off)};
             ChainedBuffers run = fetchGapsFromSource(piece, /*from_prefetch=*/true, m.reached_eof, level,
                 m.extent_snapshot, &m.long_conn, &m, m.stats);
             pushChainToWriters(m.writer_views, piece, run, m.stats, /*streaming=*/true);
@@ -2392,6 +2407,8 @@ bool ReaderExecutor::launchMachineForWindow(size_t ri, ByteRange window, IFetchM
     m->retrieve_index = ri;
     m->pressure_snapshot = read_plan.geometry()->pressure_level;
     m->extent_snapshot = read_extent_end;
+    /// Inline (serve-thread) runner -> the fetch stops at the first sibling-led segment.
+    m->inline_serve = (&machine_runner == local_runner.get());
     /// Record the fill-target writers now so the step can write its led segments inline during
     /// the fetch (the collect's `schedulePutStep` reuses these views).
     collectFillTargets(*m);
@@ -2607,7 +2624,7 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
     return out;
 }
 
-bool ReaderExecutor::committedCellCovers(ByteRange window_phys) const
+IntervalSet ReaderExecutor::committedCoverage(ByteRange window_phys) const
 {
     /// Mirrors the committed-range computation in `recreditCommittedPrefixes` but only
     /// accumulates coverage - no `read`, no stats - so the serve can poll the fill front.
@@ -2632,7 +2649,20 @@ bool ReaderExecutor::committedCellCovers(ByteRange window_phys) const
                 covered.add(committed_part);
         }
     }
-    return covered.subtract(window_phys).empty();
+    return covered;
+}
+
+bool ReaderExecutor::committedCellCovers(ByteRange window_phys) const
+{
+    return committedCoverage(window_phys).subtract(window_phys).empty();
+}
+
+size_t ReaderExecutor::committedCellPrefixEnd(ByteRange window_phys) const
+{
+    /// The first uncovered byte (in increasing-offset order) is the end of the contiguous
+    /// committed prefix; with the window fully covered there is no gap, so it is the window end.
+    auto gaps = committedCoverage(window_phys).subtract(window_phys);
+    return gaps.empty() ? window_phys.end() : gaps.front().offset;
 }
 
 ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step & step, size_t ri, size_t position_phys)
@@ -2645,13 +2675,13 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
     const size_t want = std::min({readCeiling(), step_end - position_phys, boundedReadSize(effectiveWindowSize(level))});
     if (want == 0)
         return {};
-    const ByteRange window_phys{position_phys, want};
+    ByteRange window_phys{position_phys, want};
 
     /// Unified foreground: with the machine slot free, run a one-window FetchMachine for this
     /// window INLINE on the serve thread (the same flow as the prefetch, driven by a local
     /// runner), then collect it - finalizing the cache fill and reclaiming the connection on this
-    /// thread, so the cell-serve below reads the just-committed cells. Sibling-led contention
-    /// revokes in collect (the led cells stay committed) and falls through to the sync fallback.
+    /// thread, so the cell-serve below reads the just-committed cells. The inline fetch stops at
+    /// the first sibling-led segment, so it commits only the contiguous led prefix.
     /// Collecting here rather than deferring to `maybeLaunchAhead` keeps it correct with or
     /// without a pool. The guard is `!machine` (slot free), NOT `!machineFor(ri)`:
     /// `launchMachineForWindow` overwrites the single slot, so a read-ahead machine in flight for
@@ -2659,7 +2689,18 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
     if (unified_foreground && !machine)
     {
         if (launchMachineForWindow(ri, window_phys, *local_runner))
+        {
             collectInFlightInto(ri);
+            /// Narrow the serve to the committed led prefix: a sibling-led hole bounds the inline
+            /// fetch short, so only `[offset, prefix_end)` is in our cells. Serving that prefix as
+            /// a short non-EOF window lets the caller's next read resolve the sibling boundary
+            /// (elect/wait via the sync fallback) instead of this thread blocking past the first
+            /// loss. An EMPTY prefix (the cursor sits on a sibling-led segment) leaves the window
+            /// unchanged -> `committedCellCovers` is false below -> the sync fallback handles it.
+            const size_t prefix_end = committedCellPrefixEnd(window_phys);
+            if (prefix_end > window_phys.offset && prefix_end < window_phys.end())
+                window_phys = ByteRange{window_phys.offset, prefix_end - window_phys.offset};
+        }
     }
 
     /// The in-flight machine fills the LEAD ahead of the cursor, committing cells progressively.

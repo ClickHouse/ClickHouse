@@ -509,6 +509,12 @@ private:
         /// bytes on the query thread). False with no contention (the worker then leads - and
         /// fetches - the whole window).
         bool contended = false;
+        /// Set when this machine is driven INLINE on the serve thread (a `LocalFetchMachineRunner`),
+        /// as opposed to a pool worker reading ahead. The inline fetch "stops at the first loss":
+        /// it fetches only the contiguous led PREFIX up to the first sibling-led segment, so the
+        /// serve thread never blocks fetching a led run PAST a sibling-led hole (the caller's next
+        /// read resolves the boundary). A pool worker keeps the full-window fetch.
+        bool inline_serve = false;
         /// Strategy-A pin taken by the fill step over the partial segment it just
         /// filled, held until the reap: the foreground finalize runs BEFORE the fill,
         /// so its `writerPinAt` finds a still-empty segment - without this, an eviction
@@ -835,9 +841,17 @@ private:
     /// (or a foreground fallback) until the bottom cell covers the window, reads it back via
     /// `recreditCommittedPrefixes`, and promotes the served run up. A bypass gap keeps the bank.
     ChainedBuffers serveRetrievePopulatable(const PlanSchedule::Step & step, size_t ri, size_t position_phys);
-    /// Read-only: do the plan's held write buffers commit-cover the whole physical window?
-    /// The read-only twin of `recreditCommittedPrefixes`'s coverage computation (no read, no stats).
+    /// Read-only coverage of `window_phys` by the plan's held write buffers' committed ranges
+    /// (the read-only twin of `recreditCommittedPrefixes`'s computation: no read, no stats). A
+    /// byte a SIBLING downloaded is NOT in this executor's per-writer committed set, so it reads
+    /// as uncovered here - which is what bounds the inline serve to its own led prefix.
+    IntervalSet committedCoverage(ByteRange window_phys) const;
+    /// Does the committed coverage span the whole window?
     bool committedCellCovers(ByteRange window_phys) const;
+    /// The end of the CONTIGUOUS committed run from `window_phys.offset` (== offset when nothing
+    /// is committed there). The inline populatable serve narrows to this prefix: the first
+    /// sibling-led byte bounds it short, so the serve returns the led prefix as a short window.
+    size_t committedCellPrefixEnd(ByteRange window_phys) const;
     /// Serve a populatable window from the cells: the committed prefix, then (when `allow_wait`)
     /// the still-uncommitted bytes the in-flight worker is downloading, waited on per-frontier
     /// via the worker's OWN target writers (`waitAndReadSiblingLed`). Accumulates into `out` /

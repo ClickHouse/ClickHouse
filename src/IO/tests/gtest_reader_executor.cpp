@@ -3671,6 +3671,152 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsPinnedSegment)
     EXPECT_EQ(result, content);
 }
 
+/// Stage-5 "stop at the first loss" under REAL FileCache contention (not the downloader-blind
+/// `MockCacheWriter`, which masked an earlier dead-work bug). A sibling on another thread holds
+/// the SECOND segment's downloader (DOWNLOADING, no committed bytes) over the same key+origin the
+/// inline executor uses. The first window therefore straddles an own-led segment (S0) and the
+/// sibling-led one (S1). The unified-foreground inline machine must fetch only the contiguous LED
+/// PREFIX [0, 64) - serving it as a SHORT window and stopping at the sibling boundary - rather
+/// than blocking to fetch past the sibling. The test then commits the sibling and drains the rest:
+/// S1 is read through the sync fallback (the cursor-at-sibling case) and S2 is fetched by the
+/// executor, so the full file is served correctly. (If the executor blocked on the sibling inside
+/// window 1, this test would deadlock: the sibling commits only AFTER window 1 returns.)
+TEST(ReaderExecutor, UnifiedForegroundStopsAtFirstSiblingLedSegment)
+{
+    DB::ServerUUID::setRandomForUnitTests();
+
+    auto * saved_thread = DB::current_thread;
+    DB::current_thread = nullptr;
+    SCOPE_EXIT({ DB::current_thread = saved_thread; });
+
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("reader_exec_first_loss_main");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    namespace fs = std::filesystem;
+    auto cache_path = fs::temp_directory_path() / "reader_exec_first_loss_cache";
+    fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+    SCOPE_EXIT({ fs::remove_all(cache_path); });
+
+    constexpr size_t segment_size = 64;
+    constexpr size_t file_size = 3 * segment_size;   /// S0 [0,64) S1 [64,128) S2 [128,192)
+
+    DB::FileCacheSettings settings;
+    settings[DB::FileCacheSetting::path] = cache_path.string();
+    settings[DB::FileCacheSetting::max_size] = 1ull << 20;
+    settings[DB::FileCacheSetting::max_elements] = 64;
+    settings[DB::FileCacheSetting::max_file_segment_size] = segment_size;
+    settings[DB::FileCacheSetting::boundary_alignment] = segment_size;
+    settings[DB::FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[DB::FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reader_exec_first_loss", settings);
+    cache->initialize();
+
+    DB::FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    /// Fixed key + origin shared by the inline executor's provider and the sibling, so the manual
+    /// download lands on exactly the segment the executor elects.
+    auto key = DB::FileCacheKey::fromPath("obj");
+    auto origin = DB::FileCache::getCommonOrigin();
+    auto provider = std::make_shared<DB::DiskCacheProvider>(
+        cache, cache_settings, /*query_id_=*/String{}, /*local_throttler_=*/nullptr,
+        std::optional<DB::FileCacheKey>(key), std::optional<DB::FileCacheOriginInfo>(origin));
+
+    /// Distinct bytes per segment so a misplaced serve is obvious.
+    const String content = String(segment_size, 'A') + String(segment_size, 'B') + String(segment_size, 'C');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    ReaderExecutor::Options opts;
+    opts.window_size = 2 * segment_size;   /// one window spans S0 + S1, so it straddles the boundary
+    opts.min_bytes_for_seek = 0;
+    opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+    opts.unified_foreground = true;        /// the feature under test; NO prefetch_pool -> pure inline
+
+    std::latch holding{1};      /// sibling holds S1's downloader (DOWNLOADING)
+    std::latch go_commit{1};    /// main lets the sibling commit S1 (after window 1 returns)
+    std::latch committed{1};    /// sibling has committed S1 (DOWNLOADED)
+    std::atomic<bool> sib_won_downloader{false};
+
+    std::thread sibling([&]
+    {
+        DB::current_thread = nullptr;
+        DB::ThreadStatus sib_status;
+        auto sib_context = DB::Context::createCopy(getContext().context);
+        sib_context->makeQueryContext();
+        sib_context->setCurrentQueryId("reader_exec_first_loss_sibling");
+        auto sib_scope = DB::QueryScope::create(sib_context);
+
+        /// Win S1's downloader and keep it DOWNLOADING with no committed bytes: a different thread
+        /// id makes our caller id differ from the executor's, so the executor loses the election.
+        auto holder = cache->getOrSet(key, segment_size, segment_size, file_size,
+            DB::CreateFileSegmentSettings{}, 0, origin);
+        auto & seg = holder->front();
+        sib_won_downloader.store(seg.getOrSetDownloader() == DB::FileSegment::getCallerId());
+        holding.count_down();
+
+        go_commit.wait();
+        std::string failure_reason;
+        if (seg.reserve(segment_size, 1000, failure_reason))
+        {
+            String s1 = content.substr(segment_size, segment_size);
+            seg.write(s1.data(), s1.size(), seg.getCurrentWriteOffset());
+            seg.completePartAndResetDownloader();   /// -> DOWNLOADED
+        }
+        committed.count_down();
+    });
+
+    ReaderExecutor executor(source, objects, {provider}, opts);
+
+    /// Wait until the sibling owns S1 before the first serve elects it.
+    holding.wait();
+    EXPECT_TRUE(sib_won_downloader.load()) << "the sibling must win S1's downloader on its own thread";
+
+    /// Window 1: must NOT block on the sibling - it serves the led prefix and returns.
+    String got1;
+    {
+        auto chain = executor.readNextWindow();
+        for (const auto & node : chain.getNodes())
+            got1.append(node.data(), node.size);
+    }
+    /// Now the sibling may commit S1, and the rest can be drained.
+    go_commit.count_down();
+    committed.wait();
+    sibling.join();
+
+    String rest;
+    while (true)
+    {
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            rest.append(node.data(), node.size);
+    }
+
+    EXPECT_LE(got1.size(), segment_size)
+        << "window 1 must stop at the sibling boundary (serve the led prefix), not read through S1";
+    EXPECT_EQ(content.substr(0, got1.size()), got1) << "the prefix bytes must be correct";
+    EXPECT_EQ(got1 + rest, content) << "the whole file is served correctly under real contention";
+    EXPECT_GT(inspect(executor).syncReadMicros(), 0u)
+        << "the sibling-led segment at the cursor is resolved via the sync fallback";
+}
+
 /// Reproduces the `chassert(!is_last_holder)` abort in `FileSegment::complete`'s
 /// DOWNLOADING branch. `planResidencyView` credits a concurrently-DOWNLOADING
 /// segment's committed prefix as a HIT, so its `read_holder` passively pins the
