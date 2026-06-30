@@ -67,6 +67,25 @@ expect_rejected() {
     rm "$bin"
 }
 
+# Insert a hand-crafted google.protobuf.Timestamp payload and print the resulting column value.
+read_message() {
+    local col_type="$1"
+    local message_bytes="$2"
+
+    $CLICKHOUSE_CLIENT --query "
+        DROP TABLE IF EXISTS read_message_04062;
+        CREATE TABLE read_message_04062 (ts ${col_type}) ENGINE = MergeTree ORDER BY tuple();
+    "
+
+    local bin
+    bin=$(mktemp "$CURDIR/04062_protobuf_timestamp.XXXXXX.binary")
+    printf "$message_bytes" > "$bin"
+    $CLICKHOUSE_CLIENT --query "INSERT INTO read_message_04062 SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf" < "$bin"
+    rm "$bin"
+
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM read_message_04062"
+}
+
 echo "DateTime64(9):"
 roundtrip "DateTime64(9, 'UTC')" "('2022-01-22 12:34:56.789012345'), ('1969-12-31 23:59:59.5'), ('1970-01-01 00:00:00')"
 
@@ -107,3 +126,7 @@ expect_rejected "DateTime64(9, 'UTC')" '\x08\x80\xFF\xF6\x81\xEC\xFF\xFF\xFF\xFF
 
 echo "Seconds after 2299 (DateTime64):"
 expect_rejected "DateTime64(0, 'UTC')" '\x08\x80\xB6\xD7\xE5\x26' # Timestamp{seconds=10413792000} = 2300-01-01
+
+# A singular Timestamp split across repeated field occurrences must be merged, not read as only the last one.
+echo "Split Timestamp message (DateTime64):"
+read_message "DateTime64(9, 'UTC')" '\x0C\x0A\x02\x08\x01\x0A\x06\x10\x80\xCA\xB5\xEE\x01' # ts{seconds=1} ts{nanos=500000000}
