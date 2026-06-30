@@ -231,7 +231,16 @@ void JoinStepLogical::describePipeline(FormatSettings & settings) const
 
 static String formatJoinCondition(const std::vector<JoinActionRef> & predicates)
 {
-    return fmt::format("{}", fmt::join(predicates | std::views::transform([](const auto & x) { return x.getColumnName(); }), " AND "));
+    /// Render predicates in a readable infix form (e.g. `a >= b` instead of `greaterOrEquals(a, b)`),
+    /// the same way `EXPLAIN ... pretty` does.
+    std::unordered_map<String, PrettyColumnName> pretty_names;
+    std::unordered_map<String, RuntimeFilterInfo> runtime_filter_names;
+    std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> subquery_set_names;
+    auto to_readable = [&](const JoinActionRef & predicate)
+    {
+        return QueryPlanFormat::formatNodePretty(predicate.getNode(), pretty_names, runtime_filter_names, subquery_set_names);
+    };
+    return fmt::format("{}", fmt::join(predicates | std::views::transform(to_readable), " AND "));
 }
 
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness)
