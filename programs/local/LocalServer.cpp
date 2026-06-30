@@ -1164,6 +1164,7 @@ try
     try
     {
         global_context->loadOrReloadUserDefinedExecutableFunctions(getClientConfiguration());
+        global_context->updateFunctionsDenyList(getClientConfiguration());
     }
     catch (...)
     {

@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int CANNOT_DROP_FUNCTION;
     extern const int CANNOT_CREATE_RECURSIVE_FUNCTION;
     extern const int BAD_ARGUMENTS;
+    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 
@@ -237,7 +238,7 @@ ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
 
     if (ast && CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().tryGetQueryContext();
+        auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
     }
@@ -251,7 +252,7 @@ ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) 
 
     if (ast && CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().tryGetQueryContext();
+        auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
     }

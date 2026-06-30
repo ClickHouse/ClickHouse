@@ -2512,6 +2512,7 @@ try
                 /// Moreover, it may break initialization order.
                 global_context->loadOrReloadDictionaries(config());
                 global_context->loadOrReloadUserDefinedExecutableFunctions(config());
+                global_context->updateFunctionsDenyList(config());
             }
 
             global_context->setRemoteHostFilter(config());
@@ -3314,6 +3315,7 @@ try
         try
         {
             global_context->loadOrReloadUserDefinedExecutableFunctions(config());
+            global_context->updateFunctionsDenyList(config());
         }
         catch (...)
         {

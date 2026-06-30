@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
+#include <TableFunctions/TableFunctionDisabled.h>
 
 
 namespace DB
@@ -29,10 +30,17 @@ void TableFunctionFactory::registerFunction(
     if (!table_functions.emplace(name, value).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: the table function name '{}' is not unique", name);
 
-    if (case_sensitiveness == Case::Insensitive
-        && !case_insensitive_table_functions.emplace(Poco::toLower(name), value).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: "
-                        "the case insensitive table function name '{}' is not unique", name);
+    if (case_sensitiveness == Case::Insensitive)
+    {
+        auto key = Poco::toLower(name);
+        if (!case_insensitive_table_functions.emplace(key, value).second)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "TableFunctionFactory: "
+                "the case insensitive table function name '{}' is not unique",
+                name);
+        case_insensitive_name_mapping[key] = name;
+    }
 
     KnownTableFunctionNames::instance().add(name, (case_sensitiveness == Case::Insensitive));
 }
@@ -61,7 +69,7 @@ TableFunctionPtr TableFunctionFactory::get(
 
 TableFunctionPtr TableFunctionFactory::tryGet(
         const std::string & name_param,
-        ContextPtr) const
+        ContextPtr context) const
 {
     String name = getAliasToOrName(name_param);
     TableFunctionPtr res;
@@ -80,6 +88,10 @@ TableFunctionPtr TableFunctionFactory::tryGet(
 
     if (!res)
         return nullptr;
+
+    auto deny_list_ptr = context->getTableFunctionsDenyList();
+    if (deny_list_ptr && deny_list_ptr->contains(name))
+        res = std::make_shared<TableFunctionDisabled>(res);
 
     if (CurrentThread::isInitialized())
     {

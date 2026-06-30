@@ -414,7 +414,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const Stri
 {
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(loader.load(function_name));
-    auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
+    auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), context, std::move(parameters));
 
     if (CurrentThread::isInitialized())
     {
@@ -422,6 +422,14 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const Stri
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
     }
+
+    if (auto deny_types_ptr = context->getFunctionsDenyTypes())
+        if (deny_types_ptr->contains("executable"))
+            return std::make_shared<DisabledFunctionToOverloadResolverAdaptor>(std::move(function));
+
+    if (auto deny_list_ptr = context->getFunctionsDenyList())
+        if (deny_list_ptr->contains(function_name))
+            return std::make_shared<DisabledFunctionToOverloadResolverAdaptor>(std::move(function));
 
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
 }
@@ -434,7 +442,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
     if (load_result.object)
     {
         auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(load_result.object);
-        auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
+        auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), context, std::move(parameters));
 
         if (CurrentThread::isInitialized())
         {
@@ -442,6 +450,14 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
             if (query_context && query_context->getSettingsRef()[Setting::log_queries])
                 query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
         }
+
+        if (auto deny_types_ptr = context->getFunctionsDenyTypes())
+            if (deny_types_ptr->contains("executable"))
+                return std::make_shared<DisabledFunctionToOverloadResolverAdaptor>(std::move(function));
+
+        if (auto deny_list_ptr = context->getFunctionsDenyList())
+            if (deny_list_ptr->contains(function_name))
+                return std::make_shared<DisabledFunctionToOverloadResolverAdaptor>(std::move(function));
 
         return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
     }
