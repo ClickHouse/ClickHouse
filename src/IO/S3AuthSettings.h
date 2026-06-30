@@ -66,6 +66,17 @@ struct S3AuthSettings
     /// separately by the caller.
     void clearServerManagedRequestAuth();
 
+    /// Clear the STS assume-role triple (`role_arn`, `role_session_name`, `external_id`). Used by restricted
+    /// paths to drop a role inherited from the server `<s3>` config (so the role is never assumed with the
+    /// server's identity as the STS base); the caller decides when a query-supplied role may be kept.
+    void clearRoleArn();
+
+    /// Clear the GCP OAuth metadata-service mechanism (`http_client`, `service_account`, `metadata_service`,
+    /// `request_token_path`, and the explicit Application Default Credentials triple). Used by restricted paths
+    /// whose syntax cannot supply these fields, so any value here came from the server `<s3>` config and would
+    /// otherwise mint a server-identity bearer token for a user-chosen endpoint.
+    void clearServerManagedGcpOAuth();
+
     HTTPHeaderEntries headers;
     HTTPHeaderEntries access_headers;
 

@@ -279,9 +279,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     if (context->shouldRestrictUserQueryS3Credentials() && collection.isQueryOverridden("role_arn")
         && !(collection.isQueryOverridden("access_key_id") && collection.isQueryOverridden("secret_access_key")))
     {
-        s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
-        s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
-        s3_settings->auth_settings[S3AuthSetting::external_id] = "";
+        s3_settings->auth_settings.clearRoleArn();
     }
 
     s3_settings->auth_settings[S3AuthSetting::http_client] = collection.getOrDefault<String>("http_client", "");
@@ -693,11 +691,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     /// a query-supplied role_arn remains (a server role_arn would assume the role with the server's identity).
     const bool restrict_server_credentials = context->shouldRestrictUserQueryS3Credentials();
     if (restrict_server_credentials)
-    {
-        s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
-        s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
-        s3_settings->auth_settings[S3AuthSetting::external_id] = "";
-    }
+        s3_settings->auth_settings.clearRoleArn();
 
     S3StorageParsedArguments::collectCredentials(extra_credentials, s3_settings->auth_settings, context);
 
@@ -720,13 +714,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
 
         /// Drop any GCP OAuth mechanism inherited from `<s3>` config: the bare-URL `s3(...)` form cannot supply
         /// these fields, so a value here is always server-configured and would mint a server-identity token.
-        s3_settings->auth_settings[S3AuthSetting::http_client] = "";
-        s3_settings->auth_settings[S3AuthSetting::service_account] = "";
-        s3_settings->auth_settings[S3AuthSetting::metadata_service] = "";
-        s3_settings->auth_settings[S3AuthSetting::request_token_path] = "";
-        s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = "";
-        s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = "";
-        s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
+        s3_settings->auth_settings.clearServerManagedGcpOAuth();
 
         /// The bare-URL `s3(...)` form likewise cannot supply request-auth material, so the headers/access
         /// headers and SSE-C/SSE-KMS keys here come from the server `<s3>`/endpoint config. Drop them so an
