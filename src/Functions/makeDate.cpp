@@ -15,6 +15,7 @@
 
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/typeid_cast.h>
 
 #include <array>
@@ -292,7 +293,12 @@ protected:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Argument 'precision' for function {} must be constant number", getName());
 
-        Int64 precision = precision_argument.column->getInt(0);
+        /// Read the precision as its logical numeric value, exactly as the declarative signature's
+        /// `DateTime64(precision)` type function does (via `FieldVisitorConvertToNumber`). A bare
+        /// `column->getInt(0)` returns the raw underlying integer of a `Decimal` column instead of
+        /// its value (e.g. `0.001 :: Decimal(18, 3)` reads back as `1`, not `0`), which would make
+        /// the produced `DateTime64` scale disagree with the one inferred for the result type.
+        Int64 precision = applyVisitor(FieldVisitorConvertToNumber<Int64>(), (*precision_argument.column)[0]);
 
         if (precision < 0 || precision > 9)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
