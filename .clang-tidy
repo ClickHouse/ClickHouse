@@ -136,6 +136,7 @@ Checks: [
   '-misc-const-correctness',
   '-misc-include-cleaner', # useful but far too many occurrences
   '-misc-no-recursion',
+  '-misc-multiple-inheritance',
   '-misc-non-private-member-variables-in-classes',
   '-misc-override-with-different-visibility',
   '-misc-use-anonymous-namespace',
