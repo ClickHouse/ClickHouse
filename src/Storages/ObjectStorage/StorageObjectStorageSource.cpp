@@ -83,6 +83,14 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace FailPoints
+{
+    /// Test-only: pause a worker just before it reads a bucket-split object, after the coordinator
+    /// has computed the split and (with the fix) propagated the object metadata. Lets a test
+    /// deterministically overwrite the object in place between the split and the worker read.
+    extern const char object_storage_source_pause_before_read[];
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 max_download_buffer_size;
@@ -666,6 +674,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (!object_info || object_info->getPath().empty())
             return {};
+
+        /// Bucket-split worker read: pause here (test-only) so a test can overwrite the object in
+        /// place after the coordinator's split but before this read, exercising read-time ETag
+        /// validation against the propagated split-time generation.
+        if (object_info->file_bucket_info)
+            FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_read);
+
         if (!object_info->getObjectMetadata())
         {
             bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
