@@ -288,11 +288,17 @@ private:
     template <typename DateOrTime, typename Divisor>
     static DateOrTime roundDownToMultiple(DateOrTime value, Divisor divisor)
     {
+        const Int64 d = static_cast<Int64>(divisor);
+        /// A caller can derive `divisor` from an extreme interval count (e.g. `60 * minutes`), which wraps to a
+        /// non-positive value. Such intervals are meaningless, so leave the value unchanged instead of dividing
+        /// by zero or overflowing below.
+        if (unlikely(d <= 0))
+            return value;
+
         if (value >= 0) [[likely]]
-            return static_cast<DateOrTime>(value / divisor * divisor);
+            return static_cast<DateOrTime>(value / d * d);
 
         const Int64 v = static_cast<Int64>(value);
-        const Int64 d = static_cast<Int64>(divisor);
         const Int64 remainder = v % d; /// In (-d, 0] for negative v.
         if (remainder == 0)
             return static_cast<DateOrTime>(v);
