@@ -53,6 +53,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <base/sleep.h>
 #include <fmt/core.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ErrorCodes.h>
@@ -61,6 +62,8 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
+#include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 
 namespace ProfileEvents
@@ -68,6 +71,13 @@ namespace ProfileEvents
     extern const Event PatchesAcquireLockTries;
     extern const Event PatchesAcquireLockMicroseconds;
     extern const Event MergesRejectedByMemoryLimit;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric OptimizeFinalThreads;
+    extern const Metric OptimizeFinalThreadsActive;
+    extern const Metric OptimizeFinalThreadsScheduled;
 }
 
 namespace DB
@@ -1401,11 +1411,20 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
             if (!select_result.has_value())
             {
-                /// If final - we will wait for currently processing merges to finish and continue.
-                if (final && !currently_merging_mutating_parts.empty())
+                /// Count merges in progress that touch this partition. We only wait for those: merges
+                /// in other partitions can't prevent selecting all parts of this one, and waiting for
+                /// them would needlessly serialize a parallel OPTIMIZE FINAL that assigns a merge per
+                /// partition (issue #46770).
+                size_t merging_parts_in_partition = 0;
+                for (const auto & merging_part : currently_merging_mutating_parts)
+                    if (merging_part->info.getPartitionId() == partition_id)
+                        ++merging_parts_in_partition;
+
+                /// If final - we will wait for currently processing merges in this partition to finish and continue.
+                if (final && merging_parts_in_partition != 0)
                 {
                     LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now) to perform OPTIMIZE FINAL",
-                        currently_merging_mutating_parts.size());
+                        merging_parts_in_partition);
 
                     if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(lock, timeout))
                         return std::unexpected(SelectMergeFailure{
@@ -2019,32 +2038,99 @@ bool StorageMergeTree::optimize(
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
         DataPartsVector data_parts = getVisibleDataPartsVector(local_context);
-        std::unordered_set<String> partition_ids;
+        std::unordered_set<String> partition_ids_set;
 
         for (const DataPartPtr & part : data_parts)
-            partition_ids.emplace(part->info.getPartitionId());
+            partition_ids_set.emplace(part->info.getPartitionId());
 
-        for (const String & partition_id : partition_ids)
+        const std::vector<String> partition_ids(partition_ids_set.begin(), partition_ids_set.end());
+        const bool optimize_skip_merged_partitions = local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions];
+
+        /// Assign one merge per partition. Returns success (true also when there is nothing to merge
+        /// in the partition) and records the reason into out_reason when a merge can't be assigned.
+        auto optimize_partition = [&](const String & partition_id, PreformattedMessage & out_reason) -> bool
         {
-            if (!merge(
-                    true,
-                    partition_id,
-                    true,
-                    deduplicate,
-                    deduplicate_by_columns,
-                    cleanup,
-                    txn,
-                    disable_reason,
-                    local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions]))
+            return merge(
+                true,
+                partition_id,
+                true,
+                deduplicate,
+                deduplicate_by_columns,
+                cleanup,
+                txn,
+                out_reason,
+                optimize_skip_merged_partitions);
+        };
+
+        /// OPTIMIZE FINAL assigns and runs the per-partition merges in parallel, so that merges for
+        /// all partitions appear at once (e.g. in system.merges) instead of being processed one by
+        /// one (issue #46770). Partitions are independent, so their merges can run concurrently.
+        /// The degree of parallelism is bounded by the configured background merge concurrency.
+        /// Explicit transactions take the sequential path: parallel merges would otherwise share a
+        /// single transaction object, which is not designed for concurrent use.
+        auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
+        const size_t max_concurrent_merges = std::min(
+            partition_ids.size(),
+            std::max<size_t>(1, merge_mutate_executor ? merge_mutate_executor->getMaxTasksCount() : 1));
+
+        std::optional<PreformattedMessage> failure_reason;
+
+        if (max_concurrent_merges > 1 && txn == nullptr)
+        {
+            /// Each task writes only its own slot, so no synchronization is needed for the results.
+            /// A default-constructed std::expected holds a value (i.e. "assigned successfully").
+            auto results = std::make_shared<std::vector<std::expected<void, PreformattedMessage>>>(partition_ids.size());
+
+            ThreadPool pool(
+                CurrentMetrics::OptimizeFinalThreads,
+                CurrentMetrics::OptimizeFinalThreadsActive,
+                CurrentMetrics::OptimizeFinalThreadsScheduled,
+                max_concurrent_merges);
+            ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGE_MUTATE);
+
+            for (size_t i = 0; i < partition_ids.size(); ++i)
             {
-                constexpr auto message = "Cannot OPTIMIZE table: {}";
-                LOG_INFO(log, message, disable_reason.text);
-
-                if (local_context->getSettingsRef()[Setting::optimize_throw_if_noop])
-                    throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason.text);
-
-                return false;
+                /// Capturing by reference is fine: partition_ids and optimize_partition outlive the runner.
+                runner.enqueueAndKeepTrack([i, results, &partition_ids, &optimize_partition]
+                {
+                    PreformattedMessage partition_reason;
+                    if (!optimize_partition(partition_ids[i], partition_reason))
+                        (*results)[i] = std::unexpected(std::move(partition_reason));
+                });
             }
+            runner.waitForAllToFinishAndRethrowFirstError();
+
+            for (auto & result : *results)
+            {
+                if (!result.has_value())
+                {
+                    failure_reason = std::move(result.error());
+                    break;
+                }
+            }
+        }
+        else
+        {
+            for (const String & partition_id : partition_ids)
+            {
+                PreformattedMessage partition_reason;
+                if (!optimize_partition(partition_id, partition_reason))
+                {
+                    failure_reason = std::move(partition_reason);
+                    break;
+                }
+            }
+        }
+
+        if (failure_reason)
+        {
+            constexpr auto message = "Cannot OPTIMIZE table: {}";
+            LOG_INFO(log, message, failure_reason->text);
+
+            if (local_context->getSettingsRef()[Setting::optimize_throw_if_noop])
+                throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, failure_reason->text);
+
+            return false;
         }
     }
     else
