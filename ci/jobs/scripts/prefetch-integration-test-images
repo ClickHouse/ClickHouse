@@ -8,13 +8,17 @@
 #   ci/prefetch-integration-test-images IMAGE [IMAGE ...]
 #
 # Environment variables:
-#   PULL_RETRIES   Number of pull attempts per image (default: 3)
-#   PULL_TIMEOUT   Per-attempt timeout in seconds (default: 300)
+#   PULL_RETRIES        Number of pull attempts per image (default: 5)
+#   PULL_TIMEOUT        Per-attempt timeout in seconds (default: 300)
+#   PULL_BACKOFF_BASE   Base backoff in seconds; doubled each retry (default: 5)
+#   PULL_BACKOFF_MAX    Cap on a single backoff sleep in seconds (default: 60)
 
 set -uo pipefail
 
-PULL_RETRIES="${PULL_RETRIES:-3}"
+PULL_RETRIES="${PULL_RETRIES:-5}"
 PULL_TIMEOUT="${PULL_TIMEOUT:-300}"
+PULL_BACKOFF_BASE="${PULL_BACKOFF_BASE:-5}"
+PULL_BACKOFF_MAX="${PULL_BACKOFF_MAX:-60}"
 
 images=("$@")
 if [[ ${#images[@]} -eq 0 ]]; then
@@ -34,7 +38,7 @@ pull_one()
 {
     local image="$1"
     local fail_file="$2"
-    local attempt out start elapsed
+    local attempt out start elapsed backoff
 
     for ((attempt = 1; attempt <= PULL_RETRIES; attempt++)); do
         echo "Pulling $image (attempt $attempt/$PULL_RETRIES) ..."
@@ -53,7 +57,15 @@ pull_one()
         echo "Pull of $image failed on attempt $attempt (${elapsed}s elapsed):"
         echo "$out"
         if ((attempt < PULL_RETRIES)); then
-            sleep 5
+            # Exponential backoff with jitter. The registry intermittently returns
+            # transient errors (e.g. HTTP 500) under load; a fixed short sleep is too
+            # narrow to ride those out, and all images pull in parallel, so jitter also
+            # de-synchronizes the retries instead of hammering the registry in lockstep.
+            backoff=$((PULL_BACKOFF_BASE * (1 << (attempt - 1))))
+            ((backoff > PULL_BACKOFF_MAX)) && backoff=$PULL_BACKOFF_MAX
+            backoff=$((backoff + RANDOM % (PULL_BACKOFF_BASE + 1)))
+            echo "Retrying $image in ${backoff}s ..."
+            sleep "$backoff"
         fi
     done
 

@@ -240,7 +240,7 @@ def get_images_from_compose_files(compose_files: List[Path]) -> List[str]:
 
 
 def prefetch_images(
-    images: List[str], retries: int = 3, pull_timeout: int = 300
+    images: List[str], retries: int = 5, pull_timeout: int = 300
 ) -> bool:
     """Pull every image in parallel using `ci/prefetch-integration-test-images`.
 
