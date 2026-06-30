@@ -5411,6 +5411,9 @@ document.getElementById('download-div').addEventListener('click', function(e) {
 
         dropdown.style.top = (button_rect.top - context_rect.top) + 'px';
         dropdown.style.left = (button_rect.left - context_rect.left + button_rect.width - dropdown_rect.width) + 'px';
+
+        // Move focus into the menu so keyboard users land on the format selection.
+        document.getElementById('download-format').focus();
     }
 });
 
@@ -5423,6 +5426,58 @@ document.getElementById('download-dropdown').addEventListener('click', function(
 document.addEventListener('click', function() {
     const dropdown = document.getElementById('download-dropdown');
     dropdown.classList.remove('show');
+});
+
+/// Keep the open download menu contiguous with the download button in the tab
+/// order. The dropdown lives at the end of the DOM (so it is positioned without
+/// being clipped), so without this its controls would otherwise land at the very
+/// end of the tab sequence. Tab/Shift+Tab flow:
+///   download button -> format select -> [other format] -> Download button
+/// and leaving either end closes the menu. Escape also closes it.
+function downloadTabSequence() {
+    const seq = [document.getElementById('download-div'), document.getElementById('download-format')];
+    const other = document.getElementById('download-format-other');
+    if (other.classList.contains('show')) seq.push(other);
+    seq.push(document.getElementById('download-button'));
+    return seq;
+}
+
+document.getElementById('main').addEventListener('keydown', e => {
+    const dropdown = document.getElementById('download-dropdown');
+    if (!dropdown.classList.contains('show')) return;
+
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        dropdown.classList.remove('show');
+        document.getElementById('download-div').focus();
+        return;
+    }
+
+    if (e.key !== 'Tab') return;
+
+    const seq = downloadTabSequence();
+    const idx = seq.indexOf(document.activeElement);
+    if (idx < 0) return;
+
+    if (!e.shiftKey) {
+        if (idx < seq.length - 1) {
+            e.preventDefault();
+            seq[idx + 1].focus();
+        } else {
+            /// Past the last item: close the menu and continue to the next toolbar control.
+            dropdown.classList.remove('show');
+            e.preventDefault();
+            document.getElementById('theme').focus();
+        }
+    } else {
+        if (idx > 0) {
+            e.preventDefault();
+            seq[idx - 1].focus();
+        } else {
+            /// Before the download button: close the menu and let focus move naturally.
+            dropdown.classList.remove('show');
+        }
+    }
 });
 
 // Handle "Other" format selection
