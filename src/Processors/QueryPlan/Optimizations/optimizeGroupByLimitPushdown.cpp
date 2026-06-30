@@ -76,15 +76,23 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
 ///   pruning — `requires_pruning` makes the aggregator disable the heap at
 ///   runtime for methods that cannot erase evicted keys.
 ///
-/// Note on partial aggregation: the optimization is inherently safe for
-/// Pattern 1 even if the matched `AggregatingStep` is partial (`final = false`)
-/// — a key rejected by the heap has at least N better-ranked keys locally,
-/// hence at least N better-ranked keys globally.  No plan tree currently
-/// exposes such a pair to this optimizer; the parallel-replicas mirror in
-/// `ParallelReplicasLocalPlan.cpp` applies the same logic from the AST.
+/// Note on partial aggregation: this optimizer only ever sees a local, final
+/// aggregation.  Remote sub-plans (classic distributed and parallel replicas,
+/// including under `serialize_query_plan`) are serialized without being run
+/// through these optimizations, embedded local plans are hidden behind source
+/// steps the traversal does not descend into, and a coordinator merges partial
+/// states with a `MergingAggregatedStep` (not an `AggregatingStep`).  Plans
+/// built for `make_distributed_plan` are skipped explicitly below.
 size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     if (!settings.enable_group_by_top_k_optimization)
+        return 0;
+
+    /// The heap is a local, final-aggregation optimization.  When the plan is
+    /// going to be distributed, the second optimizer pass splits aggregation into
+    /// independent partial aggregators that would each prune their own keys.  Skip
+    /// the optimization rather than annotate a step that will be distributed.
+    if (settings.make_distributed_plan)
         return 0;
 
     auto * limit_step = typeid_cast<LimitStep *>(parent_node->step.get());

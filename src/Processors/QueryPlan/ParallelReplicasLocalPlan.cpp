@@ -10,15 +10,6 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSubquery.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -179,13 +170,6 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     auto * node = findReadingStep<ReadFromTableStep>(query_plan->getRootNode());
     if (node)
         typeid_cast<ReadFromTableStep*>(node->step.get())->useParallelReplicas() = true;
-
-    /// The GROUP BY top-K pushdown is intentionally not applied to the partial
-    /// aggregation shipped to parallel-replicas followers: it would need to be
-    /// serialized through `AggregatingStep`, but the query-plan serialization
-    /// version is not negotiated on the cached-blob send path, so older
-    /// followers could not be told about the extra bytes.  The optimization
-    /// still applies to the coordinator's final aggregation.
 
     return query_plan;
 }

@@ -1008,14 +1008,6 @@ void AggregatingStep::serialize(Serialization & ctx) const
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         flags |= 16;
 
-    /// The `enable_group_by_top_k_optimization` heap parameters are intentionally
-    /// not serialized: the query-plan serialization version is not negotiated on
-    /// the cached-blob send path (`Connection::sendQueryPlan`), so an older
-    /// receiver could not be told to skip these bytes.  The optimization still
-    /// applies to local (final) aggregation; it is simply not pushed across the
-    /// wire to parallel-replicas followers.  Revisit once the version is wired
-    /// through the send path (flag bit 32 is reserved for it).
-
     writeIntBinary(flags, ctx.out);
 
     if (explicit_sorting_required_for_aggregation_in_order)
@@ -1056,8 +1048,6 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     bool group_by_use_nulls = bool(flags & 4);
     bool has_grouping_sets = bool(flags & 8);
     bool has_stats_key = bool(flags & 16);
-    /// Flag bit 32 is reserved for the top-K pushdown payload, which is not
-    /// serialized (see the serialize side); a current stream never sets it.
 
     UInt64 num_keys = 0;
     readVarUInt(num_keys, ctx.in);
