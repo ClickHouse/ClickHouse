@@ -207,14 +207,16 @@ size_t tryLiftPredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::
 
     SubstitutionMap l_to_r;
     SubstitutionMap r_to_l;
-    /// Target key must be a raw INPUT: for `ON l.k = r.k + 1` the substituted name is absent from the child header
+    /// The substituted column ends up as an INPUT of the lifted FilterStep that sits above the
+    /// target child, so its name must exist in the child's output header. For computed equi-keys
+    /// like `ON l.k = r.k + 1` the rhs name is `plus(...)` which is not in the right child
+    const auto & left_header  = *parent_node->children[0]->step->getOutputHeader();
+    const auto & right_header = *parent_node->children[1]->step->getOutputHeader();
     for (const auto & [lhs, rhs] : equi_pairs)
     {
-        const bool lhs_is_input = lhs.getNode() && lhs.getNode()->type == ActionsDAG::ActionType::INPUT;
-        const bool rhs_is_input = rhs.getNode() && rhs.getNode()->type == ActionsDAG::ActionType::INPUT;
-        if (!changes_right && rhs_is_input)
+        if (!changes_right && right_header.has(rhs.getColumn().name))
             l_to_r[lhs.getColumnName()] = rhs.getColumn();
-        if (!changes_left && lhs_is_input)
+        if (!changes_left && left_header.has(lhs.getColumn().name))
             r_to_l[rhs.getColumnName()] = lhs.getColumn();
     }
 
