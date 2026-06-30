@@ -469,7 +469,7 @@ cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --passw
 
 Select the data inserted into the table:
 
-```sql
+```bash
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
 ```
 
@@ -505,7 +505,7 @@ cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --passw
 
 Select the data inserted into the table:
 
-```sql
+```bash
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
 ```
 

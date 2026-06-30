@@ -3,6 +3,7 @@
 #if USE_EMBEDDED_COMPILER
 
 #include <sys/mman.h>
+#include <cstring>
 #include <boost/noncopyable.hpp>
 
 #include <llvm/Analysis/CGSCCPassManager.h>
@@ -443,6 +444,14 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
     symbol_resolver->registerSymbol("memcmpSmallCharsAllowOverflow15", reinterpret_cast<void *>(&memcmpSmallCharsAllowOverflow15));
+
+#if defined(OS_DARWIN)
+    /// On Apple targets LLVM lowers constant-pattern memsets to these libc helpers,
+    /// so the JIT must be able to resolve them.
+    symbol_resolver->registerSymbol("memset_pattern4", reinterpret_cast<void *>(&memset_pattern4));
+    symbol_resolver->registerSymbol("memset_pattern8", reinterpret_cast<void *>(&memset_pattern8));
+    symbol_resolver->registerSymbol("memset_pattern16", reinterpret_cast<void *>(&memset_pattern16));
+#endif
 
     symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(static_cast<double (*)(double, double)>(&fmod)));
     /// Signed and unsigned variants must be kept together: see the comment above the extern declarations.
