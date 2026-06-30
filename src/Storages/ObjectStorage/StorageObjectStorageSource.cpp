@@ -1136,8 +1136,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 2. object etag suggests a cache key in case we use filesystem cache
     /// 3. object etag as a cache key for parquet metadata caching
     /// 4. object etag to detect a concurrent in-place overwrite during the read
-    /// The s3Cluster skip_object_metadata path yields an unfetched placeholder; refresh it so ETag
-    /// validation has an etag. A real fetch that lacks an ETag (e.g. GCS) is left as-is (no extra HEAD).
     if (!object_info.metadata)
     {
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
@@ -1145,8 +1143,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     else if (!object_info.metadata->is_fetched && settings[Setting::s3_validate_etag_on_read]
              && object_storage->getType() == ObjectStorageType::S3)
     {
-        /// Refresh the placeholder to obtain its size + ETag for read-time validation. (A placeholder
-        /// carries no tags, so the with_tags=false HEAD drops nothing.)
+        /// Refresh the s3Cluster skip_object_metadata placeholder to obtain its size + ETag for read-time
+        /// validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch that
+        /// merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
     }
 
@@ -1534,11 +1533,7 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
         }
         else
         {
-            /// No metadata was fetched: this is a placeholder. `is_fetched = false` lets consumers
-            /// (e.g. read-time ETag validation) tell it apart from a real fetch that merely lacks an
-            /// ETag; `is_size_known = false` because its size is genuinely unknown.
             object_metadata.is_fetched = false;
-            object_metadata.is_size_known = false;
         }
 
         if (file_progress_callback)

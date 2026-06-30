@@ -560,12 +560,9 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     req.SetKey(key);
     if (!version_id.empty())
         req.SetVersionId(version_id);
-    /// Make the GET conditional on the generation observed at read setup: the server returns
-    /// 412 Precondition Failed if the object was replaced in place, so torn cross-generation bytes
-    /// are never transferred (no extra round-trip - just a header). Only for non-pinned reads with a
-    /// known expected_etag (populated when s3_validate_etag_on_read is on); pinned ?versionId= reads
-    /// are immutable and need no condition. The success-path ETag comparison below stays as
-    /// defense-in-depth for backends that silently ignore If-Match.
+    /// Pin the GET to the generation seen at read setup via If-Match, so an in-place overwrite is
+    /// rejected with 412 instead of transferring torn cross-generation bytes. Only for non-versioned
+    /// reads with a known expected_etag.
     else if (!expected_etag.empty())
         req.SetIfMatch(expected_etag);
 
@@ -619,15 +616,11 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
         auto result = outcome.GetResultWithOwnership();
 
         String response_etag = result.GetETag();
-        /// Test-only: force an ETag mismatch to exercise the validation path deterministically.
         fiu_do_on(FailPoints::s3_read_inject_etag_mismatch, { response_etag = "<injected-etag-mismatch>"; });
 
-        /// One file read issues many ranged GETs; if the object is overwritten between them we would
-        /// stitch bytes from two generations, so reject on ETag drift. Skip pinned-version reads
-        /// (?versionId=): immutable, and expected_etag (the current version's HEAD) would falsely mismatch.
-        /// Also skip when the GET response carries no ETag: it gives nothing to compare, and S3/GCS
-        /// always return one, so an empty response_etag only happens for backends (or test mocks)
-        /// that omit it - treating that as a mismatch would reject every such read.
+        /// Defense-in-depth for backends that ignore If-Match and return the new bytes with 200: reject
+        /// on ETag drift. Skip ?versionId= reads (pinned to an immutable version that expected_etag,
+        /// taken from the current version, would falsely mismatch) and empty response ETags.
         if (version_id.empty() && !expected_etag.empty() && !response_etag.empty() && response_etag != expected_etag)
             throw Exception(
                 ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
@@ -660,10 +653,9 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
             static_cast<Int32>(error.GetErrorType()), error.GetMessage());
     }
 
-    /// A conditional GET (If-Match, set above) returns 412 Precondition Failed when the object was
-    /// replaced in place mid-read. Map it to the same error the success-path ETag comparison raises -
-    /// which processException does not retry - rather than a generic S3 error. S3Exception only keeps
-    /// the Aws::S3::S3Errors code, not the HTTP status, so the mapping must happen here from the error.
+    /// Map the If-Match 412 to the same non-retryable S3_OBJECT_CHANGED_DURING_READ as the success-path
+    /// comparison (a generic S3 error would be retried by processException). Must map here from the raw
+    /// error: S3Exception keeps only the Aws S3Errors code, not the HTTP 412 status.
     if (version_id.empty() && !expected_etag.empty()
         && error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED)
         throw Exception(

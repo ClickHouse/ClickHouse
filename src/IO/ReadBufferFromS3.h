@@ -32,7 +32,7 @@ private:
     String key;
     String version_id;
     /// ETag observed at read setup; each GET response ETag is checked against it to catch an
-    /// in-place overwrite mid-read (instead of stitching two object generations). Empty ⇒ skip.
+    /// in-place overwrite mid-read (instead of stitching two object generations). Empty means skip.
     String expected_etag;
     const S3::S3RequestSettings request_settings;
 
