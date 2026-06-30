@@ -28,16 +28,6 @@ SerializationMapKeyValue::SerializationMapKeyValue(
 {
 }
 
-SerializationPtr SerializationMapKeyValue::create(
-    const SerializationPtr & value_serialization_,
-    const SerializationPtr & map_nested_serialization_,
-    MergeTreeMapSerializationVersion serialization_version_,
-    ColumnPtr key_,
-    const DataTypePtr & nested_type_)
-{
-    return std::shared_ptr<ISerialization>(new SerializationMapKeyValue(value_serialization_, map_nested_serialization_, serialization_version_, std::move(key_), nested_type_));
-}
-
 /// Deserialization state for reading a single key's value from a Map.
 /// For WITH_BUCKETS format, reads only one bucket (the one containing the requested key).
 struct DeserializeBinaryBulkStateMapKeyValue : public ISerialization::DeserializeBinaryBulkState
@@ -212,8 +202,6 @@ void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
             settings_copy.insert_only_rows_in_current_range_from_substreams_cache = true;
             map_nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_column, rows_offset, limit, settings_copy, map_key_value_state->nested_state, cache);
             num_read_rows = nested_column->size();
-            /// Add the whole Map to cache so other key-value subcolumns reuse it instead of re-reading the same range.
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_column, num_read_rows);
         }
     }
     /// Multiple buckets. Only the bucket containing our key was opened, so read it directly.

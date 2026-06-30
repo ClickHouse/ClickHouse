@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/CaseAwareBlockNameMap.h>
+#include <Core/BlockNameMap.h>
 #include <Core/BlockMissingValues.h>
 #include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
@@ -66,7 +66,7 @@ protected:
     const FormatSettings format_settings;
     const NamesAndTypes fields;
     /// Maps column names and their positions in header.
-    CaseAwareBlockNameMap name_to_index;
+    BlockNameMap name_to_index;
     Serializations serializations;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     BlockMissingValues block_missing_values;

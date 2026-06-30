@@ -1,6 +1,5 @@
 #include <BridgeHelper/IBridgeHelper.h>
 
-#include <csignal>
 #include <filesystem>
 #include <thread>
 #include <IO/ReadHelpers.h>
