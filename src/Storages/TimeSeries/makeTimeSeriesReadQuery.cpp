@@ -17,6 +17,9 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/makeASTForLogicalFunction.h>
+#include <Storages/IStorage.h>
+#include <Storages/KeyDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -743,8 +746,11 @@ namespace
             select_list.children.push_back(makeRepresentativeTimestamp());
     }
 
-    /// Sets `FROM <samples_table_id> [WHERE <samples_filter>] GROUP BY id` on a samples-side SELECT.
-    void setSamplesFromGroupBy(ASTSelectQuery & select_query, const StorageID & samples_table_id, const ASTPtr & samples_filter)
+    /// Sets `FROM <samples_table_id> [WHERE <samples_filter>] GROUP BY <group_by_keys>` on a samples-side SELECT.
+    /// `group_by_keys` is the "samples" sorting-key prefix up to and including `id` (so the aggregation can run in
+    /// sorting-key order); it always pins `id`, so each group is a single series (or one slice of it).
+    void setSamplesFromGroupBy(ASTSelectQuery & select_query, const StorageID & samples_table_id,
+                               const ASTPtr & samples_filter, const ASTs & group_by_keys)
     {
         select_query.setExpression(ASTSelectQuery::Expression::TABLES, makeSingleTableList(makeTableExpression(samples_table_id)));
 
@@ -752,7 +758,8 @@ namespace
             select_query.setExpression(ASTSelectQuery::Expression::WHERE, samples_filter->clone());
 
         auto group_by = make_intrusive<ASTExpressionList>();
-        group_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        for (const auto & key : group_by_keys)
+            group_by->children.push_back(key->clone());
         select_query.setExpression(ASTSelectQuery::Expression::GROUP_BY, group_by);
     }
 
@@ -760,7 +767,7 @@ namespace
     /// FROM <samples> [WHERE <samples_filter>] GROUP BY id)` wrapped in ASTSelectWithUnionQuery so it can sit
     /// inside an ASTSubquery in a JOIN. `id` is always selected as the join key.
     ASTPtr makeSamplesGroupedSubquery(const StorageID & samples_table_id, const ASTPtr & samples_filter,
-                                      bool need_time_series, bool need_timestamp)
+                                      bool need_time_series, bool need_timestamp, const ASTs & group_by_keys)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -769,7 +776,7 @@ namespace
         addSamplesSelectList(*select_list, need_time_series, need_timestamp);
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
-        setSamplesFromGroupBy(*select_query, samples_table_id, samples_filter);
+        setSamplesFromGroupBy(*select_query, samples_table_id, samples_filter, group_by_keys);
         return wrapInUnionQuery(std::move(select_query));
     }
 
@@ -779,13 +786,13 @@ namespace
     /// When the representative timestamp is needed, an extra projection renames `__rep_timestamp` to the
     /// requested `timestamp` column in a scope that doesn't reference the raw `timestamp` column.
     ASTPtr makeSamplesOnlySelect(const StorageID & samples_table_id, const ASTPtr & samples_filter,
-                                 bool need_time_series, bool need_timestamp)
+                                 bool need_time_series, bool need_timestamp, const ASTs & group_by_keys)
     {
         auto grouped = make_intrusive<ASTSelectQuery>();
         auto grouped_list = make_intrusive<ASTExpressionList>();
         addSamplesSelectList(*grouped_list, need_time_series, need_timestamp);
         grouped->setExpression(ASTSelectQuery::Expression::SELECT, grouped_list);
-        setSamplesFromGroupBy(*grouped, samples_table_id, samples_filter);
+        setSamplesFromGroupBy(*grouped, samples_table_id, samples_filter, group_by_keys);
 
         if (!need_timestamp)
             return wrapInUnionQuery(std::move(grouped));
@@ -877,21 +884,25 @@ namespace
         return makeTableElement(tags_exp);
     }
 
-    /// Builds `SEMI LEFT JOIN (samples grouped by id) AS __samples USING id` — attaches the `time_series`
-    /// array (and the representative `timestamp`) and keeps only the "tags" rows that have samples in range.
-    /// The alias is required by `joined_subquery_requires_alias` (on by default).
-    ASTPtr makeSamplesSemiJoinElement(const StorageID & samples_table_id, const ASTPtr & samples_filter,
-                                      bool need_time_series, bool need_timestamp)
+    /// Builds the join that attaches a series' samples (the `time_series` array and the representative `timestamp`)
+    /// onto its "tags" row, dropping "tags" rows that have no samples in range. The "samples" subquery groups by
+    /// `group_by_keys` (the sorting-key prefix up to `id`). When that grouping yields one row per series (`split`
+    /// is false) a `SEMI LEFT JOIN … USING id` keeps each tags row once; when it yields several rows per series
+    /// (`split` is true — a per-sample key column precedes `id`) an `INNER ALL JOIN … USING id` fans the tags row
+    /// out to one output row per group (a per-bucket slice of the series), still dropping no-sample series. The
+    /// alias is required by `joined_subquery_requires_alias` (on by default).
+    ASTPtr makeSamplesJoinElement(const StorageID & samples_table_id, const ASTPtr & samples_filter,
+                                  bool need_time_series, bool need_timestamp, const ASTs & group_by_keys, bool split)
     {
         auto samples_exp = make_intrusive<ASTTableExpression>();
         samples_exp->subquery = make_intrusive<ASTSubquery>(
-            makeSamplesGroupedSubquery(samples_table_id, samples_filter, need_time_series, need_timestamp));
+            makeSamplesGroupedSubquery(samples_table_id, samples_filter, need_time_series, need_timestamp, group_by_keys));
         samples_exp->subquery->setAlias("__samples");
         samples_exp->children.push_back(samples_exp->subquery);
 
         auto join = make_intrusive<ASTTableJoin>();
-        join->kind = JoinKind::Left;
-        join->strictness = JoinStrictness::Semi;
+        join->kind = split ? JoinKind::Inner : JoinKind::Left;
+        join->strictness = split ? JoinStrictness::All : JoinStrictness::Semi;
         auto using_list = make_intrusive<ASTExpressionList>();
         using_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
         join->using_expression_list = using_list;
@@ -1010,7 +1021,9 @@ namespace
         const std::vector<std::pair<String, String>> & tag_columns,
         const std::optional<std::vector<String>> & projected_tag_keys,
         const ASTPtr & tags_filter,
-        const ASTPtr & samples_filter)
+        const ASTPtr & samples_filter,
+        const ASTs & samples_group_by,
+        bool samples_split)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
         select_query->setExpression(ASTSelectQuery::Expression::SELECT,
@@ -1019,14 +1032,67 @@ namespace
         auto tables = make_intrusive<ASTTablesInSelectQuery>();
         tables->children.push_back(makeTagsTableElement(tags_table_id, tags_filter));
         if (samples_table_id)
-            tables->children.push_back(makeSamplesSemiJoinElement(*samples_table_id, samples_filter,
+            tables->children.push_back(makeSamplesJoinElement(*samples_table_id, samples_filter,
                 column_names.contains(TimeSeriesColumnNames::TimeSeries),
-                column_names.contains(TimeSeriesColumnNames::Timestamp)));
+                column_names.contains(TimeSeriesColumnNames::Timestamp),
+                samples_group_by, samples_split));
         if (metrics_table_id)
             tables->children.push_back(makeMetricsFullJoinElement(*metrics_table_id, column_names));
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
 
         return wrapInUnionQuery(std::move(select_query));
+    }
+
+    /// True if a "samples" sorting-key expression references a per-sample column (`timestamp` or `value`) — its
+    /// value can vary within one series, so grouping by it splits a series into several rows.
+    bool referencesSampleColumn(const ASTPtr & node)
+    {
+        if (const auto * identifier = node->as<ASTIdentifier>())
+            return identifier->name() == TimeSeriesColumnNames::Timestamp
+                || identifier->name() == TimeSeriesColumnNames::Value;
+        for (const auto & child : node->children)
+            if (referencesSampleColumn(child))
+                return true;
+        return false;
+    }
+
+    /// How to GROUP BY the "samples" read.
+    struct SamplesGrouping
+    {
+        ASTs group_by;   /// keys to GROUP BY (the sorting-key prefix up to and including `id`, or just `id`)
+        bool split = false;  /// whether the grouping can produce several rows per series
+    };
+
+    /// Derives the samples GROUP BY from the "samples" table's sorting key: the prefix up to and including `id`, so
+    /// the aggregation can run in sorting-key order. `id` (the series identity) ends the prefix and pins each group
+    /// to a single series; a series-level key column before it (e.g. `metric_name`) is constant per series, while a
+    /// per-sample column (e.g. `toStartOfHour(timestamp)`) splits the series into one row per distinct value — a
+    /// faithful, re-insertable representation. Falls back to `GROUP BY id` (no in-order aggregation) when `id` is
+    /// not part of the sorting key.
+    SamplesGrouping computeSamplesGrouping(const StorageTimeSeries & storage, const ContextPtr & context)
+    {
+        SamplesGrouping result;
+        auto samples_table = storage.getTargetTable(ViewTarget::Samples, context);
+        const auto & sorting_key = samples_table->getInMemoryMetadataPtr(context, false)->getSortingKey();
+        if (sorting_key.expression_list_ast)
+        {
+            for (const auto & key : sorting_key.expression_list_ast->children)
+            {
+                const auto * identifier = key->as<ASTIdentifier>();
+                if (identifier && identifier->name() == TimeSeriesColumnNames::ID)
+                {
+                    result.group_by.push_back(key->clone());
+                    return result;
+                }
+                if (referencesSampleColumn(key))
+                    result.split = true;
+                result.group_by.push_back(key->clone());
+            }
+        }
+        /// `id` is not in the sorting key: group by it directly (not a sorting-key prefix, so no in-order aggregation).
+        result.group_by.assign(1, make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        result.split = false;
+        return result;
     }
 }
 
@@ -1080,13 +1146,20 @@ ASTPtr makeTimeSeriesReadQuery(
 
     auto tags_filter = combineFilters(tags_index_filter, tags_time_filter);
 
+    /// When the "samples" table is read, group it by its sorting-key prefix up to `id` so the aggregation can run
+    /// in sorting-key order; a per-sample key column in that prefix splits a series into one row per group.
+    SamplesGrouping samples_grouping;
+    if (need_samples)
+        samples_grouping = computeSamplesGrouping(storage, context);
+
     /// Single-table reads (no join).
     if (!need_samples && !need_metrics)
         return makeTagsOnlySelect(storage.getTargetTableID(ViewTarget::Tags, context), requested,
                                   tag_columns, projected_tag_keys, tags_filter);
     if (need_samples && !need_tags && !need_metrics)
         return makeSamplesOnlySelect(storage.getTargetTableID(ViewTarget::Samples, context), samples_filter,
-                                     requested.contains(TimeSeriesColumnNames::TimeSeries), need_timestamp);
+                                     requested.contains(TimeSeriesColumnNames::TimeSeries), need_timestamp,
+                                     samples_grouping.group_by);
     if (need_metrics && !need_tags && !need_samples)
         return makeMetricsOnlySelect(storage.getTargetTableID(ViewTarget::Metrics, context), requested);
 
@@ -1102,7 +1175,8 @@ ASTPtr makeTimeSeriesReadQuery(
         metrics_table_id = storage.getTargetTableID(ViewTarget::Metrics, context);
 
     return makeTagsBasedSelect(tags_table_id, samples_table_id, metrics_table_id, requested,
-                               tag_columns, projected_tag_keys, tags_filter, samples_filter);
+                               tag_columns, projected_tag_keys, tags_filter, samples_filter,
+                               samples_grouping.group_by, samples_grouping.split);
 }
 
 }

@@ -680,3 +680,38 @@ def test_select_works_under_full_sorting_merge_join_algorithm():
         assert node.query(
             f"SELECT count() FROM (SELECT metric_name, type FROM prometheus) SETTINGS join_algorithm = '{algo}'"
         ) == "2\n"
+
+
+def test_select_custom_samples_pk_splits_by_bucket():
+    """When the inner `samples` table has a custom sorting key, the read groups by the sorting-key prefix up to
+    `id` so the aggregation can run in sorting-key order. A per-sample key column (here `toStartOfHour(timestamp)`)
+    precedes `id`, so a series splits into one row per bucket -- a faithful, re-insertable representation that the
+    sink reassembles on INSERT. `count()` (tags-only) still counts one series."""
+    node.query("DROP TABLE IF EXISTS t_custom SYNC")
+    node.query(
+        "CREATE TABLE t_custom ENGINE=TimeSeries"
+        " DATA ENGINE=MergeTree() ORDER BY (toStartOfHour(timestamp), id)"
+    )
+    try:
+        # Samples in two hour buckets: bucket 0 = {600s, 1000s}, bucket 1 = {4000s}.
+        node.query(
+            "INSERT INTO t_custom (metric_name, tags, time_series) VALUES"
+            " ('cpu', {'job': 'api'}, [(toDateTime64(600, 3), 1.0), (toDateTime64(1000, 3), 2.0), (toDateTime64(4000, 3), 3.0)])"
+        )
+        # count() is tags-only -> one series (no split).
+        assert node.query("SELECT count() FROM t_custom") == "1\n"
+        # Projecting time_series groups samples per (hour, id): the series splits into two rows (lengths 2 and 1).
+        assert node.query(
+            "SELECT metric_name, length(time_series) FROM t_custom ORDER BY length(time_series)"
+        ) == TSV([["cpu", "1"], ["cpu", "2"]])
+        # The split rows re-insert into a default-PK table as one reassembled series (the sink merges by id).
+        node.query(
+            "INSERT INTO prometheus (metric_name, tags, time_series) SELECT metric_name, tags, time_series FROM t_custom"
+        )
+        assert node.query("SELECT metric_name, length(time_series) FROM prometheus") == TSV([["cpu", "3"]])
+        # A timestamp filter still works: only bucket 1 (the sample at 4000s) is in window.
+        assert node.query(
+            "SELECT metric_name, length(time_series) FROM t_custom WHERE timestamp >= toDateTime64(3600, 3)"
+        ) == TSV([["cpu", "1"]])
+    finally:
+        node.query("DROP TABLE IF EXISTS t_custom SYNC")

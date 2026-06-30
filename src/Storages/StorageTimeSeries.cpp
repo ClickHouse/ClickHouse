@@ -640,6 +640,9 @@ void StorageTimeSeries::readImpl(
     /// `join_algorithm` so a caller's setting (e.g. `full_sorting_merge` with no hash fallback) can't make the
     /// read throw NOT_IMPLEMENTED.
     read_context->setSetting("join_algorithm", Field{"default"});
+    /// The "samples" read groups by the sorting-key prefix up to `id` (see makeTimeSeriesReadQuery), so the
+    /// aggregation can stream in sorting-key order instead of building a full hash table.
+    read_context->setSetting("optimize_aggregation_in_order", Field{true});
 
     auto projected_tag_keys = collectProjectedTagKeys(query_info);
     auto select_query = makeTimeSeriesReadQuery(
