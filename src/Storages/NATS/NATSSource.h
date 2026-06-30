@@ -41,6 +41,7 @@ public:
     bool wasConsumptionAborted() const { return consumption_aborted; }
 
 private:
+    Chunk generateImpl();
     bool checkTimeLimit() const;
 
     StorageNATS & storage;

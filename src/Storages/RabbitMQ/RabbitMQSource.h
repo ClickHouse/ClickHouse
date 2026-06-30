@@ -58,8 +58,6 @@ private:
     bool consumption_aborted = false;
     const Block non_virtual_header;
     const Block virtual_header;
-    /// Epoch snapshot taken when this source starts; a SYSTEM STOP/CANCEL that advances the storage's
-    /// cancel epoch past this value aborts this source's in-flight block (see StreamingBackgroundControl).
     const UInt64 cancel_epoch;
 
     LoggerPtr log;

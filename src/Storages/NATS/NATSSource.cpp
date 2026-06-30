@@ -74,10 +74,7 @@ NATSSource::~NATSSource()
     if (!consumer)
         return;
 
-    if (commit_on_select)
-        consumer->ackConsumed();
-    else
-        consumer->dropConsumed();
+    consumer->dropConsumed();
 
     if (unsubscribe_on_destroy)
         consumer->unsubscribe(/*finish_queue=*/false);
@@ -99,6 +96,16 @@ bool NATSSource::checkTimeLimit() const
 }
 
 Chunk NATSSource::generate()
+{
+    auto chunk = generateImpl();
+
+    if (!chunk && commit_on_select && !consumption_aborted && consumer)
+        consumer->ackConsumed();
+
+    return chunk;
+}
+
+Chunk NATSSource::generateImpl()
 {
     if (!consumer)
     {

@@ -1,11 +1,13 @@
 """Test SYSTEM STOP/PAUSE/CANCEL/REFRESH and ALL BACKGROUND controls on an S3Queue table."""
 
 import logging
+import threading
 import time
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 from helpers.s3_queue_common import (
     create_table,
     create_mv,
@@ -387,6 +389,87 @@ def test_cancel_during_insert_dedup_off_no_duplicates(started_cluster):
     wait_dst_count(node, table, n_files * ROWS_PER_FILE)
     assert_dst_count_stable(node, table, n_files * ROWS_PER_FILE, seconds=8)
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_cancel_during_direct_select_does_not_commit_files(started_cluster):
+    # A direct SELECT with commit_on_select=1 marks its files Processed at the end of the read. SYSTEM
+    # CANCEL mid-read must abort it via the cancel epoch before that commit, so the files stay unprocessed
+    # and are read again. A sleep failpoint parks the read so CANCEL lands while a file is in progress.
+    node = started_cluster.instances["instance"]
+    table = f"s3queue_direct_cancel_{generate_random_string()}"
+    files_path = f"{table}_data"
+    rows = 500000
+    # commit_on_select makes a direct SELECT consume its files; a single thread keeps the read
+    # sequential. No materialized view: a commit_on_select read is rejected when views are attached.
+    create_table(
+        started_cluster,
+        node,
+        table,
+        "unordered",
+        files_path,
+        additional_settings={
+            "commit_on_select": 1,
+            "processing_threads_num": 1,
+        },
+    )
+    # One file large enough to need several reader->pull calls, so the sleep failpoint lands between
+    # pulls with the file still in Processing state.
+    s3_function = (
+        f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
+        f"{started_cluster.minio_bucket}/{files_path}/{table}.csv', 'minio', '{minio_secret_key}')"
+    )
+    node.query(
+        f"INSERT INTO FUNCTION {s3_function} "
+        f"SELECT number AS column1, number AS column2, number AS column3 FROM numbers({rows})"
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_sleep_in_generate")
+    select = f"SELECT count() FROM {table} SETTINGS stream_like_engine_allow_direct_select = 1"
+    result = {}
+
+    def run_select():
+        result["answer"], result["error"] = node.query_and_get_answer_with_error(select)
+
+    reader = threading.Thread(target=run_select)
+    try:
+        reader.start()
+        # Wait until the source is parked in the sleep failpoint (a file Processing with rows already
+        # read), so the CANCEL below lands mid-read rather than before or after it.
+        deadline = time.time() + 30
+        parked = False
+        while time.time() < deadline:
+            in_progress = int(
+                node.query(
+                    f"SELECT count() FROM system.s3queue_metadata_cache "
+                    f"WHERE zookeeper_path ilike '%{table}%' "
+                    f"AND status = 'Processing' AND rows_processed > 0"
+                )
+            )
+            if in_progress >= 1:
+                parked = True
+                break
+            time.sleep(0.1)
+        assert parked, "sleep failpoint did not park the direct SELECT mid-read"
+        node.query(f"SYSTEM CANCEL {table}")
+    finally:
+        reader.join(timeout=60)
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_sleep_in_generate")
+
+    # CANCEL must abort the read instead of letting it finish and commit the file as Processed.
+    assert result.get("error"), (
+        "SYSTEM CANCEL during a direct SELECT must abort it, but the read completed"
+    )
+
+    # The file was not committed, so a fresh read sees all of it again (reprocessed).
+    reprocessed = 0
+    for _ in range(30):
+        reprocessed = int(node.query(select))
+        if reprocessed == rows:
+            break
+        time.sleep(1)
+    assert reprocessed == rows, (
+        f"files read by the aborted SELECT must be reprocessed: got {reprocessed}, expected {rows}"
+    )
 
 
 def test_stopped_state_does_not_persist_across_restart(started_cluster):

@@ -735,7 +735,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         log,
         commit_once_processed,
         add_deduplication_info,
-        is_deduplication_v2);
+        is_deduplication_v2,
+        *this);
 }
 
 size_t StorageObjectStorageQueue::getDependencies() const

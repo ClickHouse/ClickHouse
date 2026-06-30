@@ -802,6 +802,62 @@ def test_commit_on_select_does_not_lose_unreturned_messages(nats_cluster):
     )
 
 
+def test_commit_on_select_failed_parse_does_not_ack(nats_cluster):
+    # A malformed JetStream message read by a direct SELECT with nats_commit_on_select = 1 fails the query
+    # while parsing. The message must stay unacknowledged (num_ack_pending == 1) for redelivery, not be
+    # acked-and-lost by the source's cleanup as the old unconditional destructor ack did.
+    stream = "js_badparse_stream"
+    subject = "js_badparse_subject"
+    durable = "js_badparse_durable"
+    table = "nats_badparse"
+    # Long ack-wait so the message is not redelivered mid-test; we observe it stays pending after the failure.
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=60)
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_stream = '{stream}',
+                     nats_consumer_name = '{durable}',
+                     nats_format = 'JSONEachRow',
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}',
+                     nats_commit_on_select = 1;
+        """
+    )
+
+    # Publish one payload that JSONEachRow cannot turn into (key, value), so the read raises while parsing.
+    async def publish_bad():
+        nc = await nats_connect_ssl(nats_cluster)
+        js = nc.jetstream()
+        await js.publish(subject, b"not a json row")
+        await nc.close()
+
+    asyncio.run(publish_bad())
+
+    # Delivery is async, so retry until a read actually pulls the message and fails; a read that has not
+    # received it yet returns no rows and no error.
+    failed = False
+    deadline = time.time() + 30
+    while time.time() < deadline and not failed:
+        _, error = instance.query_and_get_answer_with_error(
+            f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1"
+        )
+        if error:
+            failed = True
+        else:
+            time.sleep(0.3)
+    assert failed, "a malformed message must make the direct SELECT fail"
+
+    # It was consumed before the failure but must not be acknowledged: it stays pending so JetStream
+    # redelivers it. The old destructor ack dropped pending to 0 (the message was lost).
+    assert jetstream_ack_pending(nats_cluster, stream, durable) == 1, (
+        "a failed direct read must not acknowledge the message it could not parse"
+    )
+
+
 def test_repeated_direct_reads_do_not_return_stale_copies(nats_cluster):
     # A direct read (block size 1) buffers the whole delivered burst locally and never acks it. With a long
     # ack-wait the broker does not redeliver during the test, so after the burst is delivered a later read
