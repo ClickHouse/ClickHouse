@@ -619,7 +619,7 @@ def test_background_dictionary_reconnect(started_cluster):
         assert (
             int(
                 query(
-                    "SELECT count() FROM system.text_log WHERE message like '%Reestablishing connection to % has failed: mysqlxx::ConnectionFailed: Can\\'t connect to MySQL server on %'"
+                    "SELECT count() FROM system.text_log WHERE message like '%Reestablishing connection to % has failed: mysqlxx::ConnectionFailed: Can\\'t connect to server on %'"
                 )
             )
             > 0
