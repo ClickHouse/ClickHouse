@@ -29,7 +29,8 @@ A `SELECT` query can use the plan cache when all of the following hold:
   subquery/`IN`-set sub-plans re-execute on every run.
 - The query contains no non-deterministic functions (e.g. `now`, `rand`), including inside expanded view bodies.
 - All referenced storages are local, non-temporary tables or views (no table functions, no `system` tables except `system.one`,
-  no `Merge`/`Distributed` storages, no `SQL SECURITY DEFINER` views).
+  no `Merge`/`Distributed` storages). Among views, only `SQL SECURITY INVOKER` views are eligible; `SQL SECURITY DEFINER` and
+  `SQL SECURITY NONE` views are not cached.
 - Scalar subqueries (e.g. `(SELECT max(x) FROM t)`) are evaluated once during analysis and baked into the plan as constants. By default
   such queries are not cached; set `query_plan_cache_allow_scalar_subqueries = 1` to cache them when the tables referenced by scalar
   subqueries are static or stale scalar values are acceptable.
