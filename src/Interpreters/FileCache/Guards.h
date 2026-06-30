@@ -82,8 +82,8 @@ struct CachePriorityGuard : private boost::noncopyable
     /// non-interchangable with other guards locks,
     /// so we wouldn't be able to pass CachePriorityGuard::Lock to a function
     /// which accepts KeyGuard::Lock.
-    using WriteLock = ProfiledExclusiveLock;
-    using ReadLock = ProfiledSharedLock;
+    using WriteLock = ProfiledExclusiveLock<SharedMutex>;
+    using ReadLock = ProfiledSharedLock<SharedMutex>;
 
     ReadLock tryReadLock() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
@@ -111,9 +111,10 @@ private:
 /// State lock protects cache total size/elements counters.
 struct CacheStateGuard : private boost::noncopyable
 {
-    struct Lock : public ProfiledTimedMutexLock
+    struct Lock : public ProfiledExclusiveLock<std::timed_mutex>
     {
-        using ProfiledTimedMutexLock::ProfiledTimedMutexLock;
+        using Base = ProfiledExclusiveLock<std::timed_mutex>;
+        using Base::Base;
     };
 
     Lock tryLock() TSA_NO_THREAD_SAFETY_ANALYSIS
@@ -137,10 +138,10 @@ private:
  */
 struct CacheMetadataGuard : private boost::noncopyable
 {
-    struct Lock : public ProfiledMutexLock
+    struct Lock : public ProfiledExclusiveLock<std::mutex>
     {
         explicit Lock(std::mutex & mutex_)
-            : ProfiledMutexLock(mutex_, ProfileEvents::FilesystemCacheLockMetadataMicroseconds) {}
+            : ProfiledExclusiveLock<std::mutex>(mutex_, ProfileEvents::FilesystemCacheLockMetadataMicroseconds) {}
     };
 
     Lock lock() { return Lock(mutex); }
@@ -152,10 +153,10 @@ struct CacheMetadataGuard : private boost::noncopyable
  */
 struct KeyGuard : private boost::noncopyable
 {
-    struct Lock : public ProfiledMutexLock
+    struct Lock : public ProfiledExclusiveLock<std::mutex>
     {
         explicit Lock(std::mutex & mutex_)
-            : ProfiledMutexLock(mutex_, ProfileEvents::FilesystemCacheLockKeyMicroseconds) {}
+            : ProfiledExclusiveLock<std::mutex>(mutex_, ProfileEvents::FilesystemCacheLockKeyMicroseconds) {}
     };
 
     Lock lock() { return Lock(mutex); }
@@ -167,10 +168,10 @@ struct KeyGuard : private boost::noncopyable
  */
 struct FileSegmentGuard : private boost::noncopyable
 {
-    struct Lock : public ProfiledMutexLock
+    struct Lock : public ProfiledExclusiveLock<std::mutex>
     {
         explicit Lock(std::mutex & mutex_)
-            : ProfiledMutexLock(mutex_, ProfileEvents::FileSegmentLockMicroseconds) {}
+            : ProfiledExclusiveLock<std::mutex>(mutex_, ProfileEvents::FileSegmentLockMicroseconds) {}
     };
 
     Lock lock() { return Lock(mutex); }

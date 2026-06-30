@@ -190,7 +190,7 @@ void KeeperRequestDispatcherOld::onCommit(const KeeperRequestForSession & reques
     {
         /// check if we have queue of read requests depending on this request to be committed
         SessionAndXID key(request_for_session.session_id, request_for_session.request->xid);
-        ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
+        ProfiledExclusiveLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
         if (auto it = read_request_queue.find(key); it != read_request_queue.end())
         {
             pending_reads = std::move(it->second);
@@ -203,7 +203,7 @@ void KeeperRequestDispatcherOld::onCommit(const KeeperRequestForSession & reques
     ///  This re-checking is only useful if raft commit latency gets very high, which I'm
     ///  not sure happens in practice even under too much load.)
     {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+        ProfiledExclusiveLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
         int64_t last_checked_session_id = keeper_internal_get_session_id;
         bool last_checked_session_live = true;
         std::erase_if(pending_reads, [&](const KeeperRequestForSession & read_request)
@@ -278,7 +278,7 @@ void KeeperRequestDispatcherOld::onCommit(const KeeperRequestForSession & reques
     /// how followers learn about closed sessions.
     if (request_for_session.request->getOpNum() == Coordination::OpNum::Close)
     {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+        ProfiledExclusiveLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
         live_sessions.erase(request_for_session.session_id);
     }
 }
@@ -372,7 +372,7 @@ void KeeperRequestDispatcherOld::requestThread()
                     /// do the lookup once and cache the result.
                     if (req.session_id != last_checked_session_id)
                     {
-                        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+                        ProfiledExclusiveLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
                         last_checked_session_id = req.session_id;
                         last_checked_session_live = live_sessions.contains(last_checked_session_id);
                     }
@@ -459,7 +459,7 @@ void KeeperRequestDispatcherOld::requestThread()
                         {
                             const auto & last_request = current_batch.back();
                             request.request->spans.maybeInitialize(KeeperSpan::ReadWaitForWrite, request.request->tracing_context.get());
-                            ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
+                            ProfiledExclusiveLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
                             reads_count += 1;
                             reads_bytes_size += request.request->bytesSize();
                             read_request_queue[{last_request.session_id, last_request.request->xid}].push_back(request);
@@ -717,7 +717,7 @@ bool KeeperRequestDispatcherOld::setResponse(int64_t session_id, const Coordinat
     /// KeeperOverDispatcher's CallbackState is protected by its own mutex.
     ZooKeeperResponseCallback callback;
     {
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        ProfiledExclusiveLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
 
         auto session_response_callback = session_to_response_callback.find(session_id);
 
@@ -752,7 +752,7 @@ bool KeeperRequestDispatcherOld::putRequest(const Coordination::ZooKeeperRequest
     {
         /// If session was already disconnected then we will ignore requests.
         /// Internal sessions (negative IDs, e.g. TTL garbage collector) don't have a callback registered.
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        ProfiledExclusiveLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
         if (!session_to_response_callback.contains(session_id))
             return false;
     }
@@ -802,7 +802,7 @@ void KeeperRequestDispatcherOld::shutdown()
     KeeperRequestsForSessions close_requests;
     {
         /// Clear all registered sessions
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        ProfiledExclusiveLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
 
         if (server && server->isLeaderAlive())
         {
@@ -859,13 +859,13 @@ void KeeperRequestDispatcherOld::registerSession(int64_t session_id, ZooKeeperRe
 {
     bool inserted = false;
     {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+        ProfiledExclusiveLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
         inserted = live_sessions.insert(session_id).second;
     }
 
     try
     {
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        ProfiledExclusiveLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
         if (!session_to_response_callback.try_emplace(session_id, callback).second)
             throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
         CurrentMetrics::add(CurrentMetrics::KeeperAliveConnections);
@@ -874,7 +874,7 @@ void KeeperRequestDispatcherOld::registerSession(int64_t session_id, ZooKeeperRe
     {
         if (inserted)
         {
-            ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+            ProfiledExclusiveLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
             live_sessions.erase(session_id);
         }
         throw;
@@ -889,7 +889,7 @@ void KeeperRequestDispatcherOld::finishSession(int64_t session_id)
 
     ZooKeeperResponseCallback callback;
     {
-        ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
+        ProfiledExclusiveLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
         auto session_it = session_to_response_callback.find(session_id);
         if (session_it != session_to_response_callback.end())
         {
@@ -909,7 +909,7 @@ void KeeperRequestDispatcherOld::finishSession(int64_t session_id)
     /// Remove from live_sessions so `requestThread` can skip stale requests
     /// still sitting in the queue for this session.
     {
-        ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
+        ProfiledExclusiveLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
         live_sessions.erase(session_id);
     }
 
@@ -945,7 +945,7 @@ void KeeperRequestDispatcherOld::addErrorResponses(const KeeperRequestsForSessio
         if (may_have_dependent_reads)
         {
             SessionAndXID key(request_for_session.session_id, request_for_session.request->xid);
-            ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
+            ProfiledExclusiveLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
             if (auto it = read_request_queue.find(key); it != read_request_queue.end())
             {
                 dependent_reads.insert(dependent_reads.end(), std::move_iterator(it->second.begin()), std::move_iterator(it->second.end()));
