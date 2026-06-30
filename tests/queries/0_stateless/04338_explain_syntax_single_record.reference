@@ -3,3 +3,7 @@
 1
 1	0
 1
+{"explain":"SELECT 1\nFROM system.one\nWHERE equals(dummy, 0)"}
+{"explain":"SELECT 1"}
+{"explain":"FROM system.one"}
+{"explain":"WHERE equals(dummy, 0)"}

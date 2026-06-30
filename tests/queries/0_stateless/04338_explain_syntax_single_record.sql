@@ -15,3 +15,10 @@ SELECT count(), countSubstrings(explain, '\n') FROM (EXPLAIN SYNTAX single_recor
 
 -- single_record always collapses the per-line records into exactly one, whatever the line count.
 SELECT count() FROM (EXPLAIN SYNTAX single_record = 1 SELECT 1);
+
+-- Top-level output: single_record = 1 yields one JSON row with the line feeds escaped as \n.
+-- `dummy = 0` is kept by both analyzers, so the text is stable under randomized enable_analyzer.
+EXPLAIN SYNTAX single_record = 1 SELECT 1 FROM system.one WHERE dummy = 0 FORMAT JSONEachRow;
+
+-- Default: the same query is returned as several JSON rows, one per line.
+EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE dummy = 0 FORMAT JSONEachRow;
