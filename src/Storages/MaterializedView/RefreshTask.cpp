@@ -94,6 +94,10 @@ namespace FailPoints
     /// refresh is already in flight cancels the local refresh before giving up coordination,
     /// instead of leaving Keeper thinking the refresh is still running.
     extern const char refresh_mv_force_scheduling_feature_flags_missing[];
+    /// Pauses the refresh thread after the insert pipeline finished but before the target-table
+    /// exchange, so a test can deterministically hit the post-insert window where the executor is
+    /// already gone and only the interrupt_execution flag can stop the exchange.
+    extern const char refresh_mv_pause_before_exchange[];
 }
 
 namespace
@@ -1219,6 +1223,17 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         /// Exchange tables.
         if (!refresh_append)
         {
+            /// The executor is gone once its block above returns, so interruptExecution() is a no-op
+            /// past this point. The exchange is the destructive coordinated step, so re-check the
+            /// interrupt flag here: a cancellation that lands in this post-pipeline window must still
+            /// skip the exchange, not swap the target table after the refresh was cancelled.
+            FailPointInjection::pauseFailPoint(FailPoints::refresh_mv_pause_before_exchange);
+            {
+                std::unique_lock exec_lock(execution.executor_mutex);
+                if (execution.interrupt_execution.load())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
+            }
+
             query_for_logging = "(exchange tables)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
             table_to_drop = view->exchangeTargetTable(new_table_id, refresh_context);

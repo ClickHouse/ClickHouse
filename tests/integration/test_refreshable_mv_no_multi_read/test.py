@@ -263,3 +263,91 @@ def test_refreshable_mv_scheduling_detects_missing_flags_mid_refresh(started_clu
 
     node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
     node.query("DROP DATABASE rdb3 SYNC")
+
+
+def test_refreshable_mv_scheduling_detects_missing_flags_after_insert(started_cluster):
+    # Same coordination leak as the previous test, but in the narrower post-insert window: the
+    # scheduling pass discovers the missing flags AFTER the insert pipeline has already finished but
+    # BEFORE the target-table exchange. Once the pipeline finished, the executor is gone, so
+    # interruptExecution() (which only cancels the executor) is a no-op; the refresh thread would
+    # otherwise proceed to exchange the target table outside coordination while Keeper still thinks
+    # this replica is running the refresh. The cancellation must be observable at the exchange
+    # boundary itself, not just via the executor.
+    #
+    # The window is forced with two failpoints: refresh_mv_pause_before_exchange pauses the refresh
+    # thread right after the insert finished and before the exchange, and
+    # refresh_mv_force_scheduling_feature_flags_missing makes the scheduling pass that runs while it
+    # is paused decide to give up coordination (setting the interrupt flag). When the refresh thread
+    # resumes it must see the flag and skip the exchange.
+    use_keeper_config("enable_keeper_multi_read.xml")
+    node.restart_clickhouse()
+
+    node.query(
+        "CREATE DATABASE rdb4 ENGINE = Replicated('/clickhouse/rdb4', '{shard}', '{replica}')"
+    )
+    # A fast insert: the pause failpoint (not slow rows) controls timing, so the pipeline completes
+    # quickly and the thread blocks at the pre-exchange point. The target row count tells a skipped
+    # exchange apart from one that happened: if the exchange is skipped the target stays empty; if it
+    # happens the target gets REFRESH_ROWS rows.
+    REFRESH_ROWS = 5
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW rdb4.mv
+        REFRESH EVERY 1 YEAR
+        ENGINE = ReplicatedMergeTree ORDER BY x
+        EMPTY
+        AS SELECT number AS x FROM numbers({REFRESH_ROWS})
+        """
+    )
+
+    aborts_before = int(node.count_in_log("Unexpected exception in refresh scheduling"))
+
+    # Pause the next refresh right after its insert pipeline finishes, before the exchange.
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_pause_before_exchange")
+    node.query("SYSTEM REFRESH VIEW rdb4.mv")
+    # Block until the refresh thread is paused at the pre-exchange point. Reaching it proves the
+    # insert pipeline already completed (the data is in the temp table, the executor is gone).
+    node.query("SYSTEM WAIT FAILPOINT refresh_mv_pause_before_exchange PAUSE", timeout=60)
+
+    # The real target table is still empty: the exchange has not happened yet.
+    assert node.query("SELECT count() FROM rdb4.mv").strip() == "0"
+
+    # Run a scheduling pass that discovers the missing flags while the refresh sits in the post-insert
+    # window. It finds execution.state == Running, sets the interrupt flag (a no-op for the gone
+    # executor), gives up coordination, and disables the view.
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("SYSTEM REFRESH VIEW rdb4.mv")
+    status = None
+    for _ in range(60):
+        status = node.query(
+            "SELECT status FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb4'"
+        ).strip()
+        if status == "Disabled":
+            break
+        time.sleep(0.5)
+    assert status == "Disabled", status
+
+    # Resume the paused refresh thread. Its pre-exchange check must now observe the interrupt flag and
+    # skip the exchange instead of swapping the target table outside coordination.
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_pause_before_exchange")
+
+    status = node.query(
+        "SELECT status, exception FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb4'"
+    )
+    assert "Disabled" in status, status
+    assert "multi-read" in status.lower() or "multi_read" in status.lower(), status
+
+    aborts_after = int(node.count_in_log("Unexpected exception in refresh scheduling"))
+    assert aborts_after == aborts_before, (aborts_before, aborts_after)
+
+    # The key check: the exchange must have been skipped, so the target stays empty. Without the
+    # pre-exchange cancellation check the resumed thread would complete the exchange and the target
+    # would get REFRESH_ROWS rows.
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        count = node.query("SELECT count() FROM rdb4.mv").strip()
+        assert count == "0", f"the cancelled refresh leaked {count} rows into the target"
+        time.sleep(1)
+
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("DROP DATABASE rdb4 SYNC")
