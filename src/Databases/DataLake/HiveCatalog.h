@@ -28,7 +28,7 @@ class HiveCatalog final : public ICatalog, private DB::WithContext
 {
 public:
     explicit HiveCatalog(
-        const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr context_);
+        const std::string & warehouse_, const std::string & base_url_, size_t max_requests_per_second_, DB::ContextPtr context_);
 
     ~HiveCatalog() override = default;
 

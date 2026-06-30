@@ -171,8 +171,9 @@ RestCatalog::RestCatalog(
     const std::string & auth_header_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
+    size_t max_requests_per_second_,
     DB::ContextPtr context_)
-    : ICatalog(warehouse_)
+    : ICatalog(warehouse_, max_requests_per_second_)
     , DB::WithContext(context_)
     , base_url(correctAPIURI(base_url_))
     , log(getLogger("RestCatalog(" + warehouse_ + ")"))
@@ -206,8 +207,9 @@ RestCatalog::RestCatalog(
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
+    size_t max_requests_per_second_,
     DB::ContextPtr context_)
-    : ICatalog(warehouse_)
+    : ICatalog(warehouse_, max_requests_per_second_)
     , DB::WithContext(context_)
     , base_url(correctAPIURI(base_url_))
     , log(getLogger("RestCatalog(" + warehouse_ + ")"))
@@ -298,8 +300,9 @@ OneLakeCatalog::OneLakeCatalog(
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
+    size_t max_requests_per_second_,
     DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, context_)
+    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, max_requests_per_second_, context_)
     , tenant_id(onelake_tenant_id)
 {
     client_id = onelake_client_id;
@@ -372,6 +375,8 @@ AccessToken RestCatalog::retrieveAccessToken() const
     const auto & context = getContext();
     context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
+
+    throttle();
     auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
 
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, url.getPathAndQuery(),
@@ -417,8 +422,9 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_client_secret_,
     const std::string & google_adc_refresh_token_,
     const std::string & google_adc_quota_project_id_,
+    size_t max_requests_per_second_,
     DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, "", "", false, context_)
+    : RestCatalog(warehouse_, base_url_, "", "", false, max_requests_per_second_, context_)
     , google_project_id(google_project_id_)
     , google_service_account(google_service_account_)
     , google_metadata_service(google_metadata_service_)
@@ -610,6 +616,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
     auto create_buffer = [&](bool update_token)
     {
+        throttle();
         auto result_headers = getAuthHeaders(update_token);
         std::move(headers.begin(), headers.end(), std::back_inserter(result_headers));
 
@@ -1149,6 +1156,8 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
             os << body_str;
         };
     }
+
+    throttle();
 
     /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
     Poco::URI url(endpoint, /* enable_url_encoding */ false);

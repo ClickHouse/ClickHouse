@@ -96,8 +96,9 @@ GlueCatalog::GlueCatalog(
     const String & endpoint,
     DB::ContextPtr context_,
     const CatalogSettings & settings_,
-    DB::ASTPtr table_engine_definition_)
-    : ICatalog("")
+    DB::ASTPtr table_engine_definition_,
+    size_t max_requests_per_second_)
+    : ICatalog("", max_requests_per_second_)
     , DB::WithContext(context_)
     , log(getLogger("GlueCatalog(" + settings_.region + ")"))
     , region(settings_.region)
@@ -191,6 +192,7 @@ DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & pre
     do
     {
         request.SetNextToken(next_token);
+        throttle();
         auto outcome = glue_client->GetDatabases(request);
         if (outcome.IsSuccess())
         {
@@ -240,6 +242,7 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
     do
     {
         request.SetNextToken(next_token);
+        throttle();
         auto outcome = glue_client->GetTables(request);
         if (outcome.IsSuccess())
         {
@@ -290,6 +293,7 @@ bool GlueCatalog::existsTable(const std::string & database_name, const std::stri
     request.SetDatabaseName(database_name);
     request.SetName(table_name);
 
+    throttle();
     auto outcome = glue_client->GetTable(request);
     return outcome.IsSuccess();
 }
@@ -303,6 +307,7 @@ bool GlueCatalog::tryGetTableMetadata(
     request.SetDatabaseName(database_name);
     request.SetName(table_name);
 
+    throttle();
     auto outcome = glue_client->GetTable(request);
     if (outcome.IsSuccess())
     {
@@ -599,6 +604,7 @@ void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
     db_input.SetName(namespace_name);
     create_request.SetDatabaseInput(db_input);
 
+    throttle();
     glue_client->CreateDatabase(create_request);
 }
 
@@ -631,6 +637,7 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
 
     request.SetTableInput(table_input);
 
+    throttle();
     auto response = glue_client->CreateTable(request);
 
     if (!response.IsSuccess())
@@ -666,6 +673,7 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
 
     request.SetTableInput(table_input);
 
+    throttle();
     auto response = glue_client->UpdateTable(request);
 
     if (!response.IsSuccess())
@@ -690,6 +698,7 @@ void GlueCatalog::dropTable(const String & namespace_name, const String & table_
     request.SetDatabaseName(namespace_name);
     request.SetName(table_name);
 
+    throttle();
     auto response = glue_client->DeleteTable(request);
 
     if (!response.IsSuccess())

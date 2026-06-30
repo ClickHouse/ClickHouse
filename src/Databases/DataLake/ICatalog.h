@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
+#include <Common/IThrottler.h>
 #include <Common/SettingsChanges.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/StorageCredentials.h>
@@ -143,7 +144,7 @@ public:
     using Namespaces = std::vector<std::string>;
     using CredentialsRefreshCallback = std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>>;
 
-    explicit ICatalog(const std::string & warehouse_) : warehouse(warehouse_) {}
+    explicit ICatalog(const std::string & warehouse_, size_t max_requests_per_second_ = 0);
 
     virtual DB::DatabaseDataLakeCatalogType getCatalogType() const = 0;
     virtual ~ICatalog() = default;
@@ -216,6 +217,10 @@ protected:
     /// Name of the warehouse,
     /// which is sometimes also called "catalog name".
     const std::string warehouse;
+
+    DB::ThrottlerPtr request_throttler;
+
+    void throttle() const;
 };
 
 

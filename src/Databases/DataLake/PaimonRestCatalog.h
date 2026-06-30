@@ -79,7 +79,7 @@ class PaimonRestCatalog final : public ICatalog, private DB::WithContext
 {
 public:
     explicit PaimonRestCatalog(
-        const String & warehouse_, const String & base_url_, const PaimonToken & token_, const String & region, DB::ContextPtr context_);
+        const String & warehouse_, const String & base_url_, const PaimonToken & token_, const String & region, size_t max_requests_per_second_, DB::ContextPtr context_);
 
     ~PaimonRestCatalog() override = default;
 

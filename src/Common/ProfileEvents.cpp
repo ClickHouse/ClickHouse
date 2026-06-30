@@ -187,6 +187,8 @@
     M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler: blocked and not blocked.", ValueType::Number) \
     M(S3PutRequestThrottlerBlocked, "Number of S3 PUT, COPY, POST and LIST requests blocked by throttler.", ValueType::Number) \
     M(S3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 PUT, COPY, POST and LIST request throttling.", ValueType::Microseconds) \
+    M(DataLakeCatalogRequestThrottlerCount, "Number of HTTP requests to a data lake catalog (e.g. Iceberg REST) passed through throttler: blocked and not blocked.", ValueType::Number) \
+    M(DataLakeCatalogRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform data lake catalog request throttling.", ValueType::Microseconds) \
     /* ACME profile events */ \
     M(ACMEAPIRequests, "Number of ACME API requests issued.", ValueType::Number) \
     M(ACMECertificateOrders, "Number of ACME certificate orders issued.", ValueType::Number) \

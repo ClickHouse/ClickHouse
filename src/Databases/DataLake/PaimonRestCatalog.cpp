@@ -83,8 +83,8 @@ const std::vector<String> PaimonRestCatalog::SIGNED_HEADERS
        Poco::toLower(String(DLF_SECURITY_TOKEN_HEADER_KEY))};
 
 PaimonRestCatalog::PaimonRestCatalog(
-    const String & warehouse_, const String & base_url_, const PaimonToken & token_, const String & region_, DB::ContextPtr context_)
-    : ICatalog(warehouse_)
+    const String & warehouse_, const String & base_url_, const PaimonToken & token_, const String & region_, size_t max_requests_per_second_, DB::ContextPtr context_)
+    : ICatalog(warehouse_, max_requests_per_second_)
     , DB::WithContext(context_)
     , base_url(base_url_)
     , token(token_)
@@ -269,6 +269,8 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
     Poco::URI url(base_url / endpoint);
     if (!params.empty())
         url.setQueryParameters(params);
+
+    throttle();
 
     auto create_buffer = [&, this]()
     {

@@ -74,8 +74,8 @@ std::pair<String, Int32> parseHostPort(const String & url)
 
 }
 
-HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr)
-    : ICatalog(warehouse_)
+HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & base_url_, size_t max_requests_per_second_, DB::ContextPtr)
+    : ICatalog(warehouse_, max_requests_per_second_)
     , base_url(base_url_)
 {
     std::lock_guard lock(client_mutex);
@@ -118,6 +118,7 @@ void HiveCatalog::executeWithRetry(Func && func) const
 
         try
         {
+            throttle();
             func();
             return;
         }

@@ -58,6 +58,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString catalog_credential;
     extern const DatabaseDataLakeSettingsString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
+    extern const DatabaseDataLakeSettingsUInt64 catalog_max_requests_per_second;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
     extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
     extern const DatabaseDataLakeSettingsString oauth_server_uri;
@@ -195,6 +196,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::catalog_max_requests_per_second].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -209,6 +211,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::catalog_max_requests_per_second].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -239,6 +242,7 @@ void DatabaseDataLake::initialize() const
                 google_adc_client_secret,
                 google_adc_refresh_token,
                 google_adc_quota_project_id,
+                settings[DatabaseDataLakeSetting::catalog_max_requests_per_second].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -248,6 +252,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
+                settings[DatabaseDataLakeSetting::catalog_max_requests_per_second].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -259,7 +264,8 @@ void DatabaseDataLake::initialize() const
                 url,
                 Context::getGlobalContextInstance(),
                 catalog_parameters,
-                table_engine_definition);
+                table_engine_definition,
+                settings[DatabaseDataLakeSetting::catalog_max_requests_per_second].value);
             break;
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cannot use Glue catalog: ClickHouse was compiled without AWS S3 or Avro support");
@@ -271,6 +277,7 @@ void DatabaseDataLake::initialize() const
             catalog_impl = std::make_shared<DataLake::HiveCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
+                settings[DatabaseDataLakeSetting::catalog_max_requests_per_second].value,
                 Context::getGlobalContextInstance());
             break;
 #else
@@ -291,6 +298,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 DataLake::PaimonToken(settings[DatabaseDataLakeSetting::catalog_credential].value),
                 settings[DatabaseDataLakeSetting::region].value,
+                settings[DatabaseDataLakeSetting::catalog_max_requests_per_second].value,
                 Context::getGlobalContextInstance());
             }
             else if (!settings[DatabaseDataLakeSetting::dlf_access_key_id].value.empty()
@@ -302,6 +310,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 DataLake::PaimonToken(settings[DatabaseDataLakeSetting::dlf_access_key_id].value, settings[DatabaseDataLakeSetting::dlf_access_key_secret].value),
                 settings[DatabaseDataLakeSetting::region].value,
+                settings[DatabaseDataLakeSetting::catalog_max_requests_per_second].value,
                 Context::getGlobalContextInstance());
             }
             else

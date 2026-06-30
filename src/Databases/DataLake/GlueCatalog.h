@@ -33,7 +33,8 @@ public:
         const String & endpoint,
         DB::ContextPtr context_,
         const CatalogSettings & settings_,
-        DB::ASTPtr table_engine_definition_);
+        DB::ASTPtr table_engine_definition_,
+        size_t max_requests_per_second_);
 
     ~GlueCatalog() override;
 

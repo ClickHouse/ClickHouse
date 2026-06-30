@@ -55,12 +55,14 @@ static UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_n
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params) const
 {
     const auto & context = getContext();
+    throttle();
     return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, params, {auth_header});
 }
 
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const
 {
     const auto & context = getContext();
+    throttle();
     return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, {}, {auth_header}, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callaback);
 }
 
@@ -435,8 +437,9 @@ UnityCatalog::UnityCatalog(
     const std::string & catalog_,
     const std::string & base_url_,
     const std::string & catalog_credential_,
+    size_t max_requests_per_second_,
     DB::ContextPtr context_)
-    : ICatalog(catalog_)
+    : ICatalog(catalog_, max_requests_per_second_)
     , DB::WithContext(context_)
     , base_url(base_url_)
     , log(getLogger("UnityCatalog(" + catalog_ + ")"))
