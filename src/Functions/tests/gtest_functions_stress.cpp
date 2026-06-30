@@ -1369,7 +1369,7 @@ struct FunctionsStressTestThread
                     /// guards we set up ourselves.
                     stats.add(S_QUERY_CANCELLED, 1);
                 }
-                else if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("incorrect data types") != String::npos)
+                else if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().contains("incorrect data types"))
                 {
                     /// Known issue: some arithmetic functions (plus, minus, etc.) accept types in
                     /// getReturnTypeImpl but fail in executeImpl with LowCardinality arguments.

@@ -856,7 +856,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     try
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
-        if (readLine(filename).find("[always]") != std::string::npos)
+        if (readLine(filename).contains("[always]"))
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
                 PreformattedMessage::create("Linux transparent hugepages are set to \"always\". Check {}", String(filename)));

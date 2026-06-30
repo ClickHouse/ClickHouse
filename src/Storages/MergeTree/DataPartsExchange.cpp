@@ -114,7 +114,7 @@ struct ReplicatedFetchReadCallback
 bool isProjectionNameSafe(const std::string & projection_name)
 {
     return !projection_name.empty()
-        && projection_name.find('/') == std::string::npos;
+        && !projection_name.contains('/');
 }
 
 }

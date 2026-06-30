@@ -167,7 +167,7 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
     /// The bucket variable contains the container name for Azure.
     if (!azure_account_with_suffix.empty())
     {
-        if (!force_add_bucket && location.find("/" + bucket) != std::string::npos)
+        if (!force_add_bucket && location.contains("/" + bucket))
             return std::filesystem::path(location) / path / "";
         return std::filesystem::path(location) / bucket / path / "";
     }

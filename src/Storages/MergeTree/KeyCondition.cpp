@@ -640,7 +640,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
                 /// ClickHouse `match` patterns must not contain NUL bytes.
                 /// Do not attempt to optimize such patterns.
-                if (expression.find('\0') != String::npos)
+                if (expression.contains('\0'))
                     return false;
 
                 String prefix;

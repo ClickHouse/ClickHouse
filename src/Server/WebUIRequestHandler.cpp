@@ -196,7 +196,7 @@ std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri)
         return "index.html";
 
     std::string path_str(path);
-    if (path_str.find('.') != std::string::npos)
+    if (path_str.contains('.'))
         return path_str;
 
     // assuming a path with no "." is an html page

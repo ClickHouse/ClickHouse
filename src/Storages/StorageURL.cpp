@@ -1712,7 +1712,7 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
 static String removeDotSegments(const String & path)
 {
     /// Fast path: no dot segments present.
-    if (path.find("/.") == String::npos)
+    if (!path.contains("/."))
         return path;
 
     /// Split the path into segments and process each one.
@@ -1782,7 +1782,7 @@ static String normalizeDotSegmentsInURL(const String & url, size_t authority_sta
     String path = url.substr(path_start, path_end - path_start);
 
     /// Fast check: no dot segments.
-    if (path.find("/.") == String::npos)
+    if (!path.contains("/."))
         return url;
 
     String normalized = removeDotSegments(path);
