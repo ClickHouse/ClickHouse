@@ -4,6 +4,9 @@
         <!-- The ZooKeeper node holds a YAML subtree (it does not start with '<'),
              so it must be autodetected and parsed as YAML. -->
         <include from_zk="/profile_settings_yaml" />
+        <!-- The ZooKeeper node holds a plain scalar that contains YAML syntax ('#'):
+             it must be kept as literal text, not reinterpreted by the YAML parser. -->
+        <log_comment from_zk="/scalar_with_yaml_syntax" />
     </default>
   </profiles>
   <users>

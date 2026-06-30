@@ -114,6 +114,14 @@ def start_cluster():
                 value=b"max_query_size: 99999\n",
                 makepath=True,
             )
+            # A plain scalar that happens to contain YAML syntax ('#' starts a YAML comment):
+            # it must be kept as literal text, not reinterpreted by the YAML parser (which would
+            # otherwise turn "abc # rotated" into "abc").
+            zk.create(
+                path="/scalar_with_yaml_syntax",
+                value=b"abc # rotated",
+                makepath=True,
+            )
 
         cluster.add_zookeeper_startup_command(create_zk_roots)
 
@@ -411,4 +419,17 @@ def test_config_zk_yaml_is_autodetected(start_cluster):
     assert (
         node11.query("SELECT value FROM system.settings WHERE name = 'max_query_size'")
         == "99999\n"
+    )
+
+
+def test_config_zk_scalar_keeps_literal_text(start_cluster):
+    """A from_zk scalar that contains YAML syntax must be kept as literal text.
+
+    "abc # rotated" must not be reinterpreted by the YAML parser (which would drop the
+    "# rotated" comment and yield just "abc"), so existing scalar substitutions such as
+    secrets keep their exact value.
+    """
+    assert (
+        node11.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
+        == "abc # rotated\n"
     )

@@ -19,6 +19,10 @@ public:
 
     /// Parse YAML directly from a string (for example, the contents of a ZooKeeper node).
     static Poco::AutoPtr<Poco::XML::Document> parseString(const String & yaml);
+
+    /// Returns true if the string, parsed as YAML, is a plain scalar (not a mapping or a sequence).
+    /// Used to decide whether a `from_zk` value should be kept as literal text or expanded as a YAML subtree.
+    static bool isScalar(const String & yaml);
 };
 
 using YAMLParser = YAMLParserImpl;
@@ -36,6 +40,7 @@ class DummyYAMLParser
 public:
     static Poco::AutoPtr<Poco::XML::Document> parse(const String & path);
     static Poco::AutoPtr<Poco::XML::Document> parseString(const String & yaml);
+    static bool isScalar(const String & yaml);
 };
 
 using YAMLParser = DummyYAMLParser;

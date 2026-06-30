@@ -602,15 +602,31 @@ void ConfigProcessor::doIncludesRecursive(
 
                 /// Unlike `from_env` (which is always plain text), the contents of a ZooKeeper
                 /// node may be a whole subtree. The format is autodetected the same way as for
-                /// config files: if the value begins with '<' it is parsed as an XML fragment,
-                /// otherwise it is parsed as YAML. A plain scalar value is a valid YAML scalar,
-                /// so it keeps working as before.
+                /// config files: if the value begins with '<' it is parsed as an XML fragment;
+                /// otherwise, if it is a YAML mapping or sequence it is expanded as a YAML subtree,
+                /// and a plain scalar is kept as literal text.
                 const size_t pos = firstNonWhitespacePos(znode.contents);
                 if (pos != std::string::npos && znode.contents[pos] == '<')
+                {
                     /// Enclose the contents into a fake <from_zk> tag to allow pure text substitutions.
                     zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
+                }
+                else if (YAMLParser::isScalar(znode.contents))
+                {
+                    /// A plain scalar (for example, a password or a port number) is kept as literal
+                    /// text using the exact original bytes. We do not route it through the YAML
+                    /// parser, because YAML is not identity-preserving for scalars: a value like
+                    /// `abc # rotated` would lose its `# rotated` suffix (a YAML comment), and
+                    /// `yes`/`no` would be coerced. This preserves the behavior of existing
+                    /// `from_zk` substitutions. The value is escaped so that XML special characters
+                    /// (for example, `&` or `<`) are taken as literal text, the same way as for `from_env`.
+                    zk_document = dom_parser.parseString("<from_zk>" + escapeForXMLText(znode.contents) + "</from_zk>");
+                }
                 else
+                {
+                    /// A YAML mapping or sequence is a real subtree: expand it the same way as a config file.
                     zk_document = YAMLParser::parseString(znode.contents);
+                }
                 return getRootNode(zk_document.get());
             };
 
