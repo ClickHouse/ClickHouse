@@ -501,18 +501,26 @@ QueryPlan buildLogicalJoin(
 
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
 
-    /// When the referenced input subplan is buffered in memory, its result flows through a
-    /// producer/consumer buffer: the input stream is the producer (SaveSubqueryResultToBuffer) and the
-    /// subquery side reads it (ReadFromCommonBuffer). The consumer must run only after every producer
-    /// stream finished. With JoinKind::Right the producer (input stream) is on the build side, which
-    /// FillRightFirst fully consumes before the probe side reads, so the ordering holds. With
-    /// JoinKind::Left the input stream becomes the probe side, so when a set operation places the
-    /// consumer on the build side of an enclosing join it reads the buffer before the producer
-    /// finished and the server aborts with "Trying to extract chunk from ChunkBuffer before all
-    /// inputs are finished" (issue #108521). The decorrelation join kind is an internal detail that
-    /// does not affect the result, so keep the Right (no-swap) layout for the buffered case
-    /// regardless of correlated_subqueries_default_join_kind.
-    const bool buffered_input = referenced_input_subplan && settings[Setting::correlated_subqueries_use_in_memory_buffer];
+    /// A referenced input subplan may be turned into an in-memory producer/consumer buffer
+    /// (SaveSubqueryResultToBuffer fills it, ReadFromCommonBuffer reads it). The consumer must run
+    /// only after every producer stream finished. With JoinKind::Right the producer (input stream) is
+    /// the build side and FillRightFirst guarantees that; with JoinKind::Left it becomes the probe
+    /// side, so a set operation can place the consumer on the build side of an enclosing join, read
+    /// the buffer early and abort with "Trying to extract chunk from ChunkBuffer before all inputs are
+    /// finished" (issue #108521). The decorrelation join kind does not affect the result, so force the
+    /// Right (no-swap) layout whenever a buffer is created.
+    ///
+    /// The optimizer decides buffer-vs-materialize once for the whole plan from the top-level query
+    /// context (QueryPlanOptimizationSettings), so mirror that condition exactly and read the settings
+    /// from the top-level context, not the per-branch one. A set-operation branch's own SETTINGS
+    /// clause never reaches that pass, so reading the branch settings here would skip this protection
+    /// while the optimizer still creates the buffer.
+    const auto branch_context = planner_context->getQueryContext();
+    const auto & top_level_settings
+        = branch_context->hasQueryContext() ? branch_context->getQueryContext()->getSettingsRef() : settings;
+    const bool buffered_input = referenced_input_subplan
+        && top_level_settings[Setting::correlated_subqueries_use_in_memory_buffer]
+        && top_level_settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT;
 
     if (settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::LEFT && !buffered_input)
     {

@@ -11,10 +11,16 @@
 -- kind, so the producer is always evaluated first. The join kind is an internal detail and does not
 -- change the result.
 --
--- The buffer is only created when correlated_subqueries_use_in_memory_buffer = 1: with the buffer
--- disabled the optimizer's materialization pass replaces the shared subplan reference with an inline
--- copy (no ChunkBuffer), so that case never hits the ordering invariant. Both buffer settings are
--- covered below: = 1 is the case the fix protects, = 0 must keep returning the same rows.
+-- Whether a buffer is created is decided once for the whole plan from the top-level query context
+-- (correlated_subqueries_use_in_memory_buffer there gates the materialization pass that would inline
+-- the shared subplan reference). The decorrelation join layout must follow that same top-level
+-- decision. A set-operation branch's own SETTINGS clause does not reach the materialization pass, so
+-- correlated_subqueries_use_in_memory_buffer = 0 set per-branch still leaves the buffer in place; the
+-- protection must fire there too. All three placements are covered below and must return the same rows:
+--   * default (buffer on): the buffer is created and the fix forces the safe layout.
+--   * session-level SET ... = 0: reaches the materialization pass, no buffer, plain LEFT layout is safe.
+--   * per-branch SETTINGS ... = 0: does NOT reach the materialization pass, buffer is still created,
+--     so the fix must force the safe layout here too (the case this regression specifically guards).
 --
 -- Bug: https://github.com/ClickHouse/ClickHouse/issues/108521 (STID 2651-2cfd)
 
@@ -62,9 +68,9 @@ SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
 ORDER BY i;
 
 -- ------------------------------------------------------------------------------------------------
--- correlated_subqueries_use_in_memory_buffer = 0: the materialization pass inlines the shared subplan
--- reference so no ChunkBuffer is created and the query is naturally safe. This variant is called out
--- in #108521; the rows must stay the same as the buffered case above.
+-- Session-level correlated_subqueries_use_in_memory_buffer = 0: reaches the top-level query context,
+-- so the materialization pass inlines the shared subplan reference and no ChunkBuffer is created. The
+-- plain LEFT layout is safe here; the rows must stay the same as the buffered case above.
 -- ------------------------------------------------------------------------------------------------
 SET correlated_subqueries_use_in_memory_buffer = 0;
 
@@ -86,6 +92,31 @@ SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
   SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
            correlated_subqueries_default_join_kind = 'right'
 INTERSECT
+SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
+ORDER BY i;
+
+SET correlated_subqueries_use_in_memory_buffer = 1;
+
+-- ------------------------------------------------------------------------------------------------
+-- Per-branch SETTINGS correlated_subqueries_use_in_memory_buffer = 0 (the exact shape from #108521):
+-- the branch SETTINGS clause does not reach the top-level materialization pass, so with the default
+-- session value the buffer is still created. The decorrelation layout must follow the actual buffer
+-- decision and force the safe layout here, otherwise the server aborts with the ChunkBuffer error.
+-- The rows must match the cases above.
+-- ------------------------------------------------------------------------------------------------
+SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
+  SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
+           correlated_subqueries_default_join_kind = 'left',
+           correlated_subqueries_use_in_memory_buffer = 0
+INTERSECT
+SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
+ORDER BY i;
+
+SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
+  SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
+           correlated_subqueries_default_join_kind = 'left',
+           correlated_subqueries_use_in_memory_buffer = 0
+UNION ALL
 SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
 ORDER BY i;
 
