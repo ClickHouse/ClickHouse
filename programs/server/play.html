@@ -3701,7 +3701,9 @@ document.getElementById('run-all').addEventListener('click', e =>
 });
 
 /// On Mac, the shortcut is Cmd+Enter; elsewhere it is Ctrl+Enter. Show only the relevant modifier in the hint.
-const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgentData?.platform || navigator.platform || '');
+/// Match case-insensitively: UA Client Hints reports macOS as "macOS" and iOS as "iOS",
+/// while the legacy navigator.platform reports "MacIntel", "iPhone", "iPad", etc.
+const isMac = /mac|iphone|ipad|ipod|ios/i.test(navigator.userAgentData?.platform || navigator.platform || '');
 document.getElementById('hint-modifier').innerText = isMac ? 'Cmd' : 'Ctrl';
 
 document.addEventListener('keydown', event => {
