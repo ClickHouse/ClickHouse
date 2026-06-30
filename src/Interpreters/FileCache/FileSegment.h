@@ -131,8 +131,6 @@ public:
 
     size_t getHitsCount() const { return hits_count; }
 
-    size_t getRefCount() const { return ref_count; }
-
     size_t getCurrentWriteOffset() const;
 
     size_t getDownloadedSize() const;
@@ -316,7 +314,6 @@ private:
 #endif
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
-    std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;
