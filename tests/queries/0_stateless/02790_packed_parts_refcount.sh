@@ -33,6 +33,19 @@ ALTER TABLE t_packed_refcount UPDATE v = v * 10 WHERE id % 2 = 1;
 
 wait_for_delete_inactive_parts "t_packed_refcount"
 
+# Removing a part from system.parts and removing its zero-copy refcount lock from Keeper are separate
+# async steps of part cleanup, so wait until the deleted parts' zero-copy locks are gone too (the
+# number of zero-copy lock nodes matches the number of active parts); otherwise the SELECT below can
+# still observe the old parts' lock nodes.
+for _ in {1..60}; do
+    zk_locks=$(${CLICKHOUSE_CLIENT} --query "
+        WITH (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND table = 't_packed_refcount') AS uuid
+        SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/zero_copy/zero_copy_s3/' || uuid")
+    active_parts=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_packed_refcount' AND active")
+    if [[ "$zk_locks" == "$active_parts" ]]; then break; fi
+    sleep 1
+done
+
 ${CLICKHOUSE_CLIENT} -n --query "
 SELECT name, active FROM system.parts WHERE database = currentDatabase() AND table = 't_packed_refcount' ORDER BY name;
 
