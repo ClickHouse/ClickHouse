@@ -86,6 +86,21 @@ SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 WITH CUBE ORDER 
 SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 WITH ROLLUP ORDER BY a1, a2, c
     SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1;
 
+-- GROUP BY GROUPING SETS over duplicate ALIAS columns collapsed by a Distributed shard. When a single grouping set
+-- contains both a collapsed duplicate and its representative (here (a1, a2)), the shard deduplicates the set to one key
+-- before computing its two-level bucket numbers, while the initiator's per-grouping-set Aggregator buckets by the full
+-- key list. With a single-level/two-level partial mix this would silently split groups across buckets. Reconstructing
+-- the collapsed keys through the grouping-sets merge machinery is not implemented, so the combination is rejected
+-- rather than returning wrong results. The rejection is a plan-time decision, so it fires regardless of settings.
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY GROUPING SETS ((a1, a2), (a1)) ORDER BY a1, a2
+    SETTINGS prefer_localhost_replica = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY GROUPING SETS ((a1, a2), (a1)) ORDER BY a1, a2
+    SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1; -- { serverError NOT_IMPLEMENTED }
+-- A grouping set that keeps a single key per set ((a1), (a2)) is safe: each set buckets by one key consistently with
+-- the shard, so it is not rejected and returns merged results.
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY GROUPING SETS ((a1), (a2)) ORDER BY a1, a2
+    SETTINGS prefer_localhost_replica = 0;
+
 -- The collapse may happen inside a subquery that feeds an outer query. The subquery's distributed read is
 -- renumbered independently from the initiator's query tree, so reconciling the collapsed shard header by column
 -- name has to account for the differing `__tableN` table aliases.

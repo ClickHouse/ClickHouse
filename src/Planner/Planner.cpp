@@ -805,6 +805,28 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
     }
     else
     {
+        /// A grouping set holding both a shard-collapsed duplicate key and its representative is rejected: the shard
+        /// buckets it by one key while the initiator buckets by both, so a single/two-level partial mix splits the
+        /// same group across buckets (the wrong-results defect the non-grouping-sets branch fixes by merging on the
+        /// collapsed set). Carrying the collapse through the grouping-sets merge machinery is unsupported, so reject
+        /// rather than silently return wrong results. Sets that keep one key each (e.g. ((a1), (a2))) are unaffected.
+        if (!shard_collapse_duplicate_keys.empty() && !aggregation_analysis_result.grouping_sets_parameters_list.empty())
+        {
+            for (const auto & grouping_set : aggregation_analysis_result.grouping_sets_parameters_list)
+            {
+                const NameSet used_keys_set(grouping_set.used_keys.begin(), grouping_set.used_keys.end());
+                for (const auto & key : grouping_set.used_keys)
+                {
+                    auto it = shard_collapse_duplicate_keys.find(key);
+                    if (it != shard_collapse_duplicate_keys.end() && used_keys_set.contains(it->second))
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "GROUP BY GROUPING SETS with duplicate ALIAS columns that expand to the same expression "
+                            "({} and {}) over a Distributed table is not supported, as it can produce incorrect results "
+                            "under two-level aggregation. Please use distinct expressions in the grouping sets.",
+                            it->second, key);
+                }
+            }
+        }
         merge_keys = analysis_keys;
     }
 
