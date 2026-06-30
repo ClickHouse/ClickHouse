@@ -521,6 +521,26 @@ public:
         }
     }
 
+    ~SinkToStorageView() override
+    {
+        /// On cancellation without an exception (e.g. `timeout_overflow_mode = 'break'` or user
+        /// cancellation) neither `onFinish()` nor `onException()` runs after `onStart()` started the
+        /// inner pipeline, leaving the nested executor started but unfinished. Cancel it so
+        /// `~PushingPipelineExecutor`'s finished-or-unwinding invariant holds, mirroring
+        /// `StorageAlias::AliasSink`.
+        if (executor_)
+        {
+            try
+            {
+                executor_->cancel();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("SinkToStorageView");
+            }
+        }
+    }
+
     String getName() const override { return "SinkToStorageView"; }
 
     void onStart() override
