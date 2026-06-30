@@ -5,3 +5,4 @@ self_distance	0
 const_code_distance	0
 ranking_l2	1
 column_self_is_nearest	1
+codebook_column_distance	0

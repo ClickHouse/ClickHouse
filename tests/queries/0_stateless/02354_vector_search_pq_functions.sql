@@ -41,3 +41,9 @@ SELECT pqTrain([[1., 2., 3., 4.]], 4, 3, 1); -- { serverError BAD_ARGUMENTS }
 SELECT pqTrain([[1., 2., 3., 4.]], 4, 2, 17); -- { serverError BAD_ARGUMENTS }
 -- An empty sample set is rejected rather than fabricating an all-zero codebook.
 SELECT pqTrain(CAST([] AS Array(Array(Float32))), 4, 2, 1); -- { serverError BAD_ARGUMENTS }
+
+-- A non-constant codebook column is indexed per row (each row uses its own codebook) rather than silently reusing
+-- row 0. Forcing the codebook non-constant with materialize() must still give the correct self-distance of 0.
+WITH pqTrain([[1., 0.]], 2, 2, 1) AS cb
+SELECT 'codebook_column_distance',
+    round(pqDistance(pqEncode([1., 0.], materialize(cb), 2, 2, 1), materialize(cb), [1., 0.], 2, 2, 1, 1), 3);

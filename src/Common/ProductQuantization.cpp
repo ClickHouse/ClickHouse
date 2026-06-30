@@ -186,6 +186,16 @@ std::string validateParams(size_t dimensions, size_t m, size_t nbits)
         return fmt::format("the number of dimensions ({}) must be a multiple of the number of subspaces m ({})", dimensions, m);
     if (nbits < 1 || nbits > 16)
         return fmt::format("nbits must be in the range [1, 16], got {}", nbits);
+    /// The per-part codebook is exposed as a `FixedString(codebookFloats * 4)`. Reject parameter combinations whose
+    /// codebook would exceed the FixedString size limit (`DataTypeFixedString`'s `MAX_FIXEDSTRING_SIZE`, 0xFFFFFF);
+    /// otherwise DDL passes this validator and only later fails with a generic "FixedString size is too large". The
+    /// product cannot overflow here: dimensions <= 2^20 and 2^nbits <= 2^16, so codebookFloats * 4 <= 2^38.
+    static constexpr size_t MAX_FIXEDSTRING_BYTES = 0xFFFFFF;
+    const size_t codebook_bytes = codebookFloats(dimensions, m, nbits) * sizeof(float);
+    if (codebook_bytes > MAX_FIXEDSTRING_BYTES)
+        return fmt::format(
+            "the codebook for these parameters would be {} bytes, exceeding the maximum {} (reduce nbits or dimensions)",
+            codebook_bytes, MAX_FIXEDSTRING_BYTES);
     return {};
 }
 

@@ -25,6 +25,11 @@ CREATE TABLE quantize_pq_bad (id UInt32, vec Array(Float32) CODEC(Quantize('pq',
 -- The 4th argument (m) is only valid for `pq`; the data-independent methods reject it.
 CREATE TABLE quantize_pq_bad (id UInt32, vec Array(Float32) CODEC(Quantize('int8', 64, 8, 8))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_SYNTAX_FOR_CODEC_TYPE }
 
+-- The per-part codebook is a FixedString(2^nbits * dimensions * 4); parameter combinations whose codebook exceeds the
+-- FixedString limit (0xFFFFFF bytes) are rejected at DDL time. For 64 dimensions and nbits = 16 that is
+-- 65536 * 64 * 4 = 16777216 bytes, just over the limit.
+CREATE TABLE quantize_pq_bad (id UInt32, vec Array(Float32) CODEC(Quantize('pq', 64, 16, 8))) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_CODEC_PARAMETER }
+
 -- A valid 4-argument `pq` codec is accepted and its code is m = 8 bytes (one byte per subspace at nbits = 8).
 CREATE TABLE quantize_pq_ok (id UInt32, vec Array(Float32) CODEC(Quantize('pq', 64, 8, 8))) ENGINE = MergeTree ORDER BY id;
 INSERT INTO quantize_pq_ok SELECT 1, arrayMap(j -> toFloat32(j), range(64));

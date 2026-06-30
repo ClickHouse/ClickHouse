@@ -68,20 +68,32 @@ void checkVectorArgument(const DataTypePtr & type, const String & fn, size_t idx
 /// constant within a block: either a query-level constant (`ColumnConst`, ad-hoc use) or the per-part codebook read as
 /// a `ColumnConst` by `SerializationPQCodebook` (the planner path). A non-const full column is also accepted (all rows
 /// equal), reading row 0.
-const float * getCodebook(const ColumnWithTypeAndName & arg, const String & fn, size_t expected_floats)
+/// A per-row view of the codebook argument. `stride` is the number of floats between rows: 0 for a constant codebook
+/// (the codec broadcasts the per-part codebook as a ColumnConst - row 0 serves every row), or `expected_floats` for a
+/// non-constant column (`pqTrain` produces one codebook per row, so each row must use its own - indexing `row * stride`
+/// avoids silently scoring later rows against row 0's codebook).
+struct CodebookView
+{
+    const float * data = nullptr;
+    size_t stride = 0;
+    const float * row(size_t r) const { return data + r * stride; }
+};
+
+CodebookView getCodebook(const ColumnWithTypeAndName & arg, const String & fn, size_t expected_floats)
 {
     const ColumnFixedString * cb_fs = nullptr;
+    size_t stride = 0;
     if (const auto * cb_const = checkAndGetColumnConst<ColumnFixedString>(arg.column.get()))
         cb_fs = &assert_cast<const ColumnFixedString &>(cb_const->getDataColumn());
-    else
-        cb_fs = checkAndGetColumn<ColumnFixedString>(arg.column.get());
+    else if ((cb_fs = checkAndGetColumn<ColumnFixedString>(arg.column.get())))
+        stride = expected_floats; /// genuine per-row codebook column
     if (!cb_fs || cb_fs->empty())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Codebook argument of function {} must be a (constant) FixedString", fn);
     if (cb_fs->getN() != expected_floats * sizeof(float))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Codebook of function {} has {} bytes but the given dimensions/m/nbits expect {}",
             fn, cb_fs->getN(), expected_floats * sizeof(float));
-    return reinterpret_cast<const float *>(cb_fs->getChars().data());
+    return {reinterpret_cast<const float *>(cb_fs->getChars().data()), stride};
 }
 
 }
@@ -178,7 +190,7 @@ public:
     size_t getNumberOfArguments() const override { return 5; }
     bool useDefaultImplementationForConstants() const override { return false; }
     /// The codebook (arg 1) need not be a query constant: it may be the result of `pqTrain` (not constant-folded). Only
-    /// the scalar params are required constant; `getCodebook` accepts a const or a uniform full column.
+    /// the scalar params are required constant; `getCodebook` requires a constant codebook column.
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2, 3, 4}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
@@ -206,7 +218,7 @@ public:
         const UInt64 m = getConstUInt(arguments[3], name, 3);
         const UInt64 nbits = getConstUInt(arguments[4], name, 4);
         const size_t n = assert_cast<const DataTypeFixedString &>(*result_type).getN();
-        const float * codebook = getCodebook(arguments[1], name, ProductQuantization::codebookFloats(dimensions, m, nbits));
+        const CodebookView codebook = getCodebook(arguments[1], name, ProductQuantization::codebookFloats(dimensions, m, nbits));
 
         ColumnPtr vec_column = arguments[0].column->convertToFullColumnIfConst();
         const auto * col_arr = checkAndGetColumn<ColumnArray>(vec_column.get());
@@ -217,7 +229,8 @@ public:
         auto & chars = col_res->getChars();
         chars.resize_fill(input_rows_count * n, 0);
 
-        auto encoder = ProductQuantization::prepareEncoder(codebook, dimensions, m, nbits);
+        /// Build the encoder once for a constant codebook (stride 0); rebuild per row for a per-row codebook column.
+        std::shared_ptr<ProductQuantization::Encoder> encoder;
         VectorWithMemoryTracking<float> buf;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -225,6 +238,8 @@ public:
             if (buf.size() != dimensions)
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "Vector at row {} has {} elements but function {} was declared with {} dimensions", row, buf.size(), name, dimensions);
+            if (!encoder || codebook.stride != 0)
+                encoder = ProductQuantization::prepareEncoder(codebook.row(row), dimensions, m, nbits);
             ProductQuantization::encode(*encoder, buf.data(), reinterpret_cast<char *>(&chars[row * n]));
         }
         return col_res;
@@ -272,7 +287,7 @@ public:
         const UInt64 m = getConstUInt(arguments[4], name, 4);
         const UInt64 nbits = getConstUInt(arguments[5], name, 5);
         const bool is_l2 = getConstUInt(arguments[6], name, 6) != 0;
-        const float * codebook = getCodebook(arguments[1], name, ProductQuantization::codebookFloats(dimensions, m, nbits));
+        const CodebookView codebook = getCodebook(arguments[1], name, ProductQuantization::codebookFloats(dimensions, m, nbits));
 
         const auto * query_const = checkAndGetColumnConst<ColumnArray>(arguments[2].column.get());
         if (!query_const)
@@ -283,8 +298,6 @@ public:
         if (query_buf.size() != dimensions)
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                 "Query vector has {} elements but function {} was declared with {} dimensions", query_buf.size(), name, dimensions);
-
-        auto query = ProductQuantization::prepareQuery(codebook, dimensions, m, nbits, query_buf.data(), is_l2);
 
         /// Accept a constant code argument (e.g. a literal `FixedString`) by materializing it, so scalar and column use
         /// of the function agree (the codebook argument is handled the same way in getCodebook).
@@ -300,8 +313,14 @@ public:
 
         auto col_res = ColumnFloat32::create(input_rows_count);
         auto & res_data = col_res->getData();
+        /// Prepare the ADC lookup tables once for a constant codebook (stride 0); rebuild per row for a per-row codebook.
+        std::shared_ptr<const ProductQuantization::Query> query;
         for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            if (!query || codebook.stride != 0)
+                query = ProductQuantization::prepareQuery(codebook.row(row), dimensions, m, nbits, query_buf.data(), is_l2);
             res_data[row] = ProductQuantization::distance(*query, reinterpret_cast<const char *>(&chars[row * n]));
+        }
         return col_res;
     }
 };
