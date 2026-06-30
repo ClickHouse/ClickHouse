@@ -11,6 +11,7 @@
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
@@ -86,7 +87,11 @@ public:
     {
         chassert(!argument_types_.empty());
         if (isDecimal(argument_types_.front()))
+        {
             src_scale = getDecimalScale(*argument_types_.front());
+            if constexpr (is_decimal<T1>)
+                decimal_divisor = static_cast<Float64>(DecimalUtils::scaleMultiplier<typename T1::NativeType>(src_scale));
+        }
     }
 
     String getName() const override
@@ -103,25 +108,32 @@ public:
                 static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]),
                 static_cast<ResultType>(static_cast<const ColVecT2 &>(*columns[1]).getData()[row_num]));
         else
-        {
-            if constexpr (is_decimal<T1>)
-            {
-                this->data(place).add(
-                    convertFromDecimal<DataTypeDecimal<T1>, DataTypeFloat64>(
-                        static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num], src_scale));
-            }
-            else
-                this->data(place).add(
-                    static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]));
-        }
+            this->data(place).add(
+                convertOne(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num], decimal_divisor));
     }
 
-    /// Accumulate `len` contiguous, already-converted `ResultType` values into `data` using `W`
-    /// independent struct-of-arrays lane accumulators (`s1[W]`, `s2[W]`, ...), then fold the lanes
-    /// into the moment state. The lanes are local so the `W`-wide inner loop holds them in vector
-    /// registers and auto-vectorizes (`vaddpd`/`vmulpd` over `ymm` for `Float64`); the fixed lane
-    /// layout keeps the summation order deterministic across builds and platforms.
-    static ALWAYS_INLINE void addManyContiguous(const ResultType * __restrict src, size_t len, typename StatFunc::Data & data)
+    /// Convert one source element to `ResultType`. For `Decimal` this is done inline -
+    /// `value / 10^scale` - rather than via the out-of-line `convertFromDecimal`, so the conversion
+    /// can itself auto-vectorize (`scvtf`/`fdiv` on AArch64, `vcvtdq2pd`/`vdivpd` for `Decimal32` on
+    /// x86); the value is identical to `convertFromDecimal` (same `convertToImpl` math).
+    template <typename Src>
+    static ALWAYS_INLINE ResultType convertOne(const Src & v, Float64 decimal_divisor)
+    {
+        if constexpr (std::is_same_v<Src, ResultType>)
+            return v;
+        else if constexpr (is_decimal<Src>)
+            return static_cast<ResultType>(static_cast<Float64>(v.value) / decimal_divisor);
+        else
+            return static_cast<ResultType>(v);
+    }
+
+    /// Accumulate `len` contiguous source elements (converted to `ResultType` inline) into `data`
+    /// using `W` independent struct-of-arrays lane accumulators (`s1[W]`, `s2[W]`, ...), then fold
+    /// the lanes into the moment state. The lanes are local so the `W`-wide inner loop holds them in
+    /// vector registers and auto-vectorizes (`vaddpd`/`vmulpd` over `ymm` for `Float64`); the fixed
+    /// lane layout keeps the summation order deterministic across builds and platforms.
+    template <typename Src>
+    static ALWAYS_INLINE void addManyTyped(const Src * __restrict src, size_t len, Float64 decimal_divisor, typename StatFunc::Data & data)
     {
         static constexpr size_t W = 4;
         static constexpr size_t level = StatFunc::level;
@@ -135,7 +147,7 @@ public:
         for (size_t i = 0; i < vectorized; i += W)
             for (size_t s = 0; s < W; ++s)
             {
-                const ResultType x = src[i + s];
+                const ResultType x = convertOne(src[i + s], decimal_divisor);
                 s1[s] += x;
                 s2[s] += x * x;
                 if constexpr (level >= 3) s3[s] += x * x * x;
@@ -153,7 +165,7 @@ public:
         data.m[0] += static_cast<ResultType>(vectorized);
 
         for (size_t i = vectorized; i < len; ++i)
-            data.add(src[i]);
+            data.add(convertOne(src[i], decimal_divisor));
     }
 
     /// Vectorizable fast path for the common single-argument, unconditional case.
@@ -162,10 +174,13 @@ public:
     /// `m[1]`/`m[2]` serializes it and blocks auto-vectorization. `addManyContiguous` instead
     /// accumulates into `W` independent struct-of-arrays lanes, which vectorizes for `Float64`.
     ///
-    /// For types that need a per-element conversion (integers, `Decimal`) we convert a small
-    /// cache-resident tile to `ResultType` first and then accumulate that tile. Decoupling the
-    /// (often scalar, e.g. `Int64`/`Decimal` have no `vcvtqq2pd` at `x86-64-v3`) conversion from
-    /// the accumulation lets both run at full throughput - far faster than interleaving them.
+    /// For types that need a per-element conversion (integers, `Decimal`) the strategy is
+    /// architecture-dependent. x86-64-v3 has no packed `int64 -> double` (`vcvtqq2pd` is AVX-512
+    /// only), so converting 64-bit values cannot vectorize; there we convert a small cache-resident
+    /// tile first and then accumulate it with a separate vectorized pass, so the scalar conversion
+    /// does not serialize the reduction. On targets with a packed integer->double convert (e.g.
+    /// AArch64 `scvtf`) the conversion vectorizes inline, so a single direct pass is faster than
+    /// staging through a buffer.
     ///
     /// The lane layout changes summation order relative to a strict sequential sum (last-bit float
     /// differences). Because lanes are folded per `addBatchSinglePlace` call, the result also
@@ -198,33 +213,30 @@ public:
                 if constexpr (std::is_same_v<T1, ResultType>)
                 {
                     /// No conversion needed (`Float32`/`Float64`): accumulate directly off the column.
-                    addManyContiguous(ptr, total, data);
+                    addManyTyped(ptr, total, decimal_divisor, data);
                 }
                 else
                 {
+#if defined(__x86_64__)
+                    /// Conversion of 64-bit values does not vectorize here; stage a cache-resident
+                    /// tile of converted values, then accumulate it with a vectorized pass.
                     static constexpr size_t TILE = 1024; /// multiple of W; ResultType[TILE] stays in L1
                     ResultType buf[TILE];
                     for (size_t off = 0; off + W <= total; off += TILE)
                     {
                         const size_t tile = std::min(TILE, (total - off) / W * W);
                         for (size_t k = 0; k < tile; ++k)
-                        {
-                            if constexpr (is_decimal<T1>)
-                                buf[k] = convertFromDecimal<DataTypeDecimal<T1>, DataTypeFloat64>(ptr[off + k], src_scale);
-                            else
-                                buf[k] = static_cast<ResultType>(ptr[off + k]);
-                        }
-                        addManyContiguous(buf, tile, data);
+                            buf[k] = convertOne(ptr[off + k], decimal_divisor);
+                        addManyTyped(buf, tile, decimal_divisor, data);
                     }
 
                     /// Overall tail (fewer than `W` elements) that no full tile covered.
                     for (size_t i = total / W * W; i < total; ++i)
-                    {
-                        if constexpr (is_decimal<T1>)
-                            data.add(convertFromDecimal<DataTypeDecimal<T1>, DataTypeFloat64>(ptr[i], src_scale));
-                        else
-                            data.add(static_cast<ResultType>(ptr[i]));
-                    }
+                        data.add(convertOne(ptr[i], decimal_divisor));
+#else
+                    /// Conversion vectorizes inline (e.g. AArch64 `scvtf`): one direct pass, no buffer.
+                    addManyTyped(ptr, total, decimal_divisor, data);
+#endif
                 }
                 return;
             }
@@ -340,6 +352,7 @@ public:
 
 private:
     UInt32 src_scale;
+    Float64 decimal_divisor = 1; /// 10^src_scale as Float64, for the inline Decimal -> Float64 convert
     StatisticsFunctionKind kind;
 };
 
