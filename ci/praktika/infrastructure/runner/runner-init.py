@@ -622,6 +622,10 @@ brew install \
     unidiff \
     dohq-artifactory \
     pyjwt
+"$HOME/venv/bin/pip" install \
+    numpy==2.3.2 \
+    pandas==2.3.3 \
+    scipy==1.16.1
 
 # GitHub Actions runner: wipe and re-extract so the next iteration of the
 # runner loop registers with a fresh `config.sh`.

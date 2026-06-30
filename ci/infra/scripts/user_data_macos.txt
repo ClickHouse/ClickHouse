@@ -44,14 +44,6 @@ sudo -u "$USER" -i brew upgrade python@3
 echo "Installing Python packages into venv..."
 sudo -u "$USER" -i bash -c '$(brew --prefix python@3)/bin/python3 -m venv --upgrade ~/venv && ~/venv/bin/pip install --upgrade boto3'
 
-# Install the Python packages the stateless fast tests import (numpy/pandas/scipy/requests/...).
-# These go into the brew python3 the tests run with, not the runner-init venv. brew's Python is
-# externally managed, hence --break-system-packages. Keep these pins identical to
-# ci/docker/fasttest/requirements.txt (the Linux fast-test image installs the same set); they are
-# hardcoded here because user_data runs before the repository is checked out.
-echo "Installing fast-test Python packages..."
-sudo -u "$USER" -i bash -c '$(brew --prefix python@3)/bin/python3 -m pip install --break-system-packages --upgrade Jinja2==3.1.6 numpy==2.3.2 requests==2.32.4 pandas==2.3.3 scipy==1.16.1 urllib3==1.26.20'
-
 INIT_ENVIRONMENT=${INIT_ENVIRONMENT:-macos}
 aws s3 cp --region us-east-1 "s3://github-runners-data/cloud-init/${INIT_ENVIRONMENT}.py" /tmp/runner-init.py
 rm -rf "$HOME/actions-runner/_work"
