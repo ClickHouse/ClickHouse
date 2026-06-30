@@ -39,7 +39,7 @@ namespace ErrorCodes
   *
   * Arrays are preserved as atomic replacement values, including mixed arrays such as `[42, "x", {"k": 1}]`.
   *
-  * Two `ColumnObject` limitations affect RFC 7396 conformance:
+  * Three `ColumnObject` limitations affect RFC 7396 conformance:
   *
   * 1. Null deletion: `ColumnObject` drops null-valued members on insertion, so a patch
   *    like `{"key": null}` cannot remove a key — `ColumnObject` cannot distinguish between
@@ -49,6 +49,15 @@ namespace ErrorCodes
   *    `{}` before the aggregate ever sees them. A newer patch `{"a": {}}` therefore cannot
   *    displace an older scalar or array at `a`; the old leaf survives unchanged instead of
   *    being replaced by `{}` as RFC 7396 requires.
+  *
+  * 3. Non-`Nullable` typed-path absence: when a `JSON` column has a typed path with a
+  *    non-nullable type (e.g., `JSON(a UInt32)`), `ColumnObject` fills missing values with
+  *    the type default (`0` for `UInt32`). The aggregate cannot distinguish "path absent
+  *    from this patch" from "patch explicitly wrote the default value". A later patch that
+  *    omits `a` therefore produces a batch entry `a = 0` that silently erases an older
+  *    non-zero value. To avoid this, use `Nullable` typed paths
+  *    (e.g., `JSON(a Nullable(UInt32))`): a `NULL` value in a nullable typed-path column
+  *    unambiguously represents absence and is skipped by the aggregate.
   */
 struct AggregateFunctionMergedJSONPatchData
 {
@@ -371,15 +380,30 @@ struct AggregateFunctionMergedJSONPatchData
         ///
         /// insertBatchAtomic scopes all conflict checks and erasures to the pre-existing state,
         /// so intra-row siblings (e.g. "a" and "a.b" from JSON(a UInt32, `a.b` UInt32)) cannot
-        /// erase each other.  SortedPathsIterator already skips null-valued dynamic paths;
-        /// typed paths with no null representation are passed through unconditionally and rely
-        /// on the batch atomicity to prevent sibling clobbering.
+        /// erase each other.
+        ///
+        /// SortedPathsIterator already skips null-valued dynamic paths (null = absent).
+        /// For typed paths backed by Nullable columns, null also means absent, so we mirror
+        /// that skip here: a Nullable typed path that is NULL in this row was not written by
+        /// the patch and must not displace an older non-null value.
+        ///
+        /// Non-Nullable typed paths (e.g. UInt32) have no null representation.  Their column
+        /// stores the type default (e.g. 0) whenever the patch omitted the path.  We cannot
+        /// distinguish "written as 0" from "absent, filled with default", so we pass them
+        /// through — see the documentation limitation for the consequence.
         std::vector<LeafRef> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         ColumnObject::SortedPathsIterator it(object_column, row_num);
         while (!it.end())
         {
             auto path_info = it.getCurrentPathInfo();
+            /// Skip Nullable typed paths that are null — null means the patch omitted this path.
+            if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED
+                && path_info.column->isNullAt(path_info.row))
+            {
+                it.next();
+                continue;
+            }
             Field value;
             path_info.column->get(path_info.row, value);
             collectLeaves(String(path_info.path), std::move(value), sort_key, batch);
@@ -686,6 +710,14 @@ LIMITATIONS (inherited from `ColumnObject`):
 2. Empty-object replacement: a patch `{"a": {}}` cannot displace an older scalar or array
     at path `a`. `ColumnObject` silently drops paths whose value is an empty object `{}`,
     so the newer patch contributes nothing and the old value survives.
+
+3. Non-Nullable typed-path absence: when a `JSON` column declares a typed path with a
+    non-nullable type (e.g., `JSON(a UInt32)`), a row that omits `a` is stored with the
+    type default value (e.g., `0`). The aggregate cannot tell "absent" from "explicitly
+    written as the default", so a newer patch that omits `a` silently erases an older
+    non-zero value. To avoid this, declare typed paths as `Nullable`
+    (e.g., `JSON(a Nullable(UInt32))`). A null in a nullable typed path is treated as
+    "path absent" and is correctly skipped.
 )";
 
     FunctionDocumentation::Syntax syntax = "mergedJSONPatch(json[, sort_key])";

@@ -133,6 +133,64 @@ FROM
     SELECT '{"a":{}}'::JSON, 2
 ); -- expected by RFC 7396: {"a":{}}, actual: {"a":5}
 
+-- Nullable typed path: later patch omits the path (NULL = absent).
+-- The older non-null value must survive because RFC 7396 says an absent member is unchanged.
+-- With JSON(a Nullable(UInt32)), absence is stored as NULL, which the aggregate skips.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM
+(
+    SELECT '{"a":5}'::JSON(a Nullable(UInt32)) AS patch, 1 AS version
+    UNION ALL
+    SELECT '{}'::JSON(a Nullable(UInt32)), 2
+);
+
+-- Same case via State+Merge combinator.
+SELECT toJSONString(mergedJSONPatchMerge(state))
+FROM
+(
+    SELECT mergedJSONPatchState(patch, version) AS state
+    FROM
+    (
+        SELECT '{"a":5}'::JSON(a Nullable(UInt32)) AS patch, 1 AS version
+        UNION ALL
+        SELECT '{}'::JSON(a Nullable(UInt32)), 2
+    )
+);
+
+-- Nullable typed path: newer patch explicitly writes the default value (0).
+-- 0 is a genuine write and must win over the older 5.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM
+(
+    SELECT '{"a":5}'::JSON(a Nullable(UInt32)) AS patch, 1 AS version
+    UNION ALL
+    SELECT '{"a":0}'::JSON(a Nullable(UInt32)), 2
+);
+
+-- Same case via State+Merge combinator.
+SELECT toJSONString(mergedJSONPatchMerge(state))
+FROM
+(
+    SELECT mergedJSONPatchState(patch, version) AS state
+    FROM
+    (
+        SELECT '{"a":5}'::JSON(a Nullable(UInt32)) AS patch, 1 AS version
+        UNION ALL
+        SELECT '{"a":0}'::JSON(a Nullable(UInt32)), 2
+    )
+);
+
+-- Known limitation: non-Nullable typed path. With JSON(a UInt32), a row that omits "a" is
+-- indistinguishable from a row that explicitly writes "a":0. The aggregate therefore cannot
+-- preserve the older non-zero value when the newer row omits the path.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM
+(
+    SELECT '{"a":5}'::JSON(a UInt32) AS patch, 1 AS version
+    UNION ALL
+    SELECT '{}'::JSON(a UInt32), 2
+); -- known limitation: produces {"a":0} instead of {"a":5}
+
 DROP TABLE IF EXISTS merged_json_patch_states;
 
 CREATE TABLE merged_json_patch_states
