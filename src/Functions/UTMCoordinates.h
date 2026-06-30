@@ -47,7 +47,7 @@ struct MGRSCoordinate
     Float64 latitude = 0;
 };
 
-/// Decodes an MGRS string into the WGS84 coordinates of the south-west corner of the referenced grid square.
+/// Decodes an MGRS string into the WGS84 coordinates of the centre of the referenced grid square.
 /// Whitespace is ignored and letters are case-insensitive. Throws on malformed input.
 MGRSCoordinate mgrsDecode(std::string_view mgrs);
 

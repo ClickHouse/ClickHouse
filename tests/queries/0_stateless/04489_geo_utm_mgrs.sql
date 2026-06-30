@@ -50,3 +50,4 @@ SELECT utmToGeo(500000., 0., 0, 1); -- { serverError BAD_ARGUMENTS }
 SELECT mgrsToGeo('hello'); -- { serverError BAD_ARGUMENTS }
 SELECT mgrsToGeo('31'); -- { serverError BAD_ARGUMENTS }
 SELECT mgrsToGeo('31UDQ482111935'); -- { serverError BAD_ARGUMENTS }
+SELECT mgrsToGeo('31UDQ482511193512'); -- { serverError BAD_ARGUMENTS } -- more than five digits per coordinate

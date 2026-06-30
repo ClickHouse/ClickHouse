@@ -90,7 +90,7 @@ REGISTER_FUNCTION(MGRSToGeo)
     FunctionDocumentation::Description description = R"(
 Decodes a [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) string into WGS84 geographic coordinates (longitude, latitude). This is the inverse of [`geoToMGRS`](#geotomgrs).
 
-The returned point is the south-west corner of the referenced grid square, so the precision of the result matches the precision encoded in the string. Whitespace in the input is ignored and letters are case-insensitive.
+The returned point is the centre of the referenced grid square, so the precision of the result matches the precision encoded in the string. Whitespace in the input is ignored and letters are case-insensitive.
     )";
     FunctionDocumentation::Syntax syntax = "mgrsToGeo(mgrs)";
     FunctionDocumentation::Arguments arguments = {

@@ -408,6 +408,10 @@ MGRSCoordinate mgrsDecode(std::string_view mgrs)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid MGRS string '{}': odd number of location digits", String(mgrs));
 
     const size_t per = remainder / 2;
+    if (per > 5)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Invalid MGRS string '{}': more than five digits per coordinate", String(mgrs));
+
     /// The size of the referenced square: 100 km with no digits, down to 1 m with five digits.
     Float64 cell_size = 100000.0;
     if (per > 0)
