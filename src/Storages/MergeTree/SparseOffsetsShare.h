@@ -3,11 +3,12 @@
 #include <Columns/IColumn.h>
 #include <Common/SharedMutex.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <base/defines.h>
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 
@@ -37,6 +38,21 @@ struct SparseOffsetsRange
 
 /// Per-query storage of analyzer-produced offsets indexed by `(part_name, column_name)`.
 /// Held by `MergeTreeIndexReadResultPool` so its lifetime coincides with one query.
+///
+/// Lifecycle (callers must run the phases in order; mixing them is unsafe because
+/// `findBucket` hands out raw pointers into the store that mutations would invalidate):
+///   1. Populate: the analyzer fills the share via `insert`.
+///   2. Prune:    once the surviving mark ranges are known, the caller drops dead
+///                entries with `retainSurvivingRanges` (planning, whole-share) or
+///                `retainRangesForPart` (data_read, per-part).
+///   3. Consume:  scan readers resolve buckets via `findBucket` and slice from them.
+///
+/// In `planning` mode phases 1+2 happen back-to-back in `selectRangesToRead`, then
+/// scans run phase 3. In `data_read` mode the three phases happen per part inside the
+/// per-part `getOrBuildIndexReadResult`; the scan reader for that part runs phase 3
+/// only after its `getOrBuildIndexReadResult` returns.
+///
+/// Debug and sanitizer builds enforce "no phase 1/2 after phase 3" with a `chassert`.
 class SparseOffsetsShare
 {
 public:
@@ -46,6 +62,7 @@ public:
         std::vector<SparseOffsetsRange> ranges;
     };
 
+    /// Phase 1: append one analyzer chunk to `(part, column)`'s bucket.
     void insert(
         const std::string & part_name,
         const std::string & column_name,
@@ -54,19 +71,27 @@ public:
         size_t total_rows,
         ColumnPtr offsets);
 
-    /// Resolve `(part, column)` to a stable pointer into the share. The pointer remains
-    /// valid for the lifetime of `*this`; entries are only erased once by `retainOnlyParts`,
-    /// which the caller must run before any scan reader resolves a bucket. Acquires the
-    /// shared lock once; callers should cache the result and call `sliceFromBucket` on the
-    /// cached pointer to skip the lock on every subsequent slice.
+    /// Phase 3: resolve `(part, column)` to a stable pointer into the share. The pointer
+    /// stays valid for the share's lifetime because phases 1 and 2 are already done by
+    /// the time any reader calls this. Acquires the shared lock once; callers should
+    /// cache the result and call `sliceFromBucket` on the cached pointer to skip the
+    /// lock on every subsequent slice.
     const Bucket * findBucket(const std::string & part_name, const std::string & column_name) const;
 
     /// True when no bucket has been inserted (no sparse columns / no recognised conjuncts).
     bool empty() const;
 
-    /// One-shot pruning, before any scan reader looks up buckets: drop buckets for parts
-    /// that did not survive sparsity pruning.
-    void retainOnlyParts(const std::unordered_set<std::string> & surviving_part_names);
+    /// Phase 2 (per-part): drop ranges in `part_name`'s bucket that no surviving
+    /// `MarkRange` overlaps; remove the bucket if every range was dropped. Buckets for
+    /// other parts are untouched. Used by the `data_read` analyzer once it has computed
+    /// its verdict for the part.
+    void retainRangesForPart(const std::string & part_name, const MarkRanges & surviving_ranges);
+
+    /// Phase 2 (whole-share): one-shot cleanup before any scan reader looks up buckets:
+    ///   - Parts absent from `per_part_surviving_ranges` are dropped entirely.
+    ///   - For surviving parts, `retainRangesForPart` is applied.
+    /// Used after `planning`-mode pruning has settled the surviving mark ranges.
+    void retainSurvivingRanges(const std::unordered_map<std::string, MarkRanges> & per_part_surviving_ranges);
 
     /// Build a cache element for the row window
     /// `[abs_row_start, abs_row_start + rows_offset + limit)` from a previously-resolved
@@ -86,12 +111,18 @@ public:
         size_t frame_prev_size = 0);
 
 private:
-    /// `insert` happens during the analyzer's `getOrBuildIndexReadResult` (`data_read`) or
-    /// inside `filterMarkRangesBySparsityInfo` (`planning`); `findBucket`/`sliceFromBucket`
-    /// are called from many scan threads later. Only `findBucket` needs the mutex; once
-    /// it returns a `Bucket *`, further slicing is lock-free.
+    /// All store mutations (`insert`, `retain*`) take the unique lock; lookups (`findBucket`,
+    /// `empty`) take the shared lock. `sliceFromBucket` runs on the `Bucket *` returned by
+    /// `findBucket` and is lock-free; the lifecycle contract (see class doc) is what makes
+    /// that pointer stable.
     mutable SharedMutex mutex;
     std::unordered_map<std::string, std::unordered_map<std::string, Bucket>> store;
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Flipped to true the first time `findBucket` runs. Any later phase-1/2 call
+    /// (`insert`/`retain*`) triggers a `chassert` failure.
+    mutable std::atomic<bool> consumed{false};
+#endif
 };
 
 using SparseOffsetsSharePtr = std::shared_ptr<SparseOffsetsShare>;

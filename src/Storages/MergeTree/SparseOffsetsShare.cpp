@@ -11,6 +11,12 @@
 namespace DB
 {
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+#define CHECK_NOT_CONSUMED() chassert(!consumed.load(std::memory_order_acquire))
+#else
+#define CHECK_NOT_CONSUMED() ((void)0)
+#endif
+
 void SparseOffsetsShare::insert(
     const std::string & part_name,
     const std::string & column_name,
@@ -20,6 +26,7 @@ void SparseOffsetsShare::insert(
     ColumnPtr offsets)
 {
     std::unique_lock lock(mutex);
+    CHECK_NOT_CONSUMED();
     auto & bucket = store[part_name][column_name];
     bucket.ranges.push_back(SparseOffsetsRange{range, start_row_in_part, total_rows, std::move(offsets)});
 }
@@ -28,6 +35,10 @@ const SparseOffsetsShare::Bucket *
 SparseOffsetsShare::findBucket(const std::string & part_name, const std::string & column_name) const
 {
     std::shared_lock lock(mutex);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    consumed.store(true, std::memory_order_release);
+#endif
 
     auto part_it = store.find(part_name);
     if (part_it == store.end())
@@ -46,11 +57,59 @@ bool SparseOffsetsShare::empty() const
     return store.empty();
 }
 
-void SparseOffsetsShare::retainOnlyParts(const std::unordered_set<std::string> & surviving_part_names)
+namespace
+{
+
+/// Drop stored ranges in `columns` that no surviving `MarkRange` overlaps; collapse empty
+/// column entries. Returns true when the whole part bucket becomes empty.
+bool pruneColumns(
+    std::unordered_map<std::string, SparseOffsetsShare::Bucket> & columns,
+    const MarkRanges & surviving_ranges)
+{
+    for (auto & column_entry : columns)
+    {
+        std::erase_if(column_entry.second.ranges, [&](const SparseOffsetsRange & stored)
+        {
+            for (const auto & sr : surviving_ranges)
+            {
+                if (stored.range.begin < sr.end && sr.begin < stored.range.end)
+                    return false;
+            }
+            return true;
+        });
+    }
+    std::erase_if(columns, [](const auto & col) { return col.second.ranges.empty(); });
+    return columns.empty();
+}
+
+}
+
+void SparseOffsetsShare::retainRangesForPart(const std::string & part_name, const MarkRanges & surviving_ranges)
 {
     std::unique_lock lock(mutex);
-    std::erase_if(store, [&](const auto & entry) { return !surviving_part_names.contains(entry.first); });
+    CHECK_NOT_CONSUMED();
+    auto it = store.find(part_name);
+    if (it == store.end())
+        return;
+    if (pruneColumns(it->second, surviving_ranges))
+        store.erase(it);
 }
+
+void SparseOffsetsShare::retainSurvivingRanges(
+    const std::unordered_map<std::string, MarkRanges> & per_part_surviving_ranges)
+{
+    std::unique_lock lock(mutex);
+    CHECK_NOT_CONSUMED();
+    std::erase_if(store, [&](auto & part_entry)
+    {
+        const auto it = per_part_surviving_ranges.find(part_entry.first);
+        if (it == per_part_surviving_ranges.end())
+            return true;
+        return pruneColumns(part_entry.second, it->second);
+    });
+}
+
+#undef CHECK_NOT_CONSUMED
 
 std::unique_ptr<SubstreamsCacheSparseOffsetsElement>
 SparseOffsetsShare::sliceFromBucket(

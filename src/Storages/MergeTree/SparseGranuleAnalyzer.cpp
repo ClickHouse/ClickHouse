@@ -629,6 +629,38 @@ SparsityReadResultPtr MergeTreeSparsityReader::read(const RangesInDataPart & par
 
     if (!any_predicate_used)
         return nullptr;
+
+    /// Drop bucket entries for granule ranges that the verdict rejected: the scan will not
+    /// look them up via `findBucket`/`sliceFromBucket`, so the decoded offsets are dead.
+    if (offsets_share)
+    {
+        MarkRanges surviving;
+        for (const auto & range : part.ranges)
+        {
+            size_t run_begin = 0;
+            bool in_run = false;
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                if (result->granules_selected[mark])
+                {
+                    if (!in_run)
+                    {
+                        run_begin = mark;
+                        in_run = true;
+                    }
+                }
+                else if (in_run)
+                {
+                    surviving.emplace_back(run_begin, mark);
+                    in_run = false;
+                }
+            }
+            if (in_run)
+                surviving.emplace_back(run_begin, range.end);
+        }
+        offsets_share->retainRangesForPart(part.data_part->getNameWithParent(), surviving);
+    }
+
     return result;
 }
 
