@@ -1312,6 +1312,15 @@ class QueryResultElement extends HTMLElement
                 :host
                 {
                     display: block;
+                    outline: none;
+                }
+
+                /* Show a focus ring only for keyboard focus (Tab), not when a cell
+                   click programmatically focuses the table. */
+                :host(:focus-visible)
+                {
+                    outline: 2px solid var(--link-color);
+                    outline-offset: -2px;
                 }
 
                 .monospace
@@ -1684,8 +1693,10 @@ class QueryResultElement extends HTMLElement
 
     connectedCallback()
     {
+        /// Make the result table part of the Tab navigation sequence: the user can
+        /// Tab to it, navigate cells with the arrow keys, then Tab on to the next
+        /// element. The focus ring is handled via `:host(:focus-visible)` in the CSS.
         if (!this.hasAttribute('tabindex')) this.setAttribute('tabindex', '0');
-        this.style.outline = 'none';
     }
 
     disconnectedCallback()
@@ -1745,6 +1756,19 @@ class QueryResultElement extends HTMLElement
             this._current_selected_cell.parentElement.classList.remove('tr-selected');
         }
         this._current_selected_cell = null;
+    }
+
+    _selectCell(new_cell)
+    {
+        if (this._current_selected_cell)
+        {
+            this._current_selected_cell.classList.remove('td-selected');
+            this._current_selected_cell.parentElement.classList.remove('tr-selected');
+        }
+        new_cell.classList.add('td-selected');
+        new_cell.parentElement.classList.add('tr-selected');
+        (new_cell.querySelector('.cell-content') || new_cell).scrollIntoView({ block: 'nearest' });
+        this._current_selected_cell = new_cell;
     }
 
     clearError()
@@ -2239,8 +2263,26 @@ class QueryResultElement extends HTMLElement
 
     _handleKeyDown(e)
     {
+        const arrows = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
         let cell = this._current_selected_cell;
-        if (!cell) { return; }
+
+        if (!cell)
+        {
+            /// The table is focused (e.g. via Tab) but nothing is selected yet:
+            /// the first arrow key selects the first data cell so keyboard
+            /// navigation can begin. Other keys (including Tab) are left alone so
+            /// focus can move on to the next element.
+            if (arrows.includes(e.key))
+            {
+                const first_cell = this._dataTable.querySelector('td:not(.row-number)');
+                if (first_cell)
+                {
+                    e.preventDefault();
+                    this._selectCell(first_cell);
+                }
+            }
+            return;
+        }
 
         if (e.key === 'Escape')
         {
@@ -2270,13 +2312,7 @@ class QueryResultElement extends HTMLElement
         if (!new_cell) { return; }
 
         e.preventDefault();
-
-        cell.classList.remove('td-selected');
-        cell.parentElement.classList.remove('tr-selected');
-        new_cell.classList.add('td-selected');
-        new_cell.parentElement.classList.add('tr-selected');
-        (new_cell.querySelector('.cell-content') || new_cell).scrollIntoView({ block: 'nearest' });
-        this._current_selected_cell = new_cell;
+        this._selectCell(new_cell);
     }
 
     _loadJS(src, integrity)
