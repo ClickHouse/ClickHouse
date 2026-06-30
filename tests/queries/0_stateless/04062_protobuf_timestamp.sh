@@ -50,6 +50,23 @@ expect_out_of_range() {
     $CLICKHOUSE_CLIENT --query "DROP TABLE overflow_04062"
 }
 
+# Feed a hand-crafted google.protobuf.Timestamp whose nanos fall outside [0, 999999999] and show the rejection.
+expect_invalid_nanos() {
+    local col_type="$1"
+    local message_bytes="$2"
+
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS invalid_nanos_04062"
+    $CLICKHOUSE_CLIENT --query "CREATE TABLE invalid_nanos_04062 (ts ${col_type}) ENGINE = MergeTree ORDER BY tuple()"
+
+    local bin
+    bin=$(mktemp "$CURDIR/04062_protobuf_timestamp.XXXXXX.binary")
+    printf "$message_bytes" > "$bin"
+    $CLICKHOUSE_CLIENT --query "INSERT INTO invalid_nanos_04062 SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf" < "$bin" 2>&1 | grep -o "Could not convert value.*column 'ts'" ||:
+    rm "$bin"
+
+    $CLICKHOUSE_CLIENT --query "DROP TABLE invalid_nanos_04062"
+}
+
 echo "DateTime64(9):"
 roundtrip "DateTime64(9, 'UTC')" "('2022-01-22 12:34:56.789012345'), ('1969-12-31 23:59:59.5'), ('1970-01-01 00:00:00')"
 
@@ -66,9 +83,20 @@ roundtrip "Nullable(DateTime64(9, 'UTC'))" "(NULL), ('1970-01-01 00:00:00')"
 echo "Nullable(DateTime):"
 roundtrip "Nullable(DateTime('UTC'))" "(NULL), ('1970-01-01 00:00:00')"
 
+# The maximum valid nanos (999999999) must still be accepted at the boundary.
+echo "Max nanos (DateTime64):"
+roundtrip "DateTime64(9, 'UTC')" "('1970-01-01 00:00:00.999999999')"
+
 # A Timestamp whose seconds fall outside the target column's range must be rejected, not silently wrapped.
 echo "Out of range (DateTime64):"
 expect_out_of_range "DateTime64(9, 'UTC')" "10000000000"
 
 echo "Out of range (DateTime):"
 expect_out_of_range "DateTime('UTC')" "4294967296"
+
+# A Timestamp whose nanos fall outside [0, 999999999] must be rejected, not normalized into another value.
+echo "Invalid nanos = 1000000000 (DateTime64):"
+expect_invalid_nanos "DateTime64(9, 'UTC')" '\x08\x0A\x06\x10\x80\x94\xEB\xDC\x03' # Timestamp{nanos=1000000000}
+
+echo "Invalid nanos = -1 (DateTime):"
+expect_invalid_nanos "DateTime('UTC')" '\x0D\x0A\x0B\x10\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x01' # Timestamp{nanos=-1}
