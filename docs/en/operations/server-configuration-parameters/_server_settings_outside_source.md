@@ -2366,6 +2366,16 @@ Each section in ClickHouse configuration or users configuration may have the fol
 | `from_hashicorp_vault` | Name of secret.       |
 | `hashicorp_vault_key`  | Name of secret's key. |
 
+:::note
+The resolved secret value is written into the [preprocessed config](/operations/server-configuration-parameters/index.md#preprocessed-config) as plaintext. To prevent this, add `hide_in_preprocessed="true"` to the element:
+
+```xml
+<password from_hashicorp_vault="username" hashicorp_vault_key="password" hide_in_preprocessed="true"/>
+```
+
+This removes the entire element (and its resolved value) from the preprocessed output.
+:::
+
 **Example**
 
 ClickHouse configuration for token authentication method:
