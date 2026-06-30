@@ -29,7 +29,7 @@ public:
     /// the databases that are available in the database catalog.
     std::pair<String, String> getExtendedHintForTable(const String & table_name) const;
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    Names getAllRegisteredNames() const override;
 
 private:
     ContextPtr context;

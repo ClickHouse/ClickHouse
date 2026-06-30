@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
@@ -16,7 +15,7 @@ namespace DB
 /// Transform that builds text indexes and periodically flushes their segments
 /// into temporary storage, when amount of accumulated data reaches some threshold.
 /// Used for materialization of text indexes.
-class BuildTextIndexTransform final : public ISimpleTransform
+class BuildTextIndexTransform : public ISimpleTransform
 {
 public:
     BuildTextIndexTransform(
@@ -134,16 +133,11 @@ private:
     std::vector<TokenPostingsInfo> output_infos;
     /// Postings accumulated for the current token.
     PostingList output_postings;
-    /// Positions accumulated for the current token (phrase query support).
-    PODArray<RoaringishEntry> output_positions;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;
 
-    /// Deserializer for the merged output part, using the destination codec resolved from the index definition.
     PostingsSerialization postings_serialization;
-    /// Per-source deserializers, each using the codec read from that source part's own header.
-    std::vector<PostingsSerialization> source_postings_serializations;
 
     bool is_initialized = false;
 };
