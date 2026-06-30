@@ -350,6 +350,9 @@ public:
 
     bool checkIfFormatHasSchemaReader(const String & name) const;
     bool checkIfFormatHasExternalSchemaReader(const String & name) const;
+    /// Whether the input format reads via positioned reads (readBigAt) rather than sequentially,
+    /// i.e. it is registered with a random-access input creator (e.g. Parquet/ORC/Arrow).
+    bool checkIfFormatHasRandomAccessInputCreator(const String & name) const;
     bool checkIfFormatHasAnySchemaReader(const String & name) const;
     bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
     bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
