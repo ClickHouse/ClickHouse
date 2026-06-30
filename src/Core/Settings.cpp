@@ -5143,7 +5143,7 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 - `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
 - `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
-- `geometry`: convert MySQL's spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`, and the generic `GEOMETRY`) to the corresponding ClickHouse geometric types. `POINT` is always converted to `Point` regardless of this option.
+- `geometry`: convert MySQL's concrete spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`) to the corresponding ClickHouse geometric types. `POINT` is always converted to `Point` regardless of this option. The generic `GEOMETRY` type maps to `String`, because such a column can hold any subtype, including ones with no ClickHouse counterpart (`MULTIPOINT`, `GEOMETRYCOLLECTION`).
 )", 0) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query

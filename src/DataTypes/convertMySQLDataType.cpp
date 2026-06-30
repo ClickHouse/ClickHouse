@@ -141,16 +141,16 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     {
         res = DataTypeFactory::instance().get("MultiPolygon");
     }
-    else if (type_support.isSet(MySQLDataTypesSupport::GEOMETRY) && type_name == "geometry")
-    {
-        /// The generic `GEOMETRY` type, as well as a query result, where the metadata only reports
-        /// the generic geometry type without the concrete subtype, is mapped to the umbrella
-        /// `Geometry` type (a `Variant` over all the geometric types).
-        res = DataTypeFactory::instance().get("Geometry");
-    }
+    /// Note: the generic `GEOMETRY` column type is intentionally not mapped to the umbrella
+    /// `Geometry` type. Such a column can store values of any subtype, including ones that have no
+    /// ClickHouse counterpart (`MULTIPOINT`, `GEOMETRYCOLLECTION`), so claiming it as `Geometry`
+    /// would make those rows throw at read time. It falls back to `String` (the raw WKB), below.
+    /// A user who knows the column only holds representable subtypes can still declare it as
+    /// `Geometry` explicitly (e.g. via the MySQL table engine).
 
-    /// String is the fallback for all unknown types. In particular, the spatial types `MULTIPOINT`
-    /// and `GEOMETRYCOLLECTION` have no ClickHouse counterpart and fall back to String as well.
+    /// String is the fallback for all unknown types. In particular, the generic `GEOMETRY` type and
+    /// the spatial types `MULTIPOINT` and `GEOMETRYCOLLECTION` have no ClickHouse counterpart and
+    /// fall back to String as well.
     if (!res)
         res = std::make_shared<DataTypeString>();
 

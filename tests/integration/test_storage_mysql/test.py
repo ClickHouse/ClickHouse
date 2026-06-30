@@ -989,6 +989,7 @@ def test_mysql_geometry(started_cluster):
             `mls` multilinestring NOT NULL,
             `mpg` multipolygon NOT NULL,
             `geo` geometry NOT NULL,
+            `geo_mp` geometry NOT NULL,
             PRIMARY KEY (`id`)) ENGINE=InnoDB;
         """
         )
@@ -1000,7 +1001,8 @@ def test_mysql_geometry(started_cluster):
                 pg = ST_GeomFromText('POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))'),
                 mls = ST_GeomFromText('MULTILINESTRING((0 0, 1 1), (2 2, 3 3))'),
                 mpg = ST_GeomFromText('MULTIPOLYGON(((0 0, 2 0, 2 2, 0 2, 0 0)))'),
-                geo = ST_GeomFromText('LINESTRING(5 5, 6 6)')
+                geo = ST_GeomFromText('LINESTRING(5 5, 6 6)'),
+                geo_mp = ST_GeomFromText('MULTIPOINT(0 0, 1 1)')
         """
         )
         assert 1 == cursor.execute(f"SELECT count(*) FROM `clickhouse`.`{table_name}`")
@@ -1011,15 +1013,17 @@ def test_mysql_geometry(started_cluster):
         f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
     )
 
-    # Spatial types are mapped to the corresponding ClickHouse geometric types. The concrete
-    # subtype is known from the column type, while the generic `geometry` column maps to the
-    # umbrella `Geometry` type (a Variant over all geometric types).
+    # The concrete spatial column types are mapped to the corresponding ClickHouse geometric types,
+    # because their subtype is fixed by the column type. The generic `geometry` column type can hold
+    # any subtype (including ones with no ClickHouse counterpart, such as `MULTIPOINT`), so it
+    # conservatively maps to `String` (the raw WKB) and is never claimed as the `Geometry` Variant
+    # during schema inference.
     assert (
         node1.query(
-            "SELECT toTypeName(ls), toTypeName(pg), toTypeName(mls), toTypeName(mpg), toTypeName(geo) "
+            "SELECT toTypeName(ls), toTypeName(pg), toTypeName(mls), toTypeName(mpg), toTypeName(geo), toTypeName(geo_mp) "
             f"FROM {table_function} LIMIT 1"
         ).strip()
-        == "LineString\tPolygon\tMultiLineString\tMultiPolygon\tGeometry"
+        == "LineString\tPolygon\tMultiLineString\tMultiPolygon\tString\tString"
     )
 
     assert (
@@ -1038,10 +1042,16 @@ def test_mysql_geometry(started_cluster):
         node1.query(f"SELECT mpg FROM {table_function}").strip()
         == "[[[(0,0),(2,0),(2,2),(0,2),(0,0)]]]"
     )
-    # The generic `geometry` column stores a LineString in this row, read through `Geometry`.
-    assert node1.query(f"SELECT geo FROM {table_function}").strip() == "[(5,5),(6,6)]"
+    # Regression test: a generic `geometry` column reads as raw WKB `String` without error, even for
+    # subtypes that have no ClickHouse counterpart (`MULTIPOINT` here). Mapping it to the `Geometry`
+    # Variant would make such rows throw at read time, because `MULTIPOINT` is not representable.
+    assert (
+        node1.query(f"SELECT length(geo) > 0, length(geo_mp) > 0 FROM {table_function}").strip()
+        == "1\t1"
+    )
 
-    # When the `geometry` mapping is disabled, spatial types (except `Point`) fall back to String.
+    # When the `geometry` mapping is disabled, the concrete spatial types (except `Point`) also fall
+    # back to String.
     assert (
         node1.query(
             f"SELECT toTypeName(ls) FROM {table_function} LIMIT 1",
@@ -1050,7 +1060,8 @@ def test_mysql_geometry(started_cluster):
         == "String"
     )
 
-    # The same works through the MySQL table engine.
+    # A user can still read a generic `geometry` column as a geometric value by declaring the column
+    # as `Geometry` explicitly through the MySQL table engine (when its values are representable).
     node1.query("DROP TABLE IF EXISTS test_geometry")
     node1.query(
         "CREATE TABLE test_geometry (id Int32, ls LineString, pg Polygon, mls MultiLineString, mpg MultiPolygon, geo Geometry) "
