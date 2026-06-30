@@ -1794,7 +1794,9 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         /// table_readonly = 1` is as small as possible. Suppressing already in-flight background work is
         /// best-effort: an operation whose selection started just before the setting was published may still
         /// complete once. That is harmless - the table is abandoned after rotation, the result is correct,
-        /// and explicit user writes are always rejected synchronously by `assertNotReadonly`.
+        /// and explicit user modifications are always rejected synchronously (`assertNotReadonly` for
+        /// writes/mutations/OPTIMIZE, and the `table_readonly` gate in `MergeTreeData::alterPartition` for
+        /// partition commands).
         const bool table_is_readonly = (*getSettings())[MergeTreeSetting::table_readonly];
 
         {

@@ -373,6 +373,7 @@ namespace ErrorCodes
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -7000,6 +7001,32 @@ Pipe MergeTreeData::alterPartition(
     if (metadata_snapshot && metadata_snapshot->hasUniqueKey() && !commands.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
+
+    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
+    /// must reject explicit partition mutations as well. Partition commands are dispatched here directly by
+    /// `InterpreterAlterQuery`, bypassing `StorageMergeTree::alter` / `assertNotReadonly`, so without this
+    /// gate a read-only table could still have its parts dropped, moved, attached, fetched, or replaced.
+    /// Operations that do not modify the table's data (`FREEZE`/`UNFREEZE` of a backup, `FORGET PARTITION`)
+    /// remain allowed, and the `table_readonly` setting itself can always be toggled back via
+    /// `ALTER ... MODIFY/RESET SETTING` (which goes through `alter`, not this path).
+    if ((*getSettings())[MergeTreeSetting::table_readonly])
+    {
+        for (const PartitionCommand & command : commands)
+        {
+            switch (command.type)
+            {
+                case PartitionCommand::ATTACH_PARTITION:
+                case PartitionCommand::MOVE_PARTITION:
+                case PartitionCommand::DROP_PARTITION:
+                case PartitionCommand::DROP_DETACHED_PARTITION:
+                case PartitionCommand::FETCH_PARTITION:
+                case PartitionCommand::REPLACE_PARTITION:
+                    throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode");
+                default:
+                    break;
+            }
+        }
+    }
 
     /// Wait for loading of outdated parts
     /// because partition commands (DROP, MOVE, etc.)
