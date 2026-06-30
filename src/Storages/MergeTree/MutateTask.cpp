@@ -1513,14 +1513,34 @@ static std::map<String, String> collectColumnCompressionCodecsForMutatedPart(
 {
     const auto source_column_compression_codecs = readColumnCompressionCodecsFromPartMetadata(source_part);
     std::map<String, String> column_compression_codecs;
+    NameToNameMap renamed_columns_to_from;
+    NameToNameMap renamed_columns_from_to;
+
+    for (const auto & command : commands_for_renames)
+    {
+        if (command.type != MutationCommand::Type::RENAME_COLUMN)
+            continue;
+
+        auto it = renamed_columns_to_from.find(command.column_name);
+        if (it != renamed_columns_to_from.end())
+        {
+            auto original_name = it->second;
+            renamed_columns_to_from.erase(it);
+            renamed_columns_from_to.erase(original_name);
+            renamed_columns_to_from.emplace(command.rename_to, original_name);
+            renamed_columns_from_to.emplace(original_name, command.rename_to);
+            continue;
+        }
+
+        renamed_columns_to_from.emplace(command.rename_to, command.column_name);
+        renamed_columns_from_to.emplace(command.column_name, command.rename_to);
+    }
 
     auto get_source_column_name = [&](const String & column_name) -> String
     {
-        for (const auto & command : commands_for_renames)
-        {
-            if (command.type == MutationCommand::Type::RENAME_COLUMN && command.rename_to == column_name)
-                return command.column_name;
-        }
+        if (auto it = renamed_columns_to_from.find(column_name); it != renamed_columns_to_from.end())
+            return it->second;
+
         return column_name;
     };
 
