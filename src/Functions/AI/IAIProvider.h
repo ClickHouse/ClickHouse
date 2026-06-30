@@ -23,7 +23,7 @@ public:
     AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPStatus http_status_, PreformattedMessage msg);
 
     AIProviderHTTPException * clone() const override { return new AIProviderHTTPException(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 
     Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
 
