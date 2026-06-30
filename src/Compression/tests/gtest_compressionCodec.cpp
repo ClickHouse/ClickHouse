@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Compression/CompressionFactory.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -1529,6 +1531,65 @@ TEST(CompressionCodecMultipleTest, DecompressMalformedInputShortBlockHeader)
     auto codec = CompressionCodecFactory::instance().get(static_cast<UInt8>(CompressionMethodByte::Multiple));
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
 }
+
+#if USE_SZ3
+TEST(SZ3Test, DecompressRejectsOversizedInnerLosslessSize)
+{
+    /// Regression for an unbounded allocation in the SZ3 lossy decompression path. The generic lossy
+    /// decompressor (`ALGO_INTERP` / `ALGO_LORENZO_REG` / `ALGO_INTERP_LORENZO`) inflates an internal buffer
+    /// whose size is read from the (untrusted) compressed payload. A corrupted block whose `config.num`
+    /// matches the trusted output size could still declare an arbitrary inner-buffer size and force a raw
+    /// `malloc` of that size before any validation. The decompressor must reject such a block before it
+    /// allocates the declared size.
+    auto codec = makeCodec("SZ3", std::make_shared<DataTypeFloat64>());
+
+    /// A smooth, highly compressible sequence so SZ3 keeps the lossy (generic) algorithm rather than falling
+    /// back to the bit-exact lossless path; the lossy round-trip below confirms which path was taken.
+    constexpr size_t num_values = 8192;
+    std::vector<Float64> values(num_values);
+    for (size_t i = 0; i < num_values; ++i)
+        values[i] = std::sin(static_cast<double>(i) * 0.001) * 100.0;
+
+    const char * source = reinterpret_cast<const char *>(values.data());
+    const UInt32 source_size = static_cast<UInt32>(values.size() * sizeof(Float64));
+
+    PODArray<char> encoded(codec->getCompressedReserveSize(source_size));
+    const UInt32 encoded_size = codec->compress(source, source_size, encoded.data());
+    encoded.resize(encoded_size);
+
+    /// Sanity: the unmodified block round-trips, and the result is LOSSY (differs from the input). A lossy
+    /// result proves the block uses the generic interpolation/Lorenzo path - the bit-exact lossless fallback
+    /// would reproduce the input exactly and would exercise a different (already-bounded) decoder.
+    {
+        PODArray<char> decoded(source_size);
+        const UInt32 decoded_size = codec->decompress(encoded.data(), encoded_size, decoded.data());
+        ASSERT_EQ(decoded_size, source_size);
+        ASSERT_NE(0, memcmp(source, decoded.data(), source_size)) << "Expected a lossy (generic-path) SZ3 block";
+    }
+
+    /// The inner lossless buffer size is the 8-byte little-endian prefix of the lossless payload, which sits
+    /// right after the 9-byte compressed-block header, the 1-byte SZ3 float-width byte and the 16-byte SZ3
+    /// stream header.
+    constexpr size_t inner_size_offset = ICompressionCodec::getHeaderSize() + 1 + 16;
+    ASSERT_GT(encoded_size, inner_size_offset + sizeof(size_t));
+
+    const size_t oversized = static_cast<size_t>(1) << 50; /// ~1 PiB, far above any legitimate inner buffer
+    memcpy(encoded.data() + inner_size_offset, &oversized, sizeof(oversized));
+
+    PODArray<char> decoded(source_size);
+    bool rejected_before_allocation = false;
+    try
+    {
+        codec->decompress(encoded.data(), encoded_size, decoded.data());
+    }
+    catch (const Exception & e)
+    {
+        rejected_before_allocation = e.message().find("exceeds the allowed capacity") != std::string::npos;
+    }
+    ASSERT_TRUE(rejected_before_allocation)
+        << "Decompression must reject the oversized inner lossless size before allocating it";
+}
+#endif
 
 auto ALPSequentialGenerator = []<typename T>(T base = T{0}, T exception = T{0}, double exception_probability = 0, int decimals = 2)
 {
