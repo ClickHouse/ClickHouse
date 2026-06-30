@@ -1,28 +1,13 @@
--- Regression test for a logical error in correlated-subquery decorrelation with a set operation.
--- A set operation (INTERSECT / UNION ALL / EXCEPT) whose branches reference correlated subqueries
--- shares the input subplan through an in-memory producer/consumer buffer (SaveSubqueryResultToBuffer
--- fills it, ReadFromCommonBuffer reads it). The consumer may only run once every producer stream
--- finished. The decorrelation result join was built with correlated_subqueries_default_join_kind,
--- and with 'left' the buffer producer ended up on the join's probe side while a consumer was nested
--- on the build side. FillRightFirst then ran the consumer before the producer finished and the
--- server aborted with
---   Logical error: Trying to extract chunk from ChunkBuffer before all inputs are finished
--- The fix keeps the buffered (referenced) input on the build side regardless of the requested join
--- kind, so the producer is always evaluated first. The join kind is an internal detail and does not
--- change the result.
+-- Regression test for issue #108521 (STID 2651-2cfd): a set operation (INTERSECT / UNION ALL / EXCEPT)
+-- over correlated subqueries with correlated_subqueries_default_join_kind = 'left' aborted the server
+-- with "Trying to extract chunk from ChunkBuffer before all inputs are finished".
 --
--- Whether a buffer is created is decided once for the whole plan from the top-level query context
--- (correlated_subqueries_use_in_memory_buffer there gates the materialization pass that would inline
--- the shared subplan reference). The decorrelation join layout must follow that same top-level
--- decision. A set-operation branch's own SETTINGS clause does not reach the materialization pass, so
--- correlated_subqueries_use_in_memory_buffer = 0 set per-branch still leaves the buffer in place; the
--- protection must fire there too. All three placements are covered below and must return the same rows:
---   * default (buffer on): the buffer is created and the fix forces the safe layout.
---   * session-level SET ... = 0: reaches the materialization pass, no buffer, plain LEFT layout is safe.
---   * per-branch SETTINGS ... = 0: does NOT reach the materialization pass, buffer is still created,
---     so the fix must force the safe layout here too (the case this regression specifically guards).
---
--- Bug: https://github.com/ClickHouse/ClickHouse/issues/108521 (STID 2651-2cfd)
+-- correlated_subqueries_use_in_memory_buffer controls whether the shared subplan is buffered, but the
+-- decision is made from the top-level query context, so the same set operation must return the same
+-- rows for all three placements of the setting:
+--   * default (buffer on): a buffer is created;
+--   * session-level SET ... = 0: no buffer (the reference is materialized);
+--   * per-branch SETTINGS ... = 0 (the #108521 shape): a buffer is still created.
 
 -- Correlated subqueries are only supported by the new analyzer.
 SET enable_analyzer = 1;

@@ -501,20 +501,12 @@ QueryPlan buildLogicalJoin(
 
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
 
-    /// A referenced input subplan may be turned into an in-memory producer/consumer buffer
-    /// (SaveSubqueryResultToBuffer fills it, ReadFromCommonBuffer reads it). The consumer must run
-    /// only after every producer stream finished. With JoinKind::Right the producer (input stream) is
-    /// the build side and FillRightFirst guarantees that; with JoinKind::Left it becomes the probe
-    /// side, so a set operation can place the consumer on the build side of an enclosing join, read
-    /// the buffer early and abort with "Trying to extract chunk from ChunkBuffer before all inputs are
-    /// finished" (issue #108521). The decorrelation join kind does not affect the result, so force the
-    /// Right (no-swap) layout whenever a buffer is created.
-    ///
-    /// The optimizer decides buffer-vs-materialize once for the whole plan from the top-level query
-    /// context (QueryPlanOptimizationSettings), so mirror that condition exactly and read the settings
-    /// from the top-level context, not the per-branch one. A set-operation branch's own SETTINGS
-    /// clause never reaches that pass, so reading the branch settings here would skip this protection
-    /// while the optimizer still creates the buffer.
+    /// A buffered referenced input (SaveSubqueryResultToBuffer / ReadFromCommonBuffer) requires the
+    /// reader to run after the writer finished, which only JoinKind::Right guarantees, so force it when
+    /// a buffer is created (the join kind does not change the result). The buffer is decided once for the
+    /// whole plan from the top-level query context, so read the settings from there: a set-operation
+    /// branch's own SETTINGS clause never reaches that decision, and reading the branch context here
+    /// would skip the protection while the buffer is still created (issue #108521).
     const auto branch_context = planner_context->getQueryContext();
     const auto & top_level_settings
         = branch_context->hasQueryContext() ? branch_context->getQueryContext()->getSettingsRef() : settings;
@@ -559,12 +551,7 @@ QueryPlan buildLogicalJoin(
     result_join->setStepDescription("JOIN to generate result stream");
     makeInternalDecorrelationJoinUnbounded(*result_join);
 
-    /// Depending on correlated_subqueries_use_in_memory_buffer setting,
-    /// the RHS input stream can be buffered in memory.
-    /// In this case, we cannot reorder JOIN to ensure correlated subquery input
-    /// is evaluated before the subquery itself.
-    /// Do not disable reordering if the input subplan is not referenced (expression substitution happened).
-    /// buffered_input already forced JoinKind::Right above.
+    /// Reordering protection for the buffered case whose layout was forced to JoinKind::Right above.
     if (buffered_input)
     {
         auto & join_algorithms = result_join->getJoinSettings().join_algorithms;
