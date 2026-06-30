@@ -14,23 +14,34 @@ PARTITION BY a % 16;
 INSERT INTO t_apart_max_rows SELECT number FROM numbers(1000);
 
 -- Force the optimization to be considered regardless of the runtime layout heuristics and the
--- number of available cores, so the test is deterministic.
+-- number of available cores.
 SET allow_aggregate_partitions_independently = 1;
 SET force_aggregate_partitions_independently = 1;
 
--- Sanity check: without a limit, the query returns all 1000 groups.
-SELECT count() FROM (SELECT a FROM t_apart_max_rows GROUP BY a);
+-- Parallel replicas distribute the aggregation across replicas and enforce `max_rows_to_group_by`
+-- per replica rather than globally; that path is orthogonal to this optimization, so pin it off so
+-- the test stays deterministic when the CI setting randomizer enables it.
+SET enable_parallel_replicas = 0;
 
--- With a global limit below the total number of groups (1000), the query must throw. Each of the
--- 16 partitions holds ~63 distinct keys, so a per-partition limit of 100 would not trip and would
--- hide the violation - hence the global limit must be enforced and the optimization disabled.
+-- `optimize_aggregation_in_order` streams each group out as soon as it is complete, so the
+-- aggregation hash table never grows past the limit. Pin it off so the global limit is exercised
+-- via the merge phase that the optimization skips.
+SET optimize_aggregation_in_order = 0;
+
+-- Without a limit the optimization is applied: each partition is read through a separate port and
+-- the cross-partition merge is skipped. This makes sure the setup actually triggers the
+-- optimization, so the check below is not vacuous. Expected: 1.
+SELECT count() FROM (EXPLAIN PLAN SELECT a FROM t_apart_max_rows GROUP BY a) WHERE explain LIKE '%separate port%';
+
 SET max_rows_to_group_by = 100;
 SET group_by_overflow_mode = 'throw';
--- `optimize_aggregation_in_order` emits each group as soon as it is complete, so the aggregation
--- hash table never grows past the limit and `max_rows_to_group_by` is never tripped - regardless of
--- partition-independent aggregation. Pin it off so the test deterministically exercises the global
--- limit enforced via the merge phase that the optimization skips.
-SET optimize_aggregation_in_order = 0;
+
+-- With the limit set the optimization must be disabled: the plan no longer reads each partition
+-- through a separate port, so the merge phase that enforces the global limit is present. This plan
+-- check is deterministic regardless of `max_threads` and the other randomized settings. Expected: 0.
+SELECT count() FROM (EXPLAIN PLAN SELECT a FROM t_apart_max_rows GROUP BY a) WHERE explain LIKE '%separate port%';
+
+-- And the global limit is enforced at runtime: 1000 distinct keys exceed the limit of 100.
 SELECT a FROM t_apart_max_rows GROUP BY a FORMAT Null; -- { serverError TOO_MANY_ROWS }
 
 DROP TABLE t_apart_max_rows;
