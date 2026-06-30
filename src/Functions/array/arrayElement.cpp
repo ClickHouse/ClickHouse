@@ -162,6 +162,9 @@ private:
      */
     ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
+    ColumnPtr executeWithArrayIndex(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
     using Offsets = ColumnArray::Offsets;
 
     static bool matchKeyToIndexNumber(
@@ -2103,6 +2106,276 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 }
 
 template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    const auto * result_array_type = checkAndGetDataType<DataTypeArray>(result_type.get());
+    chassert(result_array_type);
+    const auto & result_element_type = result_array_type->getNestedType();
+
+    const ColumnArray * col_data_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+    const ColumnArray * col_data_array_const = checkAndGetColumnConstData<ColumnArray>(arguments[0].column.get());
+    if (!col_data_array && !col_data_array_const)
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal column {} of first argument of function {}",
+            arguments[0].column->getName(),
+            getName());
+
+    const ColumnArray & data_array = col_data_array ? *col_data_array : *col_data_array_const;
+    bool is_data_const = (col_data_array_const != nullptr);
+
+    const ColumnArray * col_index_array = checkAndGetColumn<ColumnArray>(arguments[1].column.get());
+    ColumnPtr materialized_index;
+    if (!col_index_array)
+    {
+        materialized_index = arguments[1].column->convertToFullColumnIfConst();
+        col_index_array = checkAndGetColumn<ColumnArray>(materialized_index.get());
+        if (!col_index_array)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of second argument of function {}",
+                arguments[1].column->getName(),
+                getName());
+    }
+
+    const IColumn & data_col = data_array.getData();
+    const auto & data_offsets = data_array.getOffsets();
+    const IColumn & index_data_col = col_index_array->getData();
+    const auto & index_offsets = col_index_array->getOffsets();
+
+    const ColumnNullable * nullable_data = checkAndGetColumn<ColumnNullable>(&data_col);
+    const IColumn & inner_data = nullable_data ? nullable_data->getNestedColumn() : data_col;
+    const NullMap * source_null_map = nullable_data ? &nullable_data->getNullMapData() : nullptr;
+
+    /// For const source, every row uses the same single array (offset 0..data_offsets[0])
+    const size_t const_array_size = is_data_const ? data_offsets[0] : 0;
+
+    bool result_is_nullable = result_element_type->isNullable();
+    size_t total_indices = input_rows_count ? index_offsets[input_rows_count - 1] : 0;
+
+    /// Result offsets are identical to index offsets
+    auto result_offsets_col = ColumnArray::ColumnOffsets::create();
+    auto & result_offsets = result_offsets_col->getData();
+    result_offsets.assign(index_offsets.begin(), index_offsets.begin() + input_rows_count);
+
+    /// Index resolution: converts 1-based/negative index to 0-based offset within the row's array slice.
+    /// Returns array_size (sentinel) for out-of-bounds.
+    auto resolve_index = []<typename IndexType>(IndexType idx, size_t array_size) -> size_t
+    {
+        if constexpr (std::is_signed_v<IndexType>)
+        {
+            if (idx > 0 && static_cast<size_t>(idx) <= array_size)
+                return static_cast<size_t>(idx) - 1;
+            if (idx < 0 && -static_cast<size_t>(idx) <= array_size)
+                return array_size - (-static_cast<size_t>(idx));
+        }
+        else
+        {
+            if (idx > 0 && static_cast<size_t>(idx) <= array_size)
+                return static_cast<size_t>(idx) - 1;
+        }
+        return array_size;
+    };
+
+    /// Try numeric fast paths: direct PODArray access, no virtual calls
+    ColumnPtr fast_result_data;
+    auto try_numeric = [&](const auto * col_numeric) -> bool
+    {
+        if (!col_numeric)
+            return false;
+
+        using ColVecType = std::decay_t<decltype(*col_numeric)>;
+        using DataType = typename ColVecType::ValueType;
+
+        const auto & src_data = col_numeric->getData();
+        typename ColVecType::MutablePtr result_col;
+        if constexpr (is_decimal<DataType>)
+            result_col = ColVecType::create(0, col_numeric->getScale());
+        else
+            result_col = ColVecType::create();
+        auto & result_vec = result_col->getData();
+        result_vec.resize(total_indices);
+
+        NullMap * result_null_map = nullptr;
+        MutableColumnPtr null_map_holder;
+        if (result_is_nullable)
+        {
+            null_map_holder = ColumnUInt8::create(total_indices, UInt8(0));
+            result_null_map = &assert_cast<ColumnUInt8 &>(*null_map_holder).getData();
+        }
+
+        auto fill = [&]<typename IndexType>(const PaddedPODArray<IndexType> & indices)
+        {
+            size_t out = 0;
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                size_t data_start = is_data_const ? 0 : (row > 0 ? data_offsets[row - 1] : 0);
+                size_t array_size = is_data_const ? const_array_size : (data_offsets[row] - data_start);
+                size_t idx_start = row > 0 ? index_offsets[row - 1] : 0;
+                size_t idx_end = index_offsets[row];
+
+                for (size_t k = idx_start; k < idx_end; ++k, ++out)
+                {
+                    size_t resolved = resolve_index(indices[k], array_size);
+                    if (resolved < array_size)
+                    {
+                        size_t source_pos = data_start + resolved;
+                        if (source_null_map && (*source_null_map)[source_pos])
+                        {
+                            result_vec[out] = DataType();
+                            if (result_null_map)
+                                (*result_null_map)[out] = UInt8(1);
+                        }
+                        else
+                        {
+                            result_vec[out] = src_data[source_pos];
+                        }
+                    }
+                    else
+                    {
+                        result_vec[out] = DataType();
+                        if (result_null_map)
+                            (*result_null_map)[out] = UInt8(1);
+                    }
+                }
+            }
+        };
+
+        auto dispatch_fill = [&](const auto * idx_col) -> bool
+        {
+            if (!idx_col)
+                return false;
+            fill(idx_col->getData());
+            return true;
+        };
+
+        if (!dispatch_fill(checkAndGetColumn<ColumnVector<UInt8>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<UInt16>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<UInt32>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<UInt64>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<Int8>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<Int16>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<Int32>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<Int64>>(&index_data_col)))
+            return false;
+
+        if (null_map_holder)
+            fast_result_data = ColumnNullable::create(std::move(result_col), std::move(null_map_holder));
+        else
+            fast_result_data = std::move(result_col);
+        return true;
+    };
+
+    if (try_numeric(checkAndGetColumn<ColumnVector<UInt8>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<UInt16>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<UInt32>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<UInt64>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<UInt128>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<UInt256>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Int8>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Int16>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Int32>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Int64>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Int128>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Int256>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Float32>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Float64>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<UUID>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<IPv4>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<IPv6>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnDecimal<Decimal32>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnDecimal<Decimal64>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnDecimal<Decimal128>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnDecimal<Decimal256>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnDecimal<DateTime64>>(&inner_data)))
+    {
+        return ColumnArray::create(fast_result_data, std::move(result_offsets_col));
+    }
+
+    /// Generic fallback path using insertFrom (handles String, Array, Tuple, etc.)
+    auto result_nested_col = removeNullable(result_element_type)->createColumn();
+    result_nested_col->reserve(total_indices);
+
+    NullMap * result_null_map = nullptr;
+    MutableColumnPtr null_map_holder;
+    if (result_is_nullable)
+    {
+        null_map_holder = ColumnUInt8::create(total_indices, UInt8(0));
+        result_null_map = &assert_cast<ColumnUInt8 &>(*null_map_holder).getData();
+    }
+
+    auto generic_process = [&]<typename IndexType>(const PaddedPODArray<IndexType> & indices)
+    {
+        size_t out = 0;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            size_t data_start = is_data_const ? 0 : (row > 0 ? data_offsets[row - 1] : 0);
+            size_t array_size = is_data_const ? const_array_size : (data_offsets[row] - data_start);
+            size_t idx_start = row > 0 ? index_offsets[row - 1] : 0;
+            size_t idx_end = index_offsets[row];
+
+            for (size_t k = idx_start; k < idx_end; ++k, ++out)
+            {
+                size_t resolved = resolve_index(indices[k], array_size);
+                if (resolved < array_size)
+                {
+                    size_t source_pos = data_start + resolved;
+                    if (source_null_map && (*source_null_map)[source_pos])
+                    {
+                        result_nested_col->insertDefault();
+                        if (result_null_map)
+                            (*result_null_map)[out] = UInt8(1);
+                    }
+                    else
+                    {
+                        result_nested_col->insertFrom(inner_data, source_pos);
+                    }
+                }
+                else
+                {
+                    result_nested_col->insertDefault();
+                    if (result_null_map)
+                        (*result_null_map)[out] = UInt8(1);
+                }
+            }
+        }
+    };
+
+    auto try_dispatch_generic = [&](const auto * col) -> bool
+    {
+        if (!col)
+            return false;
+        generic_process(col->getData());
+        return true;
+    };
+
+    if (!try_dispatch_generic(checkAndGetColumn<ColumnVector<UInt8>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<UInt16>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<UInt32>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<UInt64>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<Int8>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<Int16>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<Int32>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<Int64>>(&index_data_col)))
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal column {} of second argument of function {}",
+            arguments[1].column->getName(),
+            getName());
+    }
+
+    ColumnPtr result_data;
+    if (null_map_holder)
+        result_data = ColumnNullable::create(std::move(result_nested_col), std::move(null_map_holder));
+    else
+        result_data = std::move(result_nested_col);
+
+    return ColumnArray::create(result_data, std::move(result_offsets_col));
+}
+
+template <ArrayElementExceptionMode mode>
 String FunctionArrayElement<mode>::getName() const
 {
     return name;
@@ -2127,11 +2400,28 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             arguments[0]->getName());
     }
 
+    if (const auto * index_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get()))
+    {
+        if (!isNativeInteger(index_array_type->getNestedType()))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function '{}' must be integer or array of integers, got '{}' instead",
+                getName(),
+                arguments[1]->getName());
+        }
+
+        auto nested_type = array_type->getNestedType();
+        if (is_null_mode && nested_type->canBeInsideNullable())
+            nested_type = makeNullable(nested_type);
+        return std::make_shared<DataTypeArray>(nested_type);
+    }
+
     if (!isNativeInteger(arguments[1]))
     {
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Second argument for function '{}' must be integer, got '{}' instead",
+            "Second argument for function '{}' must be integer or array of integers, got '{}' instead",
             getName(),
             arguments[1]->getName());
     }
@@ -2149,6 +2439,10 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
     if (col_map || col_const_map)
         return executeMap(arguments, result_type, input_rows_count);
+
+    /// Array-of-indices mode: arr1[arr2] where arr2 is Array(Int*)
+    if (checkAndGetDataType<DataTypeArray>(arguments[1].type.get()))
+        return executeWithArrayIndex(arguments, result_type, input_rows_count);
 
     /// Check nullability.
     bool is_array_of_nullable = false;
@@ -2333,6 +2627,9 @@ Gets the element of the provided array with index `n` where `n` can be any integ
 If the index falls outside of the bounds of an array, it returns a default value (0 for numbers, an empty string for strings, etc.),
 except for arguments of a non-constant array and a constant index 0. In this case there will be an error `Array indices are 1-based`.
 
+When `n` is an array of integers, returns an array of elements at the specified positions (gather operation).
+This is equivalent to `arrayMap(i -> arr[i], n)` but more efficient.
+
 :::note
 Arrays in ClickHouse are one-indexed.
 :::
@@ -2344,14 +2641,15 @@ Operator `[n]` provides the same functionality.
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"n", "Position of the element to get. [`(U)Int*`](/sql-reference/data-types/int-uint)."}
+        {"n", "Position of the element to get, or an array of positions. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Array((U)Int*)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a single combined array from the provided array arguments", {"Array(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns element of type `T`. When `n` is an array, returns `Array(T)`.", {"T or Array(T)"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
         {"Using [n] notation", "SELECT arr[2] FROM (SELECT [1, 2, 3] AS arr)", "2"},
-        {"Index out of array bounds", "SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "0"}
+        {"Index out of array bounds", "SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "0"},
+        {"Array of indices", "SELECT [10, 20, 30, 40][[2, 4, 1]]", "[20,40,10]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
@@ -2363,21 +2661,26 @@ Operator `[n]` provides the same functionality.
 Gets the element of the provided array with index `n` where `n` can be any integer type.
 If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value.
 
+When `n` is an array of integers, returns an array of elements at the specified positions.
+Out-of-bounds positions produce `NULL` values in the result array.
+
 :::note
 Arrays in ClickHouse are one-indexed.
 :::
 
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 )";
-    FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arrays)";
+    FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arr, n)";
     FunctionDocumentation::Arguments arguments_null = {
-        {"arrays", "Arbitrary number of array arguments.", {"Array"}}
+        {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Position of the element to get, or an array of positions. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Array((U)Int*)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_null = {"Returns a single combined array from the provided array arguments.", {"Array(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_null = {"When `n` is a scalar, returns `Nullable(T)`. When `n` is an array, returns `Array(Nullable(T))`.", {"Nullable(T) or Array(Nullable(T))"}};
     FunctionDocumentation::Examples examples_null = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
-        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "NULL"}
+        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "NULL"},
+        {"Array of indices", "SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])", "[10,NULL,20]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_null = {1, 1};
     FunctionDocumentation::Category category_null = FunctionDocumentation::Category::Array;
