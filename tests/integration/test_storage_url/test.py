@@ -206,7 +206,10 @@ def test_url_engine_persists_inferred_format_with_compression_argument():
         result = node1.query(f"SELECT sum(x) FROM {table_name}")
         assert result.strip() == "3"
 
-        create_query = node1.query(f"SHOW CREATE TABLE {table_name}")
+        # `SHOW CREATE TABLE` without an explicit format is returned as `TabSeparated`, which escapes
+        # the single quotes (`'` becomes `\'`). Use `TSVRaw` so the create statement is returned verbatim
+        # and the positional `format`/`compression` arguments can be matched as written.
+        create_query = node1.query(f"SHOW CREATE TABLE {table_name} FORMAT TSVRaw")
         assert "'auto', 'none'" not in create_query
         assert "'TSV', 'none'" in create_query
     finally:
