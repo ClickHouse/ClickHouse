@@ -50,6 +50,27 @@ INSERT INTO hashes SELECT 'D_A_again', modification_hash FROM system.tables WHER
 SELECT '-- loop-free across DETACH PARTITION too (D_A != D_A_again)';
 SELECT (SELECT v FROM hashes WHERE k = 'D_A') != (SELECT v FROM hashes WHERE k = 'D_A_again');
 
+-- The hash must also be loop-free for read-affecting metadata-only changes that touch no parts. Changing
+-- a column's ALIAS expression A -> B -> A changes query results (SELECT y) without rewriting any data, so
+-- the folded column strings return to their earlier value and the active-part counter does not move; only
+-- the metadata version keeps the round trip from reproducing the earlier hash.
+DROP TABLE IF EXISTS t_meta;
+CREATE TABLE t_meta (x UInt64, y UInt64 ALIAS x + 1) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_meta VALUES (10);
+INSERT INTO hashes SELECT 'M_A', modification_hash FROM system.tables WHERE database = currentDatabase() AND name = 't_meta';
+ALTER TABLE t_meta MODIFY COLUMN y UInt64 ALIAS x + 2;
+INSERT INTO hashes SELECT 'M_B', modification_hash FROM system.tables WHERE database = currentDatabase() AND name = 't_meta';
+ALTER TABLE t_meta MODIFY COLUMN y UInt64 ALIAS x + 1;
+INSERT INTO hashes SELECT 'M_A_again', modification_hash FROM system.tables WHERE database = currentDatabase() AND name = 't_meta';
+
+SELECT '-- hash changed on metadata change (M_A != M_B)';
+SELECT (SELECT v FROM hashes WHERE k = 'M_A') != (SELECT v FROM hashes WHERE k = 'M_B');
+SELECT '-- hash changed back on metadata revert (M_B != M_A_again)';
+SELECT (SELECT v FROM hashes WHERE k = 'M_B') != (SELECT v FROM hashes WHERE k = 'M_A_again');
+SELECT '-- loop-free across a metadata round trip (M_A != M_A_again)';
+SELECT (SELECT v FROM hashes WHERE k = 'M_A') != (SELECT v FROM hashes WHERE k = 'M_A_again');
+
 DROP TABLE t_aba;
 DROP TABLE t_aba2;
+DROP TABLE t_meta;
 DROP TABLE hashes;

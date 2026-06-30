@@ -1877,11 +1877,15 @@ std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPt
                 return true; /// This source cannot tell whether it changed - assume the worst for the whole Merge.
 
             /// Fold the table identity into the hash so that two source tables with identical contents do
-            /// not cancel out when combined.
+            /// not cancel out when combined, and - crucially - so that two different tables that happen to
+            /// report the same modification hash (e.g. the same `ETag`) are distinguished. Fold the UUID,
+            /// which uniquely identifies a table incarnation regardless of name reuse, in addition to the
+            /// database and table name.
             SipHash per_table;
             const auto id = table->getStorageID();
             per_table.update(id.database_name);
             per_table.update(id.table_name);
+            per_table.update(id.uuid);
             per_table.update(*table_hash);
             table_hashes.push_back(per_table.get128());
             return false;

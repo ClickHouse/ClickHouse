@@ -2037,6 +2037,16 @@ private:
     /// never wrongly served.
     std::atomic<UInt64> active_parts_set_version = 0;
 
+    /// Monotonically increases on every application of table metadata (`setProperties`, i.e. every
+    /// metadata-changing `ALTER` as well as the initial load). Folded into `getModificationHash` for the
+    /// same loop-free reason as `active_parts_set_version`, but for the metadata the hash folds (columns
+    /// and their DEFAULT/MATERIALIZED/ALIAS expressions, and the partition/sorting/primary/sampling keys):
+    /// those AST/string values repeat under a metadata `A -> B -> A` transition (e.g. `ALTER ... MODIFY
+    /// COLUMN ... ALIAS ...` or `MODIFY/REMOVE SAMPLE BY` and then back), and the active-part counter does
+    /// not advance because no part changes. Bumping on every metadata application makes such a round trip
+    /// produce a different hash. Resets to 0 on restart, the safe direction (see above).
+    std::atomic<UInt64> metadata_change_version = 0;
+
     mutable std::atomic<size_t> total_outdated_parts_count = 0;
     std::atomic<size_t> total_uncompressed_bytes_in_patches = 0;
 
