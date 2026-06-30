@@ -7,6 +7,11 @@ import time
 
 TIMEOUT_SECONDS = 30
 
+# How long to keep reading after the last keystroke while waiting for the expected output. The
+# committed-query cases only see the fresh ":)" prompt once the query has executed server-side,
+# which can take longer than the inter-keystroke drain on slow (sanitizer) builds.
+FINAL_WAIT_SECONDS = 20
+
 DEBUG_LOG = os.path.join(
     os.environ["CLICKHOUSE_TMP"],
     os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
@@ -71,6 +76,14 @@ def run_case(program, argv, name, keystrokes, check, state=None):
             os.write(master, keys)
             output += drain(master, debug_log_fd, 0.4)
 
+        # The last expected output may arrive only after the committed query executes and a fresh
+        # prompt is printed, which can outlast the inter-keystroke drain on slow builds. Keep
+        # reading until the check passes instead of giving up after a single drain window.
+        if not check(output):
+            output += read_until(
+                master, debug_log_fd, lambda extra: check(output + extra), FINAL_WAIT_SECONDS
+            )
+
         ok = check(output)
         print(f"{name}: {'OK' if ok else 'FAIL'}")
         state.value = 0 if ok else 1
@@ -88,7 +101,7 @@ def run_with_timeout(program, argv, name, keystrokes, check):
             kwargs={"state": state},
         )
         process.start()
-        process.join(TIMEOUT_SECONDS)
+        process.join(TIMEOUT_SECONDS + FINAL_WAIT_SECONDS)
         if process.is_alive():
             process.terminate()
         if state.value in (0, 1):
