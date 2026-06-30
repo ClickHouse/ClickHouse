@@ -996,10 +996,16 @@ void HTTPHandler::processQuery(
         if (details.query_cache_entry_expires_at)
             response.add("Expires", std::format("{:%a, %d %b %Y %H:%M:%S} GMT", *details.query_cache_entry_expires_at));
 
-        /// Set Content-Disposition: attachment for binary/compressed responses.
+        /// Set Content-Disposition: attachment for binary/compressed responses, unless the handler
+        /// already configured a `Content-Disposition` header. A `predefined_query_handler` /
+        /// `dynamic_query_handler` may set `Content-Disposition: inline` or a fixed filename via
+        /// `http_response_headers`; that explicit contract must win over the automatic attachment,
+        /// mirroring the `Content-Type` guard above.
+        bool content_disposition_configured = http_response_headers_override
+            && http_response_headers_override->contains("Content-Disposition");
         bool response_is_binary = details.format && isBinaryOutputFormat(*details.format);
         bool response_is_compressed = !disposition_compression.empty();
-        if (response_is_binary || response_is_compressed)
+        if (!content_disposition_configured && (response_is_binary || response_is_compressed))
         {
             String filename;
             if (!disposition_format_override.empty())
