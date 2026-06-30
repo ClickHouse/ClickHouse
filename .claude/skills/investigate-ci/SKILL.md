@@ -1,6 +1,6 @@
 ---
 name: investigate-ci
-description: Investigate a ClickHouse CI failure end-to-end from a PR or S3 report URL. Fetches the failed tests and their output, searches for an existing tracking GitHub issue, classifies each as flaky vs a real regression using play.clickhouse.com master history, downloads and reads the harness artifacts only for failures that history does not explain, and reports a root-cause hypothesis. Read-only first pass — never commits, pushes, or edits.
+description: Investigate a ClickHouse CI failure end-to-end from a PR or S3 report URL. Fetches the failed tests and their output, classifies each as flaky vs a real regression using play.clickhouse.com master history, and for every failure searches for both an existing tracking GitHub issue and an existing fix (open/merged PR) — reporting, per failure, whether an issue still needs to be created and whether a fix exists with its status (WIP, merged, already in this branch or not). Downloads and reads the harness artifacts only for failures that history does not explain, and reports a root-cause hypothesis. Read-only first pass — never commits, pushes, or edits.
 argument-hint: "<PR-url | S3-report-url | issue-url> [threshold-days]"
 disable-model-invocation: false
 allowed-tools: Bash, Read, Grep, Glob, Agent, Task, WebFetch
@@ -107,17 +107,27 @@ fatal error.
 - Record the **count** of failed tests. The cheap steps (2–3) always run over all of them, but
   a large count changes how step 3 scopes the expensive deep-dive — see "Scope the deep-dive".
 
-### 2. Search for an existing GitHub issue
+### 2. Search for an existing tracking issue and an existing fix
 
-Before querying history, check whether the failure is already tracked. For each failed test,
-search issues (open **and** closed) by test name — a hit often names the tracking flaky-test
-issue, and its comments may already carry the root cause, a fix PR, or a "known flaky" note that
-short-circuits the rest of the investigation.
+For **every** failed test, run two searches and record a per-test answer to two questions that go
+into the final report:
+
+- **Issue:** is the failure already tracked, or does an issue still need to be created?
+- **Fix:** does a fix already exist, and what is its status (WIP / merged / already in this branch
+  or not)?
+
+Do both before the deep-dive — a tracked failure with a merged fix often short-circuits the rest
+of the investigation.
+
+#### 2a. Existing tracking issue + "does an issue need to be created?"
+
+Search issues (open **and** closed) by test name — a hit often names the tracking flaky-test issue,
+and its comments may already carry the root cause, a fix PR, or a "known flaky" note.
 
 ```bash
 gh issue list --repo ClickHouse/ClickHouse --state all --limit 10 \
   --search "<distinctive test-name fragment> in:title,body" \
-  --json number,title,state,stateReason,url
+  --json number,title,state,stateReason,url,labels
 ```
 
 Search on a distinctive fragment (the function or `test_*` name **without** the parametrization
@@ -127,14 +137,107 @@ already provide the diagnosis:
 
 ```bash
 gh issue view <NNNNN> --repo ClickHouse/ClickHouse \
-  --json number,title,state,stateReason,body,comments
+  --json number,title,state,stateReason,body,comments,labels
 ```
 
-Record the matching issue number, its state (open vs closed/`completed`), and any root cause or
-fix PR mentioned — feed it into the step-3 classification and the final report. A closed
-`completed` issue whose fix post-dates the failing run points straight at "retry, already fixed".
-If the input was itself an issue (step 0) you already have it, but still scan for duplicate or
-related issues and read its comments.
+**How CI decides a failure is already tracked** (so you can answer "needs an issue?" the same way
+CI's matcher does — see `ci/praktika/issue.py`, `Issue._check_flaky_test_match`): CI builds a
+catalog from issues labeled **`testing`** (`IssueLabels.CI_ISSUE`) that are **open, or were closed
+within the last ~8 hours**. A failure matches a catalog issue when:
+
+- the issue's `Test name:` body field is a **suffix** of the failing test's name
+  (`result.name.endswith(test_name)`; pytest parametrization/module rules apply), **and**
+- if the issue sets a `Failure reason:`, that exact text is a **substring** of the failure output.
+
+A matched failure is flagged with an `issue` label in the CI report — visible in the
+`fetch_ci_report.js` output — which is the fastest "already tracked" signal.
+
+**First, decide whether the per-test issue search even applies.** Some failures are not a single
+test with one cause but a **generic, harness-level failure bucket** that aggregates many unrelated
+causes: check-level verdicts like `Server died`, `Hung check failed, possible deadlock found`, or
+the upgrade `Error message in clickhouse-server.log` check, and anonymized error *classes* like
+`Logical error: Bad cast from type A to B` (the harness replaces concrete types with `A`/`B` and
+groups by stack hash `STID`). Filing a per-failure tracking issue for these makes no sense — they
+recur fleet-wide for shifting reasons. For such a bucket, **skip the issue search**: do not assert
+`tracked`/`needs issue`, and record the Issue value as **`generic failure / untracked`**. Step 3's
+master/cross-PR frequency is what establishes these are pre-existing and not caused by the PR; that
+is the relevant signal, not a tracking issue. Run the per-test search below only for failures that
+name a **specific** test (a `NNNNN_*`/`test_*` case) or a **specific, identifiable** crash/race
+(e.g. a data race with a stable `STID` that maps to one code site).
+
+Then determine, per test:
+
+- **Generic failure / untracked** — a harness-level bucket or anonymized error class as above. No
+  issue search run, no issue to file; rely on the step-3 frequency for the verdict.
+- **Tracked** — an open (or just-closed) `testing` issue matches by the rule above (or the report
+  already carries the `issue` label). No new issue needed; CI will keep auto-matching it.
+- **Needs an issue** — the failure is a pre-existing **FLAKY** or **INFRA/BUILD** problem (per
+  step 3), names a specific test/crash, and has **no** matching `testing` issue. Flag it as "issue
+  needed" in the report.
+- **No issue (fix instead)** — a **REAL** regression introduced by this PR. Do **not** flag it for
+  a tracking issue: a `testing` issue would mask a real bug. The recommendation is to fix the code.
+- **Stale/closed match** — only a closed issue matches, and it was closed more than ~8 h ago. CI
+  no longer auto-matches it, so if the test is still flaky a fresh issue (or reopening) is needed;
+  note the old issue number.
+
+Never label a cell with an asserted fact you did not verify (e.g. "(known)" implying a tracking
+issue exists when you ran no search). If you did not search, the value is `generic failure /
+untracked`, not a tracking claim.
+
+Record the matching issue number, its state (open vs closed/`completed`), labels, and any root
+cause or fix PR mentioned. A closed `completed` issue whose fix post-dates the failing run points
+straight at "retry, already fixed". If the input was itself an issue (step 0) you already have it,
+but still scan for duplicate or related issues and read its comments.
+
+#### 2b. Existing fix + its status
+
+Independently of whether an issue exists, search for a **fix** — a PR that addresses this failure.
+Three complementary sources, cheapest first:
+
+- **From the tracking issue:** a fix PR is usually linked from the issue. Read its timeline for
+  cross-referencing PRs (a `Closes #<issue>` in a PR shows up here):
+
+  ```bash
+  gh issue view <issue-number> --repo ClickHouse/ClickHouse --json number,state,stateReason,closedByPullRequestsReferences,timelineItems
+  ```
+
+- **By test name:** search PRs (open **and** merged) whose title/body names the test or its
+  fragment:
+
+  ```bash
+  gh pr list --repo ClickHouse/ClickHouse --state all --limit 20 \
+    --search "<distinctive test-name fragment>" \
+    --json number,title,state,isDraft,mergedAt,mergeCommit,headRefName,url
+  ```
+
+- **By symptom:** for a `REAL`/`UNCERTAIN` failure, once step 5 names the suspect `file:line`,
+  search PRs touching that file or the error string the same way.
+
+For each candidate fix PR, classify its **status** — this is what goes in the report's Fix column:
+
+- **WIP** — open PR. Note draft vs in-review (`isDraft`). Not yet protecting any run.
+- **Merged** — `state == MERGED`, with a `mergeCommit`. Then decide **whether it is already in the
+  failing run**, which determines the recommendation:
+  - **Merged, NOT in this branch** → the fix landed on master after the report's commit. The PR
+    just needs a rebase/retry. This is the common "already fixed on master — rebase and retry"
+    case.
+  - **Merged, ALREADY in this branch** → the fix was present in the failing run yet the test still
+    failed. The "fix" is incomplete or unrelated — do **not** treat the failure as resolved; keep
+    investigating (step 5).
+- **None** — no fix PR found.
+
+**Deciding "already in this branch or not".** Compare the fix's merge against the report commit
+(`SHA` from step 1). If the fix's merge commit is in the local object store, ancestry is exact:
+
+```bash
+git cat-file -e <mergeCommit> && git merge-base --is-ancestor <mergeCommit> <report-sha> \
+  && echo "fix IS in the failing run" || echo "fix is NOT in the failing run (or commit absent locally)"
+```
+
+If the merge commit is absent locally (`git cat-file -e` fails), fall back to time order: a fix
+with `mergedAt` **after** the run's commit/`check_start_time` cannot be in the failing run →
+"merged, not in this branch → rebase/retry". Surface that you used the time-order fallback rather
+than exact ancestry.
 
 ### 3. Flaky-vs-real: query master history
 
@@ -354,14 +457,24 @@ the suspect change in the PR diff. Tell it to read only; it must not modify anyt
 
 Print one verdict table, then a short narrative per real/uncertain failure:
 
-| Test | Verdict | Master freq (7/14/30/90d) | Last master fail | Root-cause hypothesis | Suspect | CIDB |
-|------|---------|---------------------------|------------------|-----------------------|---------|------|
+| Test | Verdict | Master freq (7/14/30/90d) | Last master fail | Issue | Fix | Root-cause hypothesis | Suspect | CIDB |
+|------|---------|---------------------------|------------------|-------|-----|-----------------------|---------|------|
 
 - **Verdict** ∈ {`FLAKY`, `REAL`, `UNCERTAIN`, `NEW-TEST`, `INFRA/BUILD`}.
+- **Issue** (from step 2a) ∈ {`generic failure / untracked` (harness-level bucket or anonymized
+  error class — no issue search run, none to file), `tracked #N`, `needs issue`, `fix instead`
+  (REAL — don't mask), `stale #N` (closed >~8 h ago)}. Never write a tracking claim like "(known)"
+  for a failure you did not search.
+- **Fix** (from step 2b) ∈ {`none`, `WIP #N` (open; note draft), `merged #N — in branch` (fix was
+  present yet test still failed → keep digging), `merged #N — rebase/retry` (landed after the run)}.
 - For `REAL`/`UNCERTAIN`, give the `file:line` evidence and the suspect PR change.
 - For `FLAKY`, state the master frequency and the tracking flaky-test issue from step 2 (number,
   state, and any root cause / fix PR its comments revealed).
-- End with a one-line recommendation per test (e.g. "retry — flaky on master",
-  "real regression in `<file>`, see `<commit>`", "needs manual look — logs inconclusive").
+- End with a one-line recommendation per test that combines verdict, issue, and fix, e.g.:
+  - "retry — flaky on master, tracked by #N";
+  - "retry — already fixed on master by #N (merged after this run), rebase";
+  - "flaky on master, **no tracking issue — create one**";
+  - "real regression in `<file>`, see `<commit>` — fix the PR, do not file a tracking issue";
+  - "merged fix #N is already in this branch but the test still failed — needs manual look".
 
 Include the original report URL (and PR link) so the human can confirm. Do not take any action.
