@@ -8,10 +8,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The access-entity caches (QuotaCache, RoleCache, RowPolicyCache, SettingsProfilesCache)
 # recompute every enabled set on each access change, in a batch-finished callback that runs on
 # whichever client thread issued the DDL, and log the recompute size and duration. Those lines
-# are server-internal diagnostics and are emitted at DEBUG (slow recompute) / TRACE (fast), below
-# the default client level send_logs_level=warning, so they are not forwarded onto the issuing
-# client's stderr (which clickhouse-test would treat as a failure). This pins the fast-path line
-# at TRACE: forwarded at send_logs_level=trace, not at =debug.
+# are server-internal diagnostics emitted at TRACE (fast recompute) / DEBUG (slow, >= 1000 ms).
+# Both are below the default client level send_logs_level=warning, so at that default level they
+# are not forwarded onto the issuing client's stderr (which clickhouse-test treats as a failure).
+# Asserts, exercising all four caches at three client levels:
+#   trace   -> forwarded (1)   the recompute path actually runs and the lines exist
+#   warning -> not forwarded (0)   the contract: the default client level no longer leaks them
+#   debug   -> not forwarded (0)   the fast path is TRACE, below debug
+# The slow >= 1000 ms DEBUG path stays visible to an explicit debug client by design and is not
+# asserted here (these tiny single-entity recomputes never cross the threshold).
 #
 # send_logs_level is connection-level (the recompute fires after the statement's per-query
 # settings are gone), so build a client per level by replacing the runner-injected value
@@ -24,6 +29,7 @@ make_client() {
     fi
 }
 CLIENT_TRACE=$(make_client trace)
+CLIENT_WARNING=$(make_client warning)
 CLIENT_DEBUG=$(make_client debug)
 
 USER="user_${CLICKHOUSE_DATABASE}"
@@ -58,32 +64,33 @@ run_ddl() {
 }
 leaked() { echo "${LEAK_STDERR}" | grep -cE "${PATTERN}"; }
 
+# Create all four entity kinds wired to a user, then drop them, at $1's client log level. Both the
+# add and the drop recompute the enabled sets and emit a log line, so each call exercises the path.
+# Echoes 1 if any recompute line was forwarded to this client, else 0.
+exercise() {
+    run_ddl "${1}" "
+        CREATE ROLE ${ROLE};
+        CREATE SETTINGS PROFILE ${PROFILE} SETTINGS max_threads = 1 TO ${ROLE};
+        CREATE USER ${USER} IDENTIFIED WITH plaintext_password BY 'pass';
+        GRANT ${ROLE} TO ${USER};
+        CREATE ROW POLICY ${POLICY} ON ${POLICY_TABLE} USING 1 TO ${USER};
+        CREATE QUOTA ${QUOTA} FOR INTERVAL 100 YEAR MAX FAILED SEQUENTIAL AUTHENTICATIONS = 1 TO ${USER};
+        DROP QUOTA ${QUOTA};
+        DROP ROW POLICY ${POLICY} ON ${POLICY_TABLE};
+        DROP USER ${USER};
+        DROP ROLE ${ROLE};
+        DROP SETTINGS PROFILE ${PROFILE};
+    "
+    [ "$(leaked)" -gt 0 ] && echo 1 || echo 0
+}
+
 drop_all
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${POLICY_TABLE}"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${POLICY_TABLE} (x UInt8) ENGINE = Memory"
 
-# CREATE batch at send_logs_level=trace: the recompute lines ARE forwarded. Asserting they appear
-# proves the path ran and the lines exist, so the debug-level 0 below is meaningful.
-run_ddl "${CLIENT_TRACE}" "
-    CREATE ROLE ${ROLE};
-    CREATE SETTINGS PROFILE ${PROFILE} SETTINGS max_threads = 1 TO ${ROLE};
-    CREATE USER ${USER} IDENTIFIED WITH plaintext_password BY 'pass';
-    GRANT ${ROLE} TO ${USER};
-    CREATE ROW POLICY ${POLICY} ON ${POLICY_TABLE} USING 1 TO ${USER};
-    CREATE QUOTA ${QUOTA} FOR INTERVAL 100 YEAR MAX FAILED SEQUENTIAL AUTHENTICATIONS = 1 TO ${USER};
-"
-[ "$(leaked)" -gt 0 ] && echo 1 || echo 0
-
-# DROP batch at send_logs_level=debug: the same caches recompute, but the lines are TRACE and must
-# NOT be forwarded at debug. This is the regression guard (0 leaked lines).
-run_ddl "${CLIENT_DEBUG}" "
-    DROP USER ${USER};
-    DROP QUOTA ${QUOTA};
-    DROP ROW POLICY ${POLICY} ON ${POLICY_TABLE};
-    DROP ROLE ${ROLE};
-    DROP SETTINGS PROFILE ${PROFILE};
-"
-[ "$(leaked)" -gt 0 ] && echo 1 || echo 0
+exercise "${CLIENT_TRACE}"      # 1: recompute lines ARE forwarded at trace (path is exercised)
+exercise "${CLIENT_WARNING}"    # 0: the contract -- not forwarded at the default client level
+exercise "${CLIENT_DEBUG}"      # 0: fast path is TRACE, below debug (the regression guard)
 
 drop_all
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${POLICY_TABLE}"
