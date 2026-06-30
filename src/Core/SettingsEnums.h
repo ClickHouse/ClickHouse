@@ -443,6 +443,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     ICEBERG_ONELAKE,
     ICEBERG_BIGLAKE,
     PAIMON_REST,
+    ICEBERG_DELTA_SHARING,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
