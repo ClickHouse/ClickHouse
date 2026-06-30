@@ -1,0 +1,9 @@
+-- mixed part written by insert
+1
+1
+-- after reloading the minmax index from disk
+1
+1
+-- after a merge recomputes the minmax index
+1
+2
