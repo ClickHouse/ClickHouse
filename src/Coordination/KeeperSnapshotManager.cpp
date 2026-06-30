@@ -230,7 +230,9 @@ namespace
         readBinary(node.stats.aversion, in);
         int64_t ephemeral_owner = 0;
         readBinary(ephemeral_owner, in);
-        if (ephemeral_owner != 0)
+        if (ephemeral_owner == std::numeric_limits<int64_t>::min())
+            node.stats.setContainer();
+        else if (ephemeral_owner != 0)
             node.stats.setEphemeralOwner(ephemeral_owner);
 
         if (version < SnapshotVersion::V6)
@@ -574,9 +576,14 @@ void KeeperStorageSnapshot::deserialize(
         if (!node.stats.isEphemeral() && node.numChildren() > 0)
             node.getChildren().reserve(node.numChildren());
 
-        if (ephemeral_owner != 0)
+        if (node.stats.isContainer())
         {
-            storage.committed_ephemerals[node.stats.ephemeralOwner()].insert(std::string{path});
+            storage.container_paths.insert(std::string{path});
+            storage.committed_container_nodes.fetch_add(1);
+        }
+        else if (ephemeral_owner != 0)
+        {
+            storage.committed_ephemerals[ephemeral_owner].insert(std::string{path});
             ++storage.committed_ephemeral_nodes;
         }
 
