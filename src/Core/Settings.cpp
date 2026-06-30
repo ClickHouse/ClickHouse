@@ -4408,6 +4408,12 @@ Approximate probability of failing internal (for replication) PostgreSQL queries
     DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
 Maximum number of allowed addresses (For external storages, table functions, etc).
 )", 0) \
+    DECLARE(Bool, allow_experimental_url_wildcard_from_index_pages, false, R"(
+Allow experimental wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, url_wildcard_max_directories_to_read, 100000, R"(
+Maximum number of directories that can be traversed while expanding URL wildcards from index pages.
+)", 0) \
     DECLARE(UInt64, odbc_bridge_connection_pool_size, 16, R"(
 Connection pool size for each connection settings string in ODBC bridge.
 )", 0) \
@@ -8109,16 +8115,16 @@ Maximum number of large postings to read when text index LIKE evaluation by the 
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
-    DECLARE(Bool, use_text_index_tokens_cache, false, R"(
-Whether to use a cache of deserialized text index token infos.
+    DECLARE(Bool, use_text_index_tokens_cache, true, R"(
+Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
-    DECLARE(Bool, use_text_index_header_cache, false, R"(
-Whether to use a cache of deserialized text index header.
+    DECLARE(Bool, use_text_index_header_cache, true, R"(
+Whether to cache deserialized text index headers in memory.
 Using the text index header cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
     DECLARE(Bool, use_text_index_postings_cache, false, R"(
-Whether to use a cache of deserialized text index posting lists.
+Whether to cache deserialized text index deserialized posting lists in memory.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
     DECLARE(Bool, allow_experimental_text_index_lazy_apply, false, R"(

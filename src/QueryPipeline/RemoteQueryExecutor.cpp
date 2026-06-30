@@ -151,7 +151,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                 else
                 {
                     LOG_DEBUG(
-                        log ? log : getLogger("RemoteQueryExecutor"),
+                        log,
                         "Disconnecting replica {} (protocol_version={}, parallel_replicas_version={}): "
                         "no stream_id support (requires parallel_replicas_version >= {})",
                         result.entry->getDescription(),
@@ -320,7 +320,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         }
         catch (...)
         {
-            tryLogCurrentException(log ? log : getLogger("RemoteQueryExecutor"));
+            tryLogCurrentException(log);
         }
     }
 
@@ -337,7 +337,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         }
         catch (...)
         {
-            tryLogCurrentException(log ? log : getLogger("RemoteQueryExecutor"));
+            tryLogCurrentException(log);
         }
     }
 }
@@ -973,8 +973,7 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
     if (connections && sent_query && !finished)
     {
         connections->sendCancel();
-        if (log)
-            LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
+        LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
     }
 }
 
