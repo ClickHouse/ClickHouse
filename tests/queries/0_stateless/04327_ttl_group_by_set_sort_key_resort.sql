@@ -117,6 +117,34 @@ SELECT 'mut sub sorted', (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELEC
                        = (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELECT t.a, ts FROM t_mut_sub ORDER BY t.a, toStartOfDay(ts)));
 DROP TABLE t_mut_sub;
 
+-- Mutation path, secondary index on a subcolumn of a TTL-rewritten column. A `MATERIALIZE TTL`
+-- with a GROUP BY TTL records the rewritten physical column `t` as the changed column, while the
+-- skip index depends on the subcolumn `t.a`. The rebuild decision must map `t.a` to its storage
+-- column `t`, otherwise the index is hardlinked from the source part and keeps pre-SET minmax
+-- values; the index expression must also be recomputed after the TTL SET (computing it before the
+-- aggregation crashes the mutation). The index column `t.a` is intentionally NOT in the sorting
+-- key so the primary key cannot mask a stale skip index during pruning.
+DROP TABLE IF EXISTS t_mut_idx;
+CREATE TABLE t_mut_idx (sk UInt32, t Tuple(a UInt32, b UInt32), ts DateTime, cand Tuple(a UInt32, b UInt32), v UInt32,
+    INDEX idx t.a TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY sk
+TTL ts + toIntervalDay(1) GROUP BY sk SET ts = max(ts) + interval 100 years, t = argMax(cand, v)
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 1, index_granularity = 4, materialize_ttl_recalculate_only = 0;
+SYSTEM STOP TTL MERGES t_mut_idx;
+-- Pre-SET t.a is number (0..39); after SET t = argMax(cand, v) it becomes number + 100000.
+INSERT INTO t_mut_idx SELECT number, (number, 0), '2000-01-01 00:00:00', (number + 100000, 0), 1 FROM numbers(40);
+ALTER TABLE t_mut_idx MATERIALIZE TTL SETTINGS mutations_sync = 2;
+-- The skip index must reflect the post-SET values. Force the query to use the index
+-- (force_data_skipping_indices) and select the rewritten values: all 40 rows must be returned. A
+-- stale (pre-SET) index holds the old `t.a` minmax ranges and would prune the rewritten values
+-- away, returning fewer rows. force_data_skipping_indices also fails outright if the index was left
+-- unregistered. (EXPLAIN granule counts are avoided here as they depend on randomized settings.)
+SELECT 'mut idx present', count() FROM t_mut_idx WHERE t.a >= 100000 SETTINGS force_data_skipping_indices = 'idx', use_skip_indexes = 1;
+-- Result with the index must match the result without it for every rewritten value.
+SELECT 'mut idx matches', (SELECT count() FROM t_mut_idx WHERE t.a IN (100000, 100020, 100039) SETTINGS use_skip_indexes = 1)
+                        = (SELECT count() FROM t_mut_idx WHERE t.a IN (100000, 100020, 100039) SETTINGS use_skip_indexes = 0);
+DROP TABLE t_mut_idx;
+
 -- Control: SET only a non-sort-key column. The re-sort must not be needed and the merge
 -- must work exactly as before.
 DROP TABLE IF EXISTS t_nonkey;
