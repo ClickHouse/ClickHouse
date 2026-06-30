@@ -608,12 +608,15 @@ def test_backup_restore_correct_block_ids(cluster):
         node,
         """
         DROP TABLE IF EXISTS test_simple_merge_tree;
-        -- Pin the codec to `LZ4`: the test splits `data.bin` into fixed-size upload blocks and asserts
-        -- a minimum block count, so the compressed part size must not depend on the server default codec.
-        CREATE TABLE test_simple_merge_tree(key UInt64, data String CODEC(LZ4))
+        -- Pin the default codec to `LZ4` for the whole part: the test splits `data.bin` into fixed-size
+        -- upload blocks and asserts a minimum block count, so the compressed part size must not depend on
+        -- the server default codec. This is a compact part, so `data.bin` is the combined stream of all
+        -- columns; pinning only a per-column `CODEC` would leave the `key` column on the server default
+        -- (`ZSTD(3)`), which compresses it smaller and drops the block count below the threshold.
+        CREATE TABLE test_simple_merge_tree(key UInt64, data String)
         Engine = MergeTree()
         ORDER BY tuple()
-        SETTINGS storage_policy='blob_storage_policy', serialization_info_version = 'basic'""",
+        SETTINGS storage_policy='blob_storage_policy', serialization_info_version = 'basic', default_compression_codec = 'LZ4'""",
     )
     data_query = "SELECT number, repeat('a', 100) FROM numbers(1000)"
     azure_query(
