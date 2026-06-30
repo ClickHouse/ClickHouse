@@ -44,7 +44,6 @@ private:
         token = "";
         username = "";
         password = "";
-        client_token = "";
         cert_name = "";
         port = 0;
         secret_path = "secret";
@@ -65,7 +64,6 @@ private:
     String token;
     String username;
     String password;
-    String client_token;
     String cert_name;
     String scheme;
     String host;

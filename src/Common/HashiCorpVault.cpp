@@ -326,6 +326,7 @@ String HashiCorpVault::readSecret(const String & secret, const String & key)
 {
     LOG_DEBUG(log, "readSecret {} {}", secret, key);
 
+    String client_token;
     if (auth_method == HashiCorpVaultAuthMethod::Userpass || auth_method == HashiCorpVaultAuthMethod::Cert)
         client_token = login();
     else
