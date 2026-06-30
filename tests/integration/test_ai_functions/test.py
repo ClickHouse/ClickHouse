@@ -101,6 +101,14 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # Endpoint returning a deterministic HTTP 400, which the url table function never retries.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_bad_request AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/bad_request', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # `api_key` is optional (some providers, e.g. a local Ollama, need no auth).
         # This collection omits it so we can assert no `Authorization` header is sent.
         instance.query(
@@ -134,6 +142,22 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"CREATE NAMED COLLECTION ai_embed_wrong_count AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_wrong_count', "
+            f"model = 'test-embed-model', "
+            f"api_key = 'test-key'"
+        )
+        # Endpoints that drop the connection for the first N requests (armed via /set-flaky),
+        # used to test that transient network failures are retried like the url table function.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_flaky AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/flaky', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_embed_flaky AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_flaky', "
             f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
@@ -641,3 +665,190 @@ def test_embed_quota_input_tokens_exceeded(started_cluster):
     # value due to a quota cut, matching the documented `AIRowsSkipped` semantics.
     assert int(events["rows_processed"]) == 1
     assert int(events["rows_skipped"]) == 3
+
+
+# ---------------------------------------------------------------------------
+# Retry on transient network errors (like the url table function)
+# ---------------------------------------------------------------------------
+
+
+def set_flaky(count):
+    """Arm the mock's flaky endpoints to fail their next `count` requests with a dropped
+    connection (a transient network error). `count=0` disarms them."""
+    instance.exec_in_container(
+        ["curl", "-s", f"http://localhost:{MOCK_PORT}/set-flaky?count={count}"]
+    )
+
+
+def test_generate_retries_on_network_error(started_cluster):
+    """A transient network failure (connection dropped without a response) is retried, matching
+    the url table function. With enough retries the call recovers and ultimately succeeds."""
+    set_flaky(2)
+    qid = unique_query_id("gen_retry_net")
+    result = instance.query(
+        "SELECT aiGenerate('ai_flaky', 'recover me')",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 5,
+        },
+        query_id=qid,
+    )
+    assert result.strip() == "recover me"
+    events = get_profile_events(qid)
+    # 2 failed attempts + 1 successful attempt for the single row.
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 1
+
+
+def test_generate_network_error_not_retried_when_disabled(started_cluster):
+    """With `ai_function_max_retries = 0`, a network failure is surfaced rather than retried."""
+    set_flaky(10)
+    try:
+        error = instance.query_and_get_error(
+            "SELECT aiGenerate('ai_flaky', 'no retry')",
+            settings={
+                **AI_SETTINGS,
+                "ai_function_max_retries": 0,
+            },
+        )
+        assert error  # a network/IO error is raised instead of a result
+    finally:
+        set_flaky(0)
+
+
+def test_embed_retries_on_network_error(started_cluster):
+    """The embedding path retries transient network failures too."""
+    set_flaky(2)
+    qid = unique_query_id("embed_retry_net")
+    result = instance.query(
+        "SELECT aiEmbed('ai_embed_flaky', 'hello')",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 5,
+        },
+        query_id=qid,
+    )
+    vec = parse_embedding(result)
+    assert len(vec) == 4  # DEFAULT_EMBED_DIM in mock server
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Provider HTTP-status retry policy (matches the url table function):
+# deterministic client errors (400/401/403/404/405/501) are surfaced immediately,
+# transient/server-side errors (5xx, …) are retried.
+# ---------------------------------------------------------------------------
+
+
+def test_generate_deterministic_http_error_not_retried(started_cluster):
+    """A deterministic provider HTTP status (400 Bad Request) is surfaced immediately and is NOT
+    retried, even with `ai_function_max_retries` enabled — exactly like the url table function,
+    which never retries 400/401/403/404/405/501. Only a single API call is made."""
+    qid = unique_query_id("gen_400_no_retry")
+    result = instance.query(
+        "SELECT aiGenerate('ai_bad_request', 'bad request')",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 5,
+            "ai_function_throw_on_error": 0,
+        },
+        query_id=qid,
+    )
+    # Non-retriable error with throw_on_error = 0: the row is skipped, producing an empty result.
+    assert result.strip() == ""
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1  # exactly one call: the 400 was not retried
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 1
+
+
+def test_generate_deterministic_http_error_throws(started_cluster):
+    """With the default `ai_function_throw_on_error = 1`, the deterministic 400 surfaces as
+    `RECEIVED_ERROR_FROM_REMOTE_IO_SERVER` rather than being retried away."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('ai_bad_request', 'bad request')",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 5,
+        },
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+
+
+def test_generate_server_error_is_retried(started_cluster):
+    """Counterpart to the 400 case: an HTTP 500 is a transient/server-side error, so it IS retried
+    (1 initial attempt + `ai_function_max_retries` retries), matching the url table function."""
+    qid = unique_query_id("gen_500_retried")
+    result = instance.query(
+        "SELECT aiGenerate('ai_error', 'server error')",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 2,
+            "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
+            "ai_function_throw_on_error": 0,
+        },
+        query_id=qid,
+    )
+    assert result.strip() == ""
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 3  # 1 + 2 retries
+    assert int(events["rows_skipped"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# The API-call quota bounds retries: `ai_function_max_api_calls_per_query` caps the
+# total number of HTTP requests per query, including retried requests, so a flaky
+# endpoint cannot dispatch `1 + ai_function_max_retries` requests for a single row/batch.
+# ---------------------------------------------------------------------------
+
+
+def test_generate_retry_respects_api_call_quota(started_cluster):
+    """An HTTP 500 is retriable, but the API-call quota is enforced before every attempt — including
+    retries. With `ai_function_max_api_calls_per_query = 1` and `ai_function_max_retries = 5`, only a
+    single request is dispatched (the quota stops the retries), not `1 + 5`."""
+    qid = unique_query_id("gen_quota_caps_retries")
+    result = instance.query(
+        "SELECT aiGenerate('ai_error', 'server error')",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 5,
+            "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
+            "ai_function_max_api_calls_per_query": 1,
+            "ai_function_throw_on_error": 0,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    assert result.strip() == ""
+    events = get_profile_events(qid)
+    # Without the per-attempt quota check this would be 6 (1 initial + 5 retries).
+    assert int(events["api_calls"]) == 1
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 1
+
+
+def test_embed_retry_respects_api_call_quota(started_cluster):
+    """The embedding path enforces the same per-attempt API-call quota: a retriable HTTP 500 is not
+    retried past `ai_function_max_api_calls_per_query`."""
+    qid = unique_query_id("embed_quota_caps_retries")
+    result = instance.query(
+        "SELECT aiEmbed('ai_embed_error', 'server error')",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 5,
+            "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
+            "ai_function_max_api_calls_per_query": 1,
+            "ai_function_throw_on_error": 0,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    # The single live row is skipped (empty array) because its batch never succeeded.
+    assert parse_embedding(result) == []
+    events = get_profile_events(qid)
+    # Without the per-attempt quota check this would be 6 (1 initial + 5 retries).
+    assert int(events["api_calls"]) == 1
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 1

@@ -24,7 +24,7 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #if CLICKHOUSE_CLOUD
-#include <Interpreters/Cache/OvercommitFileCachePriority.h>
+#include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -89,6 +89,8 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
+    extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
+    extern const FileCacheSettingsUInt64 bypass_cache_threshold;
 }
 
 void printRanges(const auto & segments)
@@ -1127,6 +1129,62 @@ catch (...)
     throw;
 }
 
+/// `getDownloadedContiguousOrEmpty` must inspect the actually downloaded segments even when
+/// `enable_bypass_cache_with_threshold` is on and the requested range exceeds the threshold.
+/// Otherwise getImpl() would return a synthetic DETACHED placeholder and the helper would
+/// wrongly report present-but-large data (e.g. distributed-cache temporary data) as missing.
+TEST_F(FileCacheTest, GetDownloadedContiguousIgnoresBypassThreshold)
+try
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t bypass_threshold = 100;
+    const size_t chunk = bypass_threshold; /// each cached segment stays at/below the threshold
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 100_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = chunk;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    /// Any read larger than `bypass_threshold` bytes would normally bypass the cache.
+    settings[FileCacheSetting::enable_bypass_cache_with_threshold] = true;
+    settings[FileCacheSetting::bypass_cache_threshold] = bypass_threshold;
+
+    DB::FileCache file_cache("bypass-temp", settings);
+    file_cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    const auto key = FileCacheKey::fromPath("bypass_temp_key");
+
+    /// Populate several contiguous segments, each no larger than the bypass threshold (a single
+    /// write larger than the threshold would itself bypass the cache and never be stored). The
+    /// downloaded data covers a range that, when read at once, exceeds the threshold.
+    const size_t num_chunks = 3;
+    const size_t downloaded_size = num_chunks * chunk;
+    for (size_t i = 0; i < num_chunks; ++i)
+    {
+        auto holder = file_cache.getOrSet(key, i * chunk, chunk, downloaded_size, CreateFileSegmentSettings{}, 0, user);
+        download(holder);
+    }
+
+    const auto & user_id = user.user_id;
+
+    /// The whole downloaded range is larger than the threshold but must still be reported present.
+    EXPECT_FALSE(file_cache.getDownloadedContiguousOrEmpty(key, 0, downloaded_size, user_id)->empty());
+    /// A sub-range that also exceeds the threshold is present too.
+    EXPECT_FALSE(file_cache.getDownloadedContiguousOrEmpty(key, 10, downloaded_size - 10, user_id)->empty());
+    /// A range past the downloaded data is correctly reported as missing.
+    EXPECT_TRUE(file_cache.getDownloadedContiguousOrEmpty(key, 0, downloaded_size + 1, user_id)->empty());
+}
+catch (...)
+{
+    std::cerr << getCurrentExceptionMessage(true) << std::endl;
+    throw;
+}
+
 TEST_F(FileCacheTest, CachedReadBuffer)
 {
     ServerUUID::setRandomForUnitTests();
@@ -1260,6 +1318,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
 }
 
 TEST_F(FileCacheTest, SLRUPolicy)
+try
 {
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
@@ -1468,6 +1527,11 @@ TEST_F(FileCacheTest, SLRUPolicy)
         assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
         assertProtected(cache->dumpQueue(), { Range(10, 14), Range(0, 4), Range(5, 9)  });
     }
+}
+catch (...)
+{
+    std::cerr << getCurrentExceptionMessage(true) << "\n";
+    throw;
 }
 
 TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
@@ -1773,33 +1837,33 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     auto it2 = add_file_segment(10, 10);
 
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
-    ASSERT_EQ(priority.getEvictionPosCount(), 2); /// queue.end()
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 2); /// queue.end()
 
     FileCacheReserveStat stat;
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
     auto evicted = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvicted);
 
     auto eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, IFileCachePriority::EvictionCursor::Reserve, 0, false, origin, cache_guard, state_guard);
     eviction_info.reset();
 
     ASSERT_EQ(evicted->size(), 0); /// Nothing is evicted.
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
-    ASSERT_EQ(priority.getEvictionPosCount(), 2); /// queue.end()
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 2); /// queue.end()
 
     auto it3 = add_file_segment(20, 10);
 
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPosCount(), 3); /// queue.end()
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 3); /// queue.end()
 
     evicted = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvicted);
     stat = {};
     eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, IFileCachePriority::EvictionCursor::Reserve, 0, false, origin, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0); /// queue.begin()
 
     {
         evicted->evict();
@@ -1809,7 +1873,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
         evicted.reset();
     }
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
-    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// still queue.begin(), but it2
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0); /// still queue.begin(), but it2
 
     auto get_file_segment = [&](size_t offset)
     {
@@ -1825,22 +1889,22 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     auto it4 = add_file_segment(30, 10);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPosCount(), 0);
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0);
 
     evicted = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvicted);
     stat = {};
     eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, IFileCachePriority::EvictionCursor::Reserve, 0, false, origin, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPosCount(), 3); /// 3 and not 2, because 1 entry is invalidated.
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 3); /// 3 and not 2, because 1 entry is invalidated.
 
     fs2.reset();
     fs3.reset();
 
-    priority.resetEvictionPos();
-    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
+    priority.resetEvictionPos(IFileCachePriority::EvictionCursor::Reserve);
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0); /// queue.begin()
 }
 
 TEST_F(FileCacheTest, MoveEvictionPos)
@@ -1875,12 +1939,14 @@ TEST_F(FileCacheTest, MoveEvictionPos)
     auto it_middle = add_to_src(10, 10);
     add_to_src(20, 10);
 
-    /// Point src's eviction position at the middle entry — the one we are about to move out.
+    /// Point both eviction cursors at the middle entry — the one we are about to move out.
     {
         auto read_lock = cache_guard.readLock();
-        src.setEvictionPos(it_middle.get(), read_lock);
+        src.setEvictionPos(IFileCachePriority::EvictionCursor::Reserve, it_middle.get(), read_lock);
+        src.setEvictionPos(IFileCachePriority::EvictionCursor::Background, it_middle.get(), read_lock);
     }
-    ASSERT_EQ((*src.getEvictionPos(cache_guard.readLock()))->offset, 10u);
+    ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Reserve, cache_guard.readLock()))->offset, 10u);
+    ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Background, cache_guard.readLock()))->offset, 10u);
 
     /// Move the middle entry out of `src` into `dst` (as an SLRU upgrade/downgrade would).
     /// `move` is called on the destination queue; `src` is the source.
@@ -1893,7 +1959,22 @@ TEST_F(FileCacheTest, MoveEvictionPos)
     /// The moved node was spliced out of src, so src's eviction position must advance to the
     /// next surviving src entry (offset 20). Before the fix it kept pointing at the moved node,
     /// which now lives in `dst` (offset 10) — a dangling cross-queue eviction position.
-    ASSERT_EQ((*src.getEvictionPos(cache_guard.readLock()))->offset, 20u);
+    /// Both cursors were set at the moved node, so `moveEvictionPosIfEqual` must advance both:
+    /// a regression advancing only one would leave the other dangling.
+    ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Reserve, cache_guard.readLock()))->offset, 20u);
+    ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Background, cache_guard.readLock()))->offset, 20u);
+
+    /// The two cursors are independent: resetting one must not disturb the other. Put them at
+    /// different positions, reset only Reserve, and check Background is untouched. A regression
+    /// where `resetEvictionPos(Reserve)` also cleared Background would be caught here.
+    {
+        auto read_lock = cache_guard.readLock();
+        src.setEvictionPos(IFileCachePriority::EvictionCursor::Reserve, src.queue.begin(), read_lock);
+        src.setEvictionPos(IFileCachePriority::EvictionCursor::Background, std::next(src.queue.begin()), read_lock);
+    }
+    src.resetEvictionPos(IFileCachePriority::EvictionCursor::Reserve);
+    ASSERT_EQ(src.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0u);
+    ASSERT_EQ(src.getEvictionPosCount(IFileCachePriority::EvictionCursor::Background), 1u);
 }
 
 TEST_F(FileCacheTest, LoadMetadataParallelism)
@@ -2390,7 +2471,7 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
     EvictionCandidates evicted(IFileCachePriority::OnEvictCallback{});
     priority.collectCandidatesForEviction(
         *eviction_info, stat, evicted, invalidated_entries, /* reservee */ nullptr,
-        /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
+        IFileCachePriority::EvictionCursor::FromHead, /* max_candidates_size */ 0,
         /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), cache_guard, state_guard);
 
     /// With the bug, dispatch goes to the empty data sub-queue and no System candidates
@@ -2466,7 +2547,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
         auto evicted = std::make_unique<EvictionCandidates>(IFileCachePriority::OnEvictCallback{});
         priority.collectCandidatesForEviction(
             *eviction_info, stat, *evicted, invalidated_entries, reservee,
-            /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
+            IFileCachePriority::EvictionCursor::FromHead, /* max_candidates_size */ 0,
             /* is_total_space_cleanup */ false, origin, cache_guard, state_guard);
 
         /// Run only the write phase, then drop the candidates WITHOUT running the state
@@ -2551,7 +2632,7 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
     /// Must not throw on the empty Data SLRU's absent queue ids.
     ASSERT_NO_THROW(priority.collectCandidatesForEviction(
         *eviction_info, stat, evicted, invalidated_entries, /* reservee */ nullptr,
-        /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
+        IFileCachePriority::EvictionCursor::FromHead, /* max_candidates_size */ 0,
         /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), cache_guard, state_guard));
 
     ASSERT_GT(evicted.size(), 0u);
