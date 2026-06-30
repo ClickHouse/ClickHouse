@@ -282,8 +282,21 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (recursive)
             {
+                /// When the current segment is the globstar `**` followed by a suffix (e.g.
+                /// `**/file.txt`), descend into subdirectories keeping the whole `**/...` pattern,
+                /// so the globstar keeps matching at every deeper level (any number of
+                /// directories). The zero-level branch above applies the post-`**` suffix at the
+                /// current level, so the combination matches zero, one, or more directory
+                /// components. Without this, a literal suffix (e.g. `pick.tsv`) would short-circuit
+                /// the recursion at the no-glob exact-match branch after a single level, and only a
+                /// glob suffix (e.g. `*.tsv`) would keep descending. For a trailing `**` (no
+                /// suffix), keep re-applying `current_glob` (`/**`) to list all files recursively,
+                /// as before.
+                const std::string descent_pattern = (current_glob == "/**" && looking_for_directory)
+                    ? suffix_with_globs
+                    : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
-                                                looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
+                                                descent_pattern,
                                                 total_bytes_to_read, result, matched_paths, recursive, depth + 1);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
