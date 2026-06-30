@@ -37,6 +37,9 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 
 
 namespace DB
@@ -211,12 +214,15 @@ StorageObjectStorage::StorageObjectStorage(
         configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
     }
 
+    /// Validate the configuration before schema/format inference, so that e.g. the HTTP host/header
+    /// filters are enforced before any inference network request reads remote data. The `url` table
+    /// function does the same in `TableFunctionURL::getActualTableStructure`.
+    configuration->check(context);
+
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     else
         validateSupportedColumns(columns, *configuration);
-
-    configuration->check(context);
 
     /// FIXME: We need to call getPathSample() lazily on select
     /// in case it failed to be initialized in constructor.
@@ -311,12 +317,25 @@ StorageObjectStorage::StorageObjectStorage(
     if (configuration->partition_strategy)
         metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
 
-    metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
         metadata.columns,
         context,
         format_settings,
         configuration->partition_strategy_type,
-        sample_path));
+        sample_path);
+
+    if (configuration->getType() == ObjectStorageType::Web && !metadata.getColumns().has("_headers"))
+    {
+        virtual_columns_desc.addEphemeral(
+            "_headers",
+            std::make_shared<DataTypeMap>(
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
+            "",
+            VirtualsMaterializationPlace::Reader);
+    }
+
+    metadata.setVirtuals(virtual_columns_desc);
 
     setInMemoryMetadata(metadata);
 }
@@ -803,6 +822,12 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
     {
         static SchemaCache schema_cache(
             context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+        return schema_cache;
+    }
+    if (storage_engine_name == "web")
+    {
+        static SchemaCache schema_cache(
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_url", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_engine_name);
