@@ -912,6 +912,8 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         result.index_results.push_back(std::move(index_result));
     }
 
+    validate_forced_indices();
+
     /// what pruning ALL the empirically-modelled candidates together would achieve
     if (combined_names.size() >= 2 && result.baseline_marks > 0)
     {
@@ -937,7 +939,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         result.index_results.push_back(std::move(combined));
     }
 
-    validate_forced_indices();
     return result;
 }
 

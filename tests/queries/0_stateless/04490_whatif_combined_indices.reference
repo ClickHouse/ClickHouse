@@ -36,3 +36,5 @@ With idx_b_set (set, hypothetical):
   skip_ratio:   99.0%
 --- single hyp index: no combined block ---
 0
+--- combined name cannot be forced (INDEX_NOT_USED) ---
+INDEX_NOT_USED

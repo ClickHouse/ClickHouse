@@ -44,4 +44,11 @@ $CLICKHOUSE_CLIENT -n -q "
     EXPLAIN WHATIF SELECT * FROM t_combined WHERE b = 42;
 " | grep -cE '^\(combined'
 
+echo "--- combined name cannot be forced (INDEX_NOT_USED) ---"
+$CLICKHOUSE_CLIENT -n -q "
+    CREATE HYPOTHETICAL INDEX idx_b ON t_combined (b) TYPE minmax GRANULARITY 1;
+    CREATE HYPOTHETICAL INDEX idx_c ON t_combined (c) TYPE bloom_filter GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_combined WHERE b = 42 AND c = 5000 SETTINGS force_data_skipping_indices = '\'(combined: idx_b, idx_c)\'';
+" 2>&1 | grep -m1 -o 'INDEX_NOT_USED'
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_combined;"
