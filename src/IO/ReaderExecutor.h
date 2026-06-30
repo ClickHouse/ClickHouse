@@ -101,6 +101,10 @@ public:
         /// (hits as well as misses) on every tier into the geometry, pins them, and reuses
         /// the plan across read-extent advances while the cursor stays inside the pinned span.
         size_t plan_look_ahead_max_window = DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW;
+        /// Route the synchronous foreground serve through the same FetchMachine flow as the
+        /// prefetch (run inline by a `LocalFetchMachineRunner`). When false, the legacy
+        /// synchronous read-and-assemble path serves the foreground.
+        bool unified_foreground = false;
         /// Long-connection sizing bounds (see `DEFAULT_LONG_CONNECTION_OPEN_RANGE` /
         /// `DEFAULT_LONG_CONNECTION_MAX_BOUND`).
         size_t long_connection_open_range = DEFAULT_LONG_CONNECTION_OPEN_RANGE;
@@ -846,6 +850,10 @@ private:
     /// Build the machine's runner-independent fetch step (see the definition). Shared by the
     /// pool runner and the future inline runner.
     std::function<StepResult()> makeFetchStep(FetchMachine & m);
+    /// Build a machine for `window` and run it via `machine_runner` (pool = async read-ahead,
+    /// local = inline foreground fetch); sets `machine` on success. Returns false on a pool queue
+    /// reject (the connection is reclaimed). The sole machine builder, shared by both runners.
+    bool launchMachineForWindow(size_t ri, ByteRange window, IFetchMachineRunner & machine_runner);
     void launchRetrieve(size_t ri);
     bool depsSatisfied(size_t ri) const;
 
@@ -897,6 +905,11 @@ private:
     /// `retrieve_index` it was launched for, so this is the "is a machine running for this
     /// retrieve" presence test the serve loop branches on.
     bool machineFor(size_t ri) const { return machine && machine->retrieve_index == ri; }
+
+    /// The runner that drives the in-flight machine's revoke/release verbs at collect: the pool
+    /// runner when read-ahead launched it, else the inline runner (no pool). The verbs branch on
+    /// the machine's `current_step`, so a settled inline machine no-ops through either.
+    IFetchMachineRunner & collectRunner() { return runner ? *runner : *local_runner; }
 
     /// The cancel verb: drop the in-flight machine. `cancelled` is true for a
     /// real cancellation (seek / extent change), false for destructor cleanup.
@@ -972,6 +985,8 @@ private:
     size_t max_tail_for_drain;
     /// Single fixed size for the plan window (Options).
     size_t plan_look_ahead_max_window;
+    /// Run the foreground serve through an inline FetchMachine instead of the legacy sync path (Options).
+    bool unified_foreground;
     /// Long-connection sizing bounds (Options): open range floor and hard cap.
     size_t long_connection_open_range;
     size_t long_connection_max_bound;
@@ -1004,8 +1019,12 @@ private:
     /// The machine driver over `prefetch_pool`: state writes, scheduling and
     /// the revoke/release edges live there; every policy decision stays here.
     /// Created in the constructor from `Options::prefetch_pool`; null without a pool.
-    /// Drives the FETCH machines only.
+    /// Drives the read-ahead (pool) FETCH machines only.
     std::unique_ptr<IFetchMachineRunner> runner;
+    /// Inline driver, always present: runs a foreground serve machine synchronously on the read
+    /// thread (`unified_foreground`). Also the fallback collect-runner when there is no pool - its
+    /// verbs no-op on a settled inline machine (null `current_step`).
+    std::unique_ptr<IFetchMachineRunner> local_runner;
     /// Single source of truth for "is a background machine in flight". The
     /// machine is co-owned with the pool job; the worker reads and writes ONLY
     /// the machine payload, and the foreground reclaims it through the

@@ -538,6 +538,112 @@ TEST_F(ReaderExecutorCacheChain, InlineFillPopulatesCacheFully)
            "so the warm re-read touches the source 0 times";
 }
 
+/// `reader_executor_unified_foreground` ON, NO prefetch pool: every foreground window is served
+/// by a one-window FetchMachine run INLINE on the read thread (LocalRunner) instead of the bespoke
+/// sync path. Asserts the cold scan (a) serves every byte, (b) actually ran inline machines
+/// (PrefetchHits > 0 with no pool - only the inline path creates machines without a pool), (c)
+/// never fell back to the legacy sync read (SyncReadMicroseconds == 0 - it served from the
+/// committed cells), and (d) populated the cache fully, so the warm re-read hits the source 0 times.
+TEST_F(ReaderExecutorCacheChain, UnifiedForegroundServesAndPopulatesViaInlineMachine)
+{
+    constexpr size_t segment_size = 64;
+    constexpr size_t block_size = 16;
+    constexpr size_t file_size = 5 * segment_size;
+    const String content = makePattern(file_size);
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto page_cache = makePageCache();
+    auto fc = makeFileCache("unified_fg_fc", segment_size, /*max_size=*/1ull << 20);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(makePageProvider(page_cache, "obj", block_size, file_size));
+    caches.push_back(makeDiskProvider(fc));
+
+    ReaderExecutor::Options opts;
+    opts.window_size = block_size;
+    opts.min_bytes_for_seek = 0;
+    opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+    opts.unified_foreground = true;   /// the feature under test; NO prefetch_pool - pure inline serve
+
+    const size_t src_before_cold = sourceRequestsSoFar();
+    UInt64 cold_prefetch_hits = 0;
+    UInt64 cold_sync_micros = 0;
+    {
+        ReaderExecutor cold(source, objects, caches, opts);
+        EXPECT_EQ(drainAll(cold), content) << "cold inline scan serves all bytes";
+        cold_prefetch_hits = inspect(cold).prefetchHits();
+        cold_sync_micros = inspect(cold).syncReadMicros();
+    }
+    const size_t cold_source = sourceRequestsSoFar() - src_before_cold;
+
+    const size_t src_before_warm = sourceRequestsSoFar();
+    {
+        ReaderExecutor warm(source, objects, caches, opts);
+        EXPECT_EQ(drainAll(warm), content) << "warm inline scan serves all bytes";
+    }
+    const size_t warm_source = sourceRequestsSoFar() - src_before_warm;
+
+    EXPECT_GT(cold_source, 0u) << "cold inline scan must hit the source";
+    EXPECT_GT(cold_prefetch_hits, 0u)
+        << "with no pool, a collected machine can only come from the inline foreground path";
+    EXPECT_EQ(cold_sync_micros, 0u)
+        << "the inline serve reads the committed cells; it must not fall back to the legacy sync read";
+    EXPECT_EQ(warm_source, 0u)
+        << "the inline FetchMachine fills the cache fully, so the warm re-read touches source 0 times";
+}
+
+/// `reader_executor_unified_foreground` ON *with* a prefetch pool: the inline foreground serve
+/// must coexist with the read-ahead machine without clobbering the single machine slot (the inline
+/// launch is guarded by `!machine`, not `!machineFor(ri)`). Cold scan serves every byte; warm
+/// re-read hits the source 0 times - neither path corrupts the other's fill.
+TEST_F(ReaderExecutorCacheChain, UnifiedForegroundCoexistsWithReadAheadPool)
+{
+    constexpr size_t segment_size = 64;
+    constexpr size_t block_size = 16;
+    constexpr size_t file_size = 5 * segment_size;
+    const String content = makePattern(file_size);
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto page_cache = makePageCache();
+    auto fc = makeFileCache("unified_fg_pool_fc", segment_size, /*max_size=*/1ull << 20);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(makePageProvider(page_cache, "obj", block_size, file_size));
+    caches.push_back(makeDiskProvider(fc));
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    ReaderExecutor::Options opts;
+    opts.window_size = block_size;
+    opts.min_bytes_for_seek = 0;
+    opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+    opts.prefetch_pool = pool;
+    opts.unified_foreground = true;
+
+    const size_t src_before_cold = sourceRequestsSoFar();
+    {
+        ReaderExecutor cold(source, objects, caches, opts);
+        EXPECT_EQ(drainAll(cold), content) << "cold scan (read-ahead + inline) serves all bytes";
+    }
+    const size_t cold_source = sourceRequestsSoFar() - src_before_cold;
+
+    const size_t src_before_warm = sourceRequestsSoFar();
+    {
+        ReaderExecutor warm(source, objects, caches, opts);
+        EXPECT_EQ(drainAll(warm), content) << "warm scan serves all bytes";
+    }
+    const size_t warm_source = sourceRequestsSoFar() - src_before_warm;
+
+    EXPECT_GT(cold_source, 0u) << "cold scan must hit the source";
+    EXPECT_EQ(warm_source, 0u)
+        << "read-ahead + inline foreground populate the cache fully; warm re-read touches source 0 times";
+}
+
 /// Regression: a cold `readBigAt` of a small range strictly inside a page-cache
 /// block. The page-cache miss legitimately expands to the whole block (larger
 /// than the requested extent), so the transient must read the full block from

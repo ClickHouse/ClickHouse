@@ -439,3 +439,34 @@ def test_repro_legacy_vs_executor(started_cluster):
         "executor result/availability differs from legacy:\n  "
         + "\n  ".join([legacy_msg, live_msg, stateless_msg])
     )
+
+
+def test_repro_unified_foreground_matches_legacy(started_cluster):
+    """`reader_executor_unified_foreground` ON: the synchronous foreground serve runs the SAME
+    FetchMachine inline (LocalRunner) instead of the bespoke sync read. Run the SAME multi-threaded
+    cold scan legacy vs executor (live + stateless) with the flag ON and assert identical results -
+    the inline foreground path is correct on real S3 + a multi-thread ReadPool (the pattern where
+    the legacy sync path's premature-EOF bug once lived)."""
+    q = LOADS["sequential"]
+
+    def run(label, settings):
+        _drop_caches()
+        qid = str(uuid.uuid4())
+        try:
+            res = node.query(q, query_id=qid, settings=settings).strip()
+            return f"{label}: OK sum={res} (qid={qid})", res
+        except Exception as e:  # noqa: BLE001
+            return f"{label}: FAILED (qid={qid}): {str(e)[:400]}", None
+
+    unified = {"reader_executor_unified_foreground": 1, "max_threads": 8}
+    legacy_msg, legacy_res = run("legacy(executor=0)", {"use_reader_executor": 0, "max_threads": 8})
+    live_msg, live_res = run("executor-live-unified", _settings(True, extra=unified))
+    stateless_msg, stateless_res = run("executor-stateless-unified", _settings(False, extra=unified))
+
+    logging.error("UNIFIED-FG REPRO RESULTS:\n  %s\n  %s\n  %s", legacy_msg, live_msg, stateless_msg)
+
+    assert legacy_res is not None, f"legacy path itself failed: {legacy_msg}"
+    assert live_res == legacy_res and stateless_res == legacy_res, (
+        "unified-foreground executor result/availability differs from legacy:\n  "
+        + "\n  ".join([legacy_msg, live_msg, stateless_msg])
+    )

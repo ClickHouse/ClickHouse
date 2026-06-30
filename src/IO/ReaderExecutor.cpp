@@ -1,6 +1,7 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/PrefetchThreadPool.h>
 #include <IO/FetchMachineRunner.h>
+#include <IO/LocalFetchMachineRunner.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -244,11 +245,13 @@ ReaderExecutor::ReaderExecutor(
     , block_size(options.block_size)
     , max_tail_for_drain(options.max_tail_for_drain)
     , plan_look_ahead_max_window(options.plan_look_ahead_max_window)
+    , unified_foreground(options.unified_foreground)
     , long_connection_open_range(options.long_connection_open_range)
     , long_connection_max_bound(options.long_connection_max_bound)
     , fill_ahead_lead(options.fill_ahead_lead)
     , prefetch_pool(std::move(options.prefetch_pool))
     , runner(prefetch_pool ? std::make_unique<PoolFetchMachineRunner>(prefetch_pool) : nullptr)
+    , local_runner(std::make_unique<LocalFetchMachineRunner>())
     , long_connection_limit(std::move(options.long_connection_limit))
     , reader_executor_log(std::move(options.reader_executor_log))
     , active_metric(CurrentMetrics::ReaderExecutorActive)
@@ -787,7 +790,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     /// moved into the machine at launch; we reclaim it below.
     chassert(!long_conn);
 
-    if (runner->tryCancelQueued(*m))
+    if (collectRunner().tryCancelQueued(*m))
     {
         /// The worker never ran - the carried long connection is pristine; reclaim it
         /// so the synchronous read can continue it.
@@ -811,7 +814,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     LOG_TRACE(log, "tryCollectMachine: waiting on prefetched [{}, {})",
         m->physical_window.offset - data_start_offset, m->physical_window.end() - data_start_offset);
     StatTimer wait_scope(stats, Stats::PrefetchWaitMicroseconds);
-    runner->waitReleased(*m);
+    collectRunner().waitReleased(*m);
 
     /// The fetch step failed: mandatory work, so the read fails. Keep the machine's
     /// issued-I/O counters before rethrowing - the bytes crossed the wire.
@@ -2382,6 +2385,42 @@ std::function<StepResult()> ReaderExecutor::makeFetchStep(FetchMachine & m)
     };
 }
 
+bool ReaderExecutor::launchMachineForWindow(size_t ri, ByteRange window, IFetchMachineRunner & machine_runner)
+{
+    auto m = std::make_shared<FetchMachine>();
+    m->physical_window = window;
+    m->retrieve_index = ri;
+    m->pressure_snapshot = read_plan.geometry()->pressure_level;
+    m->extent_snapshot = read_extent_end;
+    /// Record the fill-target writers now so the step can write its led segments inline during
+    /// the fetch (the collect's `schedulePutStep` reuses these views).
+    collectFillTargets(*m);
+
+    /// The foreground is the sole opener; the aligned window's first physical range gives the
+    /// object and its object-local offset. A no-op when not warranted / at capacity / a usable
+    /// connection is already held. The channel bound comes from the runtime reach
+    /// (`longConnectionBound`: `predictedReach` clamped at the next wide cached run), the same on
+    /// the prefetch and foreground paths - the schedule no longer hands down a span.
+    auto prefetch_ranges = offset_map.map(window);
+    if (!prefetch_ranges.empty())
+        openLongIfWarranted(prefetch_ranges.front().object, prefetch_ranges.front().object_offset,
+            window.offset, stats);
+    m->long_conn = takeLong(long_conn);
+
+    m->run_step = makeFetchStep(*m);
+
+    if (!machine_runner.schedule(m))
+    {
+        /// Queue reject (pool runner only): the machine is parked, payload untouched - reclaim
+        /// the pristine connection so the caller reads synchronously.
+        long_conn = takeLong(m->long_conn);
+        stats.add(Stats::PrefetchPoolFull);
+        return false;
+    }
+    machine = std::move(m);
+    return true;
+}
+
 void ReaderExecutor::launchRetrieve(size_t ri)
 {
     const auto & r = read_plan.schedule.retrieves[ri];
@@ -2396,38 +2435,10 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     const size_t chunk = std::min(r.range.end() - base, boundedReadSize(fillAheadLead(level)));
     if (chunk == 0)
         return;
-    const ByteRange next_physical_window{base, chunk};
 
-    auto m = std::make_shared<FetchMachine>();
-    m->physical_window = next_physical_window;
-    m->retrieve_index = ri;
-    m->pressure_snapshot = read_plan.geometry()->pressure_level;
-    m->extent_snapshot = read_extent_end;
-    /// Record the fill-target writers now so the worker can write its led segments inline
-    /// during the fetch step (the collect's `schedulePutStep` reuses these views).
-    collectFillTargets(*m);
-
-    /// The foreground is the sole opener; the aligned window's first physical range gives
-    /// the object and its object-local offset. A no-op when not warranted / at capacity /
-    /// a usable connection is already held. The channel bound comes from the runtime reach
-    /// (`longConnectionBound`: `predictedReach` clamped at the next wide cached run), the same
-    /// on the prefetch and foreground paths - the schedule no longer hands down a span.
-    auto prefetch_ranges = offset_map.map(next_physical_window);
-    if (!prefetch_ranges.empty())
-        openLongIfWarranted(prefetch_ranges.front().object, prefetch_ranges.front().object_offset,
-            next_physical_window.offset, stats);
-    m->long_conn = takeLong(long_conn);
-
-    m->run_step = makeFetchStep(*m);
-
-    if (!runner->schedule(m))
-    {
-        long_conn = takeLong(m->long_conn);
-        stats.add(Stats::PrefetchPoolFull);
-        return;
-    }
-    machine = std::move(m);
-    st.phase = RetrievePhase::InFlight;
+    /// Read-ahead runs on the pool (async); the serve cursor reads its committed cells live.
+    if (launchMachineForWindow(ri, ByteRange{base, chunk}, *runner))
+        st.phase = RetrievePhase::InFlight;
 }
 
 void ReaderExecutor::maybeLaunchAhead()
@@ -2635,6 +2646,21 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
     if (want == 0)
         return {};
     const ByteRange window_phys{position_phys, want};
+
+    /// Unified foreground: with the machine slot free, run a one-window FetchMachine for this
+    /// window INLINE on the serve thread (the same flow as the prefetch, driven by a local
+    /// runner), then collect it - finalizing the cache fill and reclaiming the connection on this
+    /// thread, so the cell-serve below reads the just-committed cells. Sibling-led contention
+    /// revokes in collect (the led cells stay committed) and falls through to the sync fallback.
+    /// Collecting here rather than deferring to `maybeLaunchAhead` keeps it correct with or
+    /// without a pool. The guard is `!machine` (slot free), NOT `!machineFor(ri)`:
+    /// `launchMachineForWindow` overwrites the single slot, so a read-ahead machine in flight for
+    /// another retrieve must not be clobbered - that case keeps the existing cell-serve / fallback.
+    if (unified_foreground && !machine)
+    {
+        if (launchMachineForWindow(ri, window_phys, *local_runner))
+            collectInFlightInto(ri);
+    }
 
     /// The in-flight machine fills the LEAD ahead of the cursor, committing cells progressively.
     /// Read the committed prefix LIVE - never block on the whole lead. The machine "leads" this
@@ -3085,7 +3111,7 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     LOG_TRACE(log, "Prefetch: discarding [{}, {})",
         m->physical_window.offset - data_start_offset, m->physical_window.end() - data_start_offset);
 
-    if (runner->tryCancelQueued(*m))
+    if (collectRunner().tryCancelQueued(*m))
     {
         /// The worker never ran - reclaim the carried connection (pristine). A seek
         /// keeps it (the read funnel decides bridge-or-reopen later); the destructor
@@ -3111,8 +3137,8 @@ void ReaderExecutor::cancelMachine(bool cancelled)
         /// makes the worker wrap at its next block, so the wait is bounded. Stats are folded at
         /// the reap (the machine is stashed finished; `drainAbandonedMachines` reaps it).
         stats.add(Stats::PrefetchDiscardedRunning);
-        runner->requestInterrupt(*m);
-        runner->waitReleased(*m);
+        collectRunner().requestInterrupt(*m);
+        collectRunner().waitReleased(*m);
         abandoned_machines.push_back(std::move(m));
     }
 }

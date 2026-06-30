@@ -67,6 +67,8 @@ public:
     /// Counters.
     UInt64 incompleteConnections() const { return ex.stats.get(ReaderExecutor::Stats::IncompleteConnections); }
     UInt64 sourceRequests() const { return ex.stats.get(ReaderExecutor::Stats::SourceRequests); }
+    UInt64 prefetchHits() const { return ex.stats.get(ReaderExecutor::Stats::PrefetchHits); }
+    UInt64 syncReadMicros() const { return ex.stats.get(ReaderExecutor::Stats::SyncReadMicroseconds); }
 
     /// Drivers that exercise the long-connection mechanics directly. The
     /// `ex.`-qualified calls target `ReaderExecutor`'s private methods, not the
