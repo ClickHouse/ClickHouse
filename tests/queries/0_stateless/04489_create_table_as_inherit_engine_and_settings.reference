@@ -43,6 +43,12 @@ CREATE TABLE default.t_47240_from_join
 )
 ENGINE = Join(ANY, LEFT, k)
 SETTINGS join_use_nulls = 1
+CREATE TEMPORARY TABLE t_47240_temp_from_join
+(
+    `k` UInt64,
+    `v` UInt64
+)
+ENGINE = Memory
 CREATE TABLE default.t_47240_from_ext
 (
     `x` UInt64

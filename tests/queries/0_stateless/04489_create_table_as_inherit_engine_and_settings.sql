@@ -13,6 +13,7 @@ DROP VIEW IF EXISTS t_47240_mv;
 DROP TABLE IF EXISTS t_47240_from_mv;
 DROP TABLE IF EXISTS t_47240_join_src;
 DROP TABLE IF EXISTS t_47240_from_join;
+DROP TEMPORARY TABLE IF EXISTS t_47240_temp_from_join;
 DROP TABLE IF EXISTS t_47240_ext_src;
 DROP TABLE IF EXISTS t_47240_from_ext;
 
@@ -71,6 +72,14 @@ CREATE TABLE t_47240_join_src (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k);
 CREATE TABLE t_47240_from_join AS t_47240_join_src SETTINGS join_use_nulls = 1;
 SHOW CREATE TABLE t_47240_from_join FORMAT TSVRaw;
 
+-- A temporary table never inherits the source engine: `setEngine` always resolves it to
+-- default_temporary_table_engine (Memory by default), regardless of the AS source. The SETTINGS clause must
+-- therefore be split against that engine, not against the inherited source engine. Otherwise join_use_nulls (a
+-- Join setting of the source) would be kept in the storage definition and rejected by Memory, instead of being
+-- treated as a query setting.
+CREATE TEMPORARY TABLE t_47240_temp_from_join AS t_47240_join_src SETTINGS join_use_nulls = 1;
+SHOW CREATE TEMPORARY TABLE t_47240_temp_from_join FORMAT TSVRaw;
+
 -- When restore_replace_external_engines_to_null is set, an external engine inherited from the source (here URL)
 -- through `CREATE TABLE dst AS src <storage_clause>` must be replaced with Null, just like an explicitly
 -- specified external engine is. The source table is created before the setting is enabled so that it keeps its
@@ -83,6 +92,7 @@ SET restore_replace_external_engines_to_null = 0;
 
 DROP TABLE t_47240_from_ext;
 DROP TABLE t_47240_ext_src;
+DROP TEMPORARY TABLE t_47240_temp_from_join;
 DROP TABLE t_47240_from_join;
 DROP TABLE t_47240_join_src;
 DROP TABLE t_47240_from_mv;

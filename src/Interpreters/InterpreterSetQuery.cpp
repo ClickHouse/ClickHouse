@@ -25,6 +25,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsDefaultTableEngine default_table_engine;
+    extern const SettingsDefaultTableEngine default_temporary_table_engine;
 }
 
 BlockIO InterpreterSetQuery::execute()
@@ -101,6 +102,19 @@ std::optional<String> getTableStorageName(const ASTCreateQuery & create, Context
         return {};
     if (create.storage->engine)
         return create.storage->engine->name;
+
+    /// Temporary tables never inherit the source engine: `InterpreterCreateQuery::setEngine` resolves their
+    /// engine to `default_temporary_table_engine` regardless of the `AS` source. Mirror that here so the SETTINGS
+    /// clause is split against the engine the temporary table will actually have, instead of the inherited source
+    /// engine. Otherwise an engine-specific setting of the source (for example `join_use_nulls` for a `Join` source)
+    /// would be kept in the storage definition and then rejected by the actual engine (for example `Memory`).
+    if (create.isTemporary())
+    {
+        auto default_temporary_engine = context->getSettingsRef()[Setting::default_temporary_table_engine];
+        if (default_temporary_engine == DefaultTableEngine::None)
+            return {};
+        return default_temporary_engine.toString();
+    }
 
     if (auto inherited_engine = getInheritedEngineName(create, context))
         return inherited_engine;
