@@ -12,6 +12,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -33,8 +34,14 @@ namespace DB
 {
 struct Settings;
 
+namespace Setting
+{
+extern const SettingsBool allow_experimental_codecs;
+}
+
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int BAD_QUERY_PARAMETER;
 extern const int UNKNOWN_QUERY_PARAMETER;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -70,6 +77,7 @@ private:
     SerializationPtr serialization;
     std::optional<String> codec;
     std::optional<UInt64> block_size_bytes;
+    bool allow_experimental_codecs;
 
 
     void resetBuffersIfNeeded(AggregateDataPtr __restrict place) const
@@ -116,18 +124,35 @@ private:
             ParserCodec codec_parser;
             auto ast
                 = parseQuery(codec_parser, "(" + codec.value() + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-            return CompressionCodecFactory::instance().get(ast, argument_types[0]);
+            auto result_codec = CompressionCodecFactory::instance().get(ast, argument_types[0]);
+
+            /// Experimental codecs (such as PCO) are gated behind `allow_experimental_codecs` everywhere
+            /// they can be specified. Enforce the same gate here, so this aggregate function cannot be used
+            /// to compress data with an experimental codec when the setting is off.
+            if (!allow_experimental_codecs && result_codec->isExperimental())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Codec '{}' is experimental and not meant to be used in production."
+                    " You can enable it with the 'allow_experimental_codecs' setting",
+                    codec.value());
+
+            return result_codec;
         }
         return CompressionCodecFactory::instance().getDefaultCodec();
     }
 
 public:
     [[maybe_unused]] explicit AggregateFunctionEstimateCompressionRatio(
-        const DataTypes & arguments, const Array & params, std::optional<String> codec_, std::optional<UInt64> block_size_bytes_)
+        const DataTypes & arguments,
+        const Array & params,
+        std::optional<String> codec_,
+        std::optional<UInt64> block_size_bytes_,
+        bool allow_experimental_codecs_)
         : IAggregateFunctionDataHelper(arguments, params, createResultType())
         , serialization(this->result_type->getDefaultSerialization())
         , codec(codec_)
         , block_size_bytes(block_size_bytes_)
+        , allow_experimental_codecs(allow_experimental_codecs_)
     {
     }
 
@@ -239,7 +264,7 @@ public:
 }
 
 static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
-    const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings *)
+    const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings * settings)
 {
     if (arguments.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires exactly one argument", name);
@@ -290,7 +315,15 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
         }
     }
 
-    return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, codec, block_size_bytes);
+    /// The codec is constructed (and used to compress) lazily at execution time, through the typed
+    /// factory path, which does not enforce the experimental-codec gate. Resolve `allow_experimental_codecs`
+    /// here, from the query settings, and pass it down so that experimental codecs (such as `PCO`) cannot
+    /// be exercised through this aggregate function unless the gate is enabled. Fail closed if the settings
+    /// are unavailable.
+    const bool allow_experimental_codecs = settings != nullptr && (*settings)[Setting::allow_experimental_codecs];
+
+    return std::make_shared<AggregateFunctionEstimateCompressionRatio>(
+        arguments, parameters, codec, block_size_bytes, allow_experimental_codecs);
 }
 
 void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory);
