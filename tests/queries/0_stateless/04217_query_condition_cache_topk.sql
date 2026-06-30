@@ -1,5 +1,10 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: long, no-parallel, no-parallel-replicas
 -- Tag no-parallel: Messes with internal cache
+-- Tag long: needs ~1M rows for the QCC to populate (a granule-spanning chunk must be
+--   fully filtered before the LIMIT cancels the pipeline), so on the slower S3 +
+--   sanitizer configuration a single run takes ~180s and crosses the flaky-check
+--   "test runs too long" threshold; the data volume is structurally required and
+--   can't be cut without losing the cache-population assertions below.
 --
 -- Test that the Query Condition Cache (QCC) is populated for queries that go
 -- through the `ORDER BY <column> LIMIT n` (TopK) plan, and that QCC entries

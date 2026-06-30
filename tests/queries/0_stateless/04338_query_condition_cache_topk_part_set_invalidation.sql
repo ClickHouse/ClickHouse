@@ -1,5 +1,10 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: long, no-parallel, no-parallel-replicas
 -- Tag no-parallel: Messes with internal cache
+-- Tag long: needs ~1.5M rows across two partitions for the TopK threshold to drop
+--   whole granules of the unchanged part, so on the slower S3 + sanitizer
+--   configuration a single run takes ~180s and crosses the flaky-check "test runs
+--   too long" threshold; the data volume is structurally required by the
+--   part-set-invalidation scenario this test checks.
 --
 -- Correctness regression for the Query Condition Cache (QCC) on the
 -- `ORDER BY <column> LIMIT n` (TopK) plan: a granule-skip decision recorded for
