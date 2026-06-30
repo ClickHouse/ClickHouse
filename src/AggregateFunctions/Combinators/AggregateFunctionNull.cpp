@@ -4,7 +4,11 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 
 #include <AggregateFunctions/AggregateFunctionNothing.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -17,6 +21,16 @@ namespace ErrorCodes
 
 namespace
 {
+
+bool isNullableArrayArgument(const DataTypePtr & argument)
+{
+    return argument->isNullable() && typeid_cast<const DataTypeArray *>(removeNullable(argument).get());
+}
+
+bool hasNullableArrayArgument(const DataTypes & arguments)
+{
+    return std::any_of(arguments.begin(), arguments.end(), isNullableArrayArgument);
+}
 
 class AggregateFunctionCombinatorNull final : public IAggregateFunctionCombinator
 {
@@ -126,7 +140,19 @@ public:
             return new_function;
         }
 
-        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getResultType()->canBeInsideNullable();
+        const auto & result_type = nested_function->getResultType();
+        const bool result_type_is_array = typeid_cast<const DataTypeArray *>(result_type.get());
+        const bool nullable_array_argument = hasNullableArrayArgument(arguments);
+        bool return_type_is_nullable = !properties.returns_default_when_only_null
+            && (result_type->canBeInsideNullable() || (result_type_is_array && nullable_array_argument));
+
+        /// Keep array-returning aggregates compatible unless the nullable argument itself is
+        /// `Nullable(Array(...))`; in that case the null adapter must preserve the all-NULL result.
+        /// Do not block `Tuple`: the base Null combinator must still return `Nullable(Tuple(...))`
+        /// when arguments are nullable (see `AggregateFunctionIf::getOwnNullAdapter` for *If* only).
+        if (return_type_is_nullable && result_type_is_array && !nullable_array_argument)
+            return_type_is_nullable = false;
+
         bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
 
         if (arguments.size() == 1)

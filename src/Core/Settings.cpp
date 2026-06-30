@@ -8151,6 +8151,9 @@ On server startup, prevent scheduling of refreshable materialized views, as if w
 Allow to create database with Engine=MaterializedPostgreSQL(...).
 )", EXPERIMENTAL) \
     \
+    DECLARE(Bool, allow_experimental_nullable_array_type, false, R"(
+Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Array](../../sql-reference/data-types/array.md) columns in tables.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, false, R"(
 Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
 

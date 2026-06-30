@@ -75,13 +75,18 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const String mrk_extension = data_part->getMarksFileExtension();
     for (const auto & column_name : empty_columns)
     {
+        auto column = columns.tryGetByName(column_name);
+        if (!column)
+            continue;
+
         auto serialization = data_part->tryGetSerialization(column_name);
         if (!serialization)
             continue;
 
-        ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+        ISerialization::StreamCallback callback = [&, column_desc = *column](const ISerialization::SubstreamPath & substream_path)
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", checksums, data_part->storage.getSettings());
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                column_desc, substream_path, ".bin", checksums, data_part->storage.getSettings());
 
             /// Delete files if they are no longer shared with another column.
             if (stream_name && --stream_counts[*stream_name] == 0)

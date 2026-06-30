@@ -79,6 +79,7 @@ struct AlterCommand
 
     /// For ADD and MODIFY, a new column type.
     DataTypePtr data_type = nullptr;
+    std::optional<bool> null_modifier;
 
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};

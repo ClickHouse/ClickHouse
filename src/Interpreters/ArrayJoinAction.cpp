@@ -1,8 +1,10 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -25,6 +27,9 @@ namespace ErrorCodes
 
 std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
 {
+    if (type->isNullable())
+        return nullptr;
+
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         return std::shared_ptr<const DataTypeArray>{type, array_type};
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
@@ -38,9 +43,11 @@ std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
 
 static ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
 {
-    if (typeid_cast<const ColumnArray *>(column.get()))
-        return column;
-    if (const auto * map = typeid_cast<const ColumnMap *>(column.get()))
+    ColumnPtr unwrapped_column = column;
+
+    if (typeid_cast<const ColumnArray *>(unwrapped_column.get()))
+        return unwrapped_column;
+    if (const auto * map = typeid_cast<const ColumnMap *>(unwrapped_column.get()))
         return map->getNestedColumnPtr();
     return nullptr;
 }
@@ -226,7 +233,8 @@ Block ArrayJoinResultIterator::next()
     size_t next_row = current_row;
     for (; next_row < total_rows; ++next_row)
     {
-        if (offsets[next_row] - offsets[current_row - 1] >= max_block_size)
+        const size_t previous_offset = current_row == 0 ? 0 : offsets[current_row - 1];
+        if (offsets[next_row] - previous_offset >= max_block_size)
             break;
     }
     if (next_row == current_row)
@@ -259,11 +267,13 @@ Block ArrayJoinResultIterator::next()
             if (const auto & type = getArrayJoinDataType(current.type))
             {
                 ColumnPtr array_ptr;
-                if (typeid_cast<const DataTypeArray *>(current.type.get()))
+                if (typeid_cast<const DataTypeArray *>(removeNullable(current.type).get()))
                 {
                     array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
                                                            : current.column;
                     array_ptr = array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+                    if (const auto * nullable_array = typeid_cast<const ColumnNullable *>(array_ptr.get()))
+                        array_ptr = nullable_array->getNestedColumnPtr();
                 }
                 else
                 {

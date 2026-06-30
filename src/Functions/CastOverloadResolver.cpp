@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
@@ -244,8 +245,8 @@ protected:
 
         if (keep_nullable
             && canContainNull(*arguments.front().type)
-            && type->canBeInsideNullable())
-            return makeNullable(type);
+            && canBeInsideNullableWithSettings(*type, getContext()->getSettingsRef()))
+            return makeNullableAllowingArray(type);
 
         return type;
     }

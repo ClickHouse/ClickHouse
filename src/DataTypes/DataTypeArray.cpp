@@ -34,7 +34,6 @@ DataTypeArray::DataTypeArray(const DataTypePtr & nested_)
 {
 }
 
-
 MutableColumnPtr DataTypeArray::createColumn() const
 {
     return ColumnArray::create(nested->createColumn(), ColumnArray::ColumnOffsets::create());

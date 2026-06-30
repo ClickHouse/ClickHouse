@@ -1,7 +1,9 @@
 #pragma once
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/array/NullableArrayOffsets.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -19,7 +21,7 @@ namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TYPE_MISMATCH;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
@@ -37,6 +39,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -48,14 +51,20 @@ public:
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[i]).get());
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
                                 "All arguments for function {} must be arrays but argument {} has type {}.",
                                 getName(), i + 1, arguments[i]->getName());
         }
 
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
+        auto result_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
+        for (const auto & argument : arguments)
+        {
+            if (argument->isNullable())
+                return makeNullableAllowingArray(result_type);
+        }
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
@@ -123,7 +132,7 @@ private:
 
 
 template <typename Derived>
-ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
+ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     const ColumnArray::Offsets * offsets = nullptr;
     size_t num_arguments = arguments.size();
@@ -131,32 +140,53 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
 
     Columns array_holders;
     ColumnPtr offsets_column;
+    ColumnUInt8::MutablePtr row_null_map;
+    VectorWithMemoryTracking<const ColumnArray *> array_columns(num_arguments);
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        const ColumnPtr & array_ptr = arguments[i].column;
-        const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
-        if (!array)
+        ColumnPtr array_ptr = arguments[i].column->convertToFullColumnIfConst();
+        if (const auto * nullable_array = checkAndGetColumn<ColumnNullable>(array_ptr.get()))
         {
-            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
-                arguments[i].column.get());
-            if (!const_array)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of {}-th argument of function {}",
-                    arguments[i].column->getName(), i + 1, getName());
-            array_holders.emplace_back(const_array->convertToFullColumn());
-            array = checkAndGetColumn<ColumnArray>(array_holders.back().get());
+            if (!row_null_map)
+                row_null_map = ColumnUInt8::create(nullable_array->getNullMapData().begin(), nullable_array->getNullMapData().end());
+            else
+            {
+                auto & row_null_map_data = row_null_map->getData();
+                const auto & other_null_map = nullable_array->getNullMapData();
+                for (size_t row = 0, rows = row_null_map_data.size(); row < rows; ++row)
+                    row_null_map_data[row] |= other_null_map[row];
+            }
+            array_ptr = nullable_array->getNestedColumnPtr();
         }
 
-        const ColumnArray::Offsets & offsets_i = array->getOffsets();
+        const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
+        if (!array)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of {}-th argument of function {}",
+                arguments[i].column->getName(), i + 1, getName());
+        array_holders.emplace_back(std::move(array_ptr));
+        array_columns[i] = array;
+    }
+
+    const auto * row_null_map_data = row_null_map ? row_null_map.get() : nullptr;
+    for (size_t i = 0; i < num_arguments; ++i)
+    {
+        if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*array_columns[i], row_null_map_data, input_rows_count))
+        {
+            array_holders[i] = std::move(null_rows_empty_array);
+            array_columns[i] = assert_cast<const ColumnArray *>(array_holders[i].get());
+        }
+
+        const ColumnArray::Offsets & offsets_i = array_columns[i]->getOffsets();
         if (i == 0)
         {
             offsets = &offsets_i;
-            offsets_column = array->getOffsetsPtr();
+            offsets_column = array_columns[i]->getOffsetsPtr();
         }
         else if (offsets_i != *offsets)
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Lengths of all arrays passed to {} must be equal.",
                 getName());
 
-        const auto * array_data = &array->getData();
+        const auto * array_data = &array_columns[i]->getData();
         data_columns[i] = array_data;
     }
 
@@ -202,7 +232,14 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
             executeHashed(*offsets, data_columns, res_values);
     }
 
-    return ColumnArray::create(std::move(res_nested), offsets_column);
+    auto result = ColumnArray::create(std::move(res_nested), offsets_column);
+    if (result_type->isNullable())
+    {
+        if (!row_null_map)
+            row_null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+        return ColumnNullable::create(std::move(result), std::move(row_null_map));
+    }
+    return result;
 }
 
 template <typename Derived>

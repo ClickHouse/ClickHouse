@@ -222,7 +222,10 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                 {
                     if (levels[i].is_array)
                     {
-                        const DataTypeArray * array = typeid_cast<const DataTypeArray *>(node.type_hint.get());
+                        DataTypePtr array_hint = node.type_hint;
+                        if (array_hint->isNullable())
+                            array_hint = removeNullable(array_hint);
+                        const DataTypeArray * array = typeid_cast<const DataTypeArray *>(array_hint.get());
                         if (!array)
                             throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of nested column {} doesn't match parquet schema: parquet type is Array, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
                         node.type_hint = array->getNestedType();
@@ -257,7 +260,10 @@ void SchemaConverter::processSubtree(TraversalNode & node)
             /// We'll first process schema for array element type, then wrap it in Array type.
             if (node.type_hint)
             {
-                const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(node.type_hint.get());
+                DataTypePtr array_hint = node.type_hint;
+                if (array_hint->isNullable())
+                    array_hint = removeNullable(array_hint);
+                const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(array_hint.get());
                 if (!array_type)
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Array, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
                 node.type_hint = array_type->getNestedType();
@@ -292,6 +298,15 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         array.primitive_end = primitive_columns.size();
         array.input_type = std::make_shared<DataTypeArray>(array_element.output_type);
         array.output_type = array.input_type;
+
+        const bool make_nullable_array = levels.size() >= 2
+            && !options.schema_inference_force_not_nullable
+            && (options.schema_inference_force_nullable || !levels[levels.size() - 2].is_array);
+        if (!outer_type_hint
+            && options.format.schema_inference_allow_nullable_array_type
+            && (node.schema_context == SchemaContext::ListTuple || node.schema_context == SchemaContext::ListElement)
+            && make_nullable_array)
+            array.output_type = makeNullableAllowingArray(array.output_type);
         array.nested_columns = {*node.output_idx};
         array.rep = rep;
         node.output_idx = array_idx;

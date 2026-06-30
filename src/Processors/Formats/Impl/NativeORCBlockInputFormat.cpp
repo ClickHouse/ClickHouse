@@ -61,6 +61,7 @@ extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 extern const int THERE_IS_NO_COLUMN;
 extern const int INCORRECT_DATA;
 extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
 extern const int TOO_DEEP_RECURSION;
 }
 
@@ -1008,7 +1009,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching,
-        format_settings.orc.dictionary_as_low_cardinality);
+        format_settings.orc.dictionary_as_low_cardinality,
+        format_settings.schema_inference_allow_nullable_array_type);
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
     const auto & header = getPort().getHeader();
@@ -1226,12 +1228,14 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     bool allow_missing_columns_,
     bool null_as_default_,
     bool case_insensitive_matching_,
-    bool dictionary_as_low_cardinality_)
+    bool dictionary_as_low_cardinality_,
+    bool allow_nullable_array_type_)
     : header(header_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
     , case_insensitive_matching(case_insensitive_matching_)
     , dictionary_as_low_cardinality(dictionary_as_low_cardinality_)
+    , allow_nullable_array_type(allow_nullable_array_type_)
 {
 }
 
@@ -1791,8 +1795,10 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
 
     bool skipped = false;
 
-    if (!inside_nullable && (orc_column->hasNulls || (type_hint && isNullableOrLowCardinalityNullable(type_hint))) && !orc_column->isEncoded
-        && (orc_type->getKind() != orc::LIST && orc_type->getKind() != orc::MAP))
+    const bool type_hint_is_nullable = type_hint && isNullableOrLowCardinalityNullable(type_hint);
+    const bool can_wrap_list_in_nullable = orc_type->getKind() != orc::LIST || allow_nullable_array_type || type_hint_is_nullable;
+    if (!inside_nullable && (orc_column->hasNulls || type_hint_is_nullable) && !orc_column->isEncoded
+        && orc_type->getKind() != orc::MAP && can_wrap_list_in_nullable)
     {
         DataTypePtr nested_type_hint;
         if (type_hint)
@@ -1801,7 +1807,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         auto nested_column = readColumnFromORCColumn(orc_column, orc_type, column_name, true, nested_type_hint);
 
         auto nullmap_column = readByteMapFromORCColumn(orc_column);
-        auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
+        auto nullable_type = makeNullableAllowingArray(nested_column.type);
         auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
         return {nullable_column, nullable_type, column_name};
     }
@@ -1951,14 +1957,21 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         case orc::LIST:
         {
             DataTypePtr nested_type_hint;
+            const DataTypeArray * array_type_hint = nullptr;
             if (type_hint)
             {
-                const auto * array_type_hint = typeid_cast<const DataTypeArray *>(type_hint.get());
+                array_type_hint = typeid_cast<const DataTypeArray *>(removeNullable(type_hint).get());
                 if (array_type_hint)
                     nested_type_hint = array_type_hint->getNestedType();
             }
 
             const auto * orc_list_column = dynamic_cast<const orc::ListVectorBatch *>(orc_column);
+            if (array_type_hint && !isNullableOrLowCardinalityNullable(type_hint) && orc_list_column->hasNulls && !null_as_default)
+                throw Exception(
+                    ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                    "Cannot convert NULL value to non-Nullable type for column {}",
+                    column_name);
+
             const auto * orc_nested_column = getNestedORCColumn(orc_list_column);
             const auto * orc_nested_type = orc_type->getSubtype(0);
             auto nested_column = readColumnFromORCColumn(orc_nested_column, orc_nested_type, column_name, false, nested_type_hint);

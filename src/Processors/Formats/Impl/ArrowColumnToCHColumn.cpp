@@ -83,6 +83,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
 }
 
 static bool emptyTimezoneAsUTC(const std::string & format_name, const FormatSettings & format_settings)
@@ -1666,6 +1667,7 @@ struct ReadColumnFromArrowColumnSettings
     bool allow_geoparquet_parser;
     bool enable_json_parsing;
     bool empty_timezone_as_utc;
+    bool null_as_default;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -1951,12 +1953,19 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             }();
 
             DataTypePtr nested_type_hint;
+            const DataTypeArray * array_type_hint = nullptr;
             if (type_hint)
             {
-                const auto * array_type_hint = typeid_cast<const DataTypeArray *>(type_hint.get());
+                array_type_hint = typeid_cast<const DataTypeArray *>(removeNullable(type_hint).get());
                 if (array_type_hint)
                     nested_type_hint = array_type_hint->getNestedType();
             }
+
+            if (array_type_hint && !isNullableOrLowCardinalityNullable(type_hint) && arrow_column->null_count() && !settings.null_as_default)
+                throw Exception(
+                    ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                    "Cannot convert NULL value to non-Nullable type for column {}",
+                    column_name);
 
             bool is_nested_nullable_column = [&]
             {
@@ -2326,6 +2335,26 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     }
 }
 
+static bool nestedTypeAllowsNullableWrapperForArrowRead(const DataTypePtr & nested_type, const FormatSettings & format_settings)
+{
+    if (typeid_cast<const DataTypeArray *>(nested_type.get()))
+        return format_settings.schema_inference_allow_nullable_array_type;
+    return nested_type->canBeInsideNullable();
+}
+
+static bool arrowTypeIsListLike(const arrow::DataType & type)
+{
+    switch (type.id())
+    {
+        case arrow::Type::LIST:
+        case arrow::Type::LARGE_LIST:
+        case arrow::Type::FIXED_SIZE_LIST:
+            return true;
+        default:
+            return false;
+    }
+}
+
 static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     std::string column_name,
@@ -2352,12 +2381,21 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
         checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
 
-    bool type_hint_not_nullable_capable = type_hint && !removeNullable(type_hint)->canBeInsideNullable();
-    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
+    bool type_hint_is_nullable = type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable());
+    bool type_hint_not_nullable_capable = type_hint
+        && !type_hint_is_nullable
+        && !nestedTypeAllowsNullableWrapperForArrowRead(removeNullable(type_hint), settings.format_settings);
+    bool arrow_type_not_nullable_capable = !type_hint
+        && arrowTypeIsListLike(*arrow_column->type())
+        && !settings.format_settings.schema_inference_allow_nullable_array_type;
+    bool read_as_nullable_column = (arrow_column->null_count()
+        || is_nullable_column
+        || type_hint_is_nullable)
+        && !geo_metadata
+        && !type_hint_not_nullable_capable
+        && !arrow_type_not_nullable_capable
+        && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
-        arrow_column->type()->id() != arrow::Type::LIST &&
-        arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
-        arrow_column->type()->id() != arrow::Type::FIXED_SIZE_LIST &&
         arrow_column->type()->id() != arrow::Type::MAP &&
         arrow_column->type()->id() != arrow::Type::DICTIONARY)
     {
@@ -2382,7 +2420,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             return {};
 
         auto nullmap_column = readByteMapFromArrowColumn(arrow_column, column_name);
-        auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
+        auto nullable_type = makeNullableAllowingArray(nested_column.type);
         auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
 
         return {std::move(nullable_column), std::move(nullable_type), column_name};
@@ -2512,6 +2550,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .allow_geoparquet_parser = allow_geoparquet_parser,
         .enable_json_parsing = enable_json_parsing,
         .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
+        .null_as_default = format_settings.null_as_default,
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -2642,6 +2681,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         .allow_geoparquet_parser = allow_geoparquet_parser,
         .enable_json_parsing = enable_json_parsing,
         .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
+        .null_as_default = null_as_default,
     };
 
     Columns columns;

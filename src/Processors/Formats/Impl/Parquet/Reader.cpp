@@ -2,6 +2,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
@@ -414,8 +415,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
             /// Whether the innermost array element type is nullable.
             /// E.g. Nullable(String) or Array(Nullable(String)).
-            /// Does not apply to nullable arrays, e.g. Nullable(Array(String)), because clickhouse
-            /// doesn't support them; we convert null arrays to empty arrays, no null map.
+            /// Container-level nullable arrays are tracked separately from the innermost value
+            /// null map, so this flag only applies to primitive values.
             bool is_nullable = !primitive_columns[column_idx].levels.back().is_array;
             /// If column is declared as nullable, but statistics say there are no nulls, don't
             /// waste time converting definition levels into null map.
@@ -1343,10 +1344,13 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         output_num_values_estimate = size_t(1.2 * static_cast<double>(row_subgroup.filter.rows_pass) / static_cast<double>(row_group.meta->num_rows) * static_cast<double>(column.meta->meta_data.num_values));
 
     subchunk.arrays_offsets.resize(column_info.levels.back().rep);
+    subchunk.arrays_null_maps.resize(column_info.levels.back().rep);
     for (size_t i = 0; i < subchunk.arrays_offsets.size(); ++i)
     {
         subchunk.arrays_offsets[i] = ColumnArray::ColumnOffsets::create();
         subchunk.arrays_offsets[i]->reserve(i ? output_num_values_estimate : row_subgroup.filter.rows_total);
+        subchunk.arrays_null_maps[i] = ColumnUInt8::create();
+        subchunk.arrays_null_maps[i]->reserve(i ? output_num_values_estimate : row_subgroup.filter.rows_total);
     }
 
     if (column.need_null_map)
@@ -1957,7 +1961,7 @@ static void processDefLevelsForInnermostColumn(
 /// simdify this implementation), (b) usually there's only one level of arrays.
 static void processRepDefLevelsForArray(
     size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
-    UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
+    UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets, PaddedPODArray<UInt8> & out_null_map)
 {
     UInt64 offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
     for (size_t i = 0; i < num_values; ++i)
@@ -1967,8 +1971,7 @@ static void processRepDefLevelsForArray(
             /// In particular:
             ///  * `def[i] == array_def - 1` means this array is empty,
             ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
-            ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
-            ///    TODO [parquet]: Should we throw an error in this case if !options.format.null_as_default?
+            ///    which is recorded in the array null map.
             continue;
 
         if (rep[i] < array_rep)
@@ -1979,6 +1982,7 @@ static void processRepDefLevelsForArray(
             /// because of invalid rep levels, the caller will notice and throw.
             out_offsets.back() = offset;
             out_offsets.resize(out_offsets.size() + 1);
+            out_null_map.push_back(def[i] >= parent_array_def && def[i] < array_def - 1);
         }
 
         offset += rep[i] <= array_rep && def[i] >= array_def;
@@ -2017,9 +2021,10 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
                 continue;
 
             auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(*subchunk.arrays_offsets.at(level.rep - 1)).getData();
+            auto & null_map = assert_cast<ColumnUInt8 &>(*subchunk.arrays_null_maps.at(level.rep - 1)).getData();
             processRepDefLevelsForArray(
                 page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
-                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def, offsets);
+                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def, offsets, null_map);
 
             parent_array_def = level.def;
         }
@@ -2130,6 +2135,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
     const OutputColumnInfo & output_info = output_columns.at(output_column_idx);
     MutableColumnPtr res;
+    MutableColumnPtr nullable_array_null_map;
 
     if (output_info.is_missing_column)
     {
@@ -2171,19 +2177,31 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         chassert(output_info.nested_columns.size() == 1);
         MutableColumnPtr offsets_column;
         if (output_info.primitive_start < output_info.primitive_end)
+        {
             offsets_column = std::move(row_subgroup.columns.at(output_info.primitive_start).arrays_offsets.at(output_info.rep - 1));
+            nullable_array_null_map = std::move(row_subgroup.columns.at(output_info.primitive_start).arrays_null_maps.at(output_info.rep - 1));
+        }
         else
+        {
             /// All subcolumns inside the Array are missing. E.g. Array(Tuple(nonexistent_column Int64)).
             offsets_column = ColumnUInt64::create(num_rows, 0);
+            nullable_array_null_map = ColumnUInt8::create(num_rows, static_cast<UInt8>(0));
+        }
 
         /// If it's an array of tuples, every tuple element should have the same array offsets.
         const auto & offsets = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
+        const auto & nullable_array_null_map_data = assert_cast<const ColumnUInt8 &>(*nullable_array_null_map).getData();
         for (size_t i = output_info.primitive_start + 1; i < output_info.primitive_end; ++i)
         {
             const auto other_offsets_column = std::move(row_subgroup.columns.at(i).arrays_offsets.at(output_info.rep - 1));
             const auto & other_offsets = assert_cast<const ColumnUInt64 &>(*other_offsets_column).getData();
             if (offsets != other_offsets)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid array of tuples: tuple elements {} and {} have different array lengths", primitive_columns.at(output_info.primitive_start).name, primitive_columns.at(i).name);
+
+            const auto other_null_map_column = std::move(row_subgroup.columns.at(i).arrays_null_maps.at(output_info.rep - 1));
+            const auto & other_null_map = assert_cast<const ColumnUInt8 &>(*other_null_map_column).getData();
+            if (nullable_array_null_map_data != other_null_map)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid array of tuples: tuple elements {} and {} have different array null maps", primitive_columns.at(output_info.primitive_start).name, primitive_columns.at(i).name);
         }
 
         MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), offsets.back());
@@ -2209,12 +2227,38 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
     chassert(res->getDataType() == output_info.input_type->getColumnType());
 
-    if (output_info.needs_cast)
+    const bool output_is_nullable_array = kind == TypeIndex::Array && output_info.output_type->isNullable();
+
+    if (output_is_nullable_array)
     {
-        auto col = castColumn(
-            {std::move(res), output_info.input_type, output_info.name}, output_info.output_type);
-        chassert(col->use_count() == 1);
-        res = IColumn::mutate(std::move(col));
+        auto nested_output_type = removeNullable(output_info.output_type);
+        if (!nested_output_type->equals(*output_info.input_type))
+        {
+            auto col = castColumn({std::move(res), output_info.input_type, output_info.name}, nested_output_type);
+            chassert(col->use_count() == 1);
+            res = IColumn::mutate(std::move(col));
+        }
+
+        if (!nullable_array_null_map)
+            nullable_array_null_map = ColumnUInt8::create(res->size(), static_cast<UInt8>(0));
+        res = ColumnNullable::create(std::move(res), std::move(nullable_array_null_map));
+    }
+    else
+    {
+        if (kind == TypeIndex::Array && nullable_array_null_map && !options.format.null_as_default)
+        {
+            const auto & null_map = assert_cast<const ColumnUInt8 &>(*nullable_array_null_map).getData();
+            if (memchr(null_map.data(), 1, null_map.size()) != nullptr)
+                throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type for column {}", output_info.name);
+        }
+
+        if (output_info.needs_cast)
+        {
+            auto col = castColumn(
+                {std::move(res), output_info.input_type, output_info.name}, output_info.output_type);
+            chassert(col->use_count() == 1);
+            res = IColumn::mutate(std::move(col));
+        }
     }
 
     return res;

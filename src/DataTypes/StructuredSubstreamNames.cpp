@@ -1,0 +1,406 @@
+#include <DataTypes/StructuredSubstreamNames.h>
+
+#include <optional>
+
+#include <Common/escapeForFileName.h>
+#include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/Serializations/ISerialization.h>
+
+namespace DB
+{
+
+namespace
+{
+
+using Substream = ISerialization::Substream;
+using SubstreamPath = ISerialization::SubstreamPath;
+
+bool pathContainsSubstreamInRange(const SubstreamPath & path, size_t begin, size_t end, Substream::Type type)
+{
+    for (size_t i = begin; i < end && i < path.size(); ++i)
+    {
+        if (path[i].type == type)
+            return true;
+    }
+    return false;
+}
+
+size_t countSubstreamsInRange(const SubstreamPath & path, size_t begin, size_t end, Substream::Type type)
+{
+    size_t count = 0;
+    for (size_t i = begin; i < end && i < path.size(); ++i)
+    {
+        if (path[i].type == type)
+            ++count;
+    }
+    return count;
+}
+
+/// Tuple / Variant path components in [begin_index, end_index) that disambiguate nested streams.
+String getPathPrefixInRange(const SubstreamPath & path, size_t begin_index, size_t end_index)
+{
+    String stream_name;
+    for (size_t i = begin_index; i < end_index && i < path.size(); ++i)
+    {
+        const auto & element = path[i];
+        if (element.type == Substream::TupleElement)
+            stream_name += escapeForFileName("." + element.name_of_substream);
+        else if (element.type == Substream::VariantElement)
+            stream_name += "." + escapeForFileName(element.variant_element_name);
+        else if (element.type == Substream::VariantElementNullMap)
+            stream_name += "." + escapeForFileName(element.variant_element_name) + ".null";
+        else if (element.type == Substream::VariantDiscriminators)
+            stream_name += ".variant_discr";
+        else if (element.type == Substream::VariantDiscriminatorsPrefix)
+            stream_name += ".variant_discr_prefix";
+        else if (element.type == Substream::VariantOffsets)
+            stream_name += ".variant_offsets";
+        else if (element.type == Substream::Bucket)
+            stream_name += "." + toString(element.bucket);
+        else if (element.type == Substream::MapBucketsInfo)
+            stream_name += ".buckets_info";
+        else if (element.type == Substream::ObjectTypedPath)
+            stream_name += ".typed_path." + escapeForFileName(element.object_path_name);
+        else if (element.type == Substream::ObjectDynamicPath)
+            stream_name += ".dynamic_path." + escapeForFileName(element.object_path_name);
+        else if (element.type == Substream::DynamicData)
+            stream_name += ".dynamic";
+        else if (element.type == Substream::DynamicStructure)
+            stream_name += ".dynamic_structure";
+        else if (element.type == Substream::ObjectStructure)
+            stream_name += ".object_structure";
+        else if (element.type == Substream::ObjectSharedData)
+            stream_name += ".object_shared_data";
+        else if (element.type == Substream::ObjectSharedDataStructure)
+            stream_name += ".structure";
+        else if (element.type == Substream::ObjectSharedDataStructurePrefix)
+            stream_name += ".structure_prefix";
+        else if (element.type == Substream::ObjectSharedDataStructureSuffix)
+            stream_name += ".structure_suffix";
+        else if (element.type == Substream::ObjectSharedDataSubstreams)
+            stream_name += ".substreams";
+        else if (element.type == Substream::ObjectSharedDataPathsMarks)
+            stream_name += ".paths_marks";
+        else if (element.type == Substream::ObjectSharedDataSubstreamsMarks)
+            stream_name += ".substreams_marks";
+        else if (element.type == Substream::ObjectSharedDataPathsSubstreamsMetadata)
+            stream_name += ".paths_substreams_metadata";
+        else if (element.type == Substream::ObjectSharedDataPathsInfos)
+            stream_name += ".paths_infos";
+        else if (element.type == Substream::ObjectSharedDataData)
+            stream_name += ".data";
+        else if (element.type == Substream::ObjectSharedDataCopy)
+            stream_name += ".copy";
+        else if (element.type == Substream::ObjectSharedDataCopySizes)
+            stream_name += ".sizes";
+        else if (element.type == Substream::ObjectSharedDataCopyPathsIndexes)
+            stream_name += ".paths_indexes";
+        else if (element.type == Substream::ObjectSharedDataCopyValues)
+            stream_name += ".values";
+    }
+    return stream_name;
+}
+
+String getStructuredPathPrefixInRange(const SubstreamPath & path, size_t begin_index, size_t end_index)
+{
+    String stream_name;
+    for (size_t i = begin_index; i < end_index && i < path.size(); ++i)
+    {
+        if (path[i].type == Substream::ArrayElements)
+            stream_name += ".array";
+        else
+            stream_name += getPathPrefixInRange(path, i, i + 1);
+    }
+    return stream_name;
+}
+
+std::optional<size_t> findLastSubstreamInRange(
+    const SubstreamPath & path, size_t begin_index, size_t end_index, Substream::Type type)
+{
+    std::optional<size_t> last_index;
+    for (size_t i = begin_index; i < end_index && i < path.size(); ++i)
+    {
+        if (path[i].type == type)
+            last_index = i;
+    }
+    return last_index;
+}
+
+/// Build structured suffix for paths that contain Nullable(Array(...)) at any nesting depth.
+String buildStructuredSubstreamNameSuffix(const SubstreamPath & path)
+{
+    if (path.empty())
+        return "";
+
+    const size_t path_size = path.size();
+    const auto last_type = path.back().type;
+
+    if (last_type == Substream::Regular && path_size >= 2)
+    {
+        const auto named_subcolumn_index = path_size - 2;
+        const auto named_subcolumn_type = path[named_subcolumn_index].type;
+        if (named_subcolumn_type == Substream::NamedOffsets || named_subcolumn_type == Substream::NamedNullMap)
+        {
+            SubstreamPath storage_path = path;
+            storage_path.resize(named_subcolumn_index + 1);
+            storage_path.back() = Substream(named_subcolumn_type == Substream::NamedOffsets ? Substream::ArraySizes : Substream::NullMap);
+            return buildStructuredSubstreamNameSuffix(storage_path);
+        }
+    }
+
+    const size_t array_elements_count = countSubstreamsInRange(path, 0, path_size, Substream::ArrayElements);
+    const bool has_array_sizes_before_end = pathContainsSubstreamInRange(path, 0, path_size, Substream::ArraySizes);
+    const bool has_null_map_before_end = pathContainsSubstreamInRange(path, 0, path_size - 1, Substream::NullMap);
+
+    if (last_type == Substream::NullMap)
+    {
+        const String path_context = getStructuredPathPrefixInRange(path, 0, path_size - 1);
+
+        if (array_elements_count == 0)
+            return path_context + ".null";
+
+        const bool is_element_null_map = array_elements_count >= 2 || has_array_sizes_before_end;
+        if (is_element_null_map)
+            return path_context + ".nested.null";
+
+        return path_context + ".null";
+    }
+
+    if (last_type == Substream::ArraySizes)
+    {
+        const size_t array_sizes_count = countSubstreamsInRange(path, 0, path_size, Substream::ArraySizes);
+        const String path_context = getStructuredPathPrefixInRange(path, 0, path_size - 1);
+
+        if (array_elements_count == 0)
+        {
+            if (has_null_map_before_end)
+                return path_context + ".array.size" + toString(array_sizes_count - 1);
+            return path_context + ".size" + toString(array_sizes_count - 1);
+        }
+
+        const auto last_array_elements = findLastSubstreamInRange(path, 0, path_size, Substream::ArrayElements);
+        const size_t array_sizes_after_last_elements = last_array_elements
+            ? countSubstreamsInRange(path, *last_array_elements + 1, path_size, Substream::ArraySizes)
+            : array_sizes_count;
+
+        return path_context + ".array.size" + toString(array_sizes_after_last_elements - 1);
+    }
+
+    if (last_type == Substream::Regular)
+    {
+        const String path_context = getStructuredPathPrefixInRange(path, 0, path_size - 1);
+        if (array_elements_count == 0)
+            return path_context;
+
+        return path_context + ".nested";
+    }
+
+    return "";
+}
+
+String getLegacySubstreamNameSuffix(
+    SubstreamPath::const_iterator begin,
+    SubstreamPath::const_iterator end,
+    bool encode_sparse_stream,
+    bool escape_variant_substreams)
+{
+    String stream_name;
+    size_t array_level = 0;
+
+    for (auto it = begin; it != end; ++it)
+    {
+        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap)
+            stream_name += ".null";
+        else if (it->type == Substream::ArraySizes)
+            stream_name += ".size" + toString(array_level);
+        else if (it->type == Substream::ArrayElements)
+            ++array_level;
+        else if (it->type == Substream::StringSizes || it->type == Substream::InlinedStringSizes)
+            stream_name += ".size";
+        else if (it->type == Substream::DictionaryKeys)
+            stream_name += ".dict";
+        else if (it->type == Substream::DictionaryKeysPrefix)
+            stream_name += ".dict_prefix";
+        else if (it->type == Substream::SparseElements && encode_sparse_stream)
+            stream_name += ".sparse";
+        else if (it->type == Substream::SparseOffsets)
+            stream_name += ".sparse.idx";
+        else if (it->type == Substream::ReplicatedElements)
+            stream_name += ".repl";
+        else if (it->type == Substream::ReplicatedIndexes)
+            stream_name += ".repl.idx";
+        else if (Substream::named_types.contains(it->type))
+        {
+            auto substream_name = "." + it->name_of_substream;
+            if (it->type == Substream::TupleElement)
+                stream_name += escapeForFileName(substream_name);
+            else
+                stream_name += substream_name;
+        }
+        else if (it->type == Substream::VariantDiscriminators)
+            stream_name += ".variant_discr";
+        else if (it->type == Substream::VariantDiscriminatorsPrefix)
+            stream_name += ".variant_discr_prefix";
+        else if (it->type == Substream::VariantOffsets)
+            stream_name += ".variant_offsets";
+        else if (it->type == Substream::VariantElement)
+        {
+            if (escape_variant_substreams)
+                stream_name += "." + escapeForFileName(it->variant_element_name);
+            else
+                stream_name += "." + it->variant_element_name;
+        }
+        else if (it->type == Substream::VariantElementNullMap)
+        {
+            if (escape_variant_substreams)
+                stream_name += "." + escapeForFileName(it->variant_element_name) + ".null";
+            else
+                stream_name += "." + it->variant_element_name + ".null";
+        }
+        else if (it->type == Substream::Bucket)
+            stream_name += "." + toString(it->bucket);
+        else if (it->type == Substream::MapBucketsInfo)
+            stream_name += ".buckets_info";
+        else if (it->type == Substream::ObjectTypedPath)
+            stream_name += ".typed_path." + escapeForFileName(it->object_path_name);
+        else if (it->type == Substream::ObjectDynamicPath)
+            stream_name += ".dynamic_path." + escapeForFileName(it->object_path_name);
+        else if (it->type == Substream::DynamicData)
+            stream_name += ".dynamic";
+        else if (it->type == Substream::DynamicStructure)
+            stream_name += ".dynamic_structure";
+        else if (it->type == Substream::ObjectStructure)
+            stream_name += ".object_structure";
+        else if (it->type == Substream::ObjectSharedData)
+            stream_name += ".object_shared_data";
+        else if (it->type == Substream::ObjectSharedDataStructure)
+            stream_name += ".structure";
+        else if (it->type == Substream::ObjectSharedDataStructurePrefix)
+            stream_name += ".structure_prefix";
+        else if (it->type == Substream::ObjectSharedDataStructureSuffix)
+            stream_name += ".structure_suffix";
+        else if (it->type == Substream::ObjectSharedDataSubstreams)
+            stream_name += ".substreams";
+        else if (it->type == Substream::ObjectSharedDataPathsMarks)
+            stream_name += ".paths_marks";
+        else if (it->type == Substream::ObjectSharedDataSubstreamsMarks)
+            stream_name += ".substreams_marks";
+        else if (it->type == Substream::ObjectSharedDataPathsSubstreamsMetadata)
+            stream_name += ".paths_substreams_metadata";
+        else if (it->type == Substream::ObjectSharedDataPathsInfos)
+            stream_name += ".paths_infos";
+        else if (it->type == Substream::ObjectSharedDataData)
+            stream_name += ".data";
+        else if (it->type == Substream::ObjectSharedDataCopy)
+            stream_name += ".copy";
+        else if (it->type == Substream::ObjectSharedDataCopySizes)
+            stream_name += ".sizes";
+        else if (it->type == Substream::ObjectSharedDataCopyPathsIndexes)
+            stream_name += ".paths_indexes";
+        else if (it->type == Substream::ObjectSharedDataCopyValues)
+            stream_name += ".values";
+    }
+
+    return stream_name;
+}
+
+}
+
+bool needsStructuredSubstreamNames(const IDataType & type)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+    {
+        if (typeid_cast<const DataTypeArray *>(nullable->getNestedType().get()))
+            return true;
+        return needsStructuredSubstreamNames(*nullable->getNestedType());
+    }
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
+        return needsStructuredSubstreamNames(*array->getNestedType());
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        for (const auto & element : tuple->getElements())
+        {
+            if (needsStructuredSubstreamNames(*element))
+                return true;
+        }
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+    {
+        if (needsStructuredSubstreamNames(*map->getKeyType()) || needsStructuredSubstreamNames(*map->getValueType()))
+            return true;
+    }
+
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(&type))
+    {
+        for (const auto & alternative : variant->getVariants())
+        {
+            if (needsStructuredSubstreamNames(*alternative))
+                return true;
+        }
+    }
+
+    if (const auto * object = typeid_cast<const DataTypeObject *>(&type))
+    {
+        for (const auto & [path_name, path_type] : object->getTypedPaths())
+        {
+            if (needsStructuredSubstreamNames(*path_type))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+
+/// Check if a substream path contains a Nullable(Array(...)) pattern that requires
+/// structured naming, even when the static column type doesn't reveal it. This only
+/// applies to Dynamic and Object columns whose runtime/typed-path types are not visible
+/// in the static column type. For ordinary Array(Nullable(T)) columns the static type
+/// already returns false from needsStructuredSubstreamNames, and we must keep legacy
+/// naming to preserve compatibility with existing MergeTree parts.
+bool needsStructuredSubstreamNamesForPath(const SubstreamPath & path)
+{
+    bool has_dynamic_or_object_prefix = false;
+    bool has_array_elements = false;
+
+    for (size_t i = 0; i < path.size(); ++i)
+    {
+        if (path[i].type == Substream::DynamicData
+            || path[i].type == Substream::ObjectTypedPath
+            || path[i].type == Substream::ObjectDynamicPath)
+        {
+            has_dynamic_or_object_prefix = true;
+            has_array_elements = false;
+        }
+        else if (path[i].type == Substream::ArrayElements)
+        {
+            has_array_elements = true;
+        }
+        else if (path[i].type == Substream::NullMap && has_array_elements && has_dynamic_or_object_prefix)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+String getStructuredSubstreamNameSuffix(const SubstreamPath & path)
+{
+    String result = buildStructuredSubstreamNameSuffix(path);
+
+    if (!result.empty())
+        return result;
+
+    return getLegacySubstreamNameSuffix(path.begin(), path.end(), false, true);
+}
+
+}

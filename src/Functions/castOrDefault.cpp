@@ -1,6 +1,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -27,6 +28,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool cast_keep_nullable;
+    extern const SettingsBool allow_experimental_nullable_array_type;
 }
 
 namespace ErrorCodes
@@ -46,7 +48,11 @@ public:
         return std::make_shared<FunctionCastOrDefault>(context);
     }
 
-    explicit FunctionCastOrDefault(ContextPtr context_) : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable]) { }
+    explicit FunctionCastOrDefault(ContextPtr context_)
+        : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable])
+        , allow_nullable_array_type(context_->getSettingsRef()[Setting::allow_experimental_nullable_array_type])
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -79,9 +85,21 @@ public:
                 arguments[1].type->getName());
 
         DataTypePtr result_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+        if (hasNullableArray(result_type) && !allow_nullable_array_type)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} cannot use Nullable(Array) type while setting allow_experimental_nullable_array_type is disabled",
+                getName());
 
         if (keep_nullable && arguments.front().type->isNullable())
-            result_type = makeNullable(result_type);
+        {
+            if (isArray(result_type) && !allow_nullable_array_type)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} cannot create Nullable(Array) while setting allow_experimental_nullable_array_type is disabled",
+                    getName());
+            result_type = makeNullableAllowingArray(result_type);
+        }
 
         if (arguments.size() == 3)
         {
@@ -196,6 +214,7 @@ public:
 private:
 
     bool keep_nullable;
+    bool allow_nullable_array_type;
 };
 
 class FunctionCastOrDefaultTyped final : public IFunction

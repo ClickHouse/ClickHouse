@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -27,9 +28,14 @@ namespace ErrorCodes
 
 
 DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_)
+    : DataTypeNullable(nested_data_type_, false)
+{
+}
+
+DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_, bool allow_array)
     : nested_data_type{nested_data_type_}
 {
-    if (!nested_data_type->canBeInsideNullable())
+    if (!nested_data_type->canBeInsideNullable() && !(allow_array && isArray(nested_data_type)))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Nested type {} cannot be inside Nullable type", nested_data_type->getName());
 }
 
@@ -138,7 +144,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);
 
-    return std::make_shared<DataTypeNullable>(nested_type);
+    return makeNullableAllowingArray(nested_type);
 }
 
 
@@ -149,7 +155,7 @@ void registerDataTypeNullable(DataTypeFactory & factory)
 Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that denotes "missing value" alongside normal values allowed by `T`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
 
 `T` can't be any of the following composite data types:
-- [Array](../../sql-reference/data-types/array.md) — Not supported
+- [Array](../../sql-reference/data-types/array.md) — Experimental support available*
 - [Map](../../sql-reference/data-types/map.md) — Not supported
 - [Tuple](../../sql-reference/data-types/tuple.md) — Beta support available*
 
@@ -158,6 +164,10 @@ However, composite data types **can contain** `Nullable` type values, e.g. `Arra
 :::note Beta: Nullable Tuples
 * [Nullable(Tuple(...))](../../sql-reference/data-types/tuple.md#nullable-tuple) is supported when `enable_nullable_tuple_type = 1` is enabled.
 :::
+
+::::note Experimental: Nullable Arrays
+* `Nullable(Array(...))` is supported when `allow_experimental_nullable_array_type = 1` is enabled. It represents a `NULL` array, which is different from an empty array `[]`.
+::::
 
 A `Nullable` type field can't be included in table indexes.
 
@@ -227,6 +237,13 @@ DataTypePtr makeNullable(const DataTypePtr & type)
     if (type->isNullable())
         return type;
     return std::make_shared<DataTypeNullable>(type);
+}
+
+DataTypePtr makeNullableAllowingArray(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return type;
+    return DataTypePtr(new DataTypeNullable(type, true));
 }
 
 DataTypePtr makeNullableSafe(const DataTypePtr & type)

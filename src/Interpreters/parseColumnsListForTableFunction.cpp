@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -19,6 +20,7 @@ namespace Setting
 {
     extern const SettingsBool enable_time_time64_type;
     extern const SettingsBool allow_experimental_nullable_tuple_type;
+    extern const SettingsBool allow_experimental_nullable_array_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
@@ -33,6 +35,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
 extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 
 }
 
@@ -43,12 +46,20 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
     , enable_time_time64_type(settings[Setting::enable_time_time64_type])
     , allow_experimental_nullable_tuple_type(settings[Setting::allow_experimental_nullable_tuple_type])
+    , allow_experimental_nullable_array_type(settings[Setting::allow_experimental_nullable_array_type])
 {
 }
 
 
 void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidationSettings & settings)
 {
+    if (!settings.allow_experimental_nullable_array_type && hasNullableArray(type_to_check))
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Cannot create column with type '{}' because Nullable Array type is not allowed. "
+            "Set setting allow_experimental_nullable_array_type = 1 in order to allow it",
+            type_to_check->getName());
+
     auto validate_callback = [&](const IDataType & data_type)
     {
         if (!settings.allow_suspicious_low_cardinality_types)
@@ -153,6 +164,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                 }
             }
         }
+
     };
 
     validate_callback(*type_to_check);

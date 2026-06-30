@@ -428,13 +428,21 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     {
         bool have_array = false;
         bool all_arrays = true;
+        bool have_nullable = false;
 
         DataTypes nested_types;
         nested_types.reserve(types.size());
 
         for (const auto & type : types)
         {
-            if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+            const IDataType * unwrapped_type = type.get();
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(unwrapped_type))
+            {
+                have_nullable = true;
+                unwrapped_type = nullable_type->getNestedType().get();
+            }
+
+            if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(unwrapped_type))
             {
                 have_array = true;
                 nested_types.emplace_back(type_array->getNestedType());
@@ -454,7 +462,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (!nested_type)
                 return nullptr;
 
-            return std::make_shared<DataTypeArray>(nested_type);
+            DataTypePtr result_type = std::make_shared<DataTypeArray>(nested_type);
+            /// `DataTypeArray::canBeInsideNullable()` is false by design; outer nullability is gated at
+            /// CREATE/CAST time via settings, not during type inference for mixed Array/Nullable(Array) inputs.
+            if (have_nullable)
+                result_type = makeNullableAllowingArray(result_type);
+
+            return result_type;
         }
     }
 

@@ -522,7 +522,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto first_argument_type = arguments[0].type;
+        auto first_argument_type = removeNullable(arguments[0].type);
         auto second_argument_type = arguments[1].type;
 
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(first_argument_type.get());
@@ -579,6 +579,45 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
+        const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
+        const IColumn * data_column = col_const ? &col_const->getDataColumn() : arguments[0].column.get();
+
+        if (const auto * nullable_array = checkAndGetColumn<ColumnNullable>(data_column))
+        {
+            if (checkAndGetColumn<ColumnArray>(&nullable_array->getNestedColumn()))
+            {
+                ColumnsWithTypeAndName nested_arguments = arguments;
+                nested_arguments[0].column = col_const
+                    ? ColumnConst::create(nullable_array->getNestedColumnPtr(), col_const->size())
+                    : nullable_array->getNestedColumnPtr();
+                nested_arguments[0].type = removeNullable(arguments[0].type);
+
+                auto nested_result = executeImpl(nested_arguments, result_type, /*input_rows_count*/ 0);
+
+                auto mutable_result = IColumn::mutate(std::move(nested_result));
+                if (auto * result_col = typeid_cast<ColumnVector<ResultType> *>(mutable_result.get()))
+                {
+                    auto & data = result_col->getData();
+                    const PaddedPODArray<UInt8> * null_map_data = nullptr;
+                    ColumnUInt8::MutablePtr null_map_holder;
+                    if (col_const)
+                    {
+                        null_map_holder = ColumnUInt8::create();
+                        null_map_holder->getData().resize_fill(col_const->size(), nullable_array->getNullMapData()[0]);
+                        null_map_data = &null_map_holder->getData();
+                    }
+                    else
+                        null_map_data = &nullable_array->getNullMapData();
+
+                    for (size_t i = 0, size = data.size(); i < size; ++i)
+                        if ((*null_map_data)[i])
+                            data[i] = 0;
+                }
+
+                return mutable_result;
+            }
+        }
+
         if (auto res = executeMap(arguments, result_type))
             return res;
 

@@ -1,11 +1,13 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/array/NullableArrayOffsets.h>
 #include <IO/WriteHelpers.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -39,14 +41,16 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes arguments_types;
+        bool result_is_nullable = false;
         for (size_t index = 0; index < arguments.size(); ++index)
         {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[index].type).get());
 
             if (!array_type)
                 throw Exception(
@@ -56,13 +60,23 @@ public:
                     getName(),
                     arguments[index].type->getName());
 
+            result_is_nullable |= arguments[index].type->isNullable();
+
             auto nested_type = array_type->getNestedType();
             if (allow_unaligned)
-                nested_type = makeNullable(nested_type);
+            {
+                if (arguments[index].type->isNullable() && checkAndGetDataType<DataTypeArray>(nested_type.get()))
+                    nested_type = makeNullableAllowingArray(nested_type);
+                else
+                    nested_type = makeNullable(nested_type);
+            }
             arguments_types.emplace_back(nested_type);
         }
 
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(arguments_types));
+        auto result_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(arguments_types));
+        if (result_is_nullable)
+            return makeNullableAllowingArray(result_type);
+        return result_type;
     }
 
     ColumnPtr
@@ -78,6 +92,8 @@ public:
 
         Columns holders(num_arguments);
         Columns tuple_columns(num_arguments);
+        ColumnUInt8::MutablePtr null_map;
+        VectorWithMemoryTracking<const ColumnArray *> array_columns(num_arguments);
 
         bool has_unaligned = false;
         size_t unaligned_index = 0;
@@ -87,6 +103,21 @@ public:
             ColumnPtr holder = arguments[i].column->convertToFullColumnIfConst();
             holders[i] = holder;
 
+            if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(holder.get()))
+            {
+                if (!null_map)
+                    null_map = ColumnUInt8::create(nullable_column->getNullMapData().begin(), nullable_column->getNullMapData().end());
+                else
+                {
+                    auto & null_map_data = null_map->getData();
+                    const auto & other_null_map = nullable_column->getNullMapData();
+                    for (size_t row = 0, rows = null_map_data.size(); row < rows; ++row)
+                        null_map_data[row] |= other_null_map[row];
+                }
+
+                holder = nullable_column->getNestedColumnPtr();
+            }
+
             const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(holder.get());
             if (!column_array)
                 throw Exception(
@@ -95,9 +126,22 @@ public:
                     i + 1,
                     getName(),
                     holder->getName());
-            tuple_columns[i] = column_array->getDataPtr();
+            holders[i] = holder;
+            array_columns[i] = column_array;
+        }
 
-            if (i && !column_array->hasEqualOffsets(static_cast<const ColumnArray &>(*holders[0])))
+        const auto * row_null_map = null_map ? null_map.get() : nullptr;
+        for (size_t i = 0; i < num_arguments; ++i)
+        {
+            if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*array_columns[i], row_null_map, input_rows_count))
+            {
+                holders[i] = std::move(null_rows_empty_array);
+                array_columns[i] = assert_cast<const ColumnArray *>(holders[i].get());
+            }
+
+            tuple_columns[i] = array_columns[i]->getDataPtr();
+
+            if (i && !array_columns[i]->hasEqualOffsets(static_cast<const ColumnArray &>(*holders[0])))
             {
                 has_unaligned = true;
                 unaligned_index = i;
@@ -112,11 +156,27 @@ public:
                     "The argument 1 and argument {} of function {} have different array sizes",
                     unaligned_index + 1,
                     getName());
-            return ColumnArray::create(
+            auto result = ColumnArray::create(
                 ColumnTuple::create(std::move(tuple_columns)), static_cast<const ColumnArray &>(*holders[0]).getOffsetsPtr());
+            if (result_type->isNullable())
+            {
+                if (!null_map)
+                    null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+                return ColumnNullable::create(std::move(result), std::move(null_map));
+            }
+            return result;
         }
         else
-            return executeUnaligned(holders, tuple_columns, input_rows_count, has_unaligned);
+        {
+            auto result = executeUnaligned(holders, tuple_columns, input_rows_count, has_unaligned);
+            if (result_type->isNullable())
+            {
+                if (!null_map)
+                    null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+                return ColumnNullable::create(std::move(result), std::move(null_map));
+            }
+            return result;
+        }
     }
 
 private:

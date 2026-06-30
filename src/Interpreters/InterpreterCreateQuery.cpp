@@ -28,6 +28,8 @@
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 
+#include <DataTypes/NullableUtils.h>
+
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
@@ -133,6 +135,7 @@ namespace Setting
     extern const SettingsBool database_replicated_allow_heavy_create;
     extern const SettingsBool database_replicated_allow_only_replicated_engine;
     extern const SettingsBool data_type_default_nullable;
+    extern const SettingsBool allow_experimental_nullable_array_type;
     extern const SettingsSQLSecurityType default_materialized_view_sql_security;
     extern const SettingsSQLSecurityType default_normal_view_sql_security;
     extern const SettingsDefaultTableEngine default_table_engine;
@@ -172,6 +175,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_INDEX;
     extern const int LOGICAL_ERROR;
@@ -534,8 +538,40 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
     return res;
 }
 
+namespace
+{
+
+DataTypePtr normalizeInferredColumnTypeForStorage(const DataTypePtr & type, const Settings & settings)
+{
+    if (!settings[Setting::allow_experimental_nullable_array_type] && hasNullableArray(type))
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Cannot create column with type '{}' because Nullable Array type is not allowed. "
+            "Set setting allow_experimental_nullable_array_type = 1 in order to allow it",
+            type->getName());
+    }
+
+    return type;
+}
+
+void checkNullableArrayIsAllowed(const DataTypePtr & type, const Settings & settings, bool check_nullable_array_setting)
+{
+    if (check_nullable_array_setting && isArray(type) && !settings[Setting::allow_experimental_nullable_array_type])
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Nested type {} cannot be inside Nullable type",
+            type->getName());
+}
+
+}
+
 DataTypePtr InterpreterCreateQuery::getColumnType(
-    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable)
+    const ASTColumnDeclaration & col_decl,
+    const LoadingStrictnessLevel mode,
+    const bool make_columns_nullable,
+    const Settings & settings,
+    bool check_nullable_array_setting)
 {
     auto col_type = col_decl.getType();
     if (!col_type)
@@ -546,6 +582,16 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 
     DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
 
+    if (check_nullable_array_setting && !settings[Setting::allow_experimental_nullable_array_type])
+    {
+        if (hasNullableArray(column_type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Cannot create column with type '{}' because Nullable Array type is not allowed. "
+                "Set setting allow_experimental_nullable_array_type = 1 in order to allow it",
+                column_type->getName());
+    }
+
     if (LoadingStrictnessLevel::ATTACH <= mode)
         setVersionToAggregateFunctions(column_type, true);
 
@@ -554,11 +600,15 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         if (column_type->isNullable())
             throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Can't use [NOT] NULL modifier with Nullable type");
         if (*col_decl.null_modifier)
-            column_type = makeNullable(column_type);
+        {
+            checkNullableArrayIsAllowed(column_type, settings, check_nullable_array_setting);
+            column_type = makeNullableAllowingArray(column_type);
+        }
     }
     else if (make_columns_nullable)
     {
-        column_type = makeNullable(column_type);
+        checkNullableArrayIsAllowed(column_type, settings, check_nullable_array_setting);
+        column_type = makeNullableAllowingArray(column_type);
     }
     else if (auto default_expr = col_decl.getDefaultExpression();
         !hasNullable(column_type) && col_decl.default_specifier == ColumnDefaultSpecifier::Default && default_expr
@@ -571,13 +621,20 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
             column_type = std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
         }
         else
-            column_type = makeNullable(column_type);
+        {
+            checkNullableArrayIsAllowed(column_type, settings, check_nullable_array_setting);
+            column_type = makeNullableAllowingArray(column_type);
+        }
     }
     return column_type;
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+    const ASTExpressionList & columns_ast,
+    ContextPtr context_,
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup,
+    bool check_nullable_array_setting)
 {
     /// First, deduce implicit types.
 
@@ -596,6 +653,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         && !already_normalized_on_initiator
         && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
+    check_nullable_array_setting
+        = check_nullable_array_setting && !is_restore_from_backup && !isLoadingFromExistingMetadata(mode);
 
     for (const auto & ast : columns_ast.children)
     {
@@ -608,7 +667,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         }
 
 
-        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
+        column_names_and_types.emplace_back(
+            col_decl.name,
+            getColumnType(col_decl, mode, make_columns_nullable, context_->getSettingsRef(), check_nullable_array_setting));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
@@ -668,7 +729,10 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 column.type = defaults_sample_block.getByName(column.name).type;
                 /// set nullability for case of column declaration w/o type but with default expression
                 if ((col_decl.null_modifier && *col_decl.null_modifier) || make_columns_nullable)
-                    column.type = makeNullable(column.type);
+                {
+                    checkNullableArrayIsAllowed(column.type, context_->getSettingsRef(), check_nullable_array_setting);
+                    column.type = makeNullableAllowingArray(column.type);
+                }
             }
 
             column.default_desc.kind = toColumnDefaultKind(col_decl.default_specifier);
@@ -769,7 +833,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
-            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), mode, is_restore_from_backup);
+            properties.columns = getColumnsDescription(
+                *create.columns_list->columns,
+                getContext(),
+                mode,
+                is_restore_from_backup,
+                !create.attach_short_syntax);
         }
 
         if (create.columns_list->indices)
@@ -989,7 +1058,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 is_refreshable_mv /* is_create_parameterized_view */);
         }
 
-        properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
+        const auto & settings = getContext()->getSettingsRef();
+        NamesAndTypesList inferred_columns;
+        for (const auto & column : as_select_sample->getNamesAndTypesList())
+            inferred_columns.emplace_back(column.name, normalizeInferredColumnTypeForStorage(column.type, settings));
+
+        properties.columns = ColumnsDescription(std::move(inferred_columns));
         properties.columns_inferred_from_select_query = true;
     }
     else if (create.as_table_function)

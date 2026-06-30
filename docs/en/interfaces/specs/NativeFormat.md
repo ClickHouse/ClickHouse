@@ -803,6 +803,8 @@ Placeholder values by inner type family:
 
 `Nullable(T)` may appear inside `Array`, `Tuple`, `Map`, and `Nested` — `Array(Nullable(T))` and `Tuple(Nullable(T1), T2)` are common. Nullability does not compose with itself: `Nullable(Nullable(T))` is rejected by the server.
 
+> **Note:** `Nullable(Array(T))` — a whole-array nullable type distinct from `Array(Nullable(T))` — is an experimental type enabled by the setting `allow_experimental_nullable_array_type`. When enabled, the wire layout follows the standard `Nullable` framing: the inner `Array(T)` type's [prefix phase](#composite-types) runs first (emitting the element type's state prefix when the element is versioned, e.g. `LowCardinality`), then the `Nullable` null-map stream (1 byte per row), then the inner `Array(T)` data streams (offsets + element data). A NULL array row carries a `1` in the null map; a present array row carries a `0`. The null map decides whether the logical row is NULL, but the decoder must still read the inner `Array` streams exactly as encoded for every row, including null rows — the inner array data for a null row is implementation-defined and may contain non-empty offsets/elements that must be consumed to stay synchronized. Third-party Native clients that encounter `Nullable(Array(T))` in a type string should decode it as `Nullable` wrapping `Array`: read the inner prefix, then the null map, then the array offsets and element data.
+
 A `Nullable(UInt8)` with three rows `[5, NULL, 9]` (6 bytes total):
 
 ```text

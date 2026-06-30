@@ -1,6 +1,7 @@
 #include <Functions/FunctionDynamicAdaptor.h>
 #include <Functions/FunctionVariantAdaptor.h>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
@@ -11,11 +12,13 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/array/NullableArrayOffsets.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -25,6 +28,7 @@
 
 #include "config.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <memory>
 
@@ -66,6 +70,78 @@ bool allArgumentsAreConstants(const ColumnsWithTypeAndName & args)
         if (!isColumnConst(*arg.column))
             return false;
     return true;
+}
+
+bool hasNullableArrayArgument(const ColumnsWithTypeAndName & args)
+{
+    for (const auto & arg : args)
+    {
+        const auto * nullable_type = typeid_cast<const DataTypeNullable *>(arg.type.get());
+        if (nullable_type && isArray(nullable_type->getNestedType()))
+            return true;
+    }
+
+    return false;
+}
+
+DataTypePtr makeNullableResultForDefaultNulls(const DataTypePtr & return_type, const ColumnsWithTypeAndName & args)
+{
+    if (isArray(return_type) && hasNullableArrayArgument(args))
+        return makeNullableAllowingArray(return_type);
+
+    return makeNullableSafe(return_type);
+}
+
+ColumnPtr buildResultNullMapForDefaultNulls(const ColumnsWithTypeAndName & args, size_t input_rows_count)
+{
+    auto result_null_map = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+    auto & result_null_map_data = result_null_map->getData();
+
+    for (const auto & arg : args)
+    {
+        if (!arg.type->isNullable())
+            continue;
+
+        if (isColumnConst(*arg.column))
+        {
+            if (arg.column->onlyNull())
+                std::fill(result_null_map_data.begin(), result_null_map_data.end(), UInt8(1));
+            continue;
+        }
+
+        const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+        for (size_t i = 0; i < input_rows_count; ++i)
+            result_null_map_data[i] |= null_map[i];
+    }
+
+    return result_null_map;
+}
+
+void emptyArrayArgumentsOnNullRows(ColumnsWithTypeAndName & args, const ColumnUInt8 & row_null_map, size_t input_rows_count)
+{
+    if (!NullableArrayOffsets::rowNullMapHasAnyNull(row_null_map))
+        return;
+
+    for (auto & arg : args)
+    {
+        if (!isArray(arg.type))
+            continue;
+
+        ColumnPtr full_array_holder;
+        const ColumnArray * array = checkAndGetColumn<ColumnArray>(arg.column.get());
+        if (!array)
+        {
+            const auto * const_array = checkAndGetColumnConst<ColumnArray>(arg.column.get());
+            if (!const_array)
+                continue;
+
+            full_array_holder = const_array->convertToFullColumn();
+            array = assert_cast<const ColumnArray *>(full_array_holder.get());
+        }
+
+        if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*array, &row_null_map, input_rows_count))
+            arg.column = std::move(null_rows_empty_array);
+    }
 }
 
 ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
@@ -304,31 +380,23 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
             auto temporary_result_type = removeNullable(result_type);
 
+            if (hasNullableArrayArgument(args))
+            {
+                auto result_null_map = buildResultNullMapForDefaultNulls(args, input_rows_count);
+                emptyArrayArgumentsOnNullRows(
+                    temporary_columns,
+                    assert_cast<const ColumnUInt8 &>(*result_null_map),
+                    input_rows_count);
+
+                auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
+                return wrapInNullable(res, std::move(result_null_map));
+            }
+
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
             return wrapInNullable(res, args, result_type, input_rows_count);
         }
 
-        ColumnPtr result_null_map = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
-        for (const auto & arg : args)
-        {
-            if (arg.type->isNullable() && !isColumnConst(*arg.column))
-            {
-                if (result_null_map)
-                {
-                    MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
-                    auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
-                    const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
-                    for (size_t i = 0; i < input_rows_count; ++i)
-                        result_null_map_data[i] |= null_map[i];
-                    result_null_map = std::move(mut);
-                }
-                else
-                {
-                    /// If only one arg is nullable, share its null map between the arg and the result.
-                    result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
-                }
-            }
-        }
+        ColumnPtr result_null_map = buildResultNullMapForDefaultNulls(args, input_rows_count);
 
         size_t rows_with_nulls = result_null_map ?
             countBytesInFilter(assert_cast<const ColumnUInt8 &>(*result_null_map).getData().data(),
@@ -353,6 +421,12 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         if (!should_short_circuit)
         {
             /// Each row should be evaluated if there are no nulls or short circuiting is disabled.
+            if (hasNullableArrayArgument(args))
+                emptyArrayArgumentsOnNullRows(
+                    temporary_columns,
+                    assert_cast<const ColumnUInt8 &>(*result_null_map),
+                    input_rows_count);
+
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
             auto new_res = wrapInNullable(res, std::move(result_null_map));
             return new_res;
@@ -823,7 +897,9 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
             /// return it as-is. For null input rows, the function will be evaluated
             /// over the default values of the nested column and produce the corresponding default result
             /// (e.g. an empty array), instead of failing the type check.
-            return makeNullableSafe(return_type);
+            /// `Nullable(Array)` arguments are the exception: array-returning functions must keep
+            /// the row null map on the returned `Array`.
+            return makeNullableResultForDefaultNulls(return_type, arguments);
         }
     }
 

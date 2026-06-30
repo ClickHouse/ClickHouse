@@ -7,9 +7,11 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -22,7 +24,9 @@
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/array/NullableArrayOffsets.h>
 
+#include <algorithm>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 
@@ -39,6 +43,161 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace detail
+{
+
+struct NullableArrayArgument
+{
+    ColumnPtr column;
+    ColumnPtr null_map;
+};
+
+inline const ColumnUInt8 & getNullMapColumnUInt8(const ColumnPtr & null_map_column)
+{
+    if (const auto * null_map_const = checkAndGetColumnConst<ColumnUInt8>(null_map_column.get()))
+        return assert_cast<const ColumnUInt8 &>(null_map_const->getDataColumn());
+    return assert_cast<const ColumnUInt8 &>(*null_map_column);
+}
+
+inline ColumnPtr materializeNullMapToRowCount(const ColumnPtr & null_map_column, size_t num_rows)
+{
+    const auto & null_map = getNullMapColumnUInt8(null_map_column);
+
+    if (null_map.size() == num_rows && !isColumnConst(*null_map_column))
+        return null_map_column;
+
+    if (null_map.size() != 1 && null_map.size() != num_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Null map size {} does not match row count {} and is not a single constant value",
+            null_map.size(), num_rows);
+
+    auto result = ColumnUInt8::create();
+    auto & result_data = assert_cast<ColumnUInt8 &>(*result).getData();
+    if (null_map.size() == num_rows)
+        result_data.assign(null_map.getData().begin(), null_map.getData().end());
+    else
+        result_data.resize_fill(num_rows, null_map.getData()[0]);
+    return result;
+}
+
+inline void mergeRowNullMap(ColumnPtr & accumulated, const ColumnPtr & new_null_map, size_t num_rows)
+{
+    if (!new_null_map)
+        return;
+
+    ColumnPtr materialized_new = materializeNullMapToRowCount(new_null_map, num_rows);
+
+    if (!accumulated)
+    {
+        accumulated = std::move(materialized_new);
+        return;
+    }
+
+    accumulated = materializeNullMapToRowCount(accumulated, num_rows);
+    auto mutable_accumulated = IColumn::mutate(accumulated);
+    auto & acc_data = assert_cast<ColumnUInt8 &>(*mutable_accumulated).getData();
+    const auto & new_data = assert_cast<const ColumnUInt8 &>(*materialized_new).getData();
+
+    for (size_t i = 0; i < num_rows; ++i)
+        acc_data[i] |= new_data[i];
+
+    accumulated = std::move(mutable_accumulated);
+}
+
+inline NullableArrayArgument unwrapNullableArrayArgumentColumn(
+    const ColumnPtr & column, const DataTypePtr & type, VectorWithMemoryTracking<ColumnPtr> & materialized_columns)
+{
+    NullableArrayArgument result{.column = column, .null_map = nullptr};
+
+    ColumnPtr unwrapped_column = column;
+    auto col_no_lowcardinality = recursiveRemoveLowCardinality(unwrapped_column);
+    if (col_no_lowcardinality.get() != unwrapped_column.get())
+    {
+        materialized_columns.emplace_back(col_no_lowcardinality);
+        unwrapped_column = col_no_lowcardinality;
+    }
+
+    const ColumnConst * col_const = checkAndGetColumnConst<ColumnConst>(unwrapped_column.get());
+    const IColumn * data_column = col_const ? &col_const->getDataColumn() : unwrapped_column.get();
+
+    if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(data_column))
+    {
+        result.null_map = nullable_array_column->getNullMapColumnPtr();
+
+        auto nested_array_ptr = nullable_array_column->getNestedColumnPtr();
+        if (checkAndGetColumn<ColumnArray>(nested_array_ptr.get())
+            || checkAndGetColumnConst<ColumnArray>(nested_array_ptr.get()))
+        {
+            result.column = col_const
+                ? ColumnConst::create(std::move(nested_array_ptr), col_const->size())
+                : nested_array_ptr;
+        }
+    }
+    else if (type->isNullable())
+    {
+        if (!result.null_map)
+        {
+            auto null_map = ColumnUInt8::create();
+            assert_cast<ColumnUInt8 &>(*null_map).getData().resize_fill(unwrapped_column->size(), 0);
+            result.null_map = std::move(null_map);
+        }
+    }
+
+    return result;
+}
+
+inline bool canWrapNullableArrayResultType(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return true;
+    if (typeid_cast<const DataTypeArray *>(type.get()))
+        return true;
+    return type->canBeInsideNullable();
+}
+
+inline DataTypePtr applyNullableArrayReturnType(
+    const DataTypePtr & return_type, const ColumnsWithTypeAndName & arguments, size_t first_array_argument_index)
+{
+    for (size_t i = first_array_argument_index; i < arguments.size(); ++i)
+    {
+        if (arguments[i].type->isNullable() && canWrapNullableArrayResultType(return_type))
+            return makeNullableAllowingArray(return_type);
+    }
+    return return_type;
+}
+
+inline ColumnPtr wrapNullableArrayResultIfNeeded(
+    ColumnPtr result, const ColumnPtr & array_null_map, size_t /*input_rows_count*/, const DataTypePtr & result_type)
+{
+    if (!result_type->isNullable())
+        return result;
+
+    const size_t num_rows = result->size();
+
+    ColumnPtr null_map_col;
+    if (array_null_map)
+        null_map_col = materializeNullMapToRowCount(array_null_map, num_rows);
+    else
+    {
+        auto null_map_mut = ColumnUInt8::create();
+        assert_cast<ColumnUInt8 &>(*null_map_mut).getData().resize_fill(num_rows, 0);
+        null_map_col = std::move(null_map_mut);
+    }
+
+    ColumnPtr nested_result = result;
+    if (const auto * nullable_result = checkAndGetColumn<ColumnNullable>(result.get()))
+    {
+        mergeRowNullMap(null_map_col, nullable_result->getNullMapColumnPtr(), num_rows);
+        nested_result = nullable_result->getNestedColumnPtr();
+    }
+    else
+        nested_result = IColumn::mutate(result->convertToFullColumnIfConst());
+
+    return ColumnNullable::create(nested_result, null_map_col);
+}
+
 }
 
 /** Higher-order functions for arrays.
@@ -59,7 +218,7 @@ namespace ErrorCodes
   * See the example of Impl template parameter in arrayMap.cpp
   */
 template <typename Impl, typename Name, bool IsDeterministic = true>
-class FunctionArrayMapped final : public IFunction
+class FunctionArrayMapped : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -72,11 +231,13 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isHigherOrderFunction() const override { return true; }
     bool isDeterministic() const override { return IsDeterministic; }
     bool isDeterministicInScopeOfQuery() const override { return IsDeterministic; }
+    bool isHigherOrderFunction() const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// Nullable(Array) null maps are merged and applied in executeImpl.
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
@@ -113,7 +274,7 @@ public:
 
         for (size_t i = 0; i < num_nested_types; ++i)
         {
-            const auto * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[i + 1 + num_fixed_params]);
+            const auto * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[i + 1 + num_fixed_params]).get());
             if (!array_type)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -179,7 +340,7 @@ public:
 
         if (arguments.size() == 1 + num_fixed_params)
         {
-            const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[num_fixed_params].type.get());
+            const auto * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[num_fixed_params].type).get());
 
             if (!array_type)
                 throw Exception(
@@ -206,7 +367,8 @@ public:
                     getName(),
                     arguments[num_fixed_params].type->getName());
 
-            return Impl::getReturnType(nested_type, nested_type);
+            return detail::applyNullableArrayReturnType(
+                Impl::getReturnType(nested_type, nested_type), arguments, num_fixed_params);
         }
 
         if (arguments.size() > 2 + num_fixed_params && Impl::needOneArray())
@@ -243,12 +405,13 @@ public:
         if (arguments.size() < 2 + num_fixed_params)
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of arguments: {}", arguments.size());
 
-        const auto * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1 + num_fixed_params].type.get());
+        const auto * first_array_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[1 + num_fixed_params].type).get());
         if (!first_array_type)
             throw DB::Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1 + num_fixed_params].type->getName());
 
-        return Impl::getReturnType(return_type, first_array_type->getNestedType());
+        return detail::applyNullableArrayReturnType(
+            Impl::getReturnType(return_type, first_array_type->getNestedType()), arguments, 1 + num_fixed_params);
     }
 
     ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -261,11 +424,21 @@ public:
         return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/false);
     }
 
-    ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, bool dry_run) const
+    ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
     {
+        if (result_type->onlyNull())
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+        VectorWithMemoryTracking<ColumnPtr> materialized_columns;
+
         if (arguments.size() == 1 + num_fixed_params)
         {
-            ColumnPtr column_array_ptr = arguments[num_fixed_params].column;
+            ColumnPtr array_null_map;
+            auto unwrapped_array = detail::unwrapNullableArrayArgumentColumn(
+                arguments[num_fixed_params].column, arguments[num_fixed_params].type, materialized_columns);
+            detail::mergeRowNullMap(array_null_map, unwrapped_array.null_map, input_rows_count);
+
+            ColumnPtr column_array_ptr = unwrapped_array.column;
             const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
             if (!column_array)
@@ -279,13 +452,16 @@ public:
                 column_array = assert_cast<const ColumnArray *>(column_array_ptr.get());
             }
 
+            ColumnPtr result;
             if constexpr (num_fixed_params)
-                return Impl::execute(
+                result = Impl::execute(
                     *column_array,
                     column_array->getDataPtr(),
                     arguments.data());
             else
-                return Impl::execute(*column_array, column_array->getDataPtr());
+                result = Impl::execute(*column_array, column_array->getDataPtr());
+
+            return detail::wrapNullableArrayResultIfNeeded(std::move(result), array_null_map, input_rows_count, result_type);
         }
         else
         {
@@ -311,15 +487,31 @@ public:
             arrays.reserve(arguments.size() - 1 - num_fixed_params);
 
             bool is_single_array_argument = arguments.size() == num_fixed_params + 2;
+            ColumnPtr array_null_map;
+            struct ArrayArgument
+            {
+                ColumnPtr column_array_ptr;
+                const ColumnArray * column_array = nullptr;
+                const DataTypeArray * array_type = nullptr;
+                String name;
+                size_t argument_index = 0;
+            };
+            VectorWithMemoryTracking<ArrayArgument> array_arguments;
+            array_arguments.reserve(arguments.size() - 1 - num_fixed_params);
+
             for (size_t i = 1 + num_fixed_params; i < arguments.size(); ++i)
             {
                 const auto & array_with_type_and_name = arguments[i];
 
-                auto column_array_ptr = array_with_type_and_name.column;
+                auto unwrapped_array = detail::unwrapNullableArrayArgumentColumn(
+                    array_with_type_and_name.column, array_with_type_and_name.type, materialized_columns);
+                detail::mergeRowNullMap(array_null_map, unwrapped_array.null_map, input_rows_count);
+
+                auto column_array_ptr = unwrapped_array.column;
                 const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
                 const auto & array_type_ptr = array_with_type_and_name.type;
-                const auto * array_type = checkAndGetDataType<DataTypeArray>(array_type_ptr.get());
+                const auto * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(array_type_ptr).get());
 
                 if (!column_array)
                 {
@@ -336,30 +528,50 @@ public:
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected Array type, found {}", array_type_ptr->getName());
 
+                array_arguments.emplace_back(column_array_ptr, column_array, array_type, array_with_type_and_name.name, i + 1);
+            }
+
+            if (array_null_map)
+                array_null_map = detail::materializeNullMapToRowCount(array_null_map, input_rows_count);
+
+            const auto * row_null_map = array_null_map
+                ? &assert_cast<const ColumnUInt8 &>(*array_null_map)
+                : nullptr;
+
+            for (auto & array_argument : array_arguments)
+            {
+                if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(
+                        *array_argument.column_array, row_null_map, input_rows_count))
+                {
+                    materialized_columns.emplace_back(null_rows_empty_array);
+                    array_argument.column_array_ptr = std::move(null_rows_empty_array);
+                    array_argument.column_array = assert_cast<const ColumnArray *>(array_argument.column_array_ptr.get());
+                }
+
                 if (!offsets_column)
                 {
-                    offsets_column = column_array->getOffsetsPtr();
+                    offsets_column = array_argument.column_array->getOffsetsPtr();
                 }
                 else
                 {
                     /// The first condition is optimization: do not compare data if the pointers are equal.
-                    if (column_array->getOffsetsPtr() != offsets_column
-                        && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
+                    if (array_argument.column_array->getOffsetsPtr() != offsets_column
+                        && array_argument.column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
                         throw Exception(
                             ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                             "Arrays passed to {} must have equal size. Argument {} has size {} which differs with the size of another argument, {}",
                             getName(),
-                            i + 1,
-                            column_array->getOffsets().back(),  /// By the way, PODArray supports addressing -1th element.
+                            array_argument.argument_index,
+                            array_argument.column_array->getOffsets().back(),  /// By the way, PODArray supports addressing -1th element.
                             typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData().back());
                 }
 
-                const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column_array->getData());
+                const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&array_argument.column_array->getData());
                 size_t tuple_size = column_tuple ? column_tuple->getColumns().size() : 0;
 
                 if (is_single_array_argument && tuple_size > 1 && tuple_size == num_function_arguments)
                 {
-                    const auto & type_tuple = assert_cast<const DataTypeTuple &>(*array_type->getNestedType());
+                    const auto & type_tuple = assert_cast<const DataTypeTuple &>(*array_argument.array_type->getNestedType());
                     const auto & tuple_names = type_tuple.getElementNames();
 
                     arrays.reserve(column_tuple->getColumns().size());
@@ -368,21 +580,21 @@ public:
                         arrays.emplace_back(
                             column_tuple->getColumnPtr(j),
                             type_tuple.getElement(j),
-                            array_with_type_and_name.name + "." + tuple_names[j]);
+                            array_argument.name + "." + tuple_names[j]);
                     }
                 }
                 else
                 {
                     arrays.emplace_back(
-                        column_array->getDataPtr(),
-                        array_type->getNestedType(),
-                        array_with_type_and_name.name);
+                        array_argument.column_array->getDataPtr(),
+                        array_argument.array_type->getNestedType(),
+                        array_argument.name);
                 }
 
-                if (i == 1 + num_fixed_params)
+                if (!column_first_array)
                 {
-                    column_first_array_ptr = column_array_ptr;
-                    column_first_array = column_array;
+                    column_first_array_ptr = array_argument.column_array_ptr;
+                    column_first_array = array_argument.column_array;
                 }
             }
 
@@ -405,8 +617,8 @@ public:
                 /// If result column is Nothing or Nullable(Nothing), just create const UInt8 column with 0 value.
                 if (isNothing(removeNullable(lambda_result.type)))
                 {
-                    auto result_type = std::make_shared<DataTypeUInt8>();
-                    lambda_result.column = result_type->createColumnConst(lambda_result.column->size(), 0);
+                    auto bool_result_type = std::make_shared<DataTypeUInt8>();
+                    lambda_result.column = bool_result_type->createColumnConst(lambda_result.column->size(), 0);
                 }
                 /// If result column is Nullable(UInt8), then extract nested column and write 0 in all rows
                 /// when we have NULL.
@@ -417,8 +629,8 @@ public:
                     if (isColumnConst(*result_column))
                     {
                         UInt8 value = result_column->empty() ? 0 : result_column->getBool(0);
-                        auto result_type = std::make_shared<DataTypeUInt8>();
-                        lambda_result.column = result_type->createColumnConst(result_column->size(), value);
+                        auto bool_result_type = std::make_shared<DataTypeUInt8>();
+                        lambda_result.column = bool_result_type->createColumnConst(result_column->size(), value);
                     }
                     else
                     {
@@ -436,13 +648,16 @@ public:
                 }
             }
 
+            ColumnPtr result;
             if constexpr (num_fixed_params)
-                return Impl::execute(
+                result = Impl::execute(
                     *column_first_array,
                     lambda_result.column,
                     arguments.data() + 1);
             else
-                return Impl::execute(*column_first_array, lambda_result.column);
+                result = Impl::execute(*column_first_array, lambda_result.column);
+
+            return detail::wrapNullableArrayResultIfNeeded(std::move(result), array_null_map, input_rows_count, result_type);
         }
     }
 };
