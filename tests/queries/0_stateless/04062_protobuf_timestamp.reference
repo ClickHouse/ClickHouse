@@ -26,3 +26,5 @@ Seconds before 1900 (DateTime64):
 Could not convert value '-5364662400' from type google.protobuf.Timestamp to type DateTime64 while reading field 'ts' for inserting into column 'ts'
 Seconds after 2299 (DateTime64):
 Could not convert value '10413792000' from type google.protobuf.Timestamp to type DateTime64 while reading field 'ts' for inserting into column 'ts'
+Split Timestamp message (DateTime64):
+1970-01-01 00:00:01.500000000

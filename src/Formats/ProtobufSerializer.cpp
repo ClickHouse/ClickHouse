@@ -1448,16 +1448,9 @@ namespace
 
         void writeRow(size_t row_num) override
         {
-            const Int64 ticks = getTicks(row_num);
-
-            Int64 seconds = ticks / ticks_per_second;
-            Int64 frac = ticks % ticks_per_second;
-            if (frac < 0)
-            {
-                frac += ticks_per_second;
-                --seconds;
-            }
-            const Int64 nanos = frac * nanos_per_tick;
+            Int64 seconds = 0;
+            Int64 nanos = 0;
+            ticksToSecondsAndNanos(getTicks(row_num), seconds, nanos);
 
             writer->startNestedMessage();
             if (seconds != 0)
@@ -1471,6 +1464,10 @@ namespace
         {
             Int64 seconds = 0;
             Int64 nanos = 0;
+
+            /// Merge repeated fields.
+            if (row_num < column->size())
+                ticksToSecondsAndNanos(getTicks(row_num), seconds, nanos);
 
             reader->startNestedMessage();
             int field_number = 0;
@@ -1516,6 +1513,18 @@ namespace
     private:
         static constexpr bool is_datetime64 = std::is_same_v<ColumnType, ColumnDecimal<DateTime64>>;
         static constexpr Int64 nanos_per_second = 1'000'000'000;
+
+        void ticksToSecondsAndNanos(Int64 ticks, Int64 & seconds, Int64 & nanos) const
+        {
+            seconds = ticks / ticks_per_second;
+            Int64 frac = ticks % ticks_per_second;
+            if (frac < 0)
+            {
+                frac += ticks_per_second;
+                --seconds;
+            }
+            nanos = frac * nanos_per_tick;
+        }
 
         Int64 getTicks(size_t row_num) const
         {
