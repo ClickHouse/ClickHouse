@@ -580,6 +580,15 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::substringToTokens(
 
 std::vector<VectorWithMemoryTracking<String>> MergeTreeIndexConditionText::regexpToTokensForQueries(const String & regexp_string) const
 {
+    /// A NUL byte (`\0`) is handled inconsistently by the engines this index must agree with: `multiMatchAny`
+    /// compiles each needle in vectorscan as a C-string and stops at the NUL, while `match` evaluates the
+    /// pattern with re2, which matches the NUL literally. The index cannot faithfully reproduce both
+    /// behaviours, so for any pattern containing a NUL we decline to extract tokens and keep the original
+    /// predicate (a full scan) - the same fail-safe `substringToTokens` already uses for needles that are
+    /// not valid UTF-8.
+    if (regexp_string.find('\0') != String::npos)
+        return {};
+
     RegexpAnalysisResult result = OptimizedRegularExpression::analyze(regexp_string);
 
     /// required_substring is a literal that lies outside any alternation, so it must appear on
