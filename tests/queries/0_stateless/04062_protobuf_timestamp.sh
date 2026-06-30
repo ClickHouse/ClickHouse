@@ -41,3 +41,13 @@ roundtrip "DateTime64(3, 'UTC')" "('2022-01-22 12:34:56.789')"
 
 echo "DateTime:"
 roundtrip "DateTime('UTC')" "('2022-01-22 12:34:56')"
+
+# A timestamp that is valid protobuf but outside the DateTime64(9) range must be rejected, not silently wrapped.
+echo "Out of range:"
+bin=$(mktemp "$CURDIR/04062_protobuf_timestamp.XXXXXX.binary")
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS overflow_04062"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE overflow_04062 (ts DateTime64(9, 'UTC')) ENGINE = MergeTree ORDER BY tuple()"
+$CLICKHOUSE_CLIENT --query "SELECT toDateTime64(10000000000, 0, 'UTC') AS ts FORMAT Protobuf SETTINGS format_schema = '$SCHEMA'" > "$bin"
+$CLICKHOUSE_CLIENT --query "INSERT INTO overflow_04062 SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf" < "$bin" 2>&1 | grep -o "Could not convert value.*column 'ts'" ||:
+rm "$bin"
+$CLICKHOUSE_CLIENT --query "DROP TABLE overflow_04062"

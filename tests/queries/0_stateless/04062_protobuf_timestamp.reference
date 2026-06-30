@@ -6,3 +6,5 @@ DateTime64(3):
 2022-01-22 12:34:56.789
 DateTime:
 2022-01-22 12:34:56
+Out of range:
+Could not convert value '10000000000' from type google.protobuf.Timestamp to type DateTime64 while reading field 'ts' for inserting into column 'ts'
