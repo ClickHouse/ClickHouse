@@ -10082,7 +10082,10 @@ bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
     /// must not waste background CPU and I/O moving parts between volumes/disks, neither because of the
     /// storage policy `move_factor` nor because of `TTL ... TO DISK/VOLUME` rules. Explicit
     /// `ALTER TABLE ... MOVE` commands are rejected separately by `assertNotReadonly`; this only suppresses
-    /// the automatic background moves.
+    /// the automatic background moves. The setting is sampled here, immediately before move selection and
+    /// scheduling, so the window against a concurrent `ALTER ... MODIFY SETTING table_readonly = 1` is
+    /// minimal; suppression of an already-selected move is best-effort and a single in-flight move that
+    /// slips through right at the moment the setting is published is harmless (see `scheduleDataProcessingJob`).
     if ((*getSettings())[MergeTreeSetting::table_readonly])
         return false;
 

@@ -1766,12 +1766,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     MergeMutateSelectedEntryPtr merge_entry;
     MergeMutateSelectedEntryPtr mutate_entry;
 
-    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
-    /// performs no modifications on disk and wastes no background CPU: no merges (regular, recompression, or
-    /// TTL), mutations, or part moves run on it. Tables with a TTL are never marked read-only (see
-    /// `SystemLog::prepareTable`), so skipping TTL merges here cannot strand expired data.
-    const bool table_is_readonly = (*getSettings())[MergeTreeSetting::table_readonly];
-
     auto shared_lock = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
     MergeTreeTransactionHolder transaction_for_merge;
@@ -1789,6 +1783,19 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
+
+        /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
+        /// performs no modifications on disk and wastes no background CPU: no merges (regular, recompression,
+        /// or TTL), mutations, or part moves run on it. Tables with a TTL are never marked read-only (see
+        /// `SystemLog::prepareTable`), so skipping TTL merges here cannot strand expired data.
+        ///
+        /// Sample the setting here, under `currently_processing_in_background_mutex` and immediately before
+        /// selecting background work, so the window against a concurrent `ALTER ... MODIFY SETTING
+        /// table_readonly = 1` is as small as possible. Suppressing already in-flight background work is
+        /// best-effort: an operation whose selection started just before the setting was published may still
+        /// complete once. That is harmless - the table is abandoned after rotation, the result is correct,
+        /// and explicit user writes are always rejected synchronously by `assertNotReadonly`.
+        const bool table_is_readonly = (*getSettings())[MergeTreeSetting::table_readonly];
 
         {
             if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn, /*optimize_skip_merged_partitions=*/false, /*readonly=*/table_is_readonly))
