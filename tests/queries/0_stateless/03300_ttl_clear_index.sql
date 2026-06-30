@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS ttl_clear_index_packed_all;
 DROP TABLE IF EXISTS ttl_clear_index_packed_mixed;
 DROP TABLE IF EXISTS ttl_clear_index_large_part;
 DROP TABLE IF EXISTS ttl_clear_index_uuid_ineligible;
+DROP TABLE IF EXISTS ttl_clear_index_lightweight_delete;
 
 CREATE TABLE ttl_clear_index_bad
 (
@@ -316,5 +317,51 @@ WHERE database = currentDatabase()
   AND table = 'ttl_clear_index_uuid_ineligible'
   AND active;
 
+CREATE TABLE ttl_clear_index_lightweight_delete
+(
+    d Date,
+    k UInt64,
+    v UInt64,
+    INDEX idx v TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY k
+TTL d + INTERVAL 1 DAY CLEAR INDEX idx
+SETTINGS
+    index_granularity = 2,
+    index_granularity_bytes = '10Mi',
+    min_bytes_for_wide_part = 0,
+    min_rows_for_wide_part = 0,
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1;
+
+INSERT INTO ttl_clear_index_lightweight_delete VALUES
+    ('2000-01-01', 1, 1),
+    ('2000-01-01', 2, 2);
+
+DELETE FROM ttl_clear_index_lightweight_delete WHERE k = 1 SETTINGS lightweight_delete_mode = 'lightweight_update_force', lightweight_deletes_sync = 2;
+
+CREATE TEMPORARY TABLE ttl_clear_index_lwd_events_before (value UInt64) ENGINE = Memory;
+INSERT INTO ttl_clear_index_lwd_events_before
+SELECT sum(value)
+FROM system.events
+WHERE event = 'TTLClearIndexMetadataOnlyMerges';
+
+OPTIMIZE TABLE ttl_clear_index_lightweight_delete FINAL SETTINGS enable_ttl_clear_index_merge_type_generation = 1, optimize_skip_merged_partitions = 1;
+
+SELECT sum(value) = (SELECT value FROM ttl_clear_index_lwd_events_before)
+FROM system.events
+WHERE event = 'TTLClearIndexMetadataOnlyMerges';
+
+SELECT sum(secondary_indices_compressed_bytes) > 0
+FROM system.parts
+WHERE database = currentDatabase()
+  AND table = 'ttl_clear_index_lightweight_delete'
+  AND active;
+
+SELECT count()
+FROM ttl_clear_index_lightweight_delete;
+
 DROP TABLE ttl_clear_index_large_part;
 DROP TABLE ttl_clear_index_uuid_ineligible;
+DROP TABLE ttl_clear_index_lightweight_delete;

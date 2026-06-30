@@ -693,6 +693,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::tryPrepareClearIndexReplacemen
         && !ctx->need_remove_expired_values
         && !global_ctx->deduplicate
         && !global_ctx->cleanup
+        && !hasLightweightDelete(global_ctx->future_part)
         && global_ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary;
 
     if (!is_ttl_clear_index_merge && !can_adopt_regular_single_part_cleanup)
