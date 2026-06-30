@@ -197,7 +197,7 @@ public:
         AggregateDataPtr __restrict place,
         const IColumn ** __restrict columns,
         Arena * arena,
-        ssize_t if_argument_pos = -1) const override
+        ssize_t if_argument_pos) const override
     {
         if constexpr (StatFunc::num_args == 1)
         {
