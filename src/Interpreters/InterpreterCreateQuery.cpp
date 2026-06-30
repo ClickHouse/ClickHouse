@@ -742,6 +742,23 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
 }
 
 
+/// True when this is a `CREATE ... IF NOT EXISTS` whose target table already exists, so `doCreateTable`
+/// will return false and `execute` will skip `fillTableIfNeeded` (the populating INSERT SELECT). In that
+/// case the SELECT is a no-op against the untouched existing table, so the orphan-table access pre-check
+/// must not run -- otherwise a missing grant on a source table would turn the no-op into an ACCESS_DENIED.
+static bool createIfNotExistsResolvesToExistingTable(const ASTCreateQuery & create, const ContextPtr & context)
+{
+    if (!create.if_not_exists)
+        return false;
+
+    if (create.isTemporary())
+        return static_cast<bool>(context->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal));
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(create.getDatabase());
+    return database && database->isTableExist(create.getTable(), context);
+}
+
+
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
@@ -1039,8 +1056,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// This runs for every isCreateQueryWithImmediateInsertSelect() form (columns inferred from the SELECT
     /// or given explicitly, and materialized/window views with POPULATE), so it lives here, after the
     /// column structure is known but before the table is created.
+    ///
+    /// It is skipped when `IF NOT EXISTS` resolves to an already-existing table: there `doCreateTable`
+    /// returns false and `fillTableIfNeeded` is never reached, so the populating INSERT SELECT (and its
+    /// access checks) does not run and we must not raise a spurious access error for the no-op.
     if (create.isCreateQueryWithImmediateInsertSelect()
-        && getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+        && getContext()->getSettingsRef()[Setting::allow_experimental_analyzer]
+        && !createIfNotExistsResolvesToExistingTable(create, getContext()))
     {
         /// Mirror the subsequent INSERT SELECT (see fillTableIfNeeded) exactly, so this check cannot
         /// introduce a failure mode the insert would not also hit. In particular that INSERT SELECT sets the

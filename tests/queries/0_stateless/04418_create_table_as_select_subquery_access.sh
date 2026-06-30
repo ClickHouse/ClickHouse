@@ -55,6 +55,23 @@ check_denied()
 check_denied "inferred columns" "${inferred_query}" "dst"
 check_denied "explicit columns" "${explicit_query}" "dst_explicit"
 
+# `CREATE TABLE IF NOT EXISTS dst ... AS SELECT` for a table that already exists is a no-op:
+# `doCreateTable` returns false and the populating INSERT SELECT (`fillTableIfNeeded`) never runs, so
+# the SELECT is not executed and access to t2 must not be required. The statement must succeed and
+# leave the existing table untouched, not raise ACCESS_DENIED for the no-op.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE dst_noop (y Int) ENGINE = Memory; INSERT INTO dst_noop VALUES (42);"
+echo "-- [if not exists, table exists] no-op must succeed (no ACCESS_DENIED) even though t2 is denied:"
+"${client[@]}" --query "CREATE TABLE IF NOT EXISTS dst_noop (y Int) ENGINE = Memory AS SELECT y FROM t0 WHERE y IN (SELECT y FROM t2 WHERE y < 2)" 2>&1 | grep -Fo "ACCESS_DENIED" | uniq
+echo "-- [if not exists, table exists] the existing table must be left unchanged:"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM dst_noop"
+
+# But IF NOT EXISTS for a table that does not yet exist must still be denied (the orphan-table fix still
+# applies in that case), and must not leave an empty table behind.
+echo "-- [if not exists, table missing] still denied because of missing SELECT on t2:"
+"${client[@]}" --query "CREATE TABLE IF NOT EXISTS dst_ine (y Int) ENGINE = Memory AS SELECT y FROM t0 WHERE y IN (SELECT y FROM t2 WHERE y < 2)" 2>&1 | grep -Fo "ACCESS_DENIED" | uniq
+echo "-- [if not exists, table missing] the denied query must not leave an orphan table:"
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE dst_ine"
+
 echo "-- once column-level SELECT(y) on t2 is granted, both queries succeed and populate the table:"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT(y) ON ${CLICKHOUSE_DATABASE}.t2 TO ${user}"
 "${client[@]}" --query "${inferred_query}"
@@ -65,6 +82,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT * FROM dst_explicit"
 ${CLICKHOUSE_CLIENT} --query "
 DROP TABLE dst;
 DROP TABLE dst_explicit;
+DROP TABLE dst_noop;
 DROP TABLE t0;
 DROP TABLE t1;
 DROP TABLE t2;
