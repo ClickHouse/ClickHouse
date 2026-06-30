@@ -335,7 +335,7 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
         {
             /// The AST may be shared with the query, so it must not be modified in place.
             ASTPtr cloned = kv_arg->clone();
-            cloned->as<ASTFunction>()->arguments->children[1] = make_intrusive<ASTLiteral>(redacted);
+            cloned->as<ASTFunction>()->arguments->children[1] = std::make_shared<ASTLiteral>(redacted);
             kv_arg = cloned;
         }
     }
