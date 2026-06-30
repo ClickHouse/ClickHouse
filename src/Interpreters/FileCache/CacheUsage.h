@@ -17,10 +17,10 @@ namespace DB
 
 /// This mutex guard is needed only for correctness of `OvercommitFileCachePriority::check` method,
 /// but not for cache correctness in general,
-/// because it makes sure per client's counters
-/// (`total_size` and `total_elements` in `CacheUsage` per client state)
+/// because it makes sure per-user counters
+/// (`total_size` and `total_elements` in `CacheUsage` per-user state)
 /// are updated atomically with main cache state counters.
-/// The per-client `total_size` and `total_elements` counters are used for:
+/// The per-user `total_size` and `total_elements` counters are used for:
 /// 1. to decide from whom to evict according to overcommit policy
 /// 2. for system tables
 /// In both cases some temporary divergence from actual cache counters is fine,
