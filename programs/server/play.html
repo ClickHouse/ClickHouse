@@ -3453,6 +3453,24 @@ async function postSingle(posted_request_num, query, history_query_text)
         progressEl.clear();
         document.getElementById('download-div').style.display = 'none';
         document.getElementById('copy-div').style.display = 'none';
+        /// Persist the error as this tab's result snapshot. The restore path renders an
+        /// `ok: false` snapshot as the exception, so switching away/back or reloading shows
+        /// the failed query's error; without this, the failed run leaves the tab's previous
+        /// successful result in place and that stale result would resurrect under the failed
+        /// query. Guarded on the request number like the success path below (and like
+        /// `postMulti`), so a superseded run (tab switch / newer run) does not overwrite the
+        /// now-active tab's snapshot.
+        if (posted_request_num == request_num) {
+            saveHistory({
+                query: history_query_text || query,
+                resultQuery: query,
+                format: result.format,
+                ok: result.response_ok,
+                data: result.reply.length > 100000 ? null : result.reply,
+                elapsed_ns: 1e6 * (performance.now() - last_query_start),
+                params: paramValuesSnapshot,
+            });
+        }
         return;
     }
 
