@@ -18,49 +18,6 @@ The [stochasticLinearRegression](/sql-reference/aggregate-functions/reference/st
 
 The [stochasticLogisticRegression](/sql-reference/aggregate-functions/reference/stochasticlogisticregression) aggregate function implements stochastic gradient descent method for binary classification problem. Uses `evalMLMethod` to predict on new data.
 
-## naiveBayesClassifier {#naivebayesclassifier}
-
-`naiveBayesClassifier` and its companion functions classify text with a multinomial [Naive Bayes](https://en.wikipedia.org/wiki/Naive_Bayes_classifier) model stored in a dictionary with the [`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) layout. The dictionary compiles a table of pre-aggregated, per-class n-gram counts into a model at load time; these functions then classify input text, returning the predicted class id or class probabilities.
-
-For the model, the dictionary structure, and all configuration — tokenization modes, priors, boundary tokens, and runnable examples — see the [`NAIVE_BAYES` dictionary layout](/sql-reference/statements/create/dictionary/layouts/naive-bayes). This section documents the functions that query such a dictionary.
-
-### Functions {#functions}
-
-Three functions take the same two arguments and the same dictionary, differing only in what they return.
-
-**Syntax**
-
-```sql
-naiveBayesClassifier(dictionary_name, input_text)
-naiveBayesClassifierWithProb(dictionary_name, input_text)
-naiveBayesClassifierWithAllProbs(dictionary_name, input_text)
-```
-
-**Arguments**
-
-- `dictionary_name` — Name of a dictionary with the `NAIVE_BAYES` layout. Must be a constant. [String](../data-types/string.md).
-- `input_text` — The text to classify. [String](../data-types/string.md). It is split according to the dictionary's `mode` (raw bytes, Unicode code points, or words delimited by ASCII whitespace); case and punctuation are preserved. An empty string is accepted and classified from the priors alone.
-
-**Returned values**
-
-- [`naiveBayesClassifier`](/sql-reference/functions/machine-learning-functions#naivebayesclassifier) — the predicted class id. [UInt32](../data-types/int-uint.md).
-- [`naiveBayesClassifierWithProb`](/sql-reference/functions/machine-learning-functions#naivebayesclassifierwithprob) — the predicted class and its probability, as `Tuple(class_id UInt32, probability Float64)`.
-- [`naiveBayesClassifierWithAllProbs`](/sql-reference/functions/machine-learning-functions#naivebayesclassifierwithallprobs) — every class with its probability, ordered from most to least probable (ties broken by ascending class id), as `Array(Tuple(class_id UInt32, probability Float64))`.
-
-Probabilities sum to `1.0`.
-
-**Relationship to `dictGet`**
-
-`naiveBayesClassifier` returns the same predicted class **value** as calling [`dictGet`](/sql-reference/functions/ext-dict-functions#dictget) for the dictionary's class attribute — the attribute named by the `class_attribute` layout parameter. For example, when `class_attribute` is `class_id`, this comparison is always `1`:
-
-```sql
-naiveBayesClassifier(dictionary_name, input_text) = dictGet(dictionary_name, 'class_id', input_text)
-```
-
-The two differ only in **result type**: `naiveBayesClassifier` always returns [`UInt32`](../data-types/int-uint.md), whereas `dictGet` returns the declared class-attribute type (`UInt8`, `UInt16`, `UInt32`, or `UInt64`). The predicted class is the same value in both.
-
-[`dictHas`](/sql-reference/functions/ext-dict-functions#dicthas) always returns `1`, because every input is classifiable.
-
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.
