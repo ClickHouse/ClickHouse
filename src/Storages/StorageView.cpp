@@ -666,6 +666,17 @@ public:
             }
         }
 
+        /// Capture the accepted rows in the *view's* own header (after target defaults were
+        /// materialized and the `WHERE` constraint passed, before renaming to target columns).
+        /// `SinkToStorage::onConsume` moves `chunk` into `cur_chunk` after this method returns, and
+        /// `onGenerate` forwards `cur_chunk` to materialized views that depend on this view. We
+        /// detached the columns above, so without restoring them such a dependent materialized view
+        /// (e.g. `CREATE MATERIALIZED VIEW mv TO dst AS SELECT * FROM v`) would receive an empty
+        /// chunk and silently miss the inserted rows. The chunk keeps its original infos (only the
+        /// columns were detached), so async-insert metadata is preserved for the dependent views too.
+        Columns view_columns = block.getColumns();
+        const size_t view_rows = block.rows();
+
         /// Rename view columns to target table columns, processing each column by position.
         /// A name-based in-place rename is unsafe when aliases collide with target column
         /// names: for `CREATE VIEW v AS SELECT a AS b, b AS a FROM t` the mapping holds both
@@ -692,6 +703,11 @@ public:
         Chunk renamed_chunk(block.getColumns(), block.rows());
         renamed_chunk.setChunkInfos(std::move(chunk_infos));
         executor_->push(std::move(renamed_chunk));
+
+        /// Restore the detached columns (in the view's header) so the chunk that
+        /// `SinkToStorage::onGenerate` forwards downstream carries the inserted rows to any
+        /// materialized views depending on this view, instead of an empty chunk.
+        chunk.setColumns(std::move(view_columns), view_rows);
     }
 
     void onFinish() override

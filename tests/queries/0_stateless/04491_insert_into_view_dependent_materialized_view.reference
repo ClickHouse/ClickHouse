@@ -1,0 +1,4 @@
+target:	1	x	1.5
+target:	2	y	0.5
+mv:	1	x	1.5
+mv:	2	y	0.5
