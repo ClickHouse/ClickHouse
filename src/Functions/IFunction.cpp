@@ -495,7 +495,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             /// runtime and break that assumption. Fall back to full materialization when it no
             /// longer holds.
             ColumnPtr indexes;
-            size_t new_input_rows_count;
+            size_t new_input_rows_count = 0;
             if (!canShareLowCardinalityDictionary(columns_without_low_cardinality))
             {
                 /// Full-materialization fallback: arguments keep their original row counts (constants
