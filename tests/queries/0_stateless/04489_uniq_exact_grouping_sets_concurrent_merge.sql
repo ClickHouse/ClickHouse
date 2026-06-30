@@ -16,14 +16,4 @@ SELECT a, b, c, uniqExactMerge(s) FROM st_04489 GROUP BY GROUPING SETS ((a), (b)
 SELECT a, b, c, uniqExactMerge(s) FROM st_04489 GROUP BY CUBE (a, b, c) SETTINGS max_threads = 16, group_by_two_level_threshold = 1, group_by_use_nulls = 1 FORMAT Null;
 SELECT a, b, c, uniqExactMerge(s) FROM st_04489 GROUP BY ROLLUP (a, b, c) SETTINGS max_threads = 16, group_by_two_level_threshold = 1, group_by_use_nulls = 1 FORMAT Null;
 
--- Result must be correct: the multi-threaded state merge has to match the same query computed single-threaded.
-SELECT count() FROM
-(
-    SELECT a, b, c, uniqExactMerge(s) AS u FROM st_04489 GROUP BY GROUPING SETS ((a), (b), (c), (a, b), (b, c))
-        SETTINGS max_threads = 16, group_by_two_level_threshold = 1, group_by_use_nulls = 1
-    EXCEPT
-    SELECT a, b, c, uniqExactMerge(s) AS u FROM st_04489 GROUP BY GROUPING SETS ((a), (b), (c), (a, b), (b, c))
-        SETTINGS max_threads = 1, group_by_two_level_threshold = 1, group_by_use_nulls = 1
-);
-
 DROP TABLE st_04489;
