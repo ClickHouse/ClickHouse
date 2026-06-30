@@ -26,7 +26,6 @@ RUN apt-get update \
         git \
         xxd \
         time \
-        awscli \
         --yes --no-install-recommends --verbose-versions \
     && export LLVM_PUBKEY_HASH="5ffc7c9a9299ce774f81cada703e23ebba5bdfb0345b6c3b667b3ead7aa21c75ef62ccd74f7a8f2aa0cbe158d3068bbe" \
     && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
@@ -141,6 +140,8 @@ RUN arch=${TARGETARCH} \
 COPY requirements.txt /
 # --break-system-packages: Ubuntu 24.04 marks the system Python as externally managed (PEP 668).
 RUN pip3 install --break-system-packages --no-cache-dir -r /requirements.txt
+# Ubuntu 24.04 dropped the awscli deb; install it via pip (fast_test.py uses `aws ssm` for secrets).
+RUN pip3 install --break-system-packages --no-cache-dir awscli
 
 # chmod 777 to make the container user independent
 RUN mkdir -p /var/lib/clickhouse \
