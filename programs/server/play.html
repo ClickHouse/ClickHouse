@@ -4193,13 +4193,19 @@ function syncHistory() {
     writeHistoryEntry(tab);
 }
 
-/// Resolve which tab a history state refers to: by stable id, else by name, else
-/// create a new tab carrying that name.
+/// Resolve which tab a history state refers to. The `tabId` is the AUTHORITATIVE, stable
+/// identity: when the state carries one it wins, and we never fall back to matching by title.
+/// A same-titled tab may be an unrelated one the user has since renamed to the closed tab's
+/// old title, and adopting it would let Back/Forward overwrite that live tab's query/result.
+/// The title fallback exists ONLY for legacy entries predating `tabId`. When a state's
+/// `tabId` names a tab that was closed, recreate a fresh tab (disambiguating its title) so
+/// the navigation is non-destructive instead of hijacking an existing tab.
 function resolveTabForState(state) {
     let tab = state.tabId && tabs.find(t => t.id === state.tabId);
-    if (!tab && state.tabName) tab = tabs.find(t => t.title === state.tabName);
+    if (!tab && !state.tabId && state.tabName) tab = tabs.find(t => t.title === state.tabName);
     if (!tab) {
-        tab = makeTab(state.tabName, state.query);
+        const title = state.tabId ? uniqueTitle(state.tabName) : state.tabName;
+        tab = makeTab(title, state.query);
         tabs.push(tab);
     }
     return tab;
@@ -4213,6 +4219,12 @@ window.onpopstate = function(event) {
     invalidateInFlight();
     const token = request_num;
     const tab = resolveTabForState(event.state);
+    /// If the entry named a now-closed tab and we recreated a fresh one, adopt the new id into
+    /// this history entry so repeated Back/Forward to it lands on the same recreated tab instead
+    /// of spawning a duplicate each time. (Normal and legacy title-only entries keep their id.)
+    if (event.state.tabId && event.state.tabId !== tab.id) {
+        history.replaceState({ ...event.state, tabId: tab.id }, document.title, location.href);
+    }
     activeTabId = tab.id;
     tab.query = event.state.query;
     /// This history entry is now the tab's URL-synced query, so it is also the query the saved
