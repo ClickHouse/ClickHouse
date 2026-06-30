@@ -1247,10 +1247,14 @@ try
                 "supports only the unified insert deduplication hash ('new_unified_hash'). Remove the setting from "
                 "the configuration (or set it to 'new_unified_hash'). To migrate from a version that used "
                 "'old_separate_hashes' or 'compatible_double_hashes', first run on a release that supports "
-                "'compatible_double_hashes' (writing both the legacy and unified hashes) for at least "
-                "'replicated_deduplication_window_seconds' (one hour by default), then upgrade to this version. "
-                "The default windows retain the unified hashes of all inserts for that one-hour window, which is "
-                "considered long enough to cover an insert retry loop.",
+                "'compatible_double_hashes' (writing both the legacy and unified hashes), then upgrade to this "
+                "version. For replicated tables run it for at least 'replicated_deduplication_window_seconds' "
+                "(one hour by default); the default windows retain the unified hashes of all inserts for that "
+                "one-hour window, which is considered long enough to cover an insert retry loop. For "
+                "non-replicated tables with 'non_replicated_deduplication_window' > 0 that window is count-based, "
+                "not time-based, so run 'compatible_double_hashes' for at least that many inserts before "
+                "upgrading; otherwise stale legacy block ids can survive the upgrade and a retried insert may be "
+                "accepted as new.",
                 dedup_version);
     };
     validate_insert_deduplication_version(server_settings);
