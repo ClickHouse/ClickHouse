@@ -1,8 +1,11 @@
--- Tags: no-random-merge-tree-settings, no-random-settings, long
+-- Tags: no-random-merge-tree-settings, no-random-settings, long, no-flaky-check
 -- no-random-merge-tree-settings / no-random-settings: to stabilize the test. The autopr output-bytes
 -- estimate serializes the aggregation output with the default codec; under the `ZSTD(3)` default it
 -- is very sensitive to block-sizing query settings, so randomized settings make the estimate swing
 -- several-fold and the fixed expectations below cannot hold. Fix the query settings to keep it stable.
+-- no-flaky-check: this is a `long` test (2e6-row insert + several parallel-replicas queries); re-running
+-- it dozens of times in the flaky check exceeds the per-iteration budget in the slow debug build and the
+-- run is stopped (signal 20). The estimates are validated by the regular stateless runs across builds.
 
 SET use_uncompressed_cache=0;
 
