@@ -682,10 +682,11 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);
 
-    /// Special case of `GROUP BY` of fixed-width keys with no aggregate functions (effectively `DISTINCT`):
-    /// use a void-mapped hash table that stores only keys (no dead `AggregateDataPtr` slot, e.g. 16 -> 8 bytes
-    /// per cell for UInt64, 32 -> 16 for keys128). Covers single numbers (key32/key64) and packed fixed keys
-    /// (keys32/keys64/keys128/keys256); string, nullable and LowCardinality keys are not covered yet.
+    /// Special case of `GROUP BY` with no aggregate functions (effectively `DISTINCT`): use a void-mapped hash
+    /// table that stores only keys (no dead `AggregateDataPtr` slot, e.g. 16 -> 8 bytes per cell for UInt64,
+    /// 32 -> 16 for keys128, 32 -> 24 for serialized). Covers single numbers (key32/key64), packed fixed keys
+    /// (keys32/keys64/keys128/keys256) and serialized keys (serialized/prealloc_serialized and their nullable
+    /// forms); single string/FixedString, single nullable number and LowCardinality keys are not covered yet.
     /// This is an internal data-structure choice only: results are identical to the regular path, so - like the
     /// key8/key16/.../keys256 selection above - it is unconditional rather than gated by a setting.
     if (params.aggregates_size == 0)
@@ -699,6 +700,10 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             case Type::keys64:  method_chosen = Type::keys64_void;  break;
             case Type::keys128: method_chosen = Type::keys128_void; break;
             case Type::keys256: method_chosen = Type::keys256_void; break;
+            case Type::serialized:                   method_chosen = Type::serialized_void;                   break;
+            case Type::nullable_serialized:          method_chosen = Type::nullable_serialized_void;          break;
+            case Type::prealloc_serialized:          method_chosen = Type::prealloc_serialized_void;          break;
+            case Type::nullable_prealloc_serialized: method_chosen = Type::nullable_prealloc_serialized_void; break;
             default: break;
         }
     }
@@ -3776,6 +3781,10 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
         M(nullable_serialized)            \
         M(prealloc_serialized)            \
         M(nullable_prealloc_serialized)   \
+        M(serialized_void)                     \
+        M(nullable_serialized_void)            \
+        M(prealloc_serialized_void)            \
+        M(nullable_prealloc_serialized_void)   \
 
 #define M(NAME) \
     if (merge_method == AggregatedDataVariants::Type::NAME) \

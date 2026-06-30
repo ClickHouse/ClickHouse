@@ -86,6 +86,11 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKey>>                  nullable_serialized;
     std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKey>>                  prealloc_serialized;
     std::unique_ptr<AggregationMethodNullablePreallocSerialized<AggregatedDataWithStringKey>>          nullable_prealloc_serialized;
+    /// Void-mapped serialized variants for `GROUP BY` without aggregate functions (key-only cells).
+    std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyVoid>>                      serialized_void;
+    std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKeyVoid>>              nullable_serialized_void;
+    std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKeyVoid>>              prealloc_serialized_void;
+    std::unique_ptr<AggregationMethodNullablePreallocSerialized<AggregatedDataWithStringKeyVoid>>      nullable_prealloc_serialized_void;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>> key32_two_level;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>> key64_two_level;
@@ -105,6 +110,10 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKeyTwoLevel>>          nullable_serialized_two_level;
     std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKeyTwoLevel>>          prealloc_serialized_two_level;
     std::unique_ptr<AggregationMethodNullablePreallocSerialized<AggregatedDataWithStringKeyTwoLevel>>  nullable_prealloc_serialized_two_level;
+    std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyVoidTwoLevel>>              serialized_void_two_level;
+    std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKeyVoidTwoLevel>>      nullable_serialized_void_two_level;
+    std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKeyVoidTwoLevel>>      prealloc_serialized_void_two_level;
+    std::unique_ptr<AggregationMethodNullablePreallocSerialized<AggregatedDataWithStringKeyVoidTwoLevel>> nullable_prealloc_serialized_void_two_level;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>>   key64_hash64;
     std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyHash64>>              key_string_hash64;
@@ -120,6 +129,10 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKeyHash64>>          nullable_serialized_hash64;
     std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKeyHash64>>          prealloc_serialized_hash64;
     std::unique_ptr<AggregationMethodNullablePreallocSerialized<AggregatedDataWithStringKeyHash64>>  nullable_prealloc_serialized_hash64;
+    std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyVoidHash64>>              serialized_void_hash64;
+    std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKeyVoidHash64>>      nullable_serialized_void_hash64;
+    std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKeyVoidHash64>>      prealloc_serialized_void_hash64;
+    std::unique_ptr<AggregationMethodNullablePreallocSerialized<AggregatedDataWithStringKeyVoidHash64>> nullable_prealloc_serialized_void_hash64;
 
     /// Support for nullable keys.
     std::unique_ptr<AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false, true>>         nullable_key8;
@@ -186,6 +199,18 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_serialized,          false) \
         M(prealloc_serialized,          false) \
         M(nullable_prealloc_serialized, false) \
+        M(serialized_void,                   false) \
+        M(nullable_serialized_void,          false) \
+        M(prealloc_serialized_void,          false) \
+        M(nullable_prealloc_serialized_void, false) \
+        M(serialized_void_two_level,                   true) \
+        M(nullable_serialized_void_two_level,          true) \
+        M(prealloc_serialized_void_two_level,          true) \
+        M(nullable_prealloc_serialized_void_two_level, true) \
+        M(serialized_void_hash64,                   false) \
+        M(nullable_serialized_void_hash64,          false) \
+        M(prealloc_serialized_void_hash64,          false) \
+        M(nullable_prealloc_serialized_void_hash64, false) \
         M(key32_two_level,            true) \
         M(key64_two_level,            true) \
         M(key_string_two_level,       true) \
@@ -258,6 +283,10 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_serialized) \
         M(prealloc_serialized) \
         M(nullable_prealloc_serialized) \
+        M(serialized_void)       \
+        M(nullable_serialized_void) \
+        M(prealloc_serialized_void) \
+        M(nullable_prealloc_serialized_void) \
         M(nullable_key32) \
         M(nullable_key64) \
         M(nullable_key_string) \
@@ -290,6 +319,10 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_serialized_hash64) \
         M(prealloc_serialized_hash64) \
         M(nullable_prealloc_serialized_hash64) \
+        M(serialized_void_hash64) \
+        M(nullable_serialized_void_hash64) \
+        M(prealloc_serialized_void_hash64) \
+        M(nullable_prealloc_serialized_void_hash64) \
         M(low_cardinality_key8) \
         M(low_cardinality_key16) \
 
@@ -318,6 +351,10 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_serialized_two_level)       \
         M(prealloc_serialized_two_level)       \
         M(nullable_prealloc_serialized_two_level)       \
+        M(serialized_void_two_level)       \
+        M(nullable_serialized_void_two_level)       \
+        M(prealloc_serialized_void_two_level)       \
+        M(nullable_prealloc_serialized_void_two_level)       \
         M(nullable_key32_two_level) \
         M(nullable_key64_two_level) \
         M(nullable_key_string_two_level) \

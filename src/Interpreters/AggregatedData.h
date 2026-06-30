@@ -102,9 +102,65 @@ struct AggregatedDataVoidCell
 using AggregatedDataWithUInt32KeyVoid = HashMapTable<UInt32, AggregatedDataVoidCell<UInt32, HashCRC32<UInt32>>, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyVoid = HashMapTable<UInt64, AggregatedDataVoidCell<UInt64, HashCRC32<UInt64>>, HashCRC32<UInt64>>;
 
+/** Like `AggregatedDataVoidCell`, but stores the hash alongside the key (mirrors `HashMapCellWithSavedHash`).
+  * Used for `std::string_view` keys (serialized `GROUP BY` keys held in an Arena), where recomputing the
+  * hash on every probe/rehash would be expensive. Still routes `getMapped` to the per-thread dummy.
+  */
+template <typename Key, typename Hash, typename TState = HashTableNoState>
+struct AggregatedDataVoidCellWithSavedHash
+{
+    using State = TState;
+
+    using key_type = Key;
+    using value_type = Key;
+    using mapped_type = AggregateDataPtr;
+    using Mapped = AggregateDataPtr;
+
+    Key key;
+    size_t saved_hash;
+
+    AggregatedDataVoidCellWithSavedHash() {} /// NOLINT
+    AggregatedDataVoidCellWithSavedHash(const Key & key_, const State &) : key(key_) {}
+
+    static AggregateDataPtr & dummyMapped()
+    {
+        static thread_local AggregateDataPtr dummy = nullptr;
+        return dummy;
+    }
+
+    const Key & getKey() const { return key; }
+    AggregateDataPtr & getMapped() { return dummyMapped(); }
+    const AggregateDataPtr & getMapped() const { return dummyMapped(); }
+    const value_type & getValue() const { return key; }
+
+    static const Key & getKey(const value_type & value) { return value; } /// NOLINT(bugprone-return-const-ref-from-parameter)
+
+    bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t hash_, const State & /*state*/) const { return keyEquals(key_, hash_); }
+
+    void setHash(size_t hash_value) { saved_hash = hash_value; }
+    size_t getHash(const Hash & /*hash*/) const { return saved_hash; }
+
+    bool isZero(const State & state) const { return isZero(key, state); }
+    static bool isZero(const Key & key_, const State & /*state*/) { return ZeroTraits::check(key_); }
+    void setZero() { ZeroTraits::set(key); }
+    static constexpr bool need_zero_value_storage = true;
+
+    void setMapped(const value_type & /*value*/) {}
+
+    void write(DB::WriteBuffer & wb) const         { DB::writeBinary(key, wb); }
+    void writeText(DB::WriteBuffer & wb) const     { DB::writeDoubleQuoted(key, wb); }
+    void read(DB::ReadBuffer & rb)                 { DB::readBinary(key, rb); }
+    void readText(DB::ReadBuffer & rb)             { DB::readDoubleQuoted(key, rb); }
+};
+
 using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
 
 using AggregatedDataWithStringKey = HashMapWithSavedHash<std::string_view, AggregateDataPtr>;
+/// Void-mapped string-key map (serialized / prealloc_serialized methods), key-only saved-hash cell.
+using AggregatedDataWithStringKeyVoid
+    = HashMapTable<std::string_view, AggregatedDataVoidCellWithSavedHash<std::string_view, DefaultHash<std::string_view>>, DefaultHash<std::string_view>>;
 
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
@@ -121,6 +177,8 @@ using AggregatedDataWithUInt64KeyVoidTwoLevel = TwoLevelHashMapTable<UInt64, Agg
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
 
 using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<std::string_view, AggregateDataPtr>;
+using AggregatedDataWithStringKeyVoidTwoLevel
+    = TwoLevelHashMapTable<std::string_view, AggregatedDataVoidCellWithSavedHash<std::string_view, DefaultHash<std::string_view>>, DefaultHash<std::string_view>>;
 
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
@@ -147,6 +205,8 @@ using AggregatedDataWithKeys256Hash64 = HashMap<UInt256, AggregateDataPtr, UInt2
 using AggregatedDataWithUInt64KeyVoidHash64 = HashMapTable<UInt64, AggregatedDataVoidCell<UInt64, DefaultHash<UInt64>>, DefaultHash<UInt64>>;
 using AggregatedDataWithKeys128VoidHash64 = HashMapTable<UInt128, AggregatedDataVoidCell<UInt128, UInt128Hash>, UInt128Hash>;
 using AggregatedDataWithKeys256VoidHash64 = HashMapTable<UInt256, AggregatedDataVoidCell<UInt256, UInt256Hash>, UInt256Hash>;
+using AggregatedDataWithStringKeyVoidHash64
+    = HashMapTable<std::string_view, AggregatedDataVoidCellWithSavedHash<std::string_view, StringViewHash64>, StringViewHash64>;
 
 template <typename Base>
 struct AggregationDataWithNullKey : public Base
