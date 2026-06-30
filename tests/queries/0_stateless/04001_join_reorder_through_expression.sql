@@ -7,6 +7,7 @@ SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_limit = 64;
+SET explain_query_plan_default = 'legacy';
 
 CREATE TABLE t0 (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t0 VALUES (0, 'aa'), (1, 'bb'), (2, 'cc');
