@@ -30,3 +30,12 @@ SELECT a FROM format(TSV, 'a DateTime64(2, \'UTC\')', $$2025.08.31$$);
 -- Regression: "1234.5" alone (6 bytes total) forces buf.available()=2 after reading "1234",
 -- hitting the avail < 4 path in peek_suggests_decimal. The decimal must still parse correctly.
 SELECT a FROM format(TSV, 'a DateTime64(2, \'UTC\')', $$1234.5$$);
+
+-- Regression: 1-3 digit bare DateTime64 epochs must work consistently.
+-- Fallback path (short string < 19 bytes): "0" (1 digit) followed by Bool.
+SELECT b, c FROM format(CSV, 'b DateTime64(2, UTC), c Bool', $$0,true$$);
+-- Fallback path: "100" (3 digits) followed by Bool.
+SELECT b, c FROM format(CSV, 'b DateTime64(2, UTC), c Bool', $$100,true$$);
+-- Optimistic path (string >= 19 bytes from field start): same values must be accepted.
+SELECT b, c FROM format(CSV, 'b DateTime64(2, UTC), c Bool, d String', $$0,true,enough_padding_here$$);
+SELECT b, c FROM format(CSV, 'b DateTime64(2, UTC), c Bool, d String', $$100,true,enough_padding_here$$);

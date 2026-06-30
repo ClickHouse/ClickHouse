@@ -1612,11 +1612,13 @@ ReturnType readDateTimeTextFallback(
     /// a decimal timestamp like "1234.5,..." not a dotted date like "2025.08.31". Skip the
     /// date branch; the integer branch + DateTime64 wrapper handle the fractional part.
     /// When char 4 is '.' and fewer than 4 bytes are available (so we cannot confirm whether
-    /// the next chars form YYYY.MM.DD), treat as a decimal timestamp to avoid consuming across
-    /// buffer boundaries. Dotted dates with < 4 bytes at '.' are an accepted limitation.
+    /// the next 6 bytes (remaining_date_size). With fewer bytes in the current chunk,
+    /// the date-branch buf.read() would cross a buffer boundary and a rewind to '.' would
+    /// become impossible. Dotted dates are consistently unavailable when avail < 6;
+    /// decimal timestamps always route through the integer branch in that case.
     const bool peek_suggests_decimal
         = dt64_mode && !buf.eof() && *buf.position() == '.'
-        && (buf.available() < 4 || buf.position()[3] != '.');  // can't confirm dotted date
+        && buf.available() < 6;  // 6 = date_broken_down_length - 4
 
     /// Date branch: entered only when the input looks like a YYYY-MM-DD date, not a decimal.
     bool date_branch_entered = false;
@@ -1769,10 +1771,18 @@ ReturnType readDateTimeTextFallback(
 
         if (too_short && negative_multiplier != -1)
         {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
-            else
-                return false;
+            /// In dt64_mode, only a bare four-digit positive value is ambiguous with a year.
+            /// One-to-three digit values are unambiguous: accept them so that inputs like
+            /// "0,true,..." and "100,true,..." behave the same in both the optimistic path
+            /// (which reads via readIntTextImpl) and the fallback path (which uses this branch).
+            const bool is_ambiguous_year = !dt64_mode || (s_pos - s == 4);
+            if (is_ambiguous_year)
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+                else
+                    return false;
+            }
         }
     }
 
