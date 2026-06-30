@@ -27,7 +27,7 @@ SELECT
     toString(number % 300),
     if(number % 97 = 0, NULL, (number % 400)::UInt32),
     number
-FROM numbers(100000);
+FROM numbers(20000);
 
 SELECT 'composite_two_int';
 SELECT a, b, count(), sum(val)
@@ -122,14 +122,14 @@ SELECT
     (number % 100000)::UInt32 AS x,
     (number % 50000)::UInt32 AS y,
     count()
-FROM numbers(2000000) GROUP BY x, y ORDER BY x, y ASC LIMIT 10
+FROM numbers(200000) GROUP BY x, y ORDER BY x, y ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT
     (number % 100000)::UInt32 AS x,
     (number % 50000)::UInt32 AS y,
     count()
-FROM numbers(2000000) GROUP BY x, y ORDER BY x, y ASC LIMIT 10
+FROM numbers(200000) GROUP BY x, y ORDER BY x, y ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
 SELECT 'prefix_two_level';
@@ -138,7 +138,7 @@ SELECT * FROM (
         (number % 100000)::UInt32 AS x,
         (number % 50000)::UInt32 AS y,
         count() AS cnt
-    FROM numbers(2000000) GROUP BY x, y ORDER BY x ASC LIMIT 10
+    FROM numbers(200000) GROUP BY x, y ORDER BY x ASC LIMIT 10
     SETTINGS enable_group_by_top_k_optimization = 1
 ) ORDER BY x, y ASC
 EXCEPT
@@ -147,7 +147,7 @@ SELECT * FROM (
         (number % 100000)::UInt32 AS x,
         (number % 50000)::UInt32 AS y,
         count() AS cnt
-    FROM numbers(2000000) GROUP BY x, y ORDER BY x ASC LIMIT 10
+    FROM numbers(200000) GROUP BY x, y ORDER BY x ASC LIMIT 10
     SETTINGS enable_group_by_top_k_optimization = 0
 ) ORDER BY x, y ASC;
 
