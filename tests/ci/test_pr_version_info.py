@@ -53,7 +53,8 @@ class TestUpsertSection(unittest.TestCase):
         body = "Original description."
         section = render_section("26.6.1.1", [])
         result = upsert_section(body, section)
-        self.assertTrue(result.startswith("Original description.\n\n"))
+        # Two blank lines separate the section from the preceding description.
+        self.assertTrue(result.startswith("Original description.\n\n\n"))
         self.assertIn(SECTION_START, result)
         self.assertIn(SECTION_END, result)
         self.assertIn("Merged into: `26.6.1.1`", result)
