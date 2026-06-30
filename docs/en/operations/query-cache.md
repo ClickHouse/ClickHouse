@@ -34,12 +34,9 @@ effort and avoids redundancy.
 Alternatively, setting [query_cache_use_only_when_data_was_not_changed](/operations/settings/settings#query_cache_use_only_when_data_was_not_changed)
 makes the query cache consistent with respect to data changes: a cached result is reused only while none of the tables referenced by the query
 were changed since the entry was cached. Once any referenced table changes, the query is recomputed. This relies on each table engine being
-able to report a value that changes whenever its data changes and that never repeats across a change-and-change-back (an `A -> B -> A`
-transition); see the [`modification_hash`](/operations/system-tables/tables) column of `system.tables`. If a query references a table that
-cannot provide such a value - a table function such as `url`, or a `File`, `URL` or object storage (`S3`, ...) table, whose only validators
-(size, modification time, `ETag`) can repeat - the query cache is not used for that query: it fails closed, so a consistency check that cannot
-be guaranteed never reuses a result. Note that checking the referenced tables on each lookup may be expensive for some engines (e.g. `Merge`,
-`Distributed`).
+able to report whether its data changed; if a query references a table that cannot do so (for example a table function such as `url`), the
+query cache is not used for that query. Note that checking the referenced tables on each lookup may be expensive for some engines (e.g.
+`Merge`, `Distributed`, `URL`).
 
 ## Configuration settings and usage {#configuration-settings-and-usage}
 

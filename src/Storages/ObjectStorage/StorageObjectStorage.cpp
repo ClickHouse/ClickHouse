@@ -461,22 +461,68 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
     return configuration->totalBytes(query_context);
 }
 
-std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*query_context*/) const
+std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
-    /// Fail closed: an object-storage table has no value that is guaranteed not to repeat across a
-    /// modification. The per-object validators (`ETag`, size, `LastModified`) are all derived from the
-    /// current content/metadata, so they return to an earlier value across an `A -> B -> A` change:
-    /// overwriting an object with byte-identical content within the same second restores the strong `ETag`,
-    /// the size and the second-granular `LastModified`. The consistency consumers
-    /// (`query_cache_use_only_when_data_was_not_changed` and `REFRESH ... IF CHANGED`) validate by comparing
-    /// the modification hash sampled before the read with the one sampled after it, so a value that can
-    /// repeat would let such a round trip pass the check while the read actually saw the transient state
-    /// `B`, storing or remembering a result built from `B` under state `A`'s key. Object storage exposes no
-    /// monotonic, no-ABA version (S3 object versioning is not generally enabled, and HDFS has no `ETag` at
-    /// all), so we do not participate: `modification_hash` is NULL. This is the safe direction (a missed
-    /// cache reuse or an extra refresh, never a stale result). See the contract on
-    /// `IStorage::getModificationHash` and the AI-review thread on PR #108721.
-    return {};
+    /// Heavy path: list the objects behind the table and hash their ETags, sizes and modification times.
+    /// Not supported for data lakes (the set of objects is derived from external metadata) and for the
+    /// non-initiator side of cluster functions.
+    if (distributed_processing || configuration->isDataLakeConfiguration())
+        return {};
+
+    try
+    {
+        is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context)
+                          : configuration->update(object_storage, query_context);
+
+        auto query_settings = configuration->getQuerySettings(query_context);
+        query_settings.throw_on_zero_files_match = false;
+        query_settings.ignore_non_existent_file = true;
+
+        auto file_iterator = StorageObjectStorageSource::createFileIterator(
+            configuration,
+            query_settings,
+            object_storage,
+            /*storage_metadata=*/ nullptr,
+            /*distributed_processing=*/ false,
+            query_context,
+            /*predicate=*/ nullptr,
+            /*filter_actions_dag=*/ nullptr,
+            /*virtual_columns=*/ {},
+            /*hive_columns=*/ {},
+            /*read_keys=*/ nullptr,
+            /*file_progress_callback=*/ {});
+        file_iterator->setEmitProfileEvents(false);
+
+        SipHash hash;
+        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+
+        while (auto object_info = file_iterator->next(0))
+        {
+            auto metadata = object_info->getObjectMetadata();
+            if (!metadata)
+                metadata = object_storage->tryGetObjectMetadata(object_info->getPath(), /*with_tags=*/ false);
+            if (!metadata)
+                return {}; /// Cannot obtain metadata for an object: assume the data may have changed.
+
+            /// Require a strong provider version (ETag). Size and modification time are weak validators
+            /// (e.g. HDFS does not expose an ETag, and a same-size rewrite within the same second would be
+            /// missed), so fail closed rather than risk a stale result.
+            if (metadata->etag.empty() || metadata->etag.starts_with("W/"))
+                return {};
+
+            hash.update(object_info->getPath());
+            hash.update(metadata->etag);
+            hash.update(metadata->size_bytes);
+            hash.update(metadata->last_modified.epochTime());
+        }
+
+        return hash.get128();
+    }
+    catch (...)
+    {
+        /// Ok to ignore: we could not list the objects, so we conservatively assume the data may have changed.
+        return {};
+    }
 }
 
 void StorageObjectStorage::read(

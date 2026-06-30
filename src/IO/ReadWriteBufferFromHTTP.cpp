@@ -791,6 +791,9 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
             res.last_modified = timegm(&info);
     }
 
+    if (response.has("ETag"))
+        res.etag = response.get("ETag");
+
     return res;
 }
 

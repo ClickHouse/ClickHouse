@@ -1531,22 +1531,64 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     return buf->tryGetLastModificationTime();
 }
 
-std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*context*/) const
+std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const
 {
-    /// Fail closed: a `URL` table has no value that is guaranteed not to repeat across a modification.
-    /// The only validators an HTTP server exposes - the `ETag`, the size and the `Last-Modified` time - are
-    /// all derived from the current content, so they return to an earlier value across an `A -> B -> A`
-    /// change: rewriting the resource back to byte-identical content within the same second restores the
-    /// strong `ETag`, the size and the second-granular `Last-Modified`. The consistency consumers
-    /// (`query_cache_use_only_when_data_was_not_changed` and `REFRESH ... IF CHANGED`) validate by comparing
-    /// the modification hash sampled before the read with the one sampled after it, so a value that can
-    /// repeat would let such a round trip pass the check while the read actually saw the transient state
-    /// `B`, storing or remembering a result built from `B` under state `A`'s key. Unlike the block numbers
-    /// of `MergeTree` or the `data_version` of `Memory`/`Log`, an arbitrary HTTP resource exposes no
-    /// monotonic, no-ABA version, so we do not participate: `modification_hash` is NULL. This is the safe
-    /// direction (a missed cache reuse or an extra refresh, never a stale result). See the contract on
-    /// `IStorage::getModificationHash` and the AI-review thread on PR #108721.
-    return {};
+    const auto & settings = context->getSettingsRef();
+
+    /// The read path (`ReadFromURL::createIterator`) expands glob patterns
+    /// (`{a,b}`) and `|`-separated failover options into several concrete URLs
+    /// and reads those, while a failover table (`StorageURLWithFailover`) keeps
+    /// an empty `uri` and reads from `uri_options`. This probe only covers the
+    /// single, unexpanded `uri`. Probing the literal pattern string could miss
+    /// changes in the query-visible data: a server may return a stable strong
+    /// `ETag` for the literal `/{a,b}.csv` resource while `/a.csv` or `/b.csv`
+    /// change. We do not probe the exact URL set the read path uses, so we
+    /// cannot guarantee change detection here. Fail closed (return nullopt) so
+    /// the consistent query cache and `REFRESH ... IF CHANGED` never reuse stale
+    /// results for such tables.
+    if (uri.empty() || urlWithGlobs(uri))
+        return {};
+
+    Poco::URI request_uri(uri);
+    Poco::Net::HTTPBasicCredentials credentials;
+    StorageURLSource::setCredentials(credentials, request_uri);
+
+    ReadWriteBufferFromHTTP::HTTPFileInfo file_info;
+    try
+    {
+        auto buf = BuilderRWBufferFromHTTP(request_uri)
+                       .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                       .withSettings(context->getReadSettings())
+                       .withTimeouts(getHTTPTimeouts(context))
+                       .withHostFilter(&context->getRemoteHostFilter())
+                       .withBufSize(settings[Setting::max_read_buffer_size])
+                       .withRedirects(settings[Setting::max_http_get_redirects])
+                       .withHeaders(headers)
+                       .create(credentials);
+
+        file_info = buf->getFileInfo();
+    }
+    catch (...)
+    {
+        /// Ok to ignore: we could not reach the server, so we conservatively assume the data may have changed.
+        return {};
+    }
+
+    /// A strong validator is required: size and modification time are weak (a server can rewrite
+    /// same-size content within the same second), so we only trust a non-weak `ETag`. Without it we
+    /// cannot guarantee detection of changes, so fail closed (return nullopt). A weak ETag (prefixed
+    /// with `W/`) is also insufficient.
+    if (file_info.etag.empty() || file_info.etag.starts_with("W/"))
+        return {};
+
+    SipHash hash;
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+    hash.update(uri);
+    hash.update(file_info.etag);
+    /// Mix in size and modification time as well - they only strengthen the strong ETag.
+    hash.update(file_info.file_size.value_or(0));
+    hash.update(file_info.last_modified.value_or(0));
+    return hash.get128();
 }
 
 StorageURL::StorageURL(

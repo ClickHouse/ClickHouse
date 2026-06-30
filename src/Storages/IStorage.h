@@ -711,26 +711,15 @@ public:
     /// data may have different values, and the value may also change without the data changing.
     /// Conceptually it is similar to an HTTP ETag.
     ///
-    /// The value must additionally be loop-free (no-ABA): it must not return to an earlier value across an
-    /// `A -> B -> A` modification. The consistency consumers below validate by comparing the value sampled
-    /// before a read with the one sampled after it and rely on equal samples meaning the data did not change
-    /// in between; a value that could repeat across a round trip would let a concurrent `A -> B -> A` pass
-    /// that check while the read actually saw the transient state `B`. So a value derived only from the
-    /// current content (an `ETag`, a size or a modification time) is not acceptable when it can repeat - such
-    /// an engine must fail closed (return nullopt) instead.
-    ///
-    /// The way it is calculated is implementation-specific. For example, tables of the MergeTree family fold
-    /// a per-lifetime counter that advances on every change to the active-part set (so the value does not
-    /// repeat across a drop that restores an identical part set) together with the part block-number ranges
-    /// and the key/structure metadata; `Memory`/`Log`/`StripeLog` fold a monotonic data version.
+    /// The way it is calculated is implementation-specific. For example, tables of the MergeTree
+    /// family return a hash of the block number ranges of their data parts and the table structure
+    /// version. File-like engines use the size and modification time, and so on.
     ///
     /// The storage snapshot is taken into account, so the result describes the state of the data
     /// that the snapshot refers to (important when one subquery uses a snapshot and another does not).
     ///
-    /// Returns nullopt if the storage cannot give such a value - either it cannot tell whether its data has
-    /// changed at all, or it can only offer a content-derived value that may repeat (as for `File`, `URL` and
-    /// object storage, which have no monotonic, no-ABA version). In that case the caller must assume the
-    /// worst (that the data could have changed) and fail closed.
+    /// Returns nullopt if the storage cannot tell whether its data has changed - in that case the
+    /// caller must assume the worst (that the data could have changed).
     ///
     /// Used to detect when tables behind a query have changed, e.g. for query cache consistency
     /// and for `REFRESH ... IF CHANGED` of refreshable materialized views.
