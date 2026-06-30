@@ -341,6 +341,13 @@ public:
         return task;
     }
 
+    /// Reserve tracking capacity up front. With enough capacity reserved for every
+    /// enqueueAndKeepTrack call, the internal emplace_back cannot reallocate (and moving a
+    /// shared_ptr is noexcept), so enqueueAndKeepTrack can only throw from scheduling itself,
+    /// before the task is accepted by the pool. That lets callers safely run a task inline on
+    /// failure without risking a scheduled-but-untracked duplicate.
+    void reserve(size_t n) { tasks.reserve(n); }
+
     void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
     {
         tasks.emplace_back(enqueueAndGiveOwnership(std::move(callback), priority, wait_microseconds));
