@@ -1527,7 +1527,8 @@ namespace
             }
             else
             {
-                ticks = std::min<Int64>(std::max<Int64>(ticks, 0), std::numeric_limits<UInt32>::max());
+                if (ticks < 0 || ticks > std::numeric_limits<UInt32>::max())
+                    cannotConvertValue(toString(ticks), field_descriptor.message_type()->full_name(), "DateTime");
                 const auto value = static_cast<UInt32>(ticks);
                 if (row_num < column_data.size())
                     column_data.getElement(row_num) = value;
