@@ -583,6 +583,41 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (r.has("attach_as_replicated"))
         attach_as_replicated = r.getBool("attach_as_replicated");
 
+    /// `attach_short_syntax`, `has_attach_from_path` / `attach_from_path`, and `attach_as_replicated`
+    /// are produced only for `ATTACH TABLE` forms: the parser gates the `FROM '<path>'` and
+    /// `AS [NOT] REPLICATED` clauses behind `attach`, and `attach_short_syntax` is set only when the
+    /// interpreter re-attaches a detached table. Reject them from non-`ATTACH` JSON so `clickhouse_json`
+    /// cannot build a parser-impossible `CREATE TABLE` whose formatting hides attach-only state that
+    /// `InterpreterCreateQuery` still consumes (and which would also trip the `attach || !has_attach_from_path`
+    /// assertion in `formatImpl`).
+    if (!attach)
+    {
+        if (attach_short_syntax)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'attach_short_syntax' is only valid for ATTACH queries during AST JSON deserialization");
+        if (has_attach_from_path || !attach_from_path.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'attach_from_path' / 'has_attach_from_path' are only valid for ATTACH queries during AST JSON deserialization");
+        if (attach_as_replicated.has_value())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'attach_as_replicated' is only valid for ATTACH queries during AST JSON deserialization");
+    }
+    /// The path and its presence flag always travel together (the parser sets both, and `formatImpl`
+    /// emits ` FROM <attach_from_path>` whenever `has_attach_from_path` is set), so reject any payload
+    /// that carries one without the other.
+    if (has_attach_from_path != !attach_from_path.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'has_attach_from_path' must match whether a non-empty 'attach_from_path' is present during AST JSON deserialization");
+
+    /// `has_uuid` is not an independent parser input: every SQL parser path derives it from
+    /// `uuid != Nil`. Reject JSON that sets it inconsistently with the restored `uuid`, otherwise a
+    /// payload with `"has_uuid": true` and no `uuid` would enable `{uuid}` macro expansion
+    /// (see `TableZnodeInfo::resolve` / `DatabaseReplicated`) while `formatQueryFromJSON` shows no
+    /// `UUID` clause.
+    if (has_uuid != (uuid != UUIDHelpers::Nil))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'has_uuid' must match whether a non-Nil 'uuid' is present during AST JSON deserialization");
+
     /// Restore concrete-typed members with `readChildOfType` so a wrong node type from malformed
     /// `clickhouse_json` is rejected with `BAD_ARGUMENTS` here, instead of reaching `set` as a
     /// `LOGICAL_ERROR` cast failure (or, for `sql_security`, a downstream `as<ASTSQLSecurity>`

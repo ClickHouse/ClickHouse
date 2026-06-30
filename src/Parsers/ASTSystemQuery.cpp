@@ -1016,6 +1016,13 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
             {
                 /// Non-AST array: count each entry against `max_ast_elements`.
                 countJSONDeserializationElement();
+                /// Validate the JSON scalar type strictly so a coerced value (e.g. the string `"1"` or a
+                /// boolean) cannot be turned into a real filter; a JSON boolean is reported as integral in
+                /// Poco, so exclude it explicitly.
+                const auto elem = arr->get(i);
+                if (!elem.isInteger() || elem.isBoolean())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "'server_type.exclude_types[{}]' must be an integer during AST JSON deserialization", i);
                 Int64 v = arr->getElement<Poco::Int64>(i);
                 auto opt = magic_enum::enum_cast<ServerType::Type>(static_cast<std::underlying_type_t<ServerType::Type>>(v));
                 if (!opt || static_cast<Int64>(*opt) != v)
@@ -1032,7 +1039,12 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
             {
                 /// Non-AST array: count each entry against `max_ast_elements`.
                 countJSONDeserializationElement();
-                server_type.exclude_custom_names.insert(arr->getElement<String>(i));
+                /// Require a JSON string so a coerced number (e.g. `123`) is not accepted as a name.
+                const auto elem = arr->get(i);
+                if (!elem.isString())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "'server_type.exclude_custom_names[{}]' must be a string during AST JSON deserialization", i);
+                server_type.exclude_custom_names.insert(elem.extract<String>());
             }
         }
     }

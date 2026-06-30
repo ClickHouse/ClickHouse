@@ -141,10 +141,16 @@ void ASTIdentifier::readJSON(const Poco::JSON::Object & json)
         if (name.empty())
         {
             /// Empty short name is only valid for a single-parameter identifier (`{x:Identifier}`).
+            /// The child must be an `ASTQueryParameter`, like the compound placeholder branch above:
+            /// `ReplaceQueryParameterVisitor::visitIdentifier` casts it unconditionally, so a literal
+            /// or function child here would later throw a logical error.
             if (children.size() != 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTIdentifier JSON with empty 'name' must have exactly one parameter child, got {}",
                     children.size());
+            if (!children[0]->as<ASTQueryParameter>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ASTIdentifier JSON with empty 'name' must have an ASTQueryParameter child during AST JSON deserialization");
             full_name.clear();
             name_parts = {""};
         }
@@ -367,10 +373,15 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
         String name = r.getString("name");
         if (name.empty())
         {
+            /// As in `ASTIdentifier::readJSON`, the single child of an empty-name identifier must be an
+            /// `ASTQueryParameter`; query-parameter visitors downcast it unconditionally.
             if (children.size() != 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTTableIdentifier JSON with empty 'name' must have exactly one parameter child, got {}",
                     children.size());
+            if (!children[0]->as<ASTQueryParameter>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ASTTableIdentifier JSON with empty 'name' must have an ASTQueryParameter child during AST JSON deserialization");
             full_name.clear();
             name_parts = {""};
         }
