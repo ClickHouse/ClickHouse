@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 cluster_name = "parallel_replicas"
@@ -10,7 +10,7 @@ nodes = [
         main_configs=["configs/clusters.xml"],
         with_zookeeper=True,
         image="clickhouse/clickhouse-server",
-        tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+        tag="24.3",  # earlier versions lead to "Not found column sum(a) in block." exception 🤷
         stay_alive=True,
         use_old_analyzer=False,
         with_installed_binary=True,
@@ -19,12 +19,7 @@ nodes = [
 ] + [
     cluster.add_instance(
         "node2",
-        # node2 runs the new build; pin compatible_double_hashes so its inserts still write the
-        # legacy per-part hash and deduplicate against the old (24.3) replicas of this shared
-        # ReplicatedMergeTree. With the default new_unified_hash the new node would write only the
-        # unified hash, fail to cross-deduplicate with the old replicas, and the table would end up
-        # with a second copy of the data (mixed-version migration uses compatible_double_hashes).
-        main_configs=["configs/clusters.xml", "configs/dedup_compatible.xml"],
+        main_configs=["configs/clusters.xml"],
         with_zookeeper=True,
         use_old_analyzer=False,
     )
@@ -52,7 +47,7 @@ def test_backward_compatability(start_cluster):
             order by (a)
         """
         )
-        node.query("insert into t select number % 100000 from numbers_mt(1000000) ORDER BY ALL")
+        node.query("insert into t select number % 100000 from numbers_mt(1000000)")
         node.query("optimize table t final")
 
     # all we want is the query to run without errors

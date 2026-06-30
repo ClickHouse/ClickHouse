@@ -4,8 +4,9 @@ sidebar_label: 'lag'
 sidebar_position: 9
 slug: /sql-reference/window-functions/lag
 title: 'lag'
-doc_type: 'reference'
 ---
+
+# lag
 
 Returns a value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
 This function is similar to [`lagInFrame`](./lagInFrame.md), but always uses the `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame.
