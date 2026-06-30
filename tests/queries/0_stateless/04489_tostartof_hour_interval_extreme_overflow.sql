@@ -22,4 +22,12 @@ SELECT toStartOfInterval(toDateTime64(-9223372036854775807, 0, 'UTC'), INTERVAL 
 SELECT toStartOfInterval(toDateTime64(-9223372036854775807, 0, 'UTC'), INTERVAL 257 HOUR) FORMAT Null;
 SELECT toStartOfInterval(toDateTime64(9223372036854775807, 0, 'UTC'), INTERVAL 257 HOUR) FORMAT Null;
 
+-- Extreme interval counts must also be safe. The hour count is only validated to be positive, so
+-- `hours * 3600` can wrap. `INTERVAL 4611686018427387904 HOUR` wraps the seconds divisor to exactly
+-- zero, which used to divide by zero before the saturating guard. The divisor is saturated to the
+-- maximum instead, so a normal value rounds down to the start of its day.
+SELECT toStartOfInterval(toDateTime('2021-06-22 03:17:42', 'UTC'), INTERVAL 4611686018427387904 HOUR);
+SELECT toStartOfInterval(toDateTime64(-9223372036854775807, 0, 'UTC'), INTERVAL 4611686018427387904 HOUR) FORMAT Null;
+SELECT toStartOfInterval(toDateTime64(9223372036854775807, 0, 'UTC'), INTERVAL 9223372036854775807 HOUR) FORMAT Null;
+
 SELECT 'ok';

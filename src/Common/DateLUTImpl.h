@@ -1132,7 +1132,13 @@ public:
           * the intervals can be shortened or prolonged to the amount of transition.
           */
 
-        UInt64 seconds = hours * 3600;
+        /// `hours` is only validated to be positive by the caller, so an extreme interval count can make
+        /// `hours * 3600` wrap. When it wraps to exactly zero (e.g. `toIntervalHour(4611686018427387904)`),
+        /// the division by `seconds` below would be undefined behaviour. Saturate the divisor instead; the
+        /// rounding result for such meaningless interval counts is discarded anyway.
+        UInt64 seconds = 0;
+        if (unlikely(__builtin_mul_overflow(hours, static_cast<UInt64>(3600), &seconds)))
+            seconds = std::numeric_limits<UInt64>::max();
 
         const LUTIndex index = findIndex(t);
         const Values & values = lut[index];
