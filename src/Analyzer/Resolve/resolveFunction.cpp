@@ -29,10 +29,10 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
@@ -1327,17 +1327,41 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (right_columns_count > 0 && left_columns_count != right_columns_count)
             {
-                /// When the right side returns a single Tuple column, FunctionIn compares
-                /// the entire left-side value (even if it is a tuple) against that column
-                /// as a single value. So `(a, b) IN (SELECT tuple(a, b))` is valid.
-                bool right_is_single_tuple_column = false;
+                /// When the right side returns a single column, `FunctionIn` does not unpack the
+                /// left tuple: it compares the whole left-side value against that one column as a
+                /// single key (see `FunctionIn::executeImpl`, which unpacks only when the set has
+                /// more than one key column whose count equals the left tuple size). Such a
+                /// comparison is valid whenever the left value can be cast to the right column type:
+                /// a single `Tuple` of the same arity, but also `String`, `Dynamic`, or a
+                /// `Variant`/`Nullable`/`LowCardinality` that can hold the whole tuple. So we reject
+                /// the query only when that cast is impossible, which is exactly when the runtime
+                /// would throw (e.g. `(1, 1) IN (SELECT 1)`, where a `Tuple` cannot be cast to
+                /// `UInt8`). Mirroring the runtime here avoids false positives while still catching
+                /// the genuine mismatch before constant folding can optimize the IN away and hide it.
+                bool left_comparable_as_single_key = false;
                 if (right_columns_count == 1)
                 {
-                    auto right_col_type = removeLowCardinalityAndNullable(right_projection_columns.front().type);
-                    right_is_single_tuple_column = typeid_cast<const DataTypeTuple *>(right_col_type.get()) != nullptr;
+                    auto left_probe_column = in_first_argument_result_type->createColumn();
+                    left_probe_column->insertDefault();
+                    try
+                    {
+                        /// Use a plain accurate cast (not `accurateOrNull`): the latter casts to
+                        /// `Nullable(target)`, which is itself invalid for targets that cannot be
+                        /// wrapped in `Nullable` (e.g. `Dynamic`, `Variant`), so it would spuriously
+                        /// fail for valid right column types. `Set::execute` likewise uses the plain
+                        /// accurate cast for such types.
+                        castColumnAccurate(
+                            {ColumnPtr(std::move(left_probe_column)), in_first_argument_result_type, "left"},
+                            right_projection_columns.front().type);
+                        left_comparable_as_single_key = true;
+                    }
+                    catch (const Exception &)  /// NOLINT(bugprone-empty-catch)
+                    {
+                        /// Not castable - fall through and report the mismatch below.
+                    }
                 }
 
-                if (!right_is_single_tuple_column)
+                if (!left_comparable_as_single_key)
                     throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
                         "Number of columns in section IN doesn't match. {} at left, {} at right.",
                         left_columns_count, right_columns_count);

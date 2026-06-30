@@ -38,3 +38,26 @@ SELECT 1 FROM (SELECT 2 AS c1 WHERE (1, 1) IN (SELECT 1)) t0 WHERE t0.c1 = 1; --
 -- (regression for the AST fuzzer crash from PR #97540).
 SELECT (x -> x) IN (SELECT 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT 1 WHERE (x -> -1 * x) GLOBAL NOT IN (SELECT arrayJoin([1])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- A single right column that is not a `Tuple` but can still hold the whole left tuple as one key
+-- must NOT be rejected: `FunctionIn` compares the left value against that one column as a single
+-- key, so the query is valid as long as the left tuple can be cast to the right column type.
+-- These are valid one-key comparisons (regression for the false positive flagged in PR #97540).
+SET allow_experimental_dynamic_type = 1;
+SET allow_experimental_variant_type = 1;
+
+-- `Dynamic` can store a tuple value, so the whole left tuple is compared against it.
+SELECT (1, 2) IN (SELECT CAST((1, 2), 'Dynamic'));
+SELECT (1, 2, 3) IN (SELECT CAST((1, 2), 'Dynamic'));
+
+-- `Variant` that can hold the whole `Tuple(...)` value.
+SELECT (1, 2) IN (SELECT CAST((1, 2), 'Variant(UInt8, Tuple(UInt8, UInt8))'));
+SELECT (1, 2) IN (SELECT CAST(materialize(5), 'Variant(UInt8, Tuple(UInt8, UInt8))'));
+
+-- The left tuple is castable to `String`, so this is a valid (always-false here) comparison.
+SELECT (1, 2) IN (SELECT 'x');
+SELECT (1, 2) IN (SELECT CAST((1, 2), 'String'));
+
+-- A single scalar column the left tuple cannot be cast to is still rejected (the original issue):
+-- a `Tuple` cannot be compared as a single key against a `UInt8`.
+SELECT (1, 2) IN (SELECT materialize(1)); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
