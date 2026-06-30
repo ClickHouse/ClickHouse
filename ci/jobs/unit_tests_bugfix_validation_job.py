@@ -143,6 +143,42 @@ def determine_merge_base(info):
 SUBMODULE_MARKER = "contrib/sysroot/README.md"
 
 
+def gitmodules_shape_violation():
+    """Return an error string if the PR's `.gitmodules` has an unsafe submodule entry
+    (a URL that is not a plain `https://github.com/...`, or a name that differs from its
+    path); return None if it is clean.
+
+    SECURITY: this job populates submodules over the network from the PR-controlled
+    `.gitmodules`, inside the privileged binary-builder container, and — because it now
+    starts early — BEFORE the regular `check_submodules.sh` (run in build_arm_tidy) would
+    reject bad metadata. Validating the URL/path shape here, before any `git submodule`
+    network access, stops a PR from pointing a submodule at an arbitrary URL and having
+    the self-hosted runner fetch it. Mirrors the URL/name rules of
+    ci/jobs/scripts/check_style/check_submodules.sh.
+    """
+    for line in Shell.get_output(
+        "git config --file .gitmodules --get-regexp 'submodule\\..+\\.url'"
+    ).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        key, _, url = line.partition(" ")
+        if not url.startswith("https://github.com/"):
+            name = key.removeprefix("submodule.").removesuffix(".url")
+            return f"submodule '{name}' has a non-github URL '{url}'"
+    for line in Shell.get_output(
+        "git config --file .gitmodules --get-regexp 'submodule\\..+\\.path'"
+    ).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        key, _, path = line.partition(" ")
+        name = key.removeprefix("submodule.").removesuffix(".path")
+        if name != path:
+            return f"submodule name '{name}' is not equal to its path '{path}'"
+    return None
+
+
 def ensure_primary_submodules():
     """Populate the primary checkout's submodule working trees.
 
@@ -385,6 +421,31 @@ def main():
     merge_base = determine_merge_base(info)
     print(f"PR commit: {pr_sha}")
     print(f"merge-base: {merge_base}")
+
+    # SECURITY: refuse to touch the network if the PR's .gitmodules is unsafe. This job
+    # fetches submodules from PR-controlled metadata inside a privileged runner and runs
+    # before check_submodules.sh (build_arm_tidy) — validate the URL/path shape first so
+    # a PR cannot make the runner fetch an arbitrary submodule URL. Inconclusive (ERROR),
+    # not a reproduction; the bad .gitmodules is independently blocked by build_arm_tidy.
+    gitmodules_error = gitmodules_shape_violation()
+    if gitmodules_error:
+        finalize(
+            [
+                Result(
+                    name="Bugfix validation (unit tests)",
+                    status=Result.Status.ERROR,
+                    info=(
+                        "Refusing to populate submodules before validation: "
+                        f"{gitmodules_error}. The before-binary cannot be built; this is "
+                        "an infrastructure/safety stop, NOT a reproduction."
+                    ),
+                )
+            ],
+            "Bugfix validation inconclusive: refused unsafe .gitmodules before any "
+            f"submodule fetch ({gitmodules_error}).",
+        )
+        return
+
     submodules_ok = prepare_before_worktree(merge_base, pr_sha, test_files)
 
     # Fail close: building unit_tests_dbms needs submodules. If they are missing, cmake

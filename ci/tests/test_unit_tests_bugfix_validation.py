@@ -26,6 +26,7 @@ from ci.jobs.unit_tests_bugfix_validation_job import (
     build_gtest_filter,
     derive_test_suites,
     get_changed_unit_test_files,
+    gitmodules_shape_violation,
 )
 
 
@@ -196,6 +197,65 @@ def test_get_changed_unit_test_files_keeps_only_existing_sources(tmp_path, monke
 def test_get_changed_unit_test_files_handles_none(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     assert get_changed_unit_test_files(_FakeInfo(None)) == []
+
+
+# --------------------------------------------------------------------------
+# gitmodules_shape_violation: reject unsafe submodule metadata before any fetch.
+# --------------------------------------------------------------------------
+_GOOD_GITMODULES = (
+    '[submodule "contrib/foo"]\n\tpath = contrib/foo\n'
+    "\turl = https://github.com/ClickHouse/foo.git\n"
+)
+
+
+def _write_gitmodules(tmp_path, monkeypatch, content):
+    (tmp_path / ".gitmodules").write_text(content)
+    monkeypatch.chdir(tmp_path)
+
+
+def test_gitmodules_shape_clean(tmp_path, monkeypatch):
+    _write_gitmodules(tmp_path, monkeypatch, _GOOD_GITMODULES)
+    assert gitmodules_shape_violation() is None
+
+
+def test_gitmodules_shape_rejects_non_github_url(tmp_path, monkeypatch):
+    _write_gitmodules(
+        tmp_path,
+        monkeypatch,
+        '[submodule "contrib/evil"]\n\tpath = contrib/evil\n'
+        "\turl = https://evil.example.com/x.git\n",
+    )
+    violation = gitmodules_shape_violation()
+    assert violation and "contrib/evil" in violation and "non-github" in violation
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "git@github.com:ClickHouse/foo.git",       # ssh form, not https
+        "https://github.com.evil.com/foo.git",     # look-alike host (no trailing slash after github.com)
+        "file:///etc/passwd",                       # local file
+        "http://169.254.169.254/foo",               # plain http to metadata IP
+    ],
+)
+def test_gitmodules_shape_rejects_dangerous_urls(tmp_path, monkeypatch, url):
+    _write_gitmodules(
+        tmp_path,
+        monkeypatch,
+        f'[submodule "contrib/foo"]\n\tpath = contrib/foo\n\turl = {url}\n',
+    )
+    assert gitmodules_shape_violation() is not None
+
+
+def test_gitmodules_shape_rejects_name_path_mismatch(tmp_path, monkeypatch):
+    _write_gitmodules(
+        tmp_path,
+        monkeypatch,
+        '[submodule "contrib/foo"]\n\tpath = contrib/bar\n'
+        "\turl = https://github.com/ClickHouse/foo.git\n",
+    )
+    violation = gitmodules_shape_violation()
+    assert violation and "not equal to its path" in violation
 
 
 if __name__ == "__main__":
