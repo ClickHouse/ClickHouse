@@ -1383,6 +1383,13 @@ class QueryResultElement extends HTMLElement
                     vertical-align: top;
                 }
 
+                /* The selected cell receives keyboard focus; selection is shown by
+                   the .td-selected class, so suppress the default focus outline. */
+                td:focus
+                {
+                    outline: none;
+                }
+
                 /* Inner div limits cell height to 3 lines; expands on selection */
                 .cell-content
                 {
@@ -1732,12 +1739,35 @@ class QueryResultElement extends HTMLElement
         this._current_selected_cell = null;
     }
 
+    /// Select a cell and move keyboard focus to it. We focus the cell itself rather than
+    /// the whole result element: the browser scrolls the focused element into view both on
+    /// `focus` and when the tab is re-focused (e.g. after opening a link in a new tab). The
+    /// result element spans the full width starting at the left edge, so focusing it would
+    /// scroll the horizontal position back to the start; focusing the cell keeps the current
+    /// scroll position because the cell is already in view. `preventScroll` avoids an extra
+    /// jump here since we scroll the cell into view explicitly with `block: 'nearest'`.
+    _selectCell(td)
+    {
+        if (this._current_selected_cell)
+        {
+            this._current_selected_cell.classList.remove('td-selected');
+            this._current_selected_cell.parentElement.classList.remove('tr-selected');
+        }
+        this._current_selected_cell = td;
+        td.classList.add('td-selected');
+        td.parentElement.classList.add('tr-selected');
+        (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
+        td.tabIndex = -1;
+        td.focus({ preventScroll: true });
+    }
+
     clearSelection()
     {
         if (this._current_selected_cell)
         {
             this._current_selected_cell.classList.remove('td-selected');
             this._current_selected_cell.parentElement.classList.remove('tr-selected');
+            this._current_selected_cell.removeAttribute('tabindex');
         }
         this._current_selected_cell = null;
     }
@@ -1892,16 +1922,7 @@ class QueryResultElement extends HTMLElement
             const td = this._renderCell(column.name, row[column.name]);
 
             td.onclick = () => {
-                if (this._current_selected_cell)
-                {
-                    this._current_selected_cell.classList.remove('td-selected');
-                    this._current_selected_cell.parentElement.classList.remove('tr-selected');
-                }
-                this._current_selected_cell = td;
-                td.classList.add('td-selected');
-                td.parentElement.classList.add('tr-selected');
-                (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
-                this.focus();
+                this._selectCell(td);
             };
 
             tr.appendChild(td);
@@ -2266,12 +2287,8 @@ class QueryResultElement extends HTMLElement
 
         e.preventDefault();
 
-        cell.classList.remove('td-selected');
-        cell.parentElement.classList.remove('tr-selected');
-        new_cell.classList.add('td-selected');
-        new_cell.parentElement.classList.add('tr-selected');
-        (new_cell.querySelector('.cell-content') || new_cell).scrollIntoView({ block: 'nearest' });
-        this._current_selected_cell = new_cell;
+        cell.removeAttribute('tabindex');
+        this._selectCell(new_cell);
     }
 
     _loadJS(src, integrity)
