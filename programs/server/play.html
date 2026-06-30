@@ -433,6 +433,14 @@
             font-weight: bold;
         }
 
+        /* Number of tables shown next to an opened database name. Kept non-bold even when the
+           database is the current one (which renders the name in bold). */
+        .database-table-count
+        {
+            font-weight: normal;
+            color: var(--misc-text-color);
+        }
+
         .table
         {
             background-repeat: no-repeat;
@@ -1078,7 +1086,7 @@
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
                 <button type="button" class="shadow" id="run-all">Run all</button>
-                <div id="hint">&nbsp;(Ctrl/Cmd+Enter, +Shift to run all)</div>
+                <div id="hint">&nbsp;(Ctrl/Cmd+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
                 <query-progress id="query-progress"></query-progress>
                 <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
                     <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2667,6 +2675,8 @@ async function loadDatabases(server_address, user, password) {
             } else {
                 delete database.dataset['opened'];
                 while (tables.firstChild) tables.removeChild(tables.firstChild);
+                let count_elem = database_link.querySelector('.database-table-count');
+                if (count_elem) count_elem.remove();
             }
         });
     }
@@ -2807,6 +2817,16 @@ async function loadTables(server_address, user, password, database, container) {
     container.firstChild.classList.add('current');
     let tables_elem = container.querySelector('.tables');
     while (tables_elem.firstChild) tables_elem.removeChild(tables_elem.firstChild);
+
+    /// Show the number of tables in parentheses next to the database name, e.g. `default (123)`.
+    let database_link = container.firstChild;
+    let count_elem = database_link.querySelector('.database-table-count');
+    if (!count_elem) {
+        count_elem = document.createElement('span');
+        count_elem.className = 'database-table-count';
+        database_link.appendChild(count_elem);
+    }
+    count_elem.textContent = ` (${json.data.length})`;
 
     let max_total_bytes = Math.max(...json.data.map(elem => +elem.total_bytes));
 
@@ -4180,6 +4200,7 @@ function updateRunButtons(multi) {
         }
     }
     runAllBtn.style.display = (multi && !selects_all) ? 'inline-block' : 'none';
+    document.getElementById('hint-run-all').style.display = multi ? '' : 'none';
 }
 
 /// Update the backdrop div behind the textarea: paint per-query active backgrounds
