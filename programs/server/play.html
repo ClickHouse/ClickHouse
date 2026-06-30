@@ -423,6 +423,26 @@
             pointer-events: none;
         }
 
+        /* `.database button.database-refresh` (not just `.database-refresh`) so it
+           outranks the `.database button` rule that forces `display: block; width: 100%`,
+           which would otherwise stretch the button full width and push the icon to the left. */
+        .database button.database-refresh
+        {
+            /* Pinned to the top-right of the database row, in the same spot as the
+               loading hourglass (only one of them is shown at a time). */
+            position: absolute;
+            top: 0;
+            right: 0.25rem;
+            display: inline-block;
+            width: auto;
+            color: var(--misc-text-color);
+            line-height: 1;
+            &:hover {
+                text-decoration: none;
+                color: var(--text-color);
+            }
+        }
+
         .no-tables
         {
             color: var(--misc-text-color);
@@ -2654,18 +2674,44 @@ async function loadDatabases(server_address, user, password) {
         database.appendChild(tables);
         databases_elem.appendChild(database);
 
+        /// Refresh button shown to the right of the database name while it is open.
+        /// Clicking it reloads the list of tables without collapsing the database.
+        let refresh_button = document.createElement('button');
+        refresh_button.className = 'database-refresh';
+        refresh_button.type = 'button';
+        refresh_button.title = 'Refresh the list of tables';
+        refresh_button.textContent = '\u21BB';
+
+        /// Reload tables, showing the hourglass (and hiding the refresh button) while loading.
+        const refreshTables = () => {
+            refresh_button.style.visibility = 'hidden';
+            let hourglass = document.createElement('span');
+            hourglass.className = 'loading-hourglass';
+            hourglass.textContent = '\u29D7';
+            database_link.after(hourglass);
+            return loadTables(server_address, user, password, elem.database, database).then(ok => {
+                hourglass.remove();
+                refresh_button.style.visibility = '';
+                return ok;
+            });
+        };
+
+        refresh_button.addEventListener('click', e => {
+            e.stopPropagation();
+            if (database.dataset['opened']) refreshTables();
+        });
+
         database_link.addEventListener('click', e => {
             if (!database.dataset['opened']) {
-                let hourglass = document.createElement('span');
-                hourglass.className = 'loading-hourglass';
-                hourglass.textContent = '\u29D7';
-                database_link.after(hourglass);
-                loadTables(server_address, user, password, elem.database, database).then(ok => {
-                    hourglass.remove();
-                    if (ok !== false) database.dataset['opened'] = 1;
+                refreshTables().then(ok => {
+                    if (ok !== false) {
+                        database.dataset['opened'] = 1;
+                        database_link.after(refresh_button);
+                    }
                 });
             } else {
                 delete database.dataset['opened'];
+                refresh_button.remove();
                 while (tables.firstChild) tables.removeChild(tables.firstChild);
             }
         });
