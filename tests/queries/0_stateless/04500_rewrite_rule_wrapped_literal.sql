@@ -6,7 +6,7 @@
 -- (a bare `SELECT {x:String}` projection) must match a concrete string-literal query
 -- such as `SELECT 'hello'`. Previously the matcher bound the `ASTExpressionList` wrapper
 -- instead of the inner literal, so the `ASTLiteral` check failed and the rule never
--- matched. Unlike `04330_rewrite_rule_wrapped_placeholder`, the incoming query here is a
+-- matched. Unlike `04493_rewrite_rule_wrapped_placeholder`, the incoming query here is a
 -- plain literal (different subtree hash from the rule template), so it exercises the
 -- different-hash branch rather than the equal-hash parameterized path.
 
