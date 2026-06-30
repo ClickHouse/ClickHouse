@@ -63,4 +63,9 @@ ORDER BY
     o_orderdate
 LIMIT 10</query>
 
+<drop_query>ALTER TABLE lineitem DROP COLUMN IF EXISTS l_orderkey_fs16</drop_query>
+<drop_query>ALTER TABLE orders DROP COLUMN IF EXISTS o_orderkey_fs16</drop_query>
+<drop_query>ALTER TABLE orders DROP COLUMN IF EXISTS o_custkey_fs16</drop_query>
+<drop_query>ALTER TABLE customer DROP COLUMN IF EXISTS c_custkey_fs16</drop_query>
+
 </test>
