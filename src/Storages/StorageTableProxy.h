@@ -69,6 +69,7 @@ public:
     }
 
     bool storesDataOnDisk() const override { return true; }
+    bool hasUnreplicatedLocalDataStorage() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool isView() const override { return false; }
 
