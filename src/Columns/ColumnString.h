@@ -214,6 +214,11 @@ public:
 
     void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const override;
 
+    char * serializeValueIntoMemoryAsComparable(size_t n, char * memory) const override;
+    void batchSerializeComparableIntoMemory(PaddedPODArray<char *> & memories) const override;
+    void collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const override;
+    bool supportsComparableSerialization() const override { return true; }
+
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void skipSerializedInArena(ReadBuffer & in) const override;

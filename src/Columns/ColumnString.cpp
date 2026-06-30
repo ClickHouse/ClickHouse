@@ -380,6 +380,57 @@ void ColumnString::skipSerializedInArena(ReadBuffer & in) const
     in.ignore(string_size);
 }
 
+/// Byte-comparable encoding: 0x00 inside string → [0x00, 0x01]; terminated with [0x00, 0x00].
+ALWAYS_INLINE char * ColumnString::serializeValueIntoMemoryAsComparable(size_t n, char * memory) const
+{
+    size_t string_size = sizeAt(n);
+    auto offset = offsetAt(n);
+
+    for (size_t i = 0; i < string_size; ++i)
+    {
+        UInt8 byte = chars[offset + i];
+        *memory++ = static_cast<char>(byte);
+        if (byte == 0)
+            *memory++ = 1;
+    }
+
+    *memory++ = 0;
+    *memory++ = 0;
+    return memory;
+}
+
+void ColumnString::batchSerializeComparableIntoMemory(
+    PaddedPODArray<char *> & memories) const
+{
+    const size_t num_rows = memories.size();
+    for (size_t i = 0; i < num_rows; ++i)
+        memories[i] = serializeValueIntoMemoryAsComparable(i, memories[i]);
+}
+
+void ColumnString::collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const
+{
+    if (empty())
+        return;
+
+    size_t rows = size();
+    if (sizes.empty())
+        sizes.resize_fill(rows);
+    else if (sizes.size() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
+
+    /// NUL-escape encoding: each byte is 1 byte, except 0x00 which becomes 2 bytes.
+    /// Terminator is 2 bytes (0x00 0x00).
+    for (size_t row = 0; row < rows; ++row)
+    {
+        size_t string_size = sizeAt(row);
+        auto offset = offsetAt(row);
+        size_t encoded_size = string_size + 2;
+        for (size_t i = 0; i < string_size; ++i)
+            encoded_size += (chars[offset + i] == 0);
+        sizes[row] += encoded_size;
+    }
+}
+
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
