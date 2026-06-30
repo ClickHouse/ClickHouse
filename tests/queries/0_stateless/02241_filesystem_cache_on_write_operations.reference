@@ -49,7 +49,7 @@ state:                    DOWNLOADED
 SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
 9
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
-9	1217
+9	1225
 SELECT * FROM test_02241 FORMAT Null
 SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0 AND cache_name = '__tmp_internal'
 2
@@ -57,7 +57,7 @@ SELECT * FROM test_02241 FORMAT Null
 SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0 AND cache_name = '__tmp_internal'
 2
 SELECT count(), sum(size) size FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
-9	1217
+9	1225
 SYSTEM CLEAR FILESYSTEM CACHE
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100, 200)
 SELECT file_segment_range_begin, file_segment_range_end, size, state
@@ -160,7 +160,7 @@ state:                    DOWNLOADED
 SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
 9
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
-9	1217
+9	1225
 SELECT * FROM test_02241 FORMAT Null
 SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0 AND cache_name = '__tmp_internal'
 2
@@ -168,7 +168,7 @@ SELECT * FROM test_02241 FORMAT Null
 SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0 AND cache_name = '__tmp_internal'
 2
 SELECT count(), sum(size) size FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
-9	1217
+9	1225
 SYSTEM CLEAR FILESYSTEM CACHE
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100, 200)
 SELECT file_segment_range_begin, file_segment_range_end, size, state
@@ -271,7 +271,7 @@ state:                    DOWNLOADED
 SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
 9
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
-9	1217
+9	1225
 SELECT * FROM test_02241 FORMAT Null
 SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0 AND cache_name = '__tmp_internal'
 2
@@ -279,7 +279,7 @@ SELECT * FROM test_02241 FORMAT Null
 SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0 AND cache_name = '__tmp_internal'
 2
 SELECT count(), sum(size) size FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
-9	1217
+9	1225
 SYSTEM CLEAR FILESYSTEM CACHE
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100, 200)
 SELECT file_segment_range_begin, file_segment_range_end, size, state
