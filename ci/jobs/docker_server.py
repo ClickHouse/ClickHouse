@@ -221,6 +221,23 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
     return tags
 
 
+# `docker buildx build` resolves base/SBOM-scanner images from docker.io, which
+# intermittently returns transient HTTP errors. Retry the buildx commands on those
+# signatures (Shell.run uses exponential backoff and only retries on these strings,
+# so a genuine Dockerfile/build error still fails fast).
+BUILDX_RETRIES = 5
+BUILDX_RETRY_ERRORS = [
+    "registry-1.docker.io",
+    "resolve image config",
+    "failed to do request",
+    "unexpected status from HEAD request",
+    "TLS handshake timeout",
+    "i/o timeout",
+    "connection reset by peer",
+    "error from registry",
+]
+
+
 def buildx_args(
     urls: Dict[str, str],
     arch: str,
@@ -331,7 +348,12 @@ def build_and_push_image(
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.name, tag, arch, cmd)
         result.append(
-            Result.from_commands_run(name=f"{image.name}:{tag}-{arch}", command=cmd)
+            Result.from_commands_run(
+                name=f"{image.name}:{tag}-{arch}",
+                command=cmd,
+                retries=BUILDX_RETRIES,
+                retry_errors=BUILDX_RETRY_ERRORS,
+            )
         )
         if not result[-1].is_ok():
             return result
@@ -344,7 +366,14 @@ def build_and_push_image(
             f"--tag {image.name}:{tag} {' '.join(digests)}"
         )
         logging.info("Pushing merged %s:%s image: %s", image.name, tag, cmd)
-        result.append(Result.from_commands_run(name=f"{image.name}:{tag}", command=cmd))
+        result.append(
+            Result.from_commands_run(
+                name=f"{image.name}:{tag}",
+                command=cmd,
+                retries=BUILDX_RETRIES,
+                retry_errors=BUILDX_RETRY_ERRORS,
+            )
+        )
         if not result[-1].is_ok():
             return result
     else:
