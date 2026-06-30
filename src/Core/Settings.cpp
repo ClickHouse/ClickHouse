@@ -6210,6 +6210,13 @@ Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evalu
     DECLARE(Bool, query_plan_merge_filter_into_join_condition, true, R"(
 Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
 )", 0) \
+    DECLARE(Bool, query_plan_merge_expression_into_join, true, R"(
+Allow to merge `Expression` steps into JOIN step during join reordering optimization.
+)", 0) \
+    DECLARE(Bool, query_plan_merge_filters_into_join, false, R"(
+Allow to merge `Filter` steps into JOIN step during join reordering optimization.
+A merged filter condition becomes a join condition of an inner join or a post-join filter of an outer join.
+)", 0) \
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
 Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0) \
@@ -7777,6 +7784,9 @@ Both database and table names have to be unquoted - only simple identifiers are 
 )", 0) \
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
+)", 0) \
+    DECLARE(Bool, allow_inequality_join_as_cross_join, false, R"(
+Allows a `JOIN` with no equality in its `ON` condition (for example `t1.a < t2.b`) to be executed as a `CROSS JOIN` with the condition applied as a filter. This is a nested loop and can be slow. Only works with the `hash` join algorithm.
 )", 0) \
     DECLARE(ObjectStorageGranularityLevel, cluster_table_function_split_granularity, ObjectStorageGranularityLevel::FILE, R"(
 Controls how data is split into tasks when executing a CLUSTER TABLE FUNCTION.

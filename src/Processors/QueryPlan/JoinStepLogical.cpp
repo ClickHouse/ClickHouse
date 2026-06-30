@@ -231,7 +231,16 @@ void JoinStepLogical::describePipeline(FormatSettings & settings) const
 
 static String formatJoinCondition(const std::vector<JoinActionRef> & predicates)
 {
-    return fmt::format("{}", fmt::join(predicates | std::views::transform([](const auto & x) { return x.getColumnName(); }), " AND "));
+    /// Render predicates in a readable infix form (e.g. `a >= b` instead of `greaterOrEquals(a, b)`),
+    /// the same way `EXPLAIN ... pretty` does.
+    std::unordered_map<String, PrettyColumnName> pretty_names;
+    std::unordered_map<String, RuntimeFilterInfo> runtime_filter_names;
+    std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> subquery_set_names;
+    auto to_readable = [&](const JoinActionRef & predicate)
+    {
+        return QueryPlanFormat::formatNodePretty(predicate.getNode(), pretty_names, runtime_filter_names, subquery_set_names);
+    };
+    return fmt::format("{}", fmt::join(predicates | std::views::transform(to_readable), " AND "));
 }
 
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness)
@@ -1099,16 +1108,13 @@ static QueryPlanNode buildPhysicalJoinImpl(
     auto & join_expression = join_operator.expression;
 
     bool is_join_without_expression = isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind);
-    /// When we do JOIN ON NULL or JOIN ON 1 we create dummy columns and in fact joining on 1 = 0 or 1 = 1.
-    /// For INNER JOIN we could just do CROSS, but for OUTER result depends on whether any table is empty or not.
-    if ((!is_join_without_expression && join_expression.empty()) ||
-        (join_expression.size() == 1
-            && join_expression[0].getType()->onlyNull()
-            && std::get<0>(join_expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown))
-    {
-        UInt8 rhs_value = join_expression.empty() ? 1 : 0;
-        join_expression.clear();
 
+    /// Build a constant equi-predicate `__lhs_const = __rhs_const` between the two sides.
+    /// It makes the hash join treat every pair of rows as a key match, so the actual matching is
+    /// decided by the residual (mixed) join condition rather than by the key. `rhs_value` controls
+    /// whether the keys always match (1) or never match (0).
+    auto add_constant_join_key = [&](UInt8 rhs_value) -> JoinActionRef
+    {
         auto actions_dag = expression_actions.getActionsDAG();
 
         auto dt = std::make_shared<DataTypeUInt8>();
@@ -1121,9 +1127,20 @@ static QueryPlanNode buildPhysicalJoinImpl(
         JoinActionRef rhs(&actions_dag->addColumn(std::move(rhs_column), dt, "__rhs_const"), expression_actions);
         rhs.setSourceRelations(BitSet().set(1));
 
-        join_expression.push_back(JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
-
         table_join->setIsJoinWithConstant(true);
+        return JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+    };
+
+    /// When we do JOIN ON NULL or JOIN ON 1 we create dummy columns and in fact joining on 1 = 0 or 1 = 1.
+    /// For INNER JOIN we could just do CROSS, but for OUTER result depends on whether any table is empty or not.
+    if ((!is_join_without_expression && join_expression.empty()) ||
+        (join_expression.size() == 1
+            && join_expression[0].getType()->onlyNull()
+            && std::get<0>(join_expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown))
+    {
+        UInt8 rhs_value = join_expression.empty() ? 1 : 0;
+        join_expression.clear();
+        join_expression.push_back(add_constant_join_key(rhs_value));
     }
 
     std::vector<JoinActionRef> used_expressions;
@@ -1145,23 +1162,55 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
         if (!has_keys && join_operator.strictness != JoinStrictness::Asof)
         {
-            bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind))
-                && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
+            const bool hash_enabled = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
                 && join_operator.strictness == JoinStrictness::All;
+
+            /// INNER/CROSS with no equi keys is equivalent to a CROSS join with the predicates
+            /// applied as a filter on top of the join result.
+            const bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind)) && hash_enabled;
+
+            /// OUTER joins must keep non-matching rows (NULL-extended), so a CROSS join + filter is
+            /// not equivalent. Instead we add a constant join key, which makes the hash join enumerate
+            /// every pair of rows, and keep the predicates as a residual (mixed) join condition that is
+            /// evaluated during the join. This is correct, but not efficient (it is a nested loop), so
+            /// it is gated behind the `allow_inequality_join_as_cross_join` setting.
+            const bool can_convert_to_constant_key = (isLeftOrRight(join_operator.kind) || isFull(join_operator.kind))
+                && hash_enabled && join_settings.allow_inequality_join_as_cross_join;
 
             table_join_clauses.pop_back();
             is_disjunctive_condition = tryAddDisjunctiveConditions(
-                join_expression, table_join_clauses, used_expressions, join_settings, planning_context, !can_convert_to_cross);
+                join_expression, table_join_clauses, used_expressions, join_settings, planning_context,
+                !can_convert_to_cross && !can_convert_to_constant_key);
 
             if (!is_disjunctive_condition)
             {
-                if (!can_convert_to_cross)
-                    throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
-                        formatJoinCondition(join_expression));
-
-                join_operator.kind = JoinKind::Cross;
-                join_operator.residual_filter.append_range(join_expression);
-                join_expression.clear();
+                if (can_convert_to_cross)
+                {
+                    join_operator.kind = JoinKind::Cross;
+                    join_operator.residual_filter.append_range(join_expression);
+                    join_expression.clear();
+                }
+                else if (can_convert_to_constant_key)
+                {
+                    join_expression.push_back(add_constant_join_key(1));
+                    bool has_constant_key = addJoinPredicatesToTableJoin(
+                        join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context);
+                    if (!has_constant_key)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add a constant join key for {} JOIN ON expression {}",
+                            toString(join_operator.kind), formatJoinCondition(join_expression));
+                }
+                else
+                {
+                    /// An outer join with such a condition can be run as a (slow) nested loop if the
+                    /// hash algorithm is enabled and `allow_inequality_join_as_cross_join` is set.
+                    bool suggest_cross_join = (isLeftOrRight(join_operator.kind) || isFull(join_operator.kind))
+                        && hash_enabled && !join_settings.allow_inequality_join_as_cross_join;
+                    throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}{}",
+                        formatJoinCondition(join_expression),
+                        suggest_cross_join
+                            ? ". Enable setting 'allow_inequality_join_as_cross_join' to run it as a CROSS JOIN (may be slow)"
+                            : "");
+                }
             }
         }
     }
@@ -1225,7 +1274,14 @@ static QueryPlanNode buildPhysicalJoinImpl(
         used_expressions.push_back(right_pre_filter_condition);
     }
 
-    join_operator.residual_filter.append_range(join_expression);
+    /// Conditions left in `join_expression` belong to the JOIN ON clause, while
+    /// `join_operator.residual_filter` is a WHERE-like filter applied to the join result
+    /// (e.g. an inner-join predicate placed above an outer join by join reordering).
+    /// For INNER and CROSS joins the two are equivalent and both can be applied as a filter
+    /// after the join. For OUTER joins ON conditions affect matching (non-matching rows are
+    /// NULL-extended, not dropped), so they are evaluated during the join as a mixed join
+    /// expression, while the residual filter still drops rows from the result.
+    JoinActionRef on_clause_condition = concatConditions(join_expression);
     JoinActionRef residual_filter_condition = concatConditions(join_operator.residual_filter);
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> actions_after_join_fold;
     for (const auto * action : actions_after_join)
@@ -1249,10 +1305,12 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
 
     std::vector<const ActionsDAG::Node *> required_residual_nodes;
-    if (residual_filter_condition)
+    auto collect_required_input_nodes = [&](const JoinActionRef & condition)
     {
+        if (!condition)
+            return;
         std::stack<const ActionsDAG::Node *> stack;
-        stack.push(residual_filter_condition.getNode());
+        stack.push(condition.getNode());
         while (!stack.empty())
         {
             const auto * node = stack.top();
@@ -1267,14 +1325,26 @@ static QueryPlanNode buildPhysicalJoinImpl(
             for (const auto * child : node->children)
                 stack.push(child);
         }
+    };
+    collect_required_input_nodes(on_clause_condition);
+    collect_required_input_nodes(residual_filter_condition);
+
+    if (on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator)))
+    {
+        auto on_clause_dag = JoinExpressionActions::getSubDAG(std::views::single(on_clause_condition));
+        ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
+        mixed_join_expression = std::make_shared<ExpressionActions>(std::move(on_clause_dag), optimization_settings.actions_settings);
+        on_clause_condition = JoinActionRef(nullptr);
     }
 
-    if (residual_filter_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator)))
+    if (on_clause_condition)
     {
-        auto residual_filter_dag = JoinExpressionActions::getSubDAG(std::views::single(residual_filter_condition));
-        ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
-        mixed_join_expression = std::make_shared<ExpressionActions>(std::move(residual_filter_dag), optimization_settings.actions_settings);
-        residual_filter_condition = JoinActionRef(nullptr);
+        /// ON-clause conditions of an inner-like join are equivalent to a filter after the join.
+        std::vector<JoinActionRef> filter_conditions;
+        filter_conditions.push_back(on_clause_condition);
+        if (residual_filter_condition)
+            filter_conditions.push_back(residual_filter_condition);
+        residual_filter_condition = concatConditions(filter_conditions);
     }
 
     for (const auto * action : actions_after_join)
@@ -1357,7 +1427,21 @@ static QueryPlanNode buildPhysicalJoinImpl(
     table_join->setInputColumns(
         left_dag.getNamesAndTypesList(),
         right_dag.getNamesAndTypesList());
-    table_join->setUsedColumns(residual_dag.getRequiredColumnsNames());
+    {
+        auto used_columns = residual_dag.getRequiredColumnsNames();
+        if (used_columns.empty())
+        {
+            /// Ensure the join produces at least one output column so that result blocks
+            /// have the correct row count. When all post-join outputs are constants
+            /// (e.g. `__join_result_dummy`), residual_dag has no required inputs,
+            /// and the join would produce blocks with 0 columns
+            if (!left_dag.getOutputs().empty())
+                used_columns.push_back(left_dag.getOutputs().front()->result_name);
+            else if (!right_dag.getOutputs().empty())
+                used_columns.push_back(right_dag.getOutputs().front()->result_name);
+        }
+        table_join->setUsedColumns(used_columns);
+    }
     table_join->setJoinOperator(join_operator);
 
     SharedHeader left_sample_block = blockWithActionsDAGOutput(left_dag);

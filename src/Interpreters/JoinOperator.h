@@ -79,6 +79,9 @@ struct JoinSettings
     /* CROSS JOIN settings */
     UInt64 cross_join_min_rows_to_compress;
     UInt64 cross_join_min_bytes_to_compress;
+    /// Execute a JOIN with no equality in its ON condition (e.g. only inequalities) as a CROSS join.
+    /// Inner joins always do this; this enables it for outer joins, where it is a (slow) nested loop.
+    bool allow_inequality_join_as_cross_join = false;
 
     /* Partial merge join settings */
     UInt64 partial_merge_join_left_table_buffer_bytes;

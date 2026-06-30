@@ -65,7 +65,7 @@ Positions: 1
               Positions: 0 1 2
                 JoinLogical
                 Join: lineitem[100] ⋈ R1
-                ResultRows: unknown
+                ResultRows: 100
                 Type: INNER
                 Strictness: ALL
                 Locality: UNSPECIFIED
@@ -94,7 +94,7 @@ Positions: 1
           SaveSubqueryResultToBuffer
             JoinLogical
             Join: part[10000] ⋈ lineitem[100]
-            ResultRows: 100
+            ResultRows: 10000
             Type: INNER
             Strictness: ALL
             Locality: UNSPECIFIED

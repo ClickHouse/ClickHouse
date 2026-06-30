@@ -10,6 +10,7 @@ SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET explain_query_plan_default = 'legacy';
+SET materialize_statistics_on_insert = 1;
 
 CREATE TABLE R1 (
     A_ID UInt32,
