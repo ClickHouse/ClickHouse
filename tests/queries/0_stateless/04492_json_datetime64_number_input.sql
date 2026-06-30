@@ -52,6 +52,11 @@ SELECT '-- DateTime64(3): try-path via Nullable and Variant';
 SELECT t FROM format(JSONEachRow, 't Nullable(DateTime64(3))', '{"t":1703363853.035}');
 SELECT v FROM format(JSONEachRow, 'v Variant(String, DateTime64(3))', '{"v":1703363853.035}');
 
+SELECT '-- DateTime64(3): a token with no digits is rejected, not silently read as the epoch';
+SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":.}'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":-}'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":e9}'); -- { serverError CANNOT_PARSE_DATETIME }
+
 SELECT '-- DateTime: unquoted float is truncated to whole seconds, like CAST';
 SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":1703363853.7}');
 SELECT CAST(1703363853.7 AS DateTime);
@@ -66,3 +71,8 @@ SELECT CAST(1.703363853e9 AS DateTime);
 
 SELECT '-- DateTime: try-path via Nullable';
 SELECT t FROM format(JSONEachRow, 't Nullable(DateTime)', '{"t":1703363853.7}');
+
+SELECT '-- DateTime: a token with no digits is rejected, not silently read as the epoch';
+SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":.}'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":-}'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":e9}'); -- { serverError CANNOT_PARSE_DATETIME }

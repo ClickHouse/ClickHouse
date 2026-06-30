@@ -30,6 +30,7 @@
 -- DateTime64(3): try-path via Nullable and Variant
 2023-12-23 20:37:33.035
 2023-12-23 20:37:33.035
+-- DateTime64(3): a token with no digits is rejected, not silently read as the epoch
 -- DateTime: unquoted float is truncated to whole seconds, like CAST
 2023-12-23 20:37:33
 2023-12-23 20:37:33
@@ -41,3 +42,4 @@
 2023-12-23 20:37:33
 -- DateTime: try-path via Nullable
 2023-12-23 20:37:33
+-- DateTime: a token with no digits is rejected, not silently read as the epoch

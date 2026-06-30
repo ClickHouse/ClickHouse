@@ -22,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+extern const int CANNOT_PARSE_DATETIME;
 }
 
 UInt128 SerializationDateTime::getHash(const TimezoneMixin & time_zone_)
@@ -73,7 +74,7 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
 /// `.`/`e...` suffix unread. As before, parsing stops at the first character that is not part of the
 /// number (e.g. the `,` or `}` that follows the value in JSON), and an out-of-range number is clamped
 /// to the `DateTime` range.
-static constexpr UInt32 datetime_number_precision = DecimalUtils::max_precision<Decimal128>;
+constexpr UInt32 datetime_number_precision = DecimalUtils::max_precision<Decimal128>;
 
 inline time_t timestampNumberToSeconds(Int128 value, UInt32 unread_scale)
 {
@@ -87,7 +88,12 @@ inline void readAsIntText(time_t & x, ReadBuffer & istr)
 {
     Decimal128 tmp;
     UInt32 unread_scale = 0;
-    readDecimalText(istr, tmp, datetime_number_precision, unread_scale);
+    /// `readDecimalText` with `digits_only = false` accepts a token with no digits at all, such as `.`, `-`
+    /// or `e9`, reading it as zero; such a malformed value must be rejected rather than stored as the epoch.
+    bool has_digits = false;
+    readDecimalText(istr, tmp, datetime_number_precision, unread_scale, /*digits_only=*/false, &has_digits);
+    if (!has_digits)
+        throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse a number for DateTime timestamp");
     x = timestampNumberToSeconds(tmp.value, unread_scale);
 }
 
@@ -116,7 +122,9 @@ inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr)
 {
     Decimal128 tmp;
     UInt32 unread_scale = 0;
-    if (!readDecimalText<Decimal128, bool>(istr, tmp, datetime_number_precision, unread_scale, /*digits_only=*/false))
+    bool has_digits = false;
+    if (!readDecimalText<Decimal128, bool>(istr, tmp, datetime_number_precision, unread_scale, /*digits_only=*/false, &has_digits)
+        || !has_digits)
         return false;
     x = timestampNumberToSeconds(tmp.value, unread_scale);
     return true;

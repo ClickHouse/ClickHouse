@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
+    extern const int CANNOT_PARSE_DATETIME;
 }
 
 SerializationDateTime64::SerializationDateTime64(
@@ -154,7 +155,13 @@ static void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & is
 {
     Decimal128 tmp;
     UInt32 unread_scale = scale;
-    readDecimalText(istr, tmp, datetime64_number_precision, unread_scale);
+    /// `readDecimalText` with `digits_only = false` stops at the first non-numeric character (the `,` or `}`
+    /// that follows the value in JSON), but it also accepts a token with no digits at all, such as `.`, `-` or
+    /// `e9`, reading it as zero. Such a malformed value must be rejected rather than stored as the epoch.
+    bool has_digits = false;
+    readDecimalText(istr, tmp, datetime64_number_precision, unread_scale, /*digits_only=*/false, &has_digits);
+    if (!has_digits)
+        throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse a number for DateTime64 timestamp");
     if (!scaleAndStoreDateTime64(x, tmp.value, unread_scale))
         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric value is out of range for DateTime64");
 }
@@ -163,7 +170,9 @@ static bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer &
 {
     Decimal128 tmp;
     UInt32 unread_scale = scale;
-    if (!readDecimalText<Decimal128, bool>(istr, tmp, datetime64_number_precision, unread_scale, /*digits_only=*/false))
+    bool has_digits = false;
+    if (!readDecimalText<Decimal128, bool>(istr, tmp, datetime64_number_precision, unread_scale, /*digits_only=*/false, &has_digits)
+        || !has_digits)
         return false;
     return scaleAndStoreDateTime64(x, tmp.value, unread_scale);
 }
