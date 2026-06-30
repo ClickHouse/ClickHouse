@@ -40,10 +40,12 @@ def test_insert_select_coordinator_reuse_with_drifting_liveness(start_cluster):
     #
     # That race cannot be reproduced deterministically from outside, so the failpoint
     # `parallel_replicas_insert_select_drop_active_replica` (ONCE) drops one active non-local replica from the
-    # first (coordinator-building) snapshot only. The coordinator is therefore sized for 2 replicas while all
-    # 3 are actually active; the second pass, if it recomputed liveness, would see 3 again. With the fix the
-    # INSERT SELECT succeeds and inserts every row; without it the coordinator rejects the out-of-range
-    # replica.
+    # coordinator-building snapshot only. (The throwaway suitability probe that runs first, just to detect
+    # whether the SELECT reads with parallel replicas, is excluded from the failpoint on the server side, so
+    # the ONCE drop lands on the executed coordinator and not on the discarded probe plan.) The coordinator is
+    # therefore sized for 2 replicas while all 3 are actually active; the second pass, if it recomputed
+    # liveness, would see 3 again. With the fix the INSERT SELECT succeeds and inserts every row; without it the
+    # coordinator rejects the out-of-range replica.
     db = "pr_db_insert_select"
     for i, node in enumerate(nodes, start=1):
         node.query(

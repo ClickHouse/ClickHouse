@@ -1,5 +1,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <base/scope_guard.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
@@ -111,6 +112,17 @@ namespace FailPoints
 {
     extern const char parallel_replicas_force_local_replica_inactive[];
     extern const char parallel_replicas_insert_select_drop_active_replica[];
+}
+
+namespace
+{
+    /// `isSuitableForInsertSelectWithParallelReplicas` builds a throwaway parallel-replicas plan just to detect
+    /// whether the SELECT reads with parallel replicas. That probe runs the same connection-pool preparation as
+    /// the real coordinator-building pass, so without this guard it would consume the `ONCE` test failpoint
+    /// `parallel_replicas_insert_select_drop_active_replica` before the executed coordinator is built, and the
+    /// regression test would no longer exercise the reuse path it is meant to guard. Suppress the test failpoint
+    /// while the discarded probe plan is built (the probe and the real build run on the same thread in sequence).
+    thread_local bool in_insert_select_suitability_probe = false;
 }
 
 namespace ClusterProxy
@@ -714,17 +726,22 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
         /// current active set. The remote-pool pass must reuse this snapshot's pools; if it recomputed liveness
         /// instead, it would see the dropped replica active again and assign it a replica number that is out of
         /// range for the already-sized coordinator. ONCE, so only the first (coordinator-building) call is hit.
-        fiu_do_on(FailPoints::parallel_replicas_insert_select_drop_active_replica,
+        /// Skip the discarded suitability-probe plan (see `in_insert_select_suitability_probe`), otherwise it
+        /// would consume the ONCE failpoint before the executed coordinator is built.
+        if (!in_insert_select_suitability_probe)
         {
-            for (size_t i = 0; i < is_active.size(); ++i)
+            fiu_do_on(FailPoints::parallel_replicas_insert_select_drop_active_replica,
             {
-                if (is_active[i] && (!local_replica_index || i != *local_replica_index))
+                for (size_t i = 0; i < is_active.size(); ++i)
                 {
-                    is_active[i] = false;
-                    break;
+                    if (is_active[i] && (!local_replica_index || i != *local_replica_index))
+                    {
+                        is_active[i] = false;
+                        break;
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
     size_t available_replicas = shard.getAllNodeCount();
@@ -1125,6 +1142,12 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
 bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+
+    /// This plan is built only to detect whether the SELECT reads with parallel replicas; it is discarded
+    /// afterwards. Mark the building so the test failpoint that simulates inter-pass liveness drift is not
+    /// consumed here but on the real coordinator-building pass (see `in_insert_select_suitability_probe`).
+    in_insert_select_suitability_probe = true;
+    SCOPE_EXIT({ in_insert_select_suitability_probe = false; });
 
     InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
     auto & plan = interpreter.getQueryPlan();
