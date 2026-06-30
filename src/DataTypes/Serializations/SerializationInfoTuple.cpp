@@ -1,6 +1,5 @@
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
@@ -14,7 +13,6 @@ namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int NOT_IMPLEMENTED;
 }
 
 SerializationInfoTuple::SerializationInfoTuple(MutableSerializationInfos elems_, Names names_)
@@ -44,77 +42,6 @@ bool SerializationInfoTuple::structureEquals(const SerializationInfo & rhs) cons
             return false;
 
     return true;
-}
-
-void SerializationInfoTuple::add(const IColumn & column)
-{
-    SerializationInfo::add(column);
-
-    const auto & column_tuple = assert_cast<const ColumnTuple &>(column);
-    const auto & right_elems = column_tuple.getColumns();
-    chassert(elems.size() == right_elems.size());
-
-    for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->add(*right_elems[i]);
-}
-
-void SerializationInfoTuple::add(const SerializationInfo & other)
-{
-    SerializationInfo::add(other);
-
-    const auto * other_info = typeid_cast<const SerializationInfoTuple *>(&other);
-    if (!other_info)
-    {
-        return;
-    }
-
-    for (const auto & [name, elem] : name_to_elem)
-    {
-        auto it = other_info->name_to_elem.find(name);
-        if (it != other_info->name_to_elem.end())
-            elem->add(*it->second);
-        else
-            elem->addDefaults(other_info->getStatistics().num_rows);
-    }
-}
-
-void SerializationInfoTuple::remove(const SerializationInfo & other)
-{
-    if (!structureEquals(other))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot remove from serialization info different structure");
-
-    SerializationInfo::remove(other);
-    const auto & other_elems = assert_cast<const SerializationInfoTuple &>(other).elems;
-    chassert(elems.size() == other_elems.size());
-
-    for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->remove(*other_elems[i]);
-}
-
-void SerializationInfoTuple::addDefaults(size_t length)
-{
-    SerializationInfo::addDefaults(length);
-
-    for (const auto & elem : elems)
-        elem->addDefaults(length);
-}
-
-void SerializationInfoTuple::replaceData(const SerializationInfo & other)
-{
-    SerializationInfo::replaceData(other);
-
-    const auto * other_info = typeid_cast<const SerializationInfoTuple *>(&other);
-    if (!other_info)
-    {
-        return;
-    }
-
-    for (const auto & [name, elem] : name_to_elem)
-    {
-        auto it = other_info->name_to_elem.find(name);
-        if (it != other_info->name_to_elem.end())
-            elem->replaceData(*it->second);
-    }
 }
 
 MutableSerializationInfoPtr SerializationInfoTuple::clone() const

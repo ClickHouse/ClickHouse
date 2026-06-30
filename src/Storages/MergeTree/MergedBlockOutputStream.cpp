@@ -233,7 +233,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         auto part_columns = total_columns_list ? *total_columns_list : columns_list;
         auto serialization_infos = new_part->getSerializationInfos();
 
-        serialization_infos.replaceData(new_serialization_infos);
+        /// Persist the counts of the actually-written data, keeping the kinds chosen at prepare time.
+        serialization_statistics_builder->applyStatistics(serialization_infos);
         files_to_remove_after_sync
             = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_columns, serialization_infos, checksums);
 
@@ -465,7 +466,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
     writer->write(block, permutation, permuted_columns_cache);
     if (reset_columns)
-        new_serialization_infos.add(block);
+        serialization_statistics_builder->add(block);
 
     rows_count += rows;
 }

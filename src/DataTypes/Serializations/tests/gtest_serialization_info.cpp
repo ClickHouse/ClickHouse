@@ -1,14 +1,21 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
+#include <DataTypes/Serializations/SerializationStatisticsBuilder.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/JSON/Object.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -344,36 +351,85 @@ TEST(SerializationInfoJSON, FromJSONKindJustOver)
 
 /// chooseKindStack tests
 
-TEST(SerializationInfoJSON, ChooseKindStackDefaultBelowThreshold)
+TEST(SerializationStatisticsBuilder, ChooseKindStackDefaultBelowThreshold)
 {
-    auto kind_stack = SerializationInfo::chooseKindStack(makeData(1000, 900), defaultSettings()); /// 0.9 < 0.9375
+    auto kind_stack = SerializationStatisticsBuilder::chooseKindStack(makeData(1000, 900), defaultSettings()); /// 0.9 < 0.9375
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT};
     EXPECT_EQ(kind_stack, expected);
 }
 
-TEST(SerializationInfoJSON, ChooseKindStackSparseAboveThreshold)
+TEST(SerializationStatisticsBuilder, ChooseKindStackSparseAboveThreshold)
 {
-    auto kind_stack = SerializationInfo::chooseKindStack(makeData(1000, 950), defaultSettings()); /// 0.95 > 0.9375
+    auto kind_stack = SerializationStatisticsBuilder::chooseKindStack(makeData(1000, 950), defaultSettings()); /// 0.95 > 0.9375
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE};
     EXPECT_EQ(kind_stack, expected);
 }
 
-TEST(SerializationInfoJSON, ChooseKindStackAlwaysDefault)
+TEST(SerializationStatisticsBuilder, ChooseKindStackAlwaysDefault)
 {
-    auto kind_stack = SerializationInfo::chooseKindStack(makeData(1000, 1000), alwaysDefaultSettings());
+    auto kind_stack = SerializationStatisticsBuilder::chooseKindStack(makeData(1000, 1000), alwaysDefaultSettings());
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT};
     EXPECT_EQ(kind_stack, expected);
 }
 
-TEST(SerializationInfoJSON, ChooseKindStackZeroRows)
+TEST(SerializationStatisticsBuilder, ChooseKindStackZeroRows)
 {
-    auto kind_stack = SerializationInfo::chooseKindStack(makeData(0, 0), defaultSettings());
+    auto kind_stack = SerializationStatisticsBuilder::chooseKindStack(makeData(0, 0), defaultSettings());
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT};
     EXPECT_EQ(kind_stack, expected);
+}
+
+/// The builder mirrors the tuple tree, so the kind is chosen independently for each tuple element.
+TEST(SerializationStatisticsBuilder, TuplePerElementKinds)
+{
+    auto uint_type = std::make_shared<DataTypeUInt64>();
+    auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{uint_type, uint_type}, Strings{"a", "b"});
+    NamesAndTypesList columns{{"t", tuple_type}};
+
+    /// Element `a` is all-default (sparse), element `b` has no defaults (default).
+    auto col_a = ColumnUInt64::create();
+    auto col_b = ColumnUInt64::create();
+    for (size_t i = 0; i < 100; ++i)
+    {
+        col_a->insertValue(0);
+        col_b->insertValue(i + 1);
+    }
+    auto tuple_column = ColumnTuple::create(Columns{std::move(col_a), std::move(col_b)});
+
+    Block block{{std::move(tuple_column), tuple_type, "t"}};
+
+    SerializationInfoByName infos(columns, defaultSettings());
+    SerializationStatisticsBuilder builder(columns, defaultSettings());
+    builder.add(block);
+    builder.chooseKinds(infos);
+
+    const auto * info_tuple = typeid_cast<const SerializationInfoTuple *>(infos.tryGet("t").get());
+    ASSERT_NE(info_tuple, nullptr);
+    EXPECT_EQ(info_tuple->getElementKindStack(0), (ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
+    EXPECT_EQ(info_tuple->getElementKindStack(1), (ISerialization::KindStack{ISerialization::Kind::DEFAULT}));
+}
+
+/// `addDefaults` (used for columns missing from a source part) recurses into tuple elements.
+TEST(SerializationStatisticsBuilder, AddDefaultsRecursesIntoTupleElements)
+{
+    auto uint_type = std::make_shared<DataTypeUInt64>();
+    auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{uint_type, uint_type}, Strings{"a", "b"});
+    NamesAndTypesList columns{{"t", tuple_type}};
+
+    SerializationInfoByName infos(columns, defaultSettings());
+    SerializationStatisticsBuilder builder(columns, defaultSettings());
+    builder.addDefaults("t", 1000);
+    builder.chooseKinds(infos);
+
+    const auto * info_tuple = typeid_cast<const SerializationInfoTuple *>(infos.tryGet("t").get());
+    ASSERT_NE(info_tuple, nullptr);
+    /// Every element saw only default rows, so each is chosen sparse.
+    EXPECT_EQ(info_tuple->getElementKindStack(0), (ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
+    EXPECT_EQ(info_tuple->getElementKindStack(1), (ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
 }
 
 }

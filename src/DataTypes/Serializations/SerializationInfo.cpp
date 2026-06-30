@@ -76,40 +76,6 @@ SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, cons
 {
 }
 
-void SerializationInfo::add(const IColumn & column)
-{
-    statistics.add(column);
-    if (settings.choose_kind)
-        kind_stack = chooseKindStack(statistics, settings);
-}
-
-void SerializationInfo::add(const SerializationInfo & other)
-{
-    statistics.add(other.statistics);
-    if (settings.choose_kind)
-        kind_stack = chooseKindStack(statistics, settings);
-}
-
-void SerializationInfo::remove(const SerializationInfo & other)
-{
-    statistics.remove(other.statistics);
-    if (settings.choose_kind)
-        kind_stack = chooseKindStack(statistics, settings);
-}
-
-
-void SerializationInfo::addDefaults(size_t length)
-{
-    statistics.addDefaults(length);
-    if (settings.choose_kind)
-        kind_stack = chooseKindStack(statistics, settings);
-}
-
-void SerializationInfo::replaceData(const SerializationInfo & other)
-{
-    statistics = other.statistics;
-}
-
 MutableSerializationInfoPtr SerializationInfo::clone() const
 {
     return std::make_shared<SerializationInfo>(kind_stack, settings, statistics);
@@ -318,15 +284,6 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
     statistics.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
 }
 
-ISerialization::KindStack SerializationInfo::chooseKindStack(const SerializationStatistics & statistics, const Settings & settings)
-{
-    ISerialization::KindStack kind_stack = {ISerialization::Kind::DEFAULT};
-    double ratio = statistics.num_rows ? std::min(static_cast<double>(statistics.num_defaults) / static_cast<double>(statistics.num_rows), 1.0) : 0.0;
-    if (ratio > settings.ratio_of_defaults_for_sparse)
-        kind_stack.push_back(ISerialization::Kind::SPARSE);
-    return kind_stack;
-}
-
 SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settings & settings_)
     : settings(settings_)
 {
@@ -348,42 +305,6 @@ SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & colum
     }
 }
 
-void SerializationInfoByName::add(const Block & block)
-{
-    for (const auto & column : block)
-    {
-        auto it = find(column.name);
-        if (it == end())
-            continue;
-
-        it->second->add(*column.column);
-    }
-}
-
-void SerializationInfoByName::add(const SerializationInfoByName & other)
-{
-    for (const auto & [name, info] : other)
-        add(name, *info);
-}
-
-void SerializationInfoByName::add(const String & name, const SerializationInfo & info)
-{
-    if (auto it = find(name); it != end())
-        it->second->add(info);
-}
-
-void SerializationInfoByName::remove(const SerializationInfoByName & other)
-{
-    for (const auto & [name, info] : other)
-        remove(name, *info);
-}
-
-void SerializationInfoByName::remove(const String & name, const SerializationInfo & info)
-{
-    if (auto it = find(name); it != end())
-        it->second->remove(info);
-}
-
 SerializationInfoPtr SerializationInfoByName::tryGet(const String & name) const
 {
     auto it = find(name);
@@ -394,19 +315,6 @@ MutableSerializationInfoPtr SerializationInfoByName::tryGet(const String & name)
 {
     auto it = find(name);
     return it == end() ? nullptr : it->second;
-}
-
-void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
-{
-    for (const auto & [name, new_info] : other)
-    {
-        auto & old_info = (*this)[name];
-
-        if (old_info)
-            old_info->replaceData(*new_info);
-        else
-            old_info = new_info->clone();
-    }
 }
 
 ISerialization::KindStack SerializationInfoByName::getKindStack(const String & column_name) const

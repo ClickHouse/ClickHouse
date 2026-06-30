@@ -34,8 +34,6 @@ struct SerializationStatistics
     void add(const IColumn & column);
     /// Merge counts from another part/block (additive).
     void add(const SerializationStatistics & other);
-    /// Subtract counts (the inverse of `add`); used when removing a part's contribution.
-    void remove(const SerializationStatistics & other);
     /// Account for `length` rows that are all default (e.g. a column missing from a source part).
     void addDefaults(size_t length);
 };

@@ -21,12 +21,6 @@ void SerializationStatistics::add(const SerializationStatistics & other)
     num_defaults += other.num_defaults;
 }
 
-void SerializationStatistics::remove(const SerializationStatistics & other)
-{
-    num_rows -= other.num_rows;
-    num_defaults -= other.num_defaults;
-}
-
 void SerializationStatistics::addDefaults(size_t length)
 {
     num_rows += length;

@@ -5,7 +5,10 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <DataTypes/Serializations/SerializationStatisticsBuilder.h>
 #include <Common/Logger.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -87,7 +90,11 @@ protected:
 
     bool reset_columns = false;
     SerializationInfo::Settings info_settings;
-    SerializationInfoByName new_serialization_infos{{}};
+    /// Builds the lightweight serialization statistics (num_rows/num_defaults) of the columns being
+    /// written, so the persisted counts reflect the actually-written data. Only present when
+    /// `reset_columns` is set (merges and mutations); inserts choose the kind from the in-memory
+    /// block in `MergeTreeDataWriter` instead.
+    std::optional<SerializationStatisticsBuilder> serialization_statistics_builder;
 };
 
 using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;

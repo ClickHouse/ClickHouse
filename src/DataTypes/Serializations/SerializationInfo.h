@@ -45,12 +45,6 @@ public:
     virtual bool hasCustomSerialization() const { return kind_stack.size() > 1; }
     virtual bool structureEquals(const SerializationInfo & rhs) const { return typeid(*this) == typeid(rhs); }
 
-    virtual void add(const IColumn & column);
-    virtual void add(const SerializationInfo & other);
-    virtual void remove(const SerializationInfo & other);
-    virtual void addDefaults(size_t length);
-    virtual void replaceData(const SerializationInfo & other);
-
     virtual std::shared_ptr<SerializationInfo> clone() const;
 
     virtual std::shared_ptr<SerializationInfo> createWithType(
@@ -85,7 +79,13 @@ public:
         counts_are_external = false;
     }
 
-    static ISerialization::KindStack chooseKindStack(const SerializationStatistics & statistics, const SerializationInfoSettings & settings);
+    /// Set the statistics computed by `SerializationStatisticsBuilder`. The info itself no longer
+    /// builds or updates statistics; it only carries them for persistence and for the next merge.
+    void setStatistics(const SerializationStatistics & statistics_)
+    {
+        statistics = statistics_;
+        counts_are_external = false;
+    }
 
 protected:
     virtual void writeJSONFields(WriteBuffer & out, const String * name, bool has_internal_statistics) const;
@@ -115,21 +115,9 @@ public:
     explicit SerializationInfoByName(const Settings & settings_);
     SerializationInfoByName(const NamesAndTypesList & columns, const Settings & settings_);
 
-    void add(const Block & block);
-    void add(const SerializationInfoByName & other);
-    void add(const String & name, const SerializationInfo & info);
-
-    void remove(const SerializationInfoByName & other);
-    void remove(const String & name, const SerializationInfo & info);
-
     SerializationInfoPtr tryGet(const String & name) const;
     MutableSerializationInfoPtr tryGet(const String & name);
     ISerialization::KindStack getKindStack(const String & column_name) const;
-
-    /// Takes data from @other, but keeps current serialization kinds.
-    /// If column exists in @other infos, but not in current infos,
-    /// it's cloned to current infos.
-    void replaceData(const SerializationInfoByName & other);
 
     /// Under `WITH_EXTERNAL_STATISTICS`, columns listed in `columns_with_external_statistics` have
     /// their serialization-relevant counts persisted in the external statistics files, so their

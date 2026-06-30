@@ -32,6 +32,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationStatisticsBuilder.h>
 #include <DataTypes/hasNullable.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -10809,7 +10810,7 @@ ReservationPtr MergeTreeData::balancedReservation(
 }
 
 template <typename DataPartPtr>
-static void updateSerializationHintsForPart(const DataPartPtr & part, const ColumnsDescription & storage_columns, SerializationInfoByName & hints, bool remove)
+static void addPartToSerializationHints(const DataPartPtr & part, const ColumnsDescription & storage_columns, SerializationInfoByName & hints)
 {
     const auto & part_columns = part->getColumnsDescription();
     for (const auto & [name, info] : part->getSerializationInfos())
@@ -10824,11 +10825,14 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
             continue;
 
         chassert(new_hint->structureEquals(*info));
-        if (remove)
-            new_hint->remove(*info);
-        else
-            new_hint->add(*info);
+        SerializationStatisticsBuilder::addStatistics(*new_hint, *info);
     }
+}
+
+static void chooseSerializationHintKinds(SerializationInfoByName & hints)
+{
+    for (const auto & [name, hint] : hints)
+        SerializationStatisticsBuilder::chooseKindsFromStatistics(*hint);
 }
 
 void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
@@ -10855,12 +10859,24 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     auto range = getDataPartsStateRange(DataPartState::Active);
 
     for (const auto & part : range)
-        updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+        addPartToSerializationHints(part, storage_columns, serialization_hints);
+
+    chooseSerializationHintKinds(serialization_hints);
 }
 
 template <typename AddedParts, typename RemovedParts>
-void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & /*lock*/)
+void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock)
 {
+    /// The hints are an additive aggregate of the active parts' serialization statistics. Removing a
+    /// part's contribution would require subtracting its (sampled) counts; instead, recompute the
+    /// hints from the current active parts whenever parts are removed (merges, mutations). Pure
+    /// insertions add no removed parts, so they stay incremental (the common, hot path).
+    if (!removed_parts.empty())
+    {
+        resetSerializationHints(lock);
+        return;
+    }
+
     /// Same rationale as `resetSerializationHints`: incremental updates to the per-table hints
     /// belong in the parts arena.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
@@ -10869,10 +10885,9 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
     const auto & storage_columns = metadata_snapshot->getColumns();
 
     for (const auto & part : added_parts)
-        updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+        addPartToSerializationHints(part, storage_columns, serialization_hints);
 
-    for (const auto & part : removed_parts)
-        updateSerializationHintsForPart(part, storage_columns, serialization_hints, true);
+    chooseSerializationHintKinds(serialization_hints);
 }
 
 SerializationInfoByName MergeTreeData::getSerializationHints() const

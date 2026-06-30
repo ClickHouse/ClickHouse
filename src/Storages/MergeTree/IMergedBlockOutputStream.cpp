@@ -37,10 +37,9 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
         (*storage_settings)[MergeTreeSetting::map_serialization_version],
         (*storage_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     }
-    , new_serialization_infos(info_settings)
 {
     if (reset_columns)
-        new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
+        serialization_statistics_builder.emplace(columns_list, info_settings);
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
