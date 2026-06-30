@@ -40,12 +40,10 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
-#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
@@ -174,31 +172,6 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     query_tree_pass_manager.run(query_tree);
 
     return query_tree;
-}
-
-/// Reject correlated subqueries inside a mutation expression (filters, UPDATE
-/// expressions). Such subqueries used to reach the mutations planner path with
-/// inner source nodes that could trigger
-/// `Logical error: 'Column identifier ... is already registered'`. They are
-/// also outside the supported semantic surface of `ALTER UPDATE`/`ALTER DELETE`.
-class ValidateNoCorrelatedSubqueryVisitor : public InDepthQueryTreeVisitor<ValidateNoCorrelatedSubqueryVisitor>
-{
-public:
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (isCorrelatedQueryOrUnionNode(node))
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Correlated subqueries are not supported in mutations: {}",
-                node->formatASTForErrorMessage());
-    }
-};
-
-void validateNoCorrelatedSubqueriesInMutationExpression(const QueryTreeNodePtr & expression)
-{
-    ValidateNoCorrelatedSubqueryVisitor visitor;
-    QueryTreeNodePtr root = expression;
-    visitor.visit(root);
 }
 
 ColumnDependencies getAllColumnDependencies(
@@ -1629,10 +1602,6 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
             QueryAnalyzer query_analyzer(/*only_analyze=*/!execute_scalar_subqueries);
             query_analyzer.resolve(expression, table_node, execution_context);
-
-            /// Reject correlated subqueries early with a clean user error.
-            validateNoCorrelatedSubqueriesInMutationExpression(expression);
-
             createUniqueAliasesIfNecessary(expression, execution_context);
 
             /// 2. Set up PlannerContext, collect source columns and sets.
