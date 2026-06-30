@@ -156,11 +156,12 @@ public:
             new_args.push_back(last_size_constant);
         }
 
-        /// If the precision node (or the optional dims node) was nullable, the result needs to be nullable too. As this pass removes
-        /// those nodes, we force the nullability onto the last size constant to preserve the nullability of the result.
-        auto is_nullable = [](const ConstantNode * n)
-        { return n->getResultType()->isNullable() || n->getResultType()->isLowCardinalityNullable(); };
-        if (is_nullable(precision_node) || (dims_node && is_nullable(dims_node)))
+        /// The transposed distance functions propagate nullability from any argument, so the original (user-facing) call may be
+        /// Nullable because of the precision, dims, or reference-vector arguments. The rewritten internal form drops the precision and
+        /// dims arguments and casts the reference vector, any of which can otherwise lose the nullability, so force the nullability onto
+        /// the trailing size constant whenever the original result was Nullable to keep the rewritten result type identical.
+        auto original_result_type = function_node->getResultType();
+        if (original_result_type->isNullable() || original_result_type->isLowCardinalityNullable())
             last_size_constant->convertToNullable();
 
         /// Cast reference vector to match QBit type. This is the only information about the type of the QBit after this pass is applied
@@ -182,8 +183,6 @@ public:
 
             new_args.push_back(cast_function);
         }
-
-        auto original_result_type = function_node->getResultType();
 
         /// Re-resolve function with new arguments
         function_node->getArguments().getNodes() = std::move(new_args);
