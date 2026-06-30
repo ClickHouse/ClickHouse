@@ -230,9 +230,9 @@ void RowPolicyCache::mixFilters()
     ProfileEvents::increment(ProfileEvents::RowPolicyCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
     /// O(enabled sets * policies), under `mutex` that the ContextAccess build path also takes.
     if (elapsed_ms >= 1000)
-        LOG_WARNING(getLogger("RowPolicyCache"), "Re-mixed row policy filters for {} enabled set(s) over {} policies in {} ms", enabled_row_policies.size(), all_policies.size(), elapsed_ms);
-    else
         LOG_DEBUG(getLogger("RowPolicyCache"), "Re-mixed row policy filters for {} enabled set(s) over {} policies in {} ms", enabled_row_policies.size(), all_policies.size(), elapsed_ms);
+    else
+        LOG_TRACE(getLogger("RowPolicyCache"), "Re-mixed row policy filters for {} enabled set(s) over {} policies in {} ms", enabled_row_policies.size(), all_policies.size(), elapsed_ms);
 }
 
 
