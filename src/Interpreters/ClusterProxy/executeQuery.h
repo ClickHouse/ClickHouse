@@ -84,6 +84,12 @@ void stripInitiatorOnlySettings(Settings & settings);
 /// string, not just a settings packet).
 bool isInitiatorOnlySettingName(std::string_view name);
 
+/// Strip the initiator-only settings (the `isInitiatorOnlySettingName` names, in both the `name = value`
+/// and `name = DEFAULT` forms) from a query's own query-level `SETTINGS` clauses, so they are not carried
+/// in the forwarded query *text*. Used by `IStorageCluster::read`, whose `ReadFromCluster` sends the query
+/// via `formatWithSecretsOneLine()` in addition to the (already stripped) inter-server settings packet.
+void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query);
+
 /// Update settings for Distributed query.
 ///
 /// - Removes different restrictions (like max_concurrent_queries_for_user, max_memory_usage_for_user, etc.)

@@ -16,6 +16,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -256,23 +257,35 @@ void stripInitiatorOnlySettings(Settings & settings)
     stripDatabaseSetting(settings);
 }
 
+/// Single source of truth for the initiator-only setting names. MUST list exactly the settings reset by
+/// `stripInitiatorOnlySettings` above. Used both to test membership (`isInitiatorOnlySettingName`) and to
+/// remove these settings from a query's own `SETTINGS` clause before that query *text* is forwarded to a
+/// shard: a forwarded query string — the optimized `parallel_distributed_insert_select` paths in
+/// `StorageDistributed`, and `IStorageCluster`'s `formatWithSecretsOneLine()` — would otherwise carry an
+/// initiator-only setting written in the user's `SETTINGS` clause, getting it re-applied or, for the
+/// settings new to the HTTP table-as-file feature, rejected as `UNKNOWN_SETTING` by an older shard during
+/// a rolling upgrade.
+constexpr std::string_view initiator_only_setting_names[] = {
+    "select", "order", "sort", "filter", "limit", "offset", "page", "additional_result_filter",
+    "format", "input_format", "output_format", "default_format", "compression",
+    "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
+    "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
+    "database",
+};
+
 bool isInitiatorOnlySettingName(std::string_view name)
 {
-    /// MUST list exactly the settings reset by `stripInitiatorOnlySettings` above. Used to remove the
-    /// same settings from a query's own `SETTINGS` clause before that query *text* is forwarded to a
-    /// shard: the optimized `parallel_distributed_insert_select` paths in `StorageDistributed` send a
-    /// formatted query string (not just a settings packet), so an initiator-only setting written in
-    /// the user's `SETTINGS` clause would otherwise ride along in the SQL and be re-applied — or, for
-    /// the settings new to the HTTP table-as-file feature, rejected as `UNKNOWN_SETTING` by an older
-    /// shard during a rolling upgrade.
-    static const std::unordered_set<std::string_view> names = {
-        "select", "order", "sort", "filter", "limit", "offset", "page", "additional_result_filter",
-        "format", "input_format", "output_format", "default_format", "compression",
-        "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
-        "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
-        "database",
-    };
-    return names.contains(name);
+    for (std::string_view candidate : initiator_only_setting_names)
+        if (candidate == name)
+            return true;
+    return false;
+}
+
+void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query)
+{
+    /// `removeSettingsFromQuery` clears the names from every query-level `SETTINGS` carrier, covering both
+    /// the `name = value` (`changes`) and `name = DEFAULT` (`default_settings`) forms.
+    removeSettingsFromQuery(query, initiator_only_setting_names);
 }
 
 static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,

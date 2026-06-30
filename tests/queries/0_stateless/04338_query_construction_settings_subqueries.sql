@@ -63,3 +63,13 @@ DROP TABLE IF EXISTS t_create_as_select;
 CREATE TABLE t_create_as_select ENGINE = Memory AS SELECT number FROM numbers(10) SETTINGS limit = 3;
 SELECT count() FROM t_create_as_select;
 DROP TABLE IF EXISTS t_create_as_select;
+
+SELECT '-- a non-construction `= DEFAULT` reset on a subquery survives the construction-settings consumption (returns 10)';
+-- The session caps table reads at 5 rows; the subquery resets that cap to DEFAULT alongside the
+-- construction setting `limit`. Consuming `limit` empties the SETTINGS node's `changes`, but the node
+-- must be kept because `default_settings` still holds the reset — so the wrapped inner `numbers(100)`
+-- read is uncapped and the query returns 10. If the reset were dropped, the inherited 5-row cap would
+-- throw TOO_MANY_ROWS on the read.
+SET max_rows_to_read = 5;
+SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 10, max_rows_to_read = DEFAULT);
+SET max_rows_to_read = DEFAULT;

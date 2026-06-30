@@ -10,8 +10,9 @@
 # unknown setting names with `UNKNOWN_SETTING`. Both paths now call
 # `ClusterProxy::stripInitiatorOnlySettings`, the same contract as the regular fan-out and
 # `DistributedSink` (covered by `04424_distributed_insert_strips_initiator_only_settings`, which
-# exercises only the `DistributedSink` path). This test exercises the two `RemoteQueryExecutor` paths
-# and checks the shard-side queries no longer carry those settings.
+# exercises only the `DistributedSink` path). This test exercises the two `parallel_distributed_insert_select`
+# `RemoteQueryExecutor` paths and the `IStorageCluster` SELECT read path (`ReadFromCluster`, which also sends
+# the query via `formatWithSecretsOneLine()`), and checks the shard-side queries no longer carry those settings.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -138,6 +139,39 @@ ${CLICKHOUSE_CLIENT} -q "
     WHERE initial_query_id IN (SELECT query_id FROM initial)
       AND is_initial_query = 0
       AND query_kind = 'Insert'
+      AND type = 'QueryFinish'
+      AND event_date >= today() - 1"
+
+echo "-- ReadFromCluster (a SELECT via the fileCluster IStorageCluster) does not forward initiator-only settings in the query text"
+# IStorageCluster::read strips the inter-server settings packet (ReadFromCluster::updateSettings) but also
+# sends the query via formatWithSecretsOneLine(); an initiator-only setting in the SELECT's own SETTINGS
+# clause must not ride along in that forwarded text. Asserted on system.query_log.query, as for the DEFAULT
+# case above. (`cluster()` / `clusterAllReplicas()` are StorageDistributed, not IStorageCluster — the
+# file/data-lake `*Cluster` functions like `fileCluster` are the ones that go through ReadFromCluster.)
+QID_READ="04492-read-${CLICKHOUSE_DATABASE}-$$"
+${CLICKHOUSE_CLIENT} --query_id="${QID_READ}" -q "
+    SELECT count() FROM fileCluster('test_cluster_two_shards_localhost', '${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv', 'CSV', 'x UInt64')
+    SETTINGS prefer_localhost_replica = 0, log_queries = 1, http_allow_table_as_file = 1, input_format = 'TSV'" > /dev/null
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} -q "
+    WITH initial AS
+    (
+        SELECT query_id
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+          AND query_id = '${QID_READ}'
+          AND is_initial_query = 1
+          AND type = 'QueryFinish'
+          AND event_date >= today() - 1
+    )
+    SELECT
+        count() >= 1 AS ran_on_shards,
+        countIf(query LIKE '%http_allow_table_as_file%') AS leaked_http_allow_table_as_file,
+        countIf(query LIKE '%input_format%') AS leaked_input_format
+    FROM system.query_log
+    WHERE initial_query_id IN (SELECT query_id FROM initial)
+      AND is_initial_query = 0
+      AND query_kind = 'Select'
       AND type = 'QueryFinish'
       AND event_date >= today() - 1"
 

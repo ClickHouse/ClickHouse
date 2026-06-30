@@ -33,3 +33,5 @@ FROM
 WHERE greater(number, 5)
 -- a construction setting on the source SELECT of CREATE ... AS SELECT is effective (3 rows)
 3
+-- a non-construction `= DEFAULT` reset on a subquery survives the construction-settings consumption (returns 10)
+10

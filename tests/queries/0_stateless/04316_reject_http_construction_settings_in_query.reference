@@ -20,3 +20,5 @@
 cannot be specified together
 --- compression in an in-query SETTINGS clause is rejected ---
 shapes the HTTP response body
+--- compression = DEFAULT (a default_settings reset) is rejected too ---
+shapes the HTTP response body

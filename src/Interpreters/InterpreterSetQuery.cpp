@@ -41,17 +41,24 @@ namespace
 /// extension, or a user profile. (The query-construction settings `select`/`filter`/`order`/`sort`/
 /// `page` are applied by the engine on the parsed AST, so they *do* work via an in-query SETTINGS
 /// clause and are not rejected here.)
-void rejectHTTPOnlyConstructionSettings(const SettingsChanges & changes)
+void rejectHTTPOnlyConstructionSettings(const ASTSetQuery & set_query)
 {
-    for (const auto & change : changes)
+    /// Both in-query forms set the setting: `name = value` lands in `changes`, `name = DEFAULT` in
+    /// `default_settings`. A bare `compression = DEFAULT` would otherwise slip through and silently
+    /// reset the setting after the response buffers were already built, so reject both forms.
+    auto reject = [](std::string_view name)
     {
-        if (change.name == "compression")
+        if (name == "compression")
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Setting 'compression' shapes the HTTP response body and is consumed before the query "
                 "is executed, so it has no effect when set via an in-query SETTINGS clause. Set it via "
                 "the `compression` HTTP URL parameter, a compressed file extension in the URL path, or "
                 "a user profile instead.");
-    }
+    };
+    for (const auto & change : set_query.changes)
+        reject(change.name);
+    for (const auto & name : set_query.default_settings)
+        reject(name);
 }
 }
 
@@ -73,7 +80,7 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     if (!ignore_setting_constraints)
     {
         getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
-        rejectHTTPOnlyConstructionSettings(ast.changes);
+        rejectHTTPOnlyConstructionSettings(ast);
     }
     getContext()->applySettingsChanges(ast.changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);

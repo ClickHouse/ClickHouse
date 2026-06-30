@@ -132,6 +132,12 @@ void IStorageCluster::read(
                                       /* only_replace_in_join_= */true);
     visitor.visit(query_to_send);
 
+    /// Strip initiator-only settings from the forwarded query text as well: the inter-server settings
+    /// packet is stripped in `ReadFromCluster::updateSettings`, but `query_to_send` is also serialized via
+    /// `formatWithSecretsOneLine()` with its `SETTINGS` clause intact, which would otherwise leak those
+    /// names to shards (and trip `UNKNOWN_SETTING` on an older shard in a rolling upgrade).
+    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
+
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromCluster>(

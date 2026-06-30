@@ -23,3 +23,5 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 1 SETTINGS sort = 'a', order = 'b'" 2>&1 | 
 # via an in-query SETTINGS clause and is rejected with a clear error.
 echo "--- compression in an in-query SETTINGS clause is rejected ---"
 ${CLICKHOUSE_CLIENT} --query "SELECT 1 SETTINGS compression = 'gz'" 2>&1 | grep -o -m1 "shapes the HTTP response body"
+echo "--- compression = DEFAULT (a default_settings reset) is rejected too ---"
+${CLICKHOUSE_CLIENT} --query "SELECT 1 SETTINGS compression = DEFAULT" 2>&1 | grep -o -m1 "shapes the HTTP response body"

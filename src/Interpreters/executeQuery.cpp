@@ -1347,6 +1347,16 @@ struct ConstructionSettings
     }
 };
 
+/// A `SETTINGS` node carries three independent payloads: `changes` (`name = value`), `default_settings`
+/// (`name = DEFAULT` resets) and `query_parameters`. Construction-settings consumption only removes from
+/// `changes`, so a node may only be pruned once all three are empty — otherwise a `… = DEFAULT` reset or
+/// a query parameter sitting alongside a construction setting would be silently dropped from the
+/// (sub)query scope, changing its settings contract.
+static bool isEmptySetQuery(const ASTSetQuery & set_query)
+{
+    return set_query.changes.empty() && set_query.default_settings.empty() && set_query.query_parameters.empty();
+}
+
 /// Read and remove the construction settings from a single `SETTINGS` clause into `out` (accumulating
 /// across clauses; the last non-empty value of each wins). Throws on `sort` + `order` together.
 static void takeConstructionSettingsFromSetQuery(ASTSetQuery & set_query, ConstructionSettings & out)
@@ -1416,7 +1426,7 @@ static void takeNestedConstructionSettings(ASTSelectWithUnionQuery & select_unio
         if (!set_query)
             return;
         takeConstructionSettingsFromSetQuery(*set_query, out);
-        if (set_query->changes.empty())
+        if (isEmptySetQuery(*set_query))
         {
             settings_ptr.reset();
             if (owner_select)
@@ -1665,7 +1675,7 @@ static void wrapPerArmConstructionSettings(
 
         ConstructionSettings cs;
         takeConstructionSettingsFromSetQuery(*set_query, cs);
-        if (set_query->changes.empty())
+        if (isEmptySetQuery(*set_query))
             select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
         if (cs.empty())
             continue;
@@ -1827,7 +1837,7 @@ static void applyQueryConstructionSettings(
         set_query->changes.removeSetting("limit");
         set_query->changes.removeSetting("offset");
         set_query->changes.removeSetting("page");
-        if (set_query->changes.empty())
+        if (isEmptySetQuery(*set_query))
             settings_ptr.reset();
     };
 
