@@ -2,6 +2,7 @@
 
 #if USE_SZ3
 #    include <array>
+#    include <cmath>
 #    include <cstring>
 #    include <memory>
 #    include <Compression/CompressionFactory.h>
@@ -371,6 +372,14 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
             if (!literal || literal->value.getType() != Field::Types::Which::Float64)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "3rd argument of codec 'SZ3' be a Float64");
             auto error_value = static_cast<double>(literal->value.safeGet<Float64>());
+            /// The error bound feeds SZ3's quantizer as a divisor; a non-finite or non-positive value
+            /// produces NaN/Inf quantization indices that are then cast to integers, which is undefined
+            /// behavior (and a non-positive bound is meaningless for a lossy error-bounded codec anyway).
+            if (!std::isfinite(error_value) || error_value <= 0)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+                    "The error bound (3rd argument) of codec 'SZ3' must be a finite positive number, got {}",
+                    error_value);
 
             return std::make_shared<CompressionCodecSZ3>(float_width, algorithm, error_bound_mode, error_value);
         }
