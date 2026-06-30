@@ -51,11 +51,13 @@ Probabilities sum to `1.0`.
 
 **Relationship to `dictGet`**
 
-`naiveBayesClassifier` is exactly equivalent to calling [`dictGet`](/sql-reference/functions/ext-dict-functions#dictget) for the dictionary's class attribute — the attribute named by the `class_attribute` layout parameter. For example, when `class_attribute` is `class_id`:
+`naiveBayesClassifier` returns the same predicted class **value** as calling [`dictGet`](/sql-reference/functions/ext-dict-functions#dictget) for the dictionary's class attribute — the attribute named by the `class_attribute` layout parameter. For example, when `class_attribute` is `class_id`, this comparison is always `1`:
 
 ```sql
 naiveBayesClassifier(dictionary_name, input_text) = dictGet(dictionary_name, 'class_id', input_text)
 ```
+
+The two differ only in **result type**: `naiveBayesClassifier` always returns [`UInt32`](../data-types/int-uint.md), whereas `dictGet` returns the declared class-attribute type (`UInt8`, `UInt16`, `UInt32`, or `UInt64`). The predicted class is the same value in both.
 
 [`dictHas`](/sql-reference/functions/ext-dict-functions#dicthas) always returns `1`, because every input is classifiable.
 
