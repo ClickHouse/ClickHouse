@@ -106,6 +106,11 @@ struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
     bool is_size_known = true;
+    /// True if this metadata was obtained from a real object-storage request (HEAD/listing).
+    /// False only for the skip_object_metadata placeholder, which carries no authoritative fields.
+    /// Consumers use this to decide whether to fetch real metadata (e.g. for read-time ETag
+    /// validation) rather than overloading `is_size_known`.
+    bool is_fetched = true;
     Poco::Timestamp last_modified;
     std::string etag;
     ObjectAttributes tags;
