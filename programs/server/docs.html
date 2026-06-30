@@ -636,8 +636,8 @@
     /// wrappers). These are build machinery, not content, and are stripped whether or not the
     /// Markdown that uses them also `import`s them: some embedded entries use them without a local
     /// import (e.g. `transactionID` opens with a bare `<ExperimentalBadge/>` / `<CloudNotSupportedBadge/>`).
-    /// Only these known names are stripped, so literal `<...>` placeholders in the prose (e.g.
-    /// `<SearchPhrase>` in an XML example) are preserved.
+    /// Only these known names, plus any `*Badge` component (see `preprocessMarkdown`), are stripped, so
+    /// literal `<...>` placeholders in the prose (e.g. `<SearchPhrase>` in an XML example) are preserved.
     const MDX_COMPONENTS = [
         'ExperimentalBadge', 'BetaBadge', 'DeprecatedBadge',
         'CloudNotSupportedBadge', 'CloudAvailableBadge', 'PrivatePreviewBadge',
@@ -680,6 +680,15 @@
         /// content nested between an open/close pair.
         for (const name of components)
             out = out.replace(new RegExp('</?' + name + '(?:\\s[^>]*)?/?>', 'g'), '');
+
+        /// Also strip any `*Badge` MDX component even when it was neither imported nor in the known list
+        /// above. The website adds new status badges over time (e.g. `<ScalePlanFeatureBadge .../>` in the
+        /// `S3Queue` engine docs), and an importless self-closing badge swallows the rest of the document
+        /// into its subtree, which the sanitizer then drops. Stripping `*Badge` by name removes the
+        /// dependency on the local `import` being present. A `*Badge` is a PascalCase component name that
+        /// does not occur in documentation prose, so this is safe; the terminal Markdown renderer strips
+        /// `*Badge` components the same way.
+        out = out.replace(/<\/?[A-Z][A-Za-z0-9]*Badge(?:\s[^>]*)?\/?>/g, '');
 
         return out;
     }
@@ -1137,6 +1146,7 @@
         'aggregate-functions': '/sql-reference/aggregate-functions',
         'window-functions': '/sql-reference/window-functions',
         'table-functions': '/sql-reference/table-functions',
+        'dictionaries': '/sql-reference/dictionaries',
         'statements': '/sql-reference/statements',
         'operators': '/sql-reference/operators',
         'formats': '/interfaces/formats',
@@ -1158,14 +1168,15 @@
     /// Canonical docs route for a standalone documentation page that is neither a documented entity nor a
     /// section directory: a bare page name whose section the relative path does not reveal (the entity's
     /// embedded `source` is a code path, not a docs path). The embedded documentation links to a handful of
-    /// such pages with source-relative paths — e.g. `../syntax.md#string`, `../query-cache.md`, and
-    /// `type-conversion-functions.md#parseDateTime64BestEffort` — that would otherwise fall back to the docs
-    /// root and lose the target page and anchor. Mapping each to its route resolves it (keeping the leading
-    /// path segment's `#fragment`/`?query`) to the intended page instead.
+    /// such pages with source-relative paths — e.g. `../syntax.md#string`, `../query-cache.md`,
+    /// `type-conversion-functions.md#parseDateTime64BestEffort`, and `merge-tree-settings.md/#...` — that
+    /// would otherwise fall back to the docs root and lose the target page and anchor. Mapping each to its
+    /// route resolves it (keeping the leading path segment's `#fragment`/`?query`) to the intended page instead.
     const DOCS_PAGE_ROUTE = {
         'syntax': '/sql-reference/syntax',
         'query-cache': '/operations/query-cache',
         'type-conversion-functions': '/sql-reference/functions/type-conversion-functions',
+        'merge-tree-settings': '/operations/settings/merge-tree-settings',
     };
 
     function toDocsURL(href) {
@@ -1173,9 +1184,11 @@
         /// The embedded documentation links to source files by their repository path, keeping the
         /// `.md`/`.mdx` extension (e.g. `/operations/workload-scheduling.md`). Those extension URLs 404
         /// on the docs site, while the extensionless routes work, so strip the extension from the path
-        /// part only, preserving any `#fragment`/`?query` suffix.
+        /// part only, preserving any `#fragment`/`?query` suffix. Some entries also leave a stray slash
+        /// between the extension and the fragment (e.g. `merge-tree-settings.md/#materialize_skip_indexes_on_merge`),
+        /// so drop a trailing slash before stripping the extension.
         const [, path, suffix] = /^([^?#]*)(.*)$/.exec(href);
-        const cleanPath = path.replace(/\.mdx?$/, '');
+        const cleanPath = path.replace(/\/+$/, '').replace(/\.mdx?$/, '');
 
         /// An absolute docs path is used as is.
         if (cleanPath.startsWith('/')) return base + cleanPath + suffix;
