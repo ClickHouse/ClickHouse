@@ -36,7 +36,7 @@ public:
     /// allow_existing_group:
     ///  * If false, asserts that the thread is not already attached to a different group.
     ///    Use this when running a task in a thread pool.
-    ///  * If true, remembers the current group and restores it in destructor.
+    ///  * If true, remembers the current group and thread name and restores them in destructor.
     /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
     ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
     ~ThreadGroupSwitcher();
@@ -45,6 +45,10 @@ private:
     ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
     ThreadGroupPtr thread_group;
+    /// Only set when borrowing a thread that already owned a group (allow_existing_group=true and a
+    /// previous group existed): the name to restore in the destructor, since setThreadName(thread_name)
+    /// renamed the borrowed thread. UNKNOWN means "do not restore" (clean pool worker, no borrow).
+    ThreadName prev_thread_name = ThreadName::UNKNOWN;
 };
 
 
