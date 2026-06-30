@@ -597,14 +597,24 @@ void DatabaseWithOwnTablesBase::shutdown()
     /// (and this database) alive otherwise, so it would be destroyed only when DatabaseCatalog is
     /// destroyed at process exit - after the Poco logger registry and the static thread pools are
     /// already gone, which aborts. Remember the first error and rethrow it after the cleanup.
-    std::mutex first_error_mutex;
-    std::exception_ptr first_error;
-    auto record_error = [&](std::exception_ptr e)
+    ///
+    /// State that tasks need is held in a shared_ptr so an orphan task (scheduled but not tracked,
+    /// e.g. if tasks.emplace_back fails after the pool already accepted the job) cannot dangle
+    /// references into our stack frame. Capturing `this` and using by-ref captures would risk UB
+    /// when shutdown() returns before such a task completes.
+    struct ErrorRecorder
     {
-        std::lock_guard lock(first_error_mutex);
-        if (!first_error)
-            first_error = e;
+        std::mutex mutex;
+        std::exception_ptr first_error;
+
+        void record(std::exception_ptr e)
+        {
+            std::lock_guard lock(mutex);
+            if (!first_error)
+                first_error = e;
+        }
     };
+    auto recorder = std::make_shared<ErrorRecorder>();
 
     /// The prepare phase can throw too: e.g. StorageReplicatedMergeTree::flushAndPrepareForShutdown
     /// catches preparation failures, sets an immediate deadline and rethrows. Keep going so the
@@ -614,7 +624,7 @@ void DatabaseWithOwnTablesBase::shutdown()
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::SHUTDOWN_TABLES);
         for (const auto & kv : tables_snapshot)
         {
-            auto run_task = [this, table = kv.second, &record_error]
+            auto run_task = [log_ptr = log, table = kv.second, recorder]
             {
                 /// Widened try so that getStorageID() (and any other pre-flush call) is also caught
                 /// here rather than escaping into the task future, which waitForAllToFinish drops.
@@ -630,8 +640,8 @@ void DatabaseWithOwnTablesBase::shutdown()
                 }
                 catch (...)
                 {
-                    record_error(std::current_exception());
-                    tryLogCurrentException(log, "Failed to prepare to shut down table");
+                    recorder->record(std::current_exception());
+                    tryLogCurrentException(log_ptr, "Failed to prepare to shut down table");
                 }
             };
 
@@ -643,7 +653,7 @@ void DatabaseWithOwnTablesBase::shutdown()
             {
                 /// Scheduling itself failed (e.g. CannotAllocateThreadFaultInjector, pool exhausted).
                 /// Fall back to inline execution so the per-table cleanup still runs for this table
-                /// and the function reaches its tail cleanup (tables.clear(), rethrow first_error).
+                /// and the function reaches its tail cleanup (tables.clear(), rethrow recorder->first_error).
                 tryLogCurrentException(log, "Failed to schedule prepare-for-shutdown task, running inline");
                 run_task();
             }
@@ -658,14 +668,14 @@ void DatabaseWithOwnTablesBase::shutdown()
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::SHUTDOWN_TABLES);
         for (const auto & kv : tables_snapshot)
         {
-            auto run_task = [this, table = kv.second, &record_error]
+            auto run_task = [log_ptr = log, table = kv.second, recorder]
             {
                 /// UUID mapping cleanup MUST run even if flushAndShutdown throws — otherwise the
                 /// catalog keeps holding the StoragePtr past Context::shutdown and the table is
                 /// only destroyed at process exit, after Poco loggers and static pools are gone.
                 /// So: separate try/catch blocks for the storage-ID lookup, the flush, and the
-                /// UUID mapping removal. Each records its exception via record_error so nothing
-                /// escapes into the task future (which waitForAllToFinish discards).
+                /// UUID mapping removal. Each records its exception via the shared recorder so
+                /// nothing escapes into the task future (which waitForAllToFinish discards).
                 std::optional<StorageID> table_id;
                 try
                 {
@@ -673,8 +683,8 @@ void DatabaseWithOwnTablesBase::shutdown()
                 }
                 catch (...)
                 {
-                    record_error(std::current_exception());
-                    tryLogCurrentException(log, "Failed to read storage ID during shutdown");
+                    recorder->record(std::current_exception());
+                    tryLogCurrentException(log_ptr, "Failed to read storage ID during shutdown");
                     return;
                 }
 
@@ -697,8 +707,8 @@ void DatabaseWithOwnTablesBase::shutdown()
                 }
                 catch (...)
                 {
-                    record_error(std::current_exception());
-                    tryLogCurrentException(log, fmt::format("Failed to shut down table {}", table_id->getNameForLogs()));
+                    recorder->record(std::current_exception());
+                    tryLogCurrentException(log_ptr, fmt::format("Failed to shut down table {}", table_id->getNameForLogs()));
                 }
 
                 if (table_id->hasUUID())
@@ -709,8 +719,8 @@ void DatabaseWithOwnTablesBase::shutdown()
                     }
                     catch (...)
                     {
-                        record_error(std::current_exception());
-                        tryLogCurrentException(log, fmt::format("Failed to remove UUID mapping for table {}", table_id->getNameForLogs()));
+                        recorder->record(std::current_exception());
+                        tryLogCurrentException(log_ptr, fmt::format("Failed to remove UUID mapping for table {}", table_id->getNameForLogs()));
                     }
                 }
             };
@@ -738,6 +748,13 @@ void DatabaseWithOwnTablesBase::shutdown()
         snapshot_detached_tables.clear();
     }
 
+    /// Read first_error under the recorder's mutex — an orphan task (rare scheduled-but-untracked
+    /// case) could still be writing concurrently here, since waitForAllToFinish does not wait on it.
+    std::exception_ptr first_error;
+    {
+        std::lock_guard lock(recorder->mutex);
+        first_error = recorder->first_error;
+    }
     if (first_error)
         std::rethrow_exception(first_error);
 }
