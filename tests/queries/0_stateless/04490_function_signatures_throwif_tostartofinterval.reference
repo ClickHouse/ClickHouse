@@ -1,7 +1,7 @@
 (NativeNumber) -> UInt8 OR (NativeNumber, const String) -> UInt8
 (NativeNumber) -> UInt8 OR (NativeNumber, const String) -> UInt8 OR (NativeNumber, const String, const Int8 | Int16 | Int32) -> UInt8
 (DateOrDateTime, const Interval) -> DateOrDateTime OR (DateOrDateTime, const Interval, const String) -> DateOrDateTime OR (DateOrDateTime, const Interval, const DateOrDateTime) -> DateOrDateTime OR (DateOrDateTime, const Interval, const DateOrDateTime, const String) -> DateOrDateTime
-DateTime('UTC')
+DateTime(\'UTC\')
 1
 0
 0
