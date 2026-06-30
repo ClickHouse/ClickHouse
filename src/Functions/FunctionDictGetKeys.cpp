@@ -11,6 +11,7 @@
 #include <Core/Types.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Dictionaries/DictionarySource.h>
@@ -70,6 +71,67 @@ inline UInt128 sipHash128AtRow(const IColumn & column, size_t row_id)
     return h.get128();
 }
 
+/// True for `Float32`/`Float64` attributes (optionally wrapped in `Nullable`). Only floating-point
+/// types need special hashing: IEEE signed zero makes the raw byte hash inconsistent with SQL
+/// `equals`, because `-0.0` and `+0.0` are equal but have different bit patterns.
+bool attributeHashNeedsFloatZeroNormalization(const DataTypePtr & type)
+{
+    const DataTypePtr & nested = type->isNullable() ? assert_cast<const DataTypeNullable &>(*type).getNestedType() : type;
+    WhichDataType which(nested);
+    return which.isFloat32() || which.isFloat64();
+}
+
+/// Hashes one row of a floating-point (possibly `Nullable`) column, normalizing `-0.0` to `+0.0` so
+/// that values which SQL `equals` considers equal always hash the same.
+void updateHashNormalizingFloatZero(SipHash & h, const IColumn & column, size_t row_id)
+{
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&column))
+    {
+        const UInt8 is_null = nullable->isNullAt(row_id);
+        h.update(is_null);
+        if (!is_null)
+            updateHashNormalizingFloatZero(h, nullable->getNestedColumn(), row_id);
+        return;
+    }
+
+    if (const auto * col_f32 = checkAndGetColumn<ColumnFloat32>(&column))
+    {
+        Float32 value = col_f32->getElement(row_id);
+        if (value == 0.0f)
+            value = 0.0f; /// Normalize -0.0f to +0.0f (the literal 0.0f has the positive-zero bit pattern).
+        h.update(value);
+        return;
+    }
+
+    if (const auto * col_f64 = checkAndGetColumn<ColumnFloat64>(&column))
+    {
+        Float64 value = col_f64->getElement(row_id);
+        if (value == 0.0)
+            value = 0.0; /// Normalize -0.0 to +0.0.
+        h.update(value);
+        return;
+    }
+
+    /// Not a floating-point column; use the default hashing.
+    column.updateHashWithValue(row_id, h);
+}
+
+/// `sipHash128AtRow`, but for floating-point attributes it normalizes signed zero so that the hash
+/// agrees with SQL `equals`. The vector path uses this hash only as a prefilter / cache key and then
+/// confirms every candidate with `equals`, so the hash must never separate two values that `equals`
+/// treats as equal. Otherwise the prefilter would silently drop a real match (e.g. a dictionary row
+/// storing `0.0` against a query value of `-0.0`) and the vector path would disagree with the
+/// constant path, which compares with `equals` directly.
+inline UInt128 sipHash128AtRowConsistentWithEquals(const IColumn & column, size_t row_id, bool normalize_float_zero)
+{
+    if (!normalize_float_zero)
+        return sipHash128AtRow(column, row_id);
+
+    SipHash h;
+    updateHashNormalizingFloatZero(h, column, row_id);
+    return h.get128();
+}
+
 /// A consumed chunk that had at least one match: its sequential dictionary block number
 /// (used to restore the scan order at merge time) and the `num_keys` filtered key columns.
 struct DictGetKeysMatchedChunk
@@ -107,13 +169,16 @@ protected:
 
         chassert(chunk.getColumns().size() == num_keys + 1);
 
-        /// `DictionarySource` tags every chunk with its sequential block number. We keep it so the
-        /// merge in `executeConstPath` can restore the original dictionary scan order regardless of
-        /// how blocks were distributed across reading streams (otherwise the user-visible array
-        /// order would be scheduler-dependent and could differ from the vector path).
-        auto block_info = chunk.getChunkInfos().get<DictionaryBlockNumber>();
-        chassert(block_info != nullptr);
-        const size_t block_number = block_info->number;
+        /// The multi-stream coordinator path (`DictionarySource`) tags every chunk with its sequential
+        /// block number, so the merge in `executeConstPath` can restore the original dictionary scan
+        /// order regardless of how blocks were distributed across reading streams (otherwise the
+        /// user-visible array order would be scheduler-dependent and could differ from the vector path).
+        /// Single-stream layouts (`DIRECT`, `POLYGON`, `REGEXP_TREE`, ...) deliver their chunks in order
+        /// to the single sink and do not attach a block number, so it is optional here; the merge keeps
+        /// the insertion order in that case.
+        size_t block_number = 0;
+        if (auto block_info = chunk.getChunkInfos().get<DictionaryBlockNumber>())
+            block_number = block_info->number;
 
         /// Chunk layout: key columns followed by the attribute column
         auto chunk_columns = chunk.detachColumns();
@@ -344,19 +409,24 @@ private:
             result_cols.emplace_back(std::move(col));
         }
 
-        /// The reading streams pull dictionary blocks from a shared counter, so each sink ends up
-        /// with an arbitrary, scheduler-dependent subset of blocks. Gather all matched chunks and
-        /// merge them in ascending block-number order, which reproduces the single-stream scan order
-        /// and keeps the result deterministic and consistent with the vector path.
+        /// Gather all matched chunks from the per-stream sinks.
         VectorWithMemoryTracking<const DictGetKeysMatchedChunk *> ordered_chunks;
         for (const auto & sink : sinks)
             for (const auto & matched_chunk : sink->getMatchedChunks())
                 ordered_chunks.push_back(&matched_chunk);
 
-        std::sort(
-            ordered_chunks.begin(),
-            ordered_chunks.end(),
-            [](const DictGetKeysMatchedChunk * lhs, const DictGetKeysMatchedChunk * rhs) { return lhs->block_number < rhs->block_number; });
+        /// Multi-stream reads come only from `DictionarySourceCoordinator`, which pulls blocks from a
+        /// shared counter (so each sink ends up with an arbitrary, scheduler-dependent subset) but tags
+        /// every chunk with its sequential block number. Sorting by it reproduces the single-stream scan
+        /// order, keeping the result deterministic and consistent with the vector path. Single-stream
+        /// layouts (`DIRECT`, `POLYGON`, `REGEXP_TREE`, ...) deliver their chunks in order to the single
+        /// sink and do not attach a block number, so we keep that sink's insertion order for them.
+        if (num_streams > 1)
+            std::sort(
+                ordered_chunks.begin(),
+                ordered_chunks.end(),
+                [](const DictGetKeysMatchedChunk * lhs, const DictGetKeysMatchedChunk * rhs)
+                { return lhs->block_number < rhs->block_number; });
 
         for (const auto * matched_chunk : ordered_chunks)
         {
@@ -406,6 +476,11 @@ private:
         chassert(values_column != nullptr);
         chassert(values_column->size() == input_rows_count);
 
+        /// Floating-point attributes need signed zero normalized in the bucket / cache hash so that the
+        /// hash prefilter agrees with the `equals` confirmation (`-0.0` and `+0.0` are SQL-equal). The
+        /// same flag is applied to the dictionary side in `fillMissingBucketsFromDict`.
+        const bool normalize_float_zero = attributeHashNeedsFloatZeroNormalization(attribute_column_type);
+
         /// Step 1
         HashToBucket value_hash_to_bucket_id;
         value_hash_to_bucket_id.reserve(input_rows_count);
@@ -430,7 +505,7 @@ private:
 
         for (size_t cur_row_id = 0; cur_row_id < input_rows_count; ++cur_row_id)
         {
-            const UInt128 value_hash = sipHash128AtRow(*values_column, cur_row_id);
+            const UInt128 value_hash = sipHash128AtRowConsistentWithEquals(*values_column, cur_row_id, normalize_float_zero);
 
             auto * it = value_hash_to_bucket_id.find(value_hash);
             if (it)
@@ -487,7 +562,8 @@ private:
                 value_hash_to_bucket_id,
                 *bucket_values,
                 equals_function,
-                attribute_column_type);
+                attribute_column_type,
+                normalize_float_zero);
 
             for (size_t bucket_id : missing_bucket_ids)
             {
@@ -602,7 +678,8 @@ private:
         const HashToBucket & value_hash_to_bucket_id,
         const IColumn & bucket_values,
         const FunctionBasePtr & equals_function,
-        const DataTypePtr & attr_type) const
+        const DataTypePtr & attr_type,
+        bool normalize_float_zero) const
     {
         VectorWithMemoryTracking<UInt8> is_missing(out.size(), 0);
         for (size_t id : missing_bucket_ids)
@@ -654,7 +731,7 @@ private:
 
             for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
             {
-                const UInt128 value_hash = sipHash128AtRow(*attr_col, row_id);
+                const UInt128 value_hash = sipHash128AtRowConsistentWithEquals(*attr_col, row_id, normalize_float_zero);
 
                 /// Not in user given `values_column`
                 const auto * it = value_hash_to_bucket_id.find(value_hash);
