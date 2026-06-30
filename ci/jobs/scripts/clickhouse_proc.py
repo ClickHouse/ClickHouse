@@ -379,11 +379,7 @@ profiles:
             config_file.write(c1)
         return res
 
-    def create_log_export_config(self):
-        print("Create log export config")
-        config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
-        config_file.parent.mkdir(parents=True, exist_ok=True)
-
+    def _fetch_log_export_credentials(self):
         self.log_export_host, self.log_export_password = (
             Secret.Config(
                 name="clickhouse_ci_logs_host",
@@ -400,6 +396,39 @@ profiles:
             .get_value()
         )
 
+    def _load_log_export_credentials_from_config(self):
+        """Load credentials from the YAML config written by create_log_export_config.
+
+        This avoids a second SSM call at start_log_exports time, which would fail
+        after setup_minio.sh runs: it creates ~/.aws/credentials with MinIO's profile
+        which shadows the EC2 instance profile.
+        """
+        import yaml
+
+        config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
+        if not config_file.exists():
+            return
+        with open(config_file) as f:
+            config = yaml.safe_load(f)
+        replica = (
+            config.get("remote_servers", {})
+            .get(CLICKHOUSE_CI_LOGS_CLUSTER, {})
+            .get("shard", {})
+            .get("replica", {})
+        )
+        host = replica.get("host")
+        password = replica.get("password")
+        if host and password:
+            self.log_export_host = host
+            self.log_export_password = password
+
+    def create_log_export_config(self):
+        print("Create log export config")
+        config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        self._fetch_log_export_credentials()
+
         config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
             CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
             CLICKHOUSE_CI_LOGS_HOST=self.log_export_host,
@@ -413,6 +442,18 @@ profiles:
 
     def start_log_exports(self, check_start_time):
         print("Start log export")
+        if not self.log_export_host:
+            # Load from the config file written by create_log_export_config (before
+            # MinIO start). Avoids re-fetching from SSM after setup_minio.sh has
+            # created ~/.aws/credentials with MinIO's profile, which would shadow
+            # the EC2 instance profile and make the SSM call fail.
+            self._load_log_export_credentials_from_config()
+        if not self.log_export_host:
+            try:
+                self._fetch_log_export_credentials()
+            except Exception as e:
+                print(f"WARNING: Failed to fetch CI logs credentials: {e}")
+                return False
         if self.log_export_host:
             os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
             os.environ["CLICKHOUSE_CI_LOGS_HOST"] = self.log_export_host
