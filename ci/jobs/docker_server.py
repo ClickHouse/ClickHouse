@@ -222,19 +222,19 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
 
 
 # `docker buildx build` resolves base/SBOM-scanner images from docker.io, which
-# intermittently returns transient HTTP errors. Retry the buildx commands on those
-# signatures (Shell.run uses exponential backoff and only retries on these strings,
-# so a genuine Dockerfile/build error still fails fast).
+# intermittently returns transient HTTP errors. Retry the buildx commands only on
+# genuine registry/network *failure* signatures. None of these strings appear in
+# normal `--progress=plain` output (unlike progress text such as "resolve image
+# config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
+# fast on the first attempt.
 BUILDX_RETRIES = 5
 BUILDX_RETRY_ERRORS = [
-    "registry-1.docker.io",
-    "resolve image config",
     "failed to do request",
     "unexpected status from HEAD request",
     "TLS handshake timeout",
     "i/o timeout",
     "connection reset by peer",
-    "error from registry",
+    "connection refused",
 ]
 
 
