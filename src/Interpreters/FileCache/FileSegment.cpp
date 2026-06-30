@@ -8,7 +8,6 @@
 #include <base/EnumReflection.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
-#include <sys/stat.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -1084,22 +1083,15 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(!remote_file_reader);
             chassert(!cache_writer);
 
-            {
-                /// Cross-check: when accounting real disk size, the aligned size we account for
-                /// should equal the number of 512-byte blocks actually allocated for the file.
-                const auto km = tryGetKeyMetadata();
-                if (km && km->useRealDiskSize())
-                {
-                    struct stat file_stat{};
-                    if (stat(file_path.c_str(), &file_stat) == 0)
-                    {
-                        const size_t accounted = km->alignFileSize(reserved_size);
-                        const size_t real_size = static_cast<size_t>(file_stat.st_blocks) * 512; /// st_blocks is the number of 512B blocks allocated.
-                        if (accounted != real_size)
-                            throw_logical("Aligned file size != real on-disk size: " + std::to_string(accounted) + " != " + std::to_string(real_size));
-                    }
-                }
-            }
+            /// Note: we deliberately do not cross-check the accounted aligned size against the real
+            /// on-disk allocation (`stat::st_blocks * 512`). When `use_real_disk_size` is on, accounting
+            /// uses `alignFileSize` (i.e. `roundUpToMultiple(size, f_bsize)`), which is a model of the
+            /// physical size, not the exact allocation. The two are not equal in general: transparent
+            /// compression, sparse files, reflinks/CoW, inline-data, preallocation and delayed allocation
+            /// all make `st_blocks` differ from the rounded-up logical size for a perfectly valid cached
+            /// segment, so asserting their equality would trip a spurious `LOGICAL_ERROR` in sampled
+            /// debug/sanitizer builds. The accounting invariant that actually matters
+            /// (`entry.size == alignFileSize(reserved_size)`) is verified by `check_iterator` below.
 
             auto file_size = fs::file_size(getPath());
             UNUSED(file_size);
