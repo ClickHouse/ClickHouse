@@ -511,7 +511,7 @@ struct HashMethodSerialized
         return true;
 #endif
 
-        const size_t l2_size = getL2CacheSize();
+        size_t l2_size = getL2CacheSize();
         // Calculate the average row size.
         size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
         // Use batch serialization only if total size fits in 4x L2 cache and average row size is small.
