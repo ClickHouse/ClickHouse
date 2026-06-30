@@ -1726,9 +1726,15 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (all_columns.hasAlias(column_name))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
+
+                /// A codec-only `MODIFY COLUMN` (where the type is not restated) leaves `command.data_type`
+                /// null, while `AlterCommand::apply` validates against the existing `column.type`. Mirror that
+                /// fallback here so codecs that need the column type to compress (such as the experimental `PCO`)
+                /// can be added to an existing numeric column with the normal codec-only `ALTER`.
+                const DataTypePtr codec_data_type = command.data_type ? command.data_type : all_columns.get(column_name).type;
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
-                    command.data_type,
+                    codec_data_type,
                     !context->getSettingsRef()[Setting::allow_suspicious_codecs],
                     context->getSettingsRef()[Setting::allow_experimental_codecs]);
             }
