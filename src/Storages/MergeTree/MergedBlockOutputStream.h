@@ -36,7 +36,7 @@ public:
         const WriteSettings & write_settings,
         WrittenOffsetSubstreams * written_offset_substreams,
         WriteOrigin write_origin,
-        bool is_explicit_recompression = false);
+        bool is_explicit_recompression); /// T when the part is recompressed to an explicit non-Default codec (RECOMPRESS CODEC(X)).
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 

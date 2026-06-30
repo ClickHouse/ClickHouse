@@ -25,8 +25,8 @@ public:
         MergeTreeIndexGranularityPtr index_granularity_ptr,
         size_t part_uncompressed_bytes,
         WrittenOffsetSubstreams * written_offset_substreams,
-        class PackedFilesWriter * external_packed_skip_indices_writer = nullptr,
-        bool is_explicit_recompression = false);
+        bool is_explicit_recompression,
+        class PackedFilesWriter * external_packed_skip_indices_writer = nullptr);
 
     void write(const Block & block) override;
     void finalizeIndexGranularity();

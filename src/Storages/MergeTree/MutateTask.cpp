@@ -2080,6 +2080,7 @@ private:
         /// deadlock is impossible.
         ctx->compression_codec
             = ctx->data->getCompressionCodecForPart(ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
+        const bool is_explicit_recompression = ctx->data->isExplicitRecompression(ctx->source_part->ttl_infos, ctx->time_of_mutation);
 
         NameSet entries_to_hardlink;
         NameSet removed_indices;
@@ -2329,7 +2330,8 @@ private:
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
             static_cast<WrittenOffsetSubstreams *>(nullptr),
-            WriteOrigin::MergeOrMutation);
+            WriteOrigin::MergeOrMutation,
+            is_explicit_recompression);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -2616,6 +2618,7 @@ private:
         }
 
         ctx->compression_codec = ctx->source_part->default_codec;
+        const bool is_explicit_recompression = ctx->data->isExplicitRecompression(ctx->source_part->ttl_infos, ctx->time_of_mutation);
 
         if (ctx->mutating_pipeline_builder.initialized())
         {
@@ -2672,7 +2675,8 @@ private:
                 ctx->compression_codec,
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk(),
-                static_cast<WrittenOffsetSubstreams *>(nullptr));
+                static_cast<WrittenOffsetSubstreams *>(nullptr),
+                is_explicit_recompression);
 
             /// Carry surviving in-archive entries that aren't being recomputed into the writer's
             /// PackedFilesWriter before any block lands. Without this, the new archive would

@@ -23,8 +23,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
     WrittenOffsetSubstreams * written_offset_substreams,
-    PackedFilesWriter * external_packed_skip_indices_writer,
-    bool is_explicit_recompression)
+    bool is_explicit_recompression,
+    PackedFilesWriter * external_packed_skip_indices_writer)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
