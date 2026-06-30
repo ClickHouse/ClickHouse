@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <allow_experimental_text_index_lazy_apply>1</allow_experimental_text_index_lazy_apply>
-        </default>
-    </profiles>
-</clickhouse>
