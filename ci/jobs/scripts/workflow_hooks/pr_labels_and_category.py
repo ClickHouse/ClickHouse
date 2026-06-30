@@ -56,6 +56,8 @@ class Labels:
     DO_NOT_TEST = "do not test"
     NO_FAST_TESTS = "no-fast-tests"
     MUST_BACKPORT = "pr-must-backport"
+    MUST_BACKPORT_FORCE = "pr-must-backport-force"
+    READY_FOR_BACKPORT = "ready-for-backport"
     JEPSEN_TEST = "jepsen-test"
     SKIP_MERGEABLE_CHECK = "skip mergeable check"
     PR_BACKPORT = "pr-backport"
