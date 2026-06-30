@@ -323,7 +323,7 @@ To disable `error_log` setting, you should create the following file `/etc/click
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
-List of prefixes used for [custom settings](/operations/settings/query-level#custom_settings).
+List of prefixes used for [custom settings](/operations/settings/query-level#custom-settings).
 Multiple prefixes should be separated by commas.
 
 **Example**
@@ -334,7 +334,7 @@ Multiple prefixes should be separated by commas.
 
 **See Also**
 
-- [Custom settings](/operations/settings/query-level#custom_settings)
+- [Custom settings](/operations/settings/query-level#custom-settings)
 
 ## core_dump {#core_dump}
 
@@ -623,7 +623,7 @@ A username and a password used to connect to other servers during [replication](
 
 :::note
 - By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
-- `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/client.md#configuration_files).
+- `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/client.md#configuration-files).
 - These credentials are common for replication via `HTTP` and `HTTPS`.
 :::
 
@@ -1564,7 +1564,7 @@ The following settings can be configured by sub-tags:
 | `flush_interval_milliseconds` | Interval for flushing data from the buffer in memory to the table.                                                                                      | `7500`              |                                                                                                                    |
 | `flush_on_crash` | Sets whether logs should be dumped to the disk in case of a crash.                                                                                      | `false`             |                                                                                                                    |
 | `max_size_rows` | Maximal size in lines for the logs. When the amount of non-flushed logs reaches the max_size, logs are dumped to the disk.                              | `1024`           |                                                                                                                    |
-| `order_by` | [Custom sorting key](/engines/table-engines/mergetree-family/mergetree#order_by) for a system table. Can't be used if `engine` defined.      |                     | If `engine` is specified for system table, `order_by` parameter should be specified directly inside 'engine'       |
+| `order_by` | [Custom sorting key](/engines/table-engines/mergetree-family/mergetree#order-by) for a system table. Can't be used if `engine` defined.      |                     | If `engine` is specified for system table, `order_by` parameter should be specified directly inside 'engine'       |
 | `partition_by` | [Custom partitioning key](/engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table.                               |                     | If `engine` is specified for system table, `partition_by` parameter should be specified directly inside 'engine'   |
 | `reserved_size_rows` | Pre-allocated memory size in lines for the logs.                                                                                                        | `1024`              |                                                                                                                    |
 | `settings` | [Additional parameters](/engines/table-engines/mergetree-family/mergetree/#settings) that control the behavior of the MergeTree (optional).   |                     | If `engine` is specified for system table, `settings` parameter should be specified directly inside 'engine'       |

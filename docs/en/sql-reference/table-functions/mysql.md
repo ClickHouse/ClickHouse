@@ -46,7 +46,7 @@ or
 SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table object with the same columns as the original MySQL table.
 

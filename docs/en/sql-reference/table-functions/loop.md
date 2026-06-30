@@ -23,7 +23,7 @@ SELECT ... FROM loop(other_table_function(...));
 | `table`                     | table name.                                                                                                          |
 | `other_table_function(...)` | other table function. Example: `SELECT * FROM loop(numbers(10));` `other_table_function(...)` here is `numbers(10)`. |
 
-## Returned values {#returned_values}
+## Returned values {#returned-values}
 
 Infinite loop to return query results.
 

@@ -173,7 +173,7 @@ Views look the same as normal tables. For example, they are listed in the result
 
 To delete a view, use [DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). Although `DROP TABLE` works for VIEWs as well.
 
-## SQL security {#sql_security}
+## SQL security {#sql-security}
 
 `DEFINER` and `SQL SECURITY` allow you to specify which ClickHouse user to use when executing the view's underlying query.
 `SQL SECURITY` has three legal values: `DEFINER`, `INVOKER`, or `NONE`. You can specify any existing user or `CURRENT_USER` in the `DEFINER` clause.

@@ -31,7 +31,7 @@ url(URL [,format] [,structure] [,headers])
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified format and structure and with data from the defined `URL`.
 

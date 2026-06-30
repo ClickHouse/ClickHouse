@@ -32,7 +32,7 @@ redis(host:port, key, structure[, db_index[, password[, pool_size]]])
 
 [Named collections](/operations/named-collections.md) are not supported for `redis` table function at the moment.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table object with key as Redis key, other columns packaged together as Redis value.
 

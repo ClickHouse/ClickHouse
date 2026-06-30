@@ -30,7 +30,7 @@ hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,form
 | `compression`                                | Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, compression will be autodetected by the file extension.                                                                                                                                                                                                                   |
 | `extra_credentials`                          | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.                                                                                                                                                                                                                     |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading data from cluster in the specified Hudi table in S3.
 

@@ -10,7 +10,7 @@ doc_type: 'reference'
 When ClickHouse execute multiple queries simultaneously, they may be using shared resources (e.g. disks and CPU cores). Scheduling constraints and policies can be applied to regulate how resources are utilized and shared between different workloads. For all resources a common scheduling hierarchy can be configured. Hierarchy root represents shared resources, while leafs are specific workloads, holding requests that exceed resource capacity.
 
 :::note
-Currently [remote disk IO](#disk_config) and [CPU](#cpu_scheduling) can be scheduled using described method. For flexible memory limits see [Memory overcommit](settings/memory-overcommit.md)
+Currently [remote disk IO](#disk_config) and [CPU](#cpu-scheduling) can be scheduled using described method. For flexible memory limits see [Memory overcommit](settings/memory-overcommit.md)
 :::
 
 ## Disk configuration {#disk_config}
@@ -68,7 +68,7 @@ Example:
 
 Note that server configuration options have priority over SQL way to define resources.
 
-## Workload markup {#workload_markup}
+## Workload markup {#workload-markup}
 
 Queries can be marked with setting `workload` to distinguish different workloads. If `workload` is not set, than value "default" is used. Note that you are able to specify the other value using settings profiles. Setting constraints can be used to make `workload` constant if you want all queries from the user to be marked with fixed value of `workload` setting.
 
@@ -158,7 +158,7 @@ The following example shows how to define IO scheduling hierarchies shown in the
 </clickhouse>
 ```
 
-## Workload classifiers {#workload_classifiers}
+## Workload classifiers {#workload-classifiers}
 
 :::warning
 Workload scheduling using clickhouse configuration is deprecated. SQL syntax should be used instead. Classifiers are created automatically when using SQL syntax.
@@ -227,7 +227,7 @@ Also note that workload or resource could not be dropped if it is referenced fro
 Workload settings are translated into a proper set of scheduling nodes. For lower-level details, see the description of the scheduling node [types and options](#hierarchy).
 :::
 
-## CPU scheduling {#cpu_scheduling}
+## CPU scheduling {#cpu-scheduling}
 
 To enable CPU scheduling for workloads create CPU resource and set a limit for the number of concurrent threads:
 
@@ -281,7 +281,7 @@ Slot scheduling provides a way to control [query concurrency](/operations/settin
 Declaring CPU resource disables effect of [`concurrent_threads_soft_limit_num`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_num) and [`concurrent_threads_soft_limit_ratio_to_cores`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_ratio_to_cores) settings. Instead, workload setting `max_concurrent_threads` is used to limit the number of CPUs allocated for a specific workload. To achieve the previous behavior create only WORKER THREAD resource, set `max_concurrent_threads` for the workload `all` to the same value as `concurrent_threads_soft_limit_num` and use `workload = "all"` query setting. This configuration corresponds to [`concurrent_threads_scheduler`](server-configuration-parameters/settings.md#concurrent_threads_scheduler) setting set "fair_round_robin" value.
 :::
 
-## Threads vs. CPUs {#threads_vs_cpus}
+## Threads vs. CPUs {#threads-vs-cpus}
 
 There are two way to control CPU consumption of a workload:
 * Thread number limit: `max_concurrent_threads` and `max_concurrent_threads_ratio_to_cores`
@@ -373,7 +373,7 @@ This ensures that all background activities and queries respect the infrastructu
 
 Another use case is different configuration for different nodes in a heterogeneous cluster.
 
-## Strict resource access {#strict_resource_access}
+## Strict resource access {#strict-resource-access}
 
 To enforce all queries to follow resource scheduling policies there is a server setting `throw_on_unknown_workload`. If it is set to `true` then every query is required to use valid `workload` query setting, otherwise `RESOURCE_ACCESS_DENIED` exception is thrown. If it is set to `false` then such a query does not use resource scheduler, i.e. it will get unlimited access to any `RESOURCE`. Query setting 'use_concurrency_control = 0' allows query to avoid CPU scheduler and get unlimited access to CPU. To enforce CPU scheduling create a setting constraint to keep 'use_concurrency_control' read-only constant value.
 

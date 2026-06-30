@@ -42,7 +42,7 @@ FROM system.histogram_metrics
 FORMAT Prometheus
 ```
 
-## Metric descriptions {#metric_descriptions}
+## Metric descriptions {#metric-descriptions}
 
 | Metric | Description |
 |---|---|

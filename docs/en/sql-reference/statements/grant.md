@@ -245,7 +245,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SHOW NAMED COLLECTIONS SECRETS`
   - [`OPTIMIZE`](#optimize)
   - [`SELECT`](#select)
-  - [`SET DEFINER`](/sql-reference/statements/create/view#sql_security)
+  - [`SET DEFINER`](/sql-reference/statements/create/view#sql-security)
   - [`SHOW`](#show)
     - `SHOW COLUMNS`
     - `SHOW DATABASES`

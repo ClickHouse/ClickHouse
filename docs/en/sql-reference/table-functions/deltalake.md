@@ -31,7 +31,7 @@ The `format` argument stands for the format of data files in the Delta lake tabl
 
 An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 Returns a table with the specified structure for reading or writing data from/to the specified Delta Lake table.
 

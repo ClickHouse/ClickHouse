@@ -31,7 +31,7 @@ filesystem([path])
 |-----------|-------------|
 | `path`    | The directory to list. Can be an absolute path (must be inside `user_files_path` in server mode) or a path relative to `user_files_path`. If empty or omitted, defaults to `user_files_path`. |
 
-## Returned columns {#returned_columns}
+## Returned columns {#returned-columns}
 
 | Column              | Type                       | Description |
 |---------------------|----------------------------|-------------|

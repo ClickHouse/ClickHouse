@@ -25,7 +25,7 @@ hdfsCluster(cluster_name, URI, format, structure)
 | `format`       | The [format](/sql-reference/formats) of the file.                                                                                                                                                                                                                                                |
 | `structure`    | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                    |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading data in the specified file.
 

@@ -20,7 +20,7 @@ dictionary('dict')
 
 - `dict` — A dictionary name. [String](../../sql-reference/data-types/string.md).
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A ClickHouse table.
 

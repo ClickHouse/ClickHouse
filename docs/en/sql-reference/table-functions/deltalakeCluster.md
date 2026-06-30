@@ -31,7 +31,7 @@ deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
 - Description of all other arguments coincides with description of arguments in equivalent [deltaLake](/sql-reference/table-functions/deltalake.md) table function.
 - An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading data from cluster in the specified Delta Lake table in S3.
 

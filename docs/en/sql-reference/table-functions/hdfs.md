@@ -29,7 +29,7 @@ hdfs(URI, format, structure)
 | `format`  | The [format](/sql-reference/formats) of the file.                                                                                                                          |
 | `structure`| Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                           |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -50,7 +50,7 @@ LIMIT 2
 └─────────┴─────────┴─────────┘
 ```
 
-## Globs in path {#globs_in_path}
+## Globs in path {#globs-in-path}
 
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix.
 
