@@ -79,6 +79,8 @@
 #if CLICKHOUSE_CLOUD
 #include <Common/Licensing/LicenseChecker.h>
 #endif
+
+#include <unordered_set>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
@@ -1510,15 +1512,30 @@ static BlockIO executeQueryImpl(
                 auto restore_ast = make_intrusive<ASTSetQuery>();
                 restore_ast->is_standalone = false;
 
+                std::unordered_set<String> all_setting_names;
+                for (std::string_view setting_name : settings_before_source.getAllRegisteredNames())
+                    all_setting_names.emplace(setting_name);
                 for (std::string_view setting_name : settings_after_source.getAllRegisteredNames())
+                    all_setting_names.emplace(setting_name);
+
+                for (const auto & setting_name : all_setting_names)
                 {
-                    Field value_before = settings_before_source.get(setting_name);
-                    Field value_after = settings_after_source.get(setting_name);
-                    if (value_before != value_after)
-                        restore_ast->changes.emplace_back(String(setting_name), std::move(value_before));
+                    Field value_before;
+                    Field value_after;
+                    const bool has_before = settings_before_source.tryGet(setting_name, value_before);
+                    const bool has_after = settings_after_source.tryGet(setting_name, value_after);
+
+                    if (has_before)
+                    {
+                        if (!has_after || value_before != value_after)
+                            restore_ast->changes.emplace_back(setting_name, std::move(value_before));
+                    }
+                    else if (has_after)
+                        restore_ast->default_settings.emplace_back(setting_name);
                 }
 
-                insert_query->source_select_settings_restore_ast = restore_ast->changes.empty() ? ASTPtr{} : restore_ast;
+                insert_query->source_select_settings_restore_ast
+                    = (restore_ast->changes.empty() && restore_ast->default_settings.empty()) ? ASTPtr{} : restore_ast;
             }
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 

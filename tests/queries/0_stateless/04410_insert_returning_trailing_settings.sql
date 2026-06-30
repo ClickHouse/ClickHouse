@@ -58,6 +58,27 @@ RETURNING (SELECT number FROM numbers(10) ORDER BY number);
 
 SELECT count() FROM t_ret_settings;
 
+-- Source-only custom settings must not leak into RETURNING settings context.
+SELECT 'source custom setting does not leak into returning';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT number FROM numbers(1)
+SETTINGS custom_insert_source = 'x'
+RETURNING (SELECT getSettingOrDefault('custom_insert_source', 'unset'));
+
+SELECT count() FROM t_ret_settings;
+
+-- Source DEFAULT settings parsed before RETURNING must survive merge with trailing source settings.
+SELECT 'source default settings merged with trailing settings';
+TRUNCATE TABLE t_ret_settings;
+SET max_result_rows = 1, result_overflow_mode = 'break';
+INSERT INTO t_ret_settings SELECT number FROM numbers(3)
+SETTINGS max_result_rows = DEFAULT
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS max_threads = 1;
+SET max_result_rows = 0, result_overflow_mode = 'throw';
+
+SELECT count() FROM t_ret_settings;
+
 -- Trailing source SETTINGS must not affect RETURNING SELECT normalization/planning.
 -- Session UNION mode is ALL; trailing source settings set DISTINCT only for source phase.
 SELECT 'trailing settings do not affect returning planning';

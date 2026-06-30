@@ -30,6 +30,12 @@ query settings preserved for returning
 3
 4
 1
+source custom setting does not leak into returning
+unset
+1
+source default settings merged with trailing settings
+3
+3
 trailing settings do not affect returning planning
 1
 1
