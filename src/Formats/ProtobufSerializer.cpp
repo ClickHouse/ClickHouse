@@ -31,6 +31,7 @@
 #    include <Formats/ProtobufReader.h>
 #    include <Formats/ProtobufWriter.h>
 #    include <Formats/RowInputMissingColumnsFiller.h>
+#    include <Functions/DateTimeTransforms.h>
 #    include <IO/Operators.h>
 #    include <IO/ReadBufferFromString.h>
 #    include <IO/ReadHelpers.h>
@@ -1484,6 +1485,12 @@ namespace
 
             if (nanos < 0 || nanos >= nanos_per_second)
                 cannotConvertValue(toString(nanos), field_descriptor.message_type()->full_name(), is_datetime64 ? "DateTime64" : "DateTime");
+
+            if constexpr (is_datetime64)
+            {
+                if (seconds < MIN_DATETIME64_TIMESTAMP || seconds > MAX_DATETIME64_TIMESTAMP)
+                    cannotConvertValue(toString(seconds), field_descriptor.message_type()->full_name(), "DateTime64");
+            }
 
             Int64 ticks = 0;
             if (!DecimalUtils::multiplyAdd<Int64, false>(seconds, ticks_per_second, nanos / nanos_per_tick, ticks))

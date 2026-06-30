@@ -22,3 +22,7 @@ Invalid nanos = 1000000000 (DateTime64):
 Could not convert value '1000000000' from type google.protobuf.Timestamp to type DateTime64 while reading field 'ts' for inserting into column 'ts'
 Invalid nanos = -1 (DateTime):
 Could not convert value '-1' from type google.protobuf.Timestamp to type DateTime while reading field 'ts' for inserting into column 'ts'
+Seconds before 1900 (DateTime64):
+Could not convert value '-5364662400' from type google.protobuf.Timestamp to type DateTime64 while reading field 'ts' for inserting into column 'ts'
+Seconds after 2299 (DateTime64):
+Could not convert value '10413792000' from type google.protobuf.Timestamp to type DateTime64 while reading field 'ts' for inserting into column 'ts'

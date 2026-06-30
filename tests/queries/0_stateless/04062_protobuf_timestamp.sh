@@ -50,20 +50,20 @@ expect_out_of_range() {
     rm "$bin"
 }
 
-# Feed a hand-crafted google.protobuf.Timestamp whose nanos fall outside [0, 999999999] and show the rejection.
-expect_invalid_nanos() {
+# Feed a hand-crafted google.protobuf.Timestamp and show that it is rejected, not silently coerced.
+expect_rejected() {
     local col_type="$1"
     local message_bytes="$2"
 
     $CLICKHOUSE_CLIENT --query "
-        DROP TABLE IF EXISTS invalid_nanos_04062;
-        CREATE TABLE invalid_nanos_04062 (ts ${col_type}) ENGINE = MergeTree ORDER BY tuple();
+        DROP TABLE IF EXISTS rejected_04062;
+        CREATE TABLE rejected_04062 (ts ${col_type}) ENGINE = MergeTree ORDER BY tuple();
     "
 
     local bin
     bin=$(mktemp "$CURDIR/04062_protobuf_timestamp.XXXXXX.binary")
     printf "$message_bytes" > "$bin"
-    $CLICKHOUSE_CLIENT --query "INSERT INTO invalid_nanos_04062 SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf" < "$bin" 2>&1 | grep -o "Could not convert value.*column 'ts'" ||:
+    $CLICKHOUSE_CLIENT --query "INSERT INTO rejected_04062 SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf" < "$bin" 2>&1 | grep -o "Could not convert value.*column 'ts'" ||:
     rm "$bin"
 }
 
@@ -96,7 +96,14 @@ expect_out_of_range "DateTime('UTC')" "4294967296"
 
 # A Timestamp whose nanos fall outside [0, 999999999] must be rejected, not normalized into another value.
 echo "Invalid nanos = 1000000000 (DateTime64):"
-expect_invalid_nanos "DateTime64(9, 'UTC')" '\x08\x0A\x06\x10\x80\x94\xEB\xDC\x03' # Timestamp{nanos=1000000000}
+expect_rejected "DateTime64(9, 'UTC')" '\x08\x0A\x06\x10\x80\x94\xEB\xDC\x03' # Timestamp{nanos=1000000000}
 
 echo "Invalid nanos = -1 (DateTime):"
-expect_invalid_nanos "DateTime('UTC')" '\x0D\x0A\x0B\x10\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x01' # Timestamp{nanos=-1}
+expect_rejected "DateTime('UTC')" '\x0D\x0A\x0B\x10\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x01' # Timestamp{nanos=-1}
+
+# Seconds outside the DateTime64 range [1900-01-01, 2299-12-31] must be rejected, not stored as a wrapping value.
+echo "Seconds before 1900 (DateTime64):"
+expect_rejected "DateTime64(9, 'UTC')" '\x08\x80\xFF\xF6\x81\xEC\xFF\xFF\xFF\xFF\x01' # Timestamp{seconds=-5364662400} = 1800-01-01
+
+echo "Seconds after 2299 (DateTime64):"
+expect_rejected "DateTime64(0, 'UTC')" '\x08\x80\xB6\xD7\xE5\x26' # Timestamp{seconds=10413792000} = 2300-01-01
