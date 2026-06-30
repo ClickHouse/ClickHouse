@@ -1474,14 +1474,15 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 setDefaultTableEngine(*create.storage, getContext()->getSettingsRef()[Setting::default_table_engine].value);
             }
         }
+
         /// For external tables with restore_replace_external_engine_to_null setting we replace external engines to
-        /// Null table engine.
-        else if (getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null])
+        /// Null table engine. This must run after the engine has been resolved, whether it was specified explicitly
+        /// or inherited from the source table of `CREATE TABLE x AS y`.
+        if (getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
+            && create.storage->engine
+            && StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type)
         {
-            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type)
-            {
-                setNullTableEngine(*create.storage);
-            }
+            setNullTableEngine(*create.storage);
         }
         return;
     }

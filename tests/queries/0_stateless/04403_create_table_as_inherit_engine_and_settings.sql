@@ -11,6 +11,10 @@ DROP TABLE IF EXISTS t_47240_from_ttl;
 DROP TABLE IF EXISTS t_47240_mv_src;
 DROP VIEW IF EXISTS t_47240_mv;
 DROP TABLE IF EXISTS t_47240_from_mv;
+DROP TABLE IF EXISTS t_47240_join_src;
+DROP TABLE IF EXISTS t_47240_from_join;
+DROP TABLE IF EXISTS t_47240_ext_src;
+DROP TABLE IF EXISTS t_47240_from_ext;
 
 CREATE TABLE t_47240_src
 (
@@ -59,6 +63,28 @@ AS SELECT a, b FROM t_47240_mv_src;
 CREATE TABLE t_47240_from_mv AS t_47240_mv SETTINGS index_granularity = 8192;
 SHOW CREATE TABLE t_47240_from_mv FORMAT TSVRaw;
 
+-- The inherited engine can be a non-default one (Join) that declares engine-specific settings sharing their
+-- name with query-level settings (e.g. join_use_nulls). The SETTINGS clause must be split against the inherited
+-- engine, otherwise join_use_nulls is misclassified as a query setting, hoisted into the context, and dropped
+-- from the persisted table definition.
+CREATE TABLE t_47240_join_src (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k);
+CREATE TABLE t_47240_from_join AS t_47240_join_src SETTINGS join_use_nulls = 1;
+SHOW CREATE TABLE t_47240_from_join FORMAT TSVRaw;
+
+-- When restore_replace_external_engines_to_null is set, an external engine inherited from the source (here URL)
+-- through `CREATE TABLE dst AS src <storage_clause>` must be replaced with Null, just like an explicitly
+-- specified external engine is. The source table is created before the setting is enabled so that it keeps its
+-- external engine.
+CREATE TABLE t_47240_ext_src (x UInt64) ENGINE = URL('http://localhost:1/', 'TSV');
+SET restore_replace_external_engines_to_null = 1;
+CREATE TABLE t_47240_from_ext AS t_47240_ext_src ORDER BY x;
+SHOW CREATE TABLE t_47240_from_ext FORMAT TSVRaw;
+SET restore_replace_external_engines_to_null = 0;
+
+DROP TABLE t_47240_from_ext;
+DROP TABLE t_47240_ext_src;
+DROP TABLE t_47240_from_join;
+DROP TABLE t_47240_join_src;
 DROP TABLE t_47240_from_mv;
 DROP VIEW t_47240_mv;
 DROP TABLE t_47240_mv_src;

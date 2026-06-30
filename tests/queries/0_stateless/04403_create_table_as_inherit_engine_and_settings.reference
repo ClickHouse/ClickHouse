@@ -36,3 +36,15 @@ ENGINE = ReplacingMergeTree
 PARTITION BY b
 ORDER BY a
 SETTINGS index_granularity = 8192
+CREATE TABLE default.t_47240_from_join
+(
+    `k` UInt64,
+    `v` UInt64
+)
+ENGINE = Join(ANY, LEFT, k)
+SETTINGS join_use_nulls = 1
+CREATE TABLE default.t_47240_from_ext
+(
+    `x` UInt64
+)
+ENGINE = `Null`
