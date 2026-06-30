@@ -256,21 +256,29 @@ void RecordBatchEncoder::encodeValues(
             const auto & cs = assert_cast<const ColumnString &>(column);
             const auto & chars = cs.getChars();
             const auto & offs = cs.getOffsets();
+            const NullMap * null_map
+                = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
             PODArray<Int32> arrow_offsets(num_rows + 1);
             PODArray<char> data;
             arrow_offsets[0] = 0;
             Int64 cur = 0;
             for (size_t i = 0; i < num_rows; ++i)
             {
-                const size_t start = i == 0 ? 0 : offs[i - 1];
-                const size_t len = offs[i] - start; /// ClickHouse ColumnString stores no trailing '\0'
-                cur += static_cast<Int64>(len);
-                if (cur > std::numeric_limits<Int32>::max())
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
-                const size_t old = data.size();
-                data.resize(old + len);
-                if (len)
-                    memcpy(data.data() + old, &chars[start], len);
+                /// A null row carries an arbitrary nested value that the validity bitmap already masks as
+                /// NULL; emit a zero-length slot for it (matching the Apache Arrow writer's `AppendNull`)
+                /// so the bytes of a logically-NULL row never reach the IPC body.
+                if (!(null_map && (*null_map)[i]))
+                {
+                    const size_t start = i == 0 ? 0 : offs[i - 1];
+                    const size_t len = offs[i] - start; /// ClickHouse ColumnString stores no trailing '\0'
+                    cur += static_cast<Int64>(len);
+                    if (cur > std::numeric_limits<Int32>::max())
+                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
+                    const size_t old = data.size();
+                    data.resize(old + len);
+                    if (len)
+                        memcpy(data.data() + old, &chars[start], len);
+                }
                 arrow_offsets[i + 1] = static_cast<Int32>(cur);
             }
             appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
@@ -363,7 +371,7 @@ void RecordBatchEncoder::encodeValues(
             /// Arrow `Binary` column (read back as `String`); otherwise reject it.
             if (settings.arrow.output_unsupported_types_as_binary)
             {
-                encodeAsBinary(column, num_rows);
+                encodeAsBinary(column, num_rows, null_map_column);
                 return;
             }
             throw Exception(
@@ -374,19 +382,26 @@ void RecordBatchEncoder::encodeValues(
     }
 }
 
-void RecordBatchEncoder::encodeAsBinary(const IColumn & column, size_t num_rows)
+void RecordBatchEncoder::encodeAsBinary(const IColumn & column, size_t num_rows, const IColumn * null_map_column)
 {
+    const NullMap * null_map
+        = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
     PODArray<Int32> arrow_offsets(num_rows + 1);
     arrow_offsets[0] = 0;
     PODArray<char> data;
     size_t total = 0;
     for (size_t i = 0; i < num_rows; ++i)
     {
-        const std::string_view value = column.getDataAt(i);
-        total += value.size();
-        if (total > static_cast<size_t>(std::numeric_limits<Int32>::max()))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC binary offset exceeds 32 bits");
-        data.insert(data.end(), value.data(), value.data() + value.size());
+        /// Skip the payload of a logically-NULL row (matching the Apache Arrow writer's `AppendNull`):
+        /// emit a zero-length slot instead of the arbitrary bytes the null row may carry.
+        if (!(null_map && (*null_map)[i]))
+        {
+            const std::string_view value = column.getDataAt(i);
+            total += value.size();
+            if (total > static_cast<size_t>(std::numeric_limits<Int32>::max()))
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC binary offset exceeds 32 bits");
+            data.insert(data.end(), value.data(), value.data() + value.size());
+        }
         arrow_offsets[i + 1] = static_cast<Int32>(total);
     }
     appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
