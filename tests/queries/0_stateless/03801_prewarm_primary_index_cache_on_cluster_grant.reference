@@ -1,0 +1,6 @@
+local
+ok
+on cluster
+ok
+denied without grant
+the grant SYSTEM PREWARM PRIMARY INDEX CACHE
