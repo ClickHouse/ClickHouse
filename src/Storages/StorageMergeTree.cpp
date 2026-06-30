@@ -2896,6 +2896,15 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     if (dest_uk_metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "MOVE PARTITION TO a destination table with UNIQUE KEY is not supported");
+
+    /// A read-only destination table (the `table_readonly` MergeTree setting, used e.g. for rotated
+    /// system log tables) must not have parts moved into it. The source-side gate in
+    /// `MergeTreeData::alterPartition` only rejects `MOVE PARTITION ... TO TABLE` when the *source*
+    /// is read-only, because the command is dispatched through the source table; when the source is
+    /// writable and only the destination is read-only that gate does not fire, so the destination
+    /// has to be checked here, before any parts are cloned into it.
+    dest_table_storage->assertNotReadonly();
+
     bool are_policies_partition_op_compatible = getStoragePolicy()->isCompatibleForPartitionOps(dest_table_storage->getStoragePolicy());
 
     if (!are_policies_partition_op_compatible)
