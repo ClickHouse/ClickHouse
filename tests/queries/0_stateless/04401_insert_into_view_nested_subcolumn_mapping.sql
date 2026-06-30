@@ -37,3 +37,28 @@ SELECT 'qualified plain', x, n.x FROM t_nested_sub;
 DROP TABLE v_qualified_plain;
 DROP TABLE v_nested_sub;
 DROP TABLE t_nested_sub;
+
+-- A subcolumn rename whose alias collides with a *different* top-level column is ambiguous when the
+-- view's WHERE references the colliding name: `SELECT n.x AS x ... WHERE ... x ...` maps the alias
+-- `x` to the underlying `n.x`, but a real top-level `x` exists too, so the constraint has no single
+-- read semantics. The alias-collision guard must reject this (it must compare the alias with its
+-- resolved target name `n.x`, not with `shortName()` which would collapse `n.x` to `x` and skip it).
+DROP TABLE IF EXISTS t_collide;
+DROP VIEW IF EXISTS v_collide;
+CREATE TABLE t_collide (x UInt8, n Nested(x UInt8)) ENGINE = MergeTree ORDER BY tuple();
+CREATE VIEW v_collide AS SELECT n.x AS x FROM t_collide WHERE toString(x) != '';
+INSERT INTO v_collide VALUES ([1, 2, 3]); -- { serverError NOT_IMPLEMENTED }
+DROP VIEW v_collide;
+DROP TABLE t_collide;
+
+-- The same subcolumn rename is fine when no top-level column collides with the alias: here the
+-- underlying table has `y` and `n.x` but no top-level `x`, so `SELECT n.x AS x ... WHERE ... x ...`
+-- is unambiguous and the INSERT is accepted (the guard must not over-reject).
+DROP TABLE IF EXISTS t_nocollide;
+DROP VIEW IF EXISTS v_nocollide;
+CREATE TABLE t_nocollide (y UInt8, n Nested(x UInt8)) ENGINE = MergeTree ORDER BY tuple();
+CREATE VIEW v_nocollide AS SELECT n.x AS x FROM t_nocollide WHERE toString(x) != '';
+INSERT INTO v_nocollide VALUES ([4, 5]);
+SELECT 'no collision', y, n.x FROM t_nocollide;
+DROP VIEW v_nocollide;
+DROP TABLE t_nocollide;

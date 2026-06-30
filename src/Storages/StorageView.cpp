@@ -1103,7 +1103,18 @@ SinkToStoragePtr StorageView::write(
                 continue;
 
             const String alias = identifier->tryGetAlias();
-            if (alias.empty() || alias == identifier->shortName())
+            if (alias.empty())
+                continue;
+
+            /// Decide whether this is a genuine rename by comparing the alias with its *resolved*
+            /// target column, not with `shortName()`. A subcolumn rename such as `n.x AS x` has
+            /// `shortName() == "x" == alias` yet `extractColumnMapping` maps the alias `x` to the
+            /// underlying `n.x`, which is distinct from a real top-level column `x`. Using
+            /// `shortName()` here would treat `n.x AS x` as a non-rename and let an ambiguous view
+            /// (target also has a top-level `x`) slip past this fail-close guard.
+            auto mapping_it = column_mapping.find(alias);
+            const String mapped_target = (mapping_it != column_mapping.end()) ? mapping_it->second : alias;
+            if (alias == mapped_target)
                 continue;
 
             if (target_columns.contains(alias) && where_identifiers.contains(alias))
@@ -1111,7 +1122,7 @@ SinkToStoragePtr StorageView::write(
                     "Cannot INSERT into view {} because its WHERE condition references '{}', which is "
                     "both an alias of the underlying column '{}' and a column of the underlying table "
                     "itself, so the constraint is ambiguous",
-                    getStorageID().getFullTableName(), alias, identifier->shortName());
+                    getStorageID().getFullTableName(), alias, mapped_target);
         }
     }
 
