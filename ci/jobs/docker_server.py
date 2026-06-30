@@ -17,33 +17,6 @@ from ci.praktika.utils import Shell, Utils
 
 ARCH = ("amd64", "arm64")
 
-# The `Docker server image` job talks to two flaky external services while running
-# `buildx`: Docker Hub (registry-1.docker.io), which intermittently returns transient
-# HTTP 5xx / rate-limiting responses while resolving helper images such as
-# `docker/buildkit-syft-scanner` (pulled by `--sbom=true`) and while pushing image
-# layers; and the distribution mirrors hit by `apt-get` inside the build, which
-# transiently refuse connections. Retry `buildx` on these errors so that a brief
-# infrastructure hiccup does not fail the whole job. Matching is substring-based
-# against the command's stderr and only fires on these signatures, so a genuine build
-# error still fails fast. See `Shell.run` for the matching and exponential backoff.
-TRANSIENT_BUILD_ERRORS = [
-    # Docker Hub registry
-    "500 Internal Server Error",
-    "502 Bad Gateway",
-    "503 Service Unavailable",
-    "504 Gateway Timeout",
-    "429 Too Many Requests",
-    "TLS handshake timeout",
-    "i/o timeout",
-    "connection reset by peer",
-    "unexpected EOF",
-    # apt-get package mirrors
-    "Failed to fetch",
-    "Connection failed",
-    "Connection timed out",
-]
-BUILDX_RETRIES = 5
-
 temp_path = Path(f"{Utils.cwd()}/ci/tmp")
 
 GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
@@ -248,6 +221,38 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
     return tags
 
 
+# `docker buildx build` resolves base/SBOM-scanner images such as
+# `docker/buildkit-syft-scanner` (pulled by `--sbom=true`) from docker.io, which
+# intermittently returns transient HTTP errors while resolving and while pushing
+# image layers, and the build itself hits `apt-get` package mirrors that occasionally
+# refuse connections. Retry the buildx commands only on genuine
+# registry/network/mirror *failure* signatures. None of these strings appear in
+# normal `--progress=plain` output (unlike progress text such as "resolve image
+# config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
+# fast on the first attempt.
+BUILDX_RETRIES = 5
+BUILDX_RETRY_ERRORS = [
+    # Docker registry (docker.io / registry-1.docker.io)
+    "failed to do request",
+    "unexpected status from HEAD request",
+    "500 Internal Server Error",
+    "502 Bad Gateway",
+    "503 Service Unavailable",
+    "504 Gateway Timeout",
+    "429 Too Many Requests",
+    # Network / TLS
+    "TLS handshake timeout",
+    "i/o timeout",
+    "connection reset by peer",
+    "connection refused",
+    "unexpected EOF",
+    # apt-get package mirrors
+    "Failed to fetch",
+    "Connection failed",
+    "Connection timed out",
+]
+
+
 def buildx_args(
     urls: Dict[str, str],
     arch: str,
@@ -362,7 +367,7 @@ def build_and_push_image(
                 name=f"{image.name}:{tag}-{arch}",
                 command=cmd,
                 retries=BUILDX_RETRIES,
-                retry_errors=TRANSIENT_BUILD_ERRORS,
+                retry_errors=BUILDX_RETRY_ERRORS,
             )
         )
         if not result[-1].is_ok():
@@ -381,7 +386,7 @@ def build_and_push_image(
                 name=f"{image.name}:{tag}",
                 command=cmd,
                 retries=BUILDX_RETRIES,
-                retry_errors=TRANSIENT_BUILD_ERRORS,
+                retry_errors=BUILDX_RETRY_ERRORS,
             )
         )
         if not result[-1].is_ok():
