@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -123,7 +124,7 @@ struct AggregateFunctionWindowFunnelData
     {
         readBinary(sorted, buf);
 
-        size_t size = 0;
+        size_t size;
         readBinary(size, buf);
 
         if (size > 100'000'000) /// The constant is arbitrary
@@ -132,8 +133,8 @@ struct AggregateFunctionWindowFunnelData
         events_list.clear();
         events_list.reserve(size);
 
-        T timestamp{};
-        UInt8 event = 0;
+        T timestamp;
+        UInt8 event;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -245,7 +246,7 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     {
         readBinary(sorted, buf);
 
-        size_t events_size = 0;
+        size_t events_size;
         readBinary(events_size, buf);
 
         if (events_size > 100'000'000) /// Arbitrary limit to prevent excessive memory allocation
@@ -254,8 +255,8 @@ struct AggregateFunctionWindowFunnelStrictOnceData
         events_list.clear();
         events_list.reserve(events_size);
 
-        T timestamp{};
-        UInt8 event_type = 0;
+        T timestamp;
+        UInt8 event_type;
         UInt64 unique_id = 0;
 
         for (size_t i = 0; i < events_size; ++i)
@@ -369,15 +370,12 @@ private:
 
     UInt8 getEventLevelStrictOnce(const AggregateFunctionWindowFunnelStrictOnceData<T>::TimestampEvents & events_list) const
     {
-        /// Stores the timestamp of the first and last i-th level event happen within time window.
-        /// `event_path` must be zero-initialized: the full array is copied by `auto prev_path = it->event_path`
-        /// even though only the prefix [0..event_idx] is logically used, so leaving the tail uninitialized
-        /// would read indeterminate values under MSan/ASan.
+        /// Stores the timestamp of the first and last i-th level event happen within time window
         struct EventMatchTimeWindow
         {
-            UInt64 first_timestamp{};
-            UInt64 last_timestamp{};
-            std::array<UInt64, MAX_EVENTS> event_path{};
+            UInt64 first_timestamp;
+            UInt64 last_timestamp;
+            std::array<UInt64, MAX_EVENTS> event_path;
 
             EventMatchTimeWindow() = default;
             EventMatchTimeWindow(UInt64 first_ts, UInt64 last_ts)
@@ -580,7 +578,28 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
     {
-        this->data(place).deserialize(buf);
+        auto & data = this->data(place);
+        data.deserialize(buf);
+
+        /// Event types come from untrusted serialized state. getEventLevel* uses (event - 1) to index
+        /// events_timestamp / event_sequences, both sized events_size, so an out-of-range event would
+        /// read and write out of bounds. Valid event types are [1, events_size]; 0 is the no-event
+        /// sentinel produced only with strict_order, so it is accepted only in that mode.
+        const UInt8 min_event = strict_order ? 0 : 1;
+        for (const auto & event : data.events_list)
+        {
+            UInt8 event_type = 0;
+            if constexpr (Data::strict_once_enabled)
+                event_type = event.event_type;
+            else
+                event_type = event.second;
+
+            if (event_type < min_event || event_type > events_size)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Invalid event type {} in the state of function {}, must be in range [{}, {}]",
+                    static_cast<UInt16>(event_type), getName(), static_cast<UInt16>(min_event), static_cast<UInt16>(events_size));
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -644,7 +663,6 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
 
 }
 
-void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory);
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("windowFunnel", {createAggregateFunctionWindowFunnel, {}});
