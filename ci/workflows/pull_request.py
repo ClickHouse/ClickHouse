@@ -87,9 +87,11 @@ workflow = Workflow.Config(
         # in the `new_tests_check.py` workflow post-hook below.
         *JobConfigs.bugfix_validation_ft_pr_jobs,
         *JobConfigs.bugfix_validation_it_jobs,
-        # Unit-test (gtest) bugfix validation: a single AMD-only blocking job
-        # that reports OK/XFAIL/FAIL directly (not part of the per-arch
-        # aggregation above).
+        # Unit-test (gtest) bugfix validation: a single AMD-only job (allow_failure)
+        # that builds a merge-base "before" binary and runs the touched suite against it.
+        # It is not part of the per-arch FT/IT aggregation; instead new_tests_check.py
+        # blocks the unit case iff this job reported a definitive FAIL (failed to
+        # reproduce) — a reproduction or an inconclusive ERROR does not block.
         JobConfigs.bugfix_validation_ut_job,
         *[
             j.set_run_after(
