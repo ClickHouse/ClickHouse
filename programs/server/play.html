@@ -1078,7 +1078,7 @@
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
                 <button type="button" class="shadow" id="run-all">Run all</button>
-                <div id="hint">&nbsp;(Ctrl/Cmd+Enter, +Shift to run all)</div>
+                <div id="hint">&nbsp;(Ctrl/Cmd+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
                 <query-progress id="query-progress"></query-progress>
                 <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
                     <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -4180,6 +4180,7 @@ function updateRunButtons(multi) {
         }
     }
     runAllBtn.style.display = (multi && !selects_all) ? 'inline-block' : 'none';
+    document.getElementById('hint-run-all').style.display = multi ? '' : 'none';
 }
 
 /// Update the backdrop div behind the textarea: paint per-query active backgrounds
