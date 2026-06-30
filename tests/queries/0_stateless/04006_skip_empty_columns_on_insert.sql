@@ -1476,3 +1476,223 @@ SELECT 'case40_data';
 SELECT * FROM t_skip_empty_case40 ORDER BY key;
 
 DROP TABLE t_skip_empty_case40;
+
+-- ============================================================================
+-- CASE 41: Merge of pre-ADD-COLUMN part (no marker) + post-skip part (with marker).
+-- Regression for AI reviewer blocker #1: when one source part predates
+-- ALTER ADD COLUMN (missing column, no marker) and another source part has the
+-- column skipped via skip_empty_columns_on_insert (missing column, with marker),
+-- the merge must produce correct per-row values:
+--   - pre-ADD-COLUMN row → current DEFAULT (999)
+--   - skipped row → frozen type-default (0)
+-- The merged part materializes the column (because b is in storage_columns),
+-- so the marker is NOT propagated — each row gets its correct value baked in.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_case41;
+
+-- Step 1: Create table WITHOUT column b, insert a row.
+CREATE TABLE t_skip_empty_case41
+(
+    key UInt64,
+    a UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_case41 (key, a) VALUES (1, 100);
+
+-- Step 2: ADD COLUMN b with a DEFAULT, then enable skip and insert b=0.
+ALTER TABLE t_skip_empty_case41 ADD COLUMN b UInt64 DEFAULT 999;
+ALTER TABLE t_skip_empty_case41 MODIFY SETTING skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
+
+INSERT INTO t_skip_empty_case41 (key, a, b) VALUES (2, 200, 0);
+
+-- Pre-merge: row 1 should read b=999 (no marker, current DEFAULT),
+-- row 2 should read b=0 (marker, frozen type-default).
+SELECT 'case41_pre_merge';
+SELECT * FROM t_skip_empty_case41 ORDER BY key;
+
+-- Merge: both parts lack b physically, but part1 has no marker, part2 has marker.
+-- After merge, both values are materialized into the merged part.
+OPTIMIZE TABLE t_skip_empty_case41 FINAL;
+
+SELECT 'case41_post_merge';
+SELECT * FROM t_skip_empty_case41 ORDER BY key;
+
+-- Change DEFAULT again — merged part has physical data, so values don't change.
+ALTER TABLE t_skip_empty_case41 MODIFY COLUMN b UInt64 DEFAULT 777;
+
+SELECT 'case41_post_alter';
+SELECT * FROM t_skip_empty_case41 ORDER BY key;
+
+DROP TABLE t_skip_empty_case41;
+
+-- ============================================================================
+-- CASE 42: Type-changing ALTER MODIFY COLUMN on a missing column.
+-- Regression for AI reviewer blocker #3: when a column was skipped (b UInt64 = 0),
+-- then ALTER MODIFY COLUMN b Nullable(UInt64), the missing column is filled with
+-- the NEW type's type-default (NULL for Nullable). This is by design: the marker
+-- records "fill with type-default" which is type-specific, and a type change via
+-- mutation materializes the column anyway.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_case42;
+
+CREATE TABLE t_skip_empty_case42
+(
+    key UInt64,
+    a UInt64,
+    b UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_case42 (key, a, b) VALUES (1, 100, 0);
+
+SELECT 'case42_pre_modify';
+SELECT * FROM t_skip_empty_case42 ORDER BY key;
+
+-- Type-changing mutation: UInt64 → Nullable(UInt64).
+-- The mutation materializes the column, so the marker is removed.
+-- MATERIALIZE happens via updated_header containing 'b'.
+ALTER TABLE t_skip_empty_case42 MODIFY COLUMN b Nullable(UInt64);
+
+SELECT 'case42_post_modify';
+SELECT * FROM t_skip_empty_case42 ORDER BY key;
+
+DROP TABLE t_skip_empty_case42;
+
+-- ============================================================================
+-- CASE 43: Compact part rename of a missing column followed by mutation.
+-- Regression for AI reviewer blocker #4: a missing column on a compact part is
+-- renamed, then an unrelated mutation fires. The rename must be tracked in
+-- serialization_infos so the marker survives under the new name.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_case43;
+
+CREATE TABLE t_skip_empty_case43
+(
+    key UInt64,
+    a UInt64,
+    b UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+-- Compact part, b=0 → missing.
+INSERT INTO t_skip_empty_case43 (key, a, b) VALUES (1, 100, 0);
+
+-- Rename missing column b → c.
+ALTER TABLE t_skip_empty_case43 RENAME COLUMN b TO c;
+
+-- Unrelated mutation — must propagate marker under new name 'c'.
+ALTER TABLE t_skip_empty_case43 UPDATE a = a + 1 WHERE key = 1;
+
+-- Add DEFAULT on renamed column. Marker must still shield.
+ALTER TABLE t_skip_empty_case43 MODIFY COLUMN c UInt64 DEFAULT 999;
+
+SELECT 'case43_compact_rename_mutate';
+SELECT key, a, c FROM t_skip_empty_case43 ORDER BY key;
+
+DROP TABLE t_skip_empty_case43;
+
+-- ============================================================================
+-- CASE 44: MATERIALIZE COLUMN on a missing column writes current DEFAULT.
+-- Regression for AI reviewer blocker #5: explicitly proving that MATERIALIZE
+-- COLUMN computes the current DEFAULT and removes the marker, which is the
+-- intended semantic (MATERIALIZE = "write physical data for this column").
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_case44;
+
+CREATE TABLE t_skip_empty_case44
+(
+    key UInt64,
+    a UInt64,
+    b UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_case44 (key, a, b) VALUES (1, 100, 0);
+
+-- b is missing, reads as 0.
+SELECT 'case44_pre';
+SELECT * FROM t_skip_empty_case44 ORDER BY key;
+
+-- Add DEFAULT, then MATERIALIZE. After materialize, b is physical data = 999.
+ALTER TABLE t_skip_empty_case44 MODIFY COLUMN b UInt64 DEFAULT 999;
+ALTER TABLE t_skip_empty_case44 MATERIALIZE COLUMN b;
+
+SELECT 'case44_post_materialize';
+SELECT * FROM t_skip_empty_case44 ORDER BY key;
+
+-- Verify: column b is now in the part (materialized, marker gone).
+SELECT 'case44_columns_in_part';
+SELECT column FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_skip_empty_case44' AND active
+ORDER BY column;
+
+-- Change DEFAULT again. Since b is physical data, value stays 999.
+ALTER TABLE t_skip_empty_case44 MODIFY COLUMN b UInt64 DEFAULT 777;
+
+SELECT 'case44_post_second_alter';
+SELECT * FROM t_skip_empty_case44 ORDER BY key;
+
+DROP TABLE t_skip_empty_case44;
+
+-- ============================================================================
+-- CASE 45: CLEAR COLUMN on a missing column is a no-op (marker preserved).
+-- Regression for AI reviewer blocker #6: CLEAR COLUMN has nothing to clear
+-- when the column has no physical data. The marker remains, and the frozen
+-- type-default continues to be returned.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_case45;
+
+CREATE TABLE t_skip_empty_case45
+(
+    key UInt64,
+    a UInt64,
+    b UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_case45 (key, a, b) VALUES (1, 100, 0);
+
+-- Add DEFAULT, then CLEAR. Since b has no physical data, CLEAR is no-op.
+ALTER TABLE t_skip_empty_case45 MODIFY COLUMN b UInt64 DEFAULT 999;
+ALTER TABLE t_skip_empty_case45 CLEAR COLUMN b;
+
+-- Marker survives → still reads frozen type-default 0, NOT current DEFAULT 999.
+SELECT 'case45_post_clear';
+SELECT * FROM t_skip_empty_case45 ORDER BY key;
+
+-- Unrelated mutation — marker must still survive.
+ALTER TABLE t_skip_empty_case45 UPDATE a = a + 1 WHERE key = 1;
+
+SELECT 'case45_post_mutate';
+SELECT * FROM t_skip_empty_case45 ORDER BY key;
+
+DROP TABLE t_skip_empty_case45;

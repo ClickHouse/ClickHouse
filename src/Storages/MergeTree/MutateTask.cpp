@@ -378,6 +378,18 @@ static void splitAndModifyMutationCommands(
 
                 part_columns.rename(rename_from, rename_to);
             }
+            else if (part->getSerializationInfos().isMissingColumn(rename_from))
+            {
+                /// A missing column has no physical data but its marker must track
+                /// the rename. Record the RENAME_COLUMN so getColumnsForNewDataPart
+                /// carries the marker under the new name.
+                for_file_renames.push_back(
+                {
+                     .type = MutationCommand::Type::RENAME_COLUMN,
+                     .column_name = rename_from,
+                     .rename_to = rename_to
+                });
+            }
         }
 
         /// When the source part is non-wide-or-non-full (Compact or packed), `MutateFromLogEntryTask::prepare`
