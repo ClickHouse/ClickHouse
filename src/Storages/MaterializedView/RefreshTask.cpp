@@ -89,6 +89,11 @@ namespace FailPoints
     /// when the Keeper actually lacks them. Used to test that doScheduling re-detects the missing
     /// flags and stops the view gracefully instead of crashing the scheduling thread.
     extern const char refresh_mv_skip_attach_feature_flag_check[];
+    /// Forces the doScheduling re-check to see the Keeper feature flags as missing, even on a Keeper
+    /// that has them. Used to test that a scheduling pass which discovers missing flags while a
+    /// refresh is already in flight cancels the local refresh before giving up coordination,
+    /// instead of leaving Keeper thinking the refresh is still running.
+    extern const char refresh_mv_force_scheduling_feature_flags_missing[];
 }
 
 namespace
@@ -768,8 +773,24 @@ void RefreshTask::doScheduling(bool is_shutdown)
             /// actually unavailable. If we proceeded, readZnodesIfNeeded below would throw
             /// NOT_IMPLEMENTED on this scheduling thread and the catch-all would abort the server.
             /// Detect it here and stop the view gracefully, same as the constructor does on attach.
-            if (coordinationFeatureFlagsMissing(*zookeeper))
+            bool feature_flags_missing = coordinationFeatureFlagsMissing(*zookeeper);
+            fiu_do_on(FailPoints::refresh_mv_force_scheduling_feature_flags_missing, { feature_flags_missing = true; });
+            if (feature_flags_missing)
             {
+                /// This can fire while a refresh is already in flight on this replica (the flags
+                /// can stop being visible mid-execution, e.g. on a Keeper session change). Reconcile
+                /// the local execution before giving up coordination: otherwise a non-APPEND refresh
+                /// would keep exchanging/dropping tables locally while Keeper still thinks this
+                /// replica is running the refresh, blocking the coordinated view on other replicas.
+                /// We can't finalize the refresh in Keeper here (that needs the multi-read this
+                /// Keeper lacks, and a throwing write would hit the catch-all and abort the server),
+                /// so we just cancel it; the stale '/running' znode is then reclaimed by the existing
+                /// crashed-replica grace period, same as if this replica had crashed.
+                if (execution.state == ExecutionState::State::Finished)
+                    execution.state = ExecutionState::State::None;
+                else if (execution.state != ExecutionState::State::None)
+                    interruptExecution();
+
                 markCoordinationUnavailable();
                 setState(RefreshState::Disabled, lock);
                 return;

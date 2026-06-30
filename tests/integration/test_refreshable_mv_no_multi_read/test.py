@@ -11,6 +11,7 @@
 # gracefully and leave the server running.
 
 import os
+import time
 
 import pytest
 
@@ -180,3 +181,85 @@ def test_refreshable_mv_attach_feature_flag_propagation_race(started_cluster):
     assert node.query("SELECT 1").strip() == "1"
 
     node.query("DROP DATABASE rdb2 SYNC")
+
+
+def test_refreshable_mv_scheduling_detects_missing_flags_mid_refresh(started_cluster):
+    # The doScheduling feature-flag re-check runs before the in-flight refresh reconciliation, so a
+    # scheduling pass that discovers missing Keeper flags while this replica already has a refresh
+    # Running (or Finished) must cancel/reconcile that local refresh before giving up coordination.
+    # Otherwise a non-APPEND refresh would keep exchanging/dropping tables locally while Keeper still
+    # believes this replica is running the refresh, blocking the coordinated view on other replicas
+    # until session expiry. (The flags can stop being visible mid-execution, e.g. on a Keeper session
+    # change.)
+    #
+    # The flags cannot actually flip on a live connection, so the mid-refresh case is forced with the
+    # refresh_mv_force_scheduling_feature_flags_missing failpoint: a coordinated view runs a slow
+    # refresh on a healthy (multi-read) Keeper, the failpoint makes the next scheduling pass see the
+    # flags as missing, and that pass must stop the running refresh instead of letting it finish
+    # outside coordination.
+    use_keeper_config("enable_keeper_multi_read.xml")
+    node.restart_clickhouse()
+
+    node.query(
+        "CREATE DATABASE rdb3 ENGINE = Replicated('/clickhouse/rdb3', '{shard}', '{replica}')"
+    )
+    # A slow, coordinated refresh: sleepEachRow with max_block_size=1 keeps it Running long enough to
+    # interrupt. The target row count lets us tell a cancelled refresh apart from one that ran to
+    # completion: if the refresh is NOT cancelled it exchanges tables and the target gets REFRESH_ROWS
+    # rows; if it IS cancelled the target stays empty.
+    REFRESH_ROWS = 20
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW rdb3.mv
+        REFRESH EVERY 1 YEAR
+        ENGINE = ReplicatedMergeTree ORDER BY x
+        EMPTY
+        AS SELECT number AS x FROM numbers({REFRESH_ROWS}) WHERE sleepEachRow(1) = 0 SETTINGS max_block_size = 1
+        """
+    )
+
+    aborts_before = int(node.count_in_log("Unexpected exception in refresh scheduling"))
+
+    # Start a refresh and wait until it is actually Running on this replica.
+    node.query("SYSTEM REFRESH VIEW rdb3.mv")
+    status = None
+    for _ in range(60):
+        status = node.query(
+            "SELECT status FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb3'"
+        ).strip()
+        if status == "Running":
+            break
+        time.sleep(0.5)
+    assert status == "Running", status
+    # The target table is still empty: the slow refresh has not exchanged tables yet.
+    assert node.query("SELECT count() FROM rdb3.mv").strip() == "0"
+
+    # Make the next scheduling pass observe the flags as missing while the refresh is in flight, then
+    # poke the scheduler so the pass runs now rather than waiting a year.
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("SYSTEM REFRESH VIEW rdb3.mv")
+
+    # The scheduling pass must stop the view gracefully (Disabled), with the missing-flags reason and
+    # no scheduling-thread abort. WAIT VIEW returns immediately once the view is Disabled.
+    node.query("SYSTEM WAIT VIEW rdb3.mv")
+    status = node.query(
+        "SELECT status, exception FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb3'"
+    )
+    assert "Disabled" in status, status
+    assert "multi-read" in status.lower() or "multi_read" in status.lower(), status
+
+    aborts_after = int(node.count_in_log("Unexpected exception in refresh scheduling"))
+    assert aborts_after == aborts_before, (aborts_before, aborts_after)
+
+    # The key check: the in-flight refresh must have been cancelled, not left running. If it was NOT
+    # cancelled it keeps going and, on this healthy Keeper, completes the table exchange, populating
+    # the target with REFRESH_ROWS rows. We watch the target for longer than the whole refresh would
+    # take (sleepEachRow(1) per row): with the fix the target stays empty; without it the rows appear.
+    deadline = time.monotonic() + REFRESH_ROWS + 15
+    while time.monotonic() < deadline:
+        count = node.query("SELECT count() FROM rdb3.mv").strip()
+        assert count == "0", f"the cancelled refresh leaked {count} rows into the target"
+        time.sleep(1)
+
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("DROP DATABASE rdb3 SYNC")

@@ -130,6 +130,7 @@ static struct InitFiu
     ONCE(delta_kernel_force_stale_token_error) \
     REGULAR(object_storage_force_refresh_callback_success) \
     REGULAR(refresh_mv_skip_attach_feature_flag_check) \
+    REGULAR(refresh_mv_force_scheduling_feature_flags_missing) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
