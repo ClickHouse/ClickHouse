@@ -217,6 +217,7 @@ public:
         auto & chars = col_res->getChars();
         chars.resize_fill(input_rows_count * n, 0);
 
+        auto encoder = ProductQuantization::prepareEncoder(codebook, dimensions, m, nbits);
         VectorWithMemoryTracking<float> buf;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -224,7 +225,7 @@ public:
             if (buf.size() != dimensions)
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "Vector at row {} has {} elements but function {} was declared with {} dimensions", row, buf.size(), name, dimensions);
-            ProductQuantization::encode(codebook, dimensions, m, nbits, buf.data(), reinterpret_cast<char *>(&chars[row * n]));
+            ProductQuantization::encode(*encoder, buf.data(), reinterpret_cast<char *>(&chars[row * n]));
         }
         return col_res;
     }

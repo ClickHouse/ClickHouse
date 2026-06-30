@@ -1,6 +1,9 @@
 #include <Common/ProductQuantization.h>
 
 #include <Common/Exception.h>
+#include <Common/TargetSpecific.h>
+
+#include <base/defines.h>
 
 #include <algorithm>
 #include <cmath>
@@ -33,6 +36,11 @@ inline size_t randIndex(UInt64 & state, size_t bound)
     return bound ? static_cast<size_t>(splitmix64(state) % bound) : 0;
 }
 
+/// Scalar double nearest-centroid argmin over row-major centroids. Used only by k-means training (which runs on a
+/// bounded reservoir, not the hot per-row encode path): keeping it in double makes the learned codebook independent of
+/// the SIMD float encode kernel, so encoding stays a near-lossless re-expression of the same argmin.
+inline size_t nearestCentroidScalar(const float * centroids, size_t k, size_t d_sub, const float * sub);
+
 /// Squared L2 distance between two d-dim float vectors.
 inline double sqDist(const float * a, const float * b, size_t d)
 {
@@ -45,8 +53,7 @@ inline double sqDist(const float * a, const float * b, size_t d)
     return s;
 }
 
-/// Index of the nearest centroid (of `k` centroids, each `d_sub` floats, contiguous in `centroids`) to `sub`.
-inline size_t nearestCentroid(const float * centroids, size_t k, size_t d_sub, const float * sub)
+inline size_t nearestCentroidScalar(const float * centroids, size_t k, size_t d_sub, const float * sub)
 {
     size_t best = 0;
     double best_d = std::numeric_limits<double>::max();
@@ -60,6 +67,86 @@ inline size_t nearestCentroid(const float * centroids, size_t k, size_t d_sub, c
         }
     }
     return best;
+}
+
+/// Squared norm ||c||^2 of each of the `k` centroids (each `d_sub` floats); double accumulation for stability. Computed
+/// once per codebook in `prepareEncoder`, so it stays off the hot per-vector path.
+inline void centroidSquaredNorms(const float * centroids, size_t k, size_t d_sub, float * out)
+{
+    for (size_t c = 0; c < k; ++c)
+    {
+        const float * cen = centroids + c * d_sub;
+        double n2 = 0.0;
+        for (size_t i = 0; i < d_sub; ++i)
+            n2 += static_cast<double>(cen[i]) * static_cast<double>(cen[i]);
+        out[c] = static_cast<float>(n2);
+    }
+}
+
+/// Transpose one subspace's `k` centroids from row-major (centroid c at `src + c * d_sub`) to the column-major layout
+/// `dst[i * k + c]` (all centroids' coordinate i contiguous) that the nearest-centroid kernel scans across. Done once
+/// per codebook in `prepareEncoder`, so it stays off the hot per-vector path.
+inline void transposeCentroids(const float * src, size_t k, size_t d_sub, float * dst)
+{
+    for (size_t c = 0; c < k; ++c)
+        for (size_t i = 0; i < d_sub; ++i)
+            dst[i * k + c] = src[c * d_sub + i];
+}
+
+/// Index of the nearest of `k` centroids to `sub`, via the reformulated argmin
+///   argmin_c ||x - c||^2 = argmin_c (||c||^2 - 2 x.c)
+/// (||x||^2 is constant across centroids and dropped). With the centroids stored column-major (`centroids_t[i*k+c]`),
+/// the dot products of `sub` against ALL k centroids accumulate in parallel into `acc[0..k)` with no per-centroid
+/// horizontal reduction: each dimension i broadcasts `sub[i]` and does one fused-multiply-add across the k lanes. The
+/// target-specific build maps this onto AVX-512/AVX2. Centroid norms are precomputed in `cb_sqnorm`. `acc` is caller
+/// scratch of `k` floats. This is the hot per-row encode path.
+MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_HEADER(size_t NO_INLINE),
+nearestCentroidImpl,
+MULTITARGET_FUNCTION_BODY((
+    const float * __restrict centroids_t,
+    const float * __restrict cb_sqnorm,
+    size_t k,
+    size_t d_sub,
+    const float * __restrict sub,
+    float * __restrict acc)
+{
+    for (size_t c = 0; c < k; ++c)
+        acc[c] = 0.0f;
+    for (size_t i = 0; i < d_sub; ++i)
+    {
+        const float xi = sub[i];
+        const float * __restrict col = centroids_t + i * k;
+        for (size_t c = 0; c < k; ++c)
+            acc[c] += xi * col[c];
+    }
+
+    size_t best = 0;
+    float best_score = std::numeric_limits<float>::max();
+    for (size_t c = 0; c < k; ++c)
+    {
+        const float score = cb_sqnorm[c] - 2.0f * acc[c];
+        if (score < best_score)
+        {
+            best_score = score;
+            best = c;
+        }
+    }
+    return best;
+})
+)
+
+/// Dispatch the nearest-centroid kernel to the widest supported ISA (decided per call; cheap relative to the k*d_sub work).
+inline size_t nearestCentroid(
+    const float * centroids_t, const float * cb_sqnorm, size_t k, size_t d_sub, const float * sub, float * acc)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+        return nearestCentroidImpl_x86_64_v4(centroids_t, cb_sqnorm, k, d_sub, sub, acc);
+    if (isArchSupported(TargetArch::x86_64_v3))
+        return nearestCentroidImpl_x86_64_v3(centroids_t, cb_sqnorm, k, d_sub, sub, acc);
+#endif
+    return nearestCentroidImpl(centroids_t, cb_sqnorm, k, d_sub, sub, acc);
 }
 
 constexpr int KMEANS_ITERATIONS = 20;
@@ -132,9 +219,9 @@ std::vector<float> trainCodebook(const float * vectors, size_t n, size_t dimensi
 
         for (int iter = 0; iter < KMEANS_ITERATIONS; ++iter)
         {
-            /// Assignment step.
+            /// Assignment step in scalar double (off the hot path; keeps the codebook bit-faithful to the original).
             for (size_t i = 0; i < n; ++i)
-                assign[i] = nearestCentroid(centroids.data(), k, d_sub, vectors + i * dimensions + off);
+                assign[i] = nearestCentroidScalar(centroids.data(), k, d_sub, vectors + i * dimensions + off);
 
             /// Update step: mean of assigned sub-vectors.
             std::fill(sums.begin(), sums.end(), 0.0);
@@ -171,16 +258,46 @@ std::vector<float> trainCodebook(const float * vectors, size_t n, size_t dimensi
     return codebook;
 }
 
-void encode(const float * codebook, size_t dimensions, size_t m, size_t nbits, const float * vec, char * dst)
+struct Encoder
 {
-    const size_t d_sub = dimensions / m;
-    const size_t k = numCentroids(nbits);
-    const bool two_bytes = nbits > 8;
-    for (size_t mm = 0; mm < m; ++mm)
+    size_t m = 0;
+    size_t d_sub = 0;
+    size_t k = 0;
+    bool two_bytes = false;
+    std::vector<float> codebook_t; /// m*k*d_sub, per subspace column-major (centroid coordinate scanned across k)
+    std::vector<float> cb_sqnorm;  /// m*k centroid squared norms for the reformulated argmin
+    std::vector<float> acc;        /// k floats of per-vector kernel scratch (the encoder is used by one writer thread)
+};
+
+std::shared_ptr<Encoder> prepareEncoder(const float * codebook, size_t dimensions, size_t m, size_t nbits)
+{
+    auto e = std::make_shared<Encoder>();
+    e->m = m;
+    e->d_sub = dimensions / m;
+    e->k = numCentroids(nbits);
+    e->two_bytes = nbits > 8;
+
+    /// Per-codebook setup, reused across every row of a part: the column-major centroid layout and their squared norms.
+    e->codebook_t.resize(e->m * e->k * e->d_sub);
+    e->cb_sqnorm.resize(e->m * e->k);
+    e->acc.resize(e->k);
+    for (size_t mm = 0; mm < e->m; ++mm)
     {
-        const float * centroids = codebook + mm * k * d_sub;
-        const size_t idx = nearestCentroid(centroids, k, d_sub, vec + mm * d_sub);
-        if (two_bytes)
+        const float * centroids = codebook + mm * e->k * e->d_sub;
+        transposeCentroids(centroids, e->k, e->d_sub, e->codebook_t.data() + mm * e->k * e->d_sub);
+        centroidSquaredNorms(centroids, e->k, e->d_sub, e->cb_sqnorm.data() + mm * e->k);
+    }
+    return e;
+}
+
+void encode(Encoder & e, const float * vec, char * dst)
+{
+    for (size_t mm = 0; mm < e.m; ++mm)
+    {
+        const float * centroids_t = e.codebook_t.data() + mm * e.k * e.d_sub;
+        const float * sqn = e.cb_sqnorm.data() + mm * e.k;
+        const size_t idx = nearestCentroid(centroids_t, sqn, e.k, e.d_sub, vec + mm * e.d_sub, e.acc.data());
+        if (e.two_bytes)
         {
             const UInt16 v = static_cast<UInt16>(idx);
             std::memcpy(dst + mm * 2, &v, sizeof(UInt16));
@@ -188,6 +305,14 @@ void encode(const float * codebook, size_t dimensions, size_t m, size_t nbits, c
         else
             dst[mm] = static_cast<char>(static_cast<UInt8>(idx));
     }
+}
+
+void encode(const float * codebook, size_t dimensions, size_t m, size_t nbits, const float * vec, char * dst)
+{
+    /// Convenience one-shot for callers encoding a single vector; encoding many vectors against the same codebook
+    /// should `prepareEncoder` once and reuse it to amortize the per-codebook setup.
+    auto e = prepareEncoder(codebook, dimensions, m, nbits);
+    encode(*e, vec, dst);
 }
 
 struct Query
