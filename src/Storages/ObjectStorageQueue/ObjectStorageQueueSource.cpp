@@ -68,6 +68,7 @@ namespace FailPoints
 {
     extern const char object_storage_queue_fail_in_the_middle_of_file[];
     extern const char object_storage_queue_fail_commit_after_success[];
+    extern const char object_storage_queue_fail_batch_set_processing[];
     extern const char object_storage_queue_cancel_in_generate[];
     extern const char object_storage_queue_sleep_in_generate[];
 }
@@ -299,6 +300,22 @@ ObjectStorageQueueSource::FileIterator::next()
                 Coordination::Error code = {};
                 zk_retry.retryLoop([&]
                 {
+                    fiu_do_on(FailPoints::object_storage_queue_fail_batch_set_processing, {
+                        /// Reproduce the crash precondition: a non-processable file in the
+                        /// batch together with a failed keeper multi that clears file_metadatas.
+                        if (new_batch.size() > 1 && new_batch.back() && num_successful_objects > 0)
+                        {
+                            new_batch.back() = nullptr;
+                            --num_successful_objects;
+                        }
+                        responses.clear();
+                        auto error_response = std::make_shared<Coordination::ErrorResponse>();
+                        error_response->error = Coordination::Error::ZNONODE;
+                        responses.push_back(error_response);
+                        code = Coordination::Error::ZNONODE;
+                        return;
+                    });
+
                     auto zk_client = metadata->getZooKeeper();
                     if (zk_retry.isRetry())
                     {
@@ -390,6 +407,9 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 if (num_successful_objects != new_batch.size())
                 {
+                    /// file_metadatas is empty when the keeper tryMulti above failed and
+                    /// cleared it (see the chassert below); only compact it when populated.
+                    const bool compact_file_metadatas = !file_metadatas.empty();
                     size_t batch_i = 0;
                     for (size_t i = 0; i < num_successful_objects; ++i, ++batch_i)
                     {
@@ -405,10 +425,12 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
 
                         new_batch[i] = new_batch[batch_i];
-                        file_metadatas[i] = file_metadatas[batch_i];
+                        if (compact_file_metadatas)
+                            file_metadatas[i] = file_metadatas[batch_i];
                     }
                     new_batch.resize(num_successful_objects);
-                    file_metadatas.resize(num_successful_objects);
+                    if (compact_file_metadatas)
+                        file_metadatas.resize(num_successful_objects);
                 }
 
                 chassert(file_metadatas.empty() || new_batch.size() == file_metadatas.size());
