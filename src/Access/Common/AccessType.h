@@ -390,6 +390,7 @@ enum class AccessType : uint8_t
     M(SYSTEM_UNLOAD_PRIMARY_KEY, "SYSTEM UNLOAD PRIMARY KEY", TABLE, SYSTEM) \
     M(SYSTEM_INSTRUMENT_ADD, "SYSTEM INSTRUMENT ADD", GLOBAL, SYSTEM) \
     M(SYSTEM_INSTRUMENT_REMOVE, "SYSTEM INSTRUMENT REMOVE", GLOBAL, SYSTEM) \
+    M(SYSTEM_RESET_DDL_WORKER, "SYSTEM RESET DDL WORKER, RESET DDL WORKER", GLOBAL, SYSTEM) \
     M(SYSTEM, "", GROUP, ALL) /* allows to execute SYSTEM {SHUTDOWN|RELOAD CONFIG|...} */ \
     \
     M(dictGet, "dictHas, dictGetHierarchy, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictIsIn() */\
