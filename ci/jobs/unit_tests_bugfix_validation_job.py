@@ -321,6 +321,11 @@ def finalize(results, info_lines):
 def main():
     info = Info()
 
+    # This job runs as root (needed for the bind-mount namespace, see in_before_namespace),
+    # but the checkout is owned by uid 1000, so git refuses it with "detected dubious
+    # ownership". Mark everything safe so git (merge-base, worktree, submodules) works.
+    Shell.check("git config --global --add safe.directory '*'", verbose=True)
+
     # 1. Gate: only bugfix PRs are validated (mirrors the FT/IT bugfix checks).
     pr_labels = info.pr_labels or []
     if not (
