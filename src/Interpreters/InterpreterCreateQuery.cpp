@@ -84,6 +84,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
@@ -188,6 +189,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
 namespace fs = std::filesystem;
@@ -1973,6 +1975,22 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     DatabasePtr database;
 
     database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+
+    /// A read-only `Overlay` facade owns no storage of its own; `DatabaseOverlay::createTable` and
+    /// `attachTable` reject the operation. But when the table name already resolves through the
+    /// facade to a source table, the generic existence check below short-circuits first (it returns
+    /// success for `IF NOT EXISTS`, or throws `TABLE_ALREADY_EXISTS`), so the facade guard is never
+    /// reached: the documented read-only contract is violated and a facade-scoped `CREATE TABLE`
+    /// grant leaks the existence of source tables. Reject up front, before the existence check, for
+    /// both `CREATE` and `ATTACH` and regardless of `IF NOT EXISTS`.
+    if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run {} in an underlying database",
+            backQuoteIfNeed(create.getDatabase()),
+            create.attach ? "ATTACH TABLE" : "CREATE TABLE");
+
     assertOrSetUUID(create, database);
 
     String storage_name = create.is_dictionary ? "Dictionary" : "Table";
