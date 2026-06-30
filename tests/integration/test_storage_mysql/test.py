@@ -1060,6 +1060,33 @@ def test_mysql_geometry(started_cluster):
         == "String"
     )
 
+    # Regression test: disabling `geometry` through the table function's own `SETTINGS` must be
+    # honored during schema inference (the per-call opt-out), falling a concrete spatial type back to
+    # `String`. Before the fix the table function inferred the structure with the default engine
+    # settings, so both the per-call `SETTINGS` and a query-level value were silently ignored.
+    table_function_no_geo = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}', "
+        "SETTINGS mysql_datatypes_support_level = 'decimal,datetime64,date2Date32')"
+    )
+    assert (
+        node1.query(f"SELECT toTypeName(ls) FROM {table_function_no_geo} LIMIT 1").strip()
+        == "String"
+    )
+
+    # The per-call `SETTINGS` override the query-context value: here `geometry` is enabled through the
+    # function-local `SETTINGS` even though the query context disables it.
+    table_function_geo = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}', "
+        "SETTINGS mysql_datatypes_support_level = 'decimal,datetime64,date2Date32,geometry')"
+    )
+    assert (
+        node1.query(
+            f"SELECT toTypeName(ls) FROM {table_function_geo} LIMIT 1",
+            settings={"mysql_datatypes_support_level": "decimal,datetime64,date2Date32"},
+        ).strip()
+        == "LineString"
+    )
+
     # A user can still read a generic `geometry` column as a geometric value by declaring the column
     # as `Geometry` explicitly through the MySQL table engine (when its values are representable).
     node1.query("DROP TABLE IF EXISTS test_geometry")
