@@ -15,6 +15,8 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Poco/URI.h>
 
+#include <string_view>
+
 
 namespace DB
 {
@@ -27,6 +29,8 @@ struct ConnectionTimeouts;
 class NamedCollection;
 struct StorageID;
 class PullingPipelineExecutor;
+
+bool urlPathHasListableGlobs(std::string_view uri);
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
@@ -370,12 +374,6 @@ public:
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
-    /// Materialize the `url_base`-resolved URL `uri` into the persisted engine args, so that
-    /// DETACH/ATTACH and server restart reproduce the originally-resolved URL even if `url_base`
-    /// is later changed or unset. Handles positional, key-value and named-collection argument
-    /// forms; skips userinfo URLs to avoid leaking credentials via `SHOW CREATE TABLE`.
-    static void materializeResolvedURLInEngineArgs(ASTs & args, const String & resolved_uri, const ContextPtr & context);
-
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
     struct Configuration : public StatelessTableEngineConfiguration
@@ -406,6 +404,12 @@ public:
     /// - `#frag` → replaces base fragment, preserves base path and query
     /// The resolution is done by string manipulation to allow malformed URLs.
     static String resolveURLBase(const String & url, const String & base);
+
+    /// Rewrite engine args so that the URL literal (positional) or `url='...'`
+    /// override (named-collection) matches the URL resolved via `url_base`.
+    /// `skip_userinfo` skips the rewrite when the resolved URL embeds credentials,
+    /// to avoid leaking them through the persisted CREATE TABLE AST.
+    static void overrideURLInEngineArgs(ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo);
 };
 
 
