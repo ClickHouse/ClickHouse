@@ -40,10 +40,12 @@ private:
         ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_s3_ = true,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; })
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; },
+        bool client_restricts_server_credentials_ = true)
         : uri(uri_)
         , disk_name(disk_name_)
         , client(std::move(client_))
+        , client_restricts_server_credentials(client_restricts_server_credentials_)
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
         , key_generator(std::move(key_generator_))
@@ -165,11 +167,11 @@ private:
     std::string disk_name;
 
     mutable MultiVersion<S3::Client> client;
-    /// The user-query credential restriction mode the current `client` was built under. Used by
-    /// `applyNewSettings` to rebuild the client when a session with a different restriction mode accesses the
-    /// storage, so a restricted session never reuses a credentialed client built for an opt-in session (and
-    /// vice versa). Defaults to restricted (the server default and the mode the initial client is loaded under);
-    /// an opt-in session that accesses the storage first triggers one rebuild to the credentialed mode.
+    /// The user-query credential restriction mode the current `client` was built under (initialized by the
+    /// caller from the policy used to build the initial client -- e.g. a table created with the opt-in starts
+    /// `false`). `applyNewSettings` rebuilds the client when a session with a different restriction mode accesses
+    /// the storage, so a restricted session never reuses a credentialed client built for an opt-in session (and
+    /// vice versa). Defaults to restricted (the server default) for callers that do not pass an explicit value.
     mutable bool client_restricts_server_credentials = true;
     MultiVersion<S3Settings> s3_settings;
     S3Capabilities s3_capabilities;

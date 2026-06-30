@@ -195,7 +195,8 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         /*key_generator=*/nullptr,
         "StorageS3",
         false,
-        client_refresher);
+        client_refresher,
+        /*client_restricts_server_credentials=*/context->shouldRestrictUserQueryS3Credentials());
 }
 
 void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
