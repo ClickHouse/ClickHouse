@@ -3,6 +3,10 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/IAST_fwd.h>
+#include <DataTypes/IDataType_fwd.h>
+
+#include <string>
+#include <unordered_map>
 
 namespace DB
 {
@@ -38,6 +42,13 @@ public:
     bool reject_expensive_hyperscan_regexps = true;
     size_t min_patterns_for_rewrite = 0;
     ContextPtr context;
+
+    /// Map from source-column name to its type, used to gate the `multiSearchAny*` / `multiMatchAny`
+    /// rewrite targets to a `String` haystack (they reject `FixedString`/`Enum`, which the original
+    /// `like`/`ilike`/`match` predicates accept). A column whose type is unknown here (e.g. the LHS
+    /// is an expression rather than a plain column) is treated as non-`String`, so the rewrite
+    /// conservatively falls back to the combined-`match` form, which accepts those haystacks.
+    std::unordered_map<std::string, DataTypePtr> source_column_types;
 
     void visit(ASTFunction & function, ASTPtr & ast) const;
 };

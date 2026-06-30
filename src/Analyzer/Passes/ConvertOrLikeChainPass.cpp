@@ -15,6 +15,7 @@
 #include <Core/Field.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/checkHyperscanRegexp.h>
@@ -40,6 +41,11 @@ namespace Setting
     extern const SettingsBool optimize_or_like_chain;
     extern const SettingsUInt64 optimize_or_like_chain_min_patterns;
     extern const SettingsBool reject_expensive_hyperscan_regexps;
+}
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
 }
 
 namespace
@@ -95,6 +101,8 @@ bool combinedRegexpCompilesWithRE2(const String & combined_regexp)
     }
     catch (...)
     {
+        /// Ok: a compilation failure is the signal we are probing for. We intentionally swallow it
+        /// and fail-close (keep the original branches, skip the optimization) rather than propagate.
         return false;
     }
 }
@@ -279,16 +287,19 @@ struct PatternInfo
         return false;
     }
 
-    /// Returns true if no regexp contains an embedded NUL byte. Used to gate the combined-`match`
-    /// fallback only. RE2's required-substring optimization truncates a lone regexp at the first NUL
-    /// (so the original `match(s, 'a\0b')` already behaves like `match(s, 'a')`), but the combined
-    /// `(p1)|(p2)|...` alternation built by `getCombinedRegexp` does not get truncated, so it would
-    /// match a *different* (narrower) set than the original per-branch chain. When any pattern has an
-    /// embedded NUL we therefore keep the originals instead of emitting the combined `match`.
-    /// `multiMatchAny` needs no such guard: Vectorscan compiles each expression as a NUL-terminated C
-    /// string, so it truncates at the first NUL exactly as the original per-branch `match` does, and
-    /// preserves results. The byte-oriented `multiSearchAny*` substring path is length-aware and
-    /// preserving as well.
+    /// Returns true if no regexp contains an embedded NUL byte. Used to gate both regexp rewrite
+    /// targets — `multiMatchAny` and the combined-`match` fallback — because neither reproduces the
+    /// original predicate faithfully when a pattern contains an embedded NUL:
+    ///  - `multiMatchAny` compiles each pattern through a NUL-terminated Vectorscan API and truncates
+    ///    it at the first NUL, whereas a `LIKE`/`ILIKE`-derived regexp (e.g. `^a\x00.` from
+    ///    `LIKE 'a\0_%'`) is matched by the original `like`/`ilike` with RE2 over the full length, so
+    ///    the truncated `multiMatchAny` pattern matches a *broader* set than the original.
+    ///  - the combined `(p1)|(p2)|...` alternation built by `getCombinedRegexp` does not get truncated
+    ///    by RE2's required-substring optimization (which truncates a *lone* trivial pattern at the
+    ///    first NUL), so it matches a *different* set than the original per-branch chain.
+    /// When any pattern has an embedded NUL we therefore keep the originals on both paths. The
+    /// byte-oriented `multiSearchAny*` substring path is length-aware and preserving, so it needs no
+    /// such guard.
     bool allRegexpsHaveNoEmbeddedNul() const
     {
         for (const auto & p : patterns)
@@ -353,6 +364,7 @@ public:
             PatternInfo info;
             QueryTreeNodes originals;  /// Original LIKE/ILIKE/match argument nodes for this key
             size_t slot_index = 0;     /// Index into `slots` reserved for this key
+            bool keep_originals = false;  /// Force keeping originals (e.g. a pattern failed to convert)
         };
         std::vector<PerKeyData> per_key_data;
         QueryTreeNodePtrWithHashMap<size_t> key_to_index;
@@ -407,6 +419,7 @@ public:
             data.is_case_insensitive = is_ilike;
             data.is_substring = false;
 
+            bool conversion_failed = false;
             if (is_match)
             {
                 /// match() already has a regexp pattern - use as is.
@@ -421,13 +434,28 @@ public:
             }
             else
             {
-                /// Check if LIKE pattern is a simple substring search
+                /// Check if LIKE pattern is a simple substring search (never throws).
                 data.is_substring = likePatternIsSubstring(pattern_str, data.substring);
 
-                /// Always compute regexp for fallback
-                data.regexp = likePatternToRegexp(pattern_str);
-                if (is_ilike)
-                    data.regexp = "(?i)" + data.regexp;
+                /// Convert the LIKE/ILIKE pattern to a regexp. `likePatternToRegexp` throws
+                /// `CANNOT_PARSE_ESCAPE_SEQUENCE` for a malformed pattern (e.g. a trailing backslash).
+                /// The optimizer must not surface that error eagerly: the original `OR` chain may never
+                /// evaluate this branch at runtime (short-circuit), or the group may be below the
+                /// rewrite threshold and stay unchanged. On a parse failure we mark the whole group to
+                /// keep its original branches, preserving the query's runtime error / short-circuit
+                /// behavior. Only the expected parse error is swallowed; anything else propagates.
+                try
+                {
+                    data.regexp = likePatternToRegexp(pattern_str);
+                    if (is_ilike)
+                        data.regexp = "(?i)" + data.regexp;
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() != ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE)
+                        throw;
+                    conversion_failed = true;
+                }
             }
 
             auto it = key_to_index.find(like_first_argument);
@@ -448,6 +476,8 @@ public:
 
             per_key_data[idx].originals.push_back(argument);
             per_key_data[idx].info.patterns.push_back(std::move(data));
+            if (conversion_failed)
+                per_key_data[idx].keep_originals = true;
         }
 
         /// If no LIKE/ILIKE/match patterns were collected, nothing to do
@@ -494,7 +524,23 @@ public:
             /// below, then fall through to the "keep originals" branch, so the chain stays as written.
             const bool too_few_patterns = info.patterns.size() < min_patterns_for_rewrite;
 
-            if (!too_few_patterns && info.canUseMultiSearchAny())
+            /// `multiSearchAny*` and `multiMatchAny` accept only a `String` haystack (after the usual
+            /// `LowCardinality`/`Nullable` unwrapping); for `FixedString`/`Enum` haystacks — which the
+            /// original `like`/`ilike`/`match` predicates accept — they throw `ILLEGAL_TYPE_OF_ARGUMENT`
+            /// during function resolution. With the rewrite default-on this would turn a previously
+            /// working chain over such a column into an exception. Gate both fast paths on a `String`
+            /// haystack; non-`String` haystacks fall through to the combined-`match` fallback, which
+            /// (like the original predicates) accepts `FixedString`/`Enum` and preserves results.
+            const auto haystack_type = key_data.key->getResultType();
+            const bool haystack_is_string
+                = haystack_type && WhichDataType(removeLowCardinalityAndNullable(haystack_type)).isString();
+
+            /// `keep_originals` is set when a pattern failed to convert to a regexp (see the collection
+            /// loop): keep the original branches so the query's runtime error / short-circuit behavior
+            /// is preserved instead of failing eagerly during optimization.
+            const bool eligible = !too_few_patterns && !key_data.keep_originals;
+
+            if (eligible && haystack_is_string && info.canUseMultiSearchAny())
             {
                 /// Use `multiSearchAny` or `multiSearchAnyCaseInsensitiveUTF8` for pure substring patterns.
                 /// `multiSearchAny*` operates on raw substrings, not regexps, so the hyperscan
@@ -506,9 +552,10 @@ public:
                 auto resolver = FunctionFactory::instance().get(func_name, context);
                 match_function->resolveAsFunction(resolver);
             }
-            else if (!too_few_patterns && info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
+            else if (eligible && info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
             {
-                if (allow_hyperscan && !info.hasRawRegexp() && info.allRegexpsValidUTF8() && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp()))
+                if (allow_hyperscan && haystack_is_string && !info.hasRawRegexp() && info.allRegexpsValidUTF8()
+                    && info.allRegexpsHaveNoEmbeddedNul() && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp()))
                 {
                     /// Use `multiMatchAny` for non-substring patterns. It is significantly faster than
                     /// `match` with alternation because it can leverage Vectorscan/Hyperscan when available
@@ -521,10 +568,13 @@ public:
                     /// `HYPERSCAN_CANNOT_SCAN_TEXT` failure. `hasRawRegexp` additionally keeps chains
                     /// that contain a raw `match()` regexp off this path: Vectorscan rejects RE2-only
                     /// syntax such as `\C` even when the bytes are valid UTF-8 (see `hasRawRegexp`).
-                    /// An embedded NUL needs no guard here:
-                    /// `multiMatchAny` truncates a pattern at the first NUL exactly as the original
-                    /// per-branch `match` does (both compile through a NUL-terminated path), so results
-                    /// are preserved — only the combined-`match` fallback below differs (see there).
+                    /// `allRegexpsHaveNoEmbeddedNul` keeps chains whose regexps contain an embedded NUL
+                    /// off this path: `multiMatchAny` compiles each pattern through a NUL-terminated
+                    /// Vectorscan API and truncates at the first NUL, whereas the original
+                    /// `like`/`ilike` compiles the full pattern with RE2 (which is length-aware). A
+                    /// LIKE-derived regexp such as `^a\x00.` (from `LIKE 'a\0_%'`) therefore matches a
+                    /// different set under `multiMatchAny` than under the original predicate, so such
+                    /// chains fall through to the combined-`match` fallback / originals (see there).
                     match_function = std::make_shared<FunctionNode>("multiMatchAny");
                     match_function->getArguments().getNodes().push_back(key_data.key);
                     match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getRegexps()}));
