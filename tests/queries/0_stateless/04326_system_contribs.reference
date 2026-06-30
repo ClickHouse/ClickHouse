@@ -1,0 +1,18 @@
+name	String
+path	String
+commit	String
+submodule_url	String
+upstream_url	String
+is_fork	UInt8
+version	String
+NuRaft
+boost
+cctz
+zlib-ng
+zstd
+1
+0
+0
+0
+0
+0

@@ -52,6 +52,22 @@ list (APPEND storages_system_sources ${GENERATED_LICENSES_SRC})
 # Overlength strings
 set_source_files_properties(${GENERATED_LICENSES_SRC} PROPERTIES COMPILE_FLAGS -w)
 
+set(GENERATED_CONTRIBS_SRC "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemContribs.generated.cpp")
+
+# Generate contrib data at configure time, same rationale as licenses above.
+execute_process(
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemContribs.sh "${CMAKE_SOURCE_DIR}"
+    OUTPUT_FILE ${GENERATED_CONTRIBS_SRC}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    RESULT_VARIABLE CONTRIBS_RESULT)
+if (NOT CONTRIBS_RESULT EQUAL 0)
+    message(WARNING "Failed to generate StorageSystemContribs.generated.cpp")
+endif()
+
+list (APPEND storages_system_sources ${GENERATED_CONTRIBS_SRC})
+
+set_source_files_properties(${GENERATED_CONTRIBS_SRC} PROPERTIES COMPILE_FLAGS -w)
+
 list (SORT storages_system_sources) # Reproducible build
 add_library(clickhouse_storages_system ${storages_system_sources})
 
