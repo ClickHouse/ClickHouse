@@ -1696,3 +1696,39 @@ SELECT 'case45_post_mutate';
 SELECT * FROM t_skip_empty_case45 ORDER BY key;
 
 DROP TABLE t_skip_empty_case45;
+
+
+-- CASE 46: Date32 type-default is 1900-01-01 (= -25567), NOT memory-zero.
+-- Inserting '1970-01-01' (stored as 0 in memory) must NOT be skipped,
+-- because the read path fills missing columns with getDefault() = 1900-01-01.
+
+DROP TABLE IF EXISTS t_skip_empty_case46;
+
+CREATE TABLE t_skip_empty_case46
+(
+    key UInt64,
+    d Date32
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+-- '1970-01-01' is stored as Int32(0) — all-zero bytes in memory.
+-- Without the fix, hasOnlyTypeDefaults() sees all-zero → skips → reads back as 1900-01-01. Bug!
+INSERT INTO t_skip_empty_case46 VALUES (1, '1970-01-01');
+
+SELECT 'case46_epoch';
+SELECT * FROM t_skip_empty_case46 ORDER BY key;
+
+-- The actual type-default 1900-01-01 should also round-trip correctly.
+-- Date32 columns are never skipped (type-default ≠ zero), so this is always stored.
+INSERT INTO t_skip_empty_case46 VALUES (2, '1900-01-01');
+
+SELECT 'case46_type_default';
+SELECT * FROM t_skip_empty_case46 ORDER BY key;
+
+DROP TABLE t_skip_empty_case46;

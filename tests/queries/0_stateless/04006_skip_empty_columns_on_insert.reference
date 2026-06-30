@@ -215,3 +215,8 @@ case45_post_clear
 1	100	0
 case45_post_mutate
 1	101	0
+case46_epoch
+1	1970-01-01
+case46_type_default
+1	1970-01-01
+2	1900-01-01

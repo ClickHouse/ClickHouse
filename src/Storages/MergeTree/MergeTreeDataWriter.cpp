@@ -710,11 +710,13 @@ static void skipEmptyColumnsOnInsert(
         if (!col_data.column->hasOnlyTypeDefaults())
             continue;
         /// Only skip when the read path can reconstruct the values exactly:
-        /// a missing column is filled via IDataType::insertDefaultInto, which
-        /// must produce a value that is itself a type-default (this is not the
-        /// case for e.g. Enum types whose first declared value is not zero).
+        /// a missing column is filled via IDataType::createColumnConstWithDefaultValue
+        /// (which uses getDefault()), so the type-default must coincide with
+        /// the column's zero representation. This is NOT the case for:
+        /// - Enum types whose first declared value is not zero,
+        /// - Date32 whose getDefault() is 1900-01-01 (= -25567, not zero).
         auto default_sample = type->createColumn();
-        type->insertDefaultInto(*default_sample);
+        default_sample->insert(type->getDefault());
         if (!default_sample->isDefaultAt(0))
             continue;
         empty_columns.insert(col_name);
