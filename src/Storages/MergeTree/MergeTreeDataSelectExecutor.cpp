@@ -2200,8 +2200,6 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     MarkRanges res;
     size_t ranges_size = ranges.size();
     RangesInDataPartReadHints read_hints = in_read_hints;
-    if (index_helper->isVectorSimilarityIndex())
-        read_hints.vector_search_results.reset();
 
     auto create_update_partial_disjunction_result_fn = [&](size_t range_begin) -> KeyCondition::UpdatePartialDisjunctionResultFn
     {
@@ -2333,10 +2331,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
-                    auto vector_search_results = condition->calculateApproximateNearestNeighbors(granule);
+                    read_hints.vector_search_results = condition->calculateApproximateNearestNeighbors(granule);
 
                     /// We need to sort the result ranges ascendingly
-                    auto rows = vector_search_results.rows;
+                    auto rows = read_hints.vector_search_results.value().rows;
                     std::sort(rows.begin(), rows.end());
 #ifndef NDEBUG
                     /// Duplicates should in theory not be possible but better be safe than sorry ...
@@ -2344,33 +2342,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (has_duplicates)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #endif
-                    if (!vector_search_results.distances.has_value())
-                    {
+                    if (!(read_hints.vector_search_results.value().distances.has_value()))
                         read_hints = {};
-                    }
-                    else
-                    {
-                        const auto & distances = vector_search_results.distances.value();
-                        if (vector_search_results.rows.size() != distances.size())
-                            throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "Vector search read hints size mismatch: {} row offsets and {} distances",
-                                vector_search_results.rows.size(),
-                                distances.size());
-
-                        auto & accumulated_results = read_hints.vector_search_results;
-                        if (!accumulated_results.has_value())
-                            accumulated_results.emplace();
-                        if (!accumulated_results->distances.has_value())
-                            accumulated_results->distances.emplace();
-
-                        const size_t first_row_in_index_granule = part->index_granularity->getMarkStartingRow(index_mark * skip_index_granularity);
-                        for (size_t result_pos = 0; result_pos < vector_search_results.rows.size(); ++result_pos)
-                        {
-                            accumulated_results->rows.push_back(first_row_in_index_granule + vector_search_results.rows[result_pos]);
-                            accumulated_results->distances->push_back(distances[result_pos]);
-                        }
-                    }
 
                     for (auto row : rows)
                     {

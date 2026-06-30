@@ -1221,9 +1221,7 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     if (read_sample_block.has("_part_granule_offset"))
         add_offset_column("_part_granule_offset");
 
-    const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
-    bool is_vector_search = read_hints.vector_search_results.has_value()
-        && (read_sample_block.has("_distance") || read_hints.use_vector_search_result_filter);
+    bool is_vector_search = merge_tree_reader->data_part_info_for_read->getReadHints().vector_search_results.has_value();
     if (is_vector_search)
     {
         ColumnPtr part_offsets_auto_column = createPartOffsetColumn(result);
@@ -1272,18 +1270,10 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
 
 void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & columns, ReadResult & /*result*/, ColumnPtr & part_offsets_auto_column)
 {
-    /// Populate the `_distance` virtual column from the distances we got from vector index
-    /// only when the query plan requested it. Rescoring queries still use the row filter
-    /// below, while the SQL pipeline computes the exact distance expression.
-    const bool fill_distance = read_sample_block.has("_distance");
-    MutableColumnPtr distance_column;
-    Float32 * distances = nullptr;
-    if (fill_distance)
-    {
-        auto mutable_distance_column = ColumnFloat32::create(part_offsets_auto_column->size(), Float32(999999.99));
-        distances = mutable_distance_column->getData().data();
-        distance_column = std::move(mutable_distance_column);
-    }
+    /// Populate the "_distance" virtual column from the distances we got from vector index
+    auto distance_column = ColumnFloat32::create(part_offsets_auto_column->size(), Float32(999999.99));
+    ColumnFloat32::Container & distance_container = distance_column->getData();
+    Float32 * distances = distance_container.data();
 
     /// Populate a filter that is True only for the exact "neighbour" part offsets we got from vector index
     auto filter_data = ColumnUInt8::create(part_offsets_auto_column->size(), UInt8(0));
@@ -1292,25 +1282,14 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
     const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
     const auto & offsets_and_distances = read_hints.vector_search_results.value();
     auto row_offsets_from_index = offsets_and_distances.rows;
+    chassert(offsets_and_distances.distances.has_value());
+    const auto distances_from_index = offsets_and_distances.distances.value();
+    chassert(row_offsets_from_index.size() == distances_from_index.size());
 
     /// Stash the distance for an offset before sorting the offsets
     std::unordered_map<UInt64, Float32> offset_to_distance;
-    if (fill_distance)
-    {
-        if (!offsets_and_distances.distances.has_value())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector search read hints must contain distances");
-
-        const auto & distances_from_index = offsets_and_distances.distances.value();
-        if (row_offsets_from_index.size() != distances_from_index.size())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Vector search read hints size mismatch: {} row offsets and {} distances",
-                row_offsets_from_index.size(),
-                distances_from_index.size());
-
-        for (size_t i = 0; i < distances_from_index.size(); ++i)
-            offset_to_distance[row_offsets_from_index[i]] = distances_from_index[i];
-    }
+    for (size_t i = 0; i < distances_from_index.size(); ++i)
+        offset_to_distance[row_offsets_from_index[i]] = distances_from_index[i];
 
     std::sort(row_offsets_from_index.begin(), row_offsets_from_index.end());
 
@@ -1327,23 +1306,13 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
         if (offsets[i] == row_offsets_from_index[j])
         {
             filter[i] = true;
-            if (fill_distance)
-            {
-                auto distance_it = offset_to_distance.find(offsets[i]);
-                if (distance_it == offset_to_distance.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector search read hints do not contain distance for row offset {}", offsets[i]);
-
-                distances[i] = distance_it->second;
-            }
+            distances[i] = offset_to_distance[offsets[i]];
             j++;
         }
     }
 
-    if (fill_distance)
-    {
-        auto distance_column_pos = read_sample_block.getPositionByName("_distance");
-        columns[distance_column_pos] = std::move(distance_column);
-    }
+    auto distance_column_pos = read_sample_block.getPositionByName("_distance");
+    columns[distance_column_pos] = std::move(distance_column);
     part_offsets_filter_for_vector_search = FilterWithCachedCount(std::move(filter_data));
 }
 
