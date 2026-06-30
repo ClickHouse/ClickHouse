@@ -8,7 +8,7 @@
 #include <Parsers/IAST.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/isValidUTF8.h>
-#include <Common/OptimizedRegularExpression.h>
+#include <Common/re2.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -52,34 +52,47 @@ bool isExpressionNonDeterministic(const ASTPtr & ast, const ContextPtr & context
     return false;
 }
 
-/// Returns true if `combined_regexp` compiles within RE2's limits, using the same engine and flags
-/// as the `match` function (`RE_DOT_NL | RE_NO_CAPTURE`, see `Functions/Regexps.h`). The
-/// combined-`match` fallback merges an `OR` chain into a single `(p1)|(p2)|...` alternation; for a
-/// long or repetition-heavy chain the merged RE2 program can exceed RE2's default 8 MiB budget
-/// (`RE2::Options::kDefaultMaxMem`) and throw `CANNOT_COMPILE_REGEXP`, even though every original
-/// per-branch `match`/`LIKE` compiled on its own (each is a far smaller program). The
-/// `max_hyperscan_regexp_length` / `max_hyperscan_regexp_total_length` settings default to 0
-/// ("unlimited") and so do not bound this. We therefore pre-compile the merged regexp and keep the
-/// original branches when it does not compile, so a default-on rewrite cannot turn a
-/// previously-working query into a regexp-compilation exception. The probe constructs the same
-/// `OptimizedRegularExpression` as `match`, so it accepts exactly the regexps `match` would accept at
-/// runtime — there are no false negatives, and a failure to compile is always fail-close (we keep the
-/// originals and skip the optimization, never emit an uncompilable `match`).
+/// Returns true if `combined_regexp` compiles within RE2's limits, using the same RE2 engine
+/// configuration as the `match` function (`RE_DOT_NL`, default 8 MiB program budget; see
+/// `Functions/Regexps.h` and `OptimizedRegularExpression`). The combined-`match` fallback merges an
+/// `OR` chain into a single `(p1)|(p2)|...` alternation; for a long or repetition-heavy chain the
+/// merged RE2 program can exceed RE2's default 8 MiB budget (`RE2::Options::kDefaultMaxMem`) and make
+/// `match` throw `CANNOT_COMPILE_REGEXP`, even though every original per-branch `match`/`LIKE`
+/// compiled on its own (each is a far smaller program). The `max_hyperscan_regexp_length` /
+/// `max_hyperscan_regexp_total_length` settings default to 0 ("unlimited") and so do not bound this.
+/// We therefore pre-compile the merged regexp and keep the original branches when it does not compile,
+/// so a default-on rewrite cannot turn a previously-working query into a regexp-compilation exception.
+///
+/// We probe RE2 directly rather than constructing an `OptimizedRegularExpression`. The latter first
+/// runs ClickHouse's required-substring `analyze` step, which recurses over the regexp structure and,
+/// for a very large merged alternation, can hit the stack-depth guard and log a spurious `<Error>`
+/// ("Analyze RegularExpression failed ... TOO_DEEP_RECURSION") at analysis time. That `analyze`
+/// failure is non-fatal and never changes whether `match` accepts the regexp — it only disables a
+/// required-substring optimization, and the accept/reject decision is solely whether RE2 can compile
+/// the program (an alternation is never trivial, so `match` always reaches RE2 here). Probing RE2
+/// directly therefore yields exactly the same decision without the noise, and lets us read a real RE2
+/// rejection off `ok()` instead of a `catch (...)` that would also swallow an unexpected
+/// memory-limit/cancellation exception.
 bool combinedRegexpCompilesWithRE2(const String & combined_regexp)
 {
-    try
+    re2::RE2::Options options;
+    /// Never write error messages to stderr from library code; we inspect `ok()` instead.
+    options.set_log_errors(false);
+    /// `match` constructs its `OptimizedRegularExpression` with `RE_DOT_NL`.
+    options.set_dot_nl(true);
+
+    re2::RE2 re(combined_regexp, options);
+
+    /// `OptimizedRegularExpression` retries invalid UTF-8 with Latin1 to allow matching binary data;
+    /// mirror that so the probe accepts exactly the regexps `match` would accept at runtime.
+    if (!re.ok() && re.error_code() == re2::RE2::ErrorCode::ErrorBadUTF8)
     {
-        OptimizedRegularExpression re(
-            combined_regexp,
-            OptimizedRegularExpression::RE_DOT_NL | OptimizedRegularExpression::RE_NO_CAPTURE);
-        return true;
+        options.set_encoding(re2::RE2::Options::EncodingLatin1);
+        re2::RE2 re_latin1(combined_regexp, options);
+        return re_latin1.ok();
     }
-    catch (...)
-    {
-        /// Ok: a compilation failure is the signal we are probing for. We intentionally swallow it
-        /// and fail-close (keep the original branches, skip the optimization) rather than propagate.
-        return false;
-    }
+
+    return re.ok();
 }
 
 /// Stores information about a single LIKE/ILIKE/match pattern
