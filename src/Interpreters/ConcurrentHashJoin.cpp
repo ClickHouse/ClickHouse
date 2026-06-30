@@ -220,6 +220,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         /*use_two_level_maps*/ true);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
+                    inner_hash_join->total_bytes.store(inner_hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
                     hash_joins[i] = std::move(inner_hash_join);
                 });
         }
