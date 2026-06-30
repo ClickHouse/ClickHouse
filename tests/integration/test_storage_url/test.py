@@ -505,11 +505,14 @@ def test_url_wildcard_headers_are_not_read_from_page_cache():
 
 
 def test_url_wildcard_page_cache_uses_web_source_identity():
+    # The two web sources (`?shard=0` / `?shard=1`) expose the same object path (`part.tsv`) with the
+    # same ETag but different contents. With `use_page_cache_for_object_storage`, the page cache must
+    # key on the web source identity (the shard's base URL and query), otherwise the second shard would
+    # be served the first shard's cached page (the path and ETag collide) and the sum would be wrong.
     result = node1.query(
         with_url_wildcard_setting(
             "SELECT sum(x) FROM url('"
-            "http://resolver:8087/data/page_cache_shard0/part*.tsv,"
-            "http://resolver:8087/data/page_cache_shard1/part*.tsv', "
+            "http://resolver:8087/data/page_cache_identity/part*.tsv?shard={0,1}', "
             "'TSV', 'x UInt64') "
             "SETTINGS use_page_cache_for_object_storage=1"
         )
