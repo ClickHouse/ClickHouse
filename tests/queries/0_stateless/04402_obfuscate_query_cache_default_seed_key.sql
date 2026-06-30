@@ -23,12 +23,14 @@ SYSTEM DROP QUERY CACHE TAG '04402_obfuscate';
 
 -- Non-deterministic variant: the inner scope resets the seed to the default (empty) value, so the
 -- obfuscator uses a fresh random seed. Caching is allowed only because of the 'save' handling.
-SELECT count() FROM (SELECT * FROM obfuscate(SELECT number FROM numbers(4)) SETTINGS obfuscate_seed = DEFAULT)
+-- `obfuscate(...)` is an effectively infinite, repeating source, so the inner subquery needs an
+-- explicit `LIMIT`; otherwise the outer `count()` reads the repeating stream until it hits a limit.
+SELECT count() FROM (SELECT * FROM obfuscate(SELECT number FROM numbers(4)) LIMIT 4 SETTINGS obfuscate_seed = DEFAULT)
 SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'save', query_cache_min_query_runs = 0, query_cache_tag = '04402_obfuscate'
 FORMAT Null;
 
 -- Deterministic variant: the inner scope keeps the session seed 'stable'.
-SELECT count() FROM (SELECT * FROM obfuscate(SELECT number FROM numbers(4)))
+SELECT count() FROM (SELECT * FROM obfuscate(SELECT number FROM numbers(4)) LIMIT 4)
 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0, query_cache_tag = '04402_obfuscate'
 FORMAT Null;
 
