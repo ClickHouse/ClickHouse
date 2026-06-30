@@ -161,7 +161,7 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         sqlite_db,
         database_path,
         table_name,
-        ColumnsDescription{*columns},
+        std::move(*columns),
         ConstraintsDescription{},
         /* comment = */ "",
         local_context);

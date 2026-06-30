@@ -10,15 +10,24 @@ DB_PATH=$(mktemp "$CLICKHOUSE_TMP/sqlite_generated_XXXXXX.sqlite")
 trap 'rm -f "$DB_PATH"' EXIT
 rm -f "$DB_PATH"
 
-# A SQLite table with a STORED and a VIRTUAL generated column. `table_xinfo` reports such columns
-# (hidden = 3 / hidden = 2) and `SELECT *` returns them, so ClickHouse must keep them readable through
-# the shared SQLite schema. But SQLite rejects explicit writes into generated columns, so the SQLite
-# storage write path must omit them from the INSERT column list (otherwise an `INSERT INTO t (a, b, c)`
-# fails with "cannot INSERT into generated column").
+# A SQLite table with a STORED and a VIRTUAL generated column. SQLite computes such columns itself and
+# rejects explicit writes into them, so ClickHouse keeps them in the table structure but marks them
+# MATERIALIZED: readable, but not insertable. As a result an insert without a column list targets only
+# the base columns (matching SQLite), an explicit write into a generated column is rejected, and the
+# generated columns are computed by SQLite rather than a user value being silently dropped.
 sqlite3 "$DB_PATH" "CREATE TABLE t(a INTEGER, b INTEGER GENERATED ALWAYS AS (a + 1) STORED, c INTEGER GENERATED ALWAYS AS (a * 2) VIRTUAL);"
 
-echo 'Schema exposes the generated columns for reads:'
+echo 'Schema keeps the generated columns:'
 ${CLICKHOUSE_LOCAL} --query "CREATE DATABASE sqlite_gen ENGINE = SQLite('$DB_PATH'); DESCRIBE TABLE sqlite_gen.t;"
 
-echo 'Insert through the SQLite storage path writes only base columns; SQLite computes the generated columns:'
-${CLICKHOUSE_LOCAL} --query "CREATE DATABASE sqlite_gen ENGINE = SQLite('$DB_PATH'); INSERT INTO sqlite_gen.t (a) VALUES (1), (2); SELECT * FROM sqlite_gen.t ORDER BY a FORMAT TSVWithNames;"
+echo 'Insert without a column list, and an explicit base-column list, both target only the base columns; SQLite computes the generated columns:'
+${CLICKHOUSE_LOCAL} --query "CREATE DATABASE sqlite_gen ENGINE = SQLite('$DB_PATH'); INSERT INTO sqlite_gen.t VALUES (1); INSERT INTO sqlite_gen.t (a) VALUES (2); SELECT a, b, c FROM sqlite_gen.t ORDER BY a FORMAT TSVWithNames;"
+
+echo 'Generated columns are MATERIALIZED, so SELECT * returns only the base columns:'
+${CLICKHOUSE_LOCAL} --query "CREATE DATABASE sqlite_gen ENGINE = SQLite('$DB_PATH'); SELECT * FROM sqlite_gen.t ORDER BY a FORMAT TSVWithNames;"
+
+echo 'Explicitly writing into a generated column is rejected:'
+${CLICKHOUSE_LOCAL} --query "CREATE DATABASE sqlite_gen ENGINE = SQLite('$DB_PATH'); INSERT INTO sqlite_gen.t (a, b) VALUES (3, 100);" 2>&1 | grep -oF -m1 "Cannot insert column b, because it is MATERIALIZED column"
+
+echo 'The rejected insert wrote nothing:'
+${CLICKHOUSE_LOCAL} --query "CREATE DATABASE sqlite_gen ENGINE = SQLite('$DB_PATH'); SELECT a, b, c FROM sqlite_gen.t ORDER BY a FORMAT TSVWithNames;"

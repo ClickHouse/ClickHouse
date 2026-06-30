@@ -47,24 +47,9 @@ static DataTypePtr convertSQLiteDataType(String type)
 }
 
 
-namespace
+std::optional<ColumnsDescription> fetchSQLiteTableStructure(sqlite3 * connection, const String & sqlite_table_name)
 {
-
-struct FetchTableStructureContext
-{
-    NamesAndTypesList columns;
-    std::unordered_set<String> * generated_columns = nullptr;
-};
-
-}
-
-std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(
-    sqlite3 * connection,
-    const String & sqlite_table_name,
-    std::unordered_set<String> * out_generated_columns)
-{
-    FetchTableStructureContext context;
-    context.generated_columns = out_generated_columns;
+    ColumnsDescription columns;
 
     /// Use `table_xinfo` rather than `table_info` so that generated columns (which `SELECT *` returns) are
     /// included; `table_info` omits them, which would silently drop visible columns from the table structure.
@@ -72,53 +57,49 @@ std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(
 
     auto callback_get_data = [](void * res, int col_num, char ** data_by_col, char ** col_names) -> int
     {
-        auto & ctx = *static_cast<FetchTableStructureContext *>(res);
+        auto & cols = *static_cast<ColumnsDescription *>(res);
 
-        NameAndTypePair name_and_type;
+        String name;
+        DataTypePtr type;
         bool is_nullable = false;
         int hidden = 0;
 
         for (int i = 0; i < col_num; ++i)
         {
             if (col_names[i] == "name"sv)
-            {
-                name_and_type.name = data_by_col[i];
-            }
+                name = data_by_col[i];
             else if (col_names[i] == "type"sv)
-            {
-                name_and_type.type = convertSQLiteDataType(data_by_col[i]);
-            }
+                type = convertSQLiteDataType(data_by_col[i]);
             else if (col_names[i] == "notnull"sv)
-            {
                 is_nullable = (data_by_col[i][0] == '0');
-            }
             else if (col_names[i] == "hidden"sv)
-            {
                 hidden = data_by_col[i][0] - '0';
-            }
         }
 
-        /// `table_xinfo` reports hidden = 1 for columns that `SELECT *` does not return (e.g. the
-        /// hidden columns of virtual tables); skip them. Generated columns use hidden = 2 (VIRTUAL) or
-        /// 3 (STORED) and are returned by `SELECT *`, so they stay in the structure to keep them
-        /// readable, but they are recorded as generated so the write path can omit them (SQLite rejects
-        /// explicit inserts into generated columns).
+        /// `table_xinfo` reports hidden = 1 for columns that `SELECT *` does not return (e.g. the hidden
+        /// columns of virtual tables); skip them. Generated columns use hidden = 2 (VIRTUAL) or 3 (STORED)
+        /// and are returned by `SELECT *`, so they stay in the structure to keep them readable.
         if (hidden == 1)
             return 0;
 
         if (is_nullable)
-            name_and_type.type = std::make_shared<DataTypeNullable>(name_and_type.type);
+            type = std::make_shared<DataTypeNullable>(type);
 
-        if ((hidden == 2 || hidden == 3) && ctx.generated_columns)
-            ctx.generated_columns->insert(name_and_type.name);
+        ColumnDescription column(std::move(name), std::move(type));
 
-        ctx.columns.push_back(name_and_type);
+        /// SQLite computes generated columns itself and rejects explicit writes into them. Mark them
+        /// `MATERIALIZED` so ClickHouse keeps them readable but non-insertable: an explicit insert into a
+        /// generated column is rejected, and an insert without a column list targets only the base columns.
+        if (hidden == 2 || hidden == 3)
+            column.default_desc.kind = ColumnDefaultKind::Materialized;
+
+        cols.add(std::move(column));
 
         return 0;
     };
 
     char * err_message = nullptr;
-    int status = sqlite3_exec(connection, query.c_str(), callback_get_data, &context, &err_message);
+    int status = sqlite3_exec(connection, query.c_str(), callback_get_data, &columns, &err_message);
 
     if (status != SQLITE_OK)
     {
@@ -130,10 +111,10 @@ std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(
                         status, err_msg);
     }
 
-    if (context.columns.empty())
-        return nullptr;
+    if (columns.empty())
+        return std::nullopt;
 
-    return std::make_shared<NamesAndTypesList>(context.columns);
+    return columns;
 }
 
 }

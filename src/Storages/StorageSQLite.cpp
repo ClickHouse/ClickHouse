@@ -97,7 +97,7 @@ ColumnsDescription StorageSQLite::getTableStructureFromData(
     if (!columns)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Failed to fetch table structure for {}", table);
 
-    return ColumnsDescription{*columns};
+    return std::move(*columns);
 }
 
 
@@ -118,7 +118,9 @@ Pipe StorageSQLite::read(
     String query = transformQueryForExternalDatabase(
         query_info,
         column_names,
-        storage_snapshot->metadata->getColumns().getOrdinary(),
+        /// Use all physical columns (ordinary + the MATERIALIZED generated columns) as the pushdown-eligible
+        /// set: SQLite can filter on generated columns too, so a `WHERE` over them is still pushed down.
+        storage_snapshot->metadata->getColumns().getAllPhysical(),
         IdentifierQuotingStyle::DoubleQuotes,
         LiteralEscapingStyle::Regular,
         "",
@@ -144,15 +146,19 @@ public:
         const StorageSQLite & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         StorageSQLite::SQLitePtr sqlite_db_,
-        const String & remote_table_name_,
-        std::unordered_set<String> generated_columns_)
+        const String & remote_table_name_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage{storage_}
         , metadata_snapshot(metadata_snapshot_)
         , sqlite_db(sqlite_db_)
         , remote_table_name(remote_table_name_)
-        , generated_columns(std::move(generated_columns_))
     {
+        /// SQLite generated columns are kept in the table structure as `MATERIALIZED` (readable but not
+        /// insertable). ClickHouse still computes a placeholder for them and includes them in the block
+        /// reaching the sink, so collect their names to omit them from the SQLite INSERT - SQLite computes
+        /// their values itself and rejects an explicit write into a generated column.
+        for (const auto & column : metadata_snapshot_->getColumns().getMaterialized())
+            generated_columns.insert(column.name);
     }
 
     String getName() const override { return "SQLiteSink"; }
@@ -161,9 +167,9 @@ public:
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
-        /// SQLite rejects explicit writes into generated columns, so omit them from the INSERT. They
-        /// are still present in the table structure to keep them readable. When there are no generated
-        /// columns (the common case) this is the full block.
+        /// Drop the generated columns collected in the constructor: SQLite computes them itself, so they
+        /// must not appear in the INSERT column list. When there are no generated columns (the common case)
+        /// this is the full block.
         Block insertable_block;
         for (const auto & elem : block)
             if (!generated_columns.contains(elem.name))
@@ -216,12 +222,7 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageM
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
 
-    /// Collect the generated columns of the target SQLite table so that the sink can omit them from
-    /// the explicit insert column list (SQLite rejects writes into generated columns).
-    std::unordered_set<String> generated_columns;
-    fetchSQLiteTableStructure(sqlite_db.get(), remote_table_name, &generated_columns);
-
-    return std::make_shared<SQLiteSink>(*this, metadata_snapshot, sqlite_db, remote_table_name, std::move(generated_columns));
+    return std::make_shared<SQLiteSink>(*this, metadata_snapshot, sqlite_db, remote_table_name);
 }
 
 

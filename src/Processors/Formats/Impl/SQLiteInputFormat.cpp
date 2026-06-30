@@ -140,13 +140,17 @@ public:
             throw Exception(
                 ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot fetch table structure for SQLite table {}", table_name);
 
+        /// `getAll` keeps every column `SELECT *` returns (including generated columns, which the structure
+        /// marks `MATERIALIZED`) in declaration order, so schema inference exposes exactly the readable columns.
+        auto names_and_types = columns->getAll();
+
         /// `fetchSQLiteTableStructure` reports nullability from SQLite metadata (the `NOT NULL` constraint).
         /// Honor `schema_inference_make_columns_nullable` like other metadata-backed formats (e.g. Parquet, ORC):
         /// 0 - never `Nullable`, 1 - always `Nullable`, otherwise keep the nullability from metadata.
         if (settings.schema_inference_make_columns_nullable == 0 || settings.schema_inference_make_columns_nullable == 1)
         {
             NamesAndTypesList result;
-            for (const auto & name_and_type : *columns)
+            for (const auto & name_and_type : names_and_types)
             {
                 auto type = settings.schema_inference_make_columns_nullable == 1
                     ? makeNullableRecursively(name_and_type.type, settings)
@@ -156,7 +160,7 @@ public:
             return result;
         }
 
-        return *columns;
+        return names_and_types;
     }
 
 private:

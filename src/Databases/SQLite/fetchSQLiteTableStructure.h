@@ -4,21 +4,21 @@
 
 #if USE_SQLITE
 
-#include <Storages/StorageSQLite.h>
+#include <Storages/ColumnsDescription.h>
 #include <sqlite3.h>
 
-#include <unordered_set>
+#include <optional>
 
 
 namespace DB
 {
-/// Returns the structure of a SQLite table. Generated columns (which `SELECT *` returns) are kept in
-/// the structure so that they remain readable, but SQLite rejects explicit writes into them. When
-/// `out_generated_columns` is provided, the names of the generated columns are collected into it so
-/// that the write path can omit them from the explicit insert column list.
-std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connection,
-                                                             const String & sqlite_table_name,
-                                                             std::unordered_set<String> * out_generated_columns = nullptr);
+/// Returns the structure of a SQLite table, or `std::nullopt` if the table has no columns.
+///
+/// Generated columns (which `SELECT *` returns) are kept in the structure so they remain readable,
+/// but they are marked `MATERIALIZED`: SQLite computes them, so ClickHouse must treat them as
+/// non-insertable. An explicit write into a generated column is then rejected, and an insert without
+/// a column list targets only the base columns - matching SQLite's own insert contract.
+std::optional<ColumnsDescription> fetchSQLiteTableStructure(sqlite3 * connection, const String & sqlite_table_name);
 }
 
 #endif
