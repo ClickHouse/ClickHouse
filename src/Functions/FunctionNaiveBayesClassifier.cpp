@@ -321,7 +321,8 @@ public:
 REGISTER_FUNCTION(NaiveBayesClassifier)
 {
     factory.registerFunction<FunctionNaiveBayesClassifier>(FunctionDocumentation{
-        .description = "Classifies input text using a Naive Bayes dictionary. "
+        .description = "Classifies input text using a "
+                       "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) dictionary. "
                        "Equivalent to dictGet(dictionary_name, class_attribute, input_text), where class_attribute is the "
                        "name of the class label attribute configured in the dictionary's layout.",
         .syntax = "naiveBayesClassifier(dictionary_name, input_text)",
@@ -334,7 +335,9 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
         .category = FunctionDocumentation::Category::MachineLearning});
 
     factory.registerFunction<FunctionNaiveBayesClassifierWithProb>(FunctionDocumentation{
-        .description = "Classifies input text using a Naive Bayes dictionary and returns the predicted class with its probability.",
+        .description = "Classifies input text using a "
+                       "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) dictionary and "
+                       "returns the predicted class with its probability.",
         .syntax = "naiveBayesClassifierWithProb(dictionary_name, input_text)",
         .arguments
         = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
@@ -345,8 +348,9 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
         .category = FunctionDocumentation::Category::MachineLearning});
 
     factory.registerFunction<FunctionNaiveBayesClassifierWithAllProbs>(FunctionDocumentation{
-        .description = "Classifies input text using a Naive Bayes dictionary and returns all classes with their probabilities, "
-                       "ordered from most to least probable.",
+        .description = "Classifies input text using a "
+                       "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) dictionary and "
+                       "returns all classes with their probabilities, ordered from most to least probable.",
         .syntax = "naiveBayesClassifierWithAllProbs(dictionary_name, input_text)",
         .arguments
         = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},

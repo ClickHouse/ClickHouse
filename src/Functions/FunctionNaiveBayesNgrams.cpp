@@ -168,8 +168,9 @@ private:
 REGISTER_FUNCTION(NaiveBayesNgrams)
 {
     factory.registerFunction<FunctionNaiveBayesNgrams>(FunctionDocumentation{
-        .description = "Splits text into n-grams using the same tokenization as a Naive Bayes dictionary (the `NAIVE_BAYES` "
-                       "layout): `byte`, `codepoint`, or `token` mode, with optional boundary padding. Use it to build the "
+        .description = "Splits text into n-grams using the same tokenization as a Naive Bayes dictionary (the "
+                       "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) layout): "
+                       "`byte`, `codepoint`, or `token` mode, with optional boundary padding. Use it to build the "
                        "pre-aggregated `(ngram, class_id, count)` training data such a dictionary consumes, so the training "
                        "n-grams match exactly what naiveBayesClassifier produces at query time.",
         .syntax = "naiveBayesNgrams(text, n, mode[, start_token, end_token])",
