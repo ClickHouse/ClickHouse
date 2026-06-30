@@ -26,6 +26,11 @@ SELECT count() FROM (SELECT a FROM t_apart_max_rows GROUP BY a);
 -- hide the violation - hence the global limit must be enforced and the optimization disabled.
 SET max_rows_to_group_by = 100;
 SET group_by_overflow_mode = 'throw';
+-- `optimize_aggregation_in_order` emits each group as soon as it is complete, so the aggregation
+-- hash table never grows past the limit and `max_rows_to_group_by` is never tripped - regardless of
+-- partition-independent aggregation. Pin it off so the test deterministically exercises the global
+-- limit enforced via the merge phase that the optimization skips.
+SET optimize_aggregation_in_order = 0;
 SELECT a FROM t_apart_max_rows GROUP BY a FORMAT Null; -- { serverError TOO_MANY_ROWS }
 
 DROP TABLE t_apart_max_rows;
