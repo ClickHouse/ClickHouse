@@ -76,7 +76,7 @@ protected:
         {
             const auto & part = data_parts[part_index++];
             const auto & columns_substreams = part->getColumnsSubstreams();
-            /// TODO: mutating an old Wide part that has no columns_substreams.txt leaves the rewritten part without one too. 
+            /// TODO: mutating an old Wide part that has no columns_substreams.txt leaves the rewritten part without one too.
             /// Yet the rewritten columns may hold adaptively-selected codecs. This part is omitted here until next merge records substreams.
             if (columns_substreams.empty())
                 continue;
