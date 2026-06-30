@@ -38,7 +38,7 @@ struct GroupByKeyComparator
 {
     GroupByKeyComparator(QueryTreeNodePtr node_) /// NOLINT
         : node(std::move(node_))
-        , hash(node->getTreeHash({.compare_aliases = false}))
+        , hash(node->getTreeHashLocal({.compare_aliases = false}))
     {}
 
     bool operator==(const GroupByKeyComparator & other) const { return hash == other.hash && compareGroupByKeys(node, other.node); }
@@ -197,7 +197,7 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
                 grouping_sets_used_aggregation_keys_list.emplace_back();
                 auto & grouping_sets_used_aggregation_keys = grouping_sets_used_aggregation_keys_list.back();
 
-                QueryTreeNodePtrWithHashSet used_keys_in_set;
+                QueryTreeNodePtrWithLocalHashSet used_keys_in_set;
 
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {

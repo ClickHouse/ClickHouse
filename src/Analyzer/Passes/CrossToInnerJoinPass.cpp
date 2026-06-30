@@ -67,7 +67,7 @@ bool findInTableExpression(const QueryTreeNodePtr & source, const QueryTreeNodeP
     if (!source)
         return true;
 
-    if (source->isEqual(*table_expression))
+    if (source->isEqualGlobal(*table_expression))
         return true;
 
     if (const auto * join_node = table_expression->as<JoinNode>())

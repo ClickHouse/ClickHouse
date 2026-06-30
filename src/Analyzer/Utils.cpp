@@ -1037,7 +1037,7 @@ std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & n
 
             if (!source)
                 source = arg_source;
-            else if (arg_source && !source->isEqual(*arg_source))
+            else if (arg_source && !source->isEqualGlobal(*arg_source))
                 return {nullptr, false};
         }
         return {source, true};

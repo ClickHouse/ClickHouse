@@ -16,24 +16,24 @@ namespace ErrorCodes
 class ReplaceColumnsVisitor : public InDepthQueryTreeVisitor<ReplaceColumnsVisitor>
 {
 public:
-    explicit ReplaceColumnsVisitor(const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map_, const ContextPtr & context_)
+    explicit ReplaceColumnsVisitor(const QueryTreeNodePtrWithGlobalHashMap<QueryTreeNodePtr> & replacement_map_, const ContextPtr & context_)
         : replacement_map(replacement_map_)
         , context(context_)
     {}
 
     /// Apply replacement transitively, because column may change it's type twice, one to have a supertype and then because of `joun_use_nulls`
-    static QueryTreeNodePtr findTransitiveReplacement(QueryTreeNodePtr node, const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map_)
+    static QueryTreeNodePtr findTransitiveReplacement(QueryTreeNodePtr node, const QueryTreeNodePtrWithGlobalHashMap<QueryTreeNodePtr> & replacement_map_)
     {
         auto it = replacement_map_.find(node);
         QueryTreeNodePtr result_node = nullptr;
         for (; it != replacement_map_.end(); it = replacement_map_.find(result_node))
         {
-            if (result_node && result_node->isEqual(*it->second))
+            if (result_node && result_node->isEqualGlobal(*it->second))
             {
                 Strings map_dump;
                 for (const auto & [k, v]: replacement_map_)
                     map_dump.push_back(fmt::format("{} -> {} (is_equals: {}, is_same: {})",
-                        k.node->dumpTree(), v->dumpTree(), k.node->isEqual(*v), k.node == v));
+                        k.node->dumpTree(), v->dumpTree(), k.node->isEqualGlobal(*v), k.node == v));
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Infinite loop in query tree replacement map: {}", fmt::join(map_dump, "; "));
             }
             chassert(it->second);
@@ -65,7 +65,7 @@ public:
     }
 
 private:
-    const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map;
+    const QueryTreeNodePtrWithGlobalHashMap<QueryTreeNodePtr> & replacement_map;
     const ContextPtr & context;
 };
 

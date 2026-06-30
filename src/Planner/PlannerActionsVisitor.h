@@ -41,7 +41,7 @@ class PlannerActionsVisitor
 public:
     explicit PlannerActionsVisitor(
       const PlannerContextPtr & planner_context_,
-      const ColumnNodePtrWithHashSet & correlated_columns_set_,
+      const ColumnNodePtrWithGlobalHashSet & correlated_columns_set_,
       bool use_column_identifier_as_action_node_name_ = true);
 
     /** Add actions necessary to calculate expression node into expression dag.
@@ -52,7 +52,7 @@ public:
 
 private:
     const PlannerContextPtr planner_context;
-    const ColumnNodePtrWithHashSet & correlated_columns_set;
+    const ColumnNodePtrWithGlobalHashSet & correlated_columns_set;
     bool use_column_identifier_as_action_node_name = true;
 };
 

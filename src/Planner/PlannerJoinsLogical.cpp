@@ -90,7 +90,7 @@ static const ActionsDAG::Node * appendExpression(
 {
     size_t input_count = dag.getInputs().size();
 
-    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    ColumnNodePtrWithGlobalHashSet empty_correlated_columns_set;
     PlannerActionsVisitor join_expression_visitor(planner_context, empty_correlated_columns_set);
     auto [join_expression_dag_node_raw_pointers, correlated_subtrees] = join_expression_visitor.visit(dag, expression);
     correlated_subtrees.assertEmpty("in join expression");

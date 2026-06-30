@@ -453,7 +453,7 @@ CNF & CNF::filterAlwaysFalseAtoms(std::function<bool(const CNFAtomicFormula &)> 
         else
         {
             filtered.clear();
-            filtered_group.insert(CNFAtomicFormula{false, QueryTreeNodePtrWithHash{std::make_shared<ConstantNode>(static_cast<UInt8>(0))}});
+            filtered_group.insert(CNFAtomicFormula{false, QueryTreeNodePtrWithGlobalHash{std::make_shared<ConstantNode>(static_cast<UInt8>(0))}});
             filtered.insert(std::move(filtered_group));
             break;
         }

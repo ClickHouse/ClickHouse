@@ -4,7 +4,7 @@
 
 #include <Parsers/SelectUnionMode.h>
 
-#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/IColumnSourceNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/RecursiveCTE.h>
 
@@ -37,7 +37,7 @@ using UnionNodePtr = std::shared_ptr<UnionNode>;
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 
-class UnionNode final : public IQueryTreeNode
+class UnionNode final : public IColumnSourceNode
 {
 public:
     /// Construct union node with context and normalized union mode

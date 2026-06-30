@@ -152,7 +152,7 @@ protected:
             collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
             collectSets(expression, *planner_context);
 
-            ColumnNodePtrWithHashSet empty_correlated_columns_set;
+            ColumnNodePtrWithGlobalHashSet empty_correlated_columns_set;
             auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
                 expression,
                 /*input_columns=*/ {},

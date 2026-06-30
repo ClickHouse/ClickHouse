@@ -10,7 +10,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 
-#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/IColumnSourceNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
 
@@ -38,7 +38,7 @@ using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 class TableFunctionNode;
 using TableFunctionNodePtr = std::shared_ptr<TableFunctionNode>;
 
-class TableFunctionNode : public IQueryTreeNode
+class TableFunctionNode : public IColumnSourceNode
 {
 public:
     /// Construct table function node with table function name

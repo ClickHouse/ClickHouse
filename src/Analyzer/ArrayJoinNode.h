@@ -7,7 +7,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 
-#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/IColumnSourceNode.h>
 #include <Analyzer/ListNode.h>
 
 namespace DB
@@ -33,7 +33,7 @@ namespace DB
 class ArrayJoinNode;
 using ArrayJoinNodePtr = std::shared_ptr<ArrayJoinNode>;
 
-class ArrayJoinNode final : public IQueryTreeNode
+class ArrayJoinNode final : public IColumnSourceNode
 {
 public:
     /** Construct array join node with table expression.

@@ -603,9 +603,9 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
         if (join_node)
         {
             if (join_node->getKind() == JoinKind::Left)
-                allow_where = join_node->getLeftTableExpression()->isEqual(*query.table_expression);
+                allow_where = join_node->getLeftTableExpression()->isEqualGlobal(*query.table_expression);
             else if (join_node->getKind() == JoinKind::Right)
-                allow_where = join_node->getRightTableExpression()->isEqual(*query.table_expression);
+                allow_where = join_node->getRightTableExpression()->isEqualGlobal(*query.table_expression);
             else
                 allow_where = (join_node->getKind() == JoinKind::Inner);
         }

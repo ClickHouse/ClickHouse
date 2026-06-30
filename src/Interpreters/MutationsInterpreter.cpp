@@ -1659,7 +1659,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 }
             }
 
-            ColumnNodePtrWithHashSet empty_correlated_columns;
+            ColumnNodePtrWithGlobalHashSet empty_correlated_columns;
 
             /// Remember the boundary between filters and other expressions in all_asts.
             const size_t num_filters = stage.filters.size();

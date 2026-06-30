@@ -227,7 +227,7 @@ public:
                         /// and its source expression is being traversed to reconstruct the action node name.
                         /// In this case, createUniqueAliasesIfNecessary did not visit the subquery argument
                         /// because it is not a child of ConstantNode. Use the tree hash as a stable identifier.
-                        auto hash = exists_argument->getTreeHash();
+                        auto hash = exists_argument->getTreeHashGlobal();
                         result = fmt::format("exists({}_{})", hash.low64, hash.high64);
                     }
                     break;
@@ -680,7 +680,7 @@ public:
     PlannerActionsVisitorImpl(
         ActionsDAG & actions_dag,
         const PlannerContextPtr & planner_context_,
-        const ColumnNodePtrWithHashSet & correlated_columns_set_,
+        const ColumnNodePtrWithGlobalHashSet & correlated_columns_set_,
         bool use_column_identifier_as_action_node_name_);
 
     std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> visit(QueryTreeNodePtr expression_node);
@@ -746,7 +746,7 @@ private:
     std::unordered_map<QueryTreeNodePtr, std::string> node_to_node_name;
     CorrelatedSubtrees correlated_subtrees;
     const PlannerContextPtr planner_context;
-    const ColumnNodePtrWithHashSet & correlated_columns_set;
+    const ColumnNodePtrWithGlobalHashSet & correlated_columns_set;
     ActionNodeNameHelper action_node_name_helper;
     bool use_column_identifier_as_action_node_name;
 };
@@ -754,7 +754,7 @@ private:
 PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
     ActionsDAG & actions_dag,
     const PlannerContextPtr & planner_context_,
-    const ColumnNodePtrWithHashSet & correlated_columns_set_,
+    const ColumnNodePtrWithGlobalHashSet & correlated_columns_set_,
     bool use_column_identifier_as_action_node_name_
 )
     : planner_context(planner_context_)
@@ -1090,7 +1090,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         in_second_is_deterministic = const_node->isDeterministic();
 
     FutureSetPtr set;
-    auto set_key = in_second_argument->getTreeHash({ .ignore_cte = true });
+    auto set_key = in_second_argument->getTreeHashGlobal({ .ignore_cte = true });
 
     if (!subquery_or_table)
     {
@@ -1142,7 +1142,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     ActionsDAG index_hint_actions_dag;
     auto & index_hint_actions_dag_outputs = index_hint_actions_dag.getOutputs();
     std::unordered_set<std::string_view> index_hint_actions_dag_output_node_names;
-    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    ColumnNodePtrWithGlobalHashSet empty_correlated_columns_set;
     PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set);
 
     for (const auto & argument : function_node.getArguments())
@@ -1393,7 +1393,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
 PlannerActionsVisitor::PlannerActionsVisitor(
     const PlannerContextPtr & planner_context_,
-    const ColumnNodePtrWithHashSet & correlated_columns_set_,
+    const ColumnNodePtrWithGlobalHashSet & correlated_columns_set_,
     bool use_column_identifier_as_action_node_name_)
     : planner_context(planner_context_)
     , correlated_columns_set(correlated_columns_set_)

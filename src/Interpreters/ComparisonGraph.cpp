@@ -268,7 +268,7 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
                                 return constraint_node->getTreeHash(/*ignore_aliases=*/ true) == node->getTreeHash(/*ignore_aliases=*/ true)
                                     && constraint_node->getColumnName() == node->getColumnName();
                             else
-                                return constraint_node->isEqual(*node);
+                                return constraint_node->isEqualGlobal(*node);
                         }))
                 {
                     return {};
@@ -522,7 +522,7 @@ std::optional<size_t> ComparisonGraph<Node>::getComponentId(const Node & node) c
                 return constraint_node->getTreeHash(/*ignore_aliases=*/ true) == node->getTreeHash(/*ignore_aliases=*/ true)
                     && constraint_node->getColumnName() == node->getColumnName();
             else
-                return constraint_node->getTreeHash() == node->getTreeHash();
+                return constraint_node->getTreeHashGlobal() == node->getTreeHashGlobal();
         }))
     {
         return index;

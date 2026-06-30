@@ -46,7 +46,7 @@ namespace Setting
 }
 
 UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
-    : IQueryTreeNode(children_size)
+    : IColumnSourceNode(children_size)
     , context(std::move(context_))
     , union_mode(union_mode_)
 {
@@ -174,7 +174,7 @@ void UnionNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
     auto & correlated_columns = getCorrelatedColumns().getNodes();
     for (const auto & column : correlated_columns)
     {
-        if (column->isEqual(*correlated_column))
+        if (column->isEqualGlobal(*correlated_column))
             return;
     }
     correlated_columns.push_back(correlated_column);

@@ -41,6 +41,11 @@ public:
     /// Construct column node with column name, type and column source weak pointer
     ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_);
 
+    /** Construct column node with an explicit column source id snapshot.
+      * Used for cloning: copies the id even if the source has expired.
+      */
+    ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_, ColumnSourceId column_source_id_);
+
     /// Get column
     const NameAndTypePair & getColumn() const
     {
@@ -108,10 +113,23 @@ public:
       */
     QueryTreeNodePtr getColumnSourceOrNull() const;
 
-    void setColumnSource(const QueryTreeNodePtr & source)
+    /** Get the id of the column source instance this column refers to.
+      * Returns INVALID_COLUMN_SOURCE_ID if the column has no source.
+      * The id stays valid even after the source node itself is destroyed.
+      */
+    ColumnSourceId getColumnSourceId() const
     {
-        getSourceWeakPointer() = source;
+        return column_source_id;
     }
+
+    void setColumnSource(const QueryTreeNodePtr & source);
+
+    /** Re-point the column source to its clone after the column node was cloned, and refresh the
+      * column source id snapshot. If the column source is not in the map (not part of the cloned
+      * subtree or the replacement map), the column keeps referencing the previous source and it is
+      * expected. Used by IQueryTreeNode::cloneAndReplace.
+      */
+    void remapColumnSourceAfterClone(const ReplacementMap & old_pointer_to_new_pointer);
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -140,23 +158,15 @@ protected:
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
-    const QueryTreeNodeWeakPtr & getSourceWeakPointer() const
-    {
-        return weak_pointers[source_weak_pointer_index];
-    }
-
-    QueryTreeNodeWeakPtr & getSourceWeakPointer()
-    {
-        return weak_pointers[source_weak_pointer_index];
-    }
-
     NameAndTypePair column;
+
+    QueryTreeNodeWeakPtr column_source;
+
+    /// Snapshot of the source's column source id, kept in sync with the column source weak pointer.
+    ColumnSourceId column_source_id = INVALID_COLUMN_SOURCE_ID;
 
     static constexpr size_t expression_child_index = 0;
     static constexpr size_t children_size = expression_child_index + 1;
-
-    static constexpr size_t source_weak_pointer_index = 0;
-    static constexpr size_t weak_pointers_size = source_weak_pointer_index + 1;
 };
 
 }

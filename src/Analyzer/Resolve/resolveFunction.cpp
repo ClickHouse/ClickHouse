@@ -1097,7 +1097,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 if (auto * constant = argument_nodes[n]->as<ConstantNode>())
                 {
-                    auto mask = scope.projection_mask_map->insert({constant->getTreeHash(), scope.projection_mask_map->size() + 1}).first->second;
+                    auto mask = scope.projection_mask_map->insert({constant->getTreeHashGlobal(), scope.projection_mask_map->size() + 1}).first->second;
                     constant->setMaskId(mask);
                     arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(mask) + "]";
                 }
@@ -1602,7 +1602,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (function && !function->isDeterministic()
             && function_name != "getSetting" && function_name != "rowNumberInAllBlocks")
         {
-            auto hash = function_node_ptr->getTreeHash();
+            auto hash = function_node_ptr->getTreeHashGlobal();
             function_base_cache = &functions_cache[hash];
         }
     }
@@ -1822,7 +1822,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
 
-            auto hash = function_arguments[1]->getTreeHash({ .ignore_cte = true });
+            auto hash = function_arguments[1]->getTreeHashGlobal({ .ignore_cte = true });
             auto ast = function_arguments[1]->toAST();
             auto future_set = std::make_shared<FutureSetFromTuple>(hash, std::move(ast), std::move(result_block), settings[Setting::transform_null_in], size_limits_for_set);
 

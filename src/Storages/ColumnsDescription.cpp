@@ -1327,7 +1327,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     collectSourceColumns(expression_list, planner_context, false);
     collectSets(expression_list, *planner_context);
 
-    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    ColumnNodePtrWithGlobalHashSet empty_correlated_columns_set;
     auto [actions, _] = buildActionsDAGFromExpressionNode(
         expression_list,
         {},

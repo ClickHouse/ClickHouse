@@ -9,7 +9,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 
-#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/IColumnSourceNode.h>
 
 namespace DB
 {
@@ -29,7 +29,7 @@ namespace DB
 class JoinNode;
 using JoinNodePtr = std::shared_ptr<JoinNode>;
 
-class JoinNode final : public IQueryTreeNode
+class JoinNode final : public IColumnSourceNode
 {
 public:
     /** Construct join node with left table expression, right table expression and join expression.

@@ -364,7 +364,7 @@ public:
         auto node_without_alias = constant_node->clone();
         node_without_alias->removeAlias();
 
-        QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
+        QueryTreeNodePtrWithGlobalHash node_with_hash(node_without_alias);
         auto str_hash = DB::toString(node_with_hash.hash);
 
         Block scalar_block({{constant_node->getColumn(), constant_node->getResultType(), "_constant"}});
@@ -419,7 +419,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     ContextMutablePtr & mutable_context,
     size_t subquery_depth)
 {
-    const auto subquery_hash = subquery_node->getTreeHash();
+    const auto subquery_hash = subquery_node->getTreeHashGlobal();
     const auto temporary_table_name = fmt::format("_data_{}", toString(subquery_hash));
 
     const auto & external_tables = mutable_context->getExternalTables();
@@ -613,7 +613,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     auto replacement_map = visitor.getReplacementMap();
     const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
 
-    QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
+    QueryTreeNodePtrWithGlobalHashMap<TableNodePtr> global_in_temporary_tables;
 
     bool enable_add_distinct_to_in_subqueries = planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries];
 

@@ -126,7 +126,7 @@ static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressio
         collectSourceColumns(expression, planner_context, false /*keep_alias_columns*/);
         collectSets(expression, *planner_context);
 
-        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        ColumnNodePtrWithGlobalHashSet empty_correlated_columns_set;
         auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
             expression,
             /*input_columns=*/{},

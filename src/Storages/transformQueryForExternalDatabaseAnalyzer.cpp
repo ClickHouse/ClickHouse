@@ -70,9 +70,9 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
     if (const auto * join_node = join_tree->as<JoinNode>())
     {
         if (join_node->getKind() == JoinKind::Left)
-            allow_where = join_node->getLeftTableExpression()->isEqual(*replacement_table_expression);
+            allow_where = join_node->getLeftTableExpression()->isEqualGlobal(*replacement_table_expression);
         else if (join_node->getKind() == JoinKind::Right)
-            allow_where = join_node->getRightTableExpression()->isEqual(*replacement_table_expression);
+            allow_where = join_node->getRightTableExpression()->isEqualGlobal(*replacement_table_expression);
         else
             allow_where = (join_node->getKind() == JoinKind::Inner);
     }

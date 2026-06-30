@@ -1908,7 +1908,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
                 matched_column_node->as<ColumnNode &>().setColumnType(using_column_type);
                 correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
-                if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
+                if (!matched_column_node->isEqualGlobal(*join_using_column_nodes.at(0)))
                     scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
             }
         }
@@ -3167,7 +3167,9 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     if (resolved_as_cte)
                     {
                         auto original_cte_node = resolved_identifier_node;
-                        resolved_identifier_node = resolved_identifier_node->clone();
+                        /// Each reference to the CTE is a separate column source instance, so mint
+                        /// fresh column source ids: a self join of a CTE must distinguish its sides.
+                        resolved_identifier_node = resolved_identifier_node->cloneWithFreshColumnSourceIds();
                         subquery_node = resolved_identifier_node->as<QueryNode>();
                         union_node = resolved_identifier_node->as<UnionNode>();
 
@@ -3197,7 +3199,9 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     }
                     else if (table_node != nullptr && table_node->isMaterializedCTE())
                     {
-                        resolved_identifier_node = resolved_identifier_node->clone();
+                        /// Each reference clones the resolved subtree into the same query tree and
+                        /// must be a distinct column source instance (self join of a materialized CTE).
+                        resolved_identifier_node = resolved_identifier_node->cloneWithFreshColumnSourceIds();
                         auto * mat_table_node = resolved_identifier_node->as<TableNode>();
                         auto materialized_cte_ptr = mat_table_node->getMaterializedCTE();
 
@@ -3814,7 +3818,7 @@ bool nodeSupportsConvertToNullable(const QueryTreeNodePtr & node)
   */
 bool convertNestedGroupByKeysToNullable(
     QueryTreeNodePtr & node,
-    const QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> & nullable_group_by_keys,
+    const QueryTreeNodePtrWithLocalHashIgnoreAliasesMap<QueryTreeNodePtr> & nullable_group_by_keys,
     const ContextPtr & context)
 {
     if (nodeSupportsConvertToNullable(node) && nullable_group_by_keys.contains(node))
@@ -4094,7 +4098,13 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                         scope.scope_node->formatASTForErrorMessage());
                 }
 
-                resolved_identifier = resolved_identifier->clone();
+                /// Each reference in the join tree is a distinct column source instance, even when
+                /// several references resolve to the same shared node: a self-joined CTE
+                /// (`FROM cte AS a, cte AS b`) or a reused table-expression alias registered by
+                /// TableExpressionsAliasVisitor (`FROM (SELECT ...) AS l JOIN l AS r`). Mint fresh
+                /// column source ids so the references stay distinguishable under local comparison;
+                /// otherwise their columns would share ids and be wrongly treated as the same source.
+                resolved_identifier = resolved_identifier->cloneWithFreshColumnSourceIds();
                 if (table_identifier_lookup.original_ast_node)
                     resolved_identifier->setOriginalAST(table_identifier_lookup.original_ast_node);
 
@@ -6182,14 +6192,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             auto original_node = it->second;
             resolveExpressionNode(original_node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
-            bool matched = original_node->isEqual(*node);
+            bool matched = original_node->isEqualGlobal(*node);
             if (!matched)
                 /// Table expression could be resolved as scalar subquery,
                 /// but for duplicating alias we allow table expression to be returned.
                 /// So, check constant node source expression as well.
                 if (const auto * constant_node = original_node->as<ConstantNode>())
                     if (const auto & source_expression = constant_node->getSourceExpression())
-                        matched = source_expression->isEqual(*node);
+                        matched = source_expression->isEqualGlobal(*node);
 
             if (!matched)
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
@@ -6208,7 +6218,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             auto original_node = it->second;
             resolveExpressionNode(original_node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
-            if (!original_node->isEqual(*node))
+            if (!original_node->isEqualGlobal(*node))
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                     "Multiple expressions {} and {} for alias {}. In scope {}",
                     node->formatASTForErrorMessage(),

@@ -102,7 +102,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     auto node_without_alias = node->clone();
     node_without_alias->removeAlias();
 
-    QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
+    QueryTreeNodePtrWithGlobalHash node_with_hash(node_without_alias);
     auto str_hash = DB::toString(node_with_hash.hash);
 
     bool can_use_global_scalars = !only_analyze && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));

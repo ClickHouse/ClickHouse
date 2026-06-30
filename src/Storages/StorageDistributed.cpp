@@ -616,7 +616,7 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const
 {
     ColumnsWithTypeAndName empty_input_columns;
-    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    ColumnNodePtrWithGlobalHashSet empty_correlated_columns_set;
     // When comparing sharding key expressions, we need to ignore table qualifiers in column names
     // because the sharding key is defined without table qualifiers, but the query expression
     // may have internal table aliases (e.g. __table1.id). Setting use_column_identifier_as_action_node_name=false
