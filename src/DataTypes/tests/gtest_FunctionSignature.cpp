@@ -1,12 +1,18 @@
 #include <DataTypes/FunctionSignature.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnConst.h>
+#include <Common/Exception.h>
 #include <Core/Field.h>
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 
 namespace
@@ -433,4 +439,85 @@ GTEST_TEST(FunctionSignature, ToStartOfIntervalArgumentShapes)
     EXPECT_TRUE(checker.isArgumentCountInRange(3));
     EXPECT_TRUE(checker.isArgumentCountInRange(4));
     EXPECT_FALSE(checker.isArgumentCountInRange(5));
+}
+
+GTEST_TEST(FunctionSignature, PointInPolygonPointTupleMustBeNumeric)
+{
+    /// `pointInPolygon` dispatches the point's coordinates at execution through the raw
+    /// `CallPointInPolygon` `typeid_cast` over native-number `ColumnVector` types, so the point
+    /// tuple is constrained to `NativeNumber` elements (instead of the previous `Tuple(Any, Any)`).
+    /// A non-native-number point is then rejected during analysis rather than reaching the terminal
+    /// dispatch case that raises a `LOGICAL_ERROR` ("Unknown numeric column type"). The polygon
+    /// arguments stay loose; their coordinates are cast to `Float64` in bulk.
+    const String sig = "(Tuple(NativeNumber, NativeNumber), Array, ...) -> UInt8";
+
+    EXPECT_EQ(
+        checkSignature(sig, {makeColumn("Tuple(Float64, Float64)"), makeColumn("Array(Tuple(Float64, Float64))")}),
+        "UInt8");
+    EXPECT_EQ(
+        checkSignature(sig, {makeColumn("Tuple(UInt32, Int8)"), makeColumn("Array(Array(Tuple(Float64, Float64)))")}),
+        "UInt8");
+    /// A polygon split across several ring arguments (the variadic tail).
+    EXPECT_EQ(
+        checkSignature(
+            sig,
+            {makeColumn("Tuple(Float64, Float64)"),
+             makeColumn("Array(Tuple(Float64, Float64))"),
+             makeColumn("Array(Tuple(Float64, Float64))")}),
+        "UInt8");
+    /// Non-native-number point coordinates are rejected.
+    EXPECT_THAT(
+        checkSignature(sig, {makeColumn("Tuple(String, String)"), makeColumn("Array(Tuple(Float64, Float64))")}),
+        ::testing::StartsWith("FAIL:"));
+    EXPECT_THAT(
+        checkSignature(sig, {makeColumn("Tuple(Decimal(10, 2), Decimal(10, 2))"), makeColumn("Array(Tuple(Float64, Float64))")}),
+        ::testing::StartsWith("FAIL:"));
+}
+
+GTEST_TEST(FunctionSignature, SparseGramsHashesContract)
+{
+    /// `sparseGramsHashes` reads its optional `min_ngram_length` / `max_ngram_length` /
+    /// `min_cutoff_length` arguments once per block with `getUInt(0)` and only handles a
+    /// `ColumnString` input, so the signature spells the precise contract instead of `(Any, ...)`,
+    /// which used to accept non-`String` input and row-varying option columns.
+    const String sig = "(String, [const NativeInteger], [const NativeInteger], [const NativeInteger]) -> Array(UInt32)";
+
+    EXPECT_EQ(checkSignature(sig, {makeColumn("String")}), "Array(UInt32)");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("String"), makeConstColumn("UInt8", Field(UInt64(3)))}), "Array(UInt32)");
+    EXPECT_EQ(
+        checkSignature(
+            sig, {makeColumn("String"), makeConstColumn("UInt8", Field(UInt64(3))), makeConstColumn("UInt16", Field(UInt64(100)))}),
+        "Array(UInt32)");
+    /// Non-`String` input is rejected.
+    EXPECT_THAT(checkSignature(sig, {makeColumn("UInt32")}), ::testing::StartsWith("FAIL:"));
+    /// A non-constant option is rejected on the column path.
+    EXPECT_THAT(checkSignature(sig, {makeColumn("String"), makeColumn("UInt8")}), ::testing::StartsWith("FAIL:"));
+    /// A non-integer option is rejected.
+    EXPECT_THAT(
+        checkSignature(sig, {makeColumn("String"), makeConstColumn("Float64", Field(Float64(3.0)))}),
+        ::testing::StartsWith("FAIL:"));
+}
+
+GTEST_TEST(FunctionSignature, BareParametricReturnReportsCleanlyOnTypesOnly)
+{
+    /// A documentation-only signature whose return type is a bare parametric type function
+    /// (`FixedString`, `DateTime64`, `Time64`) is still evaluated by the types-only
+    /// `IFunction::getReturnTypeImpl(DataTypes)` fallback, where the size / scale constant is
+    /// unavailable. This must surface as a clean, user-facing `ILLEGAL_COLUMN` (the result type
+    /// needs a constant argument), not the internal `LOGICAL_ERROR` a bare zero-argument type
+    /// function used to raise.
+    for (const String & sig : {String("(Any) -> FixedString"), String("(Any) -> DateTime64"), String("(Any) -> Time64")})
+    {
+        FunctionSignature checker(sig);
+        String reason;
+        try
+        {
+            checker.check({makeColumn("UInt32")}, reason, /*types_only=*/ true);
+            FAIL() << "expected an exception for " << sig;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_COLUMN) << sig << ": " << e.message();
+        }
+    }
 }
