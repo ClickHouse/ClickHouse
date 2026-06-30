@@ -95,16 +95,16 @@ TRUNCATE ALL TABLES FROM db_overlay; -- { serverError TABLE_IS_PERMANENTLY_READ_
 INSERT INTO db_a.t_a VALUES (3, 'a3');
 SELECT * FROM db_overlay.t_a ORDER BY id;
 
--- A reference cycle formed by re-creating a source database is detected instead of exhausting the stack.
+-- A read-only Overlay cannot use another read-only Overlay as a source: nesting facades would let
+-- access checks and row policies bypass the intermediate facade. It is rejected at CREATE time,
+-- which also prevents the reference cycle that could otherwise form by re-creating a source database
+-- (create `cyc_b` as `Overlay('cyc_a')`, drop `cyc_a`, re-create `cyc_a` as `Overlay('cyc_b')`).
 DROP DATABASE IF EXISTS cyc_a;
 DROP DATABASE IF EXISTS cyc_b;
 CREATE DATABASE cyc_a ENGINE = Atomic;
 CREATE DATABASE cyc_b ENGINE = Overlay('cyc_a');
 DROP DATABASE cyc_a;
-CREATE DATABASE cyc_a ENGINE = Overlay('cyc_b');
-SHOW TABLES FROM cyc_a; -- { serverError BAD_ARGUMENTS }
-SELECT * FROM cyc_b.t; -- { serverError BAD_ARGUMENTS }
-DROP DATABASE cyc_a;
+CREATE DATABASE cyc_a ENGINE = Overlay('cyc_b'); -- { serverError BAD_ARGUMENTS }
 DROP DATABASE cyc_b;
 
 -- BACKUP of the facade stores only its definition; the tables belong to (and are backed up with) the underlying databases.

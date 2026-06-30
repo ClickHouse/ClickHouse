@@ -70,14 +70,6 @@ std::vector<DatabasePtr> DatabaseOverlay::resolveDatabases() const
 
     std::vector<DatabasePtr> resolved;
     resolved.reserve(source_names.size());
-    std::unordered_set<const IDatabase *> resolving;
-    resolving.insert(this);
-    resolveDatabasesImpl(resolving, resolved);
-    return resolved;
-}
-
-void DatabaseOverlay::resolveDatabasesImpl(std::unordered_set<const IDatabase *> & resolving, std::vector<DatabasePtr> & resolved) const
-{
     for (const auto & name : source_names)
     {
         auto db = DatabaseCatalog::instance().tryGetDatabase(name);
@@ -87,27 +79,26 @@ void DatabaseOverlay::resolveDatabasesImpl(std::unordered_set<const IDatabase *>
         /// `loadMetadata` the Overlay may be processed before one of its sources,
         /// and the missing source will simply become visible once it is loaded.
 
-        /// A source can itself be a read-only `Overlay`. Since sources are resolved
-        /// lazily by name, the reference graph can become cyclic after creation:
-        /// create `db_b` as `Overlay('db_a')`, drop `db_a`, re-create `db_a` as
-        /// `Overlay('db_b')` — the per-database self-reference check at CREATE time
-        /// cannot see this. Expand nested facades into their leaf databases here,
-        /// and reject cycles instead of recursing until the stack is exhausted.
-        if (const auto * nested = dynamic_cast<const DatabaseOverlay *>(db.get()); nested && nested->readonly)
-        {
-            if (!resolving.insert(nested).second)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Overlay database {} is part of a reference cycle involving database {}",
-                    backQuote(getDatabaseName()),
-                    backQuote(name));
-            nested->resolveDatabasesImpl(resolving, resolved);
-            resolving.erase(nested);
-            continue;
-        }
+        /// A read-only `Overlay` must not use another read-only `Overlay` as a source. Such nesting
+        /// would silently bypass the intermediate facade in every runtime check: reading `top.t`
+        /// (with `top = Overlay('mid')` and `mid = Overlay('src')`) resolves the storage straight
+        /// to `src.t`, so the access and row-policy code — which only sees the written id (`top.t`)
+        /// and the resolved storage id (`src.t`) — would never require the grants or apply the row
+        /// policies defined on `mid.t`. Reject the nested facade instead of flattening it.
+        ///
+        /// This also covers reference cycles that can only form after creation (create `db_b` as
+        /// `Overlay('db_a')`, drop `db_a`, re-create `db_a` as `Overlay('db_b')`), which the
+        /// per-database self-reference check at CREATE time cannot see.
+        if (const auto * nested = typeid_cast<const DatabaseOverlay *>(db.get()); nested && nested->readonly)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Overlay database {} cannot use another Overlay database {} as a source",
+                backQuote(getDatabaseName()),
+                backQuote(name));
 
         resolved.push_back(std::move(db));
     }
+    return resolved;
 }
 
 bool DatabaseOverlay::isTableExist(const String & table_name, ContextPtr context_) const
@@ -835,11 +826,24 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
 
         for (const auto & source_name : sources)
         {
-            if (validate_sources_exist && !DatabaseCatalog::instance().tryGetDatabase(source_name))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "{} database requires existing underlying database '{}', but it was not found",
-                    engine_name, source_name);
+            if (validate_sources_exist)
+            {
+                const auto source_db = DatabaseCatalog::instance().tryGetDatabase(source_name);
+                if (!source_db)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "{} database requires existing underlying database '{}', but it was not found",
+                        engine_name, source_name);
+
+                /// Reject nesting one read-only `Overlay` inside another up front. Lazy resolution
+                /// rejects it later too (see `resolveDatabases`), but an immediate error on CREATE
+                /// is friendlier than a failure on the first query through the facade.
+                if (const auto * nested = typeid_cast<const DatabaseOverlay *>(source_db.get()); nested && nested->isReadOnly())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "{} database cannot use another Overlay database '{}' as a source",
+                        engine_name, source_name);
+            }
             overlay->registerNextDatabaseByName(source_name);
         }
 
