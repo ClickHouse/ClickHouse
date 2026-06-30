@@ -597,29 +597,29 @@ class ReleaseInfo:
                 break
         self.is_branch_release = is_branch_release
 
-        # Decide whether this run creates a new release or only re-publishes
-        # artifacts for an existing one. We create a release only when it is the
-        # newest on its branch AND its tag does not exist yet. An out-of-order /
-        # already-released ref therefore skips the tag/version-bump/changelog
-        # steps instead of erroring — it just re-exports repos and rebuilds
-        # docker for the existing tag.
-        tag_commit = Shell.get_output(
-            f"git rev-parse --verify --quiet refs/tags/{release_tag}^{{commit}}"
-        )
-        self.create_new_release = is_branch_release and not tag_commit
-        if not self.create_new_release:
-            # Re-publishing an existing release: require the ref to actually be
-            # that release tag's commit, so a stale/typo'd ref cannot publish a
-            # different commit's artifacts under the tag.
-            assert tag_commit, (
-                f"ref [{commit_ref}] is not a new release on branch "
-                f"[{release_branch}] and its tag [{release_tag}] does not exist; "
-                f"nothing to create or re-publish"
+        # Whether this run creates a new release or only re-publishes artifacts
+        # for an existing one is decided by the KIND of ref supplied, not by
+        # comparing versions:
+        #   * a release tag (e.g. v26.3.17.4-lts) means "re-publish that existing
+        #     release" — recovery, so the creation steps are skipped;
+        #   * anything else — a branch name (e.g. 26.3) or a commit — is an
+        #     artificial ref meaning "create the next release on the branch".
+        # The branch name must therefore be processed as a new release, not
+        # treated like a tag we recover.
+        ref_is_release_tag = bool(
+            Shell.get_output(
+                f"git rev-parse --verify --quiet refs/tags/{commit_ref}^{{commit}}"
             )
-            assert tag_commit == commit_sha, (
-                f"ref [{commit_ref}] resolves to [{commit_sha}] but release tag "
-                f"[{release_tag}] is at [{tag_commit}] — refusing to re-publish a "
-                f"different commit under an existing tag"
+        )
+        self.create_new_release = not ref_is_release_tag
+        if not self.create_new_release:
+            # Recovery: the ref is an existing release tag, so the version derived
+            # from its commit must describe exactly that tag — otherwise we'd
+            # re-publish a different release than the one requested.
+            assert release_tag == commit_ref, (
+                f"ref [{commit_ref}] is a release tag but the version at its commit "
+                f"describes [{release_tag}]; refusing to re-publish a different "
+                f"release"
             )
         self.release_type = release_type
         return self
