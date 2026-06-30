@@ -2353,11 +2353,37 @@ class QueryResultElement extends HTMLElement
         target.style.color = on ? 'var(--text-color-active)' : '';
     }
 
+    /// Remove the emphasis from the previously emphasized column, if any, and reset the
+    /// emphasis-tracking state.
+    _clearCategoricalEmphasis()
+    {
+        if (this._emphasized_col_idx === null) { return; }
+        for (const row of this._colorTargetRows())
+        {
+            const c = row.cells[this._emphasized_col_idx];
+            if (c) { this._setCellEmphasis(c, false); }
+        }
+        this._emphasized_col_idx = null;
+        this._emphasized_value = null;
+        this._emphasized_active_cell = null;
+    }
+
     /// In categorical mode, emphasize the other cells that share the active cell's value (the
     /// background colors stay unchanged). The active cell itself is left unemphasized. A no-op for
     /// any other mode. Called whenever the selection changes.
     _refreshCategoricalEmphasis()
     {
+        /// The vertical (transposed) single-row layout shows no color coding (`applyColumnColors`
+        /// skips it), so it must not participate in categorical emphasis either. A transposed table
+        /// has no `tHead` (dropped by `transposeIfNeeded`), and every value cell there has
+        /// `cellIndex == 1`, which would otherwise be matched against the first column's stored
+        /// mode. Clear any leftover emphasis and bail out.
+        if (!this._dataTable.tHead)
+        {
+            this._clearCategoricalEmphasis();
+            return;
+        }
+
         /// Identify the new emphasis target: the active cell's column and value, but only when it
         /// is a categorical column. Otherwise there is nothing to emphasize.
         const cell = this._current_selected_cell;
@@ -2389,17 +2415,7 @@ class QueryResultElement extends HTMLElement
         }
 
         /// Clear the emphasis on the previously emphasized column.
-        if (this._emphasized_col_idx !== null)
-        {
-            for (const row of this._colorTargetRows())
-            {
-                const c = row.cells[this._emphasized_col_idx];
-                if (c) { this._setCellEmphasis(c, false); }
-            }
-            this._emphasized_col_idx = null;
-            this._emphasized_value = null;
-            this._emphasized_active_cell = null;
-        }
+        this._clearCategoricalEmphasis();
 
         if (col_idx === null) { return; }
 
@@ -2447,8 +2463,12 @@ class QueryResultElement extends HTMLElement
         if (this._totals) { return false; }
         if (!Array.isArray(this._header) || this._header.length == 0) { return false; }
         if (table.rows.length > 1) { return false; }
-        if (!table.rows[0] || table.rows[0].cells.length <= 5) { return false; }
-        return true;
+        /// An empty result (no data rows) is shown vertically too, so `transposeIfNeeded` can
+        /// render its `empty result` marker; this does not depend on the column count.
+        if (table.rows.length == 0) { return true; }
+        /// A single row is shown vertically only when it is wide: more than five cells, counting
+        /// the leading row-number cell.
+        return table.rows[0].cells.length > 5;
     }
 
     transposeIfNeeded()
