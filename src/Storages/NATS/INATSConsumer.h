@@ -9,6 +9,7 @@
 #include <Storages/NATS/StorageNATS.h>
 
 #include <memory>
+#include <mutex>
 #include <optional>
 
 namespace Poco
@@ -54,8 +55,8 @@ public:
 
     bool isConsumerStopped() { return stopped; }
 
-    bool queueEmpty() { return received->empty(); }
-    size_t queueSize() { return received->size(); }
+    bool queueEmpty() { return loadReceived()->empty(); }
+    size_t queueSize() { return loadReceived()->size(); }
 
     auto getSubject() const { return current.subject; }
     const String & getCurrentMessage() const { return current.message; }
@@ -84,6 +85,9 @@ protected:
     virtual bool needsAck() const { return false; }
 
 private:
+    std::shared_ptr<ConcurrentBoundedQueue<MessageData>> loadReceived() const;
+    void storeReceived(std::shared_ptr<ConcurrentBoundedQueue<MessageData>> queue);
+
     NATSConnectionPtr connection;
     std::vector<NATSSubscriptionPtr> subscriptions;
     const std::vector<String> subjects;
@@ -93,7 +97,8 @@ private:
     String queue_name;
 
     const uint32_t queue_size;
-    std::unique_ptr<ConcurrentBoundedQueue<MessageData>> received;
+    mutable std::mutex received_mutex;
+    std::shared_ptr<ConcurrentBoundedQueue<MessageData>> received;
     MessageData current;
     std::vector<NatsMsgPtr> consumed_messages;
 };

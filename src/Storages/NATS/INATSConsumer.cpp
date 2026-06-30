@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <utility>
 #include <Storages/NATS/INATSConsumer.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -26,8 +27,20 @@ INATSConsumer::INATSConsumer(
     , stopped(stopped_)
     , queue_name(subscribe_queue_name)
     , queue_size(queue_size_)
-    , received(std::make_unique<ConcurrentBoundedQueue<MessageData>>(queue_size_))
+    , received(std::make_shared<ConcurrentBoundedQueue<MessageData>>(queue_size_))
 {
+}
+
+std::shared_ptr<ConcurrentBoundedQueue<INATSConsumer::MessageData>> INATSConsumer::loadReceived() const
+{
+    std::lock_guard lock(received_mutex);
+    return received;
+}
+
+void INATSConsumer::storeReceived(std::shared_ptr<ConcurrentBoundedQueue<MessageData>> queue)
+{
+    std::lock_guard lock(received_mutex);
+    received = std::move(queue);
 }
 
 bool INATSConsumer::isSubscribed() const
@@ -40,8 +53,8 @@ void INATSConsumer::subscribe()
     if (isSubscribed())
         return;
 
-    if (received->isFinished())
-        received = std::make_unique<ConcurrentBoundedQueue<MessageData>>(queue_size);
+    if (loadReceived()->isFinished())
+        storeReceived(std::make_shared<ConcurrentBoundedQueue<MessageData>>(queue_size));
 
     subscribeImpl();
 }
@@ -49,7 +62,7 @@ void INATSConsumer::subscribe()
 void INATSConsumer::unsubscribe(bool finish_queue)
 {
     if (finish_queue)
-        received->finish();
+        loadReceived()->finish();
 
     for (auto & subscription : subscriptions)
     {
@@ -75,8 +88,9 @@ void INATSConsumer::unsubscribe(bool finish_queue)
 void INATSConsumer::dropBuffered()
 {
     consumed_messages.clear();
+    auto queue = loadReceived();
     MessageData dropped;
-    while (received->tryPop(dropped)) {}
+    while (queue->tryPop(dropped)) {}
 }
 
 ReadBufferPtr INATSConsumer::consume(std::optional<UInt64> timeout_ms)
@@ -84,7 +98,8 @@ ReadBufferPtr INATSConsumer::consume(std::optional<UInt64> timeout_ms)
     if (stopped)
         return nullptr;
 
-    const bool popped = timeout_ms ? received->tryPop(current, *timeout_ms) : received->tryPop(current);
+    auto queue = loadReceived();
+    const bool popped = timeout_ms ? queue->tryPop(current, *timeout_ms) : queue->tryPop(current);
     if (!popped)
         return nullptr;
 
@@ -133,7 +148,8 @@ void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, v
                 .subject = subject,
                 .msg = std::move(owned_msg),
             };
-            if (!nats_consumer->received->push(std::move(data)))
+            auto queue = nats_consumer->loadReceived();
+            if (!queue->push(std::move(data)))
             {
                 LOG_DEBUG(nats_consumer->log, "Consumer {} is shutting down, dropping a message", static_cast<void *>(nats_consumer));
                 nats_consumer->nackMessage(msg);
