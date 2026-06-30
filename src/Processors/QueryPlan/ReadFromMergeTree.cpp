@@ -265,6 +265,7 @@ namespace MergeTreeSetting
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -544,7 +545,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -654,7 +656,8 @@ Pipe ReadFromMergeTree::readFromPool(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -783,7 +786,8 @@ Pipe ReadFromMergeTree::readInOrder(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            &storage_snapshot->metadata->getColumns());
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
@@ -3028,7 +3032,9 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
 {
     if (isVectorColumnReplaced())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector column unexpectedly already replaced.");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
+            "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
     std::erase(all_column_names, vector_column);
     all_column_names.emplace_back("_distance");
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
