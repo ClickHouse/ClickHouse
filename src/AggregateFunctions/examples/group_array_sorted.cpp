@@ -1,6 +1,4 @@
 #include <algorithm>
-#include <type_traits>
-#include <utility>
 #include <iostream>
 
 #include <pcg_random.hpp>
@@ -8,6 +6,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/ArenaAllocator.h>
 #include <Common/RadixSort.h>
+#include <Common/Stopwatch.h>
 #include <Columns/ColumnArray.h>
 #include <Examples/clickhouse_examples.h>
 
