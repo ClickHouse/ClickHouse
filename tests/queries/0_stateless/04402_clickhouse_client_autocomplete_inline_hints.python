@@ -227,6 +227,18 @@ def main():
         in_query_first,
     )
 
+    # 6. An identifier that exists only in the current query (an alias not present in the loaded
+    #    suggestion dictionary, i.e. not in system.completions) is still offered as a hint. Here
+    #    "zqxjUniqueAlias" is introduced as an alias and then re-typed up to "zqxjU"; the remaining
+    #    "niqueAlias" must be shown as ghost text even though no dictionary word starts with "zqxj".
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "in_query_alias_candidate",
+        [b"SELECT 1 AS zqxjUniqueAlias, zqxjU"],
+        lambda o: (HINT_COLOR + "niqueAlias") in o,
+    )
+
 
 if __name__ == "__main__":
     main()

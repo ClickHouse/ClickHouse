@@ -116,27 +116,69 @@ LineReader::Suggest::Words LineReader::Suggest::getMatchingWords(
 
     Words result(range.first, range.second);
 
-    /// Prioritize words that the user has used or already typed. When matching case-insensitively,
-    /// membership is compared case-insensitively too (consistent with the matching above).
-    if (!result.empty() && (!recent.empty() || !priority_words.empty()))
+    /// When matching case-insensitively, membership and deduplication are compared
+    /// case-insensitively too (consistent with the prefix matching above).
+    auto fold = [no_case](std::string_view s)
     {
-        auto fold = [no_case](const std::string & s)
-        {
-            if (!no_case)
-                return s;
-            std::string folded = s;
+        std::string folded(s);
+        if (no_case)
             std::transform(folded.begin(), folded.end(), folded.begin(),
                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            return folded;
+        return folded;
+    };
+
+    std::unordered_set<std::string> recent_set;
+    for (const auto & w : recent)
+        recent_set.insert(fold(w));
+    std::unordered_set<std::string> priority_set;
+    for (const auto & w : priority_words)
+        priority_set.insert(fold(w));
+
+    /// Identifiers already present in the current query (aliases, column names) and identifiers
+    /// used earlier this session are eligible candidates even when they are not in the loaded
+    /// suggestion dictionary — otherwise a query-only alias such as `SELECT veryUniqueAlias AS x,
+    /// veryU` could never be hinted or completed, only re-ranked when it also exists in
+    /// `system.completions`. Add those that match the typed prefix (with the same case rules as the
+    /// dictionary lookup), skip the token currently being typed, and dedup against the dictionary
+    /// matches and each other.
+    if (!last_word_empty && (!recent_set.empty() || !priority_set.empty()))
+    {
+        auto prefix_matches = [&](const std::string & w)
+        {
+            if (w.size() < prefix_length || last_word.size() < prefix_length)
+                return false;
+            return no_case
+                ? strncasecmp(w.data(), last_word.data(), prefix_length) == 0 /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                : strncmp(w.data(), last_word.data(), prefix_length) == 0; /// NOLINT(bugprone-suspicious-stringview-data-usage)
         };
 
-        std::unordered_set<std::string> recent_set;
-        for (const auto & w : recent)
-            recent_set.insert(fold(w));
-        std::unordered_set<std::string> priority_set;
-        for (const auto & w : priority_words)
-            priority_set.insert(fold(w));
+        std::unordered_set<std::string> present;
+        present.reserve(result.size());
+        for (const auto & w : result)
+            present.insert(fold(w));
 
+        const std::string typed = fold(last_word);
+        auto add_candidates = [&](const Words & extra)
+        {
+            for (const auto & w : extra)
+            {
+                if (!prefix_matches(w))
+                    continue;
+                std::string folded = fold(w);
+                if (folded == typed)
+                    continue; /// the word being typed completes to itself - nothing to offer
+                if (present.insert(folded).second)
+                    result.push_back(w);
+            }
+        };
+        /// Query-local identifiers first, then session-recent ones (their tiers are applied below).
+        add_candidates(priority_words);
+        add_candidates(recent);
+    }
+
+    /// Prioritize words that the user has used or already typed.
+    if (!result.empty() && (!recent_set.empty() || !priority_set.empty()))
+    {
         /// Tier 0: used earlier this session; tier 1: present in the current input; tier 2: rest.
         /// Compute the tier once per word, then a stable sort preserves the alphabetical order
         /// within each tier.

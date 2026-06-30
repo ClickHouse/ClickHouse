@@ -8,3 +8,4 @@ right_no_list: OK
 stale_selection_enter_commits: OK
 hints_off: OK
 in_query_priority: OK
+in_query_alias_candidate: OK
