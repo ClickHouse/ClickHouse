@@ -2223,25 +2223,36 @@ def test_s3_server_credentials_anonymous_on_reload(started_cluster):
         "INSERT INTO t_server_credentials_reload SELECT * FROM numbers(100)",
         settings=allow,
     )
-    # The client built at creation uses the server credentials, so the data reads back.
+    # The client built at creation uses the server credentials. Reading back must opt in too: the create-time
+    # client is only reused by sessions with the same restriction mode, so a non-opted-in read rebuilds the
+    # client anonymously and would not see the data.
     assert (
-        instance.query("SELECT count() FROM t_server_credentials_reload").strip()
+        instance.query(
+            "SELECT count() FROM t_server_credentials_reload", settings=allow
+        ).strip()
         == "100"
     )
 
     # On restart the table is loaded from existing metadata under the default restriction. The server must
-    # still start (the table must not abort startup), and the client must be rebuilt anonymously.
+    # still start (the table must not abort startup) and the table is loaded with an anonymous client.
     instance.restart_clickhouse()
 
     assert instance.query("SELECT 1").strip() == "1"
     assert "t_server_credentials_reload" in instance.query("SHOW TABLES")
 
-    # The table is now anonymous and can no longer read the private bucket, even with the opt-in (the client
-    # was built anonymously at load time). It must not silently return the data through the server identity.
+    # A default (non-opted-in) read keeps the anonymous client built at load time, so it cannot read the
+    # private bucket and must not silently fall back to the server identity.
     with pytest.raises(helpers.client.QueryRuntimeException):
+        instance.query("SELECT count() FROM t_server_credentials_reload")
+
+    # An opted-in read rebuilds the client from the stored definition (the bare URL resolves the server's
+    # environment credentials), which is the operator escape hatch, so it reads the data back.
+    assert (
         instance.query(
             "SELECT count() FROM t_server_credentials_reload", settings=allow
-        )
+        ).strip()
+        == "100"
+    )
 
     instance.query("DROP TABLE IF EXISTS t_server_credentials_reload")
 
