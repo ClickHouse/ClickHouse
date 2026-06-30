@@ -622,33 +622,26 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
         /// Pre-check the permissions. Would be awkward if we create a temporary table and can't drop it.
         refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, db_name);
 
-        /// Drop a leftover temporary table from a previous failed refresh explicitly, bypassing the
-        /// drop size limits. CREATE OR REPLACE would instead leak it under a `_tmp_replace_*` name
-        /// when it exceeds max_table_size_to_drop (issue #104900).
-        {
-            auto drop_context = Context::createCopy(refresh_context);
-            drop_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
-            drop_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
-            auto drop_query = make_intrusive<ASTDropQuery>();
-            drop_query->setDatabase(db_name);
-            drop_query->setTable(new_table_name);
-            drop_query->kind = ASTDropQuery::Kind::Drop;
-            drop_query->if_exists = true;
-            drop_query->sync = false;
-            InterpreterDropQuery(drop_query, drop_context).execute();
-        }
-
         auto create_query
             = boost::dynamic_pointer_cast<ASTCreateQuery>(db->getCreateTableQuery(inner_table_id.table_name, getContext())->clone());
         create_query->setTable(new_table_name);
         create_query->setDatabase(db_name);
+        create_query->create_or_replace = true;
+        create_query->replace_table = true;
         /// Use UUID to ensure that the INSERT below inserts into the exact table we created, even if another replica replaced it.
         create_query->uuid = UUIDHelpers::generateV4();
         create_query->has_uuid = true;
         if (create_query->targets)
             create_query->targets->resetInnerUUIDs();
 
-        InterpreterCreateQuery create_interpreter(create_query, refresh_context);
+        /// Bypass the dropped-table size limits so CREATE OR REPLACE can drop a large leftover temp
+        /// table from a previous failed refresh instead of leaking it as `_tmp_replace_*` (issue #104900).
+        /// doCreateOrReplaceTable's internal drop inherits this context.
+        auto create_context = Context::createCopy(refresh_context);
+        create_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+        create_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+
+        InterpreterCreateQuery create_interpreter(create_query, create_context);
         create_interpreter.setInternal(true);
         /// Notice that we discard the BlockIO that execute() returns. This means that in case of DatabaseReplicated we don't wait
         /// for other replicas to execute the query, only the current replica. Same in exchangeTargetTable() and dropTempTable().

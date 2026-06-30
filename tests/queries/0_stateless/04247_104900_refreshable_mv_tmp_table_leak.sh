@@ -39,10 +39,10 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 # Scenario B: a leftover .tmp.inner_id.<uuid> from a previous failed refresh exists when
-# a refresh starts. prepareRefresh used CREATE OR REPLACE TABLE, which renames the
-# leftover to a _tmp_replace_<random> name and drops it through a path that honors
-# max_table_size_to_drop, so a large leftover failed to drop and leaked under that name.
-# The fix drops the leftover explicitly (size-bypassed) before creating the new table.
+# a refresh starts. CREATE OR REPLACE renames the leftover to a _tmp_replace_<random> name
+# and drops it; that internal drop used to honor max_table_size_to_drop, so a large leftover
+# failed to drop and leaked under that name. The fix runs CREATE OR REPLACE on a context that
+# bypasses the size limits, so the leftover is dropped instead of leaked.
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS rmv2_104900 SYNC;
     DROP TABLE IF EXISTS src2_104900 SYNC;
