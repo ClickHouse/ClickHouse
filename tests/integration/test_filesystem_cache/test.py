@@ -369,8 +369,9 @@ def test_cache_file_truncated_size_in_name(cluster, node_name):
     node.start_clickhouse()
     wait_for_cache_initialized(node, "truncated_size_in_name_test")
 
-    # Reading must not raise a LOGICAL_ERROR. A broken segment surfaces a retryable CANNOT_READ_ALL_DATA
-    # and is discarded; the next read re-fetches it from the source. Retry until the query succeeds.
+    # Reading must not raise a LOGICAL_ERROR. A truncated segment is discarded and the read is
+    # transparently re-routed to the source, so the part loads and the query succeeds. Retry
+    # defensively in case a concurrent state transition surfaces a retryable error first.
     last_error = None
     succeeded = False
     for _ in range(20):

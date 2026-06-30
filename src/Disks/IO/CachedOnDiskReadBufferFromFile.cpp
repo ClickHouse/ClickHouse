@@ -366,11 +366,19 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
         if (auto locked_key = file_segment.getKeyMetadata()->tryLock())
             locked_key->removeFileSegmentIfExists(file_segment.offset(), /* can_be_broken */true);
 
-        throw Exception(
-            ErrorCodes::CANNOT_READ_ALL_DATA,
+        LOG_WARNING(
+            getLogger("CachedOnDiskReadBufferFromFile"),
             "Cache file {} is shorter than its recorded size ({} < {}); it was likely truncated outside "
-            "ClickHouse. Discarded the cache entry; the data will be re-fetched from the source on retry",
+            "ClickHouse. Discarded the cache entry; the data will be re-fetched from the source",
             path, cache_file_size, file_segment.getDownloadedSize());
+
+        /// The broken segment is now `DETACHED`. Returning `nullptr` tells the caller to bypass the cache
+        /// and read from the source -- the same outcome as the `DETACHED` state -- rather than failing the
+        /// read. Throwing `CANNOT_READ_ALL_DATA` here would be misinterpreted as a broken part during
+        /// `MergeTree` part loading (when the truncated file happens to back a mark/metadata file), and the
+        /// part would be wrongly detached instead of self-healing.
+        info.cache_file_reader.reset();
+        return nullptr;
     }
 
     if (cache_file_size == 0)
@@ -491,6 +499,15 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
             case ReadType::CACHED:
             {
                 buf = getCacheReadBuffer(file_segment, info_);
+                if (!buf)
+                {
+                    /// `getCacheReadBuffer` found the cache file truncated outside ClickHouse, discarded the
+                    /// broken segment (now `DETACHED`) and asks us to bypass the cache. Read from the source
+                    /// instead, producing the same state as the `DETACHED` branch, so a truncated cache file
+                    /// is transparently re-fetched rather than failing the read.
+                    type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                    buf = getRemoteReadBuffer(file_segment, offset, type, info_);
+                }
                 break;
             }
             case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
