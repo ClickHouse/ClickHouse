@@ -2337,6 +2337,8 @@ The following settings can be configured by sub-tags:
 | Sub-tags             | Definition                                                                                                                                        |
 |----------------------|--------------------------------------------------------|
 | `url`                | Scheme, site, port of Vault server without path.       |
+| `secret_path`        | KV secrets engine mount path (default: `secret`).      |
+| `kv_api_version`     | KV secrets engine version, `1` or `2` (default: `2`).  |
 | `token`              | Token used for token authentication.                   |
 | `userpass`           | Section used for username and password authentication. |
 | `cert`               | Section used for TLS certificate authentication.       |

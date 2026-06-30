@@ -191,6 +191,11 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
             auth_method = HashiCorpVaultAuthMethod::Token;
         }
 
+        secret_path = config.getString(prefix + ".secret_path", "secret");
+        kv_api_version = config.getUInt(prefix + ".kv_api_version", 2);
+        if (kv_api_version != 1 && kv_api_version != 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid kv_api_version for vault: {}. Must be 1 or 2.", kv_api_version);
+
         if (scheme == "https")
 #if USE_SSL
             initRequestContext(config, prefix);
@@ -323,7 +328,10 @@ String HashiCorpVault::readSecret(const String & secret, const String & key)
     std::string json_str;
     try
     {
-        json_str = makeRequest("GET", fmt::format("/v1/secret/data/{}", secret), client_token, "");
+        if (kv_api_version == 2)
+            json_str = makeRequest("GET", fmt::format("/v1/{}/data/{}", secret_path, secret), client_token, "");
+        else
+            json_str = makeRequest("GET", fmt::format("/v1/{}/{}", secret_path, secret), client_token, "");
     }
     catch (const DB::HTTPException & e)
     {
@@ -349,14 +357,18 @@ String HashiCorpVault::readSecret(const String & secret, const String & key)
     {
         const Poco::JSON::Object::Ptr & root = res_json.extract<Poco::JSON::Object::Ptr>();
         const Poco::JSON::Object::Ptr & data = root->getObject("data");
-        const Poco::JSON::Object::Ptr & kv = data->getObject("data");
 
-        if (!kv->has(key))
+        if (kv_api_version == 2)
+        {
+            const Poco::JSON::Object::Ptr & kv = data->getObject("data");
+            if (!kv->has(key))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key {} not found in secret {} of vault.", key, secret);
+            return kv->get(key).extract<String>();
+        }
+
+        if (!data->has(key))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key {} not found in secret {} of vault.", key, secret);
-
-        const auto value = kv->get(key).extract<String>();
-
-        return value;
+        return data->get(key).extract<String>();
     }
     catch (const Exception &)
     {

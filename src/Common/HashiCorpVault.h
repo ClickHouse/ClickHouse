@@ -47,6 +47,8 @@ private:
         client_token = "";
         cert_name = "";
         port = 0;
+        secret_path = "secret";
+        kv_api_version = 2;
         auth_method = HashiCorpVaultAuthMethod::Token;
 #if USE_SSL
         request_context = nullptr;
@@ -68,6 +70,8 @@ private:
     String scheme;
     String host;
     int port = 0;
+    String secret_path = "secret";
+    int kv_api_version = 2;
     HashiCorpVaultAuthMethod auth_method = HashiCorpVaultAuthMethod::Token;
 #if USE_SSL
     Poco::Net::Context::Ptr request_context;
