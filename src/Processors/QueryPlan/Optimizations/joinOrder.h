@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string_view>
 #include <vector>
 #include <Core/Joins.h>
 #include <Common/EquivalenceClasses.h>
@@ -54,12 +55,60 @@ struct DPJoinEntry
     String dump() const;
 };
 
+enum class RowEstimateSource : UInt8
+{
+    /// Real column statistics (or an exact row count).
+    Statistics,
+    /// Estimated from the primary index because column statistics are missing.
+    PrimaryIndex,
+    /// No estimate could be derived at all while column statistics are missing.
+    NoStatistics,
+    /// Synthetic estimate from the `_internal_join_table_stat_hints` query parameter (testing only).
+    Hint,
+    /// Randomized estimate produced for join-reordering stress testing (testing only).
+    Randomized,
+    /// Measured row count reused from a previous run's hash table.
+    HashTableCache,
+};
+
+/// Imprecise specifically because column statistics are missing (excludes the synthetic test sources).
+constexpr bool isMissingStatisticsSource(RowEstimateSource source)
+{
+    return source == RowEstimateSource::PrimaryIndex
+        || source == RowEstimateSource::NoStatistics;
+}
+
+/// EXPLAIN prefix for the row count, e.g. `no_stats` in `a[no_stats~1000]`; empty for `Statistics`.
+constexpr std::string_view rowEstimateSourceTag(RowEstimateSource source)
+{
+    switch (source)
+    {
+        case RowEstimateSource::PrimaryIndex:
+        case RowEstimateSource::NoStatistics:
+            return "no_stats";
+        case RowEstimateSource::Hint:
+            return "hint";
+        case RowEstimateSource::Randomized:
+            return "random";
+        case RowEstimateSource::HashTableCache:
+            return "cache";
+        case RowEstimateSource::Statistics:
+            return "";
+    }
+    return "";
+}
+
 struct RelationStats
 {
     std::optional<UInt64> estimated_rows = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     String table_name;
+
+    bool imprecise_estimate = false;
+
+    /// Diagnostic annotation of where `estimated_rows` came from; see `RowEstimateSource`.
+    RowEstimateSource source = RowEstimateSource::Statistics;
 };
 
 struct QueryGraph
