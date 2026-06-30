@@ -38,6 +38,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -225,6 +226,7 @@ namespace Setting
     extern const SettingsString order;
     extern const SettingsString sort;
     extern const SettingsString filter;
+    extern const SettingsString implicit_table_at_top_level;
     extern const SettingsDouble page;
     extern const SettingsDouble limit;
     extern const SettingsDouble offset;
@@ -1869,6 +1871,37 @@ static void applyQueryConstructionSettings(
                             merged.push_back(change);
                 }
             }
+        }
+    }
+
+    /// Materialize `implicit_table_at_top_level` into the base query *before* it is wrapped.
+    /// The setting (set e.g. by the HTTP path interface for `/db/t?query=SELECT x`) makes a
+    /// top-level FROM-less `SELECT` read from the path table. The analyzer applies it only to a
+    /// non-subquery FROM-less `SELECT` (`QueryTreeBuilder::buildJoinTree`), but the wrapping below
+    /// turns the base query into a derived-table subquery `SELECT * FROM (SELECT x)`. A single-arm
+    /// base then becomes a subquery (`buildSelectWithUnionExpression` forwards `is_subquery = true`
+    /// to the lone arm), so `SELECT x` would fall back to `system.one` and `x` would not resolve
+    /// against `db.t`. Splice the table in as an explicit `FROM` on every FROM-less arm of the base
+    /// so it keeps reading from the path table once nested. The setting itself is left set: it is a
+    /// no-op for the outer wrapper (which now has a `FROM`) and still covers any FROM-less arm that is
+    /// not a plain `ASTSelectQuery` (e.g. a nested parenthesized union), matching the analyzer, whose
+    /// multi-arm path builds each arm as a non-subquery regardless.
+    if (const String & implicit_table = settings[Setting::implicit_table_at_top_level]; !implicit_table.empty())
+    {
+        ASTPtr tables_template;
+        for (auto & select_child : base_select->list_of_selects->children)
+        {
+            auto * inner_select = select_child->as<ASTSelectQuery>();
+            if (!inner_select || inner_select->tables())
+                continue;
+            if (!tables_template)
+            {
+                ParserTablesInSelectQuery tables_parser;
+                tables_template = parseQuery(
+                    tables_parser, implicit_table.data(), implicit_table.data() + implicit_table.size(),
+                    "implicit_table_at_top_level setting", max_query_size, max_parser_depth, max_parser_backtracks);
+            }
+            inner_select->setExpression(ASTSelectQuery::Expression::TABLES, tables_template->clone());
         }
     }
 
