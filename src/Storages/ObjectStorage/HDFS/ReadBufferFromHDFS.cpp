@@ -10,7 +10,6 @@
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 #include <IO/ReadSettings.h>
 #include <hdfs/hdfs.h>
 #include <limits>
@@ -168,9 +167,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     size_t pread(char * buffer, size_t size, size_t offset)
     {
         ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, size);
-        /// Account each successfully read chunk immediately, so that scheduler/profile accounting
-        /// reflects the bytes already consumed even if a later chunk or the throttler throws.
-        SCOPE_EXIT({ rlock.unlock(); });
 
         /// `hdfsPread` takes the size as a 32-bit `tSize`, so a single request above `INT_MAX` would
         /// overflow. Split larger requests into chunks capped at this boundary.
