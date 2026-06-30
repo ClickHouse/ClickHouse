@@ -20,6 +20,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
@@ -42,6 +43,13 @@
 
 #if USE_AVRO
 
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event IcebergMetadataFilesCacheSkipped;
+}
+
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -52,7 +60,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 
@@ -467,7 +474,8 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     const ContextPtr & local_context,
     LoggerPtr log,
     CompressionMethod compression_method,
-    const std::optional<String> & table_uuid)
+    const std::optional<String> & table_uuid,
+    String & raw_json_out)
 {
     auto create_fn = [&]()
     {
@@ -496,11 +504,30 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
         metadata_json_str = metadata_cache->getOrSetTableMetadata(
             IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
     else
+    {
+        if (metadata_cache)
+            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheSkipped);
         metadata_json_str = create_fn();
+    }
+
+    raw_json_out = std::move(metadata_json_str);
 
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-    Poco::Dynamic::Var json = parser.parse(metadata_json_str);
+    Poco::Dynamic::Var json = parser.parse(raw_json_out);
     return json.extract<Poco::JSON::Object::Ptr>();
+}
+
+Poco::JSON::Object::Ptr getMetadataJSONObject(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method,
+    const std::optional<String> & table_uuid)
+{
+    String raw_json;
+    return getMetadataJSONObject(metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, raw_json);
 }
 
 /// Returns type and required

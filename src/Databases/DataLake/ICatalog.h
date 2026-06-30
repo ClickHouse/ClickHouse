@@ -19,7 +19,8 @@ StorageType parseStorageTypeFromString(const std::string &type);
 
 struct DataLakeSpecificProperties
 {
-    std::string iceberg_metadata_file_location;
+    std::string iceberg_metadata_file_location{};
+    std::string iceberg_table_uuid{}; /// Populated from REST catalog inline metadata
 };
 
 /// A class representing table metadata,
