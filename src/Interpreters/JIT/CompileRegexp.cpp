@@ -601,7 +601,23 @@ std::shared_ptr<CompiledRegexpHolder> compileMatcher(const RegexpProgram & progr
     }
 
     auto func = reinterpret_cast<JITRegexpMatcherFunc>(it->second);
-    return std::make_shared<CompiledRegexpHolder>(compiled_module, std::move(jit), func, program.num_captures);
+
+    /// `compileModule` has already registered the module in the JIT instance; it is released only by
+    /// `deleteCompiledModule` (called from `~CompiledRegexpHolder`). Until the holder is constructed and
+    /// takes ownership, there is an unmanaged gap: if `make_shared` throws (e.g. `bad_alloc`), the module
+    /// would stay mapped until a full reset of the regexp JIT instance. Delete it explicitly on that path.
+    /// The raw pointer stays valid even after `jit` is moved from, because `regexp_jit_instance` keeps the
+    /// `CHJIT` alive.
+    CHJIT * jit_ptr = jit.get();
+    try
+    {
+        return std::make_shared<CompiledRegexpHolder>(compiled_module, std::move(jit), func, program.num_captures);
+    }
+    catch (...)
+    {
+        jit_ptr->deleteCompiledModule(compiled_module);
+        throw;
+    }
 }
 
 }
