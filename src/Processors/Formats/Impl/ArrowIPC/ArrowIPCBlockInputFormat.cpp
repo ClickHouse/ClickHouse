@@ -459,6 +459,12 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
             auto decoded = temp_decoder->decodeColumns(*dict_batch->data(), body_buffer, value_fields);
             checkDictionaryUnique(decoded.at(0).column);
             dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
+            /// A delta batch merges into the existing dictionary; re-validate the merged values. The
+            /// per-batch check above only proves the delta is internally unique, but a unique delta can
+            /// still repeat a value already present in the base dictionary, which would violate the
+            /// LowCardinality dictionary uniqueness invariant the non-delta path enforces.
+            if (dict_batch->isDelta())
+                checkDictionaryUnique(dictionaries.get(id));
         }
     }
 }
@@ -841,6 +847,12 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                 auto decoded = decoder->decodeColumns(*dict_batch->data(), body_buffer, value_fields);
                 checkDictionaryUnique(decoded.at(0).column);
                 dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
+                /// A delta batch merges into the existing dictionary; re-validate the merged values. The
+                /// per-batch check above only proves the delta is internally unique, but a unique delta can
+                /// still repeat a value already present in the base dictionary, which would violate the
+                /// LowCardinality dictionary uniqueness invariant the non-delta path enforces.
+                if (dict_batch->isDelta())
+                    checkDictionaryUnique(dictionaries.get(id));
                 continue;
             }
             case ArrowIPC::flatbuf::MessageHeader_Schema:
