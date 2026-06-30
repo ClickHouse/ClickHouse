@@ -756,29 +756,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
         normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup);
 
-    /// For queries that populate the table immediately (CREATE ... AS SELECT, or a materialized/window
-    /// view with POPULATE), the table is created first and the data is inserted afterwards by an
-    /// INSERT SELECT (see fillTableIfNeeded). If the user lacks access to a table referenced by the
-    /// SELECT, that INSERT SELECT would fail only after the table has already been created, leaving an
-    /// empty orphan table behind (issue #26746: a retry then reports `TABLE_ALREADY_EXISTS` instead of
-    /// the access error). To prevent this, verify access to all referenced tables now, before the table
-    /// is created, by building a full query plan: in only_analyze mode subqueries in WHERE/IN/scalar
-    /// positions are not recursively planned, so their (column-aware) access checks would be skipped.
-    ///
-    /// This check must run for every isCreateQueryWithImmediateInsertSelect() form, regardless of whether
-    /// the columns are inferred from the SELECT or given explicitly. An explicit column list takes the
-    /// `create.columns_list` branch below, which never analyzes the SELECT, so doing this next to the
-    /// column inference would miss it; hence it lives here, before any branch.
-    if (create.isCreateQueryWithImmediateInsertSelect()
-        && getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        /// Use the same context and options as the subsequent INSERT SELECT (see fillTableIfNeeded), so
-        /// this check mirrors that query plan exactly and cannot introduce a failure mode that the insert
-        /// would not also hit - it only moves the access check before the table is created.
-        InterpreterSelectQueryAnalyzer(create.select->clone(), getContext(),
-            SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1)).getQueryPlan();
-    }
-
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
@@ -1049,6 +1026,37 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// supports schema inference (will determine table structure in it's constructor).
     else if (!StorageFactory::instance().getStorageFeatures(create.storage->engine->name).supports_schema_inference)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect CREATE query: required list of column descriptions or AS section or SELECT.");
+
+    /// For queries that populate the table immediately (CREATE ... AS SELECT, or a materialized/window
+    /// view with POPULATE), the table is created first and the data is inserted afterwards by an
+    /// INSERT SELECT (see fillTableIfNeeded). If the user lacks access to a table referenced by the
+    /// SELECT, that INSERT SELECT would fail only after the table has already been created, leaving an
+    /// empty orphan table behind (issue #26746: a retry then reports `TABLE_ALREADY_EXISTS` instead of
+    /// the access error). To prevent this, verify access to all referenced tables now, before the table
+    /// is created, by building a full query plan: a sample-block (only_analyze) build does not recursively
+    /// plan subqueries in WHERE/IN/scalar positions, so their (column-aware) access checks would be missed.
+    ///
+    /// This runs for every isCreateQueryWithImmediateInsertSelect() form (columns inferred from the SELECT
+    /// or given explicitly, and materialized/window views with POPULATE), so it lives here, after the
+    /// column structure is known but before the table is created.
+    if (create.isCreateQueryWithImmediateInsertSelect()
+        && getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        /// Mirror the subsequent INSERT SELECT (see fillTableIfNeeded) exactly, so this check cannot
+        /// introduce a failure mode the insert would not also hit. In particular that INSERT SELECT sets the
+        /// just-created table as the insertion table, which lets table functions in the SELECT infer their
+        /// structure from the target table's columns (use_structure_from_insertion_table_in_table_functions),
+        /// e.g. `CREATE TABLE t (a Int32) AS SELECT * FROM file('x.bin', RowBinary)`. The table does not
+        /// exist yet, so provide the structure we just computed (which is what the table will have). Options
+        /// match InterpreterInsertQuery: SelectQueryOptions(Complete, subquery_depth = 1).
+        auto check_context = Context::createCopy(getContext());
+        check_context->setInsertionTable(
+            StorageID(create.getDatabase(), create.getTable(), create.uuid),
+            /*column_names=*/std::nullopt,
+            std::make_shared<ColumnsDescription>(properties.columns));
+        InterpreterSelectQueryAnalyzer(create.select->clone(), check_context,
+            SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1)).getQueryPlan();
+    }
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     if (!create.columns_list)
