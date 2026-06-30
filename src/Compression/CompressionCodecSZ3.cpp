@@ -19,7 +19,6 @@
 #    include <Parsers/IAST.h>
 #    include "Common/Exception.h"
 #    include <Common/SipHash.h>
-#    include <base/unaligned.h>
 #    include "base/types.h"
 
 #    include <SZ3/api/sz.hpp>
@@ -257,10 +256,9 @@ static void decompressSZ3(const char * source, UInt32 source_size, char * dest, 
     /// not hardened against corrupted input (e.g. ALGO_BIOMD/ALGO_BIOMDXTC, the OpenMP path), or claim a huge
     /// element count to force a large allocation. We only ever write the interpolation/Lorenzo algorithms in a
     /// single-stream layout, so reject anything else here.
-    uint64_t compressed_payload_size = 0;
     try
     {
-        compressed_payload_size = SZ_load_config(config, source, source_size);
+        SZ_load_config(config, source, source_size);
     }
     catch (const std::exception & e)
     {
@@ -286,27 +284,9 @@ static void decompressSZ3(const char * source, UInt32 source_size, char * dest, 
         throw Exception(
             ErrorCodes::CORRUPTED_DATA, "SZ3 element count {} does not match the expected {}", config.num, expected_num);
 
-    /// SZ3 transparently falls back to a plain lossless (zstd) block for data that does not compress well, so
-    /// ALGO_LOSSLESS is also produced by this codec. That payload starts with an 8-byte little-endian size
-    /// header holding the original (decompressed) data size. SZ3 hands this UNTRUSTED size to zstd as the
-    /// destination capacity of the output buffer it allocated from `config.num`, and only compares it with the
-    /// expected size AFTER decompression - so a crafted block could declare a larger size and let zstd write
-    /// past the buffer before the mismatch is noticed. Validate the declared size against the trusted
-    /// uncompressed size before dispatch. (The interpolation/Lorenzo payloads have no such header.)
-    if (config.cmprAlgo == SZ3::ALGO_LOSSLESS)
-    {
-        if (compressed_payload_size < sizeof(size_t))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "SZ3 lossless payload is smaller than its size header");
-        /// The 16-byte SZ3 header (magic + version + payload size) is followed by the lossless payload, which
-        /// begins with its own size prefix; `SZ_load_config` already validated that the payload lies within
-        /// the buffer.
-        const size_t declared_size = unalignedLoadLittleEndian<size_t>(source + 16);
-        if (declared_size != uncompressed_size)
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "SZ3 lossless payload declares output size {} but the trusted uncompressed size is {}",
-                declared_size, uncompressed_size);
-    }
+    /// The lossless (zstd) fallback the codec also produces (ALGO_LOSSLESS) reads a second, untrusted output
+    /// size from its payload. The contrib fork bounds that size against the buffer capacity (`conf.num`
+    /// elements) before zstd runs, so a crafted block can not write past the output buffer here.
 
     T * decompressed = nullptr;
     try
