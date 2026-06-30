@@ -1187,6 +1187,79 @@ def test_backup_table_engine(started_cluster):
     pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
 
 
+def test_backup_table_partitions(started_cluster):
+    # Regression for an AI-review finding: BACKUP TABLE ... PARTITIONS of a MaterializedPostgreSQL table
+    # used to be rejected with "Table engine MaterializedPostgreSQL doesn't support partitions", because
+    # StorageMaterializedPostgreSQL inherited IStorage::supportsBackupPartition() == false even though its
+    # backupData already forwards the selected partitions to the nested ReplacingMergeTree (which does
+    # support partition backups). BackupEntriesCollector checks that flag before calling backupData, so the
+    # backup failed before the delegation could run. supportsBackupPartition now delegates to the nested
+    # table, so a single-partition backup succeeds and, restored into a standalone ReplacingMergeTree,
+    # contains only the selected partitions.
+    #
+    # The nested table is partitioned via a TABLE OVERRIDE (the database engine path), because that is the
+    # only way to give the nested ReplacingMergeTree a partition key - the standalone table engine does not
+    # propagate PARTITION BY. The supportsBackupPartition override being exercised here is shared by both.
+    table_name = "test_backup_partitions"
+    materialized_database = "test_database"
+
+    pg_manager.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+    pg_manager.create_postgres_table(table_name, template=postgres_table_template_6)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number) FROM numbers(5)"
+    )
+
+    # PARTITION BY key makes each key its own partition in the nested ReplacingMergeTree.
+    table_overrides = f" TABLE OVERRIDE {table_name} (COLUMNS (key Int32, value String) PARTITION BY key)"
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+        materialized_database=materialized_database,
+        table_overrides=table_overrides,
+    )
+    check_tables_are_synchronized(
+        instance, table_name, postgres_database=pg_manager.get_default_database()
+    )
+    assert 5 == int(
+        instance.query(f"SELECT count() FROM {materialized_database}.{table_name}")
+    )
+
+    backup_name = "Disk('backups', 'mpg_partitions_backup')"
+    # Previously rejected with "doesn't support partitions" before the delegation could run; must now succeed.
+    instance.query(
+        f"BACKUP TABLE {materialized_database}.{table_name} PARTITIONS '1', '3' TO {backup_name}"
+    )
+
+    # Only the selected partitions (keys 1 and 3) were backed up. Restore them into a standalone
+    # ReplacingMergeTree with the same partition key. `allow_different_table_def` is required because the
+    # definition stored in the backup is the MaterializedPostgreSQL nested table, which we intentionally
+    # restore as a plain ReplacingMergeTree; only the data has to match.
+    instance.query("DROP TABLE IF EXISTS restored_partitions SYNC")
+    instance.query(
+        """
+        CREATE TABLE restored_partitions
+        (
+            key Int32,
+            value String,
+            _sign Int8 MATERIALIZED 1,
+            _version UInt64 MATERIALIZED 1
+        )
+        ENGINE = ReplacingMergeTree(_version) PARTITION BY key ORDER BY key
+        """
+    )
+    instance.query(
+        f"RESTORE TABLE {materialized_database}.{table_name} AS restored_partitions FROM {backup_name} SETTINGS allow_different_table_def = 1"
+    )
+    assert "1\n3" == instance.query(
+        "SELECT key FROM restored_partitions ORDER BY key"
+    ).strip()
+
+    instance.query("DROP TABLE IF EXISTS restored_partitions SYNC")
+    pg_manager.drop_materialized_db()
+    pg_manager.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+
+
 def test_numeric_to_int256(started_cluster):
     # https://github.com/ClickHouse/ClickHouse/issues/59224
     # PostgreSQL numeric with precision wider than Decimal256 can hold (76 digits) and scale 0
