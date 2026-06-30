@@ -660,33 +660,58 @@ void DatabaseWithOwnTablesBase::shutdown()
         {
             auto run_task = [this, table = kv.second, &record_error]
             {
-                /// Widened try so that getStorageID() and removeUUIDMapping() are also caught here
-                /// rather than escaping into the task future, which waitForAllToFinish drops.
-                /// removeUUIDMapping can throw LOGICAL_ERROR if the mapping is already gone.
+                /// UUID mapping cleanup MUST run even if flushAndShutdown throws — otherwise the
+                /// catalog keeps holding the StoragePtr past Context::shutdown and the table is
+                /// only destroyed at process exit, after Poco loggers and static pools are gone.
+                /// So: separate try/catch blocks for the storage-ID lookup, the flush, and the
+                /// UUID mapping removal. Each records its exception via record_error so nothing
+                /// escapes into the task future (which waitForAllToFinish discards).
+                std::optional<StorageID> table_id;
                 try
                 {
-                    auto table_id = table->getStorageID();
+                    table_id = table->getStorageID();
+                }
+                catch (...)
+                {
+                    record_error(std::current_exception());
+                    tryLogCurrentException(log, "Failed to read storage ID during shutdown");
+                    return;
+                }
+
+                try
+                {
                     fiu_do_on(FailPoints::database_catalog_shutdown_sleep_per_table,
                     {
                         /// Skip predefined databases (system / information_schema) so the test's
                         /// shutdown-time budget is consumed only by the user database under test.
-                        if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
+                        if (!DatabaseCatalog::isPredefinedDatabase(table_id->database_name))
                             sleepForSeconds(1);
                     });
 
                     fiu_do_on(FailPoints::database_catalog_throw_on_table_shutdown,
                     {
-                        if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
-                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while shutting down table {}", table_id.getNameForLogs());
+                        if (!DatabaseCatalog::isPredefinedDatabase(table_id->database_name))
+                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while shutting down table {}", table_id->getNameForLogs());
                     });
                     table->flushAndShutdown();
-                    if (table_id.hasUUID())
-                        DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
                 }
                 catch (...)
                 {
                     record_error(std::current_exception());
-                    tryLogCurrentException(log, "Failed to shut down table");
+                    tryLogCurrentException(log, fmt::format("Failed to shut down table {}", table_id->getNameForLogs()));
+                }
+
+                if (table_id->hasUUID())
+                {
+                    try
+                    {
+                        DatabaseCatalog::instance().removeUUIDMapping(table_id->uuid);
+                    }
+                    catch (...)
+                    {
+                        record_error(std::current_exception());
+                        tryLogCurrentException(log, fmt::format("Failed to remove UUID mapping for table {}", table_id->getNameForLogs()));
+                    }
                 }
             };
 
