@@ -151,7 +151,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                 else
                 {
                     LOG_DEBUG(
-                        log ? log : getLogger("RemoteQueryExecutor"),
+                        log,
                         "Disconnecting replica {} (protocol_version={}, parallel_replicas_version={}): "
                         "no stream_id support (requires parallel_replicas_version >= {})",
                         result.entry->getDescription(),
@@ -320,7 +320,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         }
         catch (...)
         {
-            tryLogCurrentException(log ? log : getLogger("RemoteQueryExecutor"));
+            tryLogCurrentException(log);
         }
     }
 
@@ -337,7 +337,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         }
         catch (...)
         {
-            tryLogCurrentException(log ? log : getLogger("RemoteQueryExecutor"));
+            tryLogCurrentException(log);
         }
     }
 }
@@ -781,7 +781,17 @@ void RemoteQueryExecutor::finish()
       * then you do not need to read anything.
       */
     if (!isQueryPending() || hasThrownException() || was_cancelled)
+    {
+        /// If the query was never sent there is nothing to drain, but we must still mark the
+        /// executor as finished. Otherwise a RemoteSource whose output is closed before it sends
+        /// its query (e.g. an empty-build ANY INNER JOIN that short-circuits the probe side) keeps
+        /// re-entering its drain path via prepare()/work() and spins forever, because isFinished()
+        /// never becomes true. On Linux the async startup path always sends the query before this
+        /// point, so only the synchronous (non-Linux) send path is affected.
+        if (!sent_query)
+            finished = true;
         return;
+    }
 
     /// To make sure finish is only called once
     SCOPE_EXIT({ finished = true; });
@@ -963,8 +973,7 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
     if (connections && sent_query && !finished)
     {
         connections->sendCancel();
-        if (log)
-            LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
+        LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
     }
 }
 
