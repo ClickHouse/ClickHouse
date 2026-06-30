@@ -1,8 +1,0 @@
--- without optimization
-[1]
-[1]
-[2]
--- with optimization (must produce same results)
-[1]
-[1]
-[2]

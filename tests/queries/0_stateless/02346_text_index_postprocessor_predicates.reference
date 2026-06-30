@@ -60,3 +60,10 @@
 11. sparseGrams + postprocessor: needle compaction stays sound (no false positives in Exact direct read).
 0
 2
+12. ilike: the dictionary-scan optimization bails out when a postprocessor is configured, so results are identical with use_text_index_like_evaluation_by_dictionary_scan off and on.
+1
+1
+1
+1
+1
+1
