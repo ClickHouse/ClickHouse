@@ -94,8 +94,24 @@ bool authenticateUserByHTTP(
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
-    bool has_http_credentials = request.hasCredentials() && request.get("Authorization") != "never";
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
+
+    /// Credentials passed in the URL query parameters take precedence over the HTTP
+    /// `Authorization` header: when both are present, the header is ignored instead of
+    /// rejecting the request for mixing authentication methods.
+    ///
+    /// This is needed because once a browser has remembered HTTP Basic credentials for an
+    /// origin, it attaches the `Authorization` header to every subsequent request to that
+    /// origin automatically - including requests that the application has no way to add or
+    /// remove headers from, such as a form submission or a download navigation. The Web UI
+    /// (`play.html`) authenticates by putting the user name and password into the URL query
+    /// parameters, so without this precedence such a request would carry both the remembered
+    /// header and the parameters and be rejected. (The special value `Authorization: never`
+    /// also suppresses the header, but it can only be set from `fetch`/`XMLHttpRequest`, not
+    /// from a plain navigation.)
+    bool has_http_credentials = request.hasCredentials()
+        && request.get("Authorization") != "never"
+        && !has_credentials_in_query_params;
 
     std::string spnego_challenge;
 #if USE_SSL
@@ -160,10 +176,10 @@ bool authenticateUserByHTTP(
     else if (has_http_credentials)
     {
         /// It is prohibited to mix different authorization schemes.
+        /// (Authentication via query parameters takes precedence over the `Authorization`
+        /// header and is handled above by excluding it from `has_http_credentials`.)
         if (has_config_credentials)
             throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication set in config");
-        if (has_credentials_in_query_params)
-            throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication via parameters");
 
         std::string scheme;
         std::string auth_info;
