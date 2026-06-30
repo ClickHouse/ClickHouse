@@ -21,6 +21,7 @@
 #include <Common/TypePromotion.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include <atomic>
 #include <expected>
 #include <optional>
 #include <list>
@@ -221,7 +222,21 @@ public:
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
+        /// Advance the process-lifetime metadata version (see `getMetadataVersionForModificationHash`).
+        /// This is the single point through which table metadata is applied (initial load and every
+        /// metadata-changing ALTER), so engines that fold their column/key metadata into
+        /// `getModificationHash` can fold this version to make a metadata `A -> B -> A` round trip
+        /// produce a different hash instead of repeating the earlier one.
+        metadata_version_for_modification_hash.fetch_add(1, std::memory_order_relaxed);
     }
+
+    /// A process-lifetime counter that advances on every `setInMemoryMetadata` (the universal metadata
+    /// setter). It is only meaningful relative to itself within one server lifetime (it resets to 0 on
+    /// restart, the safe direction for the in-memory consumers). Folded into `getModificationHash` by
+    /// engines whose hash includes the current column/key metadata, so that reverting a metadata-only
+    /// `ALTER` (e.g. an alias/default expression) does not reproduce an earlier hash. See the
+    /// `getModificationHash` contract.
+    UInt64 getMetadataVersionForModificationHash() const { return metadata_version_for_modification_hash.load(std::memory_order_relaxed); }
 
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
@@ -286,6 +301,10 @@ private:
 
     /// Multiversion storage metadata. Allows to read/write storage metadata without locks.
     MultiVersionStorageMetadataPtr metadata;
+
+    /// Process-lifetime counter advanced on every `setInMemoryMetadata`; see
+    /// `getMetadataVersionForModificationHash`.
+    std::atomic<UInt64> metadata_version_for_modification_hash = 0;
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(

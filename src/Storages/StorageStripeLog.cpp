@@ -628,6 +628,9 @@ std::optional<UInt128> StorageStripeLog::getModificationHash(const StorageSnapsh
     /// counts. The version resets to 0 on restart, which only causes a harmless cache miss.
     hash.update(getStorageID().uuid);
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+    /// Loop-free metadata version: the column string above repeats under a reverted metadata-only `ALTER`
+    /// and `data_version` does not move (no data changed). See `IStorage::getMetadataVersionForModificationHash`.
+    hash.update(getMetadataVersionForModificationHash());
     hash.update(data_version.load(std::memory_order_relaxed));
     hash.update(total_rows.load(std::memory_order_relaxed));
     hash.update(total_bytes.load(std::memory_order_relaxed));

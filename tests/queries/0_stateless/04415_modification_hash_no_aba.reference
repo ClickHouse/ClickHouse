@@ -12,3 +12,7 @@
 1
 -- loop-free across a metadata round trip (M_A != M_A_again)
 1
+-- Memory: hash changed on metadata change (MM_A != MM_B)
+1
+-- Memory: loop-free across a metadata round trip (MM_A != MM_A_again)
+1

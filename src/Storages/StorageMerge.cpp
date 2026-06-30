@@ -1900,6 +1900,10 @@ std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPt
 
         SipHash hash;
         hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+        /// Loop-free metadata version for this Merge table's own column metadata (a reverted metadata-only
+        /// `ALTER` would otherwise repeat the column string above). See
+        /// `IStorage::getMetadataVersionForModificationHash`.
+        hash.update(getMetadataVersionForModificationHash());
         hash.update(table_hashes.size());
         for (const auto & table_hash : table_hashes)
             hash.update(table_hash);

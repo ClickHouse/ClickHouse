@@ -1243,12 +1243,6 @@ void MergeTreeData::setProperties(
 
     setInMemoryMetadata(new_metadata);
 
-    /// Advance the loop-free metadata version (see the field declaration) so that a metadata
-    /// `A -> B -> A` round trip does not reproduce an earlier `getModificationHash`. This is the single
-    /// choke point through which the metadata folded into that hash (columns and key expressions) is
-    /// applied, both on the initial load and on every metadata-changing `ALTER`.
-    metadata_change_version.fetch_add(1);
-
     std::lock_guard lock(patch_parts_metadata_mutex);
     patch_parts_metadata_cache.clear();
 }
@@ -11112,8 +11106,9 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
     /// Same loop-free guard for metadata: the column/key strings folded above repeat under a metadata
     /// `A -> B -> A` transition (e.g. `ALTER ... MODIFY COLUMN ... ALIAS ...` then back), and the
     /// active-part counter would not move because no part changes. The metadata version advances on every
-    /// metadata application, so the round trip yields a different hash. See `metadata_change_version`.
-    hash.update(metadata_change_version.load());
+    /// metadata application, so the round trip yields a different hash. See
+    /// `IStorage::getMetadataVersionForModificationHash`.
+    hash.update(getMetadataVersionForModificationHash());
 
     /// Data version: the set of active data parts. Each part is uniquely identified within a table
     /// incarnation by its (partition_id, min_block, max_block, level, mutation), which changes on every

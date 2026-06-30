@@ -1876,6 +1876,10 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
 
         SipHash hash;
         hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+        /// Loop-free metadata version for this Distributed table's own column metadata (a reverted
+        /// metadata-only `ALTER` would otherwise repeat the column string above). See
+        /// `IStorage::getMetadataVersionForModificationHash`.
+        hash.update(getMetadataVersionForModificationHash());
         hash.update(remote_database);
         hash.update(remote_table);
         hash.update(shards_info.size());

@@ -70,7 +70,25 @@ SELECT (SELECT v FROM hashes WHERE k = 'M_B') != (SELECT v FROM hashes WHERE k =
 SELECT '-- loop-free across a metadata round trip (M_A != M_A_again)';
 SELECT (SELECT v FROM hashes WHERE k = 'M_A') != (SELECT v FROM hashes WHERE k = 'M_A_again');
 
+-- The same metadata round trip must be loop-free for engines that have no data parts and fold only the
+-- column metadata plus a data version (Memory/Log/StripeLog): the data version does not move on a
+-- metadata-only ALTER, so only the metadata version keeps the hash from returning to its earlier value.
+DROP TABLE IF EXISTS t_mem_meta;
+CREATE TABLE t_mem_meta (x UInt64, y UInt64 ALIAS x + 1) ENGINE = Memory;
+INSERT INTO t_mem_meta VALUES (10);
+INSERT INTO hashes SELECT 'MM_A', modification_hash FROM system.tables WHERE database = currentDatabase() AND name = 't_mem_meta';
+ALTER TABLE t_mem_meta MODIFY COLUMN y UInt64 ALIAS x + 2;
+INSERT INTO hashes SELECT 'MM_B', modification_hash FROM system.tables WHERE database = currentDatabase() AND name = 't_mem_meta';
+ALTER TABLE t_mem_meta MODIFY COLUMN y UInt64 ALIAS x + 1;
+INSERT INTO hashes SELECT 'MM_A_again', modification_hash FROM system.tables WHERE database = currentDatabase() AND name = 't_mem_meta';
+
+SELECT '-- Memory: hash changed on metadata change (MM_A != MM_B)';
+SELECT (SELECT v FROM hashes WHERE k = 'MM_A') != (SELECT v FROM hashes WHERE k = 'MM_B');
+SELECT '-- Memory: loop-free across a metadata round trip (MM_A != MM_A_again)';
+SELECT (SELECT v FROM hashes WHERE k = 'MM_A') != (SELECT v FROM hashes WHERE k = 'MM_A_again');
+
 DROP TABLE t_aba;
 DROP TABLE t_aba2;
 DROP TABLE t_meta;
+DROP TABLE t_mem_meta;
 DROP TABLE hashes;

@@ -231,6 +231,11 @@ std::optional<UInt128> StorageMemory::getModificationHash(const StorageSnapshotP
     /// Table identity (distinguishes different incarnations of a table with the same name) and structure version.
     hash.update(getStorageID().uuid);
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+    /// Loop-free metadata version: the column string above repeats under a metadata-only `ALTER` that is
+    /// reverted (e.g. an alias/default expression `A -> B -> A`), and `data_version` does not move because
+    /// no data changed. Folding the per-lifetime metadata version keeps such a round trip from reproducing
+    /// an earlier hash. See `IStorage::getMetadataVersionForModificationHash`.
+    hash.update(getMetadataVersionForModificationHash());
 
     /// Every modification (insert, mutation, truncate, drop, restore) publishes a new `data` version,
     /// captured atomically together with the blocks by the snapshot (see getStorageSnapshot). This is a
