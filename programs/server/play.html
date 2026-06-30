@@ -528,6 +528,17 @@
             pointer-events: none;
         }
 
+        /* The keyboard-focused row's balloon is repositioned explicitly on scroll,
+           so it must stay visible even while `suppress-balloons` hides hover-opened
+           balloons (e.g. when the stationary cursor also happens to be over the
+           focused row). Placed after the suppress rule so it wins the specificity
+           tie. */
+        body.suppress-balloons .table:focus-within .table-addendum
+        {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
         .table-addendum-elem
         {
             display: block;
@@ -2305,7 +2316,10 @@ class QueryResultElement extends HTMLElement
         const row = cell.parentElement;
         const table = row.parentElement;
         let cell_index = cell.cellIndex;
-        let row_index = row.rowIndex;
+        /// `table` is the `<tbody>`, so `table.rows` is indexed within the section;
+        /// use `sectionRowIndex` (not table-wide `rowIndex`, which counts the header)
+        /// so both sides share the same coordinate system.
+        let row_index = row.sectionRowIndex;
 
         switch(e.key)
         {
@@ -2998,6 +3012,12 @@ document.addEventListener('scroll', () => {
     /// keep its balloon glued to the row across the scroll instead of hiding it.
     const focused_table = document.activeElement?.closest?.('.table');
     if (focused_table && document.getElementById('databases').contains(focused_table)) {
+        /// Still suppress hover-opened balloons on *other* rows: a different table
+        /// button scrolled under a stationary cursor would otherwise reveal its
+        /// balloon at an unset position via the CSS `:hover` rule (`mouseenter` does
+        /// not fire without mouse movement). The focused row's balloon is exempted
+        /// from `suppress-balloons` in CSS, so it stays glued to the row.
+        document.body.classList.add('suppress-balloons');
         positionTableBalloon(focused_table);
     } else {
         hideTableBalloons();
