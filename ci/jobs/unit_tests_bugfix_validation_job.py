@@ -27,6 +27,7 @@ functional-test logic.
 
 import os
 import re
+import shlex
 import sys
 
 sys.path.append("./")
@@ -177,9 +178,12 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
     # Overlay only the PR's unit-test file changes on top of the merge-base tree — the
     # new/changed test, but none of the fix. NOTE: reference the PR commit explicitly,
     # not HEAD — inside the worktree HEAD is the merge-base.
-    files_arg = " ".join(f"'{f}'" for f in test_files)
+    # SECURITY: test_files are PR-controlled paths (the regex permits quotes/spaces), so
+    # they must be shell-quoted before reaching Shell.check (shell=True) to avoid command
+    # injection on the runner. The `--` already terminates option parsing for git.
+    files_arg = " ".join(shlex.quote(f) for f in test_files)
     assert Shell.check(
-        f"git -C {BEFORE_SRC} checkout {pr_sha} -- {files_arg}",
+        f"git -C {shlex.quote(BEFORE_SRC)} checkout {shlex.quote(pr_sha)} -- {files_arg}",
         verbose=True,
     ), "Failed to overlay unit-test files onto the merge-base worktree"
 
@@ -197,9 +201,17 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
         if not path or not os.path.isdir(path) or not os.listdir(path):
             continue
         dst = os.path.join(BEFORE_SRC, path)
-        Shell.check(f"rm -rf '{dst}' && mkdir -p '{os.path.dirname(dst)}'", verbose=False)
+        # SECURITY: submodule paths come from the PR's `.gitmodules` and are PR-controlled,
+        # so shell-quote them (and use `--`) before Shell.check to avoid command/option
+        # injection on the runner.
+        q_path, q_dst, q_dst_parent = (
+            shlex.quote(path),
+            shlex.quote(dst),
+            shlex.quote(os.path.dirname(dst)),
+        )
+        Shell.check(f"rm -rf -- {q_dst} && mkdir -p -- {q_dst_parent}", verbose=False)
         # cp -al = recursive hardlink copy (instant, no data duplication).
-        Shell.check(f"cp -al '{path}' '{dst}'", verbose=False)
+        Shell.check(f"cp -al -- {q_path} {q_dst}", verbose=False)
 
     return os.path.isfile(os.path.join(BEFORE_SRC, SUBMODULE_MARKER))
 

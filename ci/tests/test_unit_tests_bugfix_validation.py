@@ -13,6 +13,7 @@ inverter tests in `ci/tests/test_bugfix_validation_inverter.py`.
 """
 
 import os
+import shlex
 import sys
 
 import pytest
@@ -60,6 +61,21 @@ def test_unit_test_file_re_matches(path):
 )
 def test_unit_test_file_re_rejects(path):
     assert not _UNIT_TEST_FILE_RE.match(path)
+
+
+def test_unit_test_file_re_is_not_a_shell_sanitizer():
+    """The regex permits shell metacharacters (quotes/spaces/&/#) in the filename, so it
+    must NOT be relied on to make paths shell-safe — `prepare_before_worktree` shell-quotes
+    every PR-controlled path instead. This documents that contract so it is not "simplified"
+    away. See the SECURITY comments in unit_tests_bugfix_validation_job.py.
+    """
+    evil = "src/Foo/tests/a' && touch /tmp/pwned #.cpp"
+    assert _UNIT_TEST_FILE_RE.match(evil)  # regex matches — it is NOT a sanitizer
+    # With shlex.quote the path is a single inert token: parsing the command yields
+    # exactly the original path as one argument, with no injected `&&`/`touch` words.
+    # (The old f"'{f}'" quoting would split into many tokens here.)
+    tokens = shlex.split(f"git checkout HEAD -- {shlex.quote(evil)}")
+    assert tokens == ["git", "checkout", "HEAD", "--", evil]
 
 
 # --------------------------------------------------------------------------
