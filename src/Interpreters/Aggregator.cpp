@@ -686,8 +686,9 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     /// use a void-mapped hash table that stores only keys (no dead `AggregateDataPtr` slot, e.g. 16 -> 8 bytes
     /// per cell for UInt64, 32 -> 16 for keys128). Covers single numbers (key32/key64) and packed fixed keys
     /// (keys32/keys64/keys128/keys256); string, nullable and LowCardinality keys are not covered yet.
-    /// PROTOTYPE: gated by env var `CH_NO_VOID` so the same binary can A/B (set CH_NO_VOID=1 for the map baseline).
-    if (params.aggregates_size == 0 && !std::getenv("CH_NO_VOID"))
+    /// This is an internal data-structure choice only: results are identical to the regular path, so - like the
+    /// key8/key16/.../keys256 selection above - it is unconditional rather than gated by a setting.
+    if (params.aggregates_size == 0)
     {
         using Type = AggregatedDataVariants::Type;
         switch (method_chosen)
