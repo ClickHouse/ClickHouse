@@ -1,6 +1,6 @@
 #include <Functions/FunctionBase64Conversion.h>
 
-#if USE_BASE64
+#if USE_SIMDUTF
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -20,6 +20,7 @@ REGISTER_FUNCTION(Base64Decode)
 {
     FunctionDocumentation::Description description = R"(
 Decodes a string from [Base64](https://en.wikipedia.org/wiki/Base64) representation, according to RFC 4648.
+ASCII whitespace characters in the input are ignored.
 Throws an exception in case of error.
 
 )";
