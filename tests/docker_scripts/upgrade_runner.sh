@@ -337,10 +337,12 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       are arbitrary (e.g. 'a', 'b', 'Hello', 'x', or any fuzzer-generated value) and an exact-literal allow-list
 #       can never be complete. Instead these are matched by error CLASS in the secondary pipe: one of those two
 #       error codes raised on a background-mutation executor (MutatePlainMergeTreeTask / MutateFromLogEntryTask /
-#       MergeTreeBackgroundExecutor), regardless of the value or type. This filter does not broaden the existing
-#       query-error suppression: user-initiated errors carry the `} <Error> TCPHandler:` / `} <Error> executeQuery:`
-#       prefix and are already dropped by the fixed-string entries above, so this class filter only adds the
-#       background-executor lines, which lack that prefix.
+#       MergeTreeBackgroundExecutor), regardless of the value or type. Only those two codes are suppressed, so any
+#       other error on the same executors (including unrelated replicated-mutation regressions on the
+#       MutateFromLogEntryTask path) still reaches upgrade_error_messages.txt. This filter does not broaden the
+#       existing query-error suppression: user-initiated errors carry the `} <Error> TCPHandler:` /
+#       `} <Error> executeQuery:` prefix and are already dropped by the fixed-string entries above, so this class
+#       filter only adds the background-executor lines, which lack that prefix.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
@@ -444,7 +446,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "(ReplicatedMergeTreeAttachThread): Initialization failed. Error" \
            -e "Code: 269. DB::Exception: Destination table is myself" \
            -e "Coordination::Exception: Connection loss" \
-           -e "MutateFromLogEntryTask" \
            -e "No connection to ZooKeeper, cannot get shared table ID" \
            -e "Session expired" \
            -e "TOO_MANY_PARTS" \
