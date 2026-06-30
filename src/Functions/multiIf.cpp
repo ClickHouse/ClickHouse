@@ -162,7 +162,10 @@ public:
         {
             if (string_branches_count == num_branches)
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-            else if ((only_null_branches_count + string_branches_count) == num_branches)
+            /// Require at least one actual string branch: a mix of only-NULL branches without any
+            /// string (e.g. `CASE WHEN ... THEN NULL ... END`) must keep its `Nullable(Nothing)`
+            /// common type instead of being turned into `LowCardinality(Nullable(String))`.
+            else if (string_branches_count > 0 && (only_null_branches_count + string_branches_count) == num_branches)
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
         }
 
