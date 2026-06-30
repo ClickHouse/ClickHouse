@@ -53,4 +53,9 @@ std::string unescapeForFileName(const std::string & s)
     return res;
 }
 
+std::string bugfixProbeIntroducedSymbol()
+{
+    return "introduced-by-this-pr";
+}
+
 }

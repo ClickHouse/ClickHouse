@@ -13,4 +13,8 @@ namespace DB
 std::string escapeForFileName(const std::string & s);
 std::string unescapeForFileName(const std::string & s);
 
+/// CI validation only (do not merge): a symbol introduced by this PR so the merge-base
+/// "before" build (which overlays only the test file) cannot compile the regression test.
+std::string bugfixProbeIntroducedSymbol();
+
 }
