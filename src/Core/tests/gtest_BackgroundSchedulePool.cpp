@@ -126,13 +126,18 @@ TEST(BackgroundSchedulePool, LazyGrow)
     for (auto & task : tasks)
         ASSERT_EQ(task->activateAndSchedule(), true);
 
+    bool all_ran = false;
     {
         std::unique_lock lock(mutex);
         /// All tasks must eventually run concurrently — proves the pool grew past INITIAL_THREADS.
-        all_running.wait(lock, [&] { return running == num_tasks; });
+        /// Bounded wait so a lazy-growth regression fails the test instead of hanging it, and
+        /// release the blocked tasks before asserting so join() never deadlocks on a failure.
+        all_ran = all_running.wait_for(lock, std::chrono::seconds(60), [&] { return running == num_tasks; });
         release = true;
         release_tasks.notify_all();
     }
+
+    ASSERT_TRUE(all_ran);
 
     pool->join();
 }
@@ -184,6 +189,74 @@ TEST(BackgroundSchedulePool, LazyGrowSameTaskType)
     }
 
     ASSERT_TRUE(all_ran);
+
+    pool->join();
+}
+
+/// A pool created with zero initial workers (background_schedule_pool_initial_size = 0) must spawn
+/// its very first worker on demand and actually run scheduled work, instead of accepting the schedule
+/// and leaving the task stuck. This is the riskiest cold-start boundary: the production code has
+/// dedicated first-worker handling (the threads.empty() rollback/retry path in scheduleTask), and the
+/// other tests only exercise pools that start with at least one worker.
+TEST(BackgroundSchedulePool, ZeroInitialSchedule)
+{
+    auto pool = BackgroundSchedulePool::create(1, 0, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+
+    std::mutex mutex;
+    std::condition_variable condvar;
+    bool ran = false;
+
+    BackgroundSchedulePoolTaskHolder task;
+    task = pool->createTask(StorageID::createEmpty(), "zero_initial", [&]
+    {
+        std::lock_guard lock(mutex);
+        ran = true;
+        condvar.notify_one();
+    });
+    ASSERT_EQ(task->activateAndSchedule(), true);
+
+    bool finished = false;
+    {
+        std::unique_lock lock(mutex);
+        /// Bounded wait so a cold-start regression fails the test instead of hanging it.
+        finished = condvar.wait_for(lock, std::chrono::seconds(60), [&] { return ran; });
+    }
+
+    ASSERT_TRUE(finished);
+
+    pool->join();
+}
+
+/// Same zero-initial cold-start boundary, but reached through scheduleAfter: the first scheduleTask is
+/// driven by the delayed-execution thread, which now catches and retries a first-worker spawn failure
+/// instead of letting the exception terminate the delayed thread (which would stall all future
+/// scheduleAfter tasks in the pool). Here the spawn succeeds, so the delayed task must run.
+TEST(BackgroundSchedulePool, ZeroInitialScheduleAfter)
+{
+    auto pool = BackgroundSchedulePool::create(1, 0, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+
+    std::mutex mutex;
+    std::condition_variable condvar;
+    bool ran = false;
+
+    BackgroundSchedulePoolTaskHolder task;
+    task = pool->createTask(StorageID::createEmpty(), "zero_initial_delayed", [&]
+    {
+        std::lock_guard lock(mutex);
+        ran = true;
+        condvar.notify_one();
+    });
+    ASSERT_EQ(task->activate(), true);
+    ASSERT_EQ(task->scheduleAfter(1), true);
+
+    bool finished = false;
+    {
+        std::unique_lock lock(mutex);
+        /// Bounded wait so a cold-start regression fails the test instead of hanging it.
+        finished = condvar.wait_for(lock, std::chrono::seconds(60), [&] { return ran; });
+    }
+
+    ASSERT_TRUE(finished);
 
     pool->join();
 }
