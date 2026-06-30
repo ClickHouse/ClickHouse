@@ -27,7 +27,6 @@ functional-test logic.
 
 import os
 import re
-import shlex
 import sys
 
 sys.path.append("./")
@@ -41,12 +40,11 @@ from ci.praktika.utils import Shell
 
 # Inside the binary-builder docker the repo is mounted at /ClickHouse and the cwd is
 # /ClickHouse.  The "before" sources live in a separate git worktree so the primary
-# checkout (and this running script) are never mutated.  The build runs with the
-# worktree bind-mounted onto /ClickHouse in a private mount namespace (see
-# in_before_namespace), so /ClickHouse/build there IS BEFORE_SRC/build on disk.
+# checkout (and this running script) are never mutated.
 REPO_NORMALIZED = "/ClickHouse"
 BEFORE_SRC = "ci/tmp/before_src"
 BEFORE_SRC_NORMALIZED = f"{REPO_NORMALIZED}/{BEFORE_SRC}"
+BEFORE_BUILD_NORMALIZED = f"{BEFORE_SRC_NORMALIZED}/build"
 BEFORE_BINARY = f"{BEFORE_SRC}/build/src/unit_tests_dbms"
 
 # Build the "before" binary with the same config the regular `Unit tests (asan_ubsan)`
@@ -206,26 +204,6 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
     return os.path.isfile(os.path.join(BEFORE_SRC, SUBMODULE_MARKER))
 
 
-def in_before_namespace(cmd):
-    """Wrap `cmd` so it runs with the before-worktree bind-mounted at the canonical
-    `/ClickHouse` path, inside a private mount namespace.
-
-    sccache keys depend on the absolute build path (it is baked into `-ffile-prefix-map`
-    and the preprocessed `# line` markers), so building the worktree at its real path
-    `/ClickHouse/ci/tmp/before_src` misses every one of master's cache entries (0% hits,
-    a full cold compile). Bind-mounting the worktree onto `/ClickHouse` makes the compile
-    commands byte-identical to the regular build at `/ClickHouse`, so they reuse master's
-    sccache entries. The bind is private to this subprocess (`unshare -m`), so the real
-    checkout — including this running script — is untouched.
-
-    Because the bind maps `/ClickHouse` -> `before_src`, `/ClickHouse/build` inside the
-    namespace IS `before_src/build` on disk, so build artifacts land at BEFORE_BUILD/
-    BEFORE_BINARY exactly as before. Requires CAP_SYS_ADMIN (the job runs `--privileged`).
-    """
-    inner = f"mount --bind {BEFORE_SRC_NORMALIZED} {REPO_NORMALIZED} && {cmd}"
-    return f"unshare -m -- bash -c {shlex.quote(inner)}"
-
-
 def configure_before_binary(info):
     """Run cmake configure for the before-worktree. Returns the cmake Result.
 
@@ -240,16 +218,25 @@ def configure_before_binary(info):
         print("WARNING: sccache server failed to start, build will proceed without it")
     Shell.check("sccache --show-stats", verbose=True)
 
-    # Use the UNMODIFIED canonical cmake flags (no before_src path rewrite): inside the
-    # bind-mount namespace `/ClickHouse` is the worktree, so the source tree, build dir,
-    # and toolchain file all resolve to the merge-base sources while the compile commands
-    # stay byte-identical to the regular build (the prerequisite for sccache hits).
-    cmake_cmd = (
-        f"{BUILD_TYPE_TO_CMAKE[BUILD_TYPE]} {REPO_NORMALIZED} -B {REPO_NORMALIZED}/build"
+    # NOTE: this is a cold build (~1h, ~0% sccache hits). sccache keys bake in the
+    # absolute build path (via `-ffile-prefix-map` and preprocessed `# line` markers),
+    # and master's cache was populated by builds at `/ClickHouse`, so building the
+    # worktree at `ci/tmp/before_src` misses all of it. This is accepted: the job is off
+    # the critical path (it has no artifact dependency and runs in parallel with the
+    # build matrix). Bind-mounting the worktree onto `/ClickHouse` to recover hits does
+    # NOT work — sccache's server compiles in its own mount namespace, not the client's.
+    #
+    # Reuse the exact ASan+UBSan flags from the build job, but point the source tree,
+    # build dir, and toolchain file at the merge-base worktree (the only path the dict
+    # hardcodes to the primary checkout is the toolchain file).
+    cmake_flags = BUILD_TYPE_TO_CMAKE[BUILD_TYPE].replace(
+        f"{REPO_NORMALIZED}/cmake/", f"{BEFORE_SRC_NORMALIZED}/cmake/"
     )
+    cmake_cmd = f"{cmake_flags} {BEFORE_SRC_NORMALIZED} -B {BEFORE_BUILD_NORMALIZED}"
     return Result.from_commands_run(
         name="Configure before-binary (cmake)",
-        command=[in_before_namespace(cmake_cmd)],
+        command=[cmake_cmd],
+        workdir=BEFORE_BUILD_NORMALIZED,
         with_log=True,
     )
 
@@ -259,12 +246,11 @@ def compile_before_binary():
 
     Returns the ninja Result. A failure here means the overlaid test does not compile
     against the merge-base sources — strong evidence it depends on code the PR adds.
-    Runs in the same bind-mount namespace as configure so the build.ninja `/ClickHouse`
-    paths resolve to the worktree and the compiles hit master's sccache.
     """
     compile_result = Result.from_commands_run(
         name="Compile before-binary (ninja unit_tests_dbms, without the fix)",
-        command=[in_before_namespace(f"ninja -C {REPO_NORMALIZED}/build unit_tests_dbms")],
+        command=["ninja unit_tests_dbms"],
+        workdir=BEFORE_BUILD_NORMALIZED,
         with_log=True,
     )
     Shell.check("sccache --show-stats", verbose=True)
@@ -320,11 +306,6 @@ def finalize(results, info_lines):
 
 def main():
     info = Info()
-
-    # This job runs as root (needed for the bind-mount namespace, see in_before_namespace),
-    # but the checkout is owned by uid 1000, so git refuses it with "detected dubious
-    # ownership". Mark everything safe so git (merge-base, worktree, submodules) works.
-    Shell.check("git config --global --add safe.directory '*'", verbose=True)
 
     # 1. Gate: only bugfix PRs are validated (mirrors the FT/IT bugfix checks).
     pr_labels = info.pr_labels or []
