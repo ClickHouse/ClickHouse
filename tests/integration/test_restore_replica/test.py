@@ -2,6 +2,7 @@ import time
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -61,15 +62,23 @@ def zk_rmr_with_retries(zk, path):
     assert False
 
 
-# Retry only on "Connection refused": the TCP connection was rejected, so the query never
-# reached the server. That makes it safe to retry even non-idempotent statements (INSERT,
-# SYSTEM RESTORE REPLICA). Any other error is re-raised immediately.
+# Retry only when clickhouse-client could not open its connection to this node's own
+# server (NETWORK_ERROR with "Connection refused (<node ip>:9000)"). In that case the
+# query never reached any server, so it is safe to retry even non-idempotent statements.
+# A server-side or downstream "Connection refused" (remote shard / Keeper) carries a
+# different address and is re-raised immediately, so an already-enqueued ON CLUSTER DDL
+# or a partially-applied INSERT is never resubmitted.
 def query_with_connect_retry(node, sql, retries=20, sleep_time=0.5, **kwargs):
+    connect_refused = f"Connection refused ({node.ip_address}:9000)"
     for attempt in range(retries):
         try:
             return node.query(sql, **kwargs)
-        except Exception as ex:
-            if "Connection refused" in str(ex) and attempt + 1 < retries:
+        except QueryRuntimeException as ex:
+            if (
+                ex.returncode == 210
+                and connect_refused in str(ex)
+                and attempt + 1 < retries
+            ):
                 print(f"Connection refused from {node.name}, retry {attempt + 1}: {ex}")
                 time.sleep(sleep_time)
                 continue
