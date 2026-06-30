@@ -101,6 +101,37 @@ SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY GROUPING SETS ((a1, a2)
 SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY GROUPING SETS ((a1), (a2)) ORDER BY a1, a2
     SETTINGS prefer_localhost_replica = 0;
 
+-- With three (or more) ALIAS columns all expanding to the same expression, a grouping set can hold two collapsed
+-- duplicates without naming the representative (the first expected column for that shard column). Each used key must
+-- therefore be canonicalized through the collapse map before checking for a repeat, otherwise a set like (a2, a3) -
+-- which the shard still collapses to one key while the initiator buckets it by two - would slip past the rejection and
+-- silently split groups across two-level buckets. The representative being absent from the unsafe set must not hide it.
+DROP TABLE IF EXISTS local_same_expr3;
+DROP TABLE IF EXISTS dist_same_expr3;
+CREATE TABLE local_same_expr3
+(
+    dt DateTime,
+    x UInt8,
+    a1 String ALIAS toString(x),
+    a2 String ALIAS toString(x),
+    a3 String ALIAS toString(x)
+)
+ENGINE = MergeTree() ORDER BY dt;
+CREATE TABLE dist_same_expr3 AS local_same_expr3
+ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), local_same_expr3, rand());
+INSERT INTO local_same_expr3 (dt, x) VALUES ('2024-01-01 00:00:00', 7);
+
+SELECT a1, a2, a3, count() AS c FROM dist_same_expr3 GROUP BY GROUPING SETS ((a1), (a2, a3)) ORDER BY a1, a2, a3
+    SETTINGS prefer_localhost_replica = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT a1, a2, a3, count() AS c FROM dist_same_expr3 GROUP BY GROUPING SETS ((a2, a3), (a1)) ORDER BY a1, a2, a3
+    SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1; -- { serverError NOT_IMPLEMENTED }
+-- Three single-key grouping sets stay safe: no set repeats a collapsed representative, so the combination is not rejected.
+SELECT a1, a2, a3, count() AS c FROM dist_same_expr3 GROUP BY GROUPING SETS ((a1), (a2), (a3)) ORDER BY a1, a2, a3
+    SETTINGS prefer_localhost_replica = 0;
+
+DROP TABLE dist_same_expr3;
+DROP TABLE local_same_expr3;
+
 -- The collapse may happen inside a subquery that feeds an outer query. The subquery's distributed read is
 -- renumbered independently from the initiator's query tree, so reconciling the collapsed shard header by column
 -- name has to account for the differing `__tableN` table aliases.
