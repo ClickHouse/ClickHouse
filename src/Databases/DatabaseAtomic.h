@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>

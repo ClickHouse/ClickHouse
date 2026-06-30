@@ -106,7 +106,7 @@ BlockIO InterpreterDropQuery::execute()
 BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_ptr)
 {
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
-    if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
+    if (!drop.cluster.empty() && drop.table && !drop.detached && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
@@ -395,6 +395,14 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Experimental drop detached table feature is not enabled (the setting 'allow_experimental_drop_detached_table')");
 
+    auto new_query_ptr = query.clone();
+    if (!query.cluster.empty() && !maybeRemoveOnCluster(new_query_ptr, getContext()))
+    {
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccessForDDLOnCluster();
+        return executeDDLQueryOnCluster(new_query_ptr, getContext(), params);
+    }
+
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr) : nullptr);
     auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
     if (query.if_exists && !database)
@@ -403,13 +411,6 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName()));
 
     const auto table_name = table_id.getTableName();
-    auto new_query_ptr = query.clone();
-    if (!query.cluster.empty() && !maybeRemoveOnCluster(new_query_ptr, getContext()))
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(new_query_ptr, getContext(), params);
-    }
     if (database->shouldReplicateQuery(getContext(), current_query_ptr))
     {
         context_->checkAccess(AccessType::DROP_TABLE, table_id);
@@ -417,9 +418,23 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
         return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
     }
 
+    const bool table_exists = database->isTableExist(table_name, context_);
+    auto actual_database = std::dynamic_pointer_cast<DatabaseAtomic>(database);
+    if (!actual_database)
+    {
+        if (query.if_exists && !table_exists)
+            return {};
+        if (!table_exists)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
+
+        context_->checkAccess(AccessType::DROP_TABLE, table_id);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "DROP DETACHED TABLE is unsupported for Database{}", database->getEngineName());
+    }
+
+    const bool table_detached = actual_database->isTableDetached(table_name);
     if (query.if_exists)
     {
-        if (!database->isTableExist(table_name, context_) && !database->isTableDetached(table_name))
+        if (!table_exists && !table_detached)
         {
             if (auto * replicated_database = typeid_cast<DatabaseReplicated *>(database.get()))
             {
@@ -434,17 +449,13 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
             return {};
         }
     }
-    if (!database->isTableExist(table_name, context_) && !database->isTableDetached(table_name))
+    if (!table_exists && !table_detached)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
 
     context_->checkAccess(AccessType::DROP_TABLE, table_id);
 
-    if (database->isTableExist(table_name, context_) && !database->isTableDetached(table_name))
+    if (table_exists && !table_detached)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} must be detached for using DROP DETACHED TABLE", table_id.getNameForLogs());
-
-    auto actual_database = std::dynamic_pointer_cast<DatabaseAtomic>(database);
-    if (!actual_database)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "DROP DETACHED TABLE is unsupported for Database{}", database->getEngineName());
 
     /// Make sure we're really dropping a table, since view or dict could also be referenced
     auto detached_create = actual_database->getCreateQueryFromDetachedMetadataByName(context_, table_name);
@@ -963,9 +974,13 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     }
     else if (!drop.isTemporary())
     {
-        /// It can be view or table.
-        if (drop.kind == ASTDropQuery::Kind::Drop)
+        if (drop.detached)
+            required_access.emplace_back(AccessType::DROP_TABLE, drop.getDatabase(), drop.getTable());
+        else if (drop.kind == ASTDropQuery::Kind::Drop)
+        {
+            /// It can be view or table.
             required_access.emplace_back(AccessType::DROP_TABLE | AccessType::DROP_VIEW, drop.getDatabase(), drop.getTable());
+        }
         else if (drop.kind == ASTDropQuery::Kind::Truncate)
             required_access.emplace_back(AccessType::TRUNCATE, drop.getDatabase(), drop.getTable());
         else if (drop.kind == ASTDropQuery::Kind::Detach)

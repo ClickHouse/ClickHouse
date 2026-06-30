@@ -295,14 +295,14 @@ void DatabaseAtomic::finishDropDetachedTable(
 {
     auto db_disk = getDisk();
 
-    /// UUID reservation must survive until `dropTableFinally` calls `removeUUIDMappingFinally`.
-    /// Before this point, `reservation` destructor restores previous state on exceptions/cancellation.
-    static_cast<void>(drop_info.uuid_reservation.release());
-
     chassert(drop_info.table_metadata_path_drop.has_value());
     LOG_TRACE(log, "Table {} ready for remove.", table_name);
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(
         drop_info.storage_id, nullptr, db_disk, *drop_info.table_metadata_path_drop, sync);
+
+    /// UUID reservation must survive until `dropTableFinally` calls `removeUUIDMappingFinally`.
+    /// Before this point, `reservation` destructor restores previous state on exceptions/cancellation.
+    static_cast<void>(drop_info.uuid_reservation.release());
 
     try
     {
