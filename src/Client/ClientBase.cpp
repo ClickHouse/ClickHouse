@@ -841,7 +841,13 @@ try
                 current_format = format_settings_ref[Setting::output_format];
             else if (!format_settings_ref[Setting::format].value.empty())
                 current_format = format_settings_ref[Setting::format];
-            else if (!has_format_clause && !format_settings_ref[Setting::default_format].value.empty())
+            /// ... only when the client itself was not given an explicit output format. `--output-format`,
+            /// `--format` and `--vertical` all set `is_default_format = false` (the last via
+            /// `default_output_format = "Vertical"`), and such an explicit choice must win over the
+            /// `default_format` *setting* — e.g. the display default the local client now seeds as a
+            /// setting. Without this guard, `clickhouse-local --vertical` is silently overridden by that
+            /// setting and prints TSV instead of Vertical.
+            else if (is_default_format && !has_format_clause && !format_settings_ref[Setting::default_format].value.empty())
                 current_format = format_settings_ref[Setting::default_format];
         }
 
