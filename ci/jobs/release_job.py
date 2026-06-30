@@ -710,7 +710,11 @@ def main():
             workdir=REPO_PATH,
         )
 
-    # Always restore git state — equivalent to `if: ${{ !cancelled() }}`.
+    # Always restore git state — equivalent to `if: ${{ !cancelled() }}`, so it
+    # must run even after a failure (hence Result.from_commands_run, not step()
+    # which skips when ok is already False). But a failed restore must still
+    # block the release mutations below (--merge-prs, marking completed), so
+    # fold its result back into ok.
     results.append(
         Result.from_commands_run(
             name="Checkout Back",
@@ -718,6 +722,8 @@ def main():
             workdir=REPO_PATH,
         )
     )
+    if results[-1].status != Result.Status.OK:
+        ok = False
 
     # Merging the created PRs and marking the release "completed" are release
     # mutations that must only happen when every preceding step succeeded. Use
@@ -763,6 +769,17 @@ def main():
     # Always remove the publishing credentials and the signing-key home so they
     # do not persist for a later job on a reused self-hosted runner.
     def cleanup_credentials():
+        # Unmount the geesefs FUSE mount of the production `packages` bucket
+        # first. tests/ci/artifactory.py mounts it at ~/mountpoint and its
+        # teardown is not in a finally block, so an export step that fails
+        # before teardown leaves the bucket mounted; on a reused runner the next
+        # job could still read or mutate it even after the R2 auth files below
+        # are deleted. Mirror artifactory.py's `umount ~/mountpoint`, and let a
+        # failed unmount fail this cleanup step (strict) rather than silently
+        # leaving the bucket accessible.
+        mount_point = os.path.expanduser("~/mountpoint")
+        if os.path.ismount(mount_point):
+            Shell.check(f"umount {mount_point}", strict=True, verbose=True)
         for name in ("~/.r2_auth", "~/.r2_auth_test"):
             path = os.path.expanduser(name)
             if os.path.exists(path):
