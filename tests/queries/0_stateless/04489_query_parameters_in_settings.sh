@@ -41,11 +41,21 @@ $CLICKHOUSE_CLIENT --param_g=4096 -q "CREATE TABLE 04489_storage_setting (x UInt
 $CLICKHOUSE_CLIENT -q "SELECT create_table_query LIKE '%index_granularity = 4096%' FROM system.tables WHERE database = currentDatabase() AND name = '04489_storage_setting'"
 $CLICKHOUSE_CLIENT -q "DROP TABLE 04489_storage_setting"
 
-# It also covers the SETTINGS clause of BACKUP / RESTORE, which is the trailing SETTINGS clause of a
-# query (also parsed by ParserSetQuery), so the placeholder is accepted at parse time. Shown via
-# EXPLAIN AST to avoid actually running a backup.
+# It also covers the SETTINGS clause of BACKUP / RESTORE when that clause contains only core query
+# settings: such a clause falls through to the trailing SETTINGS clause of a query (also parsed by
+# ParserSetQuery), so the placeholder is accepted at parse time. Shown via EXPLAIN AST to avoid
+# actually running a backup.
 $CLICKHOUSE_CLIENT --param_threads=4 -q "EXPLAIN AST BACKUP TABLE system.one TO Disk('backups', 'b') SETTINGS max_threads = {threads:UInt64}" 2>&1 | grep -o "BackupQuery" | head -n1
 $CLICKHOUSE_CLIENT --param_threads=4 -q "EXPLAIN AST RESTORE TABLE system.one FROM Disk('backups', 'b') SETTINGS max_threads = {threads:UInt64}" 2>&1 | grep -o "RestoreQuery" | head -n1
+
+# A query parameter (a core query setting) cannot be combined with a backup/restore-specific setting
+# (such as `async` or `base_backup`) in the same BACKUP / RESTORE SETTINGS clause: those settings are
+# parsed by the separate ParserSetQuery::parseNameValuePair path, which does not understand the
+# {name:Type} placeholder. Here `async = true` is consumed as a backup setting and the remainder
+# `, max_threads = {threads:UInt64}` is left unparsed, so the query is rejected with a SYNTAX_ERROR at
+# parse time rather than misbehaving. (This path is unchanged by this PR, so the rejection is identical
+# with or without the feature.)
+$CLICKHOUSE_CLIENT --param_threads=4 -q "BACKUP TABLE system.one TO Disk('backups', 'b') SETTINGS async = true, max_threads = {threads:UInt64}" 2>&1 | grep -o "SYNTAX_ERROR" | head -n1
 
 # The boundary is the separate ParserSetQuery::parseNameValuePair path (used by CREATE NAMED
 # COLLECTION, dictionaries, ...), which does not support query parameters: a placeholder there is
