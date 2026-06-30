@@ -37,6 +37,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -71,6 +72,7 @@ extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
 extern const Event FilterPartsByVirtualColumnsMicroseconds;
+extern const Event IndexBulkFilteringEvaluatedGranules;
 }
 
 namespace DB
@@ -2162,6 +2164,35 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     /// Whether we should use a more optimal filtering.
     bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering() && !use_skip_indexes_for_disjunctions;
 
+    /// MinMax supportsBulkFiltering() returns true, but the bulk path is gated on a dedicated
+    /// session setting so it can be rolled out incrementally. When the condition's RPN cannot
+    /// be lowered into a column-engine expression (monotonic function chains, space-filling
+    /// curves, polygons, bloom filters, non-collapsed IN_SET, relaxed predicates), the bulk
+    /// path's `getPossibleGranules` would conservatively return "all granules pass" without
+    /// any pruning benefit. In that case skip bulk entirely and let the generic scalar path
+    /// evaluate granules on demand.
+    ///
+    /// The disjunction-merge path is compatible with bulk for this index when no disjunction
+    /// crosses a leaf this index owns: bulk does not populate the partial-disjunction bitset,
+    /// but for such conditions the bitset's `true` default matches what per-granule evaluation
+    /// would have written, so merge precision is preserved. This covers pure conjunctions and
+    /// also the common observability shape `t >= c AND (v < a OR v > b)` for a minmax index on
+    /// `t`, where the OR is over foreign columns and the index's own `t >= c` leaf stays outside
+    /// it. We re-enable bulk for minmax in that case even when the outer blanket disabled it for
+    /// the disjunction setting. See `KeyCondition::everyDisjunctionIsOverUnownedLeaves`.
+    const auto * minmax_index = typeid_cast<const MergeTreeIndexMinMax *>(index_helper.get());
+    const auto * minmax_cond = minmax_index ? typeid_cast<const MergeTreeIndexConditionMinMax *>(condition.get()) : nullptr;
+    if (minmax_index)
+    {
+        const bool minmax_bulk_applicable
+            = reader_settings.secondary_indices_enable_bulk_filtering
+            && reader_settings.use_minmax_index_bulk_filtering
+            && minmax_cond
+            && minmax_cond->hasBulkFastPath()
+            && (!use_skip_indexes_for_disjunctions || minmax_cond->bulkPreservesDisjunctionPrecision());
+        bulk_filtering = minmax_bulk_applicable;
+    }
+
     auto skip_index_granularity = index_helper->index.granularity;
     size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
 
@@ -2262,34 +2293,44 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
     else if (bulk_filtering)
     {
-        MergeTreeIndexBulkGranulesPtr granules;
-        size_t current_granule_num = 0;
+        /// Chunked streaming evaluation. Read skip-index granules (not data rows) in spans
+        /// of up to `chunk_size_index_granules`, run the condition on each chunk, and emit
+        /// `MarkRange`s for the surviving granules right away, freeing the chunk's columns
+        /// before reading the next one. Keeps working memory bounded at
+        /// O(chunk × bytes_per_granule) instead of O(part_size × ...): nothing here scales
+        /// with the part size, not even the list of survivors — for unselective predicates
+        /// that pass most granules (a target workload of this feature), accumulating
+        /// survivors first would reintroduce the per-part term we are trying to avoid.
+        ///
+        /// The constant matches ClickHouse's default `max_block_size` so the skip-index
+        /// evaluation has the same working-set shape as ordinary column reads. The
+        /// underlying `CompressedReadBuffer` streams decompressed blocks on demand
+        /// regardless of the chunk boundary chosen here.
+        constexpr size_t chunk_size_index_granules = DEFAULT_BLOCK_SIZE;
 
+        /// Granules survive in ascending global position order — ranges are processed in
+        /// order, chunks tile each range in order, and `getPossibleGranules` returns
+        /// chunk-local indices ascending — so the `res.back().end` merge below stays valid.
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
-
-            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+            size_t chunk_begin = index_range.begin;
+            while (chunk_begin < index_range.end)
             {
-                reader.read(index_mark, current_granule_num, granules);
-                ++current_granule_num;
-            }
-        }
+                const size_t chunk_end = std::min(chunk_begin + chunk_size_index_granules, index_range.end);
 
-        IMergeTreeIndexCondition::FilteredGranules filtered_granules = condition->getPossibleGranules(granules);
-        if (filtered_granules.empty())
-            return {res, read_hints};
+                /// Fresh container per chunk so its columns' growth stays bounded by the
+                /// chunk size and the memory is released before the next chunk starts.
+                MergeTreeIndexBulkGranulesPtr chunk_granules = index_helper->createIndexBulkGranules();
+                reader.readRange(chunk_begin, chunk_end, chunk_granules);
 
-        auto it = filtered_granules.begin();
-        current_granule_num = 0;
-        for (size_t i = 0; i < ranges_size; ++i)
-        {
-            const MarkRange & index_range = index_ranges[i];
+                /// Observable signal that the vectorized bulk path was actually taken for this
+                /// part (as opposed to silently falling back to the per-granule scalar path).
+                ProfileEvents::increment(ProfileEvents::IndexBulkFilteringEvaluatedGranules, chunk_end - chunk_begin);
 
-            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
-            {
-                if (current_granule_num == *it)
+                for (size_t local_idx : condition->getPossibleGranules(chunk_granules))
                 {
+                    const size_t index_mark = chunk_begin + local_idx;
                     MarkRange data_range(
                         std::max(ranges[i].begin, index_mark * skip_index_granularity),
                         std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
@@ -2298,17 +2339,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                         res.push_back(data_range);
                     else
                         res.back().end = data_range.end;
-
-                    ++it;
-                    if (it == filtered_granules.end())
-                        break;
                 }
 
-                ++current_granule_num;
+                chunk_begin = chunk_end;
             }
-
-            if (it == filtered_granules.end())
-                break;
         }
     }
     else
