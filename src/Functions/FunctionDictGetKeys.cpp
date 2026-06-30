@@ -13,6 +13,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <Dictionaries/DictionarySource.h>
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsExternalDictionaries.h>
@@ -68,6 +70,14 @@ inline UInt128 sipHash128AtRow(const IColumn & column, size_t row_id)
     return h.get128();
 }
 
+/// A consumed chunk that had at least one match: its sequential dictionary block number
+/// (used to restore the scan order at merge time) and the `num_keys` filtered key columns.
+struct DictGetKeysMatchedChunk
+{
+    size_t block_number = 0;
+    Columns keys;
+};
+
 /// Consumes one `dict->read()` output stream, filters rows by the constant attribute value and
 /// accumulates matching key columns for the constant-path implementation.
 class DictGetKeysMatchingRowsSink final : public ISink
@@ -86,7 +96,7 @@ public:
     String getName() const override { return "DictGetKeysMatchingRowsSink"; }
 
     /// One entry per consumed chunk that had matches; each entry holds `num_keys` filtered key columns.
-    const std::vector<Columns> & getMatchedChunks() const { return matched_chunks; } // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const std::vector<DictGetKeysMatchedChunk> & getMatchedChunks() const { return matched_chunks; } // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t getMatchedRows() const { return matched_rows; }
 
 protected:
@@ -96,6 +106,14 @@ protected:
             return;
 
         chassert(chunk.getColumns().size() == num_keys + 1);
+
+        /// `DictionarySource` tags every chunk with its sequential block number. We keep it so the
+        /// merge in `executeConstPath` can restore the original dictionary scan order regardless of
+        /// how blocks were distributed across reading streams (otherwise the user-visible array
+        /// order would be scheduler-dependent and could differ from the vector path).
+        auto block_info = chunk.getChunkInfos().get<DictionaryBlockNumber>();
+        chassert(block_info != nullptr);
+        const size_t block_number = block_info->number;
 
         /// Chunk layout: key columns followed by the attribute column
         auto chunk_columns = chunk.detachColumns();
@@ -134,7 +152,7 @@ protected:
             filtered_keys[key_pos] = key_col->filter(filter, matched_in_chunk);
         }
 
-        matched_chunks.emplace_back(std::move(filtered_keys));
+        matched_chunks.push_back({block_number, std::move(filtered_keys)});
         matched_rows += matched_in_chunk;
     }
 
@@ -143,7 +161,7 @@ private:
     ColumnPtr value_column;
     DataTypePtr attr_type;
     size_t num_keys = 0;
-    std::vector<Columns> matched_chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::vector<DictGetKeysMatchedChunk> matched_chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t matched_rows = 0;
 };
 }
@@ -326,13 +344,25 @@ private:
             result_cols.emplace_back(std::move(col));
         }
 
+        /// The reading streams pull dictionary blocks from a shared counter, so each sink ends up
+        /// with an arbitrary, scheduler-dependent subset of blocks. Gather all matched chunks and
+        /// merge them in ascending block-number order, which reproduces the single-stream scan order
+        /// and keeps the result deterministic and consistent with the vector path.
+        VectorWithMemoryTracking<const DictGetKeysMatchedChunk *> ordered_chunks;
         for (const auto & sink : sinks)
+            for (const auto & matched_chunk : sink->getMatchedChunks())
+                ordered_chunks.push_back(&matched_chunk);
+
+        std::sort(
+            ordered_chunks.begin(),
+            ordered_chunks.end(),
+            [](const DictGetKeysMatchedChunk * lhs, const DictGetKeysMatchedChunk * rhs) { return lhs->block_number < rhs->block_number; });
+
+        for (const auto * matched_chunk : ordered_chunks)
         {
-            for (const auto & chunk_keys : sink->getMatchedChunks())
-            {
-                for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                    result_cols[key_pos]->insertRangeFrom(*chunk_keys[key_pos], 0, chunk_keys[key_pos]->size());
-            }
+            const auto & chunk_keys = matched_chunk->keys;
+            for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                result_cols[key_pos]->insertRangeFrom(*chunk_keys[key_pos], 0, chunk_keys[key_pos]->size());
         }
 
         auto offsets_col = ColumnArray::ColumnOffsets::create();
