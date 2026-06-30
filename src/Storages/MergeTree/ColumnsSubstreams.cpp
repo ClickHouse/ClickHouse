@@ -4,6 +4,10 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
+#include <cstddef>
+#include <type_traits>
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -39,6 +43,41 @@ void ColumnsSubstreams::addSubstreamsToLastColumn(const std::vector<String> & su
 {
     for (const auto & substream : substreams)
         addSubstreamToLastColumn(substream);
+}
+
+size_t ColumnsSubstreams::getOwnedBytesAllocated() const
+{
+    size_t res = columns_substreams.capacity() * sizeof(decltype(columns_substreams)::value_type);
+    for (const auto & [column, substreams] : columns_substreams)
+    {
+        res += column.capacity();
+        res += substreams.capacity() * sizeof(String);
+        for (const auto & substream : substreams)
+            res += substream.capacity();
+    }
+    return res;
+}
+
+size_t ColumnsSubstreams::getLookupBytesAllocated() const
+{
+    size_t res = column_position_to_substream_positions.capacity() * sizeof(decltype(column_position_to_substream_positions)::value_type);
+    for (const auto & sub_map : column_position_to_substream_positions)
+    {
+        using SubstreamPositions = std::decay_t<decltype(sub_map)>;
+        static_assert(std::is_same_v<SubstreamPositions, std::unordered_map<String, size_t>>);
+        /// Unordered-map buckets are node-pointer slots, so use `sizeof(void *)`
+        /// per bucket. Add one pointer-sized next-link estimate per entry.
+        res += sub_map.bucket_count() * sizeof(void *);
+        res += sub_map.size() * (sizeof(SubstreamPositions::value_type) + sizeof(void *));
+        for (const auto & [substream, _] : sub_map)
+            res += substream.capacity();
+    }
+    return res;
+}
+
+size_t ColumnsSubstreams::getBytesAllocated() const
+{
+    return getOwnedBytesAllocated() + getLookupBytesAllocated();
 }
 
 size_t ColumnsSubstreams::getSubstreamPosition(size_t column_position, const String & substream) const

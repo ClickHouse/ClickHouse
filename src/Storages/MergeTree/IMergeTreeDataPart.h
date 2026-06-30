@@ -439,6 +439,7 @@ public:
     UInt64 getIndexSizeInAllocatedBytes() const;
     UInt64 getIndexGranularityBytes() const;
     UInt64 getIndexGranularityAllocatedBytes() const;
+    UInt64 getMetadataBytesAllocated() const;
     UInt64 getMarksCount() const;
     IndexSize getIndexSizeFromFile() const;
 
@@ -509,6 +510,9 @@ public:
     MergeTreeDataPartBuilder
     getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
 
+    /// PRECONDITION: callers must invoke this only on a part that has not yet been made Active.
+    /// Async metrics iterate `projection_parts` of Active parents without taking a lock and rely
+    /// on this map being populated before publication.
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
     void markProjectionPartAsBroken(const String & projection_name, const String & message, int code) const;
@@ -762,6 +766,13 @@ private:
 
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
+
+    UInt64 getColumnsSubstreamsBytesAllocated() const;
+    UInt64 getColumnsSubstreamsLookupBytesAllocated() const;
+    UInt64 getColumnsBytesAllocated() const;
+    UInt64 getSerializationInfosBytesAllocated() const;
+    UInt64 getDataTypesBytesAllocated() const;
+    UInt64 getSerializationsBytesAllocated() const;
 
     /// Map from name of column to its serialization info.
     SerializationInfoByName serialization_infos{{}};

@@ -7,6 +7,10 @@
 
 #include <Poco/JSON/Object.h>
 
+#include <cstddef>
+#include <type_traits>
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -126,6 +130,7 @@ MutableSerializationInfoPtr SerializationInfoTuple::clone() const
 
     auto ret = std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names);
     ret->data = data;
+    ret->kind_stack = kind_stack;
     return ret;
 }
 
@@ -212,6 +217,45 @@ void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object)
 
     for (size_t i = 0; i < elems.size(); ++i)
         elems[i]->fromJSON(*subcolumns->getObject(static_cast<unsigned>(i)));
+}
+
+size_t SerializationInfoTuple::getBytesAllocated() const
+{
+    size_t res = sizeof(SerializationInfoTuple);
+    res += kind_stack.capacity() * sizeof(ISerialization::Kind);
+    res += elems.capacity() * sizeof(MutableSerializationInfoPtr);
+
+    res += names.capacity() * sizeof(String);
+    for (const auto & name : names)
+        res += name.capacity();
+
+    static_assert(std::is_same_v<NameToElem, std::unordered_map<String, MutableSerializationInfoPtr>>);
+    /// Unordered-map buckets are node-pointer slots, so use `sizeof(void *)`
+    /// per bucket. Add one pointer-sized next-link estimate per entry.
+    res += name_to_elem.bucket_count() * sizeof(void *);
+    for (const auto & [name, _] : name_to_elem)
+        res += sizeof(NameToElem::value_type) + sizeof(void *) + name.capacity();
+
+    for (const auto & elem : elems)
+    {
+        /// Nested info objects are owned through `shared_ptr`; estimate the control
+        /// block as two pointer-sized words and then count the pointed object.
+        if (elem)
+            res += 2 * sizeof(void *) + elem->getBytesAllocated();
+    }
+
+    return res;
+}
+
+size_t SerializationInfoTuple::getTotalSerializationInfos() const
+{
+    size_t res = 1;
+    for (const auto & elem : elems)
+    {
+        if (elem)
+            res += elem->getTotalSerializationInfos();
+    }
+    return res;
 }
 
 }

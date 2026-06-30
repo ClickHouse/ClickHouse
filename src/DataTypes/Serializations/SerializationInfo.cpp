@@ -12,6 +12,8 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#include <cstddef>
+
 
 namespace DB
 {
@@ -313,6 +315,41 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
     data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
     data.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
     kind_stack = ISerialization::stringToKindStack(object.getValue<String>(KEY_KIND));
+}
+
+size_t SerializationInfo::getBytesAllocated() const
+{
+    return sizeof(SerializationInfo) + kind_stack.capacity() * sizeof(ISerialization::Kind);
+}
+
+size_t SerializationInfoByName::getBytesAllocated() const
+{
+    size_t res = 0;
+    for (const auto & [name, info] : *this)
+    {
+        /// `SerializationInfoByName` is a `std::map`, so estimate each red-black-tree
+        /// node as the stored value plus parent/left/right/color-alignment pointer-sized overhead.
+        res += sizeof(value_type) + 4 * sizeof(void *);
+        res += name.capacity();
+        /// `SerializationInfo` objects are per-part metadata owned through this map, so include
+        /// the shared-pointer control-block estimate as two pointer-sized words. Shared table-level
+        /// `ColumnsDescription` cache entries are excluded from column metadata accounting because
+        /// they are not owned by individual parts.
+        if (info)
+            res += 2 * sizeof(void *) + info->getBytesAllocated();
+    }
+    return res;
+}
+
+size_t SerializationInfoByName::getTotalSerializationInfos() const
+{
+    size_t res = 0;
+    for (const auto & [_, info] : *this)
+    {
+        if (info)
+            res += info->getTotalSerializationInfos();
+    }
+    return res;
 }
 
 ISerialization::KindStack SerializationInfo::chooseKindStack(const Data & data, const Settings & settings)

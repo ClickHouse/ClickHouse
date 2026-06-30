@@ -43,6 +43,10 @@ public:
     size_t getTotalSubstreams() const { return total_substreams; }
     bool empty() const { return !total_substreams; }
 
+    size_t getOwnedBytesAllocated() const;
+    size_t getLookupBytesAllocated() const;
+    size_t getBytesAllocated() const;
+
     /// Check that we have substreams for all columns and they have the same order as in provided list.
     void validateColumns(const std::vector<String> & columns) const;
 
