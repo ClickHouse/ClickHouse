@@ -1,0 +1,6 @@
+--- Read without hint ---
+Nullable(UUID)	6c1799c6-1ceb-45d3-a697-61956cd5a47a	Array(UUID)	0
+Nullable(UUID)	\N	Array(UUID)	2
+--- Read with schema hint ---
+Nullable(UUID)	6c1799c6-1ceb-45d3-a697-61956cd5a47a	Array(UUID)	[]
+Nullable(UUID)	\N	Array(UUID)	['b7f4341e-2cbc-489a-acd6-fae97bdc54a1','4867f717-c20e-4efc-b04b-6bf04793473f']

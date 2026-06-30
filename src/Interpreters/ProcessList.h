@@ -16,6 +16,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/UniqueLock.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
@@ -40,14 +41,7 @@ class PipelineExecutor;
 struct ProcessListForUser;
 class QueryStatus;
 class ThreadStatus;
-class ThreadGroup;
-using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ProcessListEntry;
-
-/// Forward-declare to avoid pulling the whole scheduler stack into every TU that includes this header.
-/// The unique_ptr destructor is instantiated only in ProcessList.cpp where MemoryReservation.h is included.
-struct MemoryReservation;
-using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;
 
 enum CancelReason
 {
@@ -106,9 +100,8 @@ protected:
     UInt64 normalized_query_hash;
     ClientInfo client_info;
 
-    /// Acquired workload resources
+    /// Query slot scheduling for workloads
     QuerySlotPtr query_slot;
-    MemoryReservationPtr memory_reservation;
 
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
@@ -211,7 +204,6 @@ public:
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
         QuerySlotPtr && query_slot_,
-        MemoryReservationPtr && memory_reservation_,
         ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
         const Settings & query_settings_,
@@ -237,11 +229,11 @@ public:
 
     ThrottlerPtr getUserNetworkThrottler();
 
-    MemoryTracker * getMemoryTracker() const;
-
-    MemoryReservation * getMemoryReservation() const
+    MemoryTracker * getMemoryTracker() const
     {
-        return memory_reservation.get();
+        if (!thread_group)
+            return nullptr;
+        return &thread_group->memory_tracker;
     }
 
     bool hasThreadGroup() const
@@ -261,10 +253,6 @@ public:
     CancellationCode cancelQuery(CancelReason reason, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }
-
-    /// Returns the reason `cancelQuery` was called with, or `UNDEFINED` if the query has not been cancelled.
-    /// Always returns `UNDEFINED` when `isKilled` is false, so consult `isKilled` first.
-    CancelReason getCancelReason() const;
 
     /// Throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED if the query has been killed
     void throwIfKilled();
@@ -293,8 +281,8 @@ public:
         return is_internal;
     }
 
-    /// Manually release all acquired workload resources.
-    void releaseWorkloadResources();
+    /// Manually release query slot (if any).
+    void releaseQuerySlot() { query_slot.reset(); }
 };
 
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -303,8 +291,8 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 /// Information of process list for user.
 struct ProcessListForUserInfo
 {
-    Int64 memory_usage{};
-    Int64 peak_memory_usage{};
+    Int64 memory_usage;
+    Int64 peak_memory_usage;
 
     // Optional field, filled by request.
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
