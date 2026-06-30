@@ -46,3 +46,6 @@ Test 1d array
 -- Test F32: summed relative error
 Simple test 1d tuple
 SZ3 is lossy and cannot be used where the column data type is unknown
+A compression block size that is not a multiple of the float width is rejected
+The lossless (zstd) fallback round-trips
+1

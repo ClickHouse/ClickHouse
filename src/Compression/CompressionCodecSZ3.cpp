@@ -19,6 +19,7 @@
 #    include <Parsers/IAST.h>
 #    include "Common/Exception.h"
 #    include <Common/SipHash.h>
+#    include <base/unaligned.h>
 #    include "base/types.h"
 
 #    include <SZ3/api/sz.hpp>
@@ -137,6 +138,20 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
 {
     SZ3::Config config;
 
+    /// SZ3 compresses whole fixed-width floating-point values. `CompressedWriteBuffer` chunks the column
+    /// stream into compressed blocks by the `max_compress_block_size` byte count, so a single value can only
+    /// be split across two blocks if that setting is not a multiple of the value width. Compressing such a
+    /// block would silently drop the trailing partial value (the truncating division below), while the block
+    /// header still records the full, untruncated size; the part would then be accepted on insert but fail to
+    /// read, because `doDecompressData` rejects a trusted size that is not a multiple of the float width.
+    /// Reject the misconfiguration up front instead of writing an unreadable part.
+    if (source_size % float_width != 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The SZ3 codec compresses whole {}-byte floating-point values, but it received a {}-byte block. "
+            "Set 'max_compress_block_size' to a multiple of {} for columns compressed with the SZ3 codec.",
+            static_cast<UInt16>(float_width), source_size, static_cast<UInt16>(float_width));
+
     const size_t total_floats = source_size / float_width;
     size_t inner_dimension = dimension.value_or(1);
     /// Fall back to flat 1D compression when this block does not contain a whole number of fixed-width
@@ -242,9 +257,10 @@ static void decompressSZ3(const char * source, UInt32 source_size, char * dest, 
     /// not hardened against corrupted input (e.g. ALGO_BIOMD/ALGO_BIOMDXTC, the OpenMP path), or claim a huge
     /// element count to force a large allocation. We only ever write the interpolation/Lorenzo algorithms in a
     /// single-stream layout, so reject anything else here.
+    uint64_t compressed_payload_size = 0;
     try
     {
-        SZ_load_config(config, source, source_size);
+        compressed_payload_size = SZ_load_config(config, source, source_size);
     }
     catch (const std::exception & e)
     {
@@ -269,6 +285,28 @@ static void decompressSZ3(const char * source, UInt32 source_size, char * dest, 
     if (config.num != expected_num)
         throw Exception(
             ErrorCodes::CORRUPTED_DATA, "SZ3 element count {} does not match the expected {}", config.num, expected_num);
+
+    /// SZ3 transparently falls back to a plain lossless (zstd) block for data that does not compress well, so
+    /// ALGO_LOSSLESS is also produced by this codec. That payload starts with an 8-byte little-endian size
+    /// header holding the original (decompressed) data size. SZ3 hands this UNTRUSTED size to zstd as the
+    /// destination capacity of the output buffer it allocated from `config.num`, and only compares it with the
+    /// expected size AFTER decompression - so a crafted block could declare a larger size and let zstd write
+    /// past the buffer before the mismatch is noticed. Validate the declared size against the trusted
+    /// uncompressed size before dispatch. (The interpolation/Lorenzo payloads have no such header.)
+    if (config.cmprAlgo == SZ3::ALGO_LOSSLESS)
+    {
+        if (compressed_payload_size < sizeof(size_t))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "SZ3 lossless payload is smaller than its size header");
+        /// The 16-byte SZ3 header (magic + version + payload size) is followed by the lossless payload, which
+        /// begins with its own size prefix; `SZ_load_config` already validated that the payload lies within
+        /// the buffer.
+        const size_t declared_size = unalignedLoadLittleEndian<size_t>(source + 16);
+        if (declared_size != uncompressed_size)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "SZ3 lossless payload declares output size {} but the trusted uncompressed size is {}",
+                declared_size, uncompressed_size);
+    }
 
     T * decompressed = nullptr;
     try
