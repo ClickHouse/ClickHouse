@@ -28,7 +28,11 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageMerge.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Common/typeid_cast.h>
+#include <optional>
 
 #include <stack>
 
@@ -1870,6 +1874,231 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     }
 
     return 0;
+}
+
+/// After `optimizeReadInOrder` has converted a `SortingStep` to `FinishSorting`,
+/// check whether the downstream `WindowStep` can be replaced with
+/// `StreamingLagTransform` to eliminate the blocking `FinishSortingTransform`
+/// and its O(N) peak memory footprint.
+///
+/// Streaming is applicable when:
+///   1. All window functions are `lagInFrame` with offset 1.  Accepted call forms:
+///      `lagInFrame(col)`, `lagInFrame(col, 1)`, `lagInFrame(col, 1, const_default)`.
+///      For the two- and three-argument forms the offset must be a constant column
+///      equal to 1; non-constant or other offsets fall back to `WindowTransform`.
+///   2. The `SortingStep` is in `FinishSorting` mode (storage ordering is already
+///      providing the prefix).
+///   3. `prefix_description` is a strict prefix of `window.partition_by`
+///      (i.e. some suffix partition columns exist beyond the storage-order prefix).
+///
+/// When streaming is applied:
+///   - `SortingStep` is converted to `MergeOnly`: it merges K input streams into one
+///     (by `prefix_description`) without finish-sorting, so that all rows for a given
+///     prefix-key group arrive in a single stream.
+///   - `WindowStep` is set to streaming mode; its `transformPipeline` creates a single
+///     `StreamingLagTransform` instead of `WindowTransform`.
+void optimizeStreamingWindowFunctions(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & /*nodes*/,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!optimization_settings.reuse_storage_ordering_for_window_functions)
+        return;
+
+    auto * window = typeid_cast<WindowStep *>(node.step.get());
+    if (!window)
+        return;
+
+    if (node.children.size() != 1)
+        return;
+
+    auto * sorting_node = node.children.front();
+    auto * sorting = typeid_cast<SortingStep *>(sorting_node->step.get());
+    if (!sorting || sorting->getType() != SortingStep::Type::FinishSorting)
+        return;
+
+    const auto & prefix_description = sorting->getPrefixDescription();
+    if (prefix_description.empty())
+        return;
+
+    /// All window functions must be `lagInFrame` with offset 1.  Accepted forms:
+    ///   lagInFrame(col)              — one argument, offset defaults to 1
+    ///   lagInFrame(col, 1)           — two arguments, offset must be constant 1
+    ///   lagInFrame(col, 1, default)  — three arguments, offset constant 1, explicit default
+    const auto & window_funcs = window->getWindowFunctions();
+    if (window_funcs.empty())
+        return;
+
+    const Block & window_input = *window->getInputHeaders()[0];
+
+    for (const auto & func : window_funcs)
+    {
+        if (func.aggregate_function->getName() != "lagInFrame")
+            return;
+        const size_t nargs = func.argument_types.size();
+        if (nargs < 1 || nargs > 3)
+            return;
+        if (nargs >= 2)
+        {
+            /// Verify the offset argument is a constant column with value 1.
+            const auto * offset_col_entry = window_input.findByName(func.argument_names[1]);
+            if (!offset_col_entry || !offset_col_entry->column || !isColumnConst(*offset_col_entry->column))
+                return;
+            const Field offset_val = (*offset_col_entry->column)[0];
+            if (offset_val != Field(Int64(1)) && offset_val != Field(UInt64(1)))
+                return;
+        }
+    }
+
+    /// Validate the window frame.  `lagInFrame(col, 1)` equals "previous row in
+    /// partition order (or default if first)" exactly when the immediately
+    /// preceding row is guaranteed to lie inside the frame.  That holds when:
+    ///   - frame start is UNBOUNDED PRECEDING (frame_start == partition_start), AND
+    ///   - frame end is not a fixed PRECEDING offset (which would place frame_end
+    ///     before the preceding row and make lagInFrame always return the default).
+    /// Concretely this accepts the default RANGE BETWEEN UNBOUNDED PRECEDING AND
+    /// CURRENT ROW as well as ROWS BETWEEN UNBOUNDED PRECEDING AND <anything that
+    /// is not N PRECEDING>.  Any other frame falls back to WindowTransform.
+    {
+        const auto & frame = window->getWindowDescription().frame;
+        if (frame.begin_type != WindowFrame::BoundaryType::Unbounded || !frame.begin_preceding)
+            return;
+        if (frame.end_type == WindowFrame::BoundaryType::Offset && frame.end_preceding)
+            return;
+    }
+
+    /// `prefix_description` must be a strict prefix of `partition_by`.
+    const auto & partition_by = window->getWindowDescription().partition_by;
+    if (prefix_description.size() >= partition_by.size())
+        return;
+
+    for (size_t i = 0; i < prefix_description.size(); ++i)
+    {
+        if (prefix_description[i].column_name != partition_by[i].column_name)
+            return;
+    }
+
+    /// Collect the suffix partition column names (the non-prefix PARTITION BY columns).
+    std::vector<std::string> suffix_col_names;
+    suffix_col_names.reserve(partition_by.size() - prefix_description.size());
+    for (size_t i = prefix_description.size(); i < partition_by.size(); ++i)
+        suffix_col_names.push_back(partition_by[i].column_name);
+
+    /// Collect value column names and optional explicit defaults for each function.
+    std::vector<std::string> value_col_names;
+    std::vector<std::optional<Field>> default_values;
+    value_col_names.reserve(window_funcs.size());
+    default_values.reserve(window_funcs.size());
+    for (const auto & func : window_funcs)
+    {
+        value_col_names.push_back(func.argument_names[0]);
+        if (func.argument_names.size() == 3)
+        {
+            const auto * default_col_entry = window_input.findByName(func.argument_names[2]);
+            if (!default_col_entry || !default_col_entry->column || !isColumnConst(*default_col_entry->column))
+                return;
+            Field raw = (*default_col_entry->column)[0];
+            Field cast = convertFieldToType(raw, *func.argument_types[0], func.argument_types[2].get());
+            if (cast.isNull() && !func.argument_types[0]->isNullable())
+                return;
+            default_values.push_back(std::move(cast));
+        }
+        else
+            default_values.push_back(std::nullopt);
+    }
+
+    /// Find `ReadFromMergeTree` below `sorting_node` (there may be an `ExpressionStep` in between).
+    if (sorting_node->children.size() != 1)
+        return;
+    auto * read_node = sorting_node->children.front();
+    if (typeid_cast<ExpressionStep *>(read_node->step.get()))
+    {
+        if (read_node->children.size() != 1)
+            return;
+        read_node = read_node->children.front();
+    }
+    auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(read_node->step.get());
+    if (!read_from_merge_tree)
+        return;
+
+    const auto & input_order = read_from_merge_tree->getInputOrder();
+    if (!input_order)
+        return;
+
+    const size_t full_key_size = read_from_merge_tree->getStorageMetadata()->getSortingKey().column_names.size();
+    if (full_key_size == 0)
+        return;
+
+    const auto & window_order_by = window->getWindowDescription().order_by;
+
+    /// The storage key must fully cover prefix + window ORDER BY columns.
+    if (prefix_description.size() + window_order_by.size() > full_key_size)
+        return;
+
+    /// Each window ORDER BY column must be fully compatible with the corresponding storage key column:
+    /// name, direction (accounting for the global read direction), nulls ordering, and collation.
+    const auto & sorting_key = read_from_merge_tree->getStorageMetadata()->getSortingKey();
+    for (size_t i = 0; i < window_order_by.size(); ++i)
+    {
+        const size_t j = prefix_description.size() + i;
+        const auto & win_col = window_order_by[i];
+
+        /// Storage keys cannot have collations; a collated window column is incompatible.
+        if (win_col.collator)
+            return;
+
+        /// Strip a plan-time table qualifier of the form `__tableN.` (first component only).
+        /// Using rfind would incorrectly truncate real dotted names such as subcolumns
+        /// (e.g. `__table1.obj.ts` → `obj.ts`, not `ts`).
+        std::string_view col_name = win_col.column_name;
+        {
+            const auto first_dot = col_name.find('.');
+            if (first_dot != std::string_view::npos)
+            {
+                const auto prefix = col_name.substr(0, first_dot);
+                if (prefix.starts_with("__table"))
+                {
+                    const auto digits = prefix.substr(7);
+                    if (!digits.empty() && std::all_of(digits.begin(), digits.end(), ::isdigit))
+                        col_name = col_name.substr(first_dot + 1);
+                }
+            }
+        }
+        if (col_name != sorting_key.column_names[j])
+            return;
+
+        /// The storage delivers column j in direction: input_order->direction * storage_raw_direction.
+        /// storage_raw_direction is +1 (ASC) unless reverse_flags marks it as DESC.
+        const int storage_raw_direction = (!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[j]) ? -1 : 1;
+        if (win_col.direction != input_order->direction * storage_raw_direction)
+            return;
+
+        /// Storage always sorts with nulls_direction = +1 (NULLS LAST for ASC, NULLS FIRST for DESC).
+        /// A window column requesting nulls_direction == -1 on a nullable/float column is incompatible.
+        const bool column_is_nullable = isNullableOrLowCardinalityNullable(sorting_key.data_types[j])
+            || isFloat(*sorting_key.data_types[j]);
+        if (column_is_nullable && win_col.nulls_direction == -1)
+            return;
+    }
+
+    const size_t merge_prefix_size = prefix_description.size() + window_order_by.size();
+
+    /// Expand the read-in-order prefix so per-layer internal merges also use the extended key.
+    if (!read_from_merge_tree->requestReadingInOrder(merge_prefix_size, input_order->direction, /*read_limit=*/0))
+        return;
+
+    /// Build merge sort description: prefix columns + window ORDER BY columns.
+    SortDescription merge_sort_description = prefix_description;
+    for (const auto & col : window_order_by)
+        merge_sort_description.push_back(col);
+
+    /// Apply the transformation.
+    sorting->convertToMergeOnly(std::move(merge_sort_description));
+    window->enableStreamingMode(
+        prefix_description,
+        std::move(suffix_col_names),
+        std::move(value_col_names),
+        std::move(default_values));
 }
 
 }
