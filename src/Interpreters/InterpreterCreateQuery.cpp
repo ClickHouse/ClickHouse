@@ -1282,6 +1282,20 @@ namespace
         storage.set(storage.engine, engine_ast);
     }
 
+    /// For external tables with the `restore_replace_external_engines_to_null` setting we replace external
+    /// engines with the `Null` table engine. This must run after the engine has been resolved, whether it
+    /// was specified explicitly or inherited from the source table of `CREATE TABLE x AS y` (both the partial
+    /// storage clause and the plain `AS` forms inherit the source engine, so both must be replaced).
+    void replaceExternalEngineWithNullIfNeeded(ASTStorage & storage, bool enabled)
+    {
+        if (enabled
+            && storage.engine
+            && StorageFactory::instance().getStorageFeatures(storage.engine->name).source_access_type)
+        {
+            setNullTableEngine(storage);
+        }
+    }
+
     void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
     {
         ASTDictionary & dict = *create_query.dictionary;
@@ -1475,15 +1489,10 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             }
         }
 
-        /// For external tables with restore_replace_external_engine_to_null setting we replace external engines to
-        /// Null table engine. This must run after the engine has been resolved, whether it was specified explicitly
-        /// or inherited from the source table of `CREATE TABLE x AS y`.
-        if (getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
-            && create.storage->engine
-            && StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type)
-        {
-            setNullTableEngine(*create.storage);
-        }
+        /// For external tables with the restore_replace_external_engines_to_null setting we replace external
+        /// engines with the Null table engine, whether the engine was specified explicitly or inherited.
+        replaceExternalEngineWithNullIfNeeded(
+            *create.storage, getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]);
         return;
     }
 
@@ -1498,7 +1507,15 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.is_materialized_view)
         create.setTargetInnerEngine(ViewTarget::To, storage_def);
     else
+    {
+        /// A plain `CREATE TABLE x AS y` without any storage clause reaches here with the engine inherited from
+        /// the source table. The external-engine replacement must run for it too, consistently with the partial
+        /// storage clause path above; otherwise `CREATE TABLE x AS url_src` would keep the external engine while
+        /// `CREATE TABLE x AS url_src ORDER BY ...` becomes Null.
+        replaceExternalEngineWithNullIfNeeded(
+            *storage_def, getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]);
         create.set(create.storage, storage_def);
+    }
 }
 
 void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const

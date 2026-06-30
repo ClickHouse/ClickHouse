@@ -54,3 +54,8 @@ CREATE TABLE default.t_47240_from_ext
     `x` UInt64
 )
 ENGINE = `Null`
+CREATE TABLE default.t_47240_from_ext_plain
+(
+    `x` UInt64
+)
+ENGINE = `Null`

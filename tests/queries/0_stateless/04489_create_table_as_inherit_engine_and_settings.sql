@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS t_47240_from_join;
 DROP TEMPORARY TABLE IF EXISTS t_47240_temp_from_join;
 DROP TABLE IF EXISTS t_47240_ext_src;
 DROP TABLE IF EXISTS t_47240_from_ext;
+DROP TABLE IF EXISTS t_47240_from_ext_plain;
 
 CREATE TABLE t_47240_src
 (
@@ -88,8 +89,15 @@ CREATE TABLE t_47240_ext_src (x UInt64) ENGINE = URL('http://localhost:1/', 'TSV
 SET restore_replace_external_engines_to_null = 1;
 CREATE TABLE t_47240_from_ext AS t_47240_ext_src ORDER BY x;
 SHOW CREATE TABLE t_47240_from_ext FORMAT TSVRaw;
+
+-- The same replacement must happen for a plain `CREATE TABLE dst AS src` without any storage clause: the
+-- engine is still inherited from the source, so the inherited external URL engine must become Null too, rather
+-- than only the partial-storage-clause form above being replaced.
+CREATE TABLE t_47240_from_ext_plain AS t_47240_ext_src;
+SHOW CREATE TABLE t_47240_from_ext_plain FORMAT TSVRaw;
 SET restore_replace_external_engines_to_null = 0;
 
+DROP TABLE t_47240_from_ext_plain;
 DROP TABLE t_47240_from_ext;
 DROP TABLE t_47240_ext_src;
 DROP TEMPORARY TABLE t_47240_temp_from_join;
