@@ -1,6 +1,4 @@
 # docker build -t clickhouse/fasttest .
-# Ubuntu 24.04 ships Python 3.12 natively (with working distro python3-apt / aws CLI), which both the
-# fast tests and the macOS runner need: numpy 2.3.x has no wheel for 22.04's Python 3.10.
 FROM ubuntu:24.04
 
 # ARG for quick switch to a given ubuntu mirror
@@ -64,6 +62,7 @@ RUN apt-get update \
         python3 \
         python3-pip \
         zstd \
+        unzip \
         moreutils \
         less \
         expect \
@@ -138,10 +137,11 @@ RUN arch=${TARGETARCH} \
   && rm "/tmp/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl" -r
 
 COPY requirements.txt /
-# --break-system-packages: Ubuntu 24.04 marks the system Python as externally managed (PEP 668).
 RUN pip3 install --break-system-packages --no-cache-dir -r /requirements.txt
-# Ubuntu 24.04 dropped the awscli deb; install it via pip (fast_test.py uses `aws ssm` for secrets).
-RUN pip3 install --break-system-packages --no-cache-dir awscli
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
+    && unzip -q awscliv2.zip \
+    && ./aws/install \
+    && rm -rf awscliv2.zip aws
 
 # chmod 777 to make the container user independent
 RUN mkdir -p /var/lib/clickhouse \
