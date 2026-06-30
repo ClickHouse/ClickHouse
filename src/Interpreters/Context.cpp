@@ -250,6 +250,7 @@ namespace CurrentMetrics
     extern const Metric BuildVectorSimilarityIndexThreadsActive;
     extern const Metric BuildVectorSimilarityIndexThreadsScheduled;
     extern const Metric AttachedTable;
+    extern const Metric AttachedReplicatedTable;
     extern const Metric AttachedView;
     extern const Metric AttachedDictionary;
     extern const Metric AttachedDatabase;
@@ -408,6 +409,7 @@ namespace ServerSetting
     extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
     extern const ServerSettingsBool enforce_keeper_component_tracking;
     extern const ServerSettingsUInt64 max_table_num_to_throw;
+    extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
     extern const ServerSettingsUInt64 max_view_num_to_throw;
     extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
     extern const ServerSettingsUInt64 max_database_num_to_throw;
@@ -662,6 +664,7 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_database_num_to_warn = 1000lu;
     std::atomic_size_t max_named_collection_num_to_warn = 1000lu;
     std::atomic_size_t max_table_num_to_warn = 5000lu;
+    std::atomic_size_t max_replicated_table_num_to_warn = 3000lu;
     std::atomic_size_t max_view_num_to_warn = 10000lu;
     std::atomic_size_t max_dictionary_num_to_warn = 1000lu;
     std::atomic_size_t max_part_num_to_warn = 100000lu;
@@ -1531,6 +1534,7 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
         common_warnings = shared->warnings;
 
         auto attached_tables = CurrentMetrics::get(CurrentMetrics::AttachedTable);
+        auto attached_replicated_tables = CurrentMetrics::get(CurrentMetrics::AttachedReplicatedTable);
         auto attached_views = CurrentMetrics::get(CurrentMetrics::AttachedView);
         auto attached_dictionaries = CurrentMetrics::get(CurrentMetrics::AttachedDictionary);
         auto attached_databases = CurrentMetrics::get(CurrentMetrics::AttachedDatabase);
@@ -1547,6 +1551,18 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
                 common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create(
                     "The number of attached tables ({}) exceeds the warning limit of {}.",
                     attached_tables, shared->max_table_num_to_warn.load());
+        }
+
+        if (attached_replicated_tables > static_cast<Int64>(shared->max_replicated_table_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_replicated_table_num_to_throw]; limit > shared->max_replicated_table_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ATTACHED_REPLICATED_TABLES] = PreformattedMessage::create(
+                    "The number of attached replicated tables ({}) exceeds the warning limit of {}. You will not be able to create new replicated tables once the limit of {} is reached.",
+                    attached_replicated_tables, shared->max_replicated_table_num_to_warn.load(), limit.value);
+            else
+                common_warnings[Context::WarningType::MAX_ATTACHED_REPLICATED_TABLES] = PreformattedMessage::create(
+                    "The number of attached replicated tables ({}) exceeds the warning limit of {}.",
+                    attached_replicated_tables, shared->max_replicated_table_num_to_warn.load());
         }
 
         if (attached_views > static_cast<Int64>(shared->max_view_num_to_warn))
@@ -5881,6 +5897,12 @@ size_t Context::getMaxTableNumToWarn() const
     return shared->max_table_num_to_warn;
 }
 
+size_t Context::getMaxReplicatedTableNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_replicated_table_num_to_warn;
+}
+
 size_t Context::getMaxViewNumToWarn() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5927,6 +5949,12 @@ void Context::setMaxTableNumToWarn(size_t max_table_to_warn)
 {
     std::lock_guard lock(shared->mutex);
     shared->max_table_num_to_warn = max_table_to_warn;
+}
+
+void Context::setMaxReplicatedTableNumToWarn(size_t max_replicated_table_to_warn)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->max_replicated_table_num_to_warn = max_replicated_table_to_warn;
 }
 
 void Context::setMaxViewNumToWarn(size_t max_view_to_warn)
