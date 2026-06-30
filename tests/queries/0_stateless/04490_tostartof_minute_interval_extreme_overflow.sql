@@ -20,11 +20,21 @@ SELECT toStartOfInterval(reinterpret(toInt64(-9223372036854775808), 'DateTime64(
 SELECT toStartOfInterval(toDateTime('2021-06-22 03:17:42', 'UTC'), INTERVAL 4611686018427387904 MINUTE) FORMAT Null;
 SELECT toStartOfInterval(reinterpret(toInt64(-9223372036854775808), 'DateTime64(0)'), INTERVAL 4611686018427387904 MINUTE) FORMAT Null;
 
+-- `Africa/Monrovia` has a partial-minute UTC offset before 1972, so toStartOfMinuteInterval takes the slow
+-- path (offset_is_whole_number_of_minutes_during_epoch is false) that does not go through roundDownToMultiple.
+-- A wrapped-to-zero divisor used to divide by zero there too (raised SIGFPE).
+SELECT toStartOfInterval(toDateTime('2021-06-22 03:17:42', 'Africa/Monrovia'), INTERVAL 4611686018427387904 MINUTE) FORMAT Null;
+SELECT toStartOfInterval(reinterpret(toInt64(-9223372036854775808), 'DateTime64(0)'), INTERVAL 4611686018427387904 MINUTE) FORMAT Null SETTINGS session_timezone = 'Africa/Monrovia';
+SELECT toStartOfInterval(reinterpret(toInt64(-9223372036854775808), 'DateTime64(0)'), INTERVAL 9223372036854775807 MINUTE) FORMAT Null SETTINGS session_timezone = 'Africa/Monrovia';
+
 -- Normal values must still be rounded down to the start of the minute interval correctly.
 SELECT toStartOfMinute(toDateTime('2021-06-22 03:17:42', 'UTC'));
 SELECT toStartOfFiveMinutes(toDateTime('2021-06-22 03:17:42', 'UTC'));
 SELECT toStartOfTenMinutes(toDateTime('2021-06-22 03:17:42', 'UTC'));
 SELECT toStartOfFifteenMinutes(toDateTime('2021-06-22 03:17:42', 'UTC'));
 SELECT toStartOfInterval(toDateTime('2021-06-22 03:17:42', 'UTC'), INTERVAL 5 MINUTE);
+
+-- A valid divisor must still round correctly on the slow (partial-minute timezone) path.
+SELECT toStartOfInterval(toDateTime('2021-06-22 03:17:42', 'Africa/Monrovia'), INTERVAL 5 MINUTE);
 
 SELECT 'ok';
