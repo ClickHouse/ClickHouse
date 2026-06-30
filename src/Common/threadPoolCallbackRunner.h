@@ -100,11 +100,13 @@ struct CallbackRunnerTask
         ///    BEFORE satisfying the promise. set_exception can wake a waiter immediately; a waiter
         ///    that treats future.get() as "the task is done" may then tear down state that the
         ///    captures reference, so the captures must be gone first (same ordering the run path
-        ///    keeps with ThreadGroupSwitcher + SCOPE_EXIT_SAFE before set_value). ThreadGroupSwitcher's
-        ///    ctor is noexcept and a no-op for a null/identical group, so this is safe on the drain
-        ///    thread; SCOPE_EXIT_SAFE keeps a throwing capture destructor from escaping this destructor.
+        ///    keeps with ThreadGroupSwitcher + SCOPE_EXIT_SAFE before set_value).
+        ///    allow_existing_group=true: unlike run() (always on a clean pool worker), this can run
+        ///    on the scheduling thread when scheduleOrThrowOnError() throws and unwinding drops the
+        ///    task; that thread already owns its query group, which must be restored, not asserted against.
+        ///    SCOPE_EXIT_SAFE keeps a throwing capture destructor from escaping this destructor.
         {
-            ThreadGroupSwitcher switcher(thread_group, thread_name);
+            ThreadGroupSwitcher switcher(thread_group, thread_name, /*allow_existing_group*/ true);
             SCOPE_EXIT_SAFE({ [[maybe_unused]] auto released = std::move(callback); });
         }
 

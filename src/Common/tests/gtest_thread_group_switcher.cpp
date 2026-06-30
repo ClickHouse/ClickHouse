@@ -1,3 +1,5 @@
+#include <functional>
+#include <future>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -8,6 +10,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -68,6 +71,47 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
             EXPECT_EQ(getCurrentThreadGroup(), G0)
                 << "Post-attach failure must detach the target group and restore the original";
         }
+        CurrentThread::detachFromGroupIfNotDetached();
+    });
+    t.join();
+}
+
+/// A CallbackRunnerTask whose pool throws from scheduleOrThrowOnError() (e.g. shutting down) is
+/// destroyed during unwinding ON THE SCHEDULING THREAD -- which usually already owns its own query
+/// thread group. ~CallbackRunnerTask() runs a ThreadGroupSwitcher to release the callback under the
+/// task's group; it must NOT abort with "Thread is already attached to a group", and must leave the
+/// scheduling thread attached to its original group afterwards. Reproduces the arm_tsan stress abort
+/// (STID 4298-42a4): DROP TABLE -> MergeTreeDeduplicationLog::shutdown -> WriteBufferFromS3 ->
+/// TaskTracker::add -> scheduleOrThrowOnError throws -> ~CallbackRunnerTask on the query thread.
+TEST(ThreadGroupSwitcher, CallbackRunnerTaskDestroyedOnGroupOwningThread)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto query_group = std::make_shared<ThreadGroup>(context, 0); /// the scheduling thread's own group
+        auto task_group = std::make_shared<ThreadGroup>(context, 0);  /// the group the task would run under
+
+        /// The scheduling thread is attached to its query group, exactly like the DROP query thread.
+        CurrentThread::attachToGroupIfDetached(query_group);
+
+        std::future<void> future;
+        {
+            /// Build the task that threadPoolCallbackRunnerUnsafe would have scheduled, then let it be
+            /// destroyed here (never run) -- the same shared_ptr destruction that happens when
+            /// scheduleOrThrowOnError() throws and unwinding drops the not-yet-queued task.
+            detail::CallbackRunnerTask<void, std::function<void()>> task(
+                task_group, ThreadName::UNKNOWN, std::function<void()>([]{}));
+            future = task.promise.get_future();
+        } /// ~CallbackRunnerTask() runs here, on a thread that already owns query_group.
+
+        /// Must not have aborted, and the scheduling thread must still own its original group.
+        EXPECT_EQ(getCurrentThreadGroup(), query_group)
+            << "~CallbackRunnerTask on a group-owning thread must restore that thread's group";
+
+        /// The dropped task satisfies its promise with a normal, catchable exception.
+        EXPECT_THROW(future.get(), DB::Exception);
+
         CurrentThread::detachFromGroupIfNotDetached();
     });
     t.join();
