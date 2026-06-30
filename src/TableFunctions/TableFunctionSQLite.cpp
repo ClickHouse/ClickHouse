@@ -76,12 +76,12 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
 }
 
 
-ColumnsDescription TableFunctionSQLite::getActualTableStructure(ContextPtr /* context */, bool is_insert_query) const
+ColumnsDescription TableFunctionSQLite::getActualTableStructure(ContextPtr /* context */, bool /*is_insert_query*/) const
 {
-    if (is_insert_query && remote_table_or_query.isQuery())
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "Cannot INSERT into the 'sqlite' table function: it represents the result of a query passed to SQLite, which is read-only");
-
+    /// A query-backed insert is rejected in executeImpl, which is the only path taken by INSERT INTO TABLE
+    /// FUNCTION (it is called with empty cached columns, before any external contact). It must not be rejected
+    /// here, because DESCRIBE TABLE also calls getActualTableStructure with is_insert_query = true and must
+    /// keep returning the inferred structure.
     return StorageSQLite::getTableStructureFromData(sqlite_db, remote_table_or_query);
 }
 

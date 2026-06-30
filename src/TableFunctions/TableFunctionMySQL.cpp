@@ -102,12 +102,12 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     pool.emplace(createMySQLPoolWithFailover(*configuration, mysql_settings));
 }
 
-ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context, bool is_insert_query) const
+ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    if (is_insert_query && configuration->table_or_query.isQuery())
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "Cannot INSERT into the 'mysql' table function: it represents the result of a query passed to MySQL, which is read-only");
-
+    /// A query-backed insert is rejected in executeImpl, which is the only path taken by INSERT INTO TABLE
+    /// FUNCTION (it is called with empty cached columns, before any external contact). It must not be rejected
+    /// here, because DESCRIBE TABLE also calls getActualTableStructure with is_insert_query = true and must
+    /// keep returning the inferred structure.
     return StorageMySQL::getTableStructureFromData(*pool, configuration->database, configuration->table_or_query, context);
 }
 
