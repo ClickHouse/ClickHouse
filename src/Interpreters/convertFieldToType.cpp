@@ -24,6 +24,7 @@
 #include <Core/AccurateComparison.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/NaNUtils.h>
 #include <Common/FieldAccurateComparison.h>
@@ -770,6 +771,8 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
 
 Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings)
 {
+    checkStackSize();
+
     if (from_value.isNull())
         return from_value;
 

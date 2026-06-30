@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorWriteBinary.h>
+#include <Common/checkStackSize.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -31,6 +32,7 @@ void FieldVisitorWriteBinary::operator() (const AggregateFunctionStateData & x, 
 
 void FieldVisitorWriteBinary::operator() (const Array & x, WriteBuffer & buf) const
 {
+    checkStackSize();
     const size_t size = x.size();
     writeBinary(size, buf);
 
@@ -44,6 +46,7 @@ void FieldVisitorWriteBinary::operator() (const Array & x, WriteBuffer & buf) co
 
 void FieldVisitorWriteBinary::operator() (const Tuple & x, WriteBuffer & buf) const
 {
+    checkStackSize();
     const size_t size = x.size();
     writeBinary(size, buf);
 
@@ -58,6 +61,7 @@ void FieldVisitorWriteBinary::operator() (const Tuple & x, WriteBuffer & buf) co
 
 void FieldVisitorWriteBinary::operator() (const Map & x, WriteBuffer & buf) const
 {
+    checkStackSize();
     const size_t size = x.size();
     writeBinary(size, buf);
 
@@ -71,6 +75,7 @@ void FieldVisitorWriteBinary::operator() (const Map & x, WriteBuffer & buf) cons
 
 void FieldVisitorWriteBinary::operator() (const Object & x, WriteBuffer & buf) const
 {
+    checkStackSize();
     const size_t size = x.size();
     writeBinary(size, buf);
 
