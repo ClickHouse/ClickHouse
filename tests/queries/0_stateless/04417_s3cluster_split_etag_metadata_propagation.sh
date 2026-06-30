@@ -34,7 +34,7 @@ ${CLICKHOUSE_CLIENT} --query_id "$qid" -q "
     SETTINGS s3_validate_etag_on_read = 1, cluster_table_function_split_granularity = 'bucket', enable_filesystem_cache = 0
 " > /dev/null
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 # Sum HEADs done by the worker (secondary) queries only. Expected: 0 (worker reuses the propagated
 # metadata). Before the fix the worker re-HEAD made this >= 1.

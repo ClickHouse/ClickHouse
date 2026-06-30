@@ -24,6 +24,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
@@ -46,15 +47,20 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     file_bucket_info = object->file_bucket_info;
 
     /// Capture the generation the coordinator saw (notably the ETag) so the worker can pin its read
-    /// to it. For the bucket-splitting path the metadata was already refreshed when the coordinator
-    /// read the object to compute bucket boundaries; for other paths it stays empty and the worker
-    /// fetches metadata itself.
-    if (auto object_metadata = object->getObjectMetadata())
+    /// to it. Scoped to the bucket-splitting path with read-time ETag validation enabled: there the
+    /// coordinator already refreshed the metadata while reading the object to compute bucket
+    /// boundaries, and the worker reads a sub-range of that same generation. For every other path
+    /// (non-bucket s3Cluster, validation disabled, non-S3 backends) we leave it empty so the worker
+    /// fetches its own metadata exactly as before - no behavioral change.
+    if (object->file_bucket_info && context->getSettingsRef()[Setting::s3_validate_etag_on_read])
     {
-        etag = object_metadata->etag;
-        size_bytes = object_metadata->size_bytes;
-        is_size_known = object_metadata->is_size_known;
-        last_modified_epoch_us = static_cast<UInt64>(object_metadata->last_modified.epochMicroseconds());
+        if (auto object_metadata = object->getObjectMetadata())
+        {
+            etag = object_metadata->etag;
+            size_bytes = object_metadata->size_bytes;
+            is_size_known = object_metadata->is_size_known;
+            last_modified_epoch_us = static_cast<UInt64>(object_metadata->last_modified.epochMicroseconds());
+        }
     }
 }
 
