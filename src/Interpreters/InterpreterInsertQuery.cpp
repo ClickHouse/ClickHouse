@@ -35,6 +35,7 @@
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
+#include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -764,72 +765,139 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     // when insert is initiated from FileLog or similar storages
     // they are allowed to expose its virtuals columns to the dependent views
+    //
+    // Pass `max_insert_threads` so that the writing side of a plain INSERT (data coming from
+    // clickhouse-client or over the HTTP interface, not from a SELECT) can be parallelized too.
+    // The input is always a single stream; we resize the pipeline to `sink_stream_size` parallel
+    // streams after the data is read and the squashing is planned. `InsertDependenciesBuilder`
+    // keeps `sink_stream_size` at 1 (preserving the previous behavior) unless all destinations
+    // support parallel inserts, so this stays a no-op for the default `max_insert_threads = 0`.
+    // Asynchronous inserts have their own batching/flush mechanism, so they keep a single stream.
+    const size_t insert_threads = async_insert ? 1 : max_insert_threads;
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table,
         query_ptr,
         query_sample_block,
         async_insert,
         /*skip_destination_table*/ no_destination,
-        /*max_insert_threads*/ 1,
+        insert_threads,
         context);
 
-    auto chains = insert_dependencies->createChainWithDependenciesForAllStreams();
-    chassert(chains.size() == 1);
-    auto chain = std::move(chains.front());
+    auto sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
+    const size_t sink_stream_size = insert_dependencies->getSinkStreamSize();
+    chassert(sink_chains.size() == sink_stream_size);
+    chassert(sink_stream_size >= 1);
+
     bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
+    bool should_squash = shouldAddSquashingForStorage(table, context) && !no_squash;
 
-    if (squash_with_strict_limits)
+    /// The header that flows through the whole insert pipeline.
+    SharedHeader insert_header = sink_chains.front().getInputSharedHeader();
+
+    auto processors = std::make_shared<Processors>();
+
+    /// Build the single-stream head of the pipeline. It processes the input data
+    /// (counting, deduplication info, planning of squashing) before the data is
+    /// distributed across the parallel insert streams.
+    InputPort * pipeline_input = nullptr;
+    OutputPort * head_output = nullptr;
+
+    auto add_head_transform = [&](ProcessorPtr processor)
     {
-        chain.addSource(
-            std::make_shared<AddDeduplicationInfoTransform>(
-                insert_dependencies,
-                insert_dependencies->getRootViewID(),
-                settings[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
-                chain.getInputSharedHeader())
-        );
+        chassert(processor->getInputs().size() == 1);
+        chassert(processor->getOutputs().size() == 1);
+        if (head_output)
+            connect(*head_output, processor->getInputs().front());
+        else
+            pipeline_input = &processor->getInputs().front();
+        head_output = &processor->getOutputs().front();
+        processors->emplace_back(std::move(processor));
+    };
+
+    {
+        auto counting = std::make_shared<CountingTransform>(insert_header, context->getQuota());
+        counting->setProcessListElement(context->getProcessListElement());
+        counting->setProgressCallback(context->getProgressCallback());
+        add_head_transform(std::move(counting));
     }
 
-    if (shouldAddSquashingForStorage(table, context) && !no_squash)
-    {
-        auto applying = std::make_shared<ApplySquashingTransform>(chain.getInputSharedHeader());
-        chain.addSource(std::move(applying));
-    }
+    if (!squash_with_strict_limits)
+        add_head_transform(std::make_shared<AddDeduplicationInfoTransform>(
+            insert_dependencies,
+            insert_dependencies->getRootViewID(),
+            settings[Setting::insert_deduplication_token].value,
+            context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
+            insert_header));
 
-    if (shouldAddSquashingForStorage(table, context) && !no_squash)
+    if (should_squash)
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
         size_t min_block_size_bytes = table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL;
         /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
         if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
             min_block_size_bytes = std::min<size_t>(min_block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
-        auto planing = std::make_shared<PlanSquashingTransform>(
-            chain.getInputSharedHeader(),
+        add_head_transform(std::make_shared<PlanSquashingTransform>(
+            insert_header,
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
             min_block_size_bytes,
             settings[Setting::max_insert_block_size],
             settings[Setting::max_insert_block_size_bytes],
-            squash_with_strict_limits);
-        chain.addSource(std::move(planing));
+            squash_with_strict_limits));
     }
 
-    if (!squash_with_strict_limits)
+    /// Prepend the per-stream transforms to each sink chain. `addSource` prepends, so the
+    /// resulting top-to-bottom order matches the previous single-stream pipeline:
+    /// ApplySquashing -> AddDeduplicationInfo (strict) -> sink.
+    for (auto & sink_chain : sink_chains)
     {
-        chain.addSource(
-            std::make_shared<AddDeduplicationInfoTransform>(
+        if (squash_with_strict_limits)
+            sink_chain.addSource(std::make_shared<AddDeduplicationInfoTransform>(
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 settings[Setting::insert_deduplication_token].value,
                 context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
-                chain.getInputSharedHeader()));
+                sink_chain.getInputSharedHeader()));
+
+        if (should_squash)
+            sink_chain.addSource(std::make_shared<ApplySquashingTransform>(sink_chain.getInputSharedHeader()));
     }
 
-    auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota());
-    counting->setProcessListElement(context->getProcessListElement());
-    counting->setProgressCallback(context->getProgressCallback());
-    chain.addSource(std::move(counting));
+    /// Distribute the single input stream across the parallel insert streams.
+    std::vector<OutputPort *> stream_outputs;
+    if (sink_stream_size > 1)
+    {
+        auto resize = std::make_shared<ResizeProcessor>(head_output->getSharedHeader(), 1, sink_stream_size);
+        connect(*head_output, resize->getInputs().front());
+        for (auto & output : resize->getOutputs())
+            stream_outputs.push_back(&output);
+        processors->emplace_back(std::move(resize));
+    }
+    else
+    {
+        stream_outputs.push_back(head_output);
+    }
 
-    QueryPipeline pipeline = QueryPipeline(std::move(chain));
+    chassert(stream_outputs.size() == sink_chains.size());
+
+    /// Connect each parallel stream to its sink chain and terminate it with an empty sink.
+    QueryPlanResourceHolder resources;
+    size_t stream_index = 0;
+    for (auto & sink_chain : sink_chains)
+    {
+        connect(*stream_outputs[stream_index], sink_chain.getInputPort());
+        ++stream_index;
+
+        auto sink = std::make_shared<EmptySink>(sink_chain.getOutputSharedHeader());
+        connect(sink_chain.getOutputPort(), sink->getPort());
+
+        for (auto processor : sink_chain.getProcessors())
+            processors->emplace_back(std::move(processor));
+        processors->emplace_back(std::move(sink));
+
+        resources = sink_chain.detachResources();
+    }
+
+    QueryPipeline pipeline(std::move(resources), std::move(processors), pipeline_input);
 
     // Pipeline ceiling: simple upper bound on parallelism. Actual slot grants are
     // demand-driven by lazy ConcurrencyControl / CPULeaseAllocation, so a wide ceiling
