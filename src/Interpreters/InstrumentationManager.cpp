@@ -69,8 +69,10 @@ static Int64 getSleepDurationMilliseconds(Float64 seconds)
     if (seconds < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
 
-    const auto milliseconds = static_cast<double>(seconds) * 1000.0;
-    if (milliseconds > static_cast<double>(std::numeric_limits<Int64>::max()))
+    const double milliseconds = seconds * 1000.0;
+    /// static_cast<double> of Int64's max rounds up to 2^63, which is the smallest double that overflows Int64.
+    /// Compare with >= so that value (and anything larger) is rejected before the static_cast below would be undefined.
+    if (milliseconds >= static_cast<double>(std::numeric_limits<Int64>::max()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration is too large to represent in milliseconds");
 
     return static_cast<Int64>(milliseconds);
