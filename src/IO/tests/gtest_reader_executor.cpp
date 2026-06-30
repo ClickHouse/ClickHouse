@@ -31,10 +31,10 @@ namespace ProfileEvents
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
     extern const Event ReaderExecutorIncompleteConnections;
-    extern const Event LongConnectionOpened;
-    extern const Event LongConnectionHits;
-    extern const Event LongConnectionFallbacks;
-    extern const Event LongConnectionBytes;
+    extern const Event ReaderExecutorLongConnectionOpened;
+    extern const Event ReaderExecutorLongConnectionHits;
+    extern const Event ReaderExecutorLongConnectionFallbacks;
+    extern const Event ReaderExecutorLongConnectionBytes;
 }
 
 using namespace DB;
@@ -204,8 +204,8 @@ protected:
         }
 
         return {tg.get(ProfileEvents::ReaderExecutorSourceRequests),
-                tg.get(ProfileEvents::LongConnectionOpened),
-                tg.get(ProfileEvents::LongConnectionHits)};
+                tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened),
+                tg.get(ProfileEvents::ReaderExecutorLongConnectionHits)};
     }
 };
 
@@ -416,9 +416,9 @@ TEST_F(ReaderExecutorTest, LongConnectionsOffByDefault)
     ASSERT_EQ(data.size(), size);
     for (size_t i = 0; i < size; ++i)
         ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-    EXPECT_EQ(tg.get(ProfileEvents::LongConnectionOpened), 0u);
-    EXPECT_EQ(tg.get(ProfileEvents::LongConnectionHits), 0u);
-    EXPECT_EQ(tg.get(ProfileEvents::LongConnectionFallbacks), 0u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened), 0u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorLongConnectionHits), 0u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorLongConnectionFallbacks), 0u);
 }
 
 TEST_F(ReaderExecutorTest, SequentialScanOpensAndReusesConnection)
@@ -436,8 +436,8 @@ TEST_F(ReaderExecutorTest, SequentialScanOpensAndReusesConnection)
     for (size_t i = 0; i < size; ++i)
         ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
     /// A purely sequential scan opens at least one long connection and reuses it.
-    EXPECT_GE(tg.get(ProfileEvents::LongConnectionOpened), 1u);
-    EXPECT_GE(tg.get(ProfileEvents::LongConnectionHits), 1u);
+    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened), 1u);
+    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionHits), 1u);
     /// Forward-scan connections are read to their bound, so none are abandoned.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u);
 }
@@ -502,8 +502,8 @@ TEST_F(ReaderExecutorTest, CapacityZeroAlwaysFallsBack)
     ASSERT_EQ(data.size(), size);
     for (size_t i = 0; i < size; ++i)
         ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-    EXPECT_EQ(tg.get(ProfileEvents::LongConnectionOpened), 0u);
-    EXPECT_GE(tg.get(ProfileEvents::LongConnectionFallbacks), 1u);   /// wanted long, no slot
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened), 0u);
+    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionFallbacks), 1u);   /// wanted long, no slot
 }
 
 TEST_F(ReaderExecutorTest, DataCorrectAcrossSeeksWithLongConnections)
@@ -552,9 +552,9 @@ TEST_F(ReaderExecutorTest, IncompleteConnectionOnAbandonedDrop)
 
     /// Read until a long connection is open (it has a large bound), then seek backward to
     /// abandon it mid-response.
-    for (int i = 0; i < 8 && tg.get(ProfileEvents::LongConnectionOpened) == 0; ++i)
+    for (int i = 0; i < 8 && tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened) == 0; ++i)
         ex.readNextWindow();
-    ASSERT_GE(tg.get(ProfileEvents::LongConnectionOpened), 1u);
+    ASSERT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened), 1u);
     ex.seek(0);
     ex.readNextWindow();   /// drops the held connection (backward, undrained tail)
     EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 1u);
@@ -585,16 +585,16 @@ TEST_F(ReaderExecutorTest, BridgeDoesNotClobberServedWindow)
     ChainedBuffers held;
     for (int i = 0; i < 4 && held.atEnd(); ++i)
     {
-        const auto opened_before = tg.get(ProfileEvents::LongConnectionOpened);
+        const auto opened_before = tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened);
         auto w = ex.readNextWindow();
-        if (!w.atEnd() && tg.get(ProfileEvents::LongConnectionOpened) > opened_before)
+        if (!w.atEnd() && tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened) > opened_before)
             held = std::move(w);
     }
     ASSERT_FALSE(held.atEnd()) << "expected a long connection to open";
     const auto span = held.peek();
     const size_t off = span.logical_offset;
 
-    /// A small forward gap on the open connection -> serveFromLong bridges via skipForward.
+    /// A small forward gap on the open connection -> serveFromLongConnection bridges via skipForward.
     ex.seek(off + span.size + 4096);
     ex.readNextWindow();
 

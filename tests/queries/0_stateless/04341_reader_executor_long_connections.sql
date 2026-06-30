@@ -1,7 +1,7 @@
 -- Tags: no-fasttest, no-distributed-cache, no-encrypted-storage
 -- The experimental ReaderExecutor's long-connection reuse: on a sequential scan of an
 -- object-storage table (storage_policy='s3_no_cache', so the executor actually engages), a held
--- source connection is opened and reused across windows -- emitting the LongConnection* metrics --
+-- source connection is opened and reused across windows -- emitting the ReaderExecutorLongConnection* metrics --
 -- and the reuse is gated by `reader_executor_use_long_connections`. Two separate tables keep both
 -- scans cold (a re-scan of the same table would be served from cache and never reach the source).
 --   no-fasttest: needs minio (object storage).
@@ -25,10 +25,10 @@ SET remote_filesystem_read_method = 'read';   -- avoid the async-prefetch stage
 SET enable_filesystem_cache = 0;               -- avoid the filesystem-cache stage so the executor engages
 SET max_read_buffer_size = 65536;              -- small windows -> many sequential reads per object
 
--- Keep the scan contiguous so reuse is deterministic. The `LongConnectionHits > 0` assertion below
+-- Keep the scan contiguous so reuse is deterministic. The `ReaderExecutorLongConnectionHits > 0` assertion below
 -- needs the held connection to serve more than one window, which only happens on contiguous forward
 -- access (the `canContinue` gate). Two randomized settings can fragment the access pattern and leave
--- `LongConnectionHits` at 0: `max_threads` > 1 stripes non-adjacent mark ranges across per-thread
+-- `ReaderExecutorLongConnectionHits` at 0: `max_threads` > 1 stripes non-adjacent mark ranges across per-thread
 -- readers, and the range-split injection reorders mark ranges within a single reader. Pin both.
 SET max_threads = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
@@ -47,9 +47,9 @@ SYSTEM FLUSH LOGS query_log;
 -- held path served real bytes, and over-read is expected -- gap-bridging reads past the requested
 -- window, so source bytes are at least the requested bytes (the inverse of 04327's strict equality).
 SELECT
-    ProfileEvents['LongConnectionOpened'] > 0,
-    ProfileEvents['LongConnectionHits'] > 0,
-    ProfileEvents['LongConnectionBytes'] > 0,
+    ProfileEvents['ReaderExecutorLongConnectionOpened'] > 0,
+    ProfileEvents['ReaderExecutorLongConnectionHits'] > 0,
+    ProfileEvents['ReaderExecutorLongConnectionBytes'] > 0,
     ProfileEvents['ReaderExecutorBytesFromSource'] >= ProfileEvents['ReaderExecutorRequestedBytes']
 FROM system.query_log
 WHERE log_comment = '04341_long_conn_on' AND type = 'QueryFinish' AND current_database = currentDatabase()
@@ -58,7 +58,7 @@ ORDER BY event_time_microseconds DESC LIMIT 1;
 -- OFF: the executor still read from the source, but the setting gated long connections off.
 SELECT
     ProfileEvents['ReaderExecutorSourceRequests'] > 0,
-    ProfileEvents['LongConnectionOpened'] = 0
+    ProfileEvents['ReaderExecutorLongConnectionOpened'] = 0
 FROM system.query_log
 WHERE log_comment = '04341_long_conn_off' AND type = 'QueryFinish' AND current_database = currentDatabase()
 ORDER BY event_time_microseconds DESC LIMIT 1;

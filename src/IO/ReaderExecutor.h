@@ -123,7 +123,7 @@ private:
 
     /// A held source connection (a bounded GET) reused across sequential windows:
     /// `readInto` streams forward from it, `skipForward` bridges a small forward gap by
-    /// discarding bytes on the open stream. Offsets are object-local. Foreground-only.
+    /// discarding bytes on the open stream. Offsets are object-local.
     struct LongConnection
     {
         std::unique_ptr<ReadBufferFromFileBase> buffer;
@@ -136,7 +136,8 @@ private:
         bool servesObject(const String & path) const { return object_path == path; }
         bool atBound() const { return current_position >= read_until; }
         bool isComplete(bool at_eof) const { return at_eof || atBound(); }
-        bool everTransferred() const { return current_position > opened_at; }
+        /// Whether any bytes have been consumed from the stream (read or skipped) since it opened.
+        bool consumedAnyBytes() const { return current_position > opened_at; }
         /// Forward, within `near_gap`, and `[off, off+want)` stays inside the bound.
         bool canContinue(size_t off, size_t want, size_t near_gap) const
         {
@@ -166,13 +167,13 @@ private:
     size_t clampReach(size_t reach, size_t logical_pos) const;
     /// Open a long connection now? True when a slot budget is configured, none is held,
     /// and the estimator predicts the read continues past this window.
-    bool shouldOpenLong() const;
+    bool shouldOpenLongConnection() const;
     /// Acquire a slot and open a held connection on `object` at `object_offset`; false if
     /// no slot was available (caller falls back to a one-shot read).
-    bool tryOpenLong(const StoredObject & object, size_t object_offset);
+    bool tryOpenLongConnection(const StoredObject & object, size_t object_offset);
     /// Serve one window (<= `want`) from the held connection, bridging a small leading gap;
     /// releases the connection if it reaches its bound. Precondition: `canContinue`.
-    size_t serveFromLong(size_t object_offset, size_t want, char * dst);
+    size_t serveFromLongConnection(size_t object_offset, size_t want, char * dst);
     /// One-shot bounded read (the stateless path): open, seek, read `want` into `dst`.
     size_t readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst);
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.

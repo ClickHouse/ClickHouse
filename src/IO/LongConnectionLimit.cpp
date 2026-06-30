@@ -3,7 +3,7 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric LongConnections;
+    extern const Metric ReaderExecutorLongConnections;
 }
 
 namespace DB
@@ -37,6 +37,8 @@ LongConnectionSlot::LongConnectionSlot(std::shared_ptr<LongConnectionLimit> limi
     : limit(std::move(limit_))
     , held(true)
 {
+    /// Account the held slot here so add/sub stay symmetric with `release`.
+    CurrentMetrics::add(CurrentMetrics::ReaderExecutorLongConnections);
 }
 
 void LongConnectionSlot::release()
@@ -44,7 +46,7 @@ void LongConnectionSlot::release()
     if (held && limit)
     {
         limit->release();
-        CurrentMetrics::sub(CurrentMetrics::LongConnections);
+        CurrentMetrics::sub(CurrentMetrics::ReaderExecutorLongConnections);
     }
     held = false;
 }
@@ -64,7 +66,6 @@ LongConnectionSlot LongConnectionLimit::tryAcquire(std::shared_ptr<LongConnectio
     {
         if (count.compare_exchange_weak(cur, cur + 1, std::memory_order_acq_rel, std::memory_order_relaxed))
         {
-            CurrentMetrics::add(CurrentMetrics::LongConnections);
             return LongConnectionSlot(std::move(self));
         }
     }

@@ -37,7 +37,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorRequestedBytes;
     extern const Event ReaderExecutorModeledCostMicroseconds;
     extern const Event ReaderExecutorIncompleteConnections;
-    extern const Event LongConnectionHits;
+    extern const Event ReaderExecutorLongConnectionHits;
 }
 
 using namespace DB;
@@ -129,7 +129,7 @@ protected:
         Metric m;
         m.requests = tg.get(ProfileEvents::ReaderExecutorSourceRequests);
         m.incomplete = tg.get(ProfileEvents::ReaderExecutorIncompleteConnections);
-        m.hits = tg.get(ProfileEvents::LongConnectionHits);
+        m.hits = tg.get(ProfileEvents::ReaderExecutorLongConnectionHits);
         m.requested = tg.get(ProfileEvents::ReaderExecutorRequestedBytes);
         m.from_source = tg.get(ProfileEvents::ReaderExecutorBytesFromSource);
         m.cost_ms = static_cast<double>(tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds)) / 1000.0;

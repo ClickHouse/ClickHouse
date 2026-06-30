@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <base/unit.h>
 #include <Core/Defines.h>
 #include <IO/DistributedCacheSettings.h>
 #include <IO/ReadMethod.h>
@@ -151,8 +152,8 @@ struct ReadSettings
     {
         bool enabled = false;
         bool use_long_connections = true;
-        size_t min_bytes_for_seek = 2 * (1 << 20);
-        size_t max_tail_for_drain = 1 << 20;
+        size_t min_bytes_for_seek = 2 * 1_MiB;
+        size_t max_tail_for_drain = 1_MiB;
     };
     ReaderExecutorSettings reader_executor;
 

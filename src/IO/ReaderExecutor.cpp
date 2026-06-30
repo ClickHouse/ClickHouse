@@ -17,10 +17,10 @@ namespace ProfileEvents
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorWorkMicroseconds;
     extern const Event ReaderExecutorModeledCostMicroseconds;
-    extern const Event LongConnectionOpened;
-    extern const Event LongConnectionHits;
-    extern const Event LongConnectionFallbacks;
-    extern const Event LongConnectionBytes;
+    extern const Event ReaderExecutorLongConnectionOpened;
+    extern const Event ReaderExecutorLongConnectionHits;
+    extern const Event ReaderExecutorLongConnectionFallbacks;
+    extern const Event ReaderExecutorLongConnectionBytes;
 }
 
 namespace CurrentMetrics
@@ -95,16 +95,16 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
             ProfileEvents::increment(ProfileEvents::ReaderExecutorWorkMicroseconds, value);
             break;
         case LongConnectionOpened:
-            ProfileEvents::increment(ProfileEvents::LongConnectionOpened, value);
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionOpened, value);
             break;
         case LongConnectionHits:
-            ProfileEvents::increment(ProfileEvents::LongConnectionHits, value);
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionHits, value);
             break;
         case LongConnectionFallbacks:
-            ProfileEvents::increment(ProfileEvents::LongConnectionFallbacks, value);
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionFallbacks, value);
             break;
         case LongConnectionBytes:
-            ProfileEvents::increment(ProfileEvents::LongConnectionBytes, value);
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionBytes, value);
             break;
         case NumCounters:
             break;
@@ -208,7 +208,7 @@ size_t ReaderExecutor::clampReach(size_t reach, size_t logical_pos) const
     return end;
 }
 
-bool ReaderExecutor::shouldOpenLong() const
+bool ReaderExecutor::shouldOpenLongConnection() const
 {
     if (long_conn || !long_connection_limit)
         return false;
@@ -216,7 +216,7 @@ bool ReaderExecutor::shouldOpenLong() const
     return clampReach(continuity_tracker.predictedReach(), position) > position + block_size;
 }
 
-bool ReaderExecutor::tryOpenLong(const StoredObject & object, size_t object_offset)
+bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t object_offset)
 {
     auto slot = long_connection_limit->tryAcquire(long_connection_limit);
     if (!slot)
@@ -255,7 +255,7 @@ bool ReaderExecutor::tryOpenLong(const StoredObject & object, size_t object_offs
     return true;
 }
 
-size_t ReaderExecutor::serveFromLong(size_t object_offset, size_t want, char * dst)
+size_t ReaderExecutor::serveFromLongConnection(size_t object_offset, size_t want, char * dst)
 {
     if (object_offset > long_conn->current_position)
     {
@@ -299,7 +299,7 @@ void ReaderExecutor::dropLong()
     }
     /// A connection abandoned mid-response (transferred, not complete) is not pool-reusable;
     /// one that never transferred (its lazy GET never issued) is excluded.
-    if (long_conn->everTransferred() && !long_conn->isComplete(ended_at_eof))
+    if (long_conn->consumedAnyBytes() && !long_conn->isComplete(ended_at_eof))
         stats.add(Stats::IncompleteConnections);
     long_conn.reset();
 }
@@ -349,7 +349,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     {
         /// Reuse the held connection for this contiguous (or small-gap) window.
         stats.add(Stats::LongConnectionHits);
-        got = serveFromLong(object_offset, want, block->data());
+        got = serveFromLongConnection(object_offset, want, block->data());
     }
     else
     {
@@ -358,14 +358,14 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         /// to continue, else fall back to a one-shot read.
         if (long_conn)
             dropLong();
-        if (shouldOpenLong() && tryOpenLong(*object, object_offset))
-            got = serveFromLong(object_offset, want, block->data());
+        if (shouldOpenLongConnection() && tryOpenLongConnection(*object, object_offset))
+            got = serveFromLongConnection(object_offset, want, block->data());
         else
             got = readOneShot(*object, object_offset, want, block->data());
     }
 
     /// Requested bytes equal source bytes until caches / over-read coalescing land; any bridged
-    /// (skipped) bytes were already counted in BytesFromSource inside serveFromLong.
+    /// (skipped) bytes were already counted in BytesFromSource inside serveFromLongConnection.
     stats.add(Stats::BytesFromSource, got);
     stats.add(Stats::RequestedBytes, got);
 

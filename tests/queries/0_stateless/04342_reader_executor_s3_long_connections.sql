@@ -26,7 +26,7 @@ SETTINGS reader_executor_use_long_connections = 1, log_comment = '04342_s3_long_
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT ProfileEvents['LongConnectionOpened'] > 0
+SELECT ProfileEvents['ReaderExecutorLongConnectionOpened'] > 0
 FROM system.query_log
 WHERE log_comment = '04342_s3_long_conn' AND type = 'QueryFinish' AND current_database = currentDatabase()
 ORDER BY event_time_microseconds DESC LIMIT 1;
