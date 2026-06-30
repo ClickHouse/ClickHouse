@@ -59,6 +59,13 @@ roundtrip "DateTime64(3, 'UTC')" "('2022-01-22 12:34:56.789')"
 echo "DateTime:"
 roundtrip "DateTime('UTC')" "('2022-01-22 12:34:56')"
 
+# Under Nullable the epoch (seconds=0, nanos=0) is a non-null value, not NULL: its empty Timestamp message must survive the round-trip.
+echo "Nullable(DateTime64):"
+roundtrip "Nullable(DateTime64(9, 'UTC'))" "(NULL), ('1970-01-01 00:00:00')"
+
+echo "Nullable(DateTime):"
+roundtrip "Nullable(DateTime('UTC'))" "(NULL), ('1970-01-01 00:00:00')"
+
 # A Timestamp whose seconds fall outside the target column's range must be rejected, not silently wrapped.
 echo "Out of range (DateTime64):"
 expect_out_of_range "DateTime64(9, 'UTC')" "10000000000"
