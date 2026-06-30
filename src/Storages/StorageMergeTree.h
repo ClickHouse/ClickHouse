@@ -126,6 +126,12 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
+    /// For tests: register a committing block as if a part for it were mid-commit, so the merge
+    /// selector's committing-blocks gap check can be exercised deterministically (the real race is
+    /// sub-millisecond and not reproducible end to end). The returned holder removes the block on
+    /// destruction; keep it alive for as long as the gap must look occupied.
+    std::unique_ptr<PlainCommittingBlockHolder> injectCommittingBlockForTest(CommittingBlock block);
+
 private:
 
     /// Mutex and condvar for synchronous mutations wait

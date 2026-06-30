@@ -3366,6 +3366,15 @@ std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::allocateBlockNumbe
     return block_holder;
 }
 
+std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::injectCommittingBlockForTest(CommittingBlock block)
+{
+    std::lock_guard lock(committing_blocks_mutex);
+
+    auto block_holder = std::make_unique<PlainCommittingBlockHolder>(std::move(block), *this);
+    committing_blocks.insert(block_holder->block);
+    return block_holder;
+}
+
 void StorageMergeTree::waitForCommittingInsertsAndMutations(Int64 max_block_number, size_t timeout_ms) const
 {
     auto all_committed = [&]
