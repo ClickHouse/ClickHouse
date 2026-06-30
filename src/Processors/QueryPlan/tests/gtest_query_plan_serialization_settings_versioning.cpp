@@ -1,17 +1,17 @@
 #include <gtest/gtest.h>
 
-#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
 using namespace DB;
 
 namespace DB::QueryPlanSerializationSetting
 {
-    extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_join;
-    extern const QueryPlanSerializationSettingsUInt64 max_memory_usage;
-    extern const QueryPlanSerializationSettingsBool enable_join_in_memory_compression;
-    extern const QueryPlanSerializationSettingsUInt64 join_decompressed_columns_cache_bytes;
+extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_join;
+extern const QueryPlanSerializationSettingsUInt64 max_memory_usage;
+extern const QueryPlanSerializationSettingsBool enable_join_in_memory_compression;
+extern const QueryPlanSerializationSettingsUInt64 join_decompressed_columns_cache_bytes;
 }
 
 namespace
