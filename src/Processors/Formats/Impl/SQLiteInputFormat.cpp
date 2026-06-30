@@ -52,7 +52,7 @@ String resolveInputTableName(sqlite3 * db, const FormatSettings & settings)
     auto statement = prepareSQLiteStatement(
         db,
         "SELECT name FROM sqlite_master "
-        "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' "
+        "WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' "
         "ORDER BY rowid LIMIT 1");
 
     int status = sqlite3_step(statement.get());
