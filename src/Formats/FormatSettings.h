@@ -315,6 +315,10 @@ struct FormatSettings
         bool write_map_as_array_of_tuples = false;
         bool read_map_as_array_of_tuples = false;
         bool json_type_escape_dots_in_keys = false;
+        /// Read an unquoted number for a `DateTime64` column as the raw underlying value (the number of ticks at the
+        /// column precision) instead of a Unix timestamp in seconds. Used by the `YTsaurus` reader, whose `timestamp`
+        /// types are stored as raw ticks (microseconds for `DateTime64(6)`), not as seconds.
+        bool read_datetime64_number_as_raw_value = false;
     } json{};
 
     struct

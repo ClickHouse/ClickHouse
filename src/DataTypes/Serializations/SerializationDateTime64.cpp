@@ -253,6 +253,10 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('"', istr);
     }
+    else if (settings.json.read_datetime64_number_as_raw_value)
+    {
+        readIntText(x, istr);
+    }
     else
     {
         readDateTime64AsNumber(x, scale, istr);
@@ -266,6 +270,11 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     if (checkChar('"', istr))
     {
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('"', istr))
+            return false;
+    }
+    else if (settings.json.read_datetime64_number_as_raw_value)
+    {
+        if (!tryReadIntText(x, istr))
             return false;
     }
     else
