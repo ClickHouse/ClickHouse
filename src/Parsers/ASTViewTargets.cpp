@@ -363,7 +363,10 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
         if (!target_obj)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'targets' array during AST JSON deserialization", i);
         ViewTarget target;
-        String kind_str = target_obj->getValue<String>("kind");
+        /// Read scalar fields through `JSONObjectReader` so a wrong JSON scalar type is rejected with
+        /// `BAD_ARGUMENTS` instead of being coerced (e.g. a number stringified into a table name).
+        JSONObjectReader target_reader(*target_obj);
+        String kind_str = target_reader.getString("kind");
         auto kind_opt = magic_enum::enum_cast<ViewTarget::Kind>(kind_str);
         if (!kind_opt)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ViewTarget kind '{}' at index {} in 'targets' array during AST JSON deserialization", kind_str, i);
@@ -374,15 +377,15 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
         {
             /// Restore the `StorageID` parts separately (see `writeJSON`); the database may be empty
             /// (`TO dst`) and names may contain dots, so do not reconstruct by splitting a full name.
-            const String database = target_obj->has("table_database") ? target_obj->getValue<String>("table_database") : "";
+            const String database = target_reader.getString("table_database");
             UUID table_uuid = UUIDHelpers::Nil;
             if (target_obj->has("table_uuid"))
-                table_uuid = parseFromString<UUID>(target_obj->getValue<String>("table_uuid"));
-            target.table_id = StorageID(database, target_obj->getValue<String>("table_name"), table_uuid);
+                table_uuid = parseFromString<UUID>(target_reader.getString("table_uuid"));
+            target.table_id = StorageID(database, target_reader.getString("table_name"), table_uuid);
         }
         if (target_obj->has("inner_uuid"))
         {
-            String uuid_str = target_obj->getValue<String>("inner_uuid");
+            String uuid_str = target_reader.getString("inner_uuid");
             target.inner_uuid = parseFromString<UUID>(uuid_str);
         }
         if (target_obj->has("inner_engine"))

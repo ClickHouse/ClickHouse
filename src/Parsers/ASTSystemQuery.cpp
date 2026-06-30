@@ -945,9 +945,11 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
             auto t_obj = arr->getObject(i);
             if (!t_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'tables' array during AST JSON deserialization", i);
+            /// Read both scalars strictly so a non-string database/table is rejected rather than coerced.
+            JSONObjectReader t_reader(*t_obj);
             tables.emplace_back(
-                t_obj->getValue<String>("database"),
-                t_obj->getValue<String>("table"));
+                t_reader.getString("database"),
+                t_reader.getString("table"));
         }
     }
     /// Validate per-`type` required fields so the deserialized AST cannot reach
@@ -994,13 +996,17 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
         auto srv_obj = r.getNestedObject("server_type");
         if (!srv_obj)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type' is not a JSON object");
-        Int64 srv_type_value = srv_obj->getValue<Poco::Int64>("type");
+        /// Read the scalar fields strictly so wrong JSON scalar types are rejected with `BAD_ARGUMENTS`
+        /// instead of being coerced (e.g. a string parsed into the type enum, or a number into a name).
+        JSONObjectReader srv_reader(*srv_obj);
+        if (!srv_obj->has("type"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type' is missing 'type' during AST JSON deserialization");
+        Int64 srv_type_value = srv_reader.getInt("type");
         auto srv_type_opt = magic_enum::enum_cast<ServerType::Type>(static_cast<std::underlying_type_t<ServerType::Type>>(srv_type_value));
         if (!srv_type_opt || static_cast<Int64>(*srv_type_opt) != srv_type_value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.type: {}", srv_type_value);
         server_type.type = *srv_type_opt;
-        if (srv_obj->has("custom_name"))
-            server_type.custom_name = srv_obj->getValue<String>("custom_name");
+        server_type.custom_name = srv_reader.getString("custom_name");
         if (srv_obj->has("exclude_types"))
         {
             auto arr = srv_obj->getArray("exclude_types");

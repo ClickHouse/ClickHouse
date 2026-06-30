@@ -50,11 +50,18 @@ void ASTRenameQuery::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'elements' array during AST JSON deserialization", i);
             Element elem;
 
-            String from_db = elem_obj->getValue<String>("from_database");
-            String from_tbl = elem_obj->getValue<String>("from_table");
-            String to_db = elem_obj->getValue<String>("to_database");
-            String to_tbl = elem_obj->getValue<String>("to_table");
-            elem.if_exists = elem_obj->getValue<bool>("if_exists");
+            /// Read the scalar fields through `JSONObjectReader` so they are validated strictly
+            /// (an exact JSON string / boolean), like the outer object above. Reading them directly
+            /// through `Poco::getValue` would coerce scalar types (e.g. the string `"yes"` becomes
+            /// `true`, a number stringifies into a name), turning malformed `clickhouse_json` into a
+            /// different valid AST instead of being rejected with `BAD_ARGUMENTS` at the boundary.
+            JSONObjectReader elem_reader(*elem_obj);
+
+            String from_db = elem_reader.getString("from_database");
+            String from_tbl = elem_reader.getString("from_table");
+            String to_db = elem_reader.getString("to_database");
+            String to_tbl = elem_reader.getString("to_table");
+            elem.if_exists = elem_reader.getBool("if_exists");
 
             /// Prefer the full identifier ASTs when present (they preserve parameterized
             /// names like `{tbl:Identifier}` that the string fields above cannot represent),
@@ -64,7 +71,6 @@ void ASTRenameQuery::readJSON(const Poco::JSON::Object & json)
             /// extract a name only through `tryGetIdentifierNameInto`, so a non-identifier node from
             /// malformed `clickhouse_json` would format one rename target while access checks and the
             /// `RenameDescription` operate on an empty/current name. Reject wrong node types here.
-            JSONObjectReader elem_reader(*elem_obj);
 
             if (auto ast = elem_reader.readChildOfType<ASTIdentifier>("from_database_ast"))
                 elem.from.database = ast;

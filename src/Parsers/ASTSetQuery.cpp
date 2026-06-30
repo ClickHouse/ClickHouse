@@ -305,7 +305,10 @@ void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
             if (!change_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'changes' array during AST JSON deserialization", i);
             SettingChange change;
-            change.name = change_obj->getValue<String>("name");
+            /// Read the name through `JSONObjectReader` so a non-string value is rejected with
+            /// `BAD_ARGUMENTS` instead of being coerced (e.g. a number stringified into a setting name).
+            JSONObjectReader change_reader(*change_obj);
+            change.name = change_reader.getString("name");
             auto value_obj = change_obj->getObject("value");
             if (!value_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' object at index {} in 'changes' array during AST JSON deserialization", i);
@@ -332,9 +335,11 @@ void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
             auto param_obj = arr->getObject(i);
             if (!param_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'query_parameters' array during AST JSON deserialization", i);
+            /// Read both scalars strictly so a non-string name/value is rejected rather than coerced.
+            JSONObjectReader param_reader(*param_obj);
             query_parameters.emplace_back(
-                param_obj->getValue<String>("name"),
-                param_obj->getValue<String>("value"));
+                param_reader.getString("name"),
+                param_reader.getString("value"));
         }
     }
 }

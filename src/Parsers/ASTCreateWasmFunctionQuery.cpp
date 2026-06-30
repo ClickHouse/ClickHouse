@@ -243,7 +243,10 @@ void ASTCreateWasmFunctionQuery::readJSON(const Poco::JSON::Object & json)
             if (!change_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'function_settings' array during AST JSON deserialization", i);
             SettingChange change;
-            change.name = change_obj->getValue<String>("name");
+            /// Read the name strictly so a non-string value is rejected with `BAD_ARGUMENTS`
+            /// instead of being coerced into a setting name.
+            JSONObjectReader change_reader(*change_obj);
+            change.name = change_reader.getString("name");
             auto value_obj = change_obj->getObject("value");
             if (!value_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' at index {} in 'function_settings' array during AST JSON deserialization", i);

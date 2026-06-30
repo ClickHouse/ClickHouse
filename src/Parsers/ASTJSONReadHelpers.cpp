@@ -253,7 +253,12 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
         return Field(std::move(map));
     }
 
-    /// For complex types, use Field::restoreFromDump.
+    /// For complex types, use Field::restoreFromDump. Validate the JSON scalar type strictly first,
+    /// like the scalar branches above, so a non-string `value` is rejected with `BAD_ARGUMENTS`
+    /// instead of being coerced into a dump string.
+    if (!obj.has("value") || !obj.get("value").isString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected a string 'value' (Field dump) for field type '{}' during AST JSON deserialization", field_type);
     String dump_str = obj.getValue<String>("value");
 
     /// `Field::restoreFromDump` recursively parses nested `Array_`/`Tuple_`/`Map_` dumps

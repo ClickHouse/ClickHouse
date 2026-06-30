@@ -175,7 +175,10 @@ void ASTDictionarySettings::readJSON(const Poco::JSON::Object & json)
             auto obj = arr->getObject(i);
             if (!obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'changes' array during AST JSON deserialization", i);
-            String setting_name = obj->getValue<String>("name");
+            /// Read the name strictly so a non-string value is rejected with `BAD_ARGUMENTS`
+            /// instead of being coerced into a setting name.
+            JSONObjectReader setting_reader(*obj);
+            String setting_name = setting_reader.getString("name");
             auto value_obj = obj->getObject("value");
             if (!value_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' object at index {} in 'changes' array during AST JSON deserialization", i);

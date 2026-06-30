@@ -435,17 +435,22 @@ namespace
         /// as AST nodes so a tiny-AST payload cannot carry millions of elements past `max_ast_elements`.
         countJSONDeserializationElement();
         Element e;
-        Int64 type_value = elem_obj.getValue<Poco::Int64>("type");
+        /// Read the scalar fields through `JSONObjectReader` so they are validated strictly (an exact
+        /// JSON integer/string), like the AST helpers above. Reading directly through `Poco::getValue`
+        /// coerces scalar types, so malformed `clickhouse_json` (e.g. a number where a name is expected)
+        /// would build a different valid AST instead of being rejected with `BAD_ARGUMENTS`.
+        JSONObjectReader elem_reader(elem_obj);
+        if (!elem_obj.has("type"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'type' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
+        Int64 type_value = elem_reader.getInt("type");
         auto type_opt = magic_enum::enum_cast<ElementType>(static_cast<std::underlying_type_t<ElementType>>(type_value));
         if (!type_opt || static_cast<Int64>(*type_opt) != type_value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BACKUP/RESTORE element type at index {}: {}", element_index, type_value);
         e.type = *type_opt;
-        if (elem_obj.has("table_name"))
-            e.table_name = elem_obj.getValue<String>("table_name");
-        if (elem_obj.has("database_name"))
-            e.database_name = elem_obj.getValue<String>("database_name");
-        e.new_table_name = elem_obj.has("new_table_name") ? elem_obj.getValue<String>("new_table_name") : e.table_name;
-        e.new_database_name = elem_obj.has("new_database_name") ? elem_obj.getValue<String>("new_database_name") : e.database_name;
+        e.table_name = elem_reader.getString("table_name");
+        e.database_name = elem_reader.getString("database_name");
+        e.new_table_name = elem_obj.has("new_table_name") ? elem_reader.getString("new_table_name") : e.table_name;
+        e.new_database_name = elem_obj.has("new_database_name") ? elem_reader.getString("new_database_name") : e.database_name;
         if (elem_obj.has("partitions"))
         {
             auto arr = elem_obj.getArray("partitions");
@@ -476,8 +481,9 @@ namespace
                 auto t_obj = arr->getObject(i);
                 if (!t_obj)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'except_tables' array at element index {} during AST JSON deserialization", i, element_index);
-                String db = t_obj->has("database") ? t_obj->getValue<String>("database") : String();
-                String tbl = t_obj->getValue<String>("table");
+                JSONObjectReader t_reader(*t_obj);
+                String db = t_reader.getString("database");
+                String tbl = t_reader.getString("table");
                 e.except_tables.emplace(std::move(db), std::move(tbl));
             }
         }
