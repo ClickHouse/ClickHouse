@@ -2352,11 +2352,11 @@ Headers that are set by the server by default and not overridden by this setting
 
 The setting allows you to set a header to a constant value. Currently there is no way to set a header to a dynamically calculated value.
 
-Neither names or values can contain ASCII control characters.
+Neither names nor values can contain ASCII control characters.
 
 If you implement a UI application which allows users to modify settings but at the same time makes decisions based on the returned headers, it is recommended to restrict this setting to readonly.
 
-Example: `SET http_response_headers = '{"Content-Type": "image/png"}'`
+Example: `SET http_response_headers = $${'Content-Type': 'image/png'}$$`
 )", 0) \
     \
     DECLARE(String, count_distinct_implementation, "uniqExact", R"(
