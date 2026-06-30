@@ -129,7 +129,7 @@ public:
             this->data(place).set(*columns[0], 0, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if (!this->data(place).has())
             this->data(place).set(this->data(rhs), arena);
@@ -323,7 +323,7 @@ public:
         this->data(place).set(*columns[0], 0, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         this->data(place).set(this->data(rhs), arena);
     }

@@ -17,6 +17,9 @@
 #include <Poco/JSON/Parser.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -46,7 +49,7 @@ public:
 
     struct ConnectionInfo
     {
-        std::vector<String> http_proxy_urls;
+        VectorWithMemoryTracking<String> http_proxy_urls;
         String oauth_token;
         String api_version = "v3";
         bool encode_utf8 = false;
@@ -82,7 +85,7 @@ public:
     struct SchemaDescription
     {
         bool is_strict;
-        std::unordered_map<String, DataTypePtr> columns;
+        UnorderedMapWithMemoryTracking<String, DataTypePtr> columns;
     };
 
     SchemaDescription getTableSchema(const String & cypress_path);

@@ -5,9 +5,7 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
-#ifdef OS_LINUX
-#    include <unistd.h>
-#endif
+#include <base/getL2CacheSize.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
@@ -194,13 +192,13 @@ DB::DataTypes calculateAggregateStateTypes(const DB::Block & header, const DB::A
     return types;
 }
 
-std::vector<DB::ColumnNumbers> calculateAggregatesPositions(const DB::Block & header, const DB::Aggregator::Params & params)
+DB::ColumnNumbersList calculateAggregatesPositions(const DB::Block & header, const DB::Aggregator::Params & params)
 {
     /// Only used in the execute path.
     if (params.only_merge)
         return {};
 
-    std::vector<DB::ColumnNumbers> positions;
+    DB::ColumnNumbersList positions;
     positions.reserve(params.aggregates_size);
     for (const auto & aggregate : params.aggregates)
     {
@@ -220,15 +218,9 @@ concept HasPrefetchMemberFunc = requires
 
 size_t getMinBytesForPrefetch()
 {
-    size_t l2_size = 0;
-
-#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
-    if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
-        l2_size = ret;
-#endif
-
-    /// 256KB looks like a reasonable default L2 size. 4 is empirical constant.
-    return 4 * std::max<size_t>(l2_size, 256 * 1024);
+    /// Enable prefetch once the hash table no longer fits in L2; below that it
+    /// is cache resident and prefetching is pure overhead.
+    return getL2CacheSize();
 }
 
 UInt64 & getCountState(DB::AggregateDataPtr __restrict place) /// NOLINT(readability-non-const-parameter)
@@ -1544,7 +1536,12 @@ void Aggregator::prepareAggregateInstructions(
                 && aggregate_columns[i][j]->getNumberOfDefaultRows() == 0)
                 allow_sparse_arguments = false;
 
-            auto full_column = allow_sparse_arguments
+            /// Keep the column sparse only when it is a top-level ColumnSparse: the sparse add()
+            /// path (addBatchSparse) works on a literal ColumnSparse. A column that is dense at the
+            /// top level but contains sparse subcolumns (e.g. a Tuple with a sparse element) takes
+            /// the regular add() path, where a function may assume dense leaves, so it must be fully
+            /// materialized. recursiveRemoveSparse() is a no-op when there is nothing sparse to strip.
+            auto full_column = (allow_sparse_arguments && aggregate_columns[i][j]->isSparse())
                 ? aggregate_columns[i][j]->getPtr()
                 : recursiveRemoveSparse(aggregate_columns[i][j]->getPtr());
 
