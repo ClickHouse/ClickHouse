@@ -3023,6 +3023,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             tryLogCurrentException(log.load());
             dest_transaction.rollback(&dest_data_parts_lock);
             src_transaction.rollback(&src_data_parts_lock);
+            throw;
         }
 
         /// Note: same elapsed time and profile events for all parts is used
