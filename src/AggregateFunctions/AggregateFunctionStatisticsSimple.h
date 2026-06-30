@@ -203,8 +203,6 @@ public:
         {
             if (if_argument_pos < 0 && row_end > row_begin)
             {
-                static constexpr size_t W = 4;
-
                 const auto & vec = static_cast<const ColVecT1 &>(*columns[0]).getData();
                 const T1 * __restrict ptr = vec.data() + row_begin;
                 const size_t total = row_end - row_begin;
@@ -220,6 +218,7 @@ public:
 #if defined(__x86_64__)
                     /// Conversion of 64-bit values does not vectorize here; stage a cache-resident
                     /// tile of converted values, then accumulate it with a vectorized pass.
+                    static constexpr size_t W = 4;
                     static constexpr size_t TILE = 1024; /// multiple of W; ResultType[TILE] stays in L1
                     ResultType buf[TILE];
                     for (size_t off = 0; off + W <= total; off += TILE)
