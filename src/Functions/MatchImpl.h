@@ -165,6 +165,20 @@ struct MatchImpl
         if (input_rows_count == 0)
             return;
 
+        /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
+        /// - col [not] [i]like '%' / '%%' / any run of '%'
+        /// - match(col, '.*')
+        /// Kept ahead of the JIT fast path below: `.*` / `.*?` belong to the JIT-compilable subset, but this
+        /// constant fill is `O(rows)` with no per-row work, whereas the compiled matcher would run (and set up
+        /// captures) for every row. Letting the shortcut own these patterns keeps the cheap path cheap.
+        if ((is_like && impl::likePatternMatchesEverything(needle))
+            || (!is_like && (needle == ".*" || needle == ".*?")))
+        {
+            for (auto & x : res)
+                x = !negate;
+            return;
+        }
+
         /// Fast path: a JIT-compiled matcher for a simple regular expression (see `CompileRegexp.h`).
         /// LIKE patterns are not regular expressions, so they never take this path.
         if constexpr (!is_like)
@@ -194,17 +208,6 @@ struct MatchImpl
                     return;
                 }
             }
-        }
-
-        /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
-        /// - col [not] [i]like '%' / '%%' / any run of '%'
-        /// - match(col, '.*')
-        if ((is_like && impl::likePatternMatchesEverything(needle))
-            || (!is_like && (needle == ".*" || needle == ".*?")))
-        {
-            for (auto & x : res)
-                x = !negate;
-            return;
         }
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
