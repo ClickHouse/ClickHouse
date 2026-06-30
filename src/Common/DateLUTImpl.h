@@ -1178,7 +1178,17 @@ public:
     template <typename DateOrTime>
     DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
     {
-        Int64 divisor = 60 * minutes;
+        /// `minutes` is only validated to be positive by the caller, so an extreme interval count can make
+        /// `60 * minutes` wrap, exactly as in `toStartOfHourInterval`. `INTERVAL 4611686018427387904 MINUTE`
+        /// wraps the product to exactly zero, which would then divide by zero in `roundDownToMultiple` (or in
+        /// the reconstruction below) before producing a result. Saturate the divisor to the maximum instead;
+        /// the rounding result for such meaningless interval counts is discarded anyway.
+        UInt64 product = 0;
+        if (unlikely(__builtin_mul_overflow(minutes, static_cast<UInt64>(60), &product)
+                     || product > static_cast<UInt64>(std::numeric_limits<Int64>::max())))
+            product = static_cast<UInt64>(std::numeric_limits<Int64>::max());
+        Int64 divisor = static_cast<Int64>(product);
+
         if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
             return roundDownToMultiple(t, divisor);
 
