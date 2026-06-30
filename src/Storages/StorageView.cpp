@@ -340,9 +340,18 @@ void StorageView::readImpl(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    /// Build the view's execution context first and select the analyzer mode from it, not from the
+    /// outer query's context. For ordinary views these settings are the same, but the `eval` table
+    /// function builds the inner view from a generated query that may carry its own
+    /// `SETTINGS enable_analyzer = ...`. The generated query's structure is inferred in
+    /// `TableFunctionEval::getActualTableStructure` using exactly this inner context, so execution
+    /// must use the same analyzer mode. Otherwise the inferred structure and the executed query can
+    /// disagree (for example, scalar subquery column names differ between the two analyzers), which
+    /// leads to a converting-actions failure or an analyzer that does not support the generated query.
+    auto view_context = getViewContext(context, storage_snapshot, this);
+
+    if (view_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectQueryAnalyzer interpreter(
             current_inner_query, view_context, options, column_names, query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
@@ -350,7 +359,6 @@ void StorageView::readImpl(
     }
     else
     {
-        auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(query_plan);
