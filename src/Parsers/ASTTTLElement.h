@@ -23,6 +23,8 @@ public:
 
     ASTPtr recompression_codec;
 
+    String index_name;
+
     ASTTTLElement(TTLMode mode_, DataDestinationType destination_type_, const String & destination_name_, bool if_exists_)
         : mode(mode_)
         , destination_type(destination_type_)

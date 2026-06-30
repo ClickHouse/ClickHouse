@@ -276,4 +276,63 @@ bool TTLRecompressMergeSelector::canConsiderPart(const PartProperties & part) co
     return part.recompression_ttl_info->will_change_codec;
 }
 
+TTLIndexClearMergeSelector::TTLIndexClearMergeSelector(time_t current_time_)
+    : ITTLMergeSelector(/*merge_due_times_=*/nullptr, current_time_)
+    , current_time(current_time_)
+{
+}
+
+PartsRanges TTLIndexClearMergeSelector::select(
+    const PartsRanges & parts_ranges,
+    const MergeConstraints & merge_constraints,
+    const RangeFilter & range_filter) const
+{
+    if (merge_constraints.empty())
+        return {};
+
+    PartsRanges result;
+    for (const auto & range : parts_ranges)
+    {
+        for (const auto & part : range)
+        {
+            if (!canConsiderPart(part))
+                continue;
+
+            const auto ttl = getTTLForPart(part);
+            if (!ttl || ttl > current_time)
+                continue;
+
+            /// TTLClearIndex is a single-part metadata cleanup when the source part is eligible
+            /// for the fast path. Otherwise execution can fall back to a row-rewriting merge, so
+            /// keep the normal full-part merge size cap for those candidates.
+            const bool exceeds_normal_merge_limits = part.size > merge_constraints.front().max_size_bytes
+                || part.rows > merge_constraints.front().max_size_rows;
+            if (exceeds_normal_merge_limits && !part.can_clear_index_metadata_only)
+                continue;
+
+            PartsRange single_part_range{part};
+            if (range_filter && !range_filter(single_part_range))
+                continue;
+
+            result.push_back(std::move(single_part_range));
+            return result;
+        }
+    }
+
+    return result;
+}
+
+time_t TTLIndexClearMergeSelector::getTTLForPart(const PartProperties & part) const
+{
+    return part.next_index_clear_ttl;
+}
+
+bool TTLIndexClearMergeSelector::canConsiderPart(const PartProperties & part) const
+{
+    if (part.is_in_volume_where_merges_avoid)
+        return false;
+
+    return part.next_index_clear_ttl != 0;
+}
+
 }

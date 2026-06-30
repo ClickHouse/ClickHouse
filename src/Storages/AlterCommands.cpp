@@ -1469,6 +1469,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             metadata_copy.primary_key,
             context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
 
+    metadata_copy.validateTTLIndexClearTargets();
+
     metadata = std::move(metadata_copy);
 }
 

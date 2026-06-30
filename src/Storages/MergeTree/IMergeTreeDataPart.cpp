@@ -2651,6 +2651,11 @@ void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk() const
 
 void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const
 {
+    columns_sizes = std::make_shared<ColumnSizeByName>();
+    total_columns_size = {};
+    secondary_index_sizes = std::make_shared<IndexSizeByName>();
+    total_secondary_indices_size = {};
+
     calculateColumnsSizesOnDisk();
     calculateSecondaryIndicesSizesOnDisk();
     are_columns_and_secondary_indices_sizes_calculated = true;
@@ -2903,6 +2908,12 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
     for (const auto & rows_where_desc : metadata_snapshot->getRowsWhereTTLs())
     {
         if (!ttl_infos.rows_where_ttl.contains(rows_where_desc.result_column))
+            return false;
+    }
+
+    for (const auto & index_clear_desc : metadata_snapshot->getIndexClearTTLs())
+    {
+        if (!ttl_infos.index_clear_ttl.contains(index_clear_desc.result_column))
             return false;
     }
 

@@ -85,6 +85,7 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
         {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL."},
         {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression within this part. Used to understand whether we have all rows with expired TTL."},
 
+
         {"is_broken",                                   std::make_shared<DataTypeUInt8>(), "Whether projection part is broken"},
         {"exception_code",                              std::make_shared<DataTypeInt32>(), "Exception message explaining broken state of the projection part"},
         {"exception",                                   std::make_shared<DataTypeString>(), "Exception code explaining broken state of the projection part"},

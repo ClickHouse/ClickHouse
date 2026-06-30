@@ -1,9 +1,17 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/TTLDescription.h>
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool assign_part_uuids;
+}
 
 namespace
 {
@@ -51,6 +59,63 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
     return std::nullopt;
 }
 
+
+time_t buildNextIndexClearTTL(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part, time_t current_time)
+{
+    if (!metadata_snapshot->hasAnyIndexClearTTL())
+        return 0;
+
+    time_t next_index_clear_ttl = 0;
+    for (const auto & ttl : metadata_snapshot->getIndexClearTTLs())
+    {
+        if (!part->hasSecondaryIndex(ttl.index_name, metadata_snapshot))
+            continue;
+
+        auto it = part->ttl_infos.index_clear_ttl.find(ttl.result_column);
+        if (it == part->ttl_infos.index_clear_ttl.end())
+            continue;
+
+        const time_t max_ttl = it->second.max;
+        if (max_ttl && max_ttl <= current_time && (!next_index_clear_ttl || max_ttl < next_index_clear_ttl))
+            next_index_clear_ttl = max_ttl;
+    }
+
+    return next_index_clear_ttl;
+}
+
+
+}
+
+bool canUseMetadataOnlyIndexClear(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeDataPartPtr & part)
+{
+    if ((*part->storage.getSettings())[MergeTreeSetting::assign_part_uuids])
+        return false;
+
+    if (part->isStoredOnRemoteDisk()
+        || part->getDataPartStorage().supportZeroCopyReplication()
+        || part->getDataPartStorage().getType() != MergeTreeDataPartStorageType::Full)
+        return false;
+
+    if (part->uuid != UUIDHelpers::Nil
+        || part->old_part_with_no_metadata_version_on_disk
+        || part->getMetadataVersion() != metadata_snapshot->getMetadataVersion())
+        return false;
+
+    const auto chosen_format = part->storage.choosePartFormat(
+        part->getTotalColumnsSize().data_uncompressed,
+        part->rows_count,
+        part->info.level + 1,
+        /*projection=*/nullptr);
+
+    return chosen_format.part_type == part->getType()
+        && chosen_format.storage_type == MergeTreeDataPartStorageType::Full;
+}
+
+namespace
+{
+
 std::set<std::string> getCalculatedProjectionNames(const MergeTreeDataPartPtr & part)
 {
     std::set<std::string> projection_names;
@@ -81,6 +146,8 @@ PartProperties buildPartProperties(
         .rows = part->rows_count,
         .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
         .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
+        .next_index_clear_ttl = buildNextIndexClearTTL(metadata_snapshot, part, current_time),
+        .can_clear_index_metadata_only = canUseMetadataOnlyIndexClear(metadata_snapshot, part),
     };
 }
 

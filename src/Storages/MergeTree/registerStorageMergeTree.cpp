@@ -1050,6 +1050,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.allow_tuple_element_aggregation = false;
     }
 
+    metadata.validateTTLIndexClearTargets();
+
     if (replicated)
     {
         bool need_check_table_structure = true;

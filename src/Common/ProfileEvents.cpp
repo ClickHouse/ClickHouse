@@ -478,6 +478,7 @@
     M(RebuiltProjections, "Number of projections rebuilt from scratch during MergeTree merges.", ValueType::Number) \
     M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.", ValueType::Bytes) \
     M(MergeWrittenRows, "Number of rows written during the merge.", ValueType::Number) \
+    M(TTLClearIndexMetadataOnlyMerges, "Number of TTL CLEAR INDEX merges that replaced a part by linking or copying unchanged files without rewriting rows.", ValueType::Number) \
     M(MergeTotalMilliseconds, "Total time spent for background merges", ValueType::Milliseconds) \
     M(MergeExecuteMilliseconds, "Total busy time spent for execution of background merges", ValueType::Milliseconds) \
     M(MergeCommitMilliseconds, "Total time spent for committing merge results (part renaming, checksum verification, ZooKeeper updates)", ValueType::Milliseconds) \

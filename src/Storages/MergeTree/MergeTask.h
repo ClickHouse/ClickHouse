@@ -293,6 +293,7 @@ private:
 
         /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
         bool merge_may_reduce_rows{false};
+        bool task_finished{false};
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
@@ -307,6 +308,7 @@ private:
     struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
     {
         bool need_remove_expired_values{false};
+        bool need_clear_expired_indexes{false};
         bool force_ttl{false};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
@@ -361,6 +363,7 @@ private:
         bool prepare() const;
         bool executeImpl() const;
         void finalize() const;
+        bool tryPrepareClearIndexReplacementPart() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
         using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 3>;

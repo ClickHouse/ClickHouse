@@ -1095,6 +1095,13 @@ void DataPartStorageOnDiskBase::seedSkipIndicesPackedReaderFrom(const IDataPartS
     seedSkipIndicesPackedReader(source_archive->getIndex());
 }
 
+void DataPartStorageOnDiskBase::resetSkipIndicesPackedReader() const
+{
+    std::lock_guard lock(skip_indices_packed_mutex);
+    skip_indices_packed_reader.reset();
+    skip_indices_packed_probed = false;
+}
+
 bool DataPartStorageOnDiskBase::isFileInPackedSkipIndicesArchive(const std::string & name) const
 {
     auto reader = getSkipIndicesPackedReader();
