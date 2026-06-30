@@ -81,6 +81,7 @@ static struct InitFiu
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
+    REGULAR(taskstats_counters_reset_throw) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
@@ -97,8 +98,12 @@ static struct InitFiu
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
+    REGULAR(delta_kernel_force_credentials_fingerprint_drift) \
+    ONCE(delta_kernel_force_stale_token_error) \
+    REGULAR(object_storage_force_refresh_callback_success) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     REGULAR(keepermap_fail_drop_data) \
+    REGULAR(keeper_fault_on_watch_request) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \

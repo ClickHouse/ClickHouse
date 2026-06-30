@@ -138,7 +138,11 @@ inline void readFloatBinary(T & x, ReadBuffer & buf)
     readPODBinary(x, buf);
 }
 
-inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
+/// Templated on the allocator so this works with both `std::string` and
+/// `StringWithMemoryTracking` (and any other `std::basic_string<char>` with
+/// a custom allocator).
+template <typename Allocator>
+inline void readStringBinary(std::basic_string<char, std::char_traits<char>, Allocator> & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
 {
     size_t size = 0;
     readVarUInt(size, buf);

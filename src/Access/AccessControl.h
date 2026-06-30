@@ -128,6 +128,11 @@ public:
     scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
+    using OnBatchFinishedHandler = std::function<void()>;
+
+    /// Subscribes for the end of a notification batch (see AccessChangesNotifier::subscribeForBatchFinished).
+    scope_guard subscribeForBatchFinished(const OnBatchFinishedHandler & handler) const;
+
     AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ClientInfo & client_info) const;
 
     /// Makes a backup of access entities.
