@@ -1,6 +1,6 @@
---- Nullable(Int32) key: WHERE id must not count NULL-only granules
+--- Nullable(UInt8) key: WHERE flag must not count NULL-only granules
 1
 1
 1
---- Nullable(Float64) key: same invariant
+--- Nullable(Bool) key: same invariant
 1
