@@ -3,7 +3,6 @@
 import random
 import string
 
-import pyarrow.flight as flight
 import pytest
 
 from helpers.cluster import ClickHouseCluster
