@@ -21,7 +21,11 @@ gen="SELECT
 
 reference=$($CLICKHOUSE_LOCAL -q "$gen ORDER BY id" | md5sum)
 
-for level in 1 3 6 9 12; do
+# Levels are kept within zlib's [1, 9] range so the test also passes in the
+# ENABLE_LIBDEFLATE=0 fallback build (where Parquet gzip falls back to zlib,
+# which rejects levels above 9). In the default build these still go through
+# libdeflate; its extended levels 10-12 are covered by the gtest_libdeflate* tests.
+for level in 1 3 6 9; do
     roundtrip=$($CLICKHOUSE_LOCAL -q "$gen FORMAT Parquet
             SETTINGS output_format_parquet_compression_method='gzip', output_format_compression_level=$level" \
         | $CLICKHOUSE_LOCAL --input-format=Parquet -q "SELECT * FROM table ORDER BY id" \
