@@ -15,7 +15,6 @@ default_compression_codec.txt
 metadata_version.txt
 primary.cidx
 serialization.json
-
 Files after DETACH TABLE
 all_X_X_X
 
