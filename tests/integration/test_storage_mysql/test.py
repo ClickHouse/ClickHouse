@@ -973,6 +973,97 @@ def test_mysql_point(started_cluster):
     conn.close()
 
 
+def test_mysql_geometry(started_cluster):
+    table_name = "test_mysql_geometry"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE `clickhouse`.`{table_name}` (
+            `id` int NOT NULL,
+            `ls` linestring NOT NULL,
+            `pg` polygon NOT NULL,
+            `mls` multilinestring NOT NULL,
+            `mpg` multipolygon NOT NULL,
+            `geo` geometry NOT NULL,
+            PRIMARY KEY (`id`)) ENGINE=InnoDB;
+        """
+        )
+        cursor.execute(
+            f"""
+            INSERT INTO `clickhouse`.`{table_name}` SET
+                id = 1,
+                ls = ST_GeomFromText('LINESTRING(0 0, 1 1, 2 2)'),
+                pg = ST_GeomFromText('POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))'),
+                mls = ST_GeomFromText('MULTILINESTRING((0 0, 1 1), (2 2, 3 3))'),
+                mpg = ST_GeomFromText('MULTIPOLYGON(((0 0, 2 0, 2 2, 0 2, 0 0)))'),
+                geo = ST_GeomFromText('LINESTRING(5 5, 6 6)')
+        """
+        )
+        assert 1 == cursor.execute(f"SELECT count(*) FROM `clickhouse`.`{table_name}`")
+
+    conn.commit()
+
+    table_function = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+
+    # Spatial types are mapped to the corresponding ClickHouse geometric types. The concrete
+    # subtype is known from the column type, while the generic `geometry` column maps to the
+    # umbrella `Geometry` type (a Variant over all geometric types).
+    assert (
+        node1.query(
+            "SELECT toTypeName(ls), toTypeName(pg), toTypeName(mls), toTypeName(mpg), toTypeName(geo) "
+            f"FROM {table_function} LIMIT 1"
+        ).strip()
+        == "LineString\tPolygon\tMultiLineString\tMultiPolygon\tGeometry"
+    )
+
+    assert (
+        node1.query(f"SELECT ls FROM {table_function}").strip()
+        == "[(0,0),(1,1),(2,2)]"
+    )
+    assert (
+        node1.query(f"SELECT pg FROM {table_function}").strip()
+        == "[[(0,0),(4,0),(4,4),(0,4),(0,0)]]"
+    )
+    assert (
+        node1.query(f"SELECT mls FROM {table_function}").strip()
+        == "[[(0,0),(1,1)],[(2,2),(3,3)]]"
+    )
+    assert (
+        node1.query(f"SELECT mpg FROM {table_function}").strip()
+        == "[[[(0,0),(2,0),(2,2),(0,2),(0,0)]]]"
+    )
+    # The generic `geometry` column stores a LineString in this row, read through `Geometry`.
+    assert node1.query(f"SELECT geo FROM {table_function}").strip() == "[(5,5),(6,6)]"
+
+    # When the `geometry` mapping is disabled, spatial types (except `Point`) fall back to String.
+    assert (
+        node1.query(
+            f"SELECT toTypeName(ls) FROM {table_function} LIMIT 1",
+            settings={"mysql_datatypes_support_level": "decimal,datetime64,date2Date32"},
+        ).strip()
+        == "String"
+    )
+
+    # The same works through the MySQL table engine.
+    node1.query("DROP TABLE IF EXISTS test_geometry")
+    node1.query(
+        "CREATE TABLE test_geometry (id Int32, ls LineString, pg Polygon, mls MultiLineString, mpg MultiPolygon, geo Geometry) "
+        f"Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+    assert node1.query("SELECT ls FROM test_geometry").strip() == "[(0,0),(1,1),(2,2)]"
+    assert node1.query("SELECT geo FROM test_geometry").strip() == "[(5,5),(6,6)]"
+    node1.query("DROP TABLE IF EXISTS test_geometry")
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 def test_joins(started_cluster):
     conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
     drop_mysql_table(conn, "test_joins_mysql_users")

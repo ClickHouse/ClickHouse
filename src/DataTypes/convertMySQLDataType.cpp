@@ -122,10 +122,35 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     }
     else if (type_name == "point")
     {
+        /// `Point` is supported unconditionally for backward compatibility (since version 24.1).
         res = DataTypeFactory::instance().get("Point");
     }
+    else if (type_support.isSet(MySQLDataTypesSupport::GEOMETRY) && type_name == "linestring")
+    {
+        res = DataTypeFactory::instance().get("LineString");
+    }
+    else if (type_support.isSet(MySQLDataTypesSupport::GEOMETRY) && type_name == "polygon")
+    {
+        res = DataTypeFactory::instance().get("Polygon");
+    }
+    else if (type_support.isSet(MySQLDataTypesSupport::GEOMETRY) && type_name == "multilinestring")
+    {
+        res = DataTypeFactory::instance().get("MultiLineString");
+    }
+    else if (type_support.isSet(MySQLDataTypesSupport::GEOMETRY) && type_name == "multipolygon")
+    {
+        res = DataTypeFactory::instance().get("MultiPolygon");
+    }
+    else if (type_support.isSet(MySQLDataTypesSupport::GEOMETRY) && type_name == "geometry")
+    {
+        /// The generic `GEOMETRY` type, as well as a query result, where the metadata only reports
+        /// the generic geometry type without the concrete subtype, is mapped to the umbrella
+        /// `Geometry` type (a `Variant` over all the geometric types).
+        res = DataTypeFactory::instance().get("Geometry");
+    }
 
-    /// Also String is fallback for all unknown types.
+    /// String is the fallback for all unknown types. In particular, the spatial types `MULTIPOINT`
+    /// and `GEOMETRYCOLLECTION` have no ClickHouse counterpart and fall back to String as well.
     if (!res)
         res = std::make_shared<DataTypeString>();
 

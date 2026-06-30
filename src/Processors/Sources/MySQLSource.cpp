@@ -9,13 +9,18 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+#include <Common/WKB.h>
+#include <Functions/geometryConverters.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
 #include <Processors/Sources/MySQLSource.h>
@@ -37,6 +42,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
@@ -214,6 +220,80 @@ namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
+    /// MySQL returns spatial values as a 4-byte SRID prefix followed by a standard WKB payload.
+    /// Parse it and insert into the target column, which is either a concrete geometric type
+    /// (`LineString`, `Polygon`, `MultiLineString`, `MultiPolygon`) or the umbrella `Geometry`
+    /// type (a `Variant` over all of them). `Point` is read by the dedicated `vtPoint` path.
+    void insertGeometryValue(const IDataType & data_type, IColumn & column, const mysqlxx::Value & value)
+    {
+        ReadBufferFromMemory payload(value.data(), value.size());
+        payload.ignore(4); /// Skip the SRID.
+        GeometricObject object = parseWKBFormat(payload);
+
+        /// Serialize the single parsed object into a one-row column of its concrete geometric type.
+        ColumnPtr concrete;
+        String concrete_type_name;
+        std::visit([&](const auto & geometry)
+        {
+            using T = std::decay_t<decltype(geometry)>;
+            if constexpr (std::is_same_v<T, CartesianPoint>)
+            {
+                PointSerializer<CartesianPoint> serializer;
+                serializer.add(geometry);
+                concrete = serializer.finalize();
+                concrete_type_name = "Point";
+            }
+            else if constexpr (std::is_same_v<T, LineString<CartesianPoint>>)
+            {
+                LineStringSerializer<CartesianPoint> serializer;
+                serializer.add(geometry);
+                concrete = serializer.finalize();
+                concrete_type_name = "LineString";
+            }
+            else if constexpr (std::is_same_v<T, MultiLineString<CartesianPoint>>)
+            {
+                MultiLineStringSerializer<CartesianPoint> serializer;
+                serializer.add(geometry);
+                concrete = serializer.finalize();
+                concrete_type_name = "MultiLineString";
+            }
+            else if constexpr (std::is_same_v<T, Polygon<CartesianPoint>>)
+            {
+                PolygonSerializer<CartesianPoint> serializer;
+                serializer.add(geometry);
+                concrete = serializer.finalize();
+                concrete_type_name = "Polygon";
+            }
+            else if constexpr (std::is_same_v<T, MultiPolygon<CartesianPoint>>)
+            {
+                MultiPolygonSerializer<CartesianPoint> serializer;
+                serializer.add(geometry);
+                concrete = serializer.finalize();
+                concrete_type_name = "MultiPolygon";
+            }
+        }, object);
+
+        if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(&data_type))
+        {
+            /// The umbrella `Geometry` type: route the value to the matching variant.
+            auto discriminator = variant_type->tryGetVariantDiscriminator(concrete_type_name);
+            if (!discriminator)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot store a geometry of type {} into a {} column", concrete_type_name, data_type.getName());
+            assert_cast<ColumnVariant &>(column).insertIntoVariantFrom(*discriminator, *concrete, 0);
+        }
+        else
+        {
+            /// A concrete geometric column (e.g. `LineString`): the WKB subtype must match the column.
+            const auto * custom_name = data_type.getCustomName();
+            if (!custom_name || custom_name->getName() != concrete_type_name)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Got a geometry of type {} from MySQL, but the column has type {}",
+                    concrete_type_name, data_type.getName());
+            column.insertFrom(*concrete, 0);
+        }
+    }
+
     void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size, enum enum_field_types mysql_type)
     {
         switch (type)
@@ -384,6 +464,12 @@ namespace
                 }
 
                 assert_cast<ColumnTuple &>(column).insert(Tuple({Field(x), Field(y)}));
+                read_bytes_size += value.size();
+                break;
+            }
+            case ValueType::vtGeometry:
+            {
+                insertGeometryValue(data_type, column, value);
                 read_bytes_size += value.size();
                 break;
             }
