@@ -220,4 +220,20 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
 
+/// True if a value of this type may contain a decimal-backed leaf (Decimal/Time64, or a Dynamic that
+/// can hold one) that needs the exact serialization provided by columnConstantToExactLiteralAST.
+bool typeMayContainDecimal(const IDataType & type);
+
+/// Build a literal AST for a constant column value, serializing decimal-backed leaves (Decimal,
+/// DateTime64, Time64, including those nested in Array/Tuple/Map/Variant/Dynamic) exactly so they
+/// round-trip across distributed / serialized-plan boundaries without going through Float64 or the
+/// DateTime text-parsing heuristics. Decimal-free values use the same representation as
+/// getFieldFromColumnForASTLiteral.
+ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type);
+
+/// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a
+/// `_CAST(..., type_name)` to the same type (e.g. the exact carrier produced for a scalar
+/// Decimal/DateTime64/Time64 constant), avoiding a redundant identity cast in the serialized AST.
+ASTPtr makeCastToTypeNameAST(ASTPtr value, const String & type_name);
+
 }
