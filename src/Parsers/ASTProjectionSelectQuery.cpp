@@ -149,10 +149,15 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
         }
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
     }
-    if (groupBy())
-        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
+    /// `WHERE` must be inserted before `GROUP BY` to match the canonical child order produced by
+    /// `ParserSelectQuery` (see `ASTSelectQuery::normalizeChildrenOrder`). `ASTSelectQuery` tree hashes
+    /// depend on the `children` order and are used for column identifiers and scalar/cache keys, so a
+    /// non-canonical order here would give a filtered aggregate projection different identifiers than
+    /// the same `SELECT` parsed from text.
     if (where())
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, where()->clone());
+    if (groupBy())
+        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
 
     /// Attach settings to prevent AST transformations. We already have ignored AST optimizations
     /// for projection queries. Only remaining settings need to be added here.
