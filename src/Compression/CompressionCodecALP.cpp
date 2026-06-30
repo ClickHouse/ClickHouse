@@ -979,7 +979,7 @@ private:
             Compression::FFOR::calculateBitpackedBytes(ALPUtils<T>::calcRdDictBits(dict_size)) + // Left part bit-packed indices
                 Compression::FFOR::calculateBitpackedBytes(ALPUtils<T>::calcRdRightBits(dict_params.left_bits)) + // Right part bit-packed values
                     exception_count * (sizeof(UInt16) + sizeof(T)); // Exceptions
-        const size_t total_unencoded_size = ALP_UNENCODED_BLOCK_HEADER_SIZE + float_count * sizeof(T);
+        const size_t total_unencoded_size = ALP_RD_UNENCODED_BLOCK_HEADER_SIZE + float_count * sizeof(T);
         if (total_encoded_size >= total_unencoded_size) // No compression gain
         {
             // Unencoded block marker
