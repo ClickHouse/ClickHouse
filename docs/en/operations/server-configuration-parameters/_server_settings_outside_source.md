@@ -200,7 +200,7 @@ If no conditions are met for a data part, ClickHouse uses the default `ZSTD(3)` 
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
+        <level>10</level>
     </case>
 </compression>
 ```
