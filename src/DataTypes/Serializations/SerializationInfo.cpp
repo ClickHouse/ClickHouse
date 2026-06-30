@@ -678,18 +678,30 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     {
         for (const auto & elem : *missing_columns_array)
         {
-            auto elem_object = elem.extract<Poco::JSON::Object::Ptr>();
+            const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
             MissingColumnInfo mc;
             mc.name = elem_object->getValue<String>(KEY_MISSING_COL_NAME);
             auto default_str = elem_object->getValue<String>(KEY_MISSING_COL_DEFAULT);
             if (default_str == VALUE_EXPRESSION)
             {
-                mc.default_kind = MissingColumnInfo::DefaultKind::Expression;
-                mc.expression = elem_object->getValue<String>(KEY_MISSING_COL_EXPRESSION);
+                /// Expression markers are reserved for Phase 2 (issue #92475:
+                /// ALTER MODIFY COLUMN ... DEFAULT freezes old expression).
+                /// Until the read path implements expression evaluation, reject
+                /// parts that carry them so we fail closed rather than silently
+                /// returning wrong data.
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "missing_columns entry for '{}' has default='expression' which is not yet supported",
+                    mc.name);
+            }
+            else if (default_str == VALUE_TYPE_DEFAULT)
+            {
+                mc.default_kind = MissingColumnInfo::DefaultKind::TypeDefault;
             }
             else
             {
-                mc.default_kind = MissingColumnInfo::DefaultKind::TypeDefault;
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "missing_columns entry for '{}' has unknown default kind '{}'",
+                    mc.name, default_str);
             }
             infos.missing_columns.push_back(std::move(mc));
         }
