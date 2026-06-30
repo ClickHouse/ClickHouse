@@ -4064,6 +4064,12 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
     std::string_view read_type_label = format_settings.pretty ? "Read type: " : "ReadType: ";
     format_settings.out << prefix << read_type_label << readTypeToString(result.read_type) << '\n';
 
+    /// Surface the FINAL modifier of this particular read. It is a per-table property, so in a JOIN
+    /// only the table the `FINAL` keyword is attached to (or all tables under `SETTINGS final = 1`)
+    /// is read with FINAL. Printed only when set, to avoid changing the output of non-FINAL reads.
+    if (isQueryWithFinal())
+        format_settings.out << prefix << "FINAL: 1\n";
+
     if (!result.index_stats.empty())
     {
         std::string_view delimiter = format_settings.pretty ? " | " : "\n";
@@ -4186,6 +4192,8 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 {
     const auto & result = getAnalysisResult();
     map.add("Read Type", readTypeToString(result.read_type));
+    if (isQueryWithFinal())
+        map.add("FINAL", true);
     if (!result.index_stats.empty())
     {
         map.add("Parts", result.index_stats.back().num_parts_after);
