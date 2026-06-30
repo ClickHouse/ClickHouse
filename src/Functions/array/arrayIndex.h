@@ -836,6 +836,13 @@ private:
      */
     static ColumnPtr executeArrayLowCardinality(const ColumnsWithTypeAndName & arguments)
     {
+        /// The LowCardinality optimization compares dictionary indices instead of actual values.
+        /// This is correct for linear scan (indexOf, has, countEqual) where only equality is checked,
+        /// but incorrect for binary search (indexOfAssumeSorted) where ordering matters --
+        /// dictionary indices are assigned in insertion order, not in sorted order of values.
+        if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
+            return nullptr;
+
         const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         const auto * col_array_const = checkAndGetColumnConstData<ColumnArray>(arguments[0].column.get());
 
