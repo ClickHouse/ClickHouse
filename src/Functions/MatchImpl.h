@@ -254,7 +254,7 @@ struct MatchImpl
                           *  so that it can match when `required_substring` occurs into the string several times,
                           *  and at the first occurrence, the regexp is not a match.
                           */
-                        const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
+                        const size_t start_pos = required_substring_is_prefix ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
                         const size_t end_pos = str_size;
 
                         const bool match = regexp.getRE2()->Match(
@@ -425,7 +425,7 @@ struct MatchImpl
                             *  so that it can match when `required_substring` occurs into the string several times,
                             *  and at the first occurrence, the regexp is not a match.
                             */
-                            const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
+                            const size_t start_pos = required_substring_is_prefix ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
                             const size_t end_pos = N;
 
                             const bool match = regexp.getRE2()->Match(

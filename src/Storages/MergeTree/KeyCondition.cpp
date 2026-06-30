@@ -1060,7 +1060,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
 
     switch (node.type)
     {
-        case (ActionsDAG::ActionType::INPUT):
+        case ActionsDAG::ActionType::INPUT:
         {
             auto & input = inputs_mapping[&node];
             if (input == nullptr)
@@ -1070,7 +1070,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             res = input;
             break;
         }
-        case (ActionsDAG::ActionType::COLUMN):
+        case ActionsDAG::ActionType::COLUMN:
         {
             String name;
             if (node.column && node.column->getDataType() != TypeIndex::Function)
@@ -1087,20 +1087,20 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             res = &inverted_dag.addColumn(node.column, node.result_type, name);
             break;
         }
-        case (ActionsDAG::ActionType::ALIAS):
+        case ActionsDAG::ActionType::ALIAS:
         {
             /// Ignore aliases
             res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
             handled_inversion = true;
             break;
         }
-        case (ActionsDAG::ActionType::ARRAY_JOIN):
+        case ActionsDAG::ActionType::ARRAY_JOIN:
         {
             const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false, /* boolean_context */ false);
             res = &inverted_dag.addArrayJoin(arg, {});
             break;
         }
-        case (ActionsDAG::ActionType::FUNCTION):
+        case ActionsDAG::ActionType::FUNCTION:
         {
             auto name = node.function_base->getName();
             if (name == "not")

@@ -176,7 +176,7 @@ struct NgramDistanceImpl
                         res &= ~(1u << (5 + 2 * CHAR_BIT));
                         [[fallthrough]];
                     case 2:
-                        res &= ~(1u);
+                        res &= ~1u;
                         res &= ~(1u << (5 + CHAR_BIT));
                         [[fallthrough]];
                     default:

@@ -1724,7 +1724,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                          if (val.tp->getTypeClass() == SQLTypeClass::NESTED)
                              nested_ids.emplace_back(key);
                      }
-                     this->next_type_mask = fc.type_mask & ~(allow_nested);
+                     this->next_type_mask = fc.type_mask & ~allow_nested;
                  }
 
                  const String ncname_key = addTableColumn(rg, t, ncname, true, false, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, def);
@@ -1821,7 +1821,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                          if (val.tp->getTypeClass() == SQLTypeClass::NESTED)
                              nested_ids.emplace_back(key);
                      }
-                     this->next_type_mask = fc.type_mask & ~(allow_nested);
+                     this->next_type_mask = fc.type_mask & ~allow_nested;
                  }
 
                  const String ncol_key

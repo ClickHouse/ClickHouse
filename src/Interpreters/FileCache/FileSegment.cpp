@@ -86,13 +86,13 @@ FileSegment::FileSegment(
     {
         /// EMPTY is used when file segment is not in cache and
         /// someone will _potentially_ want to download it (after calling getOrSetDownloader()).
-        case (State::EMPTY):
+        case State::EMPTY:
         {
             chassert(key_metadata.lock());
             break;
         }
         /// DOWNLOADED is used either on initial cache metadata load into memory on server startup
-        case (State::DOWNLOADED):
+        case State::DOWNLOADED:
         {
             reserved_size = downloaded_size = size_;
             chassert(fs::file_size(getPath()) == size_);
@@ -100,7 +100,7 @@ FileSegment::FileSegment(
             chassert(key_metadata.lock());
             break;
         }
-        case (State::DETACHED):
+        case State::DETACHED:
         {
             break;
         }

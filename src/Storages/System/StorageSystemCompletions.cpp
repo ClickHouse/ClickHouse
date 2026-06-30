@@ -221,7 +221,7 @@ static void fillDataWithTableFunctions(MutableColumns & res_columns, const Conte
     for (const auto & function_name : table_functions)
     {
         auto properties = table_functions_factory.tryGetProperties(function_name);
-        if ((non_readonly_allowed) || (properties && properties->allow_readonly))
+        if (non_readonly_allowed || (properties && properties->allow_readonly))
         {
             res_columns[0]->insert(function_name);
             res_columns[1]->insert(TABLE_FUNCTION_CONTEXT);

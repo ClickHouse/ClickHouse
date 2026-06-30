@@ -1819,7 +1819,7 @@ std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator
     {
         this->depth++;
         subtypes.emplace_back(
-            this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter2, tp ? af->add_types() : nullptr));
+            this->randomNextType(rg, this->next_type_mask & ~allow_nested, col_counter2, tp ? af->add_types() : nullptr));
         this->depth--;
     }
     if (tp)
@@ -1895,7 +1895,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           {
               DateTimeTp * dtp = tp ? tp->mutable_datetimes() : nullptr;
 
-              res = randomDateTimeType(rg, low_card ? (allowed_types & ~(allow_datetime64)) : allowed_types, dtp);
+              res = randomDateTimeType(rg, low_card ? (allowed_types & ~allow_datetime64) : allowed_types, dtp);
           }},
          {string_type,
           [&]
@@ -2106,7 +2106,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           {
               TimeTp * tt = tp ? tp->mutable_times() : nullptr;
 
-              res = randomTimeType(rg, low_card ? (allowed_types & ~(allow_time64)) : allowed_types, tt);
+              res = randomTimeType(rg, low_card ? (allowed_types & ~allow_time64) : allowed_types, tt);
           }},
          {qbit_type,
           [&]
@@ -2187,7 +2187,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               TopTypeName * arr = tp ? tp->mutable_array() : nullptr;
 
               this->depth++;
-              auto k = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, arr);
+              auto k = this->randomNextType(rg, this->next_type_mask & ~allow_nested, col_counter, arr);
               this->depth--;
               result = std::make_unique<ArrayType>(std::move(k));
           }},
@@ -2201,7 +2201,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               auto k = this->randomNextType(
                   rg, this->next_type_mask & ~(allow_nullable | allow_nested), col_counter, mt ? mt->mutable_key() : nullptr);
               this->width++;
-              auto v = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, mt ? mt->mutable_value() : nullptr);
+              auto v = this->randomNextType(rg, this->next_type_mask & ~allow_nested, col_counter, mt ? mt->mutable_value() : nullptr);
               this->depth--;
               this->width--;
               result = std::make_unique<MapType>(std::move(k), std::move(v));
@@ -2239,7 +2239,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
                       opt_cname = std::optional<uint32_t>(ncname);
                   }
                   auto k
-                      = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : ttn);
+                      = this->randomNextType(rg, this->next_type_mask & ~allow_nested, col_counter, tcd ? tcd->mutable_type_name() : ttn);
                   subtypes.emplace_back(SubType(opt_cname, std::move(k)));
               }
               this->depth--;
@@ -2286,7 +2286,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
                       tcd->mutable_col()->set_column(cname);
                   }
                   auto k = this->randomNextType(
-                      rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
+                      rg, this->next_type_mask & ~allow_nested, col_counter, tcd ? tcd->mutable_type_name() : nullptr);
                   subtypes.emplace_back(NestedSubType(cname, std::move(k)));
               }
               this->depth--;

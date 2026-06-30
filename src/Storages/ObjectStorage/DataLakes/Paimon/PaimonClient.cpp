@@ -186,7 +186,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
                 }
             }
             latest_snapshot_path
-                = std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PREFIX + std::to_string(snapshot_version));
+                = std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / (PAIMON_SNAPSHOT_PREFIX + std::to_string(snapshot_version));
         }
     }
     catch (...)
@@ -202,7 +202,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
     {
         Int64 next_snapshot_version = snapshot_version + 1;
         StoredObject store_object(
-            std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR)
+            std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR
             / (PAIMON_SNAPSHOT_PREFIX + std::to_string(next_snapshot_version)));
         if (!object_storage->exists(store_object))
         {
@@ -268,7 +268,7 @@ std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String ma
 {
     /// read manifest list file
     auto context = getContext();
-    RelativePathWithMetadata relative_path(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
+    RelativePathWithMetadata relative_path(std::filesystem::path(table_location) / PAIMON_MANIFEST_DIR / manifest_list_path);
     auto manifest_list_buf = createReadBuffer(relative_path, object_storage, context, log);
     Iceberg::AvroForIcebergDeserializer manifest_list_deserializer(
         std::move(manifest_list_buf), Iceberg::IcebergPathFromMetadata::deserialize(manifest_list_path), getFormatSettings(getContext()));
@@ -291,7 +291,7 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
         return {};
 
     auto context = getContext();
-    RelativePathWithMetadata object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_path);
+    RelativePathWithMetadata object_info(std::filesystem::path(table_location) / PAIMON_MANIFEST_DIR / manifest_path);
     auto manifest_buf = createReadBuffer(object_info, object_storage, context, log);
     Iceberg::AvroForIcebergDeserializer manifest_deserializer(std::move(manifest_buf), Iceberg::IcebergPathFromMetadata::deserialize(manifest_path), getFormatSettings(getContext()));
 

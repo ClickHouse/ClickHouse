@@ -105,7 +105,7 @@ struct CharsetClassificationImpl
             std::string_view result_value;
 
             /// Go through the dictionary and find the charset with the highest weight
-            Float64 max_result = zero_frequency_log * (max_string_size);
+            Float64 max_result = zero_frequency_log * max_string_size;
             for (const auto & item : encodings_freq)
             {
                 Float64 score = naiveBayes(item.map, model, max_result);

@@ -2503,7 +2503,7 @@ void StatementGenerator::generateSelect(
             force_group_by |= nopt > 3 && nopt < 7;
             if (force_global_agg || force_group_by)
             {
-                allowed_clauses &= ~(allow_orderby);
+                allowed_clauses &= ~allow_orderby;
             }
             else
             {
