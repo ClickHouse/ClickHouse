@@ -2682,16 +2682,28 @@ async function loadDatabases(server_address, user, password) {
         refresh_button.title = 'Refresh the list of tables';
         refresh_button.textContent = '\u21BB';
 
+        /// A per-row generation counter, bumped on every refresh and on collapse. An in-flight
+        /// load captures the current value and, once its query returns, checks whether the row's
+        /// state changed in the meantime (it was collapsed, or a newer refresh superseded it) so
+        /// it can bail out before mutating the DOM. This invariant is local to one database row,
+        /// unlike the global `load_tables_request_num` (which only tracks the latest load across
+        /// all rows and would wrongly cancel a concurrent open of a different row).
+        let row_load_generation = 0;
+
         /// Reload tables, showing the hourglass (and hiding the refresh button) while loading.
         const refreshTables = () => {
+            const generation = ++row_load_generation;
+            const is_current = () => generation == row_load_generation;
             refresh_button.style.visibility = 'hidden';
             let hourglass = document.createElement('span');
             hourglass.className = 'loading-hourglass';
             hourglass.textContent = '\u29D7';
             database_link.after(hourglass);
-            return loadTables(server_address, user, password, elem.database, database).then(ok => {
+            return loadTables(server_address, user, password, elem.database, database, is_current).then(ok => {
                 hourglass.remove();
-                refresh_button.style.visibility = '';
+                /// Only restore the button while this load is still the current one for the row;
+                /// otherwise the row was collapsed (the button is detached) or a newer refresh owns it.
+                if (is_current()) refresh_button.style.visibility = '';
                 return ok;
             });
         };
@@ -2710,6 +2722,9 @@ async function loadDatabases(server_address, user, password) {
                     }
                 });
             } else {
+                /// Collapse: invalidate any in-flight refresh so its late result cannot
+                /// repopulate the table list of this now-closed row.
+                ++row_load_generation;
                 delete database.dataset['opened'];
                 refresh_button.remove();
                 while (tables.firstChild) tables.removeChild(tables.firstChild);
@@ -2837,7 +2852,7 @@ function getTableIcon(engine)
 }
 
 let load_tables_request_num = 0;
-async function loadTables(server_address, user, password, database, container) {
+async function loadTables(server_address, user, password, database, container, is_current) {
     ++load_tables_request_num;
     const current_load_tables_request_num = load_tables_request_num;
 
@@ -2848,6 +2863,10 @@ async function loadTables(server_address, user, password, database, container) {
     if (!json) return false;
 
     if (current_load_tables_request_num != load_tables_request_num) return false;
+    /// The row this load targets may have been collapsed or superseded by a newer refresh while
+    /// the query was in flight; if so, bail out before touching the DOM so we never repopulate
+    /// the table list of a row that is no longer open.
+    if (is_current && !is_current()) return false;
 
     container.parentElement.querySelector('.current').classList.remove('current');
     container.firstChild.classList.add('current');
