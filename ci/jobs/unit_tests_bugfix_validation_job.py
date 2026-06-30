@@ -100,15 +100,23 @@ def derive_test_suites(files):
 
 
 def build_gtest_filter(suites):
-    """gtest_filter matching every case of the given suites.
+    """gtest_filter matching every case of the given suites, across all naming forms.
 
-    For value-/type-parameterized tests the full name is `Prefix/Suite.Case/0`, so we
-    add a `*/Suite.*` pattern in addition to the plain `Suite.*`.
+    gtest encodes the suite differently per test kind, and a pattern that fits one kind
+    misses the others, so we emit all four:
+      * `Suite.Case`            plain / fixture (TEST, TEST_F)          -> `Suite.*`
+      * `Prefix/Suite.Case/0`   value-parameterized (TEST_P)           -> `*/Suite.*`
+      * `Suite/0.Case`          typed (TYPED_TEST)                     -> `Suite/*`
+      * `Prefix/Suite/0.Case`   type-parameterized (TYPED_TEST_P)      -> `*/Suite/*`
+    Without the `Suite/*` / `*/Suite/*` patterns a suite that only has typed tests would
+    select zero cases on the before-binary and be misreported as "failed to reproduce".
     """
     patterns = []
     for s in suites:
         patterns.append(f"{s}.*")
         patterns.append(f"*/{s}.*")
+        patterns.append(f"{s}/*")
+        patterns.append(f"*/{s}/*")
     return ":".join(patterns)
 
 
@@ -412,23 +420,27 @@ def main():
         )
         return
 
-    # 4b. Compile. A compile failure means the overlaid test cannot build against the
-    # merge-base sources — the strongest proof that it depends on code this PR adds.
+    # 4b. Compile. A compile failure is NOT accepted as a reproduction: it only proves
+    # the overlaid test references *some* code the PR adds (a new header, helper, or
+    # symbol — even in a no-op test), not that it depends on the bug fix or reproduces
+    # the old behavior at runtime. We cannot attribute the failure to the touched
+    # regression case, so report it as inconclusive (fail close) rather than a pass. A
+    # genuine regression test should build against the merge-base and fail at runtime.
     compile_result = compile_before_binary()
     if not compile_result.is_ok():
-        compile_result.set_status(Result.Status.OK)
-        compile_result.set_label(Result.Label.XFAIL)
+        compile_result.set_status(Result.Status.ERROR)
         compile_result.set_info(
-            "EXPECTED: the merge-base (without the fix) FAILED TO COMPILE the touched "
-            "test — the test depends on code introduced by this PR. The check passes "
-            "because of this compile failure. NOTE: the bug was NOT reproduced at "
-            "runtime; the before-binary never ran."
+            "The before-binary FAILED TO COMPILE the overlaid test. This does not prove "
+            "the test reproduces the bug — it only shows the test depends on code this PR "
+            "adds (a new header/helper/symbol would fail to compile here too). Write a "
+            "regression test that builds against the merge-base and fails at runtime "
+            "without the fix. " + (compile_result.info or "")
         )
         results.append(compile_result)
         finalize(
             results,
-            "Bugfix validation passed because the before-binary FAILED TO COMPILE the "
-            "touched test (test depends on the fix). This is NOT a runtime reproduction.",
+            "Bugfix validation inconclusive: the before-binary failed to COMPILE the "
+            "overlaid test, which cannot be attributed to the touched regression case.",
         )
         return
     build_result = compile_result

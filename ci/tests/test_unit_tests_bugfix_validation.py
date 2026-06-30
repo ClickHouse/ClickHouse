@@ -13,6 +13,7 @@ inverter tests in `ci/tests/test_bugfix_validation_inverter.py`.
 """
 
 import os
+import re
 import shlex
 import sys
 
@@ -120,18 +121,43 @@ def test_derive_test_suites_tolerates_missing_file(tmp_path):
 # build_gtest_filter: plain + parameterized patterns, ordered by suite.
 # --------------------------------------------------------------------------
 def test_build_gtest_filter_single_suite():
-    assert build_gtest_filter(["SuiteA"]) == "SuiteA.*:*/SuiteA.*"
+    # Plain, value-parameterized, typed, and type-parameterized patterns.
+    assert build_gtest_filter(["SuiteA"]) == "SuiteA.*:*/SuiteA.*:SuiteA/*:*/SuiteA/*"
 
 
 def test_build_gtest_filter_preserves_order():
-    assert (
-        build_gtest_filter(["SuiteA", "SuiteB"])
-        == "SuiteA.*:*/SuiteA.*:SuiteB.*:*/SuiteB.*"
+    assert build_gtest_filter(["SuiteA", "SuiteB"]) == (
+        "SuiteA.*:*/SuiteA.*:SuiteA/*:*/SuiteA/*:"
+        "SuiteB.*:*/SuiteB.*:SuiteB/*:*/SuiteB/*"
     )
 
 
 def test_build_gtest_filter_empty():
     assert build_gtest_filter([]) == ""
+
+
+@pytest.mark.parametrize(
+    "full_name",
+    [
+        "SuiteA.case1",          # plain / fixture
+        "Prefix/SuiteA.case1/0",  # value-parameterized (TEST_P)
+        "SuiteA/0.case1",         # typed (TYPED_TEST)
+        "Prefix/SuiteA/0.case1",  # type-parameterized (TYPED_TEST_P)
+    ],
+)
+def test_build_gtest_filter_matches_all_gtest_name_forms(full_name):
+    """Every gtest naming form for a touched suite is matched by some pattern — otherwise
+    a typed-only regression test would run zero cases on the before-binary."""
+    patterns = build_gtest_filter(["SuiteA"]).split(":")
+
+    def gtest_match(pattern, name):
+        # gtest filter semantics: '*' matches any substring, '?' any char, '.'/'/' literal.
+        regex = "^" + "".join(
+            ".*" if c == "*" else ("." if c == "?" else re.escape(c)) for c in pattern
+        ) + "$"
+        return re.match(regex, name) is not None
+
+    assert any(gtest_match(p, full_name) for p in patterns), full_name
 
 
 # --------------------------------------------------------------------------

@@ -45,11 +45,25 @@ def has_new_integration_tests(changed_files):
 
 
 def has_new_unit_tests(changed_files):
+    # Share the unit-test bugfix validator's exact predicate so this gate's "unit tests
+    # added" shortcut fires ONLY when that (blocking) validator would actually run a
+    # suite. A broader check (any path under src/**/tests/**) would let a non-runnable
+    # file — wrong extension, no `<Component>` dir, or a `.cpp` with no gtest macro —
+    # satisfy the bugfix gate while the validator skips with "nothing to validate", so
+    # the bug would never be reproduced. Imported lazily to avoid pulling the validator's
+    # build-time deps at hook module load.
+    from ci.jobs.unit_tests_bugfix_validation_job import (
+        _UNIT_TEST_FILE_RE,
+        derive_test_suites,
+    )
+
+    matched = []
     for file in changed_files:
         file = file.removeprefix(".").removeprefix("/")
-        if file.startswith("src") and "/tests/" in file and Path(file).is_file():
-            return True
-    return False
+        if _UNIT_TEST_FILE_RE.match(file) and Path(file).is_file():
+            matched.append(file)
+    # Require an actual runnable gtest suite, exactly as the validator does.
+    return bool(derive_test_suites(matched))
 
 
 def has_new_integration_test_docker_images(changed_files):
