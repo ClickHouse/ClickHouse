@@ -1428,12 +1428,13 @@ namespace
         ProtobufSerializerTimestamp(
             std::string_view column_name_,
             UInt32 scale_,
+            bool nested_in_nullable_,
             const FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
             : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
             , ticks_per_second(DecimalUtils::scaleMultiplier<Int64>(scale_))
             , nanos_per_tick(DecimalUtils::scaleMultiplier<Int64>(9 - scale_))
-            , skip_if_empty(shouldSkipZeroOrEmpty(field_descriptor_))
+            , skip_if_empty(!nested_in_nullable_ && shouldSkipZeroOrEmpty(field_descriptor_))
         {
             const auto * message_type = field_descriptor.message_type();
             const auto * seconds_field = message_type ? message_type->FindFieldByName("seconds") : nullptr;
@@ -4018,10 +4019,11 @@ namespace
             const FieldDescriptor & field_descriptor,
             bool allow_repeat,
             bool google_wrappers_special_treatment,
-            bool oneof_presence)
+            bool oneof_presence,
+            bool nested_in_nullable = false)
         {
             auto serializer_ptr = buildFieldSerializerImpl(
-                column_name, data_type, field_descriptor, allow_repeat, google_wrappers_special_treatment, oneof_presence);
+                column_name, data_type, field_descriptor, allow_repeat, google_wrappers_special_treatment, oneof_presence, nested_in_nullable);
             return serializer_ptr;
         }
 
@@ -4033,7 +4035,8 @@ namespace
             const FieldDescriptor & field_descriptor,
             bool allow_repeat,
             bool google_wrappers_special_treatment,
-            bool oneof_presence)
+            bool oneof_presence,
+            bool nested_in_nullable = false)
         {
             auto data_type_id = data_type->getTypeId();
             switch (data_type_id)
@@ -4058,14 +4061,14 @@ namespace
                 {
                     const auto & datetime_type = assert_cast<const DataTypeDateTime &>(*data_type);
                     if (isGoogleTimestampField(field_descriptor))
-                        return std::make_unique<ProtobufSerializerTimestamp<ColumnVector<UInt32>>>(column_name, /* scale = */ 0, field_descriptor, reader_or_writer);
+                        return std::make_unique<ProtobufSerializerTimestamp<ColumnVector<UInt32>>>(column_name, /* scale = */ 0, nested_in_nullable, field_descriptor, reader_or_writer);
                     return std::make_unique<ProtobufSerializerDateTime>(column_name, datetime_type, field_descriptor, reader_or_writer);
                 }
                 case TypeIndex::DateTime64:
                 {
                     const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
                     if (isGoogleTimestampField(field_descriptor))
-                        return std::make_unique<ProtobufSerializerTimestamp<ColumnDecimal<DateTime64>>>(column_name, datetime64_type.getScale(), field_descriptor, reader_or_writer);
+                        return std::make_unique<ProtobufSerializerTimestamp<ColumnDecimal<DateTime64>>>(column_name, datetime64_type.getScale(), nested_in_nullable, field_descriptor, reader_or_writer);
                     return std::make_unique<ProtobufSerializerDateTime64>(column_name, datetime64_type, field_descriptor, reader_or_writer);
                 }
                 case TypeIndex::String: return std::make_unique<ProtobufSerializerString<false>>(column_name, field_descriptor, reader_or_writer);
@@ -4091,7 +4094,8 @@ namespace
                         field_descriptor,
                         allow_repeat,
                         google_wrappers_special_treatment,
-                        oneof_presence);
+                        oneof_presence,
+                        /* nested_in_nullable = */ true);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerNullable>(std::move(nested_serializer));
