@@ -379,6 +379,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_move_pool_size;
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_schedule_pool_initial_size;
     extern const ServerSettingsFloat background_schedule_pool_max_parallel_tasks_per_type_ratio;
     extern const ServerSettingsBool disable_insertion_and_mutation;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
@@ -4998,6 +4999,7 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
     callOnce(shared->buffer_flush_schedule_pool_initialized, [&] {
         shared->buffer_flush_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
+            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
@@ -5049,6 +5051,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
         {
             shared->schedule_pool = BackgroundSchedulePool::create(
                 shared->server_settings[ServerSetting::background_schedule_pool_size],
+                shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
                 max_parallel_tasks_per_type,
                 CurrentMetrics::BackgroundSchedulePoolTask,
                 CurrentMetrics::BackgroundSchedulePoolSize,
@@ -5063,6 +5066,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     callOnce(shared->distributed_schedule_pool_initialized, [&] {
         shared->distributed_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_distributed_schedule_pool_size],
+            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
@@ -5077,6 +5081,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     callOnce(shared->message_broker_schedule_pool_initialized, [&] {
         shared->message_broker_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_message_broker_schedule_pool_size],
+            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
@@ -5091,6 +5096,7 @@ BackgroundSchedulePool & Context::getIcebergSchedulePool() const
     callOnce(shared->iceberg_schedule_pool_initialized, [&] {
         shared->iceberg_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::iceberg_background_schedule_pool_size],
+            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::IcebergSchedulePoolTask,
             CurrentMetrics::IcebergSchedulePoolSize,
