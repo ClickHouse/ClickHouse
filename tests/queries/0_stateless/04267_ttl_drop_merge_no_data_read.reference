@@ -1,0 +1,22 @@
+-- Case 1: Basic TTLDrop
+TTLDropMerge	0	0	1
+0
+-- Case 2: TTLDrop with projections
+TTLDropMerge	0	0
+0
+[]
+-- Case 3: TTLDrop with skip indexes
+TTLDropMerge	0	0
+0
+-- Case 4: WHERE-clause TTL is not short-circuited
+TTLDropMerge	0	2000
+0
+-- Case 5: Table works after TTLDrop
+500
+500
+-- Case 6: Rows TTL + column TTL is not short-circuited
+TTLDropMerge	0	2000
+0
+-- Case 7: Rows TTL + GROUP BY TTL is not short-circuited
+TTLDropMerge	1000	2000
+1000
