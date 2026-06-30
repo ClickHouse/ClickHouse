@@ -2962,10 +2962,37 @@ databases_toggle.addEventListener('click', e => {
     toggleDatabases();
 });
 
+/// The icon is an <a>, which the browser activates with Enter (following the
+/// link) but not with Space. Handle both keys here so it can be toggled from the
+/// keyboard once focused via Tab, instead of navigating away.
+document.getElementById('databases-icon').addEventListener('keydown', e => {
+    if (e.key !== ' ' && e.key !== 'Enter') return;
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    e.preventDefault();
+    toggleDatabases();
+});
+
 /// The "hide panel" button is only visible while the panel is open, so it always closes it.
 document.getElementById('databases-hide').addEventListener('click', e => {
     e.stopPropagation();
     toggleDatabases();
+});
+
+/// Up/Down arrow keys move focus between the buttons inside the database panel
+/// (databases and their expanded tables), mirroring Tab/Shift+Tab but staying
+/// within the panel. The event bubbles here from the focused button.
+document.getElementById('databases').addEventListener('keydown', e => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    const buttons = [...document.getElementById('databases').querySelectorAll('button')];
+    if (buttons.length === 0) return;
+    e.preventDefault();
+    let index = buttons.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') {
+        index = index < 0 ? 0 : Math.min(index + 1, buttons.length - 1);
+    } else {
+        index = index < 0 ? buttons.length - 1 : Math.max(index - 1, 0);
+    }
+    buttons[index].focus();
 });
 
 document.getElementById('menu').addEventListener('click', e => {
