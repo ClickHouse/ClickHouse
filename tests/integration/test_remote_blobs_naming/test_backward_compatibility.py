@@ -299,6 +299,7 @@ def test_replicated_merge_tree(cluster, test_case):
                 WHERE
                     local_path LIKE '%{uuid}%'
                     AND local_path NOT LIKE '%format_version.txt%'
+                    AND local_path NOT LIKE '%column_compression_codecs.txt%'
                 ORDER BY ALL
                 """
             ).strip()
