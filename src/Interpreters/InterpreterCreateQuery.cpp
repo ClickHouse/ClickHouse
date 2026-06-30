@@ -163,7 +163,7 @@ namespace ServerSetting
 
 namespace FailPoints
 {
-    extern const char create_or_replace_after_size_check_before_rename[];
+    extern const char create_or_replace_before_rename[];
 }
 
 namespace ErrorCodes
@@ -2360,10 +2360,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             ast_rename->exchange = true;
         }
 
-        FailPointInjection::pauseFailPoint(FailPoints::create_or_replace_after_size_check_before_rename);
+        FailPointInjection::pauseFailPoint(FailPoints::create_or_replace_before_rename);
 
-        /// Run the size check once, inside the rename's `DDLGuard`s. If it throws,
-        /// no rename happens and the catch block below drops the temp.
+        /// The size check runs once inside the rename's `DDLGuard`s via `setPreSwapCheck`.
+        /// If it throws, no rename happens and the catch block below drops the temp.
         InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
         interpreter_rename.setPreSwapCheck(
             [&current_context](const StorageID & to_drop_id)
