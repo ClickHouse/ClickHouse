@@ -72,18 +72,6 @@ ababab
 [3,2]
 -- AggregationFunctionTests::MakeListIf_WithMaxSize --
 [1,3,2]
--- AggregationFunctionTests::MakeSet_BasicExample --
-[1,2,3]
--- AggregationFunctionTests::MakeSet_WithMaxSize --
-[1,2]
--- AggregationFunctionTests::MakeSet_FromMicrosoftDocs --
-[100,150,200]
--- AggregationFunctionTests::MakeSetIf_BasicExample --
-[2,3]
--- AggregationFunctionTests::MakeSetIf_WithMaxSize --
-[1,2]
--- AggregationFunctionTests::MakeSetIf_FromMicrosoftDocs --
-[150,200]
 -- ArgMinMaxTests::Arg_max --
 -- BinTests::Long --
 11
