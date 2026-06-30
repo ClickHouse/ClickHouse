@@ -1429,21 +1429,25 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
                 view.writer->releaseElectedDownloaders();
         m.fetched = std::move(led_bytes);
     });
-    /// Fill the LEAD progressively: tile each led run into window-sized pieces and COMMIT each to
-    /// the cells as it lands (`pushChainToWriters` per tile), so the foreground serve sees the
-    /// committed prefix grow and reads it while this worker keeps fetching ahead - the lead is one
-    /// GET (the long connection persists across the tiles). Without per-tile commit the serve would
-    /// block on the whole lead. `led_bytes` is still accumulated for `m.fetched` (the bypass bank
-    /// and the collect-time pin frontier).
-    const size_t tile = std::max<size_t>(effectiveWindowSize(level), 1);
+    /// Fill the LEAD progressively: the BACKGROUND run-ahead tiles each led run into window-sized
+    /// pieces and COMMITS each as it lands (`pushChainToWriters` per tile), so a concurrent
+    /// foreground serve sees the committed prefix grow and reads it while this worker keeps fetching
+    /// ahead - the lead is one GET (the long connection persists across the tiles). Without per-tile
+    /// commit that serve would block on the whole lead. The INLINE serve runs this fetch on the
+    /// serve thread itself (fetch-then-serve), so there is no concurrent reader to hand a growing
+    /// prefix to: it fetches each led run in ONE source read - one GET on the stateless arm (tiling
+    /// would issue one GET per window) - and commits it whole. `led_bytes` is still accumulated for
+    /// `m.fetched` (the bypass bank and the collect-time pin frontier).
     for (const auto & led : mergeRanges(led_disjoint, min_bytes_for_seek))
     {
         /// Clamp the run to the led prefix: an inline serve stops at `fetch_bound` (the first
         /// sibling); a pool worker has `fetch_bound == window.end()`, so this is a no-op for it.
         const size_t run_hi = std::min(led.end(), fetch_bound);
-        for (size_t off = led.offset; off < run_hi && !m.reached_eof; off += tile)
+        const size_t step = m.inline_serve ? std::max<size_t>(run_hi - led.offset, 1)
+                                            : std::max<size_t>(effectiveWindowSize(level), 1);
+        for (size_t off = led.offset; off < run_hi && !m.reached_eof; off += step)
         {
-            const ByteRange piece{off, std::min(tile, run_hi - off)};
+            const ByteRange piece{off, std::min(step, run_hi - off)};
             ChainedBuffers run = fetchGapsFromSource(piece, /*from_prefetch=*/true, m.reached_eof, level,
                 m.extent_snapshot, &m.long_conn, &m, m.stats);
             pushChainToWriters(m.writer_views, piece, run, m.stats, /*streaming=*/true);
@@ -1692,8 +1696,26 @@ void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterVie
         writeSliceToWriter(view.writer, window, chain, out_stats, streaming);
 }
 
+namespace
+{
+/// Bytes of `r` to credit to a cache tier: all of `r` unless a `credit` mask is given
+/// (unified foreground), in which case only the part of `r` ALREADY committed before this
+/// serve started filling. The rest of `r` is this serve's own source fetch transiting the
+/// cell - already counted as `BytesFromSource` - so crediting it as a cache hit would
+/// double-count and make a cold all-miss report itself as served from cache.
+size_t cacheCredit(ByteRange r, const IntervalSet * credit)
+{
+    if (!credit)
+        return r.size;
+    size_t freshly_fetched = 0;
+    for (const auto & gap : credit->subtract(r))   /// `r` minus the mask = not pre-committed
+        freshly_fetched += gap.size;
+    return r.size - freshly_fetched;
+}
+}
+
 void ReaderExecutor::recreditCommittedPrefixes(
-    ByteRange window, ChainedBuffers & result, IntervalSet & covered, Stats & out_stats)
+    ByteRange window, ChainedBuffers & result, IntervalSet & covered, Stats & out_stats, const IntervalSet * cache_credit)
 {
     /// Before the source fetch, re-credit any committed prefix of a frozen miss that a
     /// concurrent reader (or this plan's own write) has grown since plan-build: serve it
@@ -1739,7 +1761,7 @@ void ReaderExecutor::recreditCommittedPrefixes(
                         continue;  /// raced shrink/detach - fall back to the source path
                     result.append(chunk.slice(sub));
                     covered.add(sub);
-                    out_stats.add(tier_counter, sub.size);
+                    out_stats.add(tier_counter, cacheCredit(sub, cache_credit));
                 }
                 HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
                     static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
@@ -2727,11 +2749,18 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
     /// loop) and runs the plan's jobs locally - the foreground does not invent new jobs. A machine
     /// already in flight for `ri` is joined (not relaunched); a machine for ANOTHER retrieve holds
     /// the single slot, so we leave it and let the cell-serve / fallback below handle this window.
-    /// NOTE: `coordinatedPrefetch`'s tiling still over-counts GETs on the stateless arm for
-    /// fragmented reads - resolved by the planned Stage T (fetch the whole led run in one source
-    /// read; see UNIFIED_JOB_DAG.md). Tracked, not a regression in the live default.
+    ///
+    /// `pre_committed` is the cell coverage BEFORE this serve fills anything (a prior window's
+    /// over-read prefill or a worker's run-ahead). It is the cache-hit credit mask for the cell-
+    /// serve: bytes this serve fetches from the source below transit the cell but are counted as
+    /// `BytesFromSource`, not a cache hit - else a cold all-miss would report itself as served from
+    /// cache. The legacy path (null mask) credits every served byte, matching its run-ahead serve.
+    const IntervalSet * cache_credit = nullptr;
+    IntervalSet pre_committed;
     if (unified_foreground)
     {
+        pre_committed = committedCoverage(window_phys);
+        cache_credit = &pre_committed;
         const CoverageMap & geom = *read_plan.geometry();
         while (!committedCellCovers(window_phys))
         {
@@ -2742,27 +2771,45 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
             /// fetched - so the cell frontier advances PAST it while `st.fetched` does not. Keying
             /// the base off the live cell state (which the down-fill updates) makes the next fill
             /// resume after the hit instead of re-fetching it from source, and still fills a
-            /// mid-cell read from the cell floor (append-only). Fetch only to the cursor window's
-            /// end - filling the whole cell is the schedule's other (Remote/UpperCacheRead) jobs.
+            /// mid-cell read from the cell floor (append-only).
             const ByteRange aligned = geom.fetchWindowAt(window_phys);
             const size_t base = committedCellPrefixEnd(aligned);
             if (base >= window_phys.end())
                 break;   /// the window is committed to its end (defensive: the while would exit)
+            /// Fetch the whole cell-aligned miss run from the cell floor up to the cell edge, but
+            /// STOP at the first embedded faster-tier hit: `fetchWindowAt` tail-extends to the
+            /// (possibly merged) miss run end, which can span a hit a faster tier holds resident;
+            /// that hit fills the lower cell DOWN from the faster tier (`downFillScheduledLower`),
+            /// it is not re-fetched from the source. `gapEndWithin` caps the launch there.
+            const size_t run_end = geom.gapEndWithin(base, aligned.end());
+            const ByteRange run{base, run_end - base};
             if (machineFor(ri))
                 collectInFlightInto(ri);
             else if (!machine)
             {
-                if (reached_eof
-                    || !launchMachineForWindow(ri, ByteRange{base, window_phys.end() - base}, *local_runner))
+                if (reached_eof || !launchMachineForWindow(ri, run, *local_runner))
                     break;
-                /// The cell-alignment head fetched BELOW the cursor (`[base, cursor)`) is source
-                /// bytes the request did not ask for - over-read. Record the range as pending (the
-                /// collect's `assembleAndWriteBack` keys off the launched window, not the cursor, so
-                /// it does not see this head). A later read that consumes it removes the range
-                /// (`overread_pending.remove`); what is never read back is the net `OverReadBytes`.
-                if (base < window_phys.offset)
-                    overread_pending.add(ByteRange{base, window_phys.offset - base});
                 collectInFlightInto(ri);
+                /// The inline Fill fetched the WHOLE cell-aligned run `[base, run_end)` - head-
+                /// aligned to the cell floor and tail-extended to the cell edge (or the next
+                /// embedded hit) - matching the legacy `readPhysicalWindow`'s `fetchWindowAt`. So
+                /// one cold cell is ONE source read and the cursor's later windows in the cell are
+                /// served from it. The bytes outside the cursor window - the `[base, cursor)` head
+                /// and the `[cursor.end, run_end)` tail - are over-read: source bytes the request
+                /// did not ask for. The inline collect writes the cells via `pushChainToWriters`,
+                /// which (unlike the sync `assembleAndWriteBack`) does not account over-read, so
+                /// record it here. A later read that consumes the range removes it
+                /// (`overread_pending.remove`); what is never read back is the net `OverReadBytes`.
+                /// Key off the committed frontier so a short (EOF / contended) fill records only the
+                /// bytes that actually landed.
+                const size_t frontier = committedCellPrefixEnd(run);
+                if (base < window_phys.offset)
+                    overread_pending.add(ByteRange{base, std::min(frontier, window_phys.offset) - base});
+                if (frontier > window_phys.end())
+                {
+                    const size_t tail = std::max(base, window_phys.end());
+                    overread_pending.add(ByteRange{tail, frontier - tail});
+                }
             }
             else
                 break;   /// a read-ahead machine for another retrieve owns the slot
@@ -2798,7 +2845,7 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
         /// `out` is discarded and the foreground fallback re-reads the window, so folding here
         /// would double-count the discarded prefix against the cache counters.
         Stats cell_stats;
-        serveWindowFromCells(window_phys, /*allow_wait=*/machine_leads, out, covered, cell_stats);
+        serveWindowFromCells(window_phys, /*allow_wait=*/machine_leads, out, covered, cell_stats, cache_credit);
         if (covered.subtract(window_phys).empty())   /// fully served from the cells
         {
             stats += cell_stats;
@@ -2820,10 +2867,11 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
 }
 
 void ReaderExecutor::serveWindowFromCells(
-    ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered, Stats & out_stats)
+    ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered,
+    Stats & out_stats, const IntervalSet * cache_credit)
 {
     /// The committed prefix first (fastest resident tier first, under the shared `covered`).
-    recreditCommittedPrefixes(window_phys, out, covered, out_stats);
+    recreditCommittedPrefixes(window_phys, out, covered, out_stats, cache_credit);
     if (!allow_wait || !machine)
         return;
 
@@ -2859,7 +2907,7 @@ void ReaderExecutor::serveWindowFromCells(
                     continue;   /// raced reset/short - the foreground fallback re-fetches it
                 out.append(c.slice(u));
                 covered.add(u);
-                out_stats.add(tier_counter, u.size);
+                out_stats.add(tier_counter, cacheCredit(u, cache_credit));
             }
         }
     }

@@ -66,6 +66,15 @@ struct CoverageMap
     /// or `plan_end`.
     size_t gapEnd(size_t gap_start) const;
 
+    /// End of the gap starting at `gap_start`, bounded by `limit` instead of
+    /// `plan_end`: the first resident-run start in `(gap_start, limit)` on any
+    /// tier, or `limit` if the gap runs unbroken to it. The inline fill uses this
+    /// to fetch a whole cell-aligned miss run up to a cell edge it computed (which
+    /// can sit past the extent-bounded `plan_end`) while still stopping at an
+    /// embedded faster-tier hit - that hit fills the lower cell DOWN from the
+    /// faster tier, it is not re-fetched from the source.
+    size_t gapEndWithin(size_t gap_start, size_t limit) const;
+
     /// The window to FETCH to serve `req`: `req` rounded OUT to the cache cell
     /// at each edge (it may start LEFT of `req.offset` and end past `req.end()`;
     /// the caller slices back). The widening is BOUNDED by each tier's alignment

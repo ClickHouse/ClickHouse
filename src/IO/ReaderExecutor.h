@@ -678,7 +678,12 @@ private:
     /// miss that a writer has grown since plan-build: serve it from the write
     /// buffer's own `read`, marking it `covered` so only the truly-uncommitted
     /// tail drives the fetch.
-    void recreditCommittedPrefixes(ByteRange window, ChainedBuffers & result, IntervalSet & covered, Stats & out_stats);
+    /// `cache_credit` (unified foreground): when non-null, only the part of each served range
+    /// that is ALREADY in the mask is counted as a cache hit; the rest is this serve's own source
+    /// fetch transiting the cell (counted as `BytesFromSource`), so crediting it as a cache hit
+    /// would double-count. Null (the legacy path) credits every served byte.
+    void recreditCommittedPrefixes(ByteRange window, ChainedBuffers & result, IntervalSet & covered,
+        Stats & out_stats, const IntervalSet * cache_credit = nullptr);
 
     /// Read from source into the pre-allocated `blocks`: DRAIN a held/carried long
     /// connection (`lc`, nullable) if it can serve this fetch, otherwise open a
@@ -864,7 +869,8 @@ private:
     /// the still-uncommitted bytes the in-flight worker is downloading, waited on per-frontier
     /// via the worker's OWN target writers (`waitAndReadSiblingLed`). Accumulates into `out` /
     /// `covered`; the caller checks full coverage and falls back to a foreground fetch otherwise.
-    void serveWindowFromCells(ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered, Stats & out_stats);
+    void serveWindowFromCells(ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered,
+        Stats & out_stats, const IntervalSet * cache_credit = nullptr);
     ChainedBuffers serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys) const;
     ChainedBuffers serveRetrieveForeground(size_t ri, size_t position_phys);
     void collectInFlightInto(size_t ri);

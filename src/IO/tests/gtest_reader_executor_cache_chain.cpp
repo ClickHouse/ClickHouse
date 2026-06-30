@@ -1258,6 +1258,9 @@ TEST_F(ReaderExecutorCacheChain, EvictionInChainRefetchesEvictedCells)
     executor_options.window_size = window;
     executor_options.min_bytes_for_seek = 0;
     executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+    /// Exercise the unified inline-fill path explicitly (independent of the build default), since
+    /// its connection-carry under eviction is what this asserts.
+    executor_options.unified_foreground = true;
     auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     auto flood_fs = [&](size_t round)
@@ -1301,6 +1304,10 @@ TEST_F(ReaderExecutorCacheChain, EvictionInChainRefetchesEvictedCells)
     EXPECT_EQ(result, content) << "no corruption / no missing bytes under eviction pressure";
     /// Destroy the executor so it flushes its `stats` into the thread's ProfileEvents.
     executor.reset();
-    EXPECT_EQ(sourceRequestsSoFar(), 7u)
+    /// The held long connection streams the first cold run (segments 0-1) in one GET but is
+    /// re-opened per window for the later flood-evicted segments (2-3), so the unified inline
+    /// fill's small-plan re-fetch count is 9 - higher than the legacy path's 7. The small plan
+    /// does not pin far ahead, so flood-evicted cold cells are re-fetched either way.
+    EXPECT_EQ(sourceRequestsSoFar(), 9u)
         << "the small plan does not pin far ahead, so flood-evicted cold cells are re-fetched";
 }
