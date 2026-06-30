@@ -639,7 +639,7 @@ logger.jetty.level = warn
             elif storage == TableStorage.Azure:
                 # For Azurite local emulation
                 builder.config(
-                    f"spark.hadoop.fs.azure.storage.emulator.account.name",
+                    "spark.hadoop.fs.azure.storage.emulator.account.name",
                     cluster.azurite_account,
                 )
                 builder.config(
