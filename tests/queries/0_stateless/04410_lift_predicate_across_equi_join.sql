@@ -121,6 +121,24 @@ SELECT 'left correctness',
         LEFT JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
         SETTINGS query_plan_lift_predicate_across_join = 0);
 
+-- Computed equi-key (rhs is `l.orderkey + 1`, not a raw INPUT). Lift must bail in this direction,
+-- otherwise the inserted FilterStep references a column missing from the target child's header
+SELECT 'computed key',
+       countIf(explain LIKE '%Lifted equi-join filter%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM lift_orders WHERE orderkey = 42) AS o
+    INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey + 1
+);
+
+SELECT 'computed key correctness',
+       (SELECT count() FROM (SELECT * FROM lift_orders WHERE orderkey = 42) AS o
+        INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey + 1)
+     - (SELECT count() FROM (SELECT * FROM lift_orders WHERE orderkey = 42) AS o
+        INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey + 1
+        SETTINGS query_plan_lift_predicate_across_join = 0);
+
 DROP TABLE lift_orders;
 DROP TABLE lift_lineitem;
 DROP TABLE lift_mem;

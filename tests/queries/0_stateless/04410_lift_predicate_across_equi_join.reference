@@ -9,3 +9,5 @@ left, filter on rhs	0
 non-deterministic	0
 result match	0
 left correctness	0
+computed key	0
+computed key correctness	0
