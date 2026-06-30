@@ -825,16 +825,14 @@ ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const For
 /// A Nullable(Tuple) value is written as a single CSV field (see serializeTextCSV), so it must be
 /// read back as one field too. Disable separate-columns parsing for the nested tuple to keep the
 /// input symmetric with the output (issue #107342).
-static const FormatSettings & adjustCSVSettingsForNullableTuple(
+static void adjustCSVSettingsForNullableTuple(
     const SerializationPtr & nested, const FormatSettings & settings, std::optional<FormatSettings> & storage)
 {
     if (settings.csv.deserialize_separate_columns_into_tuple && typeid_cast<const SerializationTuple *>(nested.get()))
     {
         storage = settings;
         storage->csv.deserialize_separate_columns_into_tuple = false;
-        return *storage;
     }
-    return settings;
 }
 
 void SerializationNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -842,7 +840,8 @@ void SerializationNullable::deserializeTextCSV(IColumn & column, ReadBuffer & is
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
     bool is_null = false;
     std::optional<FormatSettings> settings_storage;
-    const FormatSettings & effective_settings = adjustCSVSettingsForNullableTuple(nested, settings, settings_storage);
+    adjustCSVSettingsForNullableTuple(nested, settings, settings_storage);
+    const FormatSettings & effective_settings = settings_storage ? *settings_storage : settings;
     deserializeTextCSVImpl<void>(col.getNestedColumn(), istr, effective_settings, nested, is_null);
     safeAppendToNullMap<void>(col, is_null);
 }
@@ -852,7 +851,8 @@ bool SerializationNullable::tryDeserializeTextCSV(IColumn & column, ReadBuffer &
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
     bool is_null = false;
     std::optional<FormatSettings> settings_storage;
-    const FormatSettings & effective_settings = adjustCSVSettingsForNullableTuple(nested, settings, settings_storage);
+    adjustCSVSettingsForNullableTuple(nested, settings, settings_storage);
+    const FormatSettings & effective_settings = settings_storage ? *settings_storage : settings;
     return deserializeTextCSVImpl<bool>(col.getNestedColumn(), istr, effective_settings, nested, is_null) && safeAppendToNullMap<bool>(col, is_null);
 }
 
