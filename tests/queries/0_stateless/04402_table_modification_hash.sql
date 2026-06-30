@@ -93,6 +93,16 @@ SELECT 'ordinary memory null', modification_hash IS NULL FROM system.tables WHER
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mt_ord (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_mt_ord VALUES (1);
 SELECT 'ordinary mergetree null', modification_hash IS NULL FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_mt_ord';
+-- URL and object storage also fail closed without a UUID: their hash is the resource's strong ETag, so a
+-- same-name DROP + CREATE pointing at the same resource but a different read-affecting configuration could
+-- otherwise produce the same hash.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_url_ord (x UInt64) ENGINE = URL('http://localhost:1/a.csv', CSV);
+SELECT 'ordinary url null', modification_hash IS NULL FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_url_ord';
+-- A Distributed table without a UUID also fails closed: a same-name re-incarnation can change the
+-- (query-visible) sharding key while combining to the same hash.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_dist_ord (x UInt64)
+    ENGINE = Distributed(test_shard_localhost, {CLICKHOUSE_DATABASE_1:String}, t_mt_ord, x);
+SELECT 'ordinary distributed null', modification_hash IS NULL FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_dist_ord';
 
 -- A self-referential Distributed table (its local shard resolves back to itself) must fail closed
 -- (NULL) instead of recursing into its own getModificationHash. CREATE rejects self-reference, but

@@ -706,14 +706,20 @@ public:
     /// Does not take underlying Storage (if any) into account
     virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
 
-    /// Returns a value that is guaranteed to change whenever the data behind the table changes.
-    /// There are no other guarantees: it is not a hash of the data, so two tables with identical
-    /// data may have different values, and the value may also change without the data changing.
-    /// Conceptually it is similar to an HTTP ETag.
+    /// Returns a value that changes whenever the data behind the table changes. There are no other
+    /// guarantees: it is not a hash of the data, so two tables with identical data may have different
+    /// values, and the value may also change without the data changing. Conceptually it is similar to an
+    /// HTTP ETag.
     ///
-    /// The way it is calculated is implementation-specific. For example, tables of the MergeTree
-    /// family return a hash of the block number ranges of their data parts and the table structure
-    /// version. File-like engines use the size and modification time, and so on.
+    /// For engines that can provide it the value is loop-free (no-ABA): it never returns to an earlier
+    /// value across a change-and-change-back (an A -> B -> A transition). The consistency consumers below
+    /// rely on this. Engines that cannot guarantee it must return nullopt (fail closed) - the exception is
+    /// URL and object storage, which trust the resource's strong ETag and are therefore best-effort: an
+    /// external A -> B -> A rewrite back to byte-identical content can in principle repeat the value.
+    ///
+    /// The way it is calculated is implementation-specific. For example, tables of the MergeTree family
+    /// return a hash of the block number ranges of their data parts, the table structure and a per-lifetime
+    /// version that advances on every data or metadata change.
     ///
     /// The storage snapshot is taken into account, so the result describes the state of the data
     /// that the snapshot refers to (important when one subquery uses a snapshot and another does not).

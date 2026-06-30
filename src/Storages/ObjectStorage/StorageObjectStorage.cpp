@@ -463,6 +463,13 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
 
 std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
+    /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
+    /// a same-named table whose object `ETag`s repeat under a DROP + CREATE with a different read-affecting
+    /// configuration, because the value is derived from the object content, not from a per-incarnation
+    /// identity. Fail closed, matching `MergeTree`/`Memory`/`Log` and `URL`.
+    if (!getStorageID().hasUUID())
+        return {};
+
     /// Heavy path: list the objects behind the table and hash their ETags, sizes and modification times.
     /// Not supported for data lakes (the set of objects is derived from external metadata) and for the
     /// non-initiator side of cluster functions.

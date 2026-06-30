@@ -1533,6 +1533,14 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
 
 std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const
 {
+    /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
+    /// a same-named table: a DROP + CREATE can point at the same URL with the same strong `ETag` but a
+    /// different read-affecting configuration (format, format settings) and produce the same hash, because
+    /// the value is derived from the resource content, not from a per-incarnation identity. Fail closed,
+    /// matching `MergeTree`/`Memory`/`Log`.
+    if (!getStorageID().hasUUID())
+        return {};
+
     const auto & settings = context->getSettingsRef();
 
     /// The read path (`ReadFromURL::createIterator`) expands glob patterns

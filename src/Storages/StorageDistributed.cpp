@@ -1855,6 +1855,14 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
     if (remote_table_function_ptr)
         return {};
 
+    /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
+    /// this `Distributed` table: a DROP + CREATE with the same name can change the sharding key (which is
+    /// query-visible under `optimize_skip_unused_shards`) or the cluster/remote target while combining to
+    /// the same hash, since the sharding key is fixed at creation and cannot be folded as an in-lifetime
+    /// change. Fail closed, matching the underlying engines.
+    if (!getStorageID().hasUUID())
+        return {};
+
     try
     {
         auto cluster = getCluster();

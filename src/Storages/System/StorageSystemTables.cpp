@@ -250,7 +250,10 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         },
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
         {"modification_hash", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt128>()),
-            "A value that is guaranteed to change whenever the data behind the table changes (similar to an ETag). "
+            "A value that changes whenever the data behind the table changes (similar to an ETag). For engines "
+            "that can provide a loop-free signal (e.g. MergeTree, Memory, Log) it never returns to an earlier "
+            "value across a change-and-change-back; for URL and object storage it is the resource's strong ETag, "
+            "which is best-effort, as it can repeat if the content is rewritten back to an identical state. "
             "NULL if the engine cannot tell whether its data has changed. Computing it may be expensive for some "
             "engines (e.g. Merge, Distributed, URL), so it is only calculated when this column is selected."
         },
