@@ -32,6 +32,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_IDENTIFIER;
+}
+
 
 /// Build the analyzer DAG up to (and including) `buildSetInplace`, set-determinism
 /// marking, and `indexHint` input promotion.  Output column names are NOT yet
@@ -241,6 +246,20 @@ static CoreAnalysisResult buildExpressionCoreDAG(
         if (!found)
             actions.addInput(name, type);
     }
+
+    /// The synthetic `_dummy` column (added above when `available_columns` was empty, so
+    /// that `StorageDummy` stays constructible) must remain internal: it exists only to let
+    /// a genuinely constant expression be analyzed, not to expand the set of identifiers a
+    /// user expression may reference.  If the original column list was empty but analysis
+    /// still required an input, the expression resolved a name (e.g. a zero-column table
+    /// key like `ORDER BY _dummy`) that is not a real column.  Reject it here — fail-close —
+    /// instead of producing an `ExpressionActions` that requires a column absent from the
+    /// table metadata and only fails later when executed against a real block.
+    if (available_columns.empty() && !actions.getInputs().empty())
+        throw Exception(
+            ErrorCodes::UNKNOWN_IDENTIFIER,
+            "Unknown column '{}': the expression is analyzed over an empty set of columns and must be constant",
+            actions.getInputs().front()->result_name);
 
     return {std::move(actions), std::move(ast_column_names_no_aliases), std::move(ast_column_names_with_aliases)};
 }
