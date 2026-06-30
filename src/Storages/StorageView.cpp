@@ -252,17 +252,50 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
     /// and should not prevent insertion.
 }
 
-/// Collects the short names of all identifiers referenced in an expression subtree.
-void collectIdentifierShortNames(const ASTPtr & ast, NameSet & names)
+/// Collects the short names of all identifiers referenced in an expression subtree, excluding
+/// names that are bound by an enclosing lambda parameter. A lambda parameter such as `a` in
+/// `arrayExists(a -> a > 0, arr)` shadows any outer column or alias of the same name within the
+/// lambda body, so it is a local binding rather than a reference to the outer name. Recording it
+/// would make the ambiguity guard below reject a view whose WHERE merely uses the name as a lambda
+/// parameter, even though read-time semantics are unambiguous (the parameter shadows the column).
+void collectIdentifierShortNames(const ASTPtr & ast, NameSet & names, NameSet & bound_lambda_params)
 {
     if (!ast)
         return;
 
+    /// A lambda is represented as `lambda(tuple(params...), body)`. Mask its parameter names while
+    /// visiting the body and skip the parameter-declaration tuple entirely. Stay defensive about the
+    /// shape: anything that does not match the canonical lambda layout falls through to the generic
+    /// traversal, which is the conservative (fail-close) behavior.
+    if (const auto * function = ast->as<ASTFunction>();
+        function && function->name == "lambda" && function->arguments && function->arguments->children.size() == 2)
+    {
+        if (const auto * params_tuple = function->arguments->children[0]->as<ASTFunction>();
+            params_tuple && params_tuple->name == "tuple" && params_tuple->arguments)
+        {
+            Names newly_bound;
+            for (const auto & param : params_tuple->arguments->children)
+                if (const auto * param_identifier = param->as<ASTIdentifier>())
+                    if (bound_lambda_params.insert(param_identifier->shortName()).second)
+                        newly_bound.push_back(param_identifier->shortName());
+
+            collectIdentifierShortNames(function->arguments->children[1], names, bound_lambda_params);
+
+            for (const auto & name : newly_bound)
+                bound_lambda_params.erase(name);
+            return;
+        }
+    }
+
     if (const auto * identifier = ast->as<ASTIdentifier>())
-        names.insert(identifier->shortName());
+    {
+        const String short_name = identifier->shortName();
+        if (!bound_lambda_params.contains(short_name))
+            names.insert(short_name);
+    }
 
     for (const auto & child : ast->children)
-        collectIdentifierShortNames(child, names);
+        collectIdentifierShortNames(child, names, bound_lambda_params);
 }
 
 /// Extracts column mapping from view column names to target table column names.
@@ -1095,7 +1128,8 @@ SinkToStoragePtr StorageView::write(
     if (const auto & where_expr = select.where(); where_expr)
     {
         NameSet where_identifiers;
-        collectIdentifierShortNames(where_expr, where_identifiers);
+        NameSet bound_lambda_params;
+        collectIdentifierShortNames(where_expr, where_identifiers, bound_lambda_params);
         for (const auto & expr : select.select()->children)
         {
             const auto * identifier = expr->as<ASTIdentifier>();
