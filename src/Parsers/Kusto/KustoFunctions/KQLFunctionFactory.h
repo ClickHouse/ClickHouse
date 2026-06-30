@@ -91,8 +91,6 @@ enum class KQLFunctionValue : uint16_t
     array_shift_left,
     array_shift_right,
     array_slice,
-    array_sort_asc,
-    array_sort_desc,
     array_split,
     array_sum,
     bag_keys,
