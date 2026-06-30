@@ -25,6 +25,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int CANNOT_PARSE_JSON;
 extern const int INVALID_JSON_STRUCTURE;
+extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -252,7 +253,12 @@ String HashiCorpVault::makeRequest(const String & method, const String & path, c
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
     {
-        throw Poco::Exception("HTTP error: " + std::to_string(response.getStatus()) + " Response: " + responseStream.str());
+        throw HTTPException(
+            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            path,
+            response.getStatus(),
+            response.getReason(),
+            responseStream.str());
     }
 
     std::string value = responseStream.str();

@@ -61,7 +61,7 @@ def test_token_wrong_token():
     start_clickhouse(
         "configs/config_token_wrong_token.xml",
         "configs/users.xml",
-        "Exception: HTTP error: 403",
+        "HTTP status code: 403",
     )
 
 
@@ -77,7 +77,7 @@ def test_wrong_secret():
     start_clickhouse(
         "configs/config_token.xml",
         "configs/users_wrong_secret.xml",
-        "Exception: HTTP error: 404",
+        "not found in vault",
     )
 
 
