@@ -440,11 +440,19 @@ DROP TABLE enum_edges;
 -- keys); the unoptimized scan never builds that set, so a failure there falls
 -- back to the plain scan rather than failing the query.
 DROP TABLE IF EXISTS str_chain;
-CREATE TABLE str_chain (cur String, nxt String) ENGINE = MergeTree ORDER BY cur;
+CREATE TABLE str_chain (cur String, nxt String) ENGINE = MergeTree ORDER BY cur SETTINGS index_granularity = 8192;
 INSERT INTO str_chain
     SELECT repeat('k', 2000) || toString(number) AS cur,
            repeat('k', 2000) || toString(number + 1) AS nxt
     FROM numbers(6);
+-- Unrelated wide-key filler rows so a full scan is measurably large. They are
+-- isolated self-loops (`cur = nxt`) never reached from the `'k'` chain seed, so
+-- the result is unchanged; their only purpose is to make the fallback's
+-- `read_rows` observable.
+INSERT INTO str_chain
+    SELECT repeat('z', 2000) || toString(number) AS cur,
+           repeat('z', 2000) || toString(number) AS nxt
+    FROM numbers(5000);
 
 WITH RECURSIVE str_walk AS
 (
@@ -456,6 +464,26 @@ WITH RECURSIVE str_walk AS
 )
 SELECT count() FROM str_walk
 SETTINGS max_bytes_in_set = 1, set_overflow_mode = 'throw';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- With `max_bytes_in_set = 1` the generated set's bytes dwarf the limit, so the
+-- optimization falls back to a plain scan on every recursive step: the whole
+-- table (chain + filler) is read each step and `read_rows` is far above the
+-- handful of rows an index lookup of the chain keys would touch. This proves the
+-- fallback actually fired before injecting an oversized set, not merely that the
+-- result is correct. The generated values are bounded *while being collected*,
+-- so a frontier of wide keys never materializes the full set / RHS tuple before
+-- this fallback decision.
+SELECT read_rows > 10000 AS byte_limit_fallback_full_scan
+FROM system.query_log
+WHERE
+    current_database = currentDatabase()
+    AND query LIKE '%RECURSIVE str_walk%'
+    AND query NOT LIKE '%system.query_log%'
+    AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
 
 DROP TABLE str_chain;
 
@@ -481,6 +509,27 @@ WITH RECURSIVE traverse_pr AS
 )
 SELECT current_id FROM traverse_pr ORDER BY current_id
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+-- The same force-or-throw contract must hold for *every* parallel-replica mode
+-- the recursive context could otherwise engage, not just the task-based one.
+-- A forced custom-key mode (`parallel_replicas_mode = 'custom_key_sampling'`)
+-- is not covered by `canUseTaskBasedParallelReplicas`; without checking the
+-- custom-key / offset predicates as well it would be silently downgraded here
+-- instead of failing closed. It must still raise `SUPPORT_IS_DISABLED`.
+WITH RECURSIVE traverse_pr_custom_key AS
+(
+    SELECT to_id AS current_id
+    FROM edges
+    WHERE from_id = 0
+  UNION ALL
+    SELECT e.to_id AS current_id
+    FROM edges AS e
+    INNER JOIN traverse_pr_custom_key AS t ON e.from_id = t.current_id
+)
+SELECT current_id FROM traverse_pr_custom_key ORDER BY current_id
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'from_id',
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE edges;
