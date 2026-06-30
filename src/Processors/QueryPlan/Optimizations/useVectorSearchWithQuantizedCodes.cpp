@@ -25,6 +25,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <ranges>
+#include <unordered_set>
 
 namespace DB::Setting
 {
@@ -172,8 +173,6 @@ bool optimizeVectorSearchWithQuantizedCodes(
         else if (child->type == ActionsDAG::ActionType::INPUT)
         {
             search_column = child->result_name;
-            if (search_column.contains('.'))
-                search_column = search_column.substr(search_column.find('.') + 1);
         }
         else if (child->type == ActionsDAG::ActionType::COLUMN)
         {
@@ -201,10 +200,29 @@ bool optimizeVectorSearchWithQuantizedCodes(
     if (search_column.empty() || reference_vector.empty())
         return false;
 
-    /// The search column must carry a `Quantize(...)` codec; its parameters describe the codes subcolumn.
+    /// The search column must carry a `Quantize(...)` codec; its parameters describe the codes subcolumn. Resolve it to
+    /// the exact storage column: try the full input name first, so a genuine dotted storage column (e.g. a `Nested`
+    /// component `n.vec`) is matched as-is rather than conflated with a different top-level column. Only if that fails do
+    /// we strip a single leading qualifier (the analyzer qualifies table columns as `table.column`) and retry. Truncating
+    /// unconditionally would turn `n.vec` into `vec` and rank the shortlist by the wrong column.
     auto params = findQuantizeCodecParams(*read_step, search_column);
+    if (!params && search_column.contains('.'))
+    {
+        const String unqualified = search_column.substr(search_column.find('.') + 1);
+        params = findQuantizeCodecParams(*read_step, unqualified);
+        if (params)
+            search_column = unqualified;
+    }
     if (!params)
         return false;
+
+    /// The rewrite introduces internal columns named `__quantize_*` (the approximate-distance sort key and the constant
+    /// function arguments). Blocks permit duplicate column names, so if a column with such a name already flows into the
+    /// shortlist the sort key could bind to the user column (or the header build could throw on a type mismatch). Bail
+    /// to the exact path on any collision rather than rewrite against an ambiguous header.
+    for (const auto & col : expression_node->children.front()->step->getOutputHeader()->getColumnsWithTypeAndName())
+        if (col.name.starts_with("__quantize_"))
+            return false;
 
     const String codes_column = search_column + "." + SerializationQuantizedVector::subcolumn_name;
     const String & method = params->method;
@@ -317,15 +335,20 @@ bool optimizeVectorSearchWithQuantizedCodes(
     }
     approx_dag.getOutputs().push_back(approx_node);
 
-    /// The codes column (and, for pq, the per-part codebook) are inputs to the distance function but are NOT needed
-    /// above this expression: the shortlist sort and the rescore only consume id / the heavy vector / _approx. Drop
-    /// them from the outputs so they are not carried into - and materialized by - the SortingStep. This is critical
-    /// for pq, whose codebook is a large FixedString broadcast as a ColumnConst: the MergeSortingTransform would
-    /// otherwise expand it to one full copy per buffered row, exhausting memory on a wide-vector corpus. The nodes
-    /// stay in the DAG as consumed inputs (the distance function above still references them).
+    /// The codes column (and, for pq, the per-part codebook) are inputs to the distance function. Drop them from the
+    /// outputs so they are not carried into - and materialized by - the SortingStep. This is critical for pq, whose
+    /// codebook is a large FixedString broadcast as a ColumnConst: the MergeSortingTransform would otherwise expand it
+    /// to one full copy per buffered row, exhausting memory on a wide-vector corpus. The nodes stay in the DAG as
+    /// consumed inputs (the distance function above still references them).
+    /// Exception: keep a companion subcolumn that the rescore expression still consumes - e.g. `SELECT vec.quantized
+    /// ... ORDER BY distance LIMIT` selects it - otherwise the rescore above the shortlist would lose its input.
+    std::unordered_set<std::string_view> needed_above;
+    for (const auto * input : expression.getInputs())
+        needed_above.insert(input->result_name);
     std::erase_if(approx_dag.getOutputs(), [&](const ActionsDAG::Node * node)
     {
-        return node->result_name == codes_column || (is_pq && node->result_name == codebook_column);
+        const bool is_companion = node->result_name == codes_column || (is_pq && node->result_name == codebook_column);
+        return is_companion && !needed_above.contains(node->result_name);
     });
 
     /// 4. Allocate the inner shortlist nodes (expression -> sorting -> limit), bottom-up so headers chain correctly.
