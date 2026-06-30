@@ -61,3 +61,10 @@ SELECT (1, 2) IN (SELECT CAST((1, 2), 'String'));
 -- A single scalar column the left tuple cannot be cast to is still rejected (the original issue):
 -- a `Tuple` cannot be compared as a single key against a `UInt8`.
 SELECT (1, 2) IN (SELECT materialize(1)); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+
+-- A single right `Tuple` column of the same arity as the left tuple is always an arity match and
+-- must NOT be rejected at analysis: the whole left tuple is compared against it as one key. Probing
+-- only the left default value would wrongly reject this valid query - the default has a `NULL` in the
+-- nullable element that cannot be cast to the non-nullable right element, yet the actual values
+-- compare fine at runtime. Regression for `03989_set_low_cardinality_in_tuple`.
+SELECT CAST((1, 2), 'Tuple(Nullable(UInt8), UInt8)') IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));

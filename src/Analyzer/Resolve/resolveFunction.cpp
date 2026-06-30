@@ -1341,23 +1341,42 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 bool left_comparable_as_single_key = false;
                 if (right_columns_count == 1)
                 {
-                    auto left_probe_column = in_first_argument_result_type->createColumn();
-                    left_probe_column->insertDefault();
-                    try
+                    const auto & right_single_type = right_projection_columns.front().type;
+
+                    /// A single right `Tuple` column of the same arity as the left tuple is always an
+                    /// arity match: the whole left tuple is compared against it as one key, element by
+                    /// element. Whether the element types are compatible is a runtime question - an
+                    /// incompatible pair (e.g. `(id1, id2) IN (SELECT tuple(id2, id1))` where the
+                    /// elements are `Decimal` vs `Date`) surfaces at runtime as `ILLEGAL_COLUMN` /
+                    /// `ILLEGAL_TYPE_OF_ARGUMENT`, not as a column-count mismatch. Probing only the
+                    /// left default value would also wrongly reject a valid query whose default
+                    /// happens not to cast (e.g. a `NULL` in a nullable element cast to a non-nullable
+                    /// right element), so short-circuit on matching arity instead of running the probe.
+                    const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right_single_type.get());
+                    if (right_tuple_type && right_tuple_type->getElements().size() == left_columns_count)
                     {
-                        /// Use a plain accurate cast (not `accurateOrNull`): the latter casts to
-                        /// `Nullable(target)`, which is itself invalid for targets that cannot be
-                        /// wrapped in `Nullable` (e.g. `Dynamic`, `Variant`), so it would spuriously
-                        /// fail for valid right column types. `Set::execute` likewise uses the plain
-                        /// accurate cast for such types.
-                        castColumnAccurate(
-                            {ColumnPtr(std::move(left_probe_column)), in_first_argument_result_type, "left"},
-                            right_projection_columns.front().type);
                         left_comparable_as_single_key = true;
                     }
-                    catch (const Exception &)  /// NOLINT(bugprone-empty-catch)
+                    else
                     {
-                        /// Not castable - fall through and report the mismatch below.
+                        auto left_probe_column = in_first_argument_result_type->createColumn();
+                        left_probe_column->insertDefault();
+                        try
+                        {
+                            /// Use a plain accurate cast (not `accurateOrNull`): the latter casts to
+                            /// `Nullable(target)`, which is itself invalid for targets that cannot be
+                            /// wrapped in `Nullable` (e.g. `Dynamic`, `Variant`), so it would spuriously
+                            /// fail for valid right column types. `Set::execute` likewise uses the plain
+                            /// accurate cast for such types.
+                            castColumnAccurate(
+                                {ColumnPtr(std::move(left_probe_column)), in_first_argument_result_type, "left"},
+                                right_single_type);
+                            left_comparable_as_single_key = true;
+                        }
+                        catch (const Exception &)  /// NOLINT(bugprone-empty-catch)
+                        {
+                            /// Not castable - fall through and report the mismatch below.
+                        }
                     }
                 }
 
