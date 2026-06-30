@@ -2814,9 +2814,19 @@ function getTableIcon(engine)
 /// guard must be scoped to each container: a load is only superseded by a newer
 /// load of the same database, not by a concurrent load of a different one.
 let load_tables_request_nums = new WeakMap();
+/// The current-database highlight is a singleton, so the per-container token above is not
+/// enough to protect it: it tracks the latest manual database selection. If the user opens
+/// `a` and then `b` before `a` finishes loading, the highlight must end up on `b` regardless
+/// of which load's query returns first - otherwise a slower earlier open would steal it back.
+let current_selection_num = 0;
 async function loadTables(server_address, user, password, database, container, set_current = true) {
     const request_num = (load_tables_request_nums.get(container) || 0) + 1;
     load_tables_request_nums.set(container, request_num);
+
+    /// Capture the latest-selection token synchronously, before awaiting, so that the most
+    /// recent click wins regardless of which load's query returns first. Restoring the
+    /// expanded state passes set_current = false and must not move the highlight.
+    const selection_num = set_current ? ++current_selection_num : 0;
 
     let json = await auxiliaryQuery(server_address, user, password,
         `SELECT table, engine, total_rows, total_bytes FROM system.tables WHERE database = {database:String}
@@ -2826,10 +2836,11 @@ async function loadTables(server_address, user, password, database, container, s
 
     if (request_num != load_tables_request_nums.get(container)) return false;
 
-    /// A user click marks the database as current; restoring the expanded state
-    /// must not move the highlight away from the actual currentDatabase().
-    if (set_current) {
-        container.parentElement.querySelector('.current').classList.remove('current');
+    /// A user click marks the database as current; only move the highlight if this is still
+    /// the user's latest selection, and never move it away from currentDatabase() on restore.
+    if (set_current && selection_num == current_selection_num) {
+        let current_elem = container.parentElement.querySelector('.current');
+        if (current_elem) current_elem.classList.remove('current');
         container.firstChild.classList.add('current');
     }
     let tables_elem = container.querySelector('.tables');
