@@ -206,10 +206,10 @@ void SLRUFileCachePriority::iterate(
     probationary_queue.iterate(func, stat, lock);
 }
 
-void SLRUFileCachePriority::resetEvictionPos()
+void SLRUFileCachePriority::resetEvictionPos(EvictionCursor cursor)
 {
-    protected_queue.resetEvictionPos();
-    probationary_queue.resetEvictionPos();
+    protected_queue.resetEvictionPos(cursor);
+    probationary_queue.resetEvictionPos(cursor);
 }
 
 EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
@@ -296,7 +296,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr reservee,
-    bool continue_from_last_eviction_pos,
+    EvictionCursor eviction_cursor,
     size_t max_candidates_size,
     bool is_total_space_cleanup,
     const OriginInfo & origin_info,
@@ -318,7 +318,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            continue_from_last_eviction_pos,
+            eviction_cursor,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -338,7 +338,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            continue_from_last_eviction_pos,
+            eviction_cursor,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -361,7 +361,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            continue_from_last_eviction_pos,
+            eviction_cursor,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -386,7 +386,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            continue_from_last_eviction_pos,
+            eviction_cursor,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -402,7 +402,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            continue_from_last_eviction_pos,
+            eviction_cursor,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -421,7 +421,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     EvictionCandidates & res,
     InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr reservee,
-    bool continue_from_last_eviction_pos,
+    EvictionCursor eviction_cursor,
     size_t max_candidates_size,
     bool is_total_space_cleanup,
     const OriginInfo & origin_info,
@@ -437,7 +437,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         *downgrade_candidates,
         invalidated_entries,
         reservee,
-        continue_from_last_eviction_pos,
+        eviction_cursor,
         max_candidates_size,
         is_total_space_cleanup,
         origin_info,
@@ -481,7 +481,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
             res,
             invalidated_entries,
             reservee,
-            continue_from_last_eviction_pos,
+            eviction_cursor,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -719,7 +719,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         eviction_candidates,
         invalidated_entries,
         /* reservee */nullptr,
-        /* continue_from_last_eviction_pos */false,
+        EvictionCursor::FromHead,
         /* max_candidates_size */0,
         /* is_total_space_cleanup */false,
         FileCache::getInternalOrigin(),
