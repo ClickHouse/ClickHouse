@@ -249,7 +249,16 @@ public:
     /// (must be `NativeNumber`).
     String getSignatureString() const override
     {
-        return "(Tuple(Any, Any), Array, ...) -> UInt8";
+        /// The point's coordinates are dispatched at execution through `CallPointInPolygon`,
+        /// a raw `typeid_cast` over the native-number `ColumnVector` types, so a non-native-number
+        /// point element would otherwise fall through to its terminal case and raise a
+        /// `LOGICAL_ERROR` ("Unknown numeric column type"). Constrain the point tuple to
+        /// `NativeNumber` elements here — matching the `isNativeNumber` check the legacy
+        /// `getReturnTypeImpl` ran — so such a call is rejected with a clean
+        /// `ILLEGAL_TYPE_OF_ARGUMENT` during analysis instead. The polygon arguments stay loose
+        /// (`Array`); their coordinates are cast to `Float64` in bulk, which already reports a
+        /// clean error for incompatible element types.
+        return "(Tuple(NativeNumber, NativeNumber), Array, ...) -> UInt8";
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
