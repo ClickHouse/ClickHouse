@@ -48,7 +48,16 @@ public:
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
-    bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
+    bool supportZeroCopyReplication() const override
+    {
+        const auto metadata_type = metadata_storage->getType();
+        /// `Keeper` metadata uses its own replication mechanism rather than zero-copy.
+        /// `Memory` metadata is in-memory and ephemeral: it cannot serialize part metadata for the zero-copy
+        /// path (`getSerializedMetadata` throws `NOT_IMPLEMENTED`), and for `borrow_from_cache` the data lives
+        /// in node-local cache segments that other replicas cannot read. Fail closed so the zero-copy path is
+        /// never selected for such disks (it is silently skipped, falling back to ordinary replication).
+        return metadata_type != MetadataStorageType::Keeper && metadata_type != MetadataStorageType::Memory;
+    }
 
     bool supportParallelWrite() const override { return object_storages->takePointingTo(cluster->getLocalLocation())->supportParallelWrite(); }
 
