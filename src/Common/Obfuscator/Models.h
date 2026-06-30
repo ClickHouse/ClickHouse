@@ -462,14 +462,24 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             UInt32 src_datetime = src_data[i];
-            UInt32 src_date = static_cast<UInt32>(date_lut.toDate(src_datetime));
 
             Int32 src_diff = src_datetime - src_prev_value;
             Int32 res_diff = static_cast<Int32>(transformSigned(src_diff, seed));
 
             UInt32 new_datetime = res_prev_value + res_diff;
-            UInt32 new_time = new_datetime - static_cast<UInt32>(date_lut.toDate(new_datetime));
-            res_data[i] = src_date + new_time;
+
+            /// Keep the obfuscated time of day, but re-attach it to the source date as displayed in the
+            /// column's timezone. Constructing the result from the source date plus the local wall-clock
+            /// time of `new_datetime` keeps it inside the source local day even across DST transitions,
+            /// where day lengths differ from 24 hours and a raw "seconds since midnight" offset added to
+            /// the source midnight could otherwise spill onto a neighbouring displayed date.
+            res_data[i] = static_cast<UInt32>(date_lut.makeDateTime(
+                date_lut.toYear(src_datetime),
+                date_lut.toMonth(src_datetime),
+                date_lut.toDayOfMonth(src_datetime),
+                static_cast<UInt8>(date_lut.toHour(new_datetime)),
+                static_cast<UInt8>(date_lut.toMinute(new_datetime)),
+                static_cast<UInt8>(date_lut.toSecond(new_datetime))));
 
             src_prev_value = src_datetime;
             res_prev_value = res_data[i];
