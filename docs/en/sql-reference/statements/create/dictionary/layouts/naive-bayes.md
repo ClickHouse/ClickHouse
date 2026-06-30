@@ -105,7 +105,7 @@ SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sen
 A `NAIVE_BAYES` dictionary has a fixed shape:
 
 - The `PRIMARY KEY` is a single `String` column — the n-gram. At query time this "key" is the text you pass in to classify, not a stored lookup key.
-- Alongside it, declare **exactly two unsigned-integer attributes**: the class label and the occurrence count.
+- Alongside it, declare **exactly two unsigned-integer attributes**: the class label and the occurrence count. Class ids are `UInt32` throughout — the model stores them as `UInt32` and the [`naiveBayesClassifier`](/sql-reference/functions/machine-learning-functions#naivebayesclassifier) functions return `UInt32` — so a class label must fit in `UInt32` (at most `4294967295`) even when its attribute is declared `UInt64`. A source row whose class id is larger is rejected when the dictionary loads, not when it is created.
 - The `class_attribute` layout parameter names which attribute is the class label; the other is automatically the count. The two attributes can be declared in either order.
 
 The source table holds **pre-aggregated** counts: one row per `(n-gram, class)` with how many times that n-gram was observed in that class. Producing those counts (tokenizing your corpus and grouping) is done by your training pipeline, or in ClickHouse itself from raw labelled text — see [Build training data from raw text](#build-training-data-from-raw-text); the dictionary only consumes them.
