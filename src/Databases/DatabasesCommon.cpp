@@ -608,6 +608,9 @@ void DatabaseWithOwnTablesBase::shutdown()
     {
         Stopwatch watch;
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::SHUTDOWN_TABLES);
+        /// Reserve so enqueueAndKeepTrack can't fail while tracking an already-scheduled task,
+        /// which would make the inline fallback run a duplicate.
+        runner.reserve(tables_snapshot.size());
         for (const auto & kv : tables_snapshot)
         {
             auto run_task = [log_ptr = log, table = kv.second, recorder]
@@ -650,6 +653,8 @@ void DatabaseWithOwnTablesBase::shutdown()
     {
         Stopwatch watch;
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::SHUTDOWN_TABLES);
+        /// See the prepare phase above.
+        runner.reserve(tables_snapshot.size());
         for (const auto & kv : tables_snapshot)
         {
             auto run_task = [log_ptr = log, table = kv.second, recorder]
