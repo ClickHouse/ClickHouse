@@ -217,13 +217,15 @@ concurrency:
           EOF\
 """
 
-        # workflow_dispatch inputs live in `github.event.inputs`; workflow_call
-        # inputs (a reusable-workflow run) arrive in the `inputs` context with
-        # `github.event.inputs` null. This expression picks whichever is present.
+        # The `inputs` context holds this workflow's own inputs for both
+        # workflow_dispatch and workflow_call, so it is the correct source when
+        # workflow_call is enabled. (Testing `github.event.inputs` truthiness is
+        # wrong: when the reusable workflow is called from a manually-dispatched
+        # caller, `github.event.inputs` is the *caller's* inputs, which would
+        # drop this workflow's `ref`/`type`.) For dispatch-only workflows we keep
+        # `github.event.inputs` for backward compatibility.
         WORKFLOW_INPUTS_EXPR_DISPATCH = "${{ toJson(github.event.inputs) }}"
-        WORKFLOW_INPUTS_EXPR_WITH_CALL = (
-            "${{ github.event.inputs && toJson(github.event.inputs) || toJson(inputs) }}"
-        )
+        WORKFLOW_INPUTS_EXPR_WITH_CALL = "${{ toJson(inputs) }}"
 
         TEMPLATE_PY_INSTALL = """
       - name: Set up Python
