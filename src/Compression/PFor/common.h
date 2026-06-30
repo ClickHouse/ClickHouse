@@ -41,7 +41,7 @@ inline ALWAYS_INLINE unsigned bitWidth(T v) noexcept
     if constexpr (sizeof(T) <= 4)
         return 32u - static_cast<unsigned>(__builtin_clz(static_cast<uint32_t>(v)));
     else
-        return 64u - static_cast<unsigned>(__builtin_clzll(static_cast<unsigned long long>(v)));
+        return 64u - static_cast<unsigned>(__builtin_clzll(static_cast<uint64_t>(v)));
 }
 
 /// Mask of the low b bits (b may be 0 or >= typeBits<T>).

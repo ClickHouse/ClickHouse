@@ -28,7 +28,7 @@ inline ALWAYS_INLINE size_t getVarint(const uint8_t * p, uint64_t & v) noexcept
     v = 0;
     unsigned shift = 0;
     size_t n = 0;
-    uint8_t b;
+    uint8_t b = 0;
     do
     {
         b = p[n++];

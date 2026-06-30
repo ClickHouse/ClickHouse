@@ -85,7 +85,7 @@ void decodeRawSoA(ReadBuffer & in, PositionList & pl, PaddedPODArray<char> & scr
     const char * base = scratch.data();
     for (size_t i = 0; i < count; ++i)
     {
-        RoaringishEntry entry;
+        RoaringishEntry entry{};
         memcpy(&entry, base + i * sizeof(RoaringishEntry), sizeof(RoaringishEntry));
         if constexpr (std::endian::native != std::endian::little)
             transformEntryEndianness(entry);
@@ -153,7 +153,7 @@ void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, TextIndexP
     const uint8_t * p = reinterpret_cast<const uint8_t *>(scratch.payload.data());
     p += PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::d0, scratch.doc.data());
     p += PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::none, scratch.group.data());
-    p += PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::none, scratch.bitmap.data());
+    PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::none, scratch.bitmap.data());
 
     entries.resize(count);
     for (size_t i = 0; i < count; ++i)
@@ -180,7 +180,7 @@ void decodePforSoA(ReadBuffer & in, PositionList & pl, PaddedPODArray<char> & pa
     const uint8_t * p = reinterpret_cast<const uint8_t *>(payload.data());
     p += PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::d0, pl.doc.data());
     p += PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::none, pl.group.data());
-    p += PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::none, pl.bitmap.data());
+    PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::none, pl.bitmap.data());
 }
 
 }

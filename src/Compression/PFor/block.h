@@ -26,6 +26,8 @@
 #include <Compression/PFor/common.h>
 #include <Compression/PFor/vertical.h>
 
+#include <algorithm>
+
 namespace DB::PFor::detail
 {
 
@@ -83,8 +85,7 @@ inline size_t blockEncode(const T * r, unsigned cnt, uint8_t * out) noexcept
     {
         const unsigned w = bitWidth(r[i]);
         ++hist[w];
-        if (w > maxw)
-            maxw = w;
+        maxw = std::max(w, maxw);
     }
 
     // Candidate b == maxw has no exceptions; walk b down, adding exceptions, keep the min.
@@ -217,7 +218,7 @@ inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode,
         unpackBits<T>(p, e, hb, patches);
         p += packedBytes(e, hb);
         for (unsigned j = 0; j < e; ++j)
-            out[pos[j]] |= static_cast<T>(patches[j]) << b;
+            out[pos[j]] |= patches[j] << b;
     }
     if (mode != Delta::none)
         deltaApply<T>(out, cnt, prev, plus);
