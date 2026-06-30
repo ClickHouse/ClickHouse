@@ -519,7 +519,19 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+
+                /// A pattern without wildcards is equivalent to an equality, so use an exact point range.
+                /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
+                /// and equivalent to `value = ''`, so it needs the exact empty-string point range too.
+                if (is_exact)
+                {
+                    out.function = RPNElement::FUNCTION_IN_RANGE;
+                    out.range = Range(prefix);
+                    return true;
+                }
+
+                /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
                 if (prefix.empty())
                     return false;
 
@@ -543,7 +555,19 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+
+                /// A pattern without wildcards is equivalent to an inequality, so exclude an exact point range.
+                /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
+                /// and equivalent to `value != ''`, so it needs the exact empty-string point exclusion too.
+                if (is_exact)
+                {
+                    out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                    out.range = Range(prefix);
+                    return true;
+                }
+
+                /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
                 if (prefix.empty())
                     return false;
 
@@ -2007,23 +2031,32 @@ static bool applyDeterministicDagToColumn(
             return true;
         }
 
-        if (!target_type->isNullable() && !target_type->canBeInsideNullable())
+        /// `castColumnAccurateOrNull` needs a target that can represent NULLs so a lossy cast is
+        /// observable. `LowCardinality` is only an encoding and is not itself nullable-able, so run
+        /// the accuracy probe against the `LowCardinality`-stripped target; otherwise a key column of
+        /// type `LowCardinality(FixedString)` (and similar) is wrongly rejected here, which silently
+        /// disables partition/key pruning. The requested `target_type` is re-applied afterwards so the
+        /// transform DAG still receives the type it was built against.
+        const DataTypePtr probe_type = removeLowCardinality(target_type);
+
+        if (!probe_type->isNullable() && !probe_type->canBeInsideNullable())
         {
             /// We cannot apply castColumnAccurateOrNull() because it will throw exception
             return false;
         }
 
-        column = castColumnAccurateOrNull({column, type, ""}, target_type);
-        const auto & n = assert_cast<const ColumnNullable &>(*column);
+        ColumnPtr probe_column = castColumnAccurateOrNull({column, type, ""}, probe_type);
+        const auto & n = assert_cast<const ColumnNullable &>(*probe_column);
 
         /// If we have any NULLs after cast, that means cast could not be applied accurately for all values
         for (char8_t b : n.getNullMapData())
             if (b)
                 return false;
 
-        if (!target_type->isNullable())
-            column = n.getNestedColumnPtr();
-
+        /// No NULLs were introduced, so the cast is accurate for every value. Produce the requested
+        /// target_type (which may be LowCardinality and/or Nullable); the accurate cast cannot throw
+        /// here because the probe above already proved every value fits.
+        column = castColumnAccurate({column, type, ""}, target_type);
         type = target_type;
         return true;
     };
