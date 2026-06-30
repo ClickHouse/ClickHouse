@@ -910,7 +910,9 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             {
                 if constexpr (!throw_exception)
                     return ReturnType(false);
-                /// In the throw path fall through to integer parsing below
+                if constexpr (!dt64_mode)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+                /// dt64_mode + throw_exception: fall through to integer parsing below
             }
             else
             {

@@ -1611,8 +1611,13 @@ ReturnType readDateTimeTextFallback(
     /// Quick peek: if char 4 is '.' but char 7 (peeked 3 bytes ahead) is not '.', this is
     /// a decimal timestamp like "1234.5,..." not a dotted date like "2025.08.31". Skip the
     /// date branch; the integer branch + DateTime64 wrapper handle the fractional part.
+    /// Also treat as decimal when the 6-byte date read would cross a buffer chunk boundary
+    /// (available < 6). Dotted dates with the same boundary layout are an extreme edge case;
+    /// avoiding the cross-buffer read prevents silent field-boundary corruption.
     const bool peek_suggests_decimal
-        = dt64_mode && !buf.eof() && *buf.position() == '.' && buf.available() >= 4 && buf.position()[3] != '.';
+        = dt64_mode && !buf.eof() && *buf.position() == '.'
+        && ((buf.available() >= 4 && buf.position()[3] != '.')  // different delimiters → decimal
+            || buf.available() < 6);                            // would cross chunk boundary
 
     if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()) && !peek_suggests_decimal)
     {
