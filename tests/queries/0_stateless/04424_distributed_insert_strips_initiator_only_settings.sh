@@ -37,7 +37,21 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(x) FROM dst"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 
 echo "-- at least one shard-side INSERT ran, and none of them carry the initiator-only settings"
+# The secondary (shard-side) INSERTs run as the `default` user, so their `current_database` is
+# `default`, not the test database — they cannot be filtered by `current_database = currentDatabase()`
+# directly. Match them by `initial_query_id` instead, and apply the (style-check-required)
+# `current_database = currentDatabase()` filter to the initial INSERT, which does run in the test db.
 ${CLICKHOUSE_CLIENT} -q "
+    WITH initial AS
+    (
+        SELECT query_id
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+          AND query_id = '${QUERY_ID}'
+          AND is_initial_query = 1
+          AND type = 'QueryFinish'
+          AND event_date >= today() - 1
+    )
     SELECT
         count() >= 1 AS ran_on_shards,
         countIf(Settings['input_format'] != '') AS leaked_input_format,
@@ -46,7 +60,7 @@ ${CLICKHOUSE_CLIENT} -q "
         countIf(Settings['compression'] != '') AS leaked_compression,
         countIf(Settings['offset'] != '') AS leaked_offset
     FROM system.query_log
-    WHERE initial_query_id = '${QUERY_ID}'
+    WHERE initial_query_id IN (SELECT query_id FROM initial)
       AND is_initial_query = 0
       AND query_kind = 'Insert'
       AND type = 'QueryFinish'
