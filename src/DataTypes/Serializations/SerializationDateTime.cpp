@@ -111,9 +111,13 @@ SerializationPtr SerializationTime::create(const DataTypeTime & time_type)
     return ISerialization::pooled(getHash(time_type), [&] { return new SerializationTime(time_type); });
 }
 
-void SerializationDateTime::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDateTime::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    serializeText(column, row_num, ostr, settings);
+    /// Hive timestamps are always the simple `yyyy-MM-dd HH:mm:ss` text, regardless of `date_time_output_format`.
+    /// Delegating to `serializeText` would honor that setting and could emit epoch seconds (`unix_timestamp`) or
+    /// `T...Z` (`iso`), which Hive cannot parse as a `TIMESTAMP`.
+    auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    writeDateTimeText(value, ostr, time_zone);
 }
 
 void SerializationDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

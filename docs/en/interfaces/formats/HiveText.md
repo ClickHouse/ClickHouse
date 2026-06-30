@@ -139,6 +139,12 @@ Hive text representation are not supported for output and raise a
 latter, so they are rejected rather than written as their raw underlying
 numbers.
 
+`Date`, `Date32`, `DateTime` and `DateTime64` are always written in the plain
+Hive date and timestamp text (`yyyy-MM-dd` and `yyyy-MM-dd HH:mm:ss[.fffffffff]`),
+independent of the [`date_time_output_format`](/operations/settings/formats#date_time_output_format)
+setting, so the output stays parseable by Hive even when that setting is
+`unix_timestamp` or `iso`.
+
 ```sql title="Query"
 SELECT '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555)) FORMAT HiveText;
 ```
