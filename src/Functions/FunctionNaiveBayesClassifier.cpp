@@ -33,17 +33,21 @@ extern const int BAD_ARGUMENTS;
 namespace
 {
 
-bool isStringOrNullableString(const IDataType & type)
+bool isStringOrNull(const IDataType & type)
 {
     if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
-        return isString(*nullable->getNestedType());
+    {
+        /// Also accept `Nullable(Nothing)` so a bare NULL literal classifies to NULL, like a typed `Nullable(String)` NULL.
+        const auto & nested = *nullable->getNestedType();
+        return isString(nested) || isNothing(nested);
+    }
     return isString(type);
 }
 
 void validateArguments(
     const IFunction & func,
     const ColumnsWithTypeAndName & arguments,
-    FunctionArgumentDescriptor::TypeValidator input_validator = &isStringOrNullableString,
+    FunctionArgumentDescriptor::TypeValidator input_validator = &isStringOrNull,
     const char * input_description = "String or Nullable(String)")
 {
     validateFunctionArguments(
