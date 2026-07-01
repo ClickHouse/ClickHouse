@@ -373,6 +373,7 @@ namespace ErrorCodes
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -383,7 +384,7 @@ static String getPartNameFromAST(const ASTPtr & partition)
     return literal->value.safeGet<String>();
 }
 
-static void checkSuspiciousIndices(const ASTFunction * index_function)
+void checkSuspiciousIndices(const ASTFunction * index_function)
 {
     std::unordered_set<UInt64> unique_index_expression_hashes;
     for (const auto & child : index_function->arguments->children)
@@ -1090,8 +1091,29 @@ void MergeTreeData::checkProperties(
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
 
+    /// TTL on a UNIQUE KEY table cannot be honored: TTL delete / recompression /
+    /// GROUP BY are enforced during merges, and merges are disabled on UNIQUE KEY
+    /// tables until merge-side bitmap reconciliation lands. Reject at CREATE so the
+    /// combination cannot exist (`ALTER MODIFY TTL` is rejected in
+    /// `checkAlterIsPossible`); ATTACH must still load existing tables. Mirrors the
+    /// projection reject below.
+    /// TODO(unique-key): support TTL on UNIQUE KEY tables (lands with PR-14 merges).
+    if (new_metadata.hasAnyTTL() && new_metadata.hasUniqueKey() && !attach)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "TTL is not supported on tables with UNIQUE KEY");
+
     if (!new_metadata.projections.empty())
     {
+        /// Projections on a UNIQUE KEY table would read through the projection
+        /// part, bypassing the delete-bitmap filter and exposing logically-
+        /// deleted rows. ALTER ADD PROJECTION is already rejected (see
+        /// `checkAlterIsPossible`); reject CREATE-with-projection too so the
+        /// combination cannot exist. CREATE only — ATTACH must still load.
+        /// TODO(unique-key): support projections on UNIQUE KEY tables.
+        if (new_metadata.hasUniqueKey() && !attach)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Projections are not supported on tables with UNIQUE KEY");
+
         std::unordered_set<String> projections_names;
 
         for (const auto & projection : new_metadata.projections)
@@ -4416,6 +4438,21 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     "MODIFY ORDER BY is not supported on tables with UNIQUE KEY. "
                     "The dense-index SSTs produced at write time depend on the sort order.");
 
+            /// TTL is enforced during merges, which are disabled on UNIQUE KEY tables
+            /// until merge-side reconciliation lands (mirrors the CREATE-time reject in
+            /// `checkProperties`). Covers table TTL (MODIFY_TTL) and per-column TTL added
+            /// via ADD/MODIFY COLUMN (`command.ttl`). REMOVE TTL is allowed — it only
+            /// clears an expression, and a column ALTER with no TTL clause leaves
+            /// `command.ttl` null.
+            /// TODO(unique-key): support TTL on UNIQUE KEY tables (lands with PR-14 merges).
+            if (command.type == AlterCommand::MODIFY_TTL)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "MODIFY TTL is not supported on tables with UNIQUE KEY");
+            if ((command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::MODIFY_COLUMN)
+                && command.ttl)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Column TTL is not supported on tables with UNIQUE KEY");
+
             const bool affects_column =
                 command.type == AlterCommand::DROP_COLUMN
                 || command.type == AlterCommand::RENAME_COLUMN
@@ -5030,6 +5067,14 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER DELETE / ALTER UPDATE is not supported on tables with UNIQUE KEY");
 
+            /// MATERIALIZE TTL rewrites parts to apply expiration, bypassing the UNIQUE KEY
+            /// dedup path (like MATERIALIZE COLUMN below) — and TTL is unsupported anyway
+            /// while merges are disabled. Reject so an ATTACH-loaded UK+TTL table cannot
+            /// materialize it.
+            if (command.type == MutationCommand::MATERIALIZE_TTL)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... MATERIALIZE TTL is not supported on tables with UNIQUE KEY");
+
             if (command.type == MutationCommand::MATERIALIZE_COLUMN && is_uk_column(command.column_name))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... MATERIALIZE COLUMN `{}` is not supported: the column is part of the UNIQUE KEY, "
@@ -5043,6 +5088,26 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "and CLEAR would rewrite stored values without going through UNIQUE KEY dedup, "
                     "producing duplicate live keys. UNIQUE KEY columns: ({}).",
                     command.column_name, fmt::join(uk_column_names, ", "));
+
+            /// These commands rebuild whole parts (the full read+rewrite mutation path) and
+            /// drop the delete_bitmap_*.rbm sidecars, silently resurrecting deleted rows once
+            /// DELETE lands. MATERIALIZE INDEX/STATISTICS/PROJECTION reach the same path via
+            /// MutateAllPartColumnsTask for compact or non-full parts (which only hardlinks
+            /// checksummed entries, not the sidecars). Reject the whole destructive-rewrite family.
+            if (command.type == MutationCommand::REWRITE_PARTS
+                || command.type == MutationCommand::APPLY_DELETED_MASK
+                || command.type == MutationCommand::APPLY_PATCHES
+                || command.type == MutationCommand::MATERIALIZE_INDEX
+                || command.type == MutationCommand::MATERIALIZE_STATISTICS
+                || command.type == MutationCommand::MATERIALIZE_PROJECTION)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... {} is not supported on tables with UNIQUE KEY",
+                    command.type == MutationCommand::REWRITE_PARTS ? "REWRITE PARTS"
+                        : command.type == MutationCommand::APPLY_DELETED_MASK ? "APPLY DELETED MASK"
+                        : command.type == MutationCommand::APPLY_PATCHES ? "APPLY PATCHES"
+                        : command.type == MutationCommand::MATERIALIZE_INDEX ? "MATERIALIZE INDEX"
+                        : command.type == MutationCommand::MATERIALIZE_STATISTICS ? "MATERIALIZE STATISTICS"
+                        : "MATERIALIZE PROJECTION");
         }
     }
 
@@ -6629,6 +6694,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                     break;
                 }
                 case MetadataStorageType::StaticWeb:
+                case MetadataStorageType::WebIndex:
                 {
                     can_execute_alter_on_disk = false;
                     break;
@@ -6937,6 +7003,32 @@ Pipe MergeTreeData::alterPartition(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
 
+    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
+    /// must reject explicit partition mutations as well. Partition commands are dispatched here directly by
+    /// `InterpreterAlterQuery`, bypassing `StorageMergeTree::alter` / `assertNotReadonly`, so without this
+    /// gate a read-only table could still have its parts dropped, moved, attached, fetched, or replaced.
+    /// Operations that do not modify the table's data (`FREEZE`/`UNFREEZE` of a backup, `FORGET PARTITION`)
+    /// remain allowed, and the `table_readonly` setting itself can always be toggled back via
+    /// `ALTER ... MODIFY/RESET SETTING` (which goes through `alter`, not this path).
+    if ((*getSettings())[MergeTreeSetting::table_readonly])
+    {
+        for (const PartitionCommand & command : commands)
+        {
+            switch (command.type)
+            {
+                case PartitionCommand::ATTACH_PARTITION:
+                case PartitionCommand::MOVE_PARTITION:
+                case PartitionCommand::DROP_PARTITION:
+                case PartitionCommand::DROP_DETACHED_PARTITION:
+                case PartitionCommand::FETCH_PARTITION:
+                case PartitionCommand::REPLACE_PARTITION:
+                    throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode");
+                default:
+                    break;
+            }
+        }
+    }
+
     /// Wait for loading of outdated parts
     /// because partition commands (DROP, MOVE, etc.)
     /// must be applied to all parts on disk.
@@ -7198,6 +7290,15 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     auto backup = restorer.getBackup();
     if (!backup->hasFiles(data_path_in_backup))
         return;
+
+    /// TODO(unique-key): sidecar-aware backup/restore. Delete-bitmap sidecars
+    /// are not preserved across backup/restore, so restoring data parts would
+    /// resurrect deleted rows. BACKUP is already rejected; gate the symmetric
+    /// restore path too for backups produced by older builds.
+    if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata && uk_metadata->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "RESTORE of data is not supported for UNIQUE KEY tables yet: delete-bitmap "
+            "sidecars are not preserved across backup/restore.");
 
     if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && backup->hasFiles(data_path_in_backup))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
@@ -8089,6 +8190,12 @@ void MergeTreeData::optimizeDryRun(
     bool cleanup,
     ContextPtr local_context)
 {
+    /// DRY RUN PARTS executes a real merge task, bypassing StorageMergeTree::optimize's guard.
+    if (metadata_snapshot->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "OPTIMIZE is not supported for UNIQUE KEY tables: merges are currently disabled "
+                        "to preserve DELETE correctness. Parts will not be compacted.");
+
     if (part_names.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE DRY RUN requires at least one part name");
 
@@ -9394,8 +9501,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (format_version != src_data->format_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different format_version");
 
-    if (query_to_string(my_snapshot->getPrimaryKeyAST()) != query_to_string(src_snapshot->getPrimaryKeyAST()))
+    if (query_to_string(my_snapshot->getPrimaryKey().expression_list_ast)
+        != query_to_string(src_snapshot->getPrimaryKey().expression_list_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
+
     const auto check_definitions = [this](const auto & my_descriptions, const auto & src_descriptions)
     {
         bool strict_match = (*getSettings())[MergeTreeSetting::enforce_index_structure_match_on_partition_manipulation];
@@ -9999,6 +10108,17 @@ bool MergeTreeData::scheduleDataProcessingJob(BackgroundJobsAssignee & /*assigne
 
 bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
 {
+    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
+    /// must not waste background CPU and I/O moving parts between volumes/disks, neither because of the
+    /// storage policy `move_factor` nor because of `TTL ... TO DISK/VOLUME` rules. Explicit
+    /// `ALTER TABLE ... MOVE` commands are rejected separately by `assertNotReadonly`; this only suppresses
+    /// the automatic background moves. The setting is sampled here, immediately before move selection and
+    /// scheduling, so the window against a concurrent `ALTER ... MODIFY SETTING table_readonly = 1` is
+    /// minimal; suppression of an already-selected move is best-effort and a single in-flight move that
+    /// slips through right at the moment the setting is published is harmless (see `scheduleDataProcessingJob`).
+    if ((*getSettings())[MergeTreeSetting::table_readonly])
+        return false;
+
     if (parts_mover.moves_blocker.isCancelled())
         return false;
 
@@ -11115,11 +11235,11 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
     if (subscription_manager.isEmpty())
         return false;
 
-    auto promoters = buildPromoters();
-
     LocalPartsByPartition local_parts;
     for (const auto & part : getDataPartsVectorForInternalUsage())
         local_parts[part->info.getPartitionId()].push_back(part->info);
+
+    auto promoters = buildPromoters();
 
     bool any_enriched = false;
     subscription_manager.executeOnEachSubscription([&](StreamSubscriptionPtr & subscription)

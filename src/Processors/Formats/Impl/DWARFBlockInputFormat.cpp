@@ -77,7 +77,7 @@ enum DwarfColumn
 
 static NamesAndTypesList getHeaderForDWARF()
 {
-    std::vector<NameAndTypePair> cols(COL_COUNT);
+    NamesAndTypes cols(COL_COUNT);
     cols[COL_OFFSET] = {"offset", std::make_shared<DataTypeUInt64>()};
     cols[COL_SIZE] = {"size", std::make_shared<DataTypeUInt32>()};
     cols[COL_TAG] = {"tag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
