@@ -67,6 +67,10 @@ public:
 
     const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
     std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
+    void setFilterActionsDAG(std::shared_ptr<const ActionsDAG> dag) { filter_actions_dag = std::move(dag); }
+
+    using ConstantValueMap = std::unordered_map<String, std::pair<size_t, DataTypePtr>>;
+    size_t updateFilterDagConstants(const ConstantValueMap & old_value_to_param, const std::vector<Field> & parsed_params);
 
     bool hasCorrelatedExpressions() const override
     {

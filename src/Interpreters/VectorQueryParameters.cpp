@@ -619,7 +619,7 @@ bool candidateMatchesAstLiteral(
 }
 
 void findActionsDAGAndCollectConstants(
-    const ActionsDAG & dag,
+    ActionsDAG & dag,
     const std::vector<UInt32> & plan_node_path,
     const String & dag_scope,
     Int32 step_type,
@@ -731,6 +731,7 @@ void findActionsDAGAndCollectConstants(
                         candidate.binding.parameter_index = 0;
                         candidate.binding.dag_scope = dag_scope;
                         candidate.binding.dag_node_index = static_cast<UInt32>(map[node]);
+                        candidate.binding.parent_function_node_index = parent_node ? static_cast<UInt32>(map[parent_node]) : std::numeric_limits<UInt32>::max();
                         candidate.binding.value_text = applyVisitor(FieldVisitorToString(), value);
                         candidate.binding.field_type = static_cast<Int32>(value.getType());
                         candidate.binding.target_type = result_type;
@@ -757,7 +758,86 @@ void findActionsDAGAndCollectConstants(
             if (should_clear_and_return)
                 out_candidates.clear();
         }
-    }       
+    }
+
+    std::unordered_map<UInt32, std::vector<size_t>> node_index_to_candidate_indices;
+    for (size_t i = 0; i < out_candidates.size(); ++i)
+        node_index_to_candidate_indices[out_candidates[i].binding.dag_node_index].push_back(i);
+
+    for (auto & [dag_node_index, candidate_indices] : node_index_to_candidate_indices)
+    {
+        if (candidate_indices.size() <= 1)
+            continue;
+
+        LOG_DEBUG(logger, "Detected shared COLUMN node {} with {} candidates, splitting", dag_node_index, candidate_indices.size());
+
+        auto node_it = dag.getNodes().begin();
+        std::advance(node_it, std::min<size_t>(dag_node_index, dag.getNodes().size()));
+        if (node_it == dag.getNodes().end())
+            continue;
+
+        const ActionsDAG::Node & original_node = *node_it;
+
+        std::unordered_map<UInt32, ActionsDAG::Node *> func_index_to_node;
+        {
+            size_t idx = 0;
+            for (auto it = dag.getNodes().begin(); it != dag.getNodes().end(); ++it, ++idx)
+            {
+                auto & dag_node = const_cast<ActionsDAG::Node &>(*it);
+                if (dag_node.type != ActionsDAG::ActionType::FUNCTION)
+                    continue;
+                for (const auto * child : dag_node.children)
+                {
+                    if (child == &original_node)
+                    {
+                        func_index_to_node[static_cast<UInt32>(idx)] = &dag_node;
+                        break;
+                    }
+                }
+            }
+        }
+
+        for (size_t ci = 1; ci < candidate_indices.size(); ++ci)
+        {
+            size_t candidate_idx = candidate_indices[ci];
+            auto & candidate = out_candidates[candidate_idx];
+            UInt32 parent_func_idx = candidate.binding.parent_function_node_index;
+
+            auto func_it = func_index_to_node.find(parent_func_idx);
+            if (func_it == func_index_to_node.end())
+            {
+                LOG_DEBUG(logger, "Cannot find parent FUNCTION node {} for candidate[{}], skipping", parent_func_idx, candidate_idx);
+                continue;
+            }
+
+            ActionsDAG::Node * parent_func = func_it->second;
+
+            const auto * col_const = typeid_cast<const ColumnConst *>(original_node.column.get());
+            if (!col_const)
+                continue;
+
+            const ActionsDAG::Node & added_node = dag.addColumn(
+                original_node.column, original_node.result_type,
+                original_node.result_name + "_" + std::to_string(ci),
+                original_node.is_deterministic_constant);
+
+            auto & mutable_children = parent_func->children;
+            for (auto & child : mutable_children)
+            {
+                if (child == &original_node)
+                {
+                    child = &added_node;
+                    break;
+                }
+            }
+
+            size_t new_node_index = dag.getNodes().size() - 1;
+            candidate.binding.dag_node_index = static_cast<UInt32>(new_node_index);
+
+            LOG_DEBUG(logger, "Split shared COLUMN node: candidate[{}] now points to new node {} (value='{}'), parent FUNCTION node {} updated",
+                candidate_idx, new_node_index, candidate.binding.value_text, parent_func_idx);
+        }
+    }
 }
 
 namespace

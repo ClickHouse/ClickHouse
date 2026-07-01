@@ -68,6 +68,7 @@ public:
         UInt32 parameter_index = 0;
         String dag_scope;
         UInt32 dag_node_index = 0;
+        UInt32 parent_function_node_index = std::numeric_limits<UInt32>::max();
         String value_text;
         Int32 field_type = -1;
         /// Precise target type collected while the original plan is still fresh.
