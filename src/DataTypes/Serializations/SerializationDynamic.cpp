@@ -658,7 +658,9 @@ void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & os
         return;
     }
 
-    auto field_type = applyVisitor(FieldToDataType(), field);
+    /// Use LeastSupertypeOnError::Dynamic so that arrays with incompatible element types (e.g. ["text", {"k":1}])
+    /// are typed as Array(Dynamic) rather than throwing NO_COMMON_TYPE. Dynamic can hold any element value.
+    auto field_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Dynamic>(), field);
     encodeDataType(field_type, ostr);
     field_type->getDefaultSerialization()->serializeBinary(field, ostr, settings);
 }
