@@ -90,6 +90,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_max_output_tokens_per_query", 500000, 500000, "New setting"},
             {"ai_function_max_api_calls_per_query", 0, 0, "New setting"},
             {"ai_function_throw_on_quota_exceeded", true, true, "New setting"},
+            {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
             {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
             {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
             {"defer_partition_pruning_after_final", true, true, "Setting newly added in 26.4 (backport) to gate the FINAL partition-pruning behavior that shipped silently in 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). The meaningful semantic change is registered under the 26.3 block so `compatibility = '26.2'` reverts it; this entry exists so the new-settings check accepts the newly-introduced name on this branch."},
