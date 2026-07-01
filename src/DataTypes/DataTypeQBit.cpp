@@ -21,14 +21,19 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
+bool DataTypeQBit::isSupportedElementType(const DataTypePtr & type)
+{
+    const TypeIndex id = type->getTypeId();
+    return id == TypeIndex::Int8 || id == TypeIndex::BFloat16 || id == TypeIndex::Float32 || id == TypeIndex::Float64;
+}
+
 DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimension_, const size_t stride_)
     : element_type(element_type_)
     , dimension(dimension_)
     , stride(stride_)
 {
     /// Prevents maliciously crafted byte streams from being deserialized into illegal types, which could be exploited to crash the server
-    if (element_type_->getTypeId() != TypeIndex::Int8 && element_type_->getTypeId() != TypeIndex::BFloat16
-        && element_type_->getTypeId() != TypeIndex::Float32 && element_type_->getTypeId() != TypeIndex::Float64)
+    if (!isSupportedElementType(element_type_))
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "QBit data type only supports Int8, BFloat16, Float32, or Float64 as element type. Got: {}",

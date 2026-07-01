@@ -708,16 +708,22 @@ static DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             readVarUInt(dimension, buf);
             size_t stride = 0;
             readVarUInt(stride, buf);
-            auto qbit_type = std::make_shared<DataTypeQBit>(element_type, dimension, stride);
             /// A strided QBit expands a tiny header into `element_size * (dimension / stride)` hidden FixedString
-            /// streams. The constructor has already validated the stride and bounded the number of stride groups by
-            /// MAX_STRIDE_GROUPS, but that alone lets a valid header such as QBit(Float64, 8192, 8) materialize
-            /// 64 * 1024 streams while charging only two units to the complexity budget. Charge the hidden streams here
-            /// so that a small header cannot decode into an unreasonably wide type under the default budget.
-            complexity += qbit_type->getElementSize() * qbit_type->getNumStrides();
-            if (max_complexity > 0 && complexity > max_complexity)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Binary type decoding complexity limit exceeded: {} > {} (adjust input_format_binary_max_type_complexity)", complexity, max_complexity);
-            return qbit_type;
+            /// streams, which the DataTypeQBit constructor materializes eagerly (it builds the nested Tuple via
+            /// getDefaultSerialization). Charge those hidden streams to the complexity budget *before* constructing the
+            /// type, so a small header cannot force the wide nested type to be materialized under the default budget.
+            /// Only a well-formed strided header with a supported element type and at most MAX_STRIDE_GROUPS groups
+            /// reaches that materialization (this also keeps `element_size * num_strides` well within size_t); every
+            /// other header is rejected by the constructor before it allocates the wide type, so fall through to it for
+            /// the precise validation error in those cases.
+            if (DataTypeQBit::isSupportedElementType(element_type) && stride != 0 && dimension % stride == 0
+                && dimension / stride <= DataTypeQBit::MAX_STRIDE_GROUPS)
+            {
+                complexity += 8 * element_type->getSizeOfValueInMemory() * (dimension / stride);
+                if (max_complexity > 0 && complexity > max_complexity)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Binary type decoding complexity limit exceeded: {} > {} (adjust input_format_binary_max_type_complexity)", complexity, max_complexity);
+            }
+            return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
         }
         case BinaryTypeIndex::Set:
             return std::make_shared<DataTypeSet>();

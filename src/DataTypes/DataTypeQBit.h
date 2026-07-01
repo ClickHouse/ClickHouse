@@ -60,6 +60,11 @@ public:
 
     static ALWAYS_INLINE inline size_t bitsToBytes(size_t n) { return (n + 7) / 8; }
 
+    /// Whether `type` is a supported QBit element type (Int8, BFloat16, Float32, Float64). Only these have a fixed
+    /// in-memory size, so only for these is `getElementSize` well-defined. Shared by the constructor's validation and
+    /// the binary-encoding decode path so the whitelist can never drift between the two.
+    static bool isSupportedElementType(const DataTypePtr & type);
+
     /// Upper bound on the number of stride groups (`dimension / stride`). The nested storage materializes
     /// `element size * number of stride groups` FixedString streams, so this caps that to a sane value and
     /// prevents a huge dimension with a tiny stride from exhausting memory. Generous for real Matryoshka use.
