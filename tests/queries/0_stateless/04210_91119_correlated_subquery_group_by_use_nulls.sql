@@ -198,3 +198,53 @@ SELECT replaceRegexpAll(trim(explain), 'id: [0-9]+', 'id: N') AS line
 FROM (EXPLAIN QUERY TREE
     SELECT * APPLY x -> argMax(x, number) FROM numbers(1) GROUP BY number WITH ROLLUP)
 WHERE explain ILIKE '%column_name: number,%result_type%';
+
+-- Statistics aggregates over a correlated key (skewSamp/kurtPop/varSamp/covarSamp/...).
+-- These share one add() that reads the argument via an UNCHECKED static_cast
+-- (AggregateFunctionStatisticsSimple.h), unlike min/sum/argMax above which assert_cast and
+-- raise a clean "Bad cast" exception when handed the wrong column type. So the same
+-- non-Nullable-argument bug here is a silent heap-buffer-overflow (memory-safety) on release
+-- builds instead of an exception: on master these abort with
+-- "AddressSanitizer: heap-buffer-overflow ... in AggregateFunctionVarianceSimple::add".
+-- numbers(64) is used so the +1 out-of-bounds read lands on an ASan redzone rather than the
+-- PaddedPODArray SIMD padding. Each must run to completion and produce a correct result.
+SELECT '-- skewSamp over correlated key, CUBE ---';
+SELECT k, (SELECT skewSamp(a.k))
+FROM (SELECT number AS k FROM numbers(64)) AS a
+GROUP BY k WITH CUBE
+ORDER BY k NULLS LAST FORMAT Null;
+
+SELECT '-- varSamp over correlated key, ROLLUP ---';
+SELECT k, (SELECT varSamp(a.k))
+FROM (SELECT number AS k FROM numbers(64)) AS a
+GROUP BY k WITH ROLLUP
+ORDER BY k NULLS LAST FORMAT Null;
+
+SELECT '-- kurtPop over correlated key, GROUPING SETS ---';
+SELECT k, (SELECT kurtPop(a.k))
+FROM (SELECT number AS k FROM numbers(64)) AS a
+GROUP BY GROUPING SETS ((k), ())
+ORDER BY k NULLS LAST FORMAT Null;
+
+SELECT '-- covarSamp (two-argument statistics aggregate) over correlated key, CUBE ---';
+SELECT k, (SELECT covarSamp(a.k, a.k))
+FROM (SELECT number AS k FROM numbers(64)) AS a
+GROUP BY k WITH CUBE
+ORDER BY k NULLS LAST FORMAT Null;
+
+-- Small deterministic result check for the statistics path (single-element groups -> nan;
+-- the CUBE super-aggregate null-key row is \N).
+SELECT '-- skewSamp over correlated key, CUBE, values ---';
+SELECT k, (SELECT skewSamp(a.k))
+FROM (SELECT number AS k FROM numbers(8)) AS a
+GROUP BY k WITH CUBE
+ORDER BY k NULLS LAST;
+
+-- Type pin: the correlated statistics-aggregate argument column picks up the outer
+-- rollup key's Nullable type (so the aggregate resolves with the Null combinator instead
+-- of a bare function reading a ColumnNullable). On master the argument stays Int32.
+SELECT '-- type pin: correlated statistics-aggregate argument is Nullable ---';
+SELECT replaceRegexpAll(trim(explain), 'id: [0-9]+', 'id: N') AS line
+FROM (EXPLAIN QUERY TREE
+    SELECT (SELECT skewSamp(a.k)) FROM (SELECT toInt32(3) AS k) AS a GROUP BY k WITH CUBE)
+WHERE explain ILIKE '%column_name: k,%result_type%';
