@@ -470,5 +470,58 @@ void optimizeJoinByShards(QueryPlan::Node & root)
         apply(result->joins);
 }
 
+/// Shard a `parallel_full_sorting_merge` join into independent per-shard merge joins by the hash of the
+/// join keys.
+///
+/// Unlike `optimizeJoinByShards` above (which shards by primary-key ranges and only works when both sides
+/// read from MergeTree in order), this works on any sorted input: each side's pre-join `SortingStep` is
+/// switched to scatter the rows by the hash of the join keys into independent partitions and sort each
+/// partition (one sorted stream per shard), and the join is executed shard-by-shard
+/// (`JoinStep::enableJoinByLayers` -> `joinPipelinesYShapedByShards`). Because the partitioning depends only
+/// on the join-key values (and the key types match - `FullSortingMergeJoin` requires it), equal keys land
+/// in the same shard on both sides. The join output is unordered.
+void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root)
+{
+    std::stack<QueryPlan::Node *> stack;
+    stack.push(&root);
+
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
+
+        if (auto * join_step = typeid_cast<JoinStep *>(node->step.get());
+            join_step && node->children.size() == 2)
+        {
+            const auto & join = join_step->getJoin();
+            const auto & table_join = join->getTableJoin();
+
+            if (typeid_cast<const FullSortingMergeJoin *>(join.get())
+                && table_join.isEnabledAlgorithm(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+                && table_join.getClauses().size() == 1)
+            {
+                auto * left_sort = typeid_cast<SortingStep *>(node->children[0]->step.get());
+                auto * right_sort = typeid_cast<SortingStep *>(node->children[1]->step.get());
+
+                if (left_sort && right_sort
+                    && left_sort->isSortingForMergeJoin() && right_sort->isSortingForMergeJoin())
+                {
+                    left_sort->convertToScatteredFullSort();
+                    right_sort->convertToScatteredFullSort();
+
+                    JoinStep::PrimaryKeySharding sharding;
+                    const auto & clause = table_join.getClauses().front();
+                    for (size_t i = 0; i < clause.key_names_left.size(); ++i)
+                        sharding.emplace_back(clause.key_names_left[i], clause.key_names_right[i]);
+                    join_step->enableJoinByLayers(std::move(sharding));
+                }
+            }
+        }
+
+        for (auto * child : node->children)
+            stack.push(child);
+    }
+}
+
 }
 }

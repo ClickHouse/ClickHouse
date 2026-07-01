@@ -114,6 +114,11 @@ public:
 
     void convertToPartitionedFinishSorting() { type = Type::PartitionedFinishSorting; }
 
+    /// Switch to a full sort that scatters the input by the hash of the sort key into independent
+    /// partitions and sorts each partition separately, producing one sorted stream per partition (no
+    /// final merge). Used by `parallel_full_sorting_merge` to feed a hash-sharded merge join.
+    void convertToScatteredFullSort() { partition_by_description = result_description; type = Type::Full; }
+
     static void fullSortStreams(
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
