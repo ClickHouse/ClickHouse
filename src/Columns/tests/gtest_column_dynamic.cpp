@@ -434,7 +434,7 @@ static std::set<String> getTypeNamesInSharedVariant(const ColumnDynamic & column
     {
         auto value = shared_variant.getDataAt(i);
         ReadBufferFromMemory buf(value);
-        names.insert(decodeDataType(buf)->getName());
+        names.insert(decodeDataType(buf, 0)->getName());
     }
     return names;
 }
