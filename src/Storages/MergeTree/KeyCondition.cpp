@@ -4857,8 +4857,11 @@ bool KeyCondition::matchesExactContinuousRange() const
                 Constraint & constraint = column_constraints.at(mapping.key_index);
                 /// For Constraint::POINT, we need to check if the function chain is strict.
                 /// For example, `toDate(event_time) in ('2025-06-03')` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE
-                if (is_chain_strict)
+                /// So, POINT needs to be converted to a RANGE.
+                /// Only an empty chain yields an exact point. A non-empty chain (e.g. a widening CAST for
+                /// a wider-typed constant) is applied to granule bounds with forced-closed bounds, so it
+                /// cannot promise exact continuity across a boundary granule; treat it as a RANGE (#90461).
+                if (is_chain_strict && mapping.functions.empty())
                     constraint = Constraint::POINT;
                 else
                 {
@@ -4882,8 +4885,11 @@ bool KeyCondition::matchesExactContinuousRange() const
             {
                 /// For Constraint::POINT, we need to check if the function chain is strict.
                 /// For example, `toDate(event_time) = '2025-06-03'` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE
-                if (is_chain_strict)
+                /// So, POINT needs to be converted to a RANGE.
+                /// Only an empty chain yields an exact point. A non-empty chain (e.g. a widening CAST for
+                /// a wider-typed constant) is applied to granule bounds with forced-closed bounds, so it
+                /// cannot promise exact continuity across a boundary granule; treat it as a RANGE (#90461).
+                if (is_chain_strict && element.monotonic_functions_chain.empty())
                     constraint = Constraint::POINT;
             }
 
