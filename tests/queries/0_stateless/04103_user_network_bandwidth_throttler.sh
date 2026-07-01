@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, long, no-random-settings
 # no-fasttest: needs S3, and the test is slow (exercises throttling)
-# no-random-settings: S3 prefetch settings affect read throughput; disabling prefetch can make
-# the natural read rate drop close to the throttle limit, causing the throttler to never sleep
+# no-random-settings: various randomized settings (read-buffer sizes, prefetch, thread counts,
+# etc.) perturb the S3 read throughput; pinning them keeps the read rate stable relative to the
+# throttle limit so the throttler reliably sleeps and the assertion is deterministic. The primary
+# robustness comes from the conservative throttle limit below (well under the natural read rate).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
