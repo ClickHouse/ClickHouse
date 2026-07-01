@@ -41,6 +41,8 @@ public:
         return signature;
     }
 
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+
 protected:
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
