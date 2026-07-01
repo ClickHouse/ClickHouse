@@ -1,5 +1,7 @@
 """Tests for Prometheus HTTP API endpoints: /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values"""
 
+import time
+
 import pytest
 import requests
 
@@ -247,3 +249,41 @@ def test_start_after_end_is_rejected(path):
     assert (
         "start_time must not be greater than end_time" in data["error"]
     ), f"Unexpected error message: {data}"
+
+
+def test_metadata_endpoint_records_query_finish():
+    """A successful metadata request must record a QueryFinish entry in system.query_log.
+
+    The metadata endpoints execute their generated SQL through executeQuery and must complete the
+    resulting BlockIO with finishExecutedQuery, exactly like the PromQL query path. BlockIO's
+    destructor only resets the pipeline and never runs the finish/exception callbacks, so before
+    this was fixed a successful /api/v1/series, /api/v1/labels or /api/v1/label/<name>/values request
+    never emitted QueryFinish (and kept the query slot occupied until the whole HTTP response had
+    been written).
+    """
+    get_json_from_api("/api/v1/labels")
+
+    # The /api/v1/labels endpoint runs a generated `SELECT DISTINCT arrayJoin(mapKeys(tags)) AS label_key ...`
+    # query. finishExecutedQuery records the QueryFinish entry only after the HTTP body has been flushed and
+    # the entry then reaches system.query_log asynchronously, so flush the logs and retry to avoid a race.
+    finished = 0
+    for _ in range(30):
+        node.query("SYSTEM FLUSH LOGS")
+        finished = int(
+            node.query(
+                """
+                SELECT count()
+                FROM system.query_log
+                WHERE type = 'QueryFinish'
+                  AND query LIKE '%AS label_key%'
+                  AND query LIKE '%mapKeys%'
+                """
+            ).strip()
+        )
+        if finished >= 1:
+            break
+        time.sleep(0.5)
+
+    assert (
+        finished >= 1
+    ), f"Expected a QueryFinish entry in system.query_log for the /api/v1/labels query, got {finished}"

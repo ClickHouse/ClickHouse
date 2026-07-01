@@ -425,7 +425,8 @@ void PrometheusHTTPProtocolAPI::getSeries(
     WriteBuffer & response,
     const String & match_param,
     const String & start_param,
-    const String & end_param)
+    const String & end_param,
+    QueryFinishCallback query_finish_callback)
 {
     auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
     auto tags_table_id = tags_table->getStorageID();
@@ -461,73 +462,87 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
     auto [ast, io] = executeQuery(query, getContext(), {}, QueryProcessingStage::Complete);
 
-    PullingPipelineExecutor executor(io.pipeline);
-    Block result_block;
-
-    writeString(R"({"status":"success","data":[)", response);
-
-    bool first_row = true;
-    while (executor.pull(result_block))
+    try
     {
-        if (result_block.empty() || result_block.rows() == 0)
-            continue;
+        PullingPipelineExecutor executor(io.pipeline);
+        Block result_block;
 
-        const auto & metric_name_col = result_block.getByName(TimeSeriesColumnNames::MetricName).column;
-        const auto & tags_col = result_block.getByName(TimeSeriesColumnNames::Tags).column;
+        writeString(R"({"status":"success","data":[)", response);
 
-        std::vector<const IColumn *> tag_value_cols;
-        tag_value_cols.reserve(tag_columns.size());
-        for (size_t c = 0; c < tag_columns.size(); ++c)
-            tag_value_cols.push_back(result_block.getByName(fmt::format("__tsc_{}", c)).column.get());
-
-        for (size_t i = 0; i < result_block.rows(); ++i)
+        bool first_row = true;
+        while (executor.pull(result_block))
         {
-            if (!first_row)
-                writeString(",", response);
-            first_row = false;
+            if (result_block.empty() || result_block.rows() == 0)
+                continue;
 
-            writeString(R"({"__name__":)", response);
-            writeJSONString(metric_name_col->getDataAt(i), response, format_settings);
+            const auto & metric_name_col = result_block.getByName(TimeSeriesColumnNames::MetricName).column;
+            const auto & tags_col = result_block.getByName(TimeSeriesColumnNames::Tags).column;
 
-            /// The `tags` column is a `Map(String, String)`, which materializes as `ColumnMap`.
-            /// `ColumnMap` wraps a `ColumnArray(ColumnTuple(keys, values))`, so read the nested array
-            /// to enumerate the key-value pairs of each row.
-            const auto & map_column = typeid_cast<const ColumnMap &>(*tags_col);
-            const auto & array_column = map_column.getNestedColumn();
-            const auto & offsets = array_column.getOffsets();
-            size_t start = (i == 0) ? 0 : offsets[i - 1];
-            size_t end = offsets[i];
-
-            const auto & tuple_column = map_column.getNestedData();
-            const auto & key_column = tuple_column.getColumn(0);
-            const auto & value_column = tuple_column.getColumn(1);
-
-            for (size_t j = start; j < end; ++j)
-            {
-                writeString(",", response);
-                writeJSONString(key_column.getDataAt(j), response, format_settings);
-                writeString(":", response);
-                writeJSONString(value_column.getDataAt(j), response, format_settings);
-            }
-
-            /// Emit tags that were moved out of the `tags` Map into dedicated columns. An empty value
-            /// means the tag is not set for this series (Prometheus treats it as absent), so skip it.
+            std::vector<const IColumn *> tag_value_cols;
+            tag_value_cols.reserve(tag_columns.size());
             for (size_t c = 0; c < tag_columns.size(); ++c)
-            {
-                auto value = tag_value_cols[c]->getDataAt(i);
-                if (value.empty())
-                    continue;
-                writeString(",", response);
-                writeJSONString(std::string_view{tag_columns[c].first}, response, format_settings);
-                writeString(":", response);
-                writeJSONString(value, response, format_settings);
-            }
+                tag_value_cols.push_back(result_block.getByName(fmt::format("__tsc_{}", c)).column.get());
 
-            writeString("}", response);
+            for (size_t i = 0; i < result_block.rows(); ++i)
+            {
+                if (!first_row)
+                    writeString(",", response);
+                first_row = false;
+
+                writeString(R"({"__name__":)", response);
+                writeJSONString(metric_name_col->getDataAt(i), response, format_settings);
+
+                /// The `tags` column is a `Map(String, String)`, which materializes as `ColumnMap`.
+                /// `ColumnMap` wraps a `ColumnArray(ColumnTuple(keys, values))`, so read the nested array
+                /// to enumerate the key-value pairs of each row.
+                const auto & map_column = typeid_cast<const ColumnMap &>(*tags_col);
+                const auto & array_column = map_column.getNestedColumn();
+                const auto & offsets = array_column.getOffsets();
+                size_t start = (i == 0) ? 0 : offsets[i - 1];
+                size_t end = offsets[i];
+
+                const auto & tuple_column = map_column.getNestedData();
+                const auto & key_column = tuple_column.getColumn(0);
+                const auto & value_column = tuple_column.getColumn(1);
+
+                for (size_t j = start; j < end; ++j)
+                {
+                    writeString(",", response);
+                    writeJSONString(key_column.getDataAt(j), response, format_settings);
+                    writeString(":", response);
+                    writeJSONString(value_column.getDataAt(j), response, format_settings);
+                }
+
+                /// Emit tags that were moved out of the `tags` Map into dedicated columns. An empty value
+                /// means the tag is not set for this series (Prometheus treats it as absent), so skip it.
+                for (size_t c = 0; c < tag_columns.size(); ++c)
+                {
+                    auto value = tag_value_cols[c]->getDataAt(i);
+                    if (value.empty())
+                        continue;
+                    writeString(",", response);
+                    writeJSONString(std::string_view{tag_columns[c].first}, response, format_settings);
+                    writeString(":", response);
+                    writeJSONString(value, response, format_settings);
+                }
+
+                writeString("}", response);
+            }
         }
+
+        writeString("]}", response);
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
     }
 
-    writeString("]}", response);
+    /// Release the query slot early and record QueryFinish in system.query_log, mirroring executePromQLQuery.
+    /// BlockIO::~BlockIO only resets the pipeline and never runs the finish/exception callbacks, so without
+    /// this a successful metadata request would never emit a QueryFinish entry and would keep the query slot
+    /// occupied until the whole HTTP response is written instead of releasing it when the pipeline is exhausted.
+    finishExecutedQuery(io, query_finish_callback);
 }
 
 /// Implements /api/v1/labels: returns all distinct label names across all time series.
@@ -536,7 +551,8 @@ void PrometheusHTTPProtocolAPI::getLabels(
     WriteBuffer & response,
     const String & match_param,
     const String & start_param,
-    const String & end_param)
+    const String & end_param,
+    QueryFinishCallback query_finish_callback)
 {
     auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
     auto tags_table_id = tags_table->getStorageID();
@@ -583,30 +599,44 @@ void PrometheusHTTPProtocolAPI::getLabels(
 
     auto [ast, io] = executeQuery(query, getContext(), {}, QueryProcessingStage::Complete);
 
-    PullingPipelineExecutor executor(io.pipeline);
-    Block result_block;
-
-    writeString(R"({"status":"success","data":["__name__")", response);
-
-    while (executor.pull(result_block))
+    try
     {
-        if (result_block.empty() || result_block.rows() == 0)
-            continue;
+        PullingPipelineExecutor executor(io.pipeline);
+        Block result_block;
 
-        const auto & label_col = result_block.getByName("label_key").column;
+        writeString(R"({"status":"success","data":["__name__")", response);
 
-        for (size_t i = 0; i < result_block.rows(); ++i)
+        while (executor.pull(result_block))
         {
-            auto label = label_col->getDataAt(i);
-            /// Skip __name__ since we already included it
-            if (label == "__name__")
+            if (result_block.empty() || result_block.rows() == 0)
                 continue;
-            writeString(",", response);
-            writeJSONString(label, response, format_settings);
+
+            const auto & label_col = result_block.getByName("label_key").column;
+
+            for (size_t i = 0; i < result_block.rows(); ++i)
+            {
+                auto label = label_col->getDataAt(i);
+                /// Skip __name__ since we already included it
+                if (label == "__name__")
+                    continue;
+                writeString(",", response);
+                writeJSONString(label, response, format_settings);
+            }
         }
+
+        writeString("]}", response);
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
     }
 
-    writeString("]}", response);
+    /// Release the query slot early and record QueryFinish in system.query_log, mirroring executePromQLQuery.
+    /// BlockIO::~BlockIO only resets the pipeline and never runs the finish/exception callbacks, so without
+    /// this a successful metadata request would never emit a QueryFinish entry and would keep the query slot
+    /// occupied until the whole HTTP response is written instead of releasing it when the pipeline is exhausted.
+    finishExecutedQuery(io, query_finish_callback);
 }
 
 /// Implements /api/v1/label/<name>/values: returns all distinct values for a given label name.
@@ -617,7 +647,8 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
     const String & label_name,
     const String & match_param,
     const String & start_param,
-    const String & end_param)
+    const String & end_param,
+    QueryFinishCallback query_finish_callback)
 {
     auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
     auto tags_table_id = tags_table->getStorageID();
@@ -685,32 +716,46 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
 
     auto [ast, io] = executeQuery(query, getContext(), {}, QueryProcessingStage::Complete);
 
-    PullingPipelineExecutor executor(io.pipeline);
-    Block result_block;
-
-    writeString(R"({"status":"success","data":[)", response);
-
-    bool first = true;
-    while (executor.pull(result_block))
+    try
     {
-        if (result_block.empty() || result_block.rows() == 0)
-            continue;
+        PullingPipelineExecutor executor(io.pipeline);
+        Block result_block;
 
-        const auto & value_col = result_block.getByName("label_value").column;
+        writeString(R"({"status":"success","data":[)", response);
 
-        for (size_t i = 0; i < result_block.rows(); ++i)
+        bool first = true;
+        while (executor.pull(result_block))
         {
-            auto value = value_col->getDataAt(i);
-            if (value.empty())
+            if (result_block.empty() || result_block.rows() == 0)
                 continue;
-            if (!first)
-                writeString(",", response);
-            first = false;
-            writeJSONString(value, response, format_settings);
+
+            const auto & value_col = result_block.getByName("label_value").column;
+
+            for (size_t i = 0; i < result_block.rows(); ++i)
+            {
+                auto value = value_col->getDataAt(i);
+                if (value.empty())
+                    continue;
+                if (!first)
+                    writeString(",", response);
+                first = false;
+                writeJSONString(value, response, format_settings);
+            }
         }
+
+        writeString("]}", response);
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
     }
 
-    writeString("]}", response);
+    /// Release the query slot early and record QueryFinish in system.query_log, mirroring executePromQLQuery.
+    /// BlockIO::~BlockIO only resets the pipeline and never runs the finish/exception callbacks, so without
+    /// this a successful metadata request would never emit a QueryFinish entry and would keep the query slot
+    /// occupied until the whole HTTP response is written instead of releasing it when the pipeline is exhausted.
+    finishExecutedQuery(io, query_finish_callback);
 }
 
 

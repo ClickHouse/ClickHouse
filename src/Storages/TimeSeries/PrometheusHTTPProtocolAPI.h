@@ -52,14 +52,16 @@ public:
         WriteBuffer & response,
         const String & match_param,
         const String & start_param,
-        const String & end_param);
+        const String & end_param,
+        QueryFinishCallback query_finish_callback = {});
 
     /// Get all label names (/api/v1/labels)
     void getLabels(
         WriteBuffer & response,
         const String & match_param,
         const String & start_param,
-        const String & end_param);
+        const String & end_param,
+        QueryFinishCallback query_finish_callback = {});
 
     /// Get values for a specific label (/api/v1/label/<name>/values)
     void getLabelValues(
@@ -67,7 +69,8 @@ public:
         const String & label_name,
         const String & match_param,
         const String & start_param,
-        const String & end_param);
+        const String & end_param,
+        QueryFinishCallback query_finish_callback = {});
 
 private:
     /// Writes the result of a prometheus query as a JSON.

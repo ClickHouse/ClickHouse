@@ -507,7 +507,7 @@ public:
 
                 /// TODO: Support limit=<number> optional parameter
 
-                protocol.getSeries(getOutputStream(response), match, start, end);
+                protocol.getSeries(getOutputStream(response), match, start, end, query_finish_callback);
             }
             else if (uri_path.ends_with("/labels"))
             {
@@ -515,7 +515,7 @@ public:
                 String start = params->get("start", "");
                 String end = params->get("end", "");
 
-                protocol.getLabels(getOutputStream(response), match, start, end);
+                protocol.getLabels(getOutputStream(response), match, start, end, query_finish_callback);
             }
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
@@ -523,7 +523,7 @@ public:
                 String start = params->get("start", "");
                 String end = params->get("end", "");
 
-                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end);
+                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end, query_finish_callback);
             }
             else
             {
