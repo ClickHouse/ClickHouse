@@ -107,7 +107,6 @@ def create_and_populate(node, table, posting_list_codec):
 # pre-WithCodec granules silently fall back to eager mode, while the new-format
 # part inserted after the upgrade actually uses the cursor-based reader.
 LAZY_APPLY_SETTINGS = {
-    "allow_experimental_text_index_lazy_apply": 1,
     "text_index_posting_list_apply_mode": "lazy",
 }
 
