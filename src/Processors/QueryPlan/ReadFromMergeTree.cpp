@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <base/sort.h>
+#include <Columns/ColumnConst.h>
 
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
@@ -2002,6 +2003,34 @@ bool areAllSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const
 
 }
 
+void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+{
+    /// Prunable only if in the primary key or has a minmax/set skip index.
+    const auto & metadata = *storage_snapshot->metadata;
+    const auto & primary_key_columns = metadata.getPrimaryKey().column_names;
+    const bool is_primary_key_column
+        = std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
+
+    bool has_applicable_skip_index = false;
+    for (const auto & index : metadata.getSecondaryIndices())
+    {
+        if (index.type != "minmax" && index.type != "set")
+            continue;
+        if (std::find(index.column_names.begin(), index.column_names.end(), column_name) != index.column_names.end())
+        {
+            has_applicable_skip_index = true;
+            break;
+        }
+    }
+
+    if (!is_primary_key_column && !has_applicable_skip_index)
+        return;
+
+    join_runtime_filters_for_index_analysis.push_back({filter_id, column_name, column_type});
+    LOG_DEBUG(log, "Registered join runtime filter {} on column {} (primary_key={}, skip_index={})",
+        filter_id, column_name, is_primary_key_column, has_applicable_skip_index);
+}
+
 void ReadFromMergeTree::buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
     const ActionsDAG * filter_actions_dag_,
@@ -3797,6 +3826,46 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     MergeTreeIndexBuildContextPtr index_build_context;
     MergeTreeSkipIndexReaderPtr skip_index_reader;
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
+
+    /// Now check if we have to use primary-key or skip indexes for join pruning
+    bool runtime_prune_primary_key = false;
+    MergeTreeIndices runtime_skip_indexes;
+    if (!join_runtime_filters_for_index_analysis.empty())
+    {
+        const auto & metadata = *storage_snapshot->metadata;
+        const auto & pk_columns = metadata.getPrimaryKey().column_names;
+        std::unordered_set<String> seen_index_names;
+        for (const auto & descr : join_runtime_filters_for_index_analysis)
+        {
+            if (std::find(pk_columns.begin(), pk_columns.end(), descr.key_column_name) != pk_columns.end())
+            {
+                runtime_prune_primary_key = true;
+                continue;
+            }
+            for (const auto & index : metadata.getSecondaryIndices())
+            {
+                if (index.type != "minmax" && index.type != "set")
+                    continue;
+                if (std::find(index.column_names.begin(), index.column_names.end(), descr.key_column_name) == index.column_names.end())
+                    continue;
+                if (seen_index_names.insert(index.name).second)
+                    runtime_skip_indexes.push_back(MergeTreeIndexFactory::instance().get(storage_snapshot->metadata, index, *data_settings));
+            }
+        }
+    }
+
+    /// Use a callback to isolate MergeTreeReader from JoinRuntimeFilter
+    MergeTreeSkipIndexReader::DynamicPredicateBuilder dynamic_predicate_builder;
+    if (!join_runtime_filters_for_index_analysis.empty())
+    {
+        dynamic_predicate_builder =
+            [lookup = context->getRuntimeFilterLookup(), descriptors = join_runtime_filters_for_index_analysis, ctx = context]
+            (ActionsDAG & dag) -> const ActionsDAG::Node *
+            {
+                return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
+            };
+    }
+
     if (supportsSkipIndexesOnDataRead())
     {
         UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;
@@ -3819,8 +3888,30 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 context->getIndexUncompressedCache(),
                 context->getVectorSimilarityIndexCache(),
                 reader_settings,
+                dynamic_predicate_builder,
+                runtime_prune_primary_key,
+                runtime_skip_indexes,
+                context,
                 getLogger("MergeTreeSkipIndexReader"));
         }
+    }
+
+    /// Need a reader if we only have join runtime filter
+    if (!skip_index_reader && !join_runtime_filters_for_index_analysis.empty())
+    {
+        skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
+            UsefulSkipIndexes{},
+            indexes->key_condition_rpn_template,
+            /*use_for_disjunctions=*/false,
+            context->getIndexMarkCache(),
+            context->getIndexUncompressedCache(),
+            context->getVectorSimilarityIndexCache(),
+            reader_settings,
+            dynamic_predicate_builder,
+            runtime_prune_primary_key,
+            runtime_skip_indexes,
+            context,
+            getLogger("MergeTreeSkipIndexReader"));
     }
 
     if (!projection_index_read_desc.read_ranges.empty())
