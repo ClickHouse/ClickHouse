@@ -12,18 +12,26 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
+
+#include <Common/DateLUT.h>
+#include <IO/WriteHelpers.h>
 
 #include <Common/FieldVisitorToString.h>
 
@@ -1237,10 +1245,10 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 namespace
 {
 
-Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object)
+Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object, bool is_inside_variant_or_dynamic)
 {
     if (isColumnConst(*column))
-        return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, is_inside_object);
+        return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, is_inside_object, is_inside_variant_or_dynamic);
 
     switch (data_type->getTypeId())
     {
@@ -1250,15 +1258,32 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             const auto & nullable_column = assert_cast<const ColumnNullable &>(*column);
             if (nullable_column.isNullAt(row))
                 return Null();
-            return getFieldFromColumnForASTLiteralImpl(nullable_column.getNestedColumnPtr(), row, nullable_data_type.getNestedType(), is_inside_object);
+            return getFieldFromColumnForASTLiteralImpl(nullable_column.getNestedColumnPtr(), row, nullable_data_type.getNestedType(), is_inside_object, is_inside_variant_or_dynamic);
         }
         case TypeIndex::Date: [[fallthrough]];
-        case TypeIndex::Date32: [[fallthrough]];
-        case TypeIndex::DateTime: [[fallthrough]];
-        case TypeIndex::DateTime64:
+        case TypeIndex::Date32:
         {
             WriteBufferFromOwnString buf;
             data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
+            return Field(buf.str());
+        }
+        case TypeIndex::DateTime: [[fallthrough]];
+        case TypeIndex::DateTime64:
+        {
+            /// write UTC wall-clock text - with the UTC-typed cast added by ConstantNode::toASTImpl it keeps
+            /// the exact instant under any parser mode, unlike the DST-ambiguous local text
+            /// Variant/Dynamic/JSON reparse plain strings without that cast, so they keep the local text
+            WriteBufferFromOwnString buf;
+            if (is_inside_variant_or_dynamic || is_inside_object)
+                data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
+            else if (data_type->getTypeId() == TypeIndex::DateTime)
+                writeDateTimeText(assert_cast<const ColumnVector<UInt32> &>(*column).getData()[row], buf, DateLUT::instance("UTC"));
+            else
+                writeDateTimeText(
+                    assert_cast<const ColumnDecimal<DateTime64> &>(*column).getData()[row],
+                    assert_cast<const DataTypeDateTime64 &>(*data_type).getScale(),
+                    buf,
+                    DateLUT::instance("UTC"));
             return Field(buf.str());
         }
         case TypeIndex::UInt8:
@@ -1280,7 +1305,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             Array array;
             array.reserve(end - start);
             for (size_t i = start; i != end; ++i)
-                array.push_back(getFieldFromColumnForASTLiteralImpl(nested_column, i, nested_data_type, is_inside_object));
+                array.push_back(getFieldFromColumnForASTLiteralImpl(nested_column, i, nested_data_type, is_inside_object, is_inside_variant_or_dynamic));
             return array;
         }
         case TypeIndex::Map:
@@ -1298,8 +1323,8 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 Object object;
                 for (size_t i = start; i != end; ++i)
                 {
-                    auto key_field = convertFieldToString(getFieldFromColumnForASTLiteralImpl(key_column, i, map_type.getKeyType(), is_inside_object));
-                    auto value_field = getFieldFromColumnForASTLiteralImpl(value_column, i, map_type.getValueType(), is_inside_object);
+                    auto key_field = convertFieldToString(getFieldFromColumnForASTLiteralImpl(key_column, i, map_type.getKeyType(), is_inside_object, is_inside_variant_or_dynamic));
+                    auto value_field = getFieldFromColumnForASTLiteralImpl(value_column, i, map_type.getValueType(), is_inside_object, is_inside_variant_or_dynamic);
                     object[key_field] = value_field;
                 }
 
@@ -1308,7 +1333,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 
             const auto & nested_type = assert_cast<const DataTypeMap &>(*data_type).getNestedType();
             const auto & nested_column = assert_cast<const ColumnMap &>(*column).getNestedColumnPtr();
-            return getFieldFromColumnForASTLiteralImpl(nested_column, row, nested_type, is_inside_object);
+            return getFieldFromColumnForASTLiteralImpl(nested_column, row, nested_type, is_inside_object, is_inside_variant_or_dynamic);
         }
         case TypeIndex::Tuple:
         {
@@ -1317,7 +1342,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             Tuple tuple;
             tuple.reserve(element_columns.size());
             for (size_t i = 0; i != element_types.size(); ++i)
-                tuple.push_back(getFieldFromColumnForASTLiteralImpl(element_columns[i], row, element_types[i], is_inside_object));
+                tuple.push_back(getFieldFromColumnForASTLiteralImpl(element_columns[i], row, element_types[i], is_inside_object, is_inside_variant_or_dynamic));
             return tuple;
         }
         case TypeIndex::Variant:
@@ -1329,7 +1354,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 return Null();
             const auto & variant = variant_column.getVariantPtrByGlobalDiscriminator(global_discr);
             size_t variant_offset = variant_column.offsetAt(row);
-            return getFieldFromColumnForASTLiteralImpl(variant, variant_offset, variant_types[global_discr], is_inside_object);
+            return getFieldFromColumnForASTLiteralImpl(variant, variant_offset, variant_types[global_discr], is_inside_object, /*is_inside_variant_or_dynamic=*/ true);
         }
         case TypeIndex::Dynamic:
         {
@@ -1337,7 +1362,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             const auto & variant_column = dynamic_column.getVariantColumn();
             auto global_discr = variant_column.globalDiscriminatorAt(row);
             if (global_discr != dynamic_column.getSharedVariantDiscriminator())
-                return getFieldFromColumnForASTLiteralImpl(dynamic_column.getVariantColumnPtr(), row, dynamic_column.getVariantInfo().variant_type, is_inside_object);
+                return getFieldFromColumnForASTLiteralImpl(dynamic_column.getVariantColumnPtr(), row, dynamic_column.getVariantInfo().variant_type, is_inside_object, /*is_inside_variant_or_dynamic=*/ true);
 
             const auto & shared_variant = dynamic_column.getSharedVariant();
             auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
@@ -1346,7 +1371,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             auto tmp_column = type->createColumn();
             tmp_column->reserve(1);
             type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, {});
-            return getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, type, is_inside_object);
+            return getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, type, is_inside_object, /*is_inside_variant_or_dynamic=*/ true);
         }
         case TypeIndex::Object:
         {
@@ -1354,10 +1379,10 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             const auto & typed_paths_types = assert_cast<const DataTypeObject &>(*data_type).getTypedPaths();
             Object object;
             for (const auto & [path, path_column] : object_column.getTypedPaths())
-                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, typed_paths_types.at(path), true);
+                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, typed_paths_types.at(path), true, is_inside_variant_or_dynamic);
 
             for (const auto & [path, path_column] : object_column.getDynamicPaths())
-                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, std::make_shared<DataTypeDynamic>(), true);
+                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, std::make_shared<DataTypeDynamic>(), true, is_inside_variant_or_dynamic);
 
             const auto & shared_data_offsets = object_column.getSharedDataOffsets();
             const auto [shared_paths, shared_values] = object_column.getSharedDataPathsAndValues();
@@ -1375,7 +1400,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 auto tmp_column = dynamic_type->createColumn();
                 tmp_column->reserve(1);
                 dynamic_serialization->deserializeBinary(*tmp_column, buf, format_settings);
-                object[path] = getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, dynamic_type, true);
+                object[path] = getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, dynamic_type, true, is_inside_variant_or_dynamic);
             }
 
             return is_inside_object ? Field(object) : Field(convertObjectToString(object));
@@ -1389,7 +1414,74 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type)
 {
-    return getFieldFromColumnForASTLiteralImpl(column, row, data_type, false);
+    return getFieldFromColumnForASTLiteralImpl(column, row, data_type, /*is_inside_object=*/ false, /*is_inside_variant_or_dynamic=*/ false);
+}
+
+DataTypePtr changeDateTimeTimeZoneToUTC(const DataTypePtr & type)
+{
+    switch (type->getTypeId())
+    {
+        case TypeIndex::DateTime:
+        {
+            const auto & datetime_type = assert_cast<const DataTypeDateTime &>(*type);
+            if (datetime_type.hasExplicitTimeZone() && datetime_type.getTimeZone().getTimeZone() == "UTC")
+                return type;
+            return std::make_shared<DataTypeDateTime>("UTC");
+        }
+        case TypeIndex::DateTime64:
+        {
+            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*type);
+            if (datetime64_type.hasExplicitTimeZone() && datetime64_type.getTimeZone().getTimeZone() == "UTC")
+                return type;
+            return std::make_shared<DataTypeDateTime64>(datetime64_type.getScale(), "UTC");
+        }
+        case TypeIndex::Nullable:
+        {
+            const auto & nested = assert_cast<const DataTypeNullable &>(*type).getNestedType();
+            auto rewritten = changeDateTimeTimeZoneToUTC(nested);
+            if (rewritten.get() == nested.get())
+                return type;
+            return std::make_shared<DataTypeNullable>(rewritten);
+        }
+        case TypeIndex::Array:
+        {
+            const auto & nested = assert_cast<const DataTypeArray &>(*type).getNestedType();
+            auto rewritten = changeDateTimeTimeZoneToUTC(nested);
+            if (rewritten.get() == nested.get())
+                return type;
+            return std::make_shared<DataTypeArray>(rewritten);
+        }
+        case TypeIndex::Map:
+        {
+            const auto & map_type = assert_cast<const DataTypeMap &>(*type);
+            auto rewritten_key = changeDateTimeTimeZoneToUTC(map_type.getKeyType());
+            auto rewritten_value = changeDateTimeTimeZoneToUTC(map_type.getValueType());
+            if (rewritten_key.get() == map_type.getKeyType().get() && rewritten_value.get() == map_type.getValueType().get())
+                return type;
+            return std::make_shared<DataTypeMap>(rewritten_key, rewritten_value);
+        }
+        case TypeIndex::Tuple:
+        {
+            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
+            const auto & elements = tuple_type.getElements();
+            DataTypes rewritten_elements;
+            rewritten_elements.reserve(elements.size());
+            bool changed = false;
+            for (const auto & element : elements)
+            {
+                rewritten_elements.push_back(changeDateTimeTimeZoneToUTC(element));
+                changed |= rewritten_elements.back().get() != element.get();
+            }
+            if (!changed)
+                return type;
+            if (tuple_type.hasExplicitNames())
+                return std::make_shared<DataTypeTuple>(rewritten_elements, tuple_type.getElementNames());
+            return std::make_shared<DataTypeTuple>(rewritten_elements);
+        }
+        /// Variant/Dynamic/JSON values keep local text (see above), so their types must stay unchanged
+        default:
+            return type;
+    }
 }
 
 }
