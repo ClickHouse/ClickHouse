@@ -1,143 +1,64 @@
-http_requests_total 1
-
+http_requests_total 1 0
 # EOF
-# HELP http_requests_total Total number of HTTP requests
-# TYPE http_requests_total counter
-http_requests_total{method="GET",status="200"} 2 0.1
-
+# HELP http_requests Total number of HTTP requests
+# TYPE http_requests counter
+http_requests_total{method="GET",code="200"} 1027 1704067200
 # EOF
-a 1 1520879607.789
-
+# TYPE temperature gauge
+temperature 21.5 0
+temperature 21.7 60
 # EOF
-b 2 1520879607
-
+# TYPE requests counter
+requests_total{code="200"} 5 0
+requests_total{code="500"} 1 0
 # EOF
-c 3 -0.5
-
+# TYPE x unknown
+x 1 0
 # EOF
-d 4 0
-
+# TYPE gauge_metric gauge
+gauge_metric{region="us",zone="a"} 42 0
 # EOF
-e 5 -9223372036854775.808
-
+ts 1 1520879607.789
+ts 2 1520879607
+ts 3 0
+ts 4 -0.5
+# EOF
+special NaN 0
+special +Inf 0
+special -Inf 0
 # EOF
 # EOF
-demo_jobs_processed_total	42	Number of completed batch jobs	counter	{}	999000	seconds
-ingress_http_requests_total	7			{}	\N	
-demo_log_lines_total	1			{'k':'a\nb'}	\N	
-demo_error_messages_total	1			{'k':'a"b'}	\N	
-demo_http_requests_total	1
-foo_bucket	17
-m	1	2000
-m	1	1520879607789
-m	1	-500
-http_requests_total_sum	1			{}	\N	
-http_request_duration_seconds	5	help	histogram	{'sum':''}	\N	
-rpc_duration_seconds	3	help	histogram	{'le':'0.5'}	\N	
-m	1	9223372036854775000
-m	1	9223372036854775807
-m	1	-9223372036854775808
-m	1	9223372036854775807
-m	1	-9223372036854775808
-m	1	1789
-demo_jobs_processed_total
-42
-1500
-{'job':'b'}
-x_bucket	3	{'le':'0.5'}	
-x	5	{'sum':''}	summary
-x	7	{'count':''}	summary
-x	3	{'le':'0.5'}	histogram
-x	5	{'sum':''}
-x	7	{'count':''}
-# TYPE h histogram
-h_bucket{le="0.5"} 3
+Row 1:
+──────
+metric_name:   http_requests_total
+metric_family: http_requests
+help:          Total number of HTTP requests
+type:          counter
+tags:          [('code','200'),('method','POST')]
+time_series:   [('2024-01-01 00:00:00.000',1027)]
+Row 1:
+──────
+metric_name: q
+tags:        [('a','1')]
+time_series: [('1970-01-01 00:00:01.000',10),('1970-01-01 00:00:02.000',11)]
 
-# EOF
-# TYPE s summary
-s{le="0.5",quantile="0.9"} 3
-
-# EOF
-# TYPE bytes_total counter
-# UNIT bytes_total bytes
-bytes_total 1
-
-# EOF
-# TYPE h histogram
-h_sum 9
-
-# EOF
-# TYPE s summary
-s_count 11
-
-# EOF
-# TYPE req histogram
-req_bucket{job="api",le="+Inf"} 10
-req_count{job="api"} 10
-
-# EOF
-# TYPE req histogram
-req_bucket{job="api",le="0.5"} 5
-req_bucket{job="api",le="+Inf"} 10
-req_bucket{job="web",le="+Inf"} 20
-req_count{job="api"} 10
-req_count{job="web"} 20
-
-# EOF
-# TYPE h histogram
-h_bucket{le="+Inf"} 5
-h_count 5
-
-# EOF
-m{k="a\nb"} 1
-
-# EOF
-# TYPE lat histogram
-lat_bucket{le="+Inf"} 7 1
-lat_bucket{le="+Inf"} 9 2
-lat_count 7 1
-lat_count 9 2
-
-# EOF
-# TYPE lat2 histogram
-lat2_bucket{le="+Inf"} 3 1
-lat2_bucket{le="+Inf"} 5 2
-lat2_count 3 1
-lat2_count 5 2
-
-# EOF
-m_inf +Inf
-
-m_nan NaN
-
-m_ninf -Inf
-
-m_pinf +Inf
-
-# EOF
-foo_total	5	total foos	counter	bars
-foo_total	5	
-x_created	7	
-lonely_total	9	
-# TYPE h histogram
-h_bucket{le="+Inf"} 1
-h_count 1
-
-# EOF
-# TYPE s summary
-s{quantile="0.5"} 1
-
-# EOF
-# TYPE h histogram
-h_bucket{le="+Inf"} 4
-h_count 4
-
-# EOF
-h	3	{'le':'0.5'}	histogram
-h	9	{'le':'+Inf'}	histogram
-s	1	{'quantile':'0.5'}	summary
-# TYPE rt counter
-rt{method="GET"} 1
-rt{method="POST"} 2
-
-# EOF
+Row 2:
+──────
+metric_name: q
+tags:        [('a','2')]
+time_series: [('1970-01-01 00:00:01.000',20)]
+u	unknown
+[('1970-01-01 00:00:00.000',5)]
+1520879607789
+2000
+-500
+1789
+{'a':'1','b':'2'}
+foo_bucket
+metric_name	String					
+metric_family	String					
+help	String					
+type	String					
+unit	String					
+tags	Array(Tuple(String, String))					
+time_series	Array(Tuple(DateTime64(3), Float64))					

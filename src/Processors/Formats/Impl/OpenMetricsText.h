@@ -3,18 +3,10 @@
 #include <base/types.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/readFloatText.h>
 #include <IO/WriteHelpers.h>
 
-#include <fmt/format.h>
-
-#include <array>
-#include <cmath>
 #include <cstddef>
 #include <limits>
-#include <map>
-#include <optional>
 #include <string>
 #include <string_view>
 
@@ -29,9 +21,10 @@ namespace ErrorCodes
 }
 
 /// Contract shared by the OpenMetrics text reader (OpenMetricsTextRowInputFormat) and writer
-/// (OpenMetricsTextOutputFormat). Both sides must agree on name/label grammar, the label-value
-/// escape set, the millisecond<->seconds timestamp round-trip, and the histogram/summary marker
-/// rules, so the single source of truth lives here to keep read and write from drifting.
+/// (OpenMetricsTextOutputFormat). Both sides must agree on the metric/label name grammar, the
+/// label-value escape set, the millisecond<->seconds timestamp round-trip, and the OpenMetrics 1.0
+/// metric-type vocabulary, so the single source of truth lives here to keep read and write from
+/// drifting.
 namespace OpenMetricsText
 {
 
@@ -64,92 +57,22 @@ inline bool isValidName(std::string_view name, bool allow_colon)
 inline bool isValidMetricName(std::string_view name) { return isValidName(name, /*allow_colon=*/true); }
 inline bool isValidLabelName(std::string_view name) { return isValidName(name, /*allow_colon=*/false); }
 
-/// Empty `sum`/`count` label values are the internal suffix markers for histogram/summary rows.
-inline bool isEmptyMarker(const std::map<String, String> & labels, const String & key)
+/// OpenMetrics 1.0 metric-family types (https://openmetrics.io/, section MetricType). The Prometheus
+/// `untyped` spelling is not part of the vocabulary; it maps to `unknown` (see `normalizeOpenMetricsType`).
+inline bool isValidOpenMetricsType(std::string_view type)
 {
-    auto it = labels.find(key);
-    return it != labels.end() && it->second.empty();
+    return type == "unknown" || type == "gauge" || type == "counter" || type == "stateset"
+        || type == "info" || type == "histogram" || type == "gaugehistogram" || type == "summary";
 }
 
-/// Number of histogram/summary "sample kinds" a row carries: the bucket/quantile sample (`le`
-/// for histogram, `quantile` for summary) plus the `_sum` / `_count` empty-value markers. Returns
-/// 0 for non histogram/summary families. A well-formed histogram/summary row carries exactly one;
-/// callers reject 0 (an untyped sample under a typed family) and >1 (combined kinds) with their
-/// own format-specific error.
-inline size_t sampleKindCount(const String & type, const std::map<String, String> & labels)
+/// Normalize a type token to its OpenMetrics 1.0 spelling: the Prometheus `untyped` becomes `unknown`.
+/// Every other token is returned verbatim (validity is checked separately with `isValidOpenMetricsType`).
+inline String normalizeOpenMetricsType(std::string_view type)
 {
-    if (type != "histogram" && type != "summary")
-        return 0;
-
-    size_t sample_kinds = 0;
-    if (type == "histogram")
-    {
-        if (labels.contains("le"))
-            ++sample_kinds;
-    }
-    else if (labels.contains("quantile"))
-    {
-        ++sample_kinds;
-    }
-
-    if (isEmptyMarker(labels, "sum"))
-        ++sample_kinds;
-    if (isEmptyMarker(labels, "count"))
-        ++sample_kinds;
-
-    return sample_kinds;
+    if (type == "untyped")
+        return "unknown";
+    return String{type};
 }
-
-/// `count` / `sum` are reserved histogram/summary marker label names: they are only meaningful as
-/// empty-value markers (`{count=""}` / `{sum=""}`) standing in for the `_count` / `_sum` samples.
-/// A non-empty value collides with that marker mechanism (the writer cannot represent, e.g., a
-/// `_count` series that itself carries a `count` label), so such rows are rejected.
-inline bool hasReservedMarkerLabelWithValue(const std::map<String, String> & labels, String & offending_key)
-{
-    for (const auto * key : {"sum", "count"})
-    {
-        auto it = labels.find(key);
-        if (it != labels.end() && !it->second.empty())
-        {
-            offending_key = key;
-            return true;
-        }
-    }
-    return false;
-}
-
-/// Histogram series identity: all labels except bucket/meta markers (`le`, empty `count`, empty `sum`).
-inline std::map<String, String> histogramSeriesLabels(const std::map<String, String> & labels)
-{
-    std::map<String, String> series;
-    for (const auto & [key, value] : labels)
-    {
-        if (key == "le")
-            continue;
-        if (key == "count" && value.empty())
-            continue;
-        if (key == "sum" && value.empty())
-            continue;
-        series[key] = value;
-    }
-    return series;
-}
-
-/// Suffix-folding rules shared by the reader (fold `<base>_suffix` into the family) and the writer
-/// (emit the suffix from the marker label). `_bucket` belongs only to `histogram` families;
-/// `_sum` / `_count` are shared by `histogram` and `summary`.
-struct SuffixRule
-{
-    std::string_view suffix;
-    std::string_view synth_label;
-    bool histogram_only;
-};
-
-inline constexpr std::array<SuffixRule, 3> SUFFIX_RULES = {{
-    {"_bucket", "", true},
-    {"_sum", "sum", false},
-    {"_count", "count", false},
-}};
 
 /// `pos` at opening `"`. Decodes `\\`, `\"`, `\n`; rejects other escape sequences. Returns false on malformed input.
 inline bool readQuotedLabelValue(std::string_view s, size_t & pos, String & out)
@@ -215,7 +138,7 @@ inline void writeQuotedLabelValue(std::string_view s, WriteBuffer & buf)
 }
 
 /// ASCII case-insensitive equality. OpenMetrics `number` special values (`nan`, `inf`, `infinity`)
-/// and the histogram `+Inf` bucket label are matched case-insensitively per the spec.
+/// are matched case-insensitively per the spec.
 inline bool equalsIgnoreCaseAscii(std::string_view a, std::string_view b)
 {
     if (a.size() != b.size())
@@ -293,50 +216,7 @@ inline bool isStrictRealNumberToken(std::string_view token)
     return i == token.size();
 }
 
-/// Single source of truth for the histogram `le` / summary `quantile` boundary-label rule, shared by
-/// the writer (which sorts buckets numerically) and the reader (which ingests them). A histogram `le`
-/// accepts the exact token `+Inf` (the only spelling of the infinity bucket) or any finite `realnumber`
-/// (negative values included); every other infinity spelling (`inf`, `Inf`, `+Infinity`, `Infinity`,
-/// `infinity`), `NaN`, and `-Inf` are rejected so that only the canonical `+Inf` can reach the writer's
-/// `+Inf`/`_count` bucket synthesis. A summary `quantile` never denotes infinity: it must be a finite
-/// `realnumber` in the closed range [0, 1]. A marker row carrying no boundary label (`_sum` / `_count`)
-/// is a no-op. Returns the rejection reason, or `std::nullopt` when the boundary is valid, so each
-/// caller raises its own error code in its own style (writer: BAD_ARGUMENTS, reader: INCORRECT_DATA).
-inline std::optional<String> checkBoundaryLabel(const String & type, const std::map<String, String> & labels)
-{
-    const auto strict_finite = [](const String & token, Float64 & out)
-    {
-        if (!isStrictRealNumberToken(token))
-            return false;
-        ReadBufferFromString buf(token);
-        return tryReadFloatText(out, buf) && buf.eof() && std::isfinite(out);
-    };
-
-    Float64 value = 0;
-    if (type == "histogram")
-    {
-        const auto it = labels.find("le");
-        if (it == labels.end())
-            return std::nullopt;
-        const String & le = it->second;
-        if (le == "+Inf")
-            return std::nullopt;
-        if (!strict_finite(le, value))
-            return fmt::format("Histogram bucket boundary le='{}' (expected '+Inf' or a finite real number)", le);
-    }
-    else if (type == "summary")
-    {
-        const auto it = labels.find("quantile");
-        if (it == labels.end())
-            return std::nullopt;
-        const String & quantile = it->second;
-        if (!strict_finite(quantile, value) || value < 0.0 || value > 1.0)
-            return fmt::format("Summary quantile='{}' (expected a finite real number in [0, 1])", quantile);
-    }
-    return std::nullopt;
-}
-
-/// Writer side of the timestamp contract. The ClickHouse `timestamp` column is Prometheus-compatible
+/// Writer side of the timestamp contract. The ClickHouse timestamp is Prometheus-compatible
 /// milliseconds; OpenMetrics text expects epoch seconds, so emit `<seconds>.<3-digit-ms>` with
 /// trailing-zero stripping (e.g. `1520879607789 -> "1520879607.789"`, `1520879607000 -> "1520879607"`,
 /// `-500 -> "-0.5"`, `Int64::min -> "-9223372036854775.808"`).
@@ -463,7 +343,7 @@ inline bool decomposeNumber(std::string_view token, bool & neg, String & digits,
 
 /// Reader side of the timestamp contract: convert an OpenMetrics `realnumber` token (epoch seconds,
 /// possibly fractional and/or in exponent form) to the millisecond representation stored in the
-/// `timestamp` column. The token is decomposed into exact base-10 digits, the seconds->milliseconds
+/// timestamp. The token is decomposed into exact base-10 digits, the seconds->milliseconds
 /// scale (10^3) is folded into its exponent, and the result is evaluated with overflow-checked
 /// unsigned 64-bit arithmetic so the writer's tokens round-trip back to the same `Int64` across the
 /// whole `Int64::min`/`Int64::max` boundary — whether written as `<seconds>.<ms>` or an equivalent

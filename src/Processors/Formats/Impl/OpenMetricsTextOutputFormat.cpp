@@ -4,31 +4,28 @@
 
 #include <algorithm>
 #include <cmath>
-#include <map>
-#include <optional>
+#include <set>
 #include <type_traits>
 #include <utility>
 
-#include <base/sort.h>
-
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
 
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
-#include <Core/Field.h>
-
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 
 #include <Formats/FormatFactory.h>
 
-#include <IO/ReadBufferFromString.h>
-#include <IO/readFloatText.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
@@ -49,33 +46,42 @@ namespace
 using OpenMetricsText::FORMAT_NAME;
 using OpenMetricsText::isValidMetricName;
 using OpenMetricsText::isValidLabelName;
-using OpenMetricsText::isEmptyMarker;
-using OpenMetricsText::sampleKindCount;
-using OpenMetricsText::hasReservedMarkerLabelWithValue;
-using OpenMetricsText::decomposeNumber;
-using OpenMetricsText::histogramSeriesLabels;
-using OpenMetricsText::checkBoundaryLabel;
+using OpenMetricsText::isValidOpenMetricsType;
+using OpenMetricsText::normalizeOpenMetricsType;
 using OpenMetricsText::validateLabelValue;
 using OpenMetricsText::writeQuotedLabelValue;
 using OpenMetricsText::millisToSecondsString;
 
-bool isDataTypeMapString(const DataTypePtr & type)
+/// `tags` accepts either `Map(String, String)` or `Array(Tuple(String, String))`: the two share the
+/// `ColumnArray(ColumnTuple(keys, values))` representation, so a `TimeSeries` `tags` column exported
+/// via `SELECT * FROM ts` round-trips regardless of which spelling the source uses.
+bool isTagsColumnType(const DataTypePtr & type)
 {
-    if (!isMap(type))
-        return false;
-    const auto * type_map = assert_cast<const DataTypeMap *>(type.get());
-    return isStringOrFixedString(type_map->getKeyType()) && isStringOrFixedString(type_map->getValueType());
+    if (isMap(type))
+    {
+        const auto * type_map = assert_cast<const DataTypeMap *>(type.get());
+        return isStringOrFixedString(type_map->getKeyType()) && isStringOrFixedString(type_map->getValueType());
+    }
+    if (isArray(type))
+    {
+        const auto * type_array = assert_cast<const DataTypeArray *>(type.get());
+        const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_array->getNestedType().get());
+        return type_tuple && type_tuple->getElements().size() == 2
+            && isStringOrFixedString(type_tuple->getElement(0)) && isStringOrFixedString(type_tuple->getElement(1));
+    }
+    return false;
 }
 
-/// OpenMetrics timestamps must round-trip with the input parser, which stores into `Int64`
-/// (or `Nullable(Int64)`) milliseconds; reject other numeric types to keep the contract explicit
-/// and avoid silent precision drift through `Float64` or smaller integer widths.
-bool isInt64OrNullableInt64(const DataTypePtr & type)
+/// `time_series` is `Array(Tuple(DateTime64, Float64))`: the series' (timestamp, value) points,
+/// matching the `TimeSeries` engine's `time_series` column and the input format's accepted type.
+bool isTimeSeriesColumnType(const DataTypePtr & type)
 {
-    const DataTypePtr & nested = type->isNullable()
-        ? assert_cast<const DataTypeNullable *>(type.get())->getNestedType()
-        : type;
-    return WhichDataType(nested).isInt64();
+    if (!isArray(type))
+        return false;
+    const auto * type_array = assert_cast<const DataTypeArray *>(type.get());
+    const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_array->getNestedType().get());
+    return type_tuple && type_tuple->getElements().size() == 2
+        && isDateTime64(type_tuple->getElement(0)) && WhichDataType(type_tuple->getElement(1)).isFloat64();
 }
 
 template <typename ResType>
@@ -104,32 +110,6 @@ void getColumnPos(const Block & header, const String & col_name, bool (*pred)(co
     }
 }
 
-Float64 tryParseFloat(const String & s)
-{
-    Float64 t = 0;
-    ReadBufferFromString buf(s);
-    tryReadFloatText(t, buf);
-    return t;
-}
-
-/// Exact numeric equality for two serialized sample values, used to check the histogram `+Inf` bucket
-/// against the `_count` total. `Float64` collapses distinct integers above 2^53 to the same value
-/// (e.g. 9007199254740992 and 9007199254740993), so compare the exact base-10 decompositions: equal
-/// values share one canonical (sign, digits, exponent). Values that are not finite decimals
-/// (`inf` / `nan`) have no such decomposition and fall back to the lenient float comparison.
-bool sampleValuesEqual(const String & lhs, const String & rhs)
-{
-    bool lhs_neg = false;
-    bool rhs_neg = false;
-    String lhs_digits;
-    String rhs_digits;
-    Int64 lhs_exp = 0;
-    Int64 rhs_exp = 0;
-    if (decomposeNumber(lhs, lhs_neg, lhs_digits, lhs_exp) && decomposeNumber(rhs, rhs_neg, rhs_digits, rhs_exp))
-        return lhs_neg == rhs_neg && lhs_digits == rhs_digits && lhs_exp == rhs_exp;
-    return tryParseFloat(lhs) == tryParseFloat(rhs);
-}
-
 void validateOpenMetricsMetricName(const String & name)
 {
     if (!isValidMetricName(name))
@@ -148,46 +128,83 @@ void validateOpenMetricsLabelName(const String & name)
             name, FORMAT_NAME);
 }
 
-/// The `type` value is emitted raw in the `# TYPE <name> <type>` family-metadata line. The reader
-/// parses the type as a single whitespace-delimited token and rejects trailing data, and a newline
-/// would inject extra lines, so a type carrying whitespace or control characters would produce a
-/// stream this writer's own reader rejects. Reject those up front (documented free tokens such as
-/// `untyped` / `unknown` still pass through verbatim).
-void validateOpenMetricsType(const String & type)
+/// Convert a raw `DateTime64` value at `scale` decimal places to Prometheus-compatible milliseconds.
+Int64 dateTime64ToMillis(Int64 raw, UInt32 scale)
 {
-    for (char c : type)
-        if (c == ' ' || c == '\t' || static_cast<unsigned char>(c) < 32)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Invalid type '{}' for output format '{}': it must be a single token without whitespace or control characters",
-                type, FORMAT_NAME);
+    if (scale == 3)
+        return raw;
+    if (scale < 3)
+    {
+        Int64 mult = 1;
+        for (UInt32 i = scale; i < 3; ++i)
+            mult *= 10;
+        return raw * mult;
+    }
+    Int64 div = 1;
+    for (UInt32 i = 3; i < scale; ++i)
+        div *= 10;
+    return raw / div;  /// sub-millisecond precision is truncated toward zero
 }
 
-template <typename Container>
-void columnMapToContainer(const ColumnMap * col_map, size_t row_num, Container & result)
+/// OpenMetrics `number` on the wire: finite values are serialized as ClickHouse Float64 text; the
+/// special values use the canonical OpenMetrics spellings `NaN` / `+Inf` / `-Inf`.
+String formatSampleValue(double value)
 {
-    Field field;
-    col_map->get(row_num, field);
-    const auto & map_field = field.safeGet<Map>();
-    for (const auto & map_element : map_field)
-    {
-        const auto & map_entry = map_element.safeGet<Tuple>();
+    if (std::isnan(value))
+        return "NaN";
+    if (std::isinf(value))
+        return value < 0 ? "-Inf" : "+Inf";
+    WriteBufferFromOwnString buf;
+    writeFloatText(value, buf);
+    return buf.str();
+}
 
-        String entry_key;
-        String entry_value;
-        if (map_entry.size() == 2
-            && map_entry[0].tryGet<String>(entry_key)
-            && map_entry[1].tryGet<String>(entry_value))
-        {
-            validateOpenMetricsLabelName(entry_key);
-            const auto [it, inserted] = result.emplace(entry_key, entry_value);
-            if (!inserted)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Duplicate label name '{}' for output format '{}'",
-                    it->first, FORMAT_NAME);
-        }
+/// Reads the `tags` column (either `Map` or `Array(Tuple)`) for one row into an ordered key/value
+/// list, validating label names and rejecting duplicate keys.
+void extractTags(const IColumn & column, size_t row_num, std::vector<std::pair<String, String>> & out)
+{
+    const ColumnArray * col_array = nullptr;
+    if (const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(&column))
+        col_array = &col_map->getNestedColumn();
+    else
+        col_array = checkAndGetColumn<ColumnArray>(&column);
+    if (!col_array)
+        return;
+
+    const auto & col_tuple = assert_cast<const ColumnTuple &>(col_array->getData());
+    const IColumn & keys = col_tuple.getColumn(0);
+    const IColumn & values = col_tuple.getColumn(1);
+    const auto & offsets = col_array->getOffsets();
+    const size_t start = row_num == 0 ? 0 : offsets[row_num - 1];
+    const size_t end = offsets[row_num];
+
+    std::set<String> seen;
+    for (size_t j = start; j < end; ++j)
+    {
+        String key(keys.getDataAt(j));
+        validateOpenMetricsLabelName(key);
+        if (!seen.insert(key).second)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Duplicate label name '{}' for output format '{}'",
+                key, FORMAT_NAME);
+        out.emplace_back(std::move(key), String(values.getDataAt(j)));
     }
+}
+
+/// Reads the `time_series` column for one row into an ordered list of (millisecond, value) points.
+void extractPoints(const IColumn & column, size_t row_num, UInt32 scale, std::vector<std::pair<Int64, double>> & out)
+{
+    const auto & col_array = assert_cast<const ColumnArray &>(column);
+    const auto & col_tuple = assert_cast<const ColumnTuple &>(col_array.getData());
+    const IColumn & timestamps = col_tuple.getColumn(0);
+    const IColumn & values = col_tuple.getColumn(1);
+    const auto & offsets = col_array.getOffsets();
+    const size_t start = row_num == 0 ? 0 : offsets[row_num - 1];
+    const size_t end = offsets[row_num];
+
+    for (size_t j = start; j < end; ++j)
+        out.emplace_back(dateTime64ToMillis(timestamps.getInt(j), scale), values.getFloat64(j));
 }
 
 }
@@ -197,300 +214,135 @@ OpenMetricsTextOutputFormat::OpenMetricsTextOutputFormat(
     SharedHeader header_,
     const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_)
-    , string_serialization(DataTypeString().getDefaultSerialization())
     , format_settings(format_settings_)
 {
     const Block & header = getPort(PortKind::Main).getHeader();
 
-    getColumnPos(header, "name", isStringOrFixedString, pos.name);
-    getColumnPos(header, "value", isNumber, pos.value);
+    getColumnPos(header, "metric_name", isStringOrFixedString, pos.metric_name);
+    getColumnPos(header, "time_series", isTimeSeriesColumnType, pos.time_series);
 
+    getColumnPos(header, "metric_family", isStringOrFixedString, pos.metric_family);
     getColumnPos(header, "help", isStringOrFixedString, pos.help);
     getColumnPos(header, "type", isStringOrFixedString, pos.type);
     getColumnPos(header, "unit", isStringOrFixedString, pos.unit);
-    getColumnPos(header, "timestamp", isInt64OrNullableInt64, pos.timestamp);
-    getColumnPos(header, "labels", isDataTypeMapString, pos.labels);
+    getColumnPos(header, "tags", isTagsColumnType, pos.tags);
 
-    /// `getColumnPos` strips `Nullable` from optional columns before predicate validation, but
-    /// `write` later casts `labels` straight to `ColumnMap`. Accepting `Nullable(Map(...))`
-    /// here would silently drop labels for every row, so reject it explicitly.
-    if (pos.labels.has_value() && header.getByName("labels").type->isNullable())
+    /// `getColumnPos` strips `Nullable` from optional columns before predicate validation, but `write`
+    /// later casts `tags` straight to `ColumnMap` / `ColumnArray`. Accepting `Nullable(...)` here would
+    /// silently drop labels for every row, so reject it explicitly.
+    if (pos.tags.has_value() && header.getByName("tags").type->isNullable())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Illegal type '{}' of column 'labels' for output format '{}': Nullable(Map(...)) is not supported",
-            header.getByName("labels").type->getName(), FORMAT_NAME);
+            "Illegal type '{}' of column 'tags' for output format '{}': Nullable is not supported",
+            header.getByName("tags").type->getName(), FORMAT_NAME);
+
+    const auto & ts_type = header.getByName("time_series").type;
+    const auto & ts_tuple = assert_cast<const DataTypeTuple &>(*assert_cast<const DataTypeArray &>(*ts_type).getNestedType());
+    timestamp_scale = assert_cast<const DataTypeDateTime64 &>(*ts_tuple.getElement(0)).getScale();
 }
 
-/// Sort histogram/summary rows: regular buckets first (by `le`/`quantile`),
-/// then `_sum`, then `_count`. Also synthesize `+Inf` bucket from `_count`
-/// (or vice-versa) so the family always exposes both, matching Prometheus
-/// exposition rules also referenced by OpenMetrics.
-void OpenMetricsTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
+void OpenMetricsTextOutputFormat::flushCurrentFamily()
 {
-    String bucket_label = metric.type == "histogram" ? "le" : "quantile";
-
-    if (metric.type == "histogram")
+    if (!current_family.started)
     {
-        struct SeriesState
-        {
-            bool has_count_marker = false;
-            bool has_inf_bucket = false;
-            std::optional<CurrentMetric::RowValue> count_marker_row;
-            std::optional<CurrentMetric::RowValue> inf_bucket_row;
-        };
-
-        /// Synthesis is per (series, timestamp): a histogram series sampled at several timestamps
-        /// must get its `+Inf`/`_count` counterpart at each timestamp independently, so the
-        /// timestamp is part of the key. A series-only key would cross-match different timestamps
-        /// (e.g. a `_count` at t1 and a `+Inf` at t2 would wrongly suppress synthesis for both).
-        std::map<std::pair<std::map<String, String>, String>, SeriesState> series_states;
-        for (const auto & val : metric.values)
-        {
-            auto & state = series_states[std::pair{histogramSeriesLabels(val.labels), val.timestamp}];
-
-            if (isEmptyMarker(val.labels, "count"))
-            {
-                state.has_count_marker = true;
-                state.count_marker_row = val;
-            }
-            if (auto it = val.labels.find("le"); it != val.labels.end() && it->second == "+Inf")
-            {
-                state.has_inf_bucket = true;
-                state.inf_bucket_row = val;
-            }
-        }
-
-        for (const auto & [key, state] : series_states)
-        {
-            const auto & series = key.first;
-            if (state.has_count_marker && !state.has_inf_bucket && state.count_marker_row)
-            {
-                auto synthetic = *state.count_marker_row;
-                synthetic.labels = series;
-                synthetic.labels["le"] = "+Inf";
-                metric.values.emplace_back(std::move(synthetic));
-            }
-            else if (!state.has_count_marker && state.has_inf_bucket && state.inf_bucket_row)
-            {
-                auto synthetic = *state.inf_bucket_row;
-                synthetic.labels = series;
-                synthetic.labels["count"] = "";
-                metric.values.emplace_back(std::move(synthetic));
-            }
-            else if (state.has_count_marker && state.has_inf_bucket
-                && state.count_marker_row && state.inf_bucket_row
-                && !sampleValuesEqual(state.inf_bucket_row->value, state.count_marker_row->value))
-            {
-                /// When a series already exposes both the `+Inf` bucket and the `_count` marker, the
-                /// histogram contract requires them to carry the same value: the `+Inf` bucket is the
-                /// cumulative total, which is exactly `_count`. A mismatch is invalid exposition rather
-                /// than a synthesis opportunity, so reject it.
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Histogram '+Inf' bucket value '{}' must equal the '_count' value '{}' for output format '{}'",
-                    state.inf_bucket_row->value, state.count_marker_row->value, FORMAT_NAME);
-            }
-        }
-    }
-
-    ::sort(metric.values.begin(), metric.values.end(),
-        [&bucket_label](const auto & lhs, const auto & rhs)
-        {
-            bool lhs_sum = isEmptyMarker(lhs.labels, "sum");
-            bool lhs_count = isEmptyMarker(lhs.labels, "count");
-            bool lhs_meta = lhs_sum || lhs_count;
-
-            bool rhs_sum = isEmptyMarker(rhs.labels, "sum");
-            bool rhs_count = isEmptyMarker(rhs.labels, "count");
-            bool rhs_meta = rhs_sum || rhs_count;
-
-            if (lhs_sum && rhs_count)
-                return true;
-            if (lhs_count && rhs_sum)
-                return false;
-            if (rhs_meta && !lhs_meta)
-                return true;
-            if (lhs_meta && !rhs_meta)
-                return false;
-
-            auto lit = lhs.labels.find(bucket_label);
-            auto rit = rhs.labels.find(bucket_label);
-            if (lit != lhs.labels.end() && rit != rhs.labels.end())
-            {
-                const Float64 lval = tryParseFloat(lit->second);
-                const Float64 rval = tryParseFloat(rit->second);
-                if (lval != rval)
-                    return lval < rval;
-            }
-            /// Same bucket bound and/or different series labels: fall back to a total order so
-            /// multi-series histogram families are emitted deterministically across platforms.
-            if (lhs.labels != rhs.labels)
-                return lhs.labels < rhs.labels;
-            /// Identical labels (same series + bucket) differing only by timestamp/value: e.g. one
-            /// series sampled at several timestamps, or an original `+Inf`/`_count` row next to its
-            /// synthesized counterpart. Without an explicit tiebreaker their relative order is the
-            /// (chunk-dependent) input order, which diverges under parallel formatting. Order by
-            /// timestamp then value for a deterministic, ascending-by-time output.
-            const Float64 lts = tryParseFloat(lhs.timestamp);
-            const Float64 rts = tryParseFloat(rhs.timestamp);
-            if (lts != rts)
-                return lts < rts;
-            return lhs.value < rhs.value;
-        });
-}
-
-void OpenMetricsTextOutputFormat::flushCurrentMetric()
-{
-    if (current_metric.name.empty() || current_metric.values.empty())
-    {
-        current_metric = {};
+        current_family = {};
         return;
     }
 
-    if (current_metric.type == "histogram" || current_metric.type == "summary")
+    size_t total_points = 0;
+    for (const auto & series : current_family.series)
+        total_points += series.points.size();
+    if (total_points == 0)
     {
-        for (const auto & val : current_metric.values)
-        {
-            /// Every row in a histogram/summary family must carry exactly one sample kind: a
-            /// bucket/quantile sample, or a `_sum` / `_count` marker. Zero kinds (an untyped sample
-            /// such as `# TYPE h histogram` + `h 3`) and more than one (combined kinds) are both
-            /// invalid exposition.
-            const size_t kinds = sampleKindCount(current_metric.type, val.labels);
-            if (kinds == 0)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Row for output format '{}' in a '{}' family must carry exactly one sample kind "
-                    "(a bucket/quantile sample or a '_sum' / '_count' marker), but has none",
-                    FORMAT_NAME, current_metric.type);
-            if (kinds > 1)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Row for output format '{}' cannot combine multiple histogram/summary sample kinds in labels",
-                    FORMAT_NAME);
-
-            /// Reject a non-empty `count` / `sum` label: those names are reserved markers in a
-            /// histogram/summary family, so a real value collides with the synthesized `_count` /
-            /// `_sum` counterpart (the writer would otherwise overwrite the real label and emit the
-            /// marker for the wrong series).
-            String offending_key;
-            if (hasReservedMarkerLabelWithValue(val.labels, offending_key))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Label '{}' is a reserved histogram/summary marker for output format '{}' and must have an empty value",
-                    offending_key, FORMAT_NAME);
-
-            /// Validate the bucket/quantile boundary before `fixupBucketLabels` sorts numerically;
-            /// the sort's lenient `tryParseFloat` would otherwise let `le='NaN'` / `quantile='bogus'`
-            /// through. The rule is shared with the reader in `checkBoundaryLabel`; raise the writer's
-            /// own BAD_ARGUMENTS here.
-            if (auto reason = checkBoundaryLabel(current_metric.type, val.labels))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} for output format '{}'", *reason, FORMAT_NAME);
-        }
+        current_family = {};
+        return;
     }
 
-    /// Synthesize the `+Inf`/`_count` counterparts, order the rows, and validate `+Inf`/`_count`
-    /// consistency before emitting anything, so a rejected histogram/summary family fails without
-    /// leaving a dangling `# HELP`/`# TYPE`/`# UNIT` header in the stream (matching the per-row
-    /// validation above, which also rejects before a byte is written).
-    bool use_buckets = current_metric.type == "histogram" || current_metric.type == "summary";
-    if (use_buckets)
-        fixupBucketLabels(current_metric);
+    /// OpenMetrics 1.0 family-metadata conformance, checked before any of this family's bytes are
+    /// written so a rejected family fails up front rather than leaving a dangling header on the wire.
+    if (!current_family.type.empty() && !isValidOpenMetricsType(current_family.type))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Invalid OpenMetrics metric type '{}' for metric family '{}' in output format '{}' "
+            "(expected one of unknown/gauge/counter/stateset/info/histogram/gaugehistogram/summary)",
+            current_family.type, current_family.name, FORMAT_NAME);
 
-    /// Validate every row's label values before emitting any of this family's bytes, so a malformed
-    /// value (a tab or other control character) fails the whole family up front instead of throwing
-    /// mid-stream and leaving a dangling `# HELP`/`# TYPE`/`# UNIT` header on the wire.
-    for (const auto & val : current_metric.values)
-        for (const auto & [label_name, label_value] : val.labels)
+    /// If a unit is specified, the family name must carry it as a suffix (OpenMetrics 1.0 UNIT rule).
+    if (!current_family.unit.empty())
+    {
+        const String unit_suffix = "_" + current_family.unit;
+        if (!current_family.name.ends_with(unit_suffix))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "OpenMetrics unit '{}' requires metric family '{}' to end with '{}' for output format '{}'",
+                current_family.unit, current_family.name, unit_suffix, FORMAT_NAME);
+    }
+
+    /// A counter's family name (used in `# TYPE`/`# HELP`/`# UNIT`) must not carry the `_total`
+    /// suffix, and each counter sample's on-wire name must (the optional `_created` sample aside).
+    if (current_family.type == "counter")
+    {
+        if (current_family.name.ends_with("_total"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "OpenMetrics counter family name '{}' must not carry the '_total' suffix "
+                "(it belongs on the sample name) for output format '{}'",
+                current_family.name, FORMAT_NAME);
+        for (const auto & series : current_family.series)
+            if (!series.metric_name.ends_with("_total") && !series.metric_name.ends_with("_created"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "OpenMetrics counter sample '{}' must end with '_total' or '_created' for output format '{}'",
+                    series.metric_name, FORMAT_NAME);
+    }
+
+    /// Validate every label value before emitting any bytes, so a malformed value (a tab or other
+    /// control character) fails the whole family up front instead of throwing mid-stream.
+    for (const auto & series : current_family.series)
+        for (const auto & [label_name, label_value] : series.tags)
             validateLabelValue(label_value);
 
-    auto write_attribute = [this](const char * marker, const String & value)
+    const auto write_descriptor = [this](const char * marker, const String & value)
     {
         if (value.empty())
             return;
         writeCString(marker, out);
-        writeString(current_metric.name, out);
+        writeString(current_family.name, out);
         writeChar(' ', out);
         writeString(value, out);
         writeChar('\n', out);
     };
 
-    write_attribute("# HELP ", current_metric.help);
-    write_attribute("# TYPE ", current_metric.type);
-    write_attribute("# UNIT ", current_metric.unit);
+    write_descriptor("# HELP ", current_family.help);
+    write_descriptor("# TYPE ", current_family.type);
+    write_descriptor("# UNIT ", current_family.unit);
 
-    for (auto & val : current_metric.values)
+    for (const auto & series : current_family.series)
     {
-        writeString(current_metric.name, out);
-
-        /// Suffix-marker rewrite. The documented table contract is:
-        ///   * `{'sum': ''}` / `{'count': ''}` are marker rows: append `_sum`/`_count` to the
-        ///     family name and drop the marker label. A non-empty `sum`/`count` value is rejected
-        ///     up front in `flushCurrentMetric` (reserved marker collision), so by here the guard
-        ///     below only ever fires for the empty-marker case.
-        ///   * `{'le': '<bound>'}` is only a histogram bucket. Summaries use `{quantile=...}`
-        ///     and a real label named `le` on a summary is just a normal label, so the
-        ///     `le` -> `_bucket` rewrite is gated on the histogram type.
-        auto rewrite_empty_marker = [&val, this](const String & key, const String & suffix)
+        for (const auto & [ms, value] : series.points)
         {
-            auto it = val.labels.find(key);
-            if (it == val.labels.end() || !it->second.empty())
-                return;
-            writeChar('_', out);
-            writeString(suffix, out);
-            val.labels.erase(it);
-        };
+            writeString(series.metric_name, out);
 
-        if (use_buckets)
-        {
-            rewrite_empty_marker("sum", "sum");
-            rewrite_empty_marker("count", "count");
-            if (current_metric.type == "histogram")
+            if (!series.tags.empty())
             {
-                if (auto it = val.labels.find("le"); it != val.labels.end())
+                writeChar('{', out);
+                bool is_first = true;
+                for (const auto & [name, label_value] : series.tags)
                 {
-                    writeChar('_', out);
-                    writeString("bucket", out);
+                    if (!is_first)
+                        writeChar(',', out);
+                    is_first = false;
+                    writeString(name, out);
+                    writeChar('=', out);
+                    writeQuotedLabelValue(label_value, out);
                 }
+                writeChar('}', out);
             }
-        }
 
-        if (!val.labels.empty())
-        {
-            writeChar('{', out);
-            bool is_first = true;
-            for (const auto & [name, value] : val.labels)
-            {
-                if (!is_first)
-                    writeChar(',', out);
-                is_first = false;
-                writeString(name, out);
-                writeChar('=', out);
-                writeQuotedLabelValue(value, out);
-            }
-            writeChar('}', out);
-        }
-
-        writeChar(' ', out);
-
-        if (val.value == "nan")
-            writeString("NaN", out);
-        else if (val.value == "inf")
-            writeString("+Inf", out);
-        else if (val.value == "-inf")
-            writeString("-Inf", out);
-        else
-            writeString(val.value, out);
-
-        if (!val.timestamp.empty())
-        {
             writeChar(' ', out);
-            writeString(val.timestamp, out);
+            writeString(formatSampleValue(value), out);
+            writeChar(' ', out);
+            writeString(millisToSecondsString(ms), out);
+            writeChar('\n', out);
         }
-
-        writeChar('\n', out);
     }
-    writeChar('\n', out);
 
-    current_metric = {};
+    current_family = {};
 }
 
 String OpenMetricsTextOutputFormat::getString(const Columns & columns, size_t row_num, size_t column_pos)
@@ -504,12 +356,22 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
 {
     row_write_in_progress = true;
 
-    String name = getString(columns, row_num, pos.name);
-    validateOpenMetricsMetricName(name);
-    if (current_metric.name != name)
+    String metric_name = getString(columns, row_num, pos.metric_name);
+    validateOpenMetricsMetricName(metric_name);
+
+    String family;
+    if (pos.metric_family.has_value() && !columns[*pos.metric_family]->isNullAt(row_num))
+        family = getString(columns, row_num, *pos.metric_family);
+
+    const String & key = family.empty() ? metric_name : family;
+    if (!current_family.started || current_family.key != key)
     {
-        flushCurrentMetric();
-        current_metric = CurrentMetric(name);
+        flushCurrentFamily();
+        current_family.started = true;
+        current_family.key = key;
+        current_family.name = key;
+        if (!family.empty())
+            validateOpenMetricsMetricName(current_family.name);
     }
 
     if (pos.help.has_value() && !columns[*pos.help]->isNullAt(row_num))
@@ -518,39 +380,26 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
         std::replace(help.begin(), help.end(), '\n', ' ');
         if (!help.empty())
         {
-            if (current_metric.help.empty())
-                current_metric.help = std::move(help);
-            else if (current_metric.help != help)
+            if (current_family.help.empty())
+                current_family.help = std::move(help);
+            else if (current_family.help != help)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Conflicting '# HELP' metadata for metric family '{}' in output format '{}'",
-                    current_metric.name, FORMAT_NAME);
+                    current_family.name, FORMAT_NAME);
         }
     }
 
     if (pos.type.has_value() && !columns[*pos.type]->isNullAt(row_num))
     {
-        String type = getString(columns, row_num, *pos.type);
+        String type = normalizeOpenMetricsType(getString(columns, row_num, *pos.type));
         if (!type.empty())
         {
-            if (current_metric.type.empty())
-            {
-                current_metric.type = std::move(type);
-                validateOpenMetricsType(current_metric.type);
-            }
-            else if (current_metric.type != type)
+            if (current_family.type.empty())
+                current_family.type = std::move(type);
+            else if (current_family.type != type)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Conflicting '# TYPE' metadata for metric family '{}' in output format '{}'",
-                    current_metric.name, FORMAT_NAME);
-        }
-    }
-
-    std::optional<std::map<String, String>> labels;
-    if (pos.labels.has_value())
-    {
-        if (const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(columns[*pos.labels].get()))
-        {
-            labels.emplace();
-            columnMapToContainer(col_map, row_num, *labels);
+                    current_family.name, FORMAT_NAME);
         }
     }
 
@@ -560,31 +409,21 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
         std::replace(unit.begin(), unit.end(), '\n', ' ');
         if (!unit.empty())
         {
-            if (current_metric.unit.empty())
-                current_metric.unit = std::move(unit);
-            else if (current_metric.unit != unit)
+            if (current_family.unit.empty())
+                current_family.unit = std::move(unit);
+            else if (current_family.unit != unit)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Conflicting '# UNIT' metadata for metric family '{}' in output format '{}'",
-                    current_metric.name, FORMAT_NAME);
+                    current_family.name, FORMAT_NAME);
         }
     }
 
-    auto & row = current_metric.values.emplace_back();
-    row.value = getString(columns, row_num, pos.value);
-
-    /// OpenMetrics timestamp rule: emit whenever the column is present and non-NULL (including zero).
-    /// Convert the ClickHouse millisecond representation to the OpenMetrics seconds string here.
-    if (pos.timestamp.has_value() && !columns[*pos.timestamp]->isNullAt(row_num))
-    {
-        const IColumn & ts_col = *columns[*pos.timestamp];
-        const Int64 ms = ts_col.isNullable()
-            ? assert_cast<const ColumnNullable &>(ts_col).getNestedColumn().getInt(row_num)
-            : ts_col.getInt(row_num);
-        row.timestamp = millisToSecondsString(ms);
-    }
-
-    if (labels)
-        row.labels = std::move(*labels);
+    Series series;
+    series.metric_name = std::move(metric_name);
+    if (pos.tags.has_value())
+        extractTags(*columns[*pos.tags], row_num, series.tags);
+    extractPoints(*columns[pos.time_series], row_num, timestamp_scale, series.points);
+    current_family.series.push_back(std::move(series));
 
     row_write_in_progress = false;
 }
@@ -593,7 +432,7 @@ void OpenMetricsTextOutputFormat::finalizeImpl()
 {
     if (!row_write_in_progress)
     {
-        flushCurrentMetric();
+        flushCurrentFamily();
         writeCString("# EOF\n", out);
     }
 }
@@ -606,12 +445,7 @@ void registerOutputFormatOpenMetrics(FormatFactory & factory)
         [](WriteBuffer & buf, const Block & sample, const FormatSettings & settings, FormatFilterInfoPtr /*format_filter_info*/)
         { return std::make_shared<OpenMetricsTextOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
 
-    /// Intentionally drops the `version=1.0.0` parameter advertised by earlier iterations of this
-    /// PR. This writer does not enforce strict OpenMetrics 1.0 family-metadata requirements
-    /// (`# HELP`/`# TYPE`/`# UNIT` are emitted only when the columns are non-empty, and the `type`
-    /// value is passed through verbatim, including the Prometheus-style `untyped`), so claiming
-    /// version compliance would be misleading to strict consumers.
-    factory.setContentType(FORMAT_NAME, "application/openmetrics-text; charset=utf-8");
+    factory.setContentType(FORMAT_NAME, "application/openmetrics-text; version=1.0.0; charset=utf-8");
     /// Each stream ends with `# EOF`; appending another exposition would make the file unreadable.
     factory.markFormatHasNoAppendSupport(FORMAT_NAME);
 }

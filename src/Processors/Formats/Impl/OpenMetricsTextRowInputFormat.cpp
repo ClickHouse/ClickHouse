@@ -1,17 +1,22 @@
 #include <Processors/Formats/Impl/OpenMetricsTextRowInputFormat.h>
 
 #include <Processors/Formats/Impl/OpenMetricsText.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatFactory.h>
@@ -21,8 +26,14 @@
 
 #include <array>
 #include <cmath>
+#include <initializer_list>
 #include <limits>
 #include <map>
+#include <optional>
+#include <string_view>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 
 namespace DB
@@ -43,9 +54,6 @@ using OpenMetricsText::readQuotedLabelValue;
 using OpenMetricsText::equalsIgnoreCaseAscii;
 using OpenMetricsText::isStrictRealNumberToken;
 using OpenMetricsText::secondsTokenToMillis;
-using OpenMetricsText::sampleKindCount;
-using OpenMetricsText::hasReservedMarkerLabelWithValue;
-using OpenMetricsText::checkBoundaryLabel;
 
 void skipAsciiSpaces(std::string_view s, size_t & pos)
 {
@@ -242,36 +250,89 @@ void checkOnlyBlankLinesAfterEof(ReadBuffer & buf)
     }
 }
 
-bool isMapStringString(const DataTypePtr & type)
-{
-    if (!isMap(type))
-        return false;
-    const auto * m = assert_cast<const DataTypeMap *>(type.get());
-    const auto & k = m->getKeyType();
-    const auto & v = m->getValueType();
-    /// Insertion uses `ColumnMap` materialized from `Map(String, String)`; reject FixedString / Nullable variants.
-    return !k->isNullable() && !v->isNullable() && WhichDataType(k).isString() && WhichDataType(v).isString();
-}
-
-/// `value` is always inserted via `assert_cast<ColumnFloat64 &>`; reject `Nullable(Float64)`.
-bool isPlainFloat64(const DataTypePtr & t) { return !t->isNullable() && WhichDataType(t).isFloat64(); }
 /// String columns insert via `assert_cast<ColumnString &>`; reject FixedString / Nullable.
-bool isPlainString(const DataTypePtr & t)  { return !t->isNullable() && WhichDataType(t).isString(); }
-/// Timestamp can be `Int64` or `Nullable(Int64)`.
-bool isOptionalInt64(const DataTypePtr & t)
+bool isPlainString(const DataTypePtr & t) { return !t->isNullable() && WhichDataType(t).isString(); }
+
+/// `tags` accepts either `Map(String, String)` or `Array(Tuple(String, String))`.
+bool isTagsColumnType(const DataTypePtr & type)
 {
-    if (t->isNullable())
-        return WhichDataType(assert_cast<const DataTypeNullable *>(t.get())->getNestedType()).isInt64();
-    return WhichDataType(t).isInt64();
+    if (isMap(type))
+    {
+        const auto * type_map = assert_cast<const DataTypeMap *>(type.get());
+        return WhichDataType(type_map->getKeyType()).isString() && WhichDataType(type_map->getValueType()).isString();
+    }
+    if (isArray(type))
+    {
+        const auto * type_array = assert_cast<const DataTypeArray *>(type.get());
+        const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_array->getNestedType().get());
+        return type_tuple && type_tuple->getElements().size() == 2
+            && WhichDataType(type_tuple->getElement(0)).isString() && WhichDataType(type_tuple->getElement(1)).isString();
+    }
+    return false;
 }
 
-void insertMapLabels(IColumn & column, const std::map<String, String> & labels)
+/// `time_series` is inserted via `ColumnDecimal<DateTime64>` + `ColumnFloat64`, so require exactly
+/// `Array(Tuple(DateTime64, Float64))`.
+bool isTimeSeriesColumnType(const DataTypePtr & type)
 {
-    Field map_field = Map();
-    Map & m = map_field.safeGet<Map>();
-    for (const auto & [k, v] : labels)
-        m.push_back(Tuple{k, v});
-    column.insert(map_field);
+    if (!isArray(type))
+        return false;
+    const auto * type_array = assert_cast<const DataTypeArray *>(type.get());
+    const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_array->getNestedType().get());
+    return type_tuple && type_tuple->getElements().size() == 2
+        && isDateTime64(type_tuple->getElement(0)) && WhichDataType(type_tuple->getElement(1)).isFloat64();
+}
+
+/// Convert Prometheus-compatible milliseconds to a raw `DateTime64` value at `scale` decimal places.
+Int64 millisToDateTime64(Int64 ms, UInt32 scale)
+{
+    if (scale == 3)
+        return ms;
+    if (scale > 3)
+    {
+        Int64 mult = 1;
+        for (UInt32 i = 3; i < scale; ++i)
+            mult *= 10;
+        return ms * mult;
+    }
+    Int64 div = 1;
+    for (UInt32 i = scale; i < 3; ++i)
+        div *= 10;
+    return ms / div;  /// sub-millisecond precision is truncated toward zero
+}
+
+void insertTags(IColumn & column, const std::vector<std::pair<String, String>> & tags)
+{
+    if (checkAndGetColumn<ColumnMap>(&column))
+    {
+        Field field = Map();
+        Map & m = field.safeGet<Map>();
+        for (const auto & [k, v] : tags)
+            m.push_back(Tuple{k, v});
+        column.insert(field);
+    }
+    else
+    {
+        Field field = Array();
+        Array & a = field.safeGet<Array>();
+        for (const auto & [k, v] : tags)
+            a.push_back(Tuple{k, v});
+        column.insert(field);
+    }
+}
+
+void insertPoints(IColumn & column, const std::vector<std::pair<Int64, double>> & points, UInt32 scale)
+{
+    auto & col_array = assert_cast<ColumnArray &>(column);
+    auto & col_tuple = assert_cast<ColumnTuple &>(col_array.getData());
+    auto & col_ts = assert_cast<ColumnDecimal<DateTime64> &>(col_tuple.getColumn(0));
+    auto & col_val = assert_cast<ColumnFloat64 &>(col_tuple.getColumn(1));
+    for (const auto & [ms, value] : points)
+    {
+        col_ts.insertValue(DateTime64(millisToDateTime64(ms, scale)));
+        col_val.insertValue(value);
+    }
+    col_array.getOffsets().push_back(col_tuple.size());
 }
 
 }  /// anonymous namespace
@@ -285,18 +346,16 @@ OpenMetricsTextRowInputFormat::ColumnLoc OpenMetricsTextRowInputFormat::buildCol
         std::optional<size_t> ColumnLoc::* slot;
         Pred pred;
     };
-    /// All slots are optional: `markFormatSupportsSubsetOfColumns` lets `file()`/`format()`
-    /// pass only the columns the query actually requests (e.g. `SELECT name FROM file(..., OpenMetrics)`).
-    /// `readRow` still parses the `name` and `value` tokens on every line because OpenMetrics
-    /// requires them; it just skips the insertion when the slot is absent.
+    /// All slots are optional: `markFormatSupportsSubsetOfColumns` lets `file()`/`format()` pass only
+    /// the columns the query actually requests (e.g. `SELECT metric_name FROM file(..., OpenMetrics)`).
     static const std::array<Spec, 7> specs = {{
-        {"name",      &ColumnLoc::name,      &isPlainString},
-        {"value",     &ColumnLoc::value,     &isPlainFloat64},
-        {"help",      &ColumnLoc::help,      &isPlainString},
-        {"type",      &ColumnLoc::type,      &isPlainString},
-        {"labels",    &ColumnLoc::labels,    &isMapStringString},
-        {"timestamp", &ColumnLoc::timestamp, &isOptionalInt64},
-        {"unit",      &ColumnLoc::unit,      &isPlainString},
+        {"metric_name",   &ColumnLoc::metric_name,   &isPlainString},
+        {"metric_family", &ColumnLoc::metric_family, &isPlainString},
+        {"help",          &ColumnLoc::help,          &isPlainString},
+        {"type",          &ColumnLoc::type,          &isPlainString},
+        {"unit",          &ColumnLoc::unit,          &isPlainString},
+        {"tags",          &ColumnLoc::tags,          &isTagsColumnType},
+        {"time_series",   &ColumnLoc::time_series,   &isTimeSeriesColumnType},
     }};
 
     ColumnLoc loc;
@@ -329,6 +388,9 @@ void OpenMetricsTextRowInputFormat::resetParser()
     family_meta.clear();
     saw_eof = false;
     column_loc_initialized = false;
+    parsed = false;
+    output_rows.clear();
+    next_output_row = 0;
 }
 
 void OpenMetricsTextRowInputFormat::readPrefix()
@@ -336,27 +398,60 @@ void OpenMetricsTextRowInputFormat::readPrefix()
     skipBOMIfExists(*in);
 }
 
-bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
+String OpenMetricsTextRowInputFormat::deriveMetricFamily(const String & metric_name) const
 {
-    if (!column_loc_initialized)
+    /// A name that carries its own `# HELP` / `# TYPE` / `# UNIT` is its own family, even if it also
+    /// looks like a suffixed sample of some other family (e.g. an explicitly typed `foo_total`).
+    const auto declared = [this](const String & name)
     {
-        column_loc = buildColumnLoc(getPort().getHeader());
-        column_loc_initialized = true;
-    }
-    const ColumnLoc & loc = column_loc;
+        const auto it = family_meta.find(name);
+        return it != family_meta.end() && (it->second.has_help || it->second.has_type || it->second.has_unit);
+    };
+    if (declared(metric_name))
+        return metric_name;
 
-    /// Like JSONEachRow: empty `read_columns` signals "no row produced" rather than "all nulls" (Code 7).
-    ext.read_columns.clear();
+    const auto in_set = [](const String & t, std::initializer_list<std::string_view> set)
+    {
+        for (const auto & s : set)
+            if (t == s)
+                return true;
+        return false;
+    };
+    const auto try_base = [&](std::string_view suffix, auto type_ok) -> std::optional<String>
+    {
+        if (metric_name.size() <= suffix.size() || !metric_name.ends_with(suffix))
+            return std::nullopt;
+        String base = metric_name.substr(0, metric_name.size() - suffix.size());
+        const auto it = family_meta.find(base);
+        if (it != family_meta.end() && type_ok(it->second.type))
+            return base;
+        return std::nullopt;
+    };
 
-    /// A `# HELP` / `# TYPE` / `# UNIT` for a family must precede every sample that folds into it.
-    /// Besides the bare name, that covers the histogram/summary `_bucket` / `_sum` / `_count` siblings,
-    /// the counter `_total`, and the unsupported `_created` / `_gcount` / `_gsum` forms: the metadata
-    /// governs how each folds, so a sample already emitted under any of them means the metadata is late
-    /// and would make the parse order-dependent. Probe with `find` so checking siblings never grows the map.
+    /// Suffix -> the base-family types for which that suffix is a member sample (OpenMetrics MetricType
+    /// suffix rules). The type stored in `family_meta` is already normalized (`untyped` -> `unknown`).
+    if (auto b = try_base("_total",   [&](const String & t) { return t == "counter"; })) return *b;
+    if (auto b = try_base("_created", [&](const String & t) { return in_set(t, {"counter", "histogram", "summary", "gaugehistogram"}); })) return *b;
+    if (auto b = try_base("_bucket",  [&](const String & t) { return in_set(t, {"histogram", "gaugehistogram"}); })) return *b;
+    if (auto b = try_base("_gcount",  [&](const String & t) { return t == "gaugehistogram"; })) return *b;
+    if (auto b = try_base("_gsum",    [&](const String & t) { return t == "gaugehistogram"; })) return *b;
+    if (auto b = try_base("_count",   [&](const String & t) { return in_set(t, {"histogram", "summary"}); })) return *b;
+    if (auto b = try_base("_sum",     [&](const String & t) { return in_set(t, {"histogram", "summary"}); })) return *b;
+    if (auto b = try_base("_info",    [&](const String & t) { return t == "info"; })) return *b;
+    return metric_name;
+}
+
+void OpenMetricsTextRowInputFormat::parseAll()
+{
+    /// OpenMetrics requires every `# HELP` / `# TYPE` / `# UNIT` to precede the family's samples: the
+    /// metadata governs family membership (`_bucket` / `_sum` / `_count`, counter `_total`, and the
+    /// `_created` / `_gcount` / `_gsum` / `_info` siblings), so a sample already emitted under any of
+    /// them means the metadata is late and would make the parse order-dependent. Probe with `find` so
+    /// checking siblings never grows the map.
     const auto familyOrSiblingEmittedSample = [this](const String & family) -> bool
     {
-        static constexpr std::array<std::string_view, 7> sibling_suffixes
-            = {"_bucket", "_sum", "_count", "_total", "_created", "_gcount", "_gsum"};
+        static constexpr std::array<std::string_view, 8> sibling_suffixes
+            = {"_bucket", "_sum", "_count", "_total", "_created", "_gcount", "_gsum", "_info"};
 
         const auto emitted = [this](const String & key)
         {
@@ -371,6 +466,10 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
                 return true;
         return false;
     };
+
+    /// Maps a series identity (metric_name + tags) to its row in `output_rows`, so repeated samples of
+    /// the same series accumulate into one `time_series` array.
+    std::unordered_map<String, size_t> series_index;
 
     while (!in->eof() && !saw_eof)
     {
@@ -396,10 +495,7 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
 
             String name;
             String rest;
-            /// OpenMetrics requires every `# HELP` / `# TYPE` / `# UNIT` to precede the family's
-            /// samples, and allows at most one of each. A duplicate descriptor, or one arriving after
-            /// a sample, would change how rows fold and make the parsed result order-dependent, so
-            /// reject both rather than silently reinterpreting earlier rows.
+            /// OpenMetrics allows at most one of each descriptor per family, all preceding its samples.
             if (line.starts_with("# HELP "))
             {
                 parseMetadataLine(line, sizeof("# HELP ") - 1, name, rest);
@@ -414,24 +510,23 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
             else if (line.starts_with("# TYPE "))
             {
                 parseMetadataLine(line, sizeof("# TYPE ") - 1, name, rest);
-                /// Type is a single token (counter/gauge/histogram/summary/untyped).
+                /// Type is a single token; reject trailing data.
                 size_t end = 0;
                 while (end < rest.size() && rest[end] != ' ' && rest[end] != '\t')
                     ++end;
                 if (end == 0)
                     throwIncorrect("Missing type in # TYPE descriptor", line);
                 for (size_t i = end; i < rest.size(); ++i)
-                {
                     if (rest[i] != ' ' && rest[i] != '\t')
                         throwIncorrect("Unexpected trailing data in # TYPE descriptor", line);
-                }
                 rest.resize(end);
                 auto & fm = family_meta[name];
                 if (familyOrSiblingEmittedSample(name))
                     throwIncorrect("'# TYPE' metadata cannot follow samples for a metric family", line);
                 if (fm.has_type)
                     throwIncorrect("Duplicate '# TYPE' metadata for a metric family", line);
-                fm.type = std::move(rest);
+                /// Normalize to the OpenMetrics 1.0 vocabulary (Prometheus `untyped` -> `unknown`).
+                fm.type = OpenMetricsText::normalizeOpenMetricsType(rest);
                 fm.has_type = true;
             }
             else if (line.starts_with("# UNIT "))
@@ -481,197 +576,125 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
         if (pos < sv.size())
             throwIncorrect("Unexpected trailing data", line);
 
-        std::optional<Int64> parsed_timestamp_ms;
-        if (has_ts)
-            parsed_timestamp_ms = secondsTokenToMillis(ts_token, line);
+        /// A sample without an explicit timestamp is stored at epoch (millisecond 0); the on-wire
+        /// name keeps its suffix, and the owning family (for metadata) is derived from `# TYPE`.
+        const Int64 ms = has_ts ? secondsTokenToMillis(ts_token, line) : 0;
 
-        /// Fold `_bucket`/`_sum`/`_count` siblings into their `# TYPE` family (see SUFFIX_RULES for
-        /// the type-specific contract). Folding a suffix synthesizes the empty marker label
-        /// (`labels[sum]=""` / `labels[count]=""`); a pre-existing non-empty label of that name is a
-        /// collision and is rejected rather than silently overwritten.
-        String logical_name = stem;
-        for (const auto & r : OpenMetricsText::SUFFIX_RULES)
-        {
-            if (!stem.ends_with(r.suffix) || stem.size() <= r.suffix.size())
-                continue;
-            const String base = stem.substr(0, stem.size() - r.suffix.size());
-            auto it = family_meta.find(base);
-            if (it == family_meta.end())
-                break;
-            const String & base_type = it->second.type;
-            const bool type_matches = r.histogram_only
-                ? (base_type == "histogram")
-                : (base_type == "histogram" || base_type == "summary");
-            if (!type_matches)
-                break;
-            if (r.suffix == "_bucket" && !labels.contains("le"))
-                throwIncorrect("Histogram bucket sample is missing required 'le' label", line);
-            logical_name = base;
-            if (!r.synth_label.empty())
-            {
-                const String synth_key(r.synth_label);
-                if (auto label_it = labels.find(synth_key); label_it != labels.end() && !label_it->second.empty())
-                    throwIncorrect(
-                        fmt::format(
-                            "Sample line for family '{}' uses suffix '{}' but its labels already contain '{}=\"{}\"'",
-                            base, r.suffix, synth_key, label_it->second),
-                        line);
-                labels[synth_key] = "";
-            }
-            break;
-        }
-
-        /// A `counter` family `foo` exposes its sample as `foo_total`. Unlike the histogram/summary
-        /// siblings folded above, the `_total` suffix is NOT dropped: the emitted name stays
-        /// `foo_total`, but the row inherits the base family's type/help/unit. Decouple the
-        /// metadata-family lookup from `logical_name` so the name round-trips unchanged while the
-        /// metadata comes from the base family.
-        String meta_family_name = logical_name;
-        {
-            static constexpr std::string_view total_suffix = "_total";
-            if (stem.ends_with(total_suffix) && stem.size() > total_suffix.size() && !family_meta.contains(stem))
-            {
-                const String base = stem.substr(0, stem.size() - total_suffix.size());
-                if (auto it = family_meta.find(base); it != family_meta.end() && it->second.type == "counter")
-                    meta_family_name = base;
-            }
-
-            /// Sibling suffixes ClickHouse does not model: reject them when the base is a declared
-            /// family, but leave a standalone `x_created` (no declared base family) to ingest as an
-            /// ordinary metric named `x_created`.
-            static constexpr std::array<std::string_view, 3> unsupported_suffixes = {"_created", "_gcount", "_gsum"};
-            for (const auto & suffix : unsupported_suffixes)
-            {
-                if (!stem.ends_with(suffix) || stem.size() <= suffix.size())
-                    continue;
-                const String base = stem.substr(0, stem.size() - suffix.size());
-                /// Only a declared family (one carrying a `# HELP` / `# TYPE` / `# UNIT`) claims these
-                /// siblings; a base name that has merely emitted samples does not.
-                const auto base_it = family_meta.find(base);
-                if (base_it != family_meta.end()
-                    && (base_it->second.has_help || base_it->second.has_type || base_it->second.has_unit))
-                    throwIncorrect(
-                        fmt::format("Unsupported OpenMetrics sibling suffix '{}' for family '{}'", suffix, base),
-                        line);
-                break;
-            }
-        }
-
-        /// Don't `operator[]` on lookup — that would grow the map for every unseen family name.
+        const String metric_family = deriveMetricFamily(stem);
         static const FamilyMeta empty_meta;
-        const auto meta_it = family_meta.find(meta_family_name);
+        const auto meta_it = family_meta.find(metric_family);
         const FamilyMeta & fm = (meta_it == family_meta.end()) ? empty_meta : meta_it->second;
 
-        if (fm.type == "histogram" || fm.type == "summary")
+        /// `std::map` iterates in sorted label-name order, giving a deterministic, canonical tag order.
+        std::vector<std::pair<String, String>> tags(labels.begin(), labels.end());
+
+        String key = stem;
+        key.push_back('\0');
+        for (const auto & [k, v] : tags)
         {
-            /// A histogram/summary sample must carry exactly one sample kind: a bucket/quantile
-            /// sample, or a `_sum` / `_count` marker. Zero kinds (e.g. `# TYPE h histogram` followed
-            /// by a bare `h 3`) and more than one (combined kinds) are both invalid exposition.
-            const size_t kinds = sampleKindCount(fm.type, labels);
-            if (kinds != 1)
-                throwIncorrect(
-                    fmt::format(
-                        "Sample for family '{}' with type '{}' must carry exactly one histogram/summary sample kind "
-                        "(a bucket/quantile sample or a '_sum' / '_count' marker), but has {}",
-                        logical_name, fm.type, kinds),
-                    line);
-
-            /// `count` / `sum` are reserved markers in a histogram/summary family: meaningful only as
-            /// the empty-value synth markers the suffix fold sets for `_count` / `_sum`. A non-empty
-            /// value collides with that mechanism, so the writer rejects such a row in
-            /// `hasReservedMarkerLabelWithValue`; reject it symmetrically on input (the empty synth
-            /// marker stays allowed — the predicate only flags a non-empty value).
-            String offending_key;
-            if (hasReservedMarkerLabelWithValue(labels, offending_key))
-                throwIncorrect(
-                    fmt::format("Label '{}' is a reserved histogram/summary marker and must have an empty value", offending_key),
-                    line);
-
-            /// Validate the bucket/quantile boundary value with the same strict rule the writer
-            /// applies in `checkBoundaryLabel`, so malformed (`le='.'`) or non-canonical-infinity
-            /// (`le='inf'`) and out-of-range (`quantile='2'`) boundaries are rejected symmetrically
-            /// on input. A `_sum` / `_count` marker row carries no boundary label, so this is a no-op.
-            if (auto reason = checkBoundaryLabel(fm.type, labels))
-                throwIncorrect(*reason, line);
+            key += k;
+            key.push_back('\0');
+            key += v;
+            key.push_back('\0');
         }
 
-        ext.read_columns.assign(columns.size(), 0);
-
-        const auto setString = [&](std::optional<size_t> idx, std::string_view str)
+        const auto [it, inserted] = series_index.try_emplace(key, output_rows.size());
+        if (inserted)
         {
-            if (!idx)
-                return;
-            assert_cast<ColumnString &>(*columns[*idx]).insertData(str.data(), str.size());
-            ext.read_columns[*idx] = 1;
-        };
-
-        setString(loc.name, logical_name);
-
-        if (loc.value)
+            OutputSeries series;
+            series.metric_name = stem;
+            series.metric_family = metric_family;
+            series.help = fm.help;
+            series.type = fm.type;
+            series.unit = fm.unit;
+            series.tags = std::move(tags);
+            series.points.emplace_back(ms, value);
+            output_rows.push_back(std::move(series));
+        }
+        else
         {
-            assert_cast<ColumnFloat64 &>(*columns[*loc.value]).insert(value);
-            ext.read_columns[*loc.value] = 1;
+            output_rows[it->second].points.emplace_back(ms, value);
         }
 
-        setString(loc.help, fm.help);
-        setString(loc.type, fm.type);
-
-        if (loc.labels)
-        {
-            insertMapLabels(*columns[*loc.labels], labels);
-            ext.read_columns[*loc.labels] = 1;
-        }
-
-        if (loc.timestamp)
-        {
-            auto & col = *columns[*loc.timestamp];
-            if (!has_ts)
-            {
-                if (!col.isNullable())
-                    throwIncorrect("Timestamp column is not Nullable but line has no timestamp", line);
-                assert_cast<ColumnNullable &>(col).insertDefault();
-            }
-            else
-            {
-                const Int64 t = *parsed_timestamp_ms;
-                if (col.isNullable())
-                {
-                    auto & nc = assert_cast<ColumnNullable &>(col);
-                    nc.getNestedColumn().insert(t);
-                    nc.getNullMapColumn().insertValue(0);
-                }
-                else
-                    assert_cast<ColumnInt64 &>(col).insert(t);
-            }
-            ext.read_columns[*loc.timestamp] = 1;
-        }
-
-        setString(loc.unit, fm.unit);
-
-        /// Record that a sample has been emitted under this exact name, so a later `# HELP` / `# TYPE`
-        /// / `# UNIT` for the owning family is rejected. Mark the literal emitted name (`operator[]`
-        /// deliberately grows the map here): `familyOrSiblingEmittedSample` maps a family back to every
-        /// sibling form it can fold, so recording the name as-is keeps that check symmetric for buckets,
-        /// `_sum` / `_count`, counter `_total`, and the `_created` / `_gcount` / `_gsum` siblings alike.
+        /// Record that a sample has been emitted under this exact on-wire name so a later descriptor
+        /// for the owning family is rejected (`operator[]` deliberately grows the map here).
         family_meta[stem].samples_emitted = true;
+    }
+}
 
-        return true;
+bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
+{
+    if (!column_loc_initialized)
+    {
+        const Block & header = getPort().getHeader();
+        column_loc = buildColumnLoc(header);
+        if (column_loc.time_series)
+        {
+            const auto & ts_type = header.getByPosition(*column_loc.time_series).type;
+            const auto & ts_tuple = assert_cast<const DataTypeTuple &>(*assert_cast<const DataTypeArray &>(*ts_type).getNestedType());
+            timestamp_scale = assert_cast<const DataTypeDateTime64 &>(*ts_tuple.getElement(0)).getScale();
+        }
+        column_loc_initialized = true;
     }
 
-    ext.read_columns.clear();
-    return false;
+    if (!parsed)
+    {
+        parseAll();
+        parsed = true;
+    }
+
+    /// Like JSONEachRow: empty `read_columns` signals "no row produced" rather than "all nulls".
+    if (next_output_row >= output_rows.size())
+    {
+        ext.read_columns.clear();
+        return false;
+    }
+
+    const OutputSeries & series = output_rows[next_output_row++];
+    ext.read_columns.assign(columns.size(), 0);
+
+    const auto set_string = [&](std::optional<size_t> idx, const String & str)
+    {
+        if (!idx)
+            return;
+        assert_cast<ColumnString &>(*columns[*idx]).insertData(str.data(), str.size());
+        ext.read_columns[*idx] = 1;
+    };
+
+    set_string(column_loc.metric_name, series.metric_name);
+    set_string(column_loc.metric_family, series.metric_family);
+    set_string(column_loc.help, series.help);
+    set_string(column_loc.type, series.type);
+    set_string(column_loc.unit, series.unit);
+
+    if (column_loc.tags)
+    {
+        insertTags(*columns[*column_loc.tags], series.tags);
+        ext.read_columns[*column_loc.tags] = 1;
+    }
+    if (column_loc.time_series)
+    {
+        insertPoints(*columns[*column_loc.time_series], series.points, timestamp_scale);
+        ext.read_columns[*column_loc.time_series] = 1;
+    }
+
+    return true;
 }
 
 NamesAndTypesList OpenMetricsTextSchemaReader::readSchema()
 {
+    auto str = std::make_shared<DataTypeString>();
+    auto tags = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{str, str}));
+    auto time_series = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
+        DataTypes{std::make_shared<DataTypeDateTime64>(3), std::make_shared<DataTypeFloat64>()}));
     return {
-        {"name",      std::make_shared<DataTypeString>()},
-        {"value",     std::make_shared<DataTypeFloat64>()},
-        {"help",      std::make_shared<DataTypeString>()},
-        {"type",      std::make_shared<DataTypeString>()},
-        {"labels",    std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
-        {"timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
-        {"unit",      std::make_shared<DataTypeString>()},
+        {"metric_name",   str},
+        {"metric_family", str},
+        {"help",          str},
+        {"type",          str},
+        {"unit",          str},
+        {"tags",          tags},
+        {"time_series",   time_series},
     };
 }
 
