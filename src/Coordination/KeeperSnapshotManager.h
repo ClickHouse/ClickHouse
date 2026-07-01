@@ -1,18 +1,11 @@
 #pragma once
 #include "config.h"
 
-#include <atomic>
 #include <Common/CopyableAtomic.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Coordination/ACLMap.h>
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperStorage_fwd.h>
-#include <functional>
 #include <libnuraft/nuraft.hxx>
-#include <IO/WriteBuffer.h>
-#include <vector>
-
-#include <mutex>
 
 namespace DB
 {
@@ -22,6 +15,7 @@ using SnapshotMetadataPtr = std::shared_ptr<SnapshotMetadata>;
 using ClusterConfig = nuraft::cluster_config;
 using ClusterConfigPtr = nuraft::ptr<ClusterConfig>;
 
+class WriteBuffer;
 class ReadBuffer;
 
 class KeeperContext;
@@ -39,11 +33,9 @@ enum SnapshotVersion : uint8_t
     V4 = 4, /// add Node size to snapshots
     V5 = 5, /// add ZXID and digest to snapshots
     V6 = 6, /// remove is_sequential, per node size, data length
-    V7 = 7, /// acl_id narrowed from uint64_t to uint32_t, seq_num widened from int32_t to int64_t
-    V8 = 8, /// add destroy_time and ttl for TTL nodes
 };
 
-static constexpr auto MAX_SUPPORTED_SNAPSHOT_VERSION = SnapshotVersion::V8;
+static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V6;
 
 /// What is stored in binary snapshot
 template<typename Storage>
@@ -55,7 +47,7 @@ struct SnapshotDeserializationResult
     SnapshotMetadataPtr snapshot_meta;
     /// Cluster config
     ClusterConfigPtr cluster_config;
-    /// Container with all the paths stored in snapshot
+    /// container with all the paths stored in snapshot
     /// used if we don't want to load entire storage from snapshot
     /// which can be useful for analyzing snapshot files
     std::vector<std::string> paths;
@@ -63,20 +55,12 @@ struct SnapshotDeserializationResult
 
 /// In memory keeper snapshot. Keeper Storage based on a hash map which can be
 /// turned into snapshot mode. This operation is fast and KeeperStorageSnapshot
-/// class does it in constructor. It also copies iterators from storage hash table
-/// up to some log index with lock. In destructor this class turns off snapshot
+/// class do it in constructor. It also copies iterators from storage hash table
+/// up to some log index with lock. In destructor this class turn off snapshot
 /// mode for KeeperStorage.
 ///
-/// This representation of snapshot has to be serialized into NuRaft
-/// buffer and sent over network or saved to file.
-///
-/// Tricky to use correctly:
-///  * During the constructor call, storage contents must not change, and up_to_log_idx_ must match
-///    the storage's commit idx. In keeper server, this means that nuraft's commit_lock_ must be held.
-///  * At most one instance of KeeperStorageSnapshot can exist at a time, for a given KeeperStorage.
-///    NuRaft guarantees that at most one snapshotting operation can be in progress (create_snapshot
-///    is not called again until when_done callback is called).
-///  * Destructor must be called with storage mutex held (for the disableSnapshotMode() call).
+/// This representation of snapshot have to be serialized into NuRaft
+/// buffer and send over network or saved to file.
 template<typename Storage>
 struct KeeperStorageSnapshot
 {
@@ -87,10 +71,10 @@ struct KeeperStorageSnapshot
 #endif
 
 public:
-    KeeperStorageSnapshot(Storage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_);
+    KeeperStorageSnapshot(Storage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_ = nullptr);
 
     KeeperStorageSnapshot(
-        Storage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_);
+        Storage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_ = nullptr);
 
     KeeperStorageSnapshot(const KeeperStorageSnapshot<Storage>&) = delete;
     KeeperStorageSnapshot(KeeperStorageSnapshot<Storage>&&) = default;
@@ -103,7 +87,7 @@ public:
 
     Storage * storage;
 
-    SnapshotVersion version;
+    SnapshotVersion version = CURRENT_SNAPSHOT_VERSION;
     /// Snapshot metadata
     SnapshotMetadataPtr snapshot_meta;
     /// Max session id
@@ -118,7 +102,7 @@ public:
     /// Sessions credentials
     Storage::SessionAndAuth session_and_auth;
     /// ACLs cache for better performance. Without we cannot deserialize storage.
-    std::vector<std::pair<ACLId, Coordination::ACLs>> acl_map;
+    std::unordered_map<uint64_t, Coordination::ACLs> acl_map;
     /// Cluster config from snapshot, can be empty
     ClusterConfigPtr cluster_config;
     /// Last committed ZXID
@@ -136,71 +120,15 @@ struct SnapshotFileInfo
 
     std::string path;
     DiskPtr disk;
-
-    /// Set when the file should be unlinked after the last `shared_ptr` drops.
-    /// A false value keeps the file across manager destruction.
-    std::atomic<bool> retired_for_removal{false};
 };
 
 using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;
-
-struct SnapshotMoveCandidate
-{
-    uint64_t log_idx = 0;
-    SnapshotFileInfoPtr file_info;
-    DiskPtr source_disk;
-    std::string source_path;
-    DiskPtr target_disk;
-    std::string target_path;
-};
-
-struct SnapshotMaintenanceTasks
-{
-    std::vector<SnapshotFileInfoPtr> retired_snapshots;
-    std::vector<SnapshotMoveCandidate> move_candidates;
-};
-
 #if USE_ROCKSDB
 using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>, std::shared_ptr<KeeperStorageSnapshot<KeeperRocksStorage>>>;
 #else
 using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>>;
 #endif
 using CreateSnapshotCallback = std::function<SnapshotFileInfoPtr(KeeperStorageSnapshotPtr &&, bool)>;
-
-/// In-progress chunked snapshot receive state on the follower side.
-/// Holds the write buffer for writing chunks directly to disk and the tmp_
-/// marker path used to detect incomplete writes on restart.
-struct SnapshotReceiveCtx
-{
-    const uint64_t log_idx = 0;
-    /// The obj_id of the next chunk we expect to receive. Starts at 0, incremented after
-    /// each chunk is written. Used to detect duplicate or out-of-order chunks.
-    uint64_t expected_obj_id = 0;
-    const std::string snapshot_file_name;
-    const DiskPtr disk;
-    std::unique_ptr<WriteBuffer> write_buf;
-
-    SnapshotReceiveCtx(
-        std::unique_ptr<WriteBuffer> write_buf_,
-        DiskPtr disk_,
-        std::string snapshot_file_name_,
-        uint64_t log_idx_)
-        : log_idx(log_idx_)
-        , expected_obj_id(0)
-        , snapshot_file_name(std::move(snapshot_file_name_))
-        , disk(std::move(disk_))
-        , write_buf(std::move(write_buf_))
-    {
-    }
-
-    /// Cancel write buffer if not finalized.
-    ~SnapshotReceiveCtx()
-    {
-        if (write_buf && !write_buf->isFinalized())
-            write_buf->cancel();
-    }
-
-};
 
 /// Class responsible for snapshots serialization and deserialization. Each snapshot
 /// has it's path on disk and log index.
@@ -221,54 +149,13 @@ public:
     /// Compress snapshot and serialize it to buffer
     nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot<Storage> & snapshot) const;
 
-    /// Write helpers do disk I/O under a fresh unique name and do not publish metadata.
-    SnapshotFileInfoPtr writeSnapshotFile(const KeeperStorageSnapshot<Storage> & snapshot);
-    SnapshotFileInfoPtr writeSnapshotBufferToFile(nuraft::buffer & buffer, uint64_t up_to_log_idx);
-
-    /// Returns the already-registered entry for `up_to_log_idx` so the caller can skip rewriting.
-    /// Returns nullptr if nothing is registered.
-    SnapshotFileInfoPtr tryReuseRegisteredSnapshot(uint64_t up_to_log_idx) const;
-
-    /// Publish `written`, retire it if a race was lost, run inline maintenance, and return the
-    /// published metadata. Used by write-from-scratch and receive paths (not by
-    /// `KeeperStateMachine::publishWrittenSnapshot`, which calls `publishSnapshotFile` directly).
-    SnapshotFileInfoPtr publishAndRunMaintenance(uint64_t up_to_log_idx, SnapshotFileInfoPtr written);
-
-    /// Metadata-only; call under `IKeeperStateMachine::snapshots_lock`.
-    /// Returns the already-registered entry for the same log index if any; caller retires its file on loss.
-    SnapshotFileInfoPtr publishSnapshotFile(uint64_t up_to_log_idx, SnapshotFileInfoPtr file_info);
-    /// `just_written_log_idx` (0 = none) pins the caller's own entry through this pass.
-    SnapshotMaintenanceTasks prepareSnapshotMaintenanceTasks(uint64_t just_written_log_idx);
-    bool publishMovedSnapshotIfValid(const SnapshotMoveCandidate & candidate);
-    void retireUnpublishedSnapshotFile(const SnapshotFileInfoPtr & file_info) const;
-
-    /// Cross-disk copy/removal; must run outside `snapshots_lock`.
-    bool moveSnapshotCandidate(
-        const SnapshotMoveCandidate & candidate,
-        const std::function<bool(const SnapshotMoveCandidate &)> & publish_moved_snapshot);
-
-    /// Best-effort maintenance (swallows exceptions); `just_written_log_idx` (0 = none) pins the
-    /// caller's own entry through this pass.
-    void runMaintenanceInline(uint64_t just_written_log_idx);
-
     /// Serialize already compressed snapshot to disk (return path)
     SnapshotFileInfoPtr serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
-
-    /// Chunked receive: open a snapshot file under a fresh unique name and return a context.
-    std::unique_ptr<SnapshotReceiveCtx> beginSnapshotReceiveToDisk(uint64_t up_to_log_idx);
-
-    /// Finalize chunked receive: sync, finalize write buffer, remove tmp marker, register snapshot.
-    SnapshotFileInfoPtr finalizeSnapshotReceiveToDisk(SnapshotReceiveCtx & ctx);
 
     /// Serialize snapshot directly to disk
     SnapshotFileInfoPtr serializeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot);
 
     SnapshotDeserializationResult<Storage> deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage = true) const;
-
-    SnapshotMetadataPtr deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
-
-    /// Deserialize pinned snapshot from disk into compressed nuraft buffer.
-    nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(const SnapshotFileInfo & snapshot_info) const;
 
     /// Deserialize snapshot with log index up_to_log_idx from disk into compressed nuraft buffer.
     nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const;
@@ -276,7 +163,7 @@ public:
     /// Deserialize latest snapshot from disk into compressed nuraft buffer.
     nuraft::ptr<nuraft::buffer> deserializeLatestSnapshotBufferFromDisk();
 
-    /// Remove snapshot with this log_index. Used by tests and tools only.
+    /// Remove snapshot  with this log_index
     void removeSnapshot(uint64_t log_idx);
 
     /// Total amount of snapshots
@@ -287,32 +174,9 @@ public:
 
     SnapshotFileInfoPtr getLatestSnapshotInfo() const;
 
-    std::map<uint64_t, SnapshotFileInfoPtr> getExistingSnapshots(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const;
-
-    /// Return the map entry for `log_idx`, or `nullptr` if absent. Holding the
-    /// result pins the file against unlink and cross-disk moves.
-    /// Caller must hold `IKeeperStateMachine::snapshots_lock`.
-    SnapshotFileInfoPtr getSnapshotPin(uint64_t log_idx) const;
-
-    /// Protect this log index from retention — the file backing `latest_snapshot_meta` must
-    /// stay servable to NuRaft. 0 = none. Caller must hold `IKeeperStateMachine::snapshots_lock`.
-    void setProtectedSnapshotIndex(uint64_t log_idx);
-
-    /// Protect a pending install from retention until `apply_snapshot` consumes it. 0 = none.
-    /// Caller must hold `IKeeperStateMachine::snapshots_lock`.
-    void setProtectedPendingSnapshotIndex(uint64_t log_idx);
-
 private:
-    /// Detach the entry at `it` and same-index recovery copies, marking retired; caller's drop unlinks them.
-    std::vector<SnapshotFileInfoPtr> detachSnapshotForRemoval(std::map<uint64_t, SnapshotFileInfoPtr>::iterator it);
-    /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.
-    std::vector<SnapshotFileInfoPtr> detachOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx);
-    std::vector<SnapshotMoveCandidate> selectSnapshotsToMove();
-    void cleanupCopiedMoveTarget(const SnapshotMoveCandidate & candidate) const;
-
-    /// Build a `shared_ptr<SnapshotFileInfo>` whose deleter unlinks only when
-    /// `retired_for_removal` is set.
-    SnapshotFileInfoPtr makeManagedSnapshotFileInfo(std::string path, DiskPtr disk, uint64_t log_idx) const;
+    void removeOutdatedSnapshotsIfNeeded();
+    void moveSnapshotsIfNeeded();
 
     DiskPtr getDisk() const;
     DiskPtr getLatestSnapshotDisk() const;
@@ -325,14 +189,6 @@ private:
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)
     std::map<uint64_t, SnapshotFileInfoPtr> existing_snapshots;
-    /// Same-index recovery copies kept on disk at startup but NOT registered in
-    /// `existing_snapshots` (retained-window duplicates + re-point orphans), keyed by log index.
-    /// `detachSnapshotForRemoval` retires them with their index so they age out without a restart.
-    std::unordered_map<uint64_t, std::vector<SnapshotFileInfoPtr>> retained_duplicate_snapshots;
-    /// See `setProtectedSnapshotIndex` / `setProtectedPendingSnapshotIndex`. Both checked by
-    /// `detachOutdatedSnapshotsIfNeeded`.
-    uint64_t protected_snapshot_log_idx = 0;
-    uint64_t protected_pending_snapshot_log_idx = 0;
     /// Compress snapshots in common ZSTD format instead of custom ClickHouse block LZ4 format
     const bool compress_snapshots_zstd;
     /// Superdigest for deserialization of storage
@@ -345,17 +201,14 @@ private:
     LoggerPtr log = getLogger("KeeperSnapshotManager");
 };
 
-/// Keeper creates snapshots in background thread. KeeperStateMachine just creates
-/// in-memory snapshot from storage and pushes task for its serialization into
-/// special tasks queue. Background thread checks this queue and after snapshot
-/// successfully serialized notifies state machine.
+/// Keeper create snapshots in background thread. KeeperStateMachine just create
+/// in-memory snapshot from storage and push task for it serialization into
+/// special tasks queue. Background thread check this queue and after snapshot
+/// successfully serialized notify state machine.
 struct CreateSnapshotTask
 {
-    /// Declared before `snapshot`: the closure keeps the captured storage alive while the
-    /// snapshot holds a raw pointer into it; reverse member destruction protects a task
-    /// that is destroyed without being executed.
-    CreateSnapshotCallback create_snapshot;
     KeeperStorageSnapshotPtr snapshot;
+    CreateSnapshotCallback create_snapshot;
 };
 
 }
