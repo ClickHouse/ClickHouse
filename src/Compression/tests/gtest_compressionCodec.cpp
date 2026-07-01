@@ -1565,6 +1565,25 @@ TEST(GetCompressionCodecForFileTest, ThrowsOnMultipleSizeBelowConsumed)
     ASSERT_THROW(getCompressionCodecForFile(in, size_compressed, size_decompressed, /*skip_to_next_block=*/true), Exception);
 }
 
+TEST(GetCompressionCodecForFileTest, DoesNotOverreadMultipleCountByteWhenSizeEqualsHeader)
+{
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x91, /// Multiple method byte
+        0x09, 0x00, 0x00, 0x00, /// size_compressed = 9 (== header size, so no payload follows)
+        0x00, 0x00, 0x00, 0x00, /// size_decompressed
+        0x01, /// count byte: belongs to the next block, must NOT be read
+        0x82, /// padding, so an (incorrect) read of the count byte would find real data
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    UInt32 size_compressed = 0;
+    UInt32 size_decompressed = 0;
+    ASSERT_THROW(getCompressionCodecForFile(in, size_compressed, size_decompressed, /*skip_to_next_block=*/true), Exception);
+    /// The count byte at offset 25 must not have been consumed.
+    EXPECT_EQ(in.count(), 16u + ICompressionCodec::getHeaderSize());
+}
+
 auto ALPSequentialGenerator = []<typename T>(T base = T{0}, T exception = T{0}, double exception_probability = 0, int decimals = 2)
 {
     std::default_random_engine random_engine(17); /// NOLINT

@@ -41,6 +41,14 @@ getCompressionCodecForFile(ReadBuffer & read_buffer, UInt32 & size_compressed, U
 
     if (method == static_cast<uint8_t>(CompressionMethodByte::Multiple))
     {
+        if (size_compressed < static_cast<UInt32>(header_size) + 1)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Compressed block header reports compressed size {}, too small to hold the Multiple codec count byte (needs at least {} "
+                "bytes)",
+                size_compressed,
+                static_cast<UInt32>(header_size) + 1);
+
         compressed_buffer.resize(1);
         read_buffer.readStrict(compressed_buffer.data(), 1);
         const size_t codecs_count = static_cast<UInt8>(compressed_buffer[0]);
