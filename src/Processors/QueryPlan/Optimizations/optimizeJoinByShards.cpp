@@ -564,18 +564,32 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
                 auto * left_sort = typeid_cast<SortingStep *>(node->children[0]->step.get());
                 auto * right_sort = typeid_cast<SortingStep *>(node->children[1]->step.get());
 
-                /// Only rewrite plain full sorts. `applyOrder` (read-in-order), which runs before this pass,
-                /// can turn a merge-join `SortingStep` into `FinishSorting` fed by an already in-order read
-                /// (with `read_in_order_use_virtual_row = 1` the read even emits virtual-row chunks). The
-                /// scatter path here is designed for a full sort of unsorted input, so re-routing such a
-                /// read through `ScatterByPartitionTransform` throws away the pre-sortedness and mixes in
-                /// virtual-row handling it does not expect. Sharding of in-order MergeTree reads is already
-                /// handled by the primary-key-range path (`optimizeJoinByShards`), so leave these steps
-                /// alone and let the join run as a single merge join.
+                /// A merge-join pre-sort is scattered when it is a plain full sort, or a `FinishSorting`
+                /// that `applyOrder` produced from a generic already-sorted input - a sorted subquery, a
+                /// sorted `UNION ALL`, or any other sorted upstream operator (`applyOrder` runs before this
+                /// pass and turns the full sort into a `FinishSorting` when its input already carries a sort
+                /// prefix). `convertToScatteredFullSort` turns the step back into a full sort per shard, so
+                /// the pre-sortedness is simply re-established inside each shard; this is what lets
+                /// `parallel_full_sorting_merge` parallelize any sorted input, as advertised, and not only
+                /// unsorted ones.
+                ///
+                /// Read-in-order MergeTree reads are deliberately left alone: `optimizeReadInOrder` marks
+                /// their pre-join `FinishSorting` with buffering (and, with `read_in_order_use_virtual_row`,
+                /// virtual-row chunks) that the scatter path is not meant to consume. Such reads are sharded
+                /// by the primary-key-range path (`optimizeJoinByShards`), which runs before this pass and
+                /// converts them to `PartitionedFinishSorting`. So a `FinishSorting` is scattered only when
+                /// it does not use buffering, i.e. it was created by `applyOrder` rather than read-in-order.
+                auto is_scatterable_merge_join_sort = [](const SortingStep & sort)
+                {
+                    if (!sort.isSortingForMergeJoin())
+                        return false;
+                    if (sort.getType() == SortingStep::Type::Full)
+                        return true;
+                    return sort.getType() == SortingStep::Type::FinishSorting && !sort.getUseBuffering();
+                };
                 if (left_sort && right_sort
-                    && left_sort->isSortingForMergeJoin() && right_sort->isSortingForMergeJoin()
-                    && left_sort->getType() == SortingStep::Type::Full
-                    && right_sort->getType() == SortingStep::Type::Full)
+                    && is_scatterable_merge_join_sort(*left_sort)
+                    && is_scatterable_merge_join_sort(*right_sort))
                 {
                     const auto & clause = table_join.getClauses().front();
                     const auto & left_header = left_sort->getOutputHeader();
