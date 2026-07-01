@@ -19,7 +19,26 @@ namespace DB
 template <typename T>
 void SerializationNumber<T>::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeText(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
+    const auto x = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
+
+    if constexpr (is_floating_point<T>)
+    {
+        /// Apache Hive's `LazySimpleSerDe` reads `FLOAT`/`DOUBLE` with Java's parser, which spells the
+        /// non-finite values as `NaN`, `Infinity`, and `-Infinity`. ClickHouse's default `nan`/`inf`/`-inf`
+        /// tokens are read back by Hive as null, so we emit the Java spellings to round-trip these values.
+        if (isNaN(x))
+        {
+            writeString(std::string_view("NaN"), ostr);
+            return;
+        }
+        if (!isFinite(x))
+        {
+            writeString(signBit(x) ? std::string_view("-Infinity") : std::string_view("Infinity"), ostr);
+            return;
+        }
+    }
+
+    writeText(x, ostr);
 }
 
 template <typename T>
