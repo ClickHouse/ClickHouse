@@ -646,10 +646,6 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
     chassert(downloaded_size > 0);
     chassert(fs::file_size(getPath()) == downloaded_size);
 
-    /// Publish DOWNLOADED only once the segment is fully finalized (writer flushed and closed,
-    /// reader released). `download_state` is read without lock (see `FileSegment::state` and
-    /// `FileSegment::isDownloaded`), so an observer of DOWNLOADED must see a fully-downloaded
-    /// segment, not an intermediate state.
     download_state = State::DOWNLOADED;
 }
 
