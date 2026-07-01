@@ -1,4 +1,4 @@
--- Tags: distributed
+-- Tags: distributed, no-parallel-replicas
 --
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/103333
 --
@@ -9,6 +9,21 @@
 -- subquery in `buildQueryTreeForShard` via `executeSubqueryNode` and used to
 -- skip that check, silently ignoring the limit. This test guards against the
 -- regression by asserting that the limit fires under both analyzers.
+
+-- The queries below deliberately cancel remote execution mid-stream (the
+-- `{ serverError SET_SIZE_LIMIT_EXCEEDED }` limit throws, and the
+-- `transfer_overflow_mode = 'break'` query truncates the transfer), which can
+-- leave a pooled connection with an unread packet. The next user of that
+-- connection then reads the leftover packet and fails with
+-- `UNEXPECTED_PACKET_FROM_SERVER` (expected TablesStatusResponse, got ProfileInfo)
+-- while establishing the Distributed shard connection. This connection-reuse race
+-- is orthogonal to the `max_rows_to_transfer` behaviour under test.
+--
+-- Pin hedged requests off: A/B failures ran the hedged path and, with no
+-- observed `hedged=1, parallel_replicas=0` sample to rule it out as an independent
+-- trigger, this keeps that path out too. Both are orthogonal to the
+-- `max_rows_to_transfer` behaviour under test.
+SET use_hedged_requests = 0;
 
 DROP TABLE IF EXISTS t1_local SYNC;
 DROP TABLE IF EXISTS t2_local SYNC;
