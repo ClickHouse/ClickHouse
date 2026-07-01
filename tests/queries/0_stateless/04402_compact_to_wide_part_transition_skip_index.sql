@@ -38,6 +38,7 @@ SELECT 'after_merge', arraySort(groupUniqArray(part_type)) FROM system.parts
     WHERE database = currentDatabase() AND table = 't_compact_to_wide' AND active;
 
 ALTER TABLE t_compact_to_wide UPDATE d = (id + 1)::Dynamic WHERE 1 SETTINGS mutations_sync = 2;
+ALTER TABLE t_compact_to_wide UPDATE v = v WHERE 1 SETTINGS mutations_sync = 2;
 
 SELECT 'after_mutate', arraySort(groupUniqArray(part_type)) FROM system.parts
     WHERE database = currentDatabase() AND table = 't_compact_to_wide' AND active;
