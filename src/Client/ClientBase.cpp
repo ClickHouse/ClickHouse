@@ -1071,7 +1071,13 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     {
         std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(stdout_fd);
         if (format_from_file_name)
+        {
             default_output_format = *format_from_file_name;
+            /// A format autodetected from the output file (e.g. stdout redirected to `x.jsonl.gz`) is an
+            /// explicit format choice, like `--output-format`; the `default_format` setting must not
+            /// override it in the per-query resolution below.
+            is_default_format = false;
+        }
         else
             default_output_format = "TSV";
     }
