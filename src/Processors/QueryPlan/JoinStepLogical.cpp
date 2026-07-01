@@ -229,8 +229,11 @@ void JoinStepLogical::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-static String formatJoinCondition(const std::vector<JoinActionRef> & predicates)
+static String formatJoinCondition(const std::vector<JoinActionRef> & predicates, bool pretty = false)
 {
+    if (!pretty)
+        return fmt::format("{}", fmt::join(predicates | std::views::transform([](const auto & x) { return x.getColumnName(); }), " AND "));
+
     /// Render predicates in a readable infix form (e.g. `a >= b` instead of `greaterOrEquals(a, b)`),
     /// the same way `EXPLAIN ... pretty` does.
     std::unordered_map<String, PrettyColumnName> pretty_names;
@@ -241,6 +244,11 @@ static String formatJoinCondition(const std::vector<JoinActionRef> & predicates)
         return QueryPlanFormat::formatNodePretty(predicate.getNode(), pretty_names, runtime_filter_names, subquery_set_names);
     };
     return fmt::format("{}", fmt::join(predicates | std::views::transform(to_readable), " AND "));
+}
+
+static String formatJoinConditionPretty(const std::vector<JoinActionRef> & predicates)
+{
+    return formatJoinCondition(predicates, /* pretty */ true);
 }
 
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness)
@@ -889,7 +897,7 @@ static bool tryAddDisjunctiveConditions(
             if (!throw_on_error)
                 return false;
 
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}", formatJoinCondition({expr}));
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}", formatJoinConditionPretty({expr}));
         }
 
         if (auto left_pre_filter_condition = concatConditions(join_condition, JoinTableSide::Left))
@@ -1197,7 +1205,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
                         join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context);
                     if (!has_constant_key)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add a constant join key for {} JOIN ON expression {}",
-                            toString(join_operator.kind), formatJoinCondition(join_expression));
+                            toString(join_operator.kind), formatJoinConditionPretty(join_expression));
                 }
                 else
                 {
@@ -1206,7 +1214,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
                     bool suggest_cross_join = (isLeftOrRight(join_operator.kind) || isFull(join_operator.kind))
                         && hash_enabled && !join_settings.allow_inequality_join_as_cross_join;
                     throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}{}",
-                        formatJoinCondition(join_expression),
+                        formatJoinConditionPretty(join_expression),
                         suggest_cross_join
                             ? ". Enable setting 'allow_inequality_join_as_cross_join' to run it as a CROSS JOIN (may be slow)"
                             : "");
@@ -1257,7 +1265,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         }
         if (found_asof_predicate_it == join_expression.end())
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join requires one inequality predicate in JOIN ON expression, in {}",
-                formatJoinCondition(join_expression));
+                formatJoinConditionPretty(join_expression));
 
         join_expression.erase(found_asof_predicate_it);
     }
