@@ -136,6 +136,44 @@ struct CosineDistanceTransposed
     }
 };
 
+struct DotProductTransposed
+{
+    static constexpr auto name = "dotProductTransposed";
+#if USE_SIMSIMD
+    static constexpr simsimd_metric_kind_t metric_kind = simsimd_metric_dot_k;
+    /// Largest term the SimSIMD i8 kernel adds per element (max |a * b| = 128 * 128, both equal to -128). Used to
+    /// bound the dimension before that kernel's int32 accumulator overflows; beyond it we use the scalar path.
+    static constexpr UInt64 max_int8_simd_term = 128 * 128;
+#endif
+
+    template <typename T>
+    static void distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
+    {
+        if constexpr (std::is_same_v<T, Int8>)
+            distanceScalar<Int8, Float64>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, BFloat16>)
+            distanceScalar<BFloat16, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float32>)
+            distanceScalar<Float32, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float64>)
+            distanceScalar<Float64, Float64>(x, y, array_size, result);
+    }
+
+    template <typename InputType, typename AccumulatorType>
+    static void distanceScalar(const InputType * __restrict x, const InputType * __restrict y, std::size_t array_size, Float64 * result)
+    {
+        /// This could be vectorized, but we consider this a fallback code path, so no need to optimize it heavily
+        AccumulatorType ab = 0;
+        for (size_t i = 0; i != array_size; ++i)
+        {
+            AccumulatorType xi = static_cast<AccumulatorType>(*(x + i));
+            AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
+            ab += xi * yi;
+        }
+        *result = static_cast<Float64>(ab);
+    }
+};
+
 /** Each [L2/cosine/...]DistanceTransposed has two calling conventions:
   * 1. User-facing (documented): DistanceTransposed(qbit, ref_vec, precision)
   * 2. Internal (undocumented): DistanceTransposed(vec.1, ..., vec.precision, qbit_size, ref_vec)
@@ -554,6 +592,7 @@ private:
 /// Used by TupleOrArrayFunction
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_);
 FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_);
+FunctionPtr createFunctionArrayDotProductTransposed(ContextPtr context_);
 
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_)
 {
@@ -563,5 +602,10 @@ FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_)
 FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_)
 {
     return FunctionArrayDistance<CosineDistanceTransposed>::create(context_);
+}
+
+FunctionPtr createFunctionArrayDotProductTransposed(ContextPtr context_)
+{
+    return FunctionArrayDistance<DotProductTransposed>::create(context_);
 }
 }
