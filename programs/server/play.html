@@ -4321,12 +4321,18 @@ async function persist() {
 /// Build the query-string parameters (user/run/url/param_*/tab) shared by history
 /// entries. Connection settings are global; the active tab name is appended so a
 /// shared URL can be reconciled against saved tabs on load.
-function buildHistoryParams(params, tabName) {
+/// `fromRun` marks an entry that a genuine run produced (see `writeHistoryEntry`).
+function buildHistoryParams(params, tabName, fromRun) {
     const out = [];
     const user = user_elem.value;
     const server_address = url_elem.value;
     if (user) out.push('user=' + encodeURIComponent(user));
-    if (run_immediately) out.push('run=1');
+    /// Only carry `run=1` for an entry a genuine run produced (`fromRun`). Editor-only updates
+    /// (tab switch/rename, parameter edits, startup sync via `syncHistory`/
+    /// `refreshCurrentHistoryEntry`) must NOT stamp `run=1` onto a query or parameters the user
+    /// edited but never ran: otherwise reloading that URL would auto-execute the unrun edit
+    /// (e.g. a `DROP`/`INSERT`), because startup treats a `run=1` URL as authoritative.
+    if (run_immediately && fromRun) out.push('run=1');
     if (server_address != location.origin) out.push('url=' + encodeURIComponent(server_address));
     for (const [name, value] of Object.entries(params || {})) {
         /// Serialize every parameter, including empty strings: an empty value is valid for a
@@ -4346,7 +4352,9 @@ function buildHistoryParams(params, tabName) {
 /// `titleForDoc` overrides the document title text. When `forceReplace` is set, the current
 /// entry is replaced in place even if the query changed (used to refresh the entry of a tab
 /// being left so it carries the latest editor edit rather than the last run/URL snapshot).
-function writeHistoryEntry(tab, titleForDoc, forceReplace) {
+/// `fromRun` is set only by `saveHistory` (an actual run) so the URL carries `run=1`; every
+/// editor-only caller leaves it unset so an unrun edit is never re-stamped as auto-runnable.
+function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
     /// Skip a fresh entry if neither the active tab nor its query changed.
     const cur = history.state;
     const sameTab = cur && cur.tabId === tab.id;
@@ -4360,7 +4368,7 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace) {
         tabName: tab.title,
     };
     const title = "ClickHouse Query: " + (titleForDoc || tab.query);
-    const history_params = buildHistoryParams(tab.params, tab.title);
+    const history_params = buildHistoryParams(tab.params, tab.title, fromRun);
     let history_url = window.location.pathname;
     if (history_params.length > 0) history_url += '?' + history_params.join('&');
     history_url += '#' + toBase64(tab.query);
@@ -4410,7 +4418,9 @@ function saveHistory(stateData, titleForDoc) {
         multi: stateData.multi ?? null,
         elapsed_ns: stateData.elapsed_ns,
     };
-    writeHistoryEntry(tab, titleForDoc);
+    /// This entry was produced by an actual run, so it may carry `run=1` (a reload/shared link
+    /// re-runs it). Editor-only writers (`syncHistory`/`refreshCurrentHistoryEntry`) never do.
+    writeHistoryEntry(tab, titleForDoc, /*forceReplace=*/ false, /*fromRun=*/ true);
 }
 
 /// Record a history entry for the active tab on tab switch / rename. Reuses the tab's
