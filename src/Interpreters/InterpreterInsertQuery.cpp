@@ -70,7 +70,7 @@ namespace Setting
     extern const SettingsBool optimize_trivial_insert_select;
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_insert_threads;
+    extern const SettingsMaxThreads max_insert_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
     extern const SettingsBool use_strict_insert_block_limits;
