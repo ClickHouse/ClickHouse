@@ -1,0 +1,24 @@
+WITH
+    a AS
+    (
+        SELECT 100
+    )
+SELECT a
+WITH
+    a AS
+    (
+        SELECT 100
+    ),
+    b AS
+    (
+        SELECT 200
+    )
+SELECT a
+WITH
+    1 AS x
+SELECT x
+WITH
+    1 AS x,
+    2 AS y
+SELECT x + y
+SELECT 1
