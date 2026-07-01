@@ -236,17 +236,18 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     String server_side_encryption_customer_key_base64 = auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
     auto server_side_encryption_kms_config = auth_settings.server_side_encryption_kms_config;
 
-    /// When a restricted client resolves to anonymous, drop the request-auth material merged from the server
-    /// `<s3>`/endpoint config (generic headers and per-request access headers -- either can carry an
-    /// `Authorization` -- and the SSE-C/SSE-KMS keys) so they cannot keep authorizing with the server identity.
-    /// `auth_settings.headers` is the merged result of the stored definition and the server config and they
-    /// cannot be told apart here, so all of them are cleared (the disk is anonymous and inaccessible anyway).
-    /// This covers a persistent S3-engine table on metadata load and any forced-anonymous dynamic S3 disk
-    /// (forceAnonymousS3DiskConfig sets `no_sign_request`); the disk path reaches `getClient` with `for_disk_s3`
-    /// but no metadata-load flag, so do not require it here.
+    /// When a persistent S3-engine table is downgraded to anonymous on metadata load, drop the request-auth
+    /// material merged from the server `<s3>`/endpoint config (generic headers and per-request access headers --
+    /// either can carry an `Authorization` -- and the SSE-C/SSE-KMS keys) so they cannot keep authorizing with
+    /// the server identity. `auth_settings.headers` is the merged result of the stored definition and the server
+    /// config and they cannot be told apart here, so all of them are cleared (the storage is anonymous and
+    /// inaccessible anyway). A forced-anonymous dynamic S3 disk already had this material removed from its
+    /// resolved config by `forceAnonymousS3DiskConfig`, so this is keyed on the metadata-load fallback only and
+    /// must not fire for an ordinary server disk (`for_disk_s3`) that the operator configured `no_sign_request`
+    /// with its own headers/encryption keys.
     if (context->shouldRestrictUserQueryS3Credentials()
         && (credentials_configuration.no_sign_request || credentials_configuration.anonymous_fallback_for_server_credentials)
-        && (is_loading_from_existing_metadata || for_disk_s3))
+        && is_loading_from_existing_metadata)
     {
         headers.clear();
         server_side_encryption_customer_key_base64.clear();

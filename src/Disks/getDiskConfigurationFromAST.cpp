@@ -318,6 +318,27 @@ void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & conf
     /// merely be inaccessible on query) rather than fail to attach. `skip_access_check` is read from the disk
     /// root and applied to every location child, so set it once at the root regardless of `prefix`.
     config.setString("skip_access_check", "1");
+
+    /// An anonymous disk must not still send request-auth material inherited from the server `<s3>`/endpoint
+    /// config: generic/per-request headers (either can carry an `Authorization`) and the SSE-C key / SSE-KMS
+    /// config. Remove them from the resolved config here -- at the single point that forces a disk anonymous --
+    /// rather than in `getClient`, which cannot tell a forced-anonymous disk from an operator-configured
+    /// `no_sign_request` disk that legitimately keeps its headers and encryption keys.
+    const String enum_root = prefix.empty() ? "" : prefix.substr(0, prefix.size() - 1);
+    Poco::Util::AbstractConfiguration::Keys backend_keys;
+    config.keys(enum_root, backend_keys);
+    for (const auto & key : backend_keys)
+    {
+        if (key.starts_with("header") || key.starts_with("access_header"))
+            config.remove(prefix + key);
+    }
+    for (const auto * sse_key : {"server_side_encryption_customer_key_base64",
+                                 "server_side_encryption_kms_key_id",
+                                 "server_side_encryption_kms_encryption_context"})
+    {
+        if (config.has(prefix + sse_key))
+            config.remove(prefix + sse_key);
+    }
 }
 
 namespace
