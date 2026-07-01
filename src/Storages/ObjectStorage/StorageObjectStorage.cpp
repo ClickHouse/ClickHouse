@@ -732,8 +732,11 @@ void StorageObjectStorage::drop()
     /// On the DataLakeCatalog path the storage is a fresh instance whose metadata was never
     /// initialized (no prior read/write), so configuration->drop() would be a no-op and leave
     /// the files behind. Only initialize when we are going to delete data, so a plain DROP keeps
-    /// its no-op behavior and does not newly touch the object storage.
-    if (delete_data_on_drop && configuration->isDataLakeConfiguration())
+    /// its no-op behavior and does not newly touch the object storage. iceberg_delete_data_on_drop
+    /// is Iceberg-only and only IcebergMetadata overrides drop(); gate on isIcebergConfiguration()
+    /// so DeltaLake/Hudi/Paimon (which share StorageObjectStorage but keep the no-op drop) do not
+    /// pay an unnecessary init that could fail on metadata/object-storage errors.
+    if (delete_data_on_drop && configuration->isIcebergConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, drop_context);
     configuration->drop(drop_context);
 }
