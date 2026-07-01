@@ -1,0 +1,76 @@
+-- stem postprocessor: the index stores stemmed tokens and the needle is stemmed before lookup.
+3
+3
+2
+0
+0
+5
+-- Array(String) column: postprocessor stems each array element.
+2
+2
+2
+1
+0
+1
+0
+3
+0
+-- Nullable(String) column: NULL values are skipped by the index.
+3
+3
+3
+2
+2
+0
+0
+5
+-- Index inspection: the index stores only stemmed tokens, not original words.
+collect	1
+run	3
+studi	1
+-- val IN (...) routes set elements through the stem postprocessor.
+3
+2
+1
+0
+0
+-- equals: needle is stemmed before index lookup so morphologically equivalent rows are not pruned.
+1
+1
+1
+3
+0
+-- hasPhrase: phrase tokens are stemmed before index lookup.
+3
+3
+3
+3
+0
+-- startsWith / endsWith: prefix/suffix tokens are stemmed for the hint lookup.
+1
+1
+3
+1
+1
+0
+0
+-- like: HINT-mode pattern tokens are stemmed.
+1
+1
+3
+1
+0
+-- mapContainsKey / mapContainsKeyLike: needle is stemmed for index on mapKeys.
+1
+1
+1
+0
+1
+3
+-- mapContainsValue / mapContainsValueLike: needle is stemmed for index on mapValues.
+1
+1
+1
+0
+1
+3

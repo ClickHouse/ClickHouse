@@ -7,6 +7,7 @@
 
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 
 constexpr size_t MIN_LENGTH_FOR_STRSTR = 3;
 constexpr size_t MAX_SUBPATTERNS = 1024;
@@ -266,10 +267,6 @@ const char * analyzeImpl(
     {
         switch (*pos)
         {
-            case '\0':
-                pos = end;
-                break;
-
             case '\\':
             {
                 ++pos;
@@ -448,6 +445,8 @@ const char * analyzeImpl(
             ordinary:   /// Normal, not escaped symbol.
             [[fallthrough]];
             default:
+                /// A NUL byte (`\0`) lands here too: the pattern is length-based (RE2 matches `\0`
+                /// literally), so it must be treated as an ordinary literal, not as end-of-pattern.
                 if (depth == 0 && !in_curly_braces && !in_square_braces)
                 {
                     /// record the first position of last string.
@@ -579,6 +578,18 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     number_of_subpatterns = 0;
     if (!is_trivial)
     {
+        /// re2 patterns can be machine-generated and huge; bound them in error messages.
+        /// Truncate on a UTF-8 code point boundary so a multi-byte character is not cut in half.
+        auto for_message = [](const std::string & re) -> std::string
+        {
+            static constexpr size_t max_code_points = 256;
+            const size_t bytes = DB::UTF8::computeBytesBeforeCodePoint(
+                reinterpret_cast<const UInt8 *>(re.data()), re.size(), max_code_points);
+            if (bytes >= re.size())
+                return re;
+            return re.substr(0, bytes) + "... (truncated, " + std::to_string(re.size()) + " bytes total)";
+        };
+
         /// Compile the re2 regular expression.
         re2::RE2::Options regexp_options;
 
@@ -609,14 +620,14 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
                 "string literal, the slashes have to be additionally escaped. "
                 "For example, to match an opening brace, write '\\(' -- "
                 "the first slash is for SQL and the second one is for regex",
-                regexp_, re2->error());
+                for_message(regexp_), for_message(re2->error()));
         }
 
         if (!is_no_capture)
         {
             number_of_subpatterns = re2->NumberOfCapturingGroups();
             if (number_of_subpatterns > MAX_SUBPATTERNS)
-                throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: too many subpatterns in regexp: {}", regexp_);
+                throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: too many subpatterns in regexp: {}", for_message(regexp_));
         }
     }
 
@@ -732,10 +743,12 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
 }
 
 
-unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
+unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_size, size_t start_pos, MatchVec & matches, unsigned limit) const
 {
     const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
     const UInt8 * haystack_end = haystack + subject_size;
+    /// Search starts here, but the characters before it remain available as context for zero-width assertions.
+    const UInt8 * search_begin = haystack + start_pos;
 
     matches.clear();
 
@@ -748,15 +761,15 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
     {
         if (required_substring.empty())
         {
-            matches.emplace_back(Match{0, 0});
+            matches.emplace_back(Match{start_pos, 0});
             return 1;
         }
 
         const UInt8 * pos = nullptr;
         if (is_case_insensitive)
-            pos = case_insensitive_substring_searcher->search(haystack, subject_size);
+            pos = case_insensitive_substring_searcher->search(search_begin, haystack_end - search_begin);
         else
-            pos = case_sensitive_substring_searcher->search(haystack, subject_size);
+            pos = case_sensitive_substring_searcher->search(search_begin, haystack_end - search_begin);
 
         if (haystack_end == pos)
             return 0;
@@ -772,9 +785,9 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
     {
         const UInt8 * pos = nullptr;
         if (is_case_insensitive)
-            pos = case_insensitive_substring_searcher->search(haystack, subject_size);
+            pos = case_insensitive_substring_searcher->search(search_begin, haystack_end - search_begin);
         else
-            pos = case_sensitive_substring_searcher->search(haystack, subject_size);
+            pos = case_sensitive_substring_searcher->search(search_begin, haystack_end - search_begin);
 
         if (haystack_end == pos)
             return 0;
@@ -782,7 +795,7 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
 
     DB::PODArrayWithStackMemory<std::string_view, 128> pieces(limit);
 
-    if (!re2->Match({subject, subject_size}, 0, subject_size, re2::RE2::UNANCHORED, pieces.data(), static_cast<int>(pieces.size())))
+    if (!re2->Match({subject, subject_size}, start_pos, subject_size, re2::RE2::UNANCHORED, pieces.data(), static_cast<int>(pieces.size())))
     {
         return 0;
     }
