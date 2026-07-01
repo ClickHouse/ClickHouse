@@ -891,6 +891,13 @@ void executeQueryWithParallelReplicas(
     LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
         storage_id.getNameForLogs(), header->dumpStructure(), query_ast->formatForLogging(), processed_stage);
 
+    /// Strip initiator-only settings from the query text forwarded to the replicas (same contract as the
+    /// `Distributed` fan-out): the AST carries them from a nested `SETTINGS` clause and, on the analyzer
+    /// path, from `QueryNode::settings_changes` materialized by `queryNodeToDistributedSelectQuery`
+    /// (`QueryNode::toAST`). The per-replica context packet is stripped in `updateContextForParallelReplicas`.
+    auto forwarded_query_ast = query_ast->clone();
+    stripInitiatorOnlySettingsFromQuery(forwarded_query_ast);
+
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
@@ -946,7 +953,7 @@ void executeQueryWithParallelReplicas(
         LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-            query_ast,
+            forwarded_query_ast,
             query_tree,
             planner_context,
             cluster,
@@ -986,7 +993,7 @@ void executeQueryWithParallelReplicas(
         connection_pools.resize(max_replicas_to_use);
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-            query_ast,
+            forwarded_query_ast,
             query_tree,
             planner_context,
             cluster,

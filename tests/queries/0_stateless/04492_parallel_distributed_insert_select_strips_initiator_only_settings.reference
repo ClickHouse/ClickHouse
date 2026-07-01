@@ -10,3 +10,5 @@
 1	0	0
 -- an initiator-only setting in a NESTED source subquery is stripped from the forwarded query text
 1	0
+-- the regular Distributed SELECT fan-out does not forward initiator-only settings (analyzer + nested)
+1	0	0

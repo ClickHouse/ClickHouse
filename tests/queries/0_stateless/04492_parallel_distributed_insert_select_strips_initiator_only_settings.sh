@@ -237,6 +237,41 @@ ${CLICKHOUSE_CLIENT} -q "
       AND type = 'QueryFinish'
       AND event_date >= today() - 1"
 
+echo "-- the regular Distributed SELECT fan-out does not forward initiator-only settings (analyzer + nested)"
+# A top-level SETTINGS clause becomes QueryNode::settings_changes, which QueryNode::toAST materializes into
+# the AST SelectStreamFactory forwards to shards; a nested subquery carries its own SETTINGS too. Neither
+# must reach shards. (Asserted on the forwarded secondary SELECT text.)
+QID_DSEL="04492-dsel-${CLICKHOUSE_DATABASE}-$$"
+${CLICKHOUSE_CLIENT} --query_id="${QID_DSEL}" -q "
+    SELECT count() FROM dist_src
+    SETTINGS prefer_localhost_replica = 0, log_queries = 1, http_allow_table_as_file = 1, input_format = 'CSV'" > /dev/null
+QID_DSEL_NESTED="04492-dseln-${CLICKHOUSE_DATABASE}-$$"
+${CLICKHOUSE_CLIENT} --query_id="${QID_DSEL_NESTED}" -q "
+    SELECT count() FROM dist_src WHERE x IN (SELECT number FROM numbers(10) SETTINGS http_allow_table_as_file = 1)
+    SETTINGS prefer_localhost_replica = 0, log_queries = 1" > /dev/null
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} -q "
+    WITH initial AS
+    (
+        SELECT query_id
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+          AND query_id IN ('${QID_DSEL}', '${QID_DSEL_NESTED}')
+          AND is_initial_query = 1
+          AND type = 'QueryFinish'
+          AND event_date >= today() - 1
+    )
+    SELECT
+        count() >= 1 AS ran_on_shards,
+        countIf(query LIKE '%http_allow_table_as_file%') AS leaked_http_allow_table_as_file,
+        countIf(query LIKE '%input_format%') AS leaked_input_format
+    FROM system.query_log
+    WHERE initial_query_id IN (SELECT query_id FROM initial)
+      AND is_initial_query = 0
+      AND query_kind = 'Select'
+      AND type = 'QueryFinish'
+      AND event_date >= today() - 1"
+
 rm -f "${DATA_FILE}"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE dist_dst"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE dist_src"
