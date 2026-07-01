@@ -20,7 +20,7 @@ SELECT COUNT(*) FROM system.query_cache;
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses']
 FROM system.query_log
-WHERE type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase()
   AND query = 'select 1 SETTINGS use_query_cache = true;';
 

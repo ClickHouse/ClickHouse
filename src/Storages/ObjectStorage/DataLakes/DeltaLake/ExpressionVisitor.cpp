@@ -27,6 +27,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/LocalDate.h>
 #include <Common/logger_useful.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
 #include <Parsers/ASTLiteral.h>
@@ -247,13 +248,10 @@ public:
     void addLiteral(size_t list_id, DB::Field value, DB::DataTypePtr type)
     {
         chassert(type);
-        auto col = type->createColumnConst(1, value);
-        auto column = DB::ColumnWithTypeAndName(
-            col,
-            type,
-            /* name */"const_" + DB::toString(literal_counter++));
+        auto col = assert_cast<const DB::ColumnConst &>(*type->createColumnConst(0, value)).getPtr();
+        auto name = "const_" + DB::toString(literal_counter++);
 
-        const auto & node = dag->addColumn(std::move(column));
+        const auto & node = dag->addColumn(std::move(col), std::move(type), std::move(name));
 
         node_lists[list_id].push_back(&node);
 
@@ -457,6 +455,16 @@ public:
     {
         auto visitor = createVisitor(data);
         [[maybe_unused]] uintptr_t result = ffi::visit_expression_ref(expression, &visitor);
+        chassert(result == 0, "Unexpected result: " + DB::toString(result));
+
+        if (auto e = data.getException())
+            std::rethrow_exception(e);
+    }
+
+    static void visit(ffi::SharedExpression * expression, ExpressionVisitorData & data)
+    {
+        auto visitor = createVisitor(data);
+        [[maybe_unused]] uintptr_t result = ffi::visit_expression(&expression, &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
 
         if (auto e = data.getException())
@@ -992,8 +1000,7 @@ std::vector<DB::Field> getConstValuesFromExpression(const DB::Names & columns, c
     std::vector<DB::Field> values;
     for (const auto & node : nodes)
     {
-        if (node->type != DB::ActionsDAG::ActionType::COLUMN
-            || !DB::isColumnConst(*node->column))
+        if (node->type != DB::ActionsDAG::ActionType::COLUMN)
         {
             throw DB::Exception(
                 DB::ErrorCodes::LOGICAL_ERROR,
@@ -1001,15 +1008,14 @@ std::vector<DB::Field> getConstValuesFromExpression(const DB::Names & columns, c
                 magic_enum::enum_name(node->type), node->column->getDataType());
         }
 
-        DB::Field value;
-        node->column->get(0, value);
+        DB::Field value = node->column->getField();
         values.push_back(std::move(value));
     }
     return values;
 }
 
 std::shared_ptr<DB::ActionsDAG> visitScanCallbackExpression(
-    const ffi::Expression * expression,
+    ffi::SharedExpression * expression,
     const DB::NamesAndTypesList & read_schema,
     const DB::NamesAndTypesList & expression_schema,
     bool enable_logging)

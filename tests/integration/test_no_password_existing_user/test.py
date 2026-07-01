@@ -30,7 +30,7 @@ def test(start_cluster):
     node.restart_clickhouse()
     with pytest.raises(Exception) as err:
         node.query("SELECT user()", user="u_3574")
-    assert "u_3574: Authentication failed: password is incorrect, or there is no user with such name." in str(err.value)
+    assert "u_3574: Authentication failed: password is incorrect, or there is no user with such name" in str(err.value)
 
     assert node.grep_in_log(
         substring="User is not allowed to Create users",

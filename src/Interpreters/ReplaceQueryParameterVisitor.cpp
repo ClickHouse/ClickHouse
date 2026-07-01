@@ -1,7 +1,7 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -11,14 +11,15 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTViewTargets.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Analyzer/Utils.h>
+#include <Common/checkStackSize.h>
+#include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -57,17 +58,39 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             }
             visitChildren(ast);
         }
-        else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get());
-                 create_query && create_query->targets && create_query->targets->hasTableASTWithQueryParams(ViewTarget::To))
+        else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get()))
         {
-            auto to_table_ast = create_query->targets->getTableASTWithQueryParams(ViewTarget::To);
+            if (create_query->isParameterizedView())
+            {
+                /// For a parameterized view the SELECT body contains query parameters that
+                /// form the view's parameterizable interface; they are substituted at
+                /// view-call time and must be preserved here. Other parts of the query
+                /// (database name, table name, columns list, storage, view targets) are
+                /// still subject to parameter substitution at create time.
+                const IAST * select_node = create_query->select;
+                for (auto & child : create_query->children)
+                {
+                    if (child.get() == select_node)
+                        continue;
+                    IAST * old_ptr = child.get();
+                    visit(child);
+                    if (child.get() != old_ptr)
+                        create_query->updatePointerToChild(old_ptr, child);
+                }
+            }
+            else if (create_query->targets && create_query->targets->hasTableASTWithQueryParams(ViewTarget::To))
+            {
+                auto to_table_ast = create_query->targets->getTableASTWithQueryParams(ViewTarget::To);
 
-            visit(to_table_ast);
+                visit(to_table_ast);
 
-            create_query->targets->setTableID(ViewTarget::To, to_table_ast->as<ASTTableIdentifier>()->getTableId());
-            create_query->targets->resetTableASTWithQueryParams(ViewTarget::To);
+                create_query->targets->setTableID(ViewTarget::To, to_table_ast->as<ASTTableIdentifier>()->getTableId());
+                create_query->targets->resetTableASTWithQueryParams(ViewTarget::To);
 
-            visitChildren(ast);
+                visitChildren(ast);
+            }
+            else
+                visitChildren(ast);
         }
         else
             visitChildren(ast);
@@ -119,16 +142,41 @@ bool needCastFromString(const DataTypePtr & type)
     return result;
 }
 
+/// Build an AST literal for a query parameter, optionally wrapping it in a CAST.
+/// String literals don't need CAST to support substitutions in simple queries
+/// that don't support expressions (such as CREATE USER).
+ASTPtr makeASTForQueryParameter(const Field & literal, const String & type_name, const DataTypePtr & data_type)
+{
+    if (typeid_cast<const DataTypeString *>(data_type.get()))
+        return make_intrusive<ASTLiteral>(literal);
+    return addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
+}
+
 }
 
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
 {
     const auto & ast_param = ast->as<ASTQueryParameter &>();
-    const String & value = getParamValue(ast_param.name);
     const String & type_name = ast_param.type;
     String alias = ast_param.alias;
 
     const auto data_type = DataTypeFactory::instance().get(type_name);
+
+    auto it = query_parameters.find(ast_param.name);
+    if (it == query_parameters.end())
+    {
+        /// If a parameter has Nullable type and is not specified, assume its value is NULL.
+        if (!isNullableOrLowCardinalityNullable(data_type))
+            throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(ast_param.name));
+
+        ast = makeASTForQueryParameter(Field(), type_name, data_type);
+        ast->setAlias(alias);
+        ++num_replaced_parameters;
+        return;
+    }
+
+    const String & value = it->second;
+
     auto temp_column_ptr = data_type->createColumn();
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
@@ -169,16 +217,11 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
         literal = temp_column[0];
     }
 
-    /// If it's a String, substitute it in the form of a string literal without CAST
-    /// to enable substitutions in simple queries that don't support expressions
-    /// (such as CREATE USER).
-    if (typeid_cast<const DataTypeString *>(data_type.get()))
-        ast = make_intrusive<ASTLiteral>(literal);
-    else
-        ast = addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
+    ast = makeASTForQueryParameter(literal, type_name, data_type);
 
     /// Keep the original alias.
     ast->setAlias(alias);
+    ++num_replaced_parameters;
 }
 
 void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
@@ -195,6 +238,9 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
         {
             const auto & ast_param = ast_identifier->children[j++]->as<ASTQueryParameter &>();
             name_parts[i] = getParamValue(ast_param.name);
+            if (name_parts[i].empty())
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "Empty Identifier part after parameter {} substitution",
+                    backQuote(ast_param.name));
             replaced_parameter = true;
         }
     }

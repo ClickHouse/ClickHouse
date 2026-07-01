@@ -16,9 +16,11 @@
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/getBackupDataFileName.h>
+#include <Core/UUID.h>
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif
+#include <Common/FailPoint.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/BackupLog.h>
@@ -68,6 +70,12 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
+}
+
+namespace FailPoints
+{
+    extern const char backup_pause_on_start[];
+    extern const char restore_pause_on_start[];
 }
 
 namespace ErrorCodes
@@ -148,7 +156,7 @@ namespace
         addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = backup_settings.read_from_filesystem_cache;
-        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache;
+        read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = backup_settings.read_from_filesystem_cache;
         return read_settings;
     }
 
@@ -165,8 +173,8 @@ namespace
         addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
-        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
         read_settings.read_through_distributed_cache = false;
+        read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = false;
         return read_settings;
     }
 
@@ -277,9 +285,8 @@ public:
         size_t max_free_threads = 0;
         size_t queue_size = use_queue ? 0 : max_threads;
         auto thread_pool = std::make_unique<ThreadPool>(metric_threads, metric_active_threads, metric_scheduled_threads, max_threads, max_free_threads, queue_size);
-        auto * thread_pool_ptr = thread_pool.get();
-        thread_pools.emplace(thread_pool_id, std::move(thread_pool));
-        return *thread_pool_ptr;
+        it = thread_pools.emplace(thread_pool_id, std::move(thread_pool)).first;
+        return *it->second;
     }
 
     /// Waits for all threads to finish.
@@ -384,10 +391,7 @@ struct BackupsWorker::BackupStarter
         , backup_context(Context::createCopy(query_context))
     {
         backup_settings = BackupSettings::fromBackupQuery(*backup_query);
-
         backup_context->makeQueryContext();
-        backup_context->checkSettingsConstraints(backup_settings.core_settings, SettingSource::QUERY);
-        backup_context->applySettingsChanges(backup_settings.core_settings);
 
         backup_info = BackupInfo::fromAST(*backup_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
@@ -395,7 +399,7 @@ struct BackupsWorker::BackupStarter
 
         /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
         /// It should not be allowed for an initial query explicitly specified by a user.
-        if (is_internal_backup && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
+        if (is_internal_backup && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
@@ -458,11 +462,14 @@ struct BackupsWorker::BackupStarter
             backup_context->getCurrentQueryId(),
             is_internal_backup,
             process_list_element,
-            BackupStatus::CREATING_BACKUP);
+            BackupStatus::CREATING_BACKUP,
+            backup_settings.getSerializedSettings());
     }
 
     void doBackup()
     {
+        FailPointInjection::pauseFailPoint(FailPoints::backup_pause_on_start);
+
         chassert(!backup_coordination);
         if (on_cluster && !is_internal_backup)
         {
@@ -579,7 +586,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
                 {
                     starter->doBackup();
                 }
-                catch (...)
+                catch (const std::exception &)
                 {
                     starter->onException();
                 }
@@ -653,6 +660,15 @@ void BackupsWorker::doBackup(
 #endif
 
     bool is_internal_backup = backup_settings.internal;
+
+    /// Record the engine's effective settings for observability (see `system.backups`).
+    /// A non-internal `BACKUP ON CLUSTER` initiator only writes metadata/lock files locally; the data
+    /// files are written by the per-host internal operations (which are filtered out of `system.backups`)
+    /// and those hosts may use different endpoint or global settings. So the initiator's local writer does
+    /// not represent the whole backup; omit the engine settings, as is done for incremental multi-engine backups.
+    const bool is_on_cluster_initiator = on_cluster && !is_internal_backup;
+    if (!is_on_cluster_initiator)
+        setEngineSettings(backup_id, backup->getEngineSettings());
 
     maybeSleepForTesting();
 
@@ -787,7 +803,10 @@ void BackupsWorker::writeBackupEntries(
         auto & entry = backup_entries[index].second;
         const auto & file_info = file_infos[index];
 
-        auto job = [&]()
+        /// Using references here is fine as the variables reference objects either belonging to `this` or passed as references in the
+        /// function. The exception is file_info, which is itself a reference to `file_infos`, created before the runner (so it will be
+        /// destroyed after)
+        auto job = [&failed, &process_list_element, &backup, &file_info, &entry, this, is_internal_backup, &backup_id]()
         {
             if (failed)
                 return;
@@ -858,10 +877,7 @@ struct BackupsWorker::RestoreStarter
         , restore_context(Context::createCopy(query_context))
     {
         restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
-
         restore_context->makeQueryContext();
-        restore_context->checkSettingsConstraints(restore_settings.core_settings, SettingSource::QUERY);
-        restore_context->applySettingsChanges(restore_settings.core_settings);
 
         backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
@@ -869,7 +885,7 @@ struct BackupsWorker::RestoreStarter
 
         /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
         /// It should not be allowed for an initial query explicitly specified by a user.
-        if (is_internal_restore && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
+        if (is_internal_restore && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
         /// RESTORE is a write operation, it should be forbidden in strict readonly mode (readonly=1).
@@ -912,11 +928,14 @@ struct BackupsWorker::RestoreStarter
             restore_context->getCurrentQueryId(),
             is_internal_restore,
             process_list_element,
-            BackupStatus::RESTORING);
+            BackupStatus::RESTORING,
+            restore_settings.getSerializedSettings());
     }
 
     void doRestore()
     {
+        FailPointInjection::pauseFailPoint(FailPoints::restore_pause_on_start);
+
         chassert(!restore_coordination);
         if (on_cluster && !is_internal_restore)
         {
@@ -1002,7 +1021,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startRestoring(const A
                 {
                     starter->doRestore();
                 }
-                catch (...)
+                catch (const std::exception &)
                 {
                     starter->onException();
                 }
@@ -1057,6 +1076,13 @@ void BackupsWorker::doRestore(
 
     /// Open the backup for reading.
     BackupPtr backup = openBackupForReading(backup_info, restore_settings, context);
+
+    /// Record the engine's effective settings for observability (see `system.backups`).
+    /// As on the backup path, a non-internal `RESTORE ON CLUSTER` initiator records only its own reader
+    /// while the per-host internal restores do the actual work, so omit the engine settings in that case.
+    const bool is_on_cluster_initiator = on_cluster && !is_internal_restore;
+    if (!is_on_cluster_initiator)
+        setEngineSettings(restore_id, backup->getEngineSettings());
 
     String current_database = context->getCurrentDatabase().database;
 
@@ -1214,7 +1240,7 @@ BackupsWorker::makeRestoreCoordination(bool on_cluster, const RestoreSettings & 
 
 std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, const String & name, const String & base_backup_name,
                                                      const String & query_id, bool internal, QueryStatusPtr process_list_element,
-                                                     BackupStatus status)
+                                                     BackupStatus status, std::map<String, String> settings)
 {
     ExtendedOperationInfo extended_info;
     auto & info = extended_info.info;
@@ -1224,6 +1250,7 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
     info.query_id = query_id;
     info.internal = internal;
     info.status = status;
+    info.settings = std::move(settings);
     info.start_time_us = timeInMicroseconds(std::chrono::system_clock::now());
 
     bool is_final_status = isFinalStatus(status);
@@ -1337,6 +1364,18 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
 }
 
 
+void BackupsWorker::setEngineSettings(const OperationID & id, std::map<String, String> engine_settings)
+{
+    /// Current operation's info entry is updated here. The backup_log table is updated on its basis within a subsequent setStatus() call.
+    std::lock_guard lock{infos_mutex};
+    auto it = infos.find(id);
+    if (it == infos.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup ID {}", id);
+
+    it->second.info.engine_settings = std::move(engine_settings);
+}
+
+
 void BackupsWorker::maybeSleepForTesting() const
 {
     if (test_inject_sleep)
@@ -1347,7 +1386,7 @@ void BackupsWorker::maybeSleepForTesting() const
 BackupStatus BackupsWorker::wait(const OperationID & backup_or_restore_id, bool rethrow_exception)
 {
     std::unique_lock lock{infos_mutex};
-    BackupStatus current_status;
+    BackupStatus current_status = {};
     status_changed.wait(lock, [&]
     {
         auto it = infos.find(backup_or_restore_id);
@@ -1389,7 +1428,7 @@ void BackupsWorker::waitAll()
 BackupStatus BackupsWorker::cancel(const BackupOperationID & backup_or_restore_id, bool wait_)
 {
     QueryStatusPtr process_list_element;
-    BackupStatus current_status;
+    BackupStatus current_status = {};
 
     {
         std::unique_lock lock{infos_mutex};

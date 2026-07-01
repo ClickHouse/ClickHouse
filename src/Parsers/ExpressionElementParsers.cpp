@@ -1,7 +1,8 @@
 #include <cerrno>
-#include <cstdlib>
-#include <Poco/String.h>
 #include <cmath>
+#include <cstdlib>
+#include <limits>
+#include <Poco/String.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -9,10 +10,14 @@
 #include <Common/BinStringDecodeHelper.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
+#include <Parsers/ASTAssignment.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCollation.h>
 #include <Parsers/ASTColumnsTransformers.h>
@@ -29,7 +34,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTWindowDefinition.h>
-#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -46,6 +50,7 @@
 
 #include <boost/range/algorithm.hpp>
 #include <boost/range/algorithm_ext.hpp>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -55,6 +60,89 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+/// Helper to record literal token positions in the map stored in Expected.
+/// The char* pointers reference the original query string buffer.
+///
+/// Why insert_or_assign: When parsing nested literals like tuples `(1, 2)`,
+/// the parser may reuse memory addresses due to make_shared's small object optimization.
+/// The final composite literal may get the same address as an earlier element.
+/// We want the token info for the final literal, so insert_or_assign overwrites earlier entries.
+inline void recordLiteralTokens(const ASTLiteral * literal, IParser::Pos begin, IParser::Pos end, Expected & expected)
+{
+    if (expected.literal_token_map)
+    {
+        --end;
+        expected.literal_token_map->insert_or_assign(literal, LiteralTokenInfo{begin->begin, end->end});
+    }
+}
+
+String ilikePatternToRegexp(const String & pattern)
+{
+    return "(?i)" + likePatternToRegexp(pattern);
+}
+
+bool parseColumnsMatcherFromLikePattern(IParser::Pos & pos, Expected & expected, bool qualified, ASTPtr & node)
+{
+    bool case_insensitive = false;
+    if (ParserKeyword(Keyword::ILIKE).ignore(pos, expected))
+        case_insensitive = true;
+    else if (!ParserKeyword(Keyword::LIKE).ignore(pos, expected))
+        return false;
+
+    ParserStringLiteral string_literal;
+    ASTPtr like_pattern;
+    if (!string_literal.parse(pos, like_pattern, expected))
+        return true;
+
+    const auto & like_pattern_str = like_pattern->as<ASTLiteral &>().value.safeGet<String>();
+    const auto pattern = case_insensitive ? ilikePatternToRegexp(like_pattern_str) : likePatternToRegexp(like_pattern_str);
+    if (qualified)
+    {
+        auto columns_matcher = make_intrusive<ASTQualifiedColumnsRegexpMatcher>();
+        columns_matcher->setPattern(pattern);
+        node = std::move(columns_matcher);
+        return true;
+    }
+
+    auto columns_matcher = make_intrusive<ASTColumnsRegexpMatcher>();
+    columns_matcher->setPattern(pattern);
+    node = std::move(columns_matcher);
+    return true;
+}
+
+void attachColumnTransformers(ASTPtr & matcher, ASTPtr transformers)
+{
+    if (!transformers || transformers->children.empty())
+        return;
+
+    ASTPtr * matcher_transformers = nullptr;
+
+    if (auto * asterisk = matcher->as<ASTAsterisk>())
+    {
+        matcher_transformers = &asterisk->transformers;
+    }
+    else if (auto * qualified_asterisk = matcher->as<ASTQualifiedAsterisk>())
+    {
+        matcher_transformers = &qualified_asterisk->transformers;
+    }
+    else if (auto * columns_matcher = matcher->as<ASTColumnsRegexpMatcher>())
+    {
+        matcher_transformers = &columns_matcher->transformers;
+    }
+    else
+    {
+        auto & qualified_columns_matcher = matcher->as<ASTQualifiedColumnsRegexpMatcher &>();
+        matcher_transformers = &qualified_columns_matcher.transformers;
+    }
+
+    *matcher_transformers = std::move(transformers);
+    matcher->children.push_back(*matcher_transformers);
+}
+
 }
 
 /*
@@ -106,12 +194,17 @@ static ASTPtr buildSelectFromTableFunction(const boost::intrusive_ptr<ASTFunctio
 
 bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserSelectWithUnionQuery select;
+    starts_with_valid_select_or_explain = false;
+
+    ParserWithOptionalAlias select(std::make_unique<ParserSelectWithUnionQuery>(), false);
     ParserExplainQuery explain;
 
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
     ++pos;
+
+    /// Lookahead for inner subquery
+    const bool possible_inner_subquery = pos->type == TokenType::OpeningRoundBracket;
 
     ASTPtr result_node = nullptr;
 
@@ -164,10 +257,43 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             result_node = buildSelectFromTableFunction(view_explain);
         }
     }
+    else if (ParserKeyword(Keyword::VALUES).ignore(pos, expected))
+    {
+        /// SQL standard VALUES clause: (VALUES (1, 'a'), (2, 'b'))
+        /// Rewrite as SELECT * FROM SQLStandardValues((1, 'a'), (2, 'b'))
+        if (pos->type != TokenType::OpeningRoundBracket)
+            return false;
+
+        auto args = make_intrusive<ASTExpressionList>();
+        ParserExpression expr_parser;
+
+        ASTPtr value_expr;
+        if (!expr_parser.parse(pos, value_expr, expected))
+            return false;
+        args->children.push_back(std::move(value_expr));
+
+        while (pos->type == TokenType::Comma)
+        {
+            ++pos;
+            if (!expr_parser.parse(pos, value_expr, expected))
+                return false;
+            args->children.push_back(std::move(value_expr));
+        }
+
+        auto values_func = make_intrusive<ASTFunction>();
+        values_func->name = "SQLStandardValues";
+        values_func->arguments = args;
+        values_func->children.push_back(values_func->arguments);
+
+        result_node = buildSelectFromTableFunction(values_func);
+    }
     else
     {
         return false;
     }
+
+    /// Inner subquery should be handled separately
+    starts_with_valid_select_or_explain = !possible_inner_subquery && result_node != nullptr;
 
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
@@ -184,8 +310,10 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (pos->type == TokenType::QuotedIdentifier)
     {
         /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
-        if (*pos->begin == '\xE2' && pos->size() > 6) /// Empty identifiers are not allowed.
+        if (*pos->begin == '\xE2' && pos->size() >= 6)
         {
+            if (pos->size() == 6) /// Empty Unicode-quoted identifiers are not allowed.
+                return false;
             node = make_intrusive<ASTIdentifier>(String(pos->begin + 3, pos->end - 3));
             ++pos;
             return true;
@@ -327,7 +455,7 @@ protected:
     }
 
 private:
-    size_t last_array_level;
+    size_t last_array_level{};
 };
 
 }
@@ -338,6 +466,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     std::vector<std::pair<ParserPtr, SpecialDelimiter>> delimiter_parsers;
     delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
     delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Caret}), SpecialDelimiter::JSON_PATH_PREFIX);
+    delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::At}), SpecialDelimiter::JSON_PATH_COMBINED);
     delimiter_parsers.emplace_back(std::make_unique<ParserToken>(TokenType::Dot), SpecialDelimiter::NONE);
     ParserArrayOfJSONIdentifierAddition array_of_json_identifier_addition;
 
@@ -396,6 +525,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     ParserKeyword s_uuid(Keyword::UUID);
     UUID uuid = UUIDHelpers::Nil;
+    bool has_uuid_clause = false;
 
     if (table_name_with_optional_uuid)
     {
@@ -406,6 +536,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             if (!uuid_p.parse(pos, ast_uuid, expected))
                 return false;
             uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
+            has_uuid_clause = true;
         }
 
         /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
@@ -430,6 +561,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             return false;
         }
         node->as<ASTTableIdentifier>()->uuid = uuid;
+        node->as<ASTTableIdentifier>()->has_uuid = has_uuid_clause;
     }
     else
         node = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));
@@ -441,7 +573,7 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
 {
     /// Identifier with special delimiter looks like this: <special_delimiter>`<identifier>`.
     if (name.size() < 3
-        || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX))
+        || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX) && name[0] != char(SpecialDelimiter::JSON_PATH_COMBINED))
         || name[1] != '`' || name.back() != '`')
         return std::nullopt;
 
@@ -462,7 +594,7 @@ ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
 
 bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    assert(node);
+    chassert(node);
     ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
 
     ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
@@ -506,7 +638,7 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
 bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    assert(node);
+    chassert(node);
     ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
 
     // Variant 1:
@@ -823,7 +955,7 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto function_node = make_intrusive<ASTFunction>();
     function_node->name = "CODEC";
-    function_node->kind = ASTFunction::Kind::CODEC;
+    function_node->setKind(ASTFunction::Kind::CODEC);
     function_node->arguments = expr_list_args;
     function_node->children.push_back(function_node->arguments);
 
@@ -851,7 +983,7 @@ bool ParserStatisticsType::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     auto function_node = make_intrusive<ASTFunction>();
     function_node->name = "STATISTICS";
-    function_node->kind = ASTFunction::Kind::STATISTICS;
+    function_node->setKind(ASTFunction::Kind::STATISTICS);
     function_node->arguments = stat_type;
     function_node->children.push_back(function_node->arguments);
     node = function_node;
@@ -1074,7 +1206,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto try_read_float = [&](const char * it, const char * end)
     {
         std::string buf(it, end); /// Copying is needed to ensure the string is 0-terminated.
-        char * str_end;
+        char * str_end = nullptr;
         errno = 0;    /// Functions strto* don't clear errno.
         /// The usage of strtod is needed, because we parse hex floating point literals as well.
         Float64 float_value = std::strtod(buf.c_str(), &str_end);
@@ -1089,11 +1221,17 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (negative)
                 float_value = -float_value;
 
+            /// Canonicalize NaN to a single representation, because negative NaN has
+            /// a different bit pattern but formats identically to positive NaN ("nan"),
+            /// breaking the AST formatting roundtrip consistency check.
+            if (std::isnan(float_value))
+                float_value = std::numeric_limits<Float64>::quiet_NaN();
+
             res = float_value;
 
             auto literal = make_intrusive<ASTLiteral>(res);
-            literal->begin = literal_begin;
-            literal->end = ++pos;
+            ++pos;
+            recordLiteralTokens(literal.get(), literal_begin, pos, expected);
             node = literal;
 
             return true;
@@ -1154,8 +1292,8 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (parseNumber(start_pos, size, negative, 2, res))
             {
                 auto literal = make_intrusive<ASTLiteral>(res);
-                literal->begin = literal_begin;
-                literal->end = ++pos;
+                ++pos;
+                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
                 node = literal;
 
                 return true;
@@ -1171,8 +1309,8 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (parseNumber(start_pos, size, negative, 16, res))
             {
                 auto literal = make_intrusive<ASTLiteral>(res);
-                literal->begin = literal_begin;
-                literal->end = ++pos;
+                ++pos;
+                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
                 node = literal;
 
                 return true;
@@ -1189,8 +1327,8 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (parseNumber(start_pos, size, negative, 10, res))
             {
                 auto literal = make_intrusive<ASTLiteral>(res);
-                literal->begin = literal_begin;
-                literal->end = ++pos;
+                ++pos;
+                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
                 node = literal;
 
                 return true;
@@ -1200,8 +1338,8 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else if (parseNumber(start_pos, size, negative, 10, res))
     {
         auto literal = make_intrusive<ASTLiteral>(res);
-        literal->begin = literal_begin;
-        literal->end = ++pos;
+        ++pos;
+        recordLiteralTokens(literal.get(), literal_begin, pos, expected);
         node = literal;
 
         return true;
@@ -1218,6 +1356,7 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!pos.isValid())
         return false;
 
+    auto literal_begin = pos;
     UInt64 x = 0;
     ReadBufferFromMemory in(pos->begin, pos->size());
     if (!tryReadIntText(x, in) || in.count() != pos->size())
@@ -1228,27 +1367,28 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     res = x;
     auto literal = make_intrusive<ASTLiteral>(res);
-    literal->begin = pos;
-    literal->end = ++pos;
+    ++pos;
+    recordLiteralTokens(literal.get(), literal_begin, pos, expected);
     node = literal;
     return true;
 }
 
-inline static bool makeStringLiteral(IParser::Pos & pos, ASTPtr & node, String str)
+inline static bool makeStringLiteral(IParser::Pos & pos, ASTPtr & node, String str, Expected & expected)
 {
+    auto literal_begin = pos;
     auto literal = make_intrusive<ASTLiteral>(str);
-    literal->begin = pos;
-    literal->end = ++pos;
+    ++pos;
+    recordLiteralTokens(literal.get(), literal_begin, pos, expected);
     node = literal;
     return true;
 }
 
-inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, bool hex, size_t word_size)
+inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, bool hex, size_t word_size, Expected & expected)
 {
     const char * str_begin = pos->begin + 2;
     const char * str_end = pos->end - 1;
     if (str_begin == str_end)
-        return makeStringLiteral(pos, node, "");
+        return makeStringLiteral(pos, node, "", expected);
 
     PODArray<UInt8> res;
     res.resize((str_end - str_begin + word_size - 1) / word_size);
@@ -1264,7 +1404,7 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
-    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), res.size()));
+    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), res.size()), expected);
 }
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -1281,19 +1421,19 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         if (first_char == 'x' || first_char == 'X')
         {
             constexpr size_t word_size = 2;
-            return makeHexOrBinStringLiteral(pos, node, true, word_size);
+            return makeHexOrBinStringLiteral(pos, node, true, word_size, expected);
         }
 
         if (first_char == 'b' || first_char == 'B')
         {
             constexpr size_t word_size = 8;
-            return makeHexOrBinStringLiteral(pos, node, false, word_size);
+            return makeHexOrBinStringLiteral(pos, node, false, word_size, expected);
         }
 
         /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
         if (first_char == '\xE2' && pos->size() >= 6)
         {
-            return makeStringLiteral(pos, node, String(pos->begin + 3, pos->end - 3));
+            return makeStringLiteral(pos, node, String(pos->begin + 3, pos->end - 3), expected);
         }
 
         ReadBufferFromMemory in(pos->begin, pos->size());
@@ -1318,11 +1458,11 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     {
         std::string_view here_doc(pos->begin, pos->size());
         size_t heredoc_size = here_doc.find('$', 1) + 1;
-        assert(heredoc_size != std::string_view::npos);
+        chassert(heredoc_size != std::string_view::npos);
         s = String(pos->begin + heredoc_size, pos->size() - heredoc_size * 2);
     }
 
-    return makeStringLiteral(pos, node, s);
+    return makeStringLiteral(pos, node, s, expected);
 }
 
 template <typename Collection>
@@ -1360,8 +1500,9 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                     return false;
 
                 boost::intrusive_ptr<ASTLiteral> literal = make_intrusive<ASTLiteral>(std::move(layers.back().arr));
-                literal->begin = layers.back().literal_begin;
-                literal->end = ++pos;
+                auto layer_begin = layers.back().literal_begin;
+                ++pos;
+                recordLiteralTokens(literal.get(), layer_begin, pos, expected);
 
                 layers.pop_back();
                 pos.decreaseDepth();
@@ -1372,7 +1513,11 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                     return true;
                 }
 
-                layers.back().arr.push_back(literal->value);
+                /// Move the just-finished nested collection into its parent instead of copying it.
+                /// `literal` is a local that is discarded right after (only the outermost layer is
+                /// kept as `node`), so moving its value out is safe. Copying here made parsing a
+                /// deeply nested literal such as `[[[ ... ]]]` quadratic in its depth.
+                layers.back().arr.push_back(std::move(literal->value));
                 continue;
             }
             if (pos->type == TokenType::Comma)
@@ -1484,8 +1629,7 @@ bool CommonCollection<Container, end_token>::parse(IParser::Pos & pos, Collectio
         if (end_p.ignore(pos, expected))
         {
             auto result = make_intrusive<ASTLiteral>(std::move(container));
-            result->begin = begin;
-            result->end = pos;
+            recordLiteralTokens(result.get(), begin, pos, expected);
 
             node = std::move(result);
             break;
@@ -1522,8 +1666,7 @@ bool MapCollection::parse(IParser::Pos & pos, Collections & collections, ASTPtr 
         if (end_p.ignore(pos, expected))
         {
             auto result = make_intrusive<ASTLiteral>(std::move(container));
-            result->begin = begin;
-            result->end = pos;
+            recordLiteralTokens(result.get(), begin, pos, expected);
 
             node = std::move(result);
             break;
@@ -1619,6 +1762,7 @@ const char * ParserAlias::restricted_keywords[] =
     "LEFT",
     "LIKE",
     "LIMIT",
+    "NATURAL",
     "NOT",
     "OFFSET",
     "ON",
@@ -1630,6 +1774,7 @@ const char * ParserAlias::restricted_keywords[] =
     "SAMPLE",
     "SEMI",
     "SETTINGS",
+    "STREAM",
     "UNION",
     "USING",
     "WHERE",
@@ -1716,7 +1861,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
                 else
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda argument declarations must be identifiers");
 
-                func->is_lambda_function = true;
+                func->setIsLambdaFunction(true);
             }
             else
             {
@@ -1884,7 +2029,13 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (pos->type == TokenType::Asterisk)
     {
         ++pos;
-        auto asterisk = make_intrusive<ASTAsterisk>();
+
+        ASTPtr res;
+        if (parseColumnsMatcherFromLikePattern(pos, expected, false /*qualified*/, res) && !res)
+            return false;
+        if (!res)
+            res = make_intrusive<ASTAsterisk>();
+
         auto transformers = make_intrusive<ASTColumnsTransformerList>();
         ParserColumnsTransformers transformers_p(allowed_transformers);
         ASTPtr transformer;
@@ -1893,13 +2044,9 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             transformers->children.push_back(transformer);
         }
 
-        if (!transformers->children.empty())
-        {
-            asterisk->transformers = std::move(transformers);
-            asterisk->children.push_back(asterisk->transformers);
-        }
+        attachColumnTransformers(res, std::move(transformers));
 
-        node = std::move(asterisk);
+        node = std::move(res);
         return true;
     }
     return false;
@@ -1919,7 +2066,12 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         return false;
     ++pos;
 
-    auto res = make_intrusive<ASTQualifiedAsterisk>();
+    ASTPtr res;
+    if (parseColumnsMatcherFromLikePattern(pos, expected, true /*qualified*/, res) && !res)
+        return false;
+    if (!res)
+        res = make_intrusive<ASTQualifiedAsterisk>();
+
     auto transformers = make_intrusive<ASTColumnsTransformerList>();
     ParserColumnsTransformers transformers_p;
     ASTPtr transformer;
@@ -1928,14 +2080,21 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         transformers->children.push_back(transformer);
     }
 
-    res->qualifier = std::move(node);
-    res->children.push_back(res->qualifier);
-
-    if (!transformers->children.empty())
+    ASTPtr * matcher_qualifier = nullptr;
+    if (auto * qualified_asterisk = res->as<ASTQualifiedAsterisk>())
     {
-        res->transformers = std::move(transformers);
-        res->children.push_back(res->transformers);
+        matcher_qualifier = &qualified_asterisk->qualifier;
     }
+    else
+    {
+        auto & columns_matcher = res->as<ASTQualifiedColumnsRegexpMatcher &>();
+        matcher_qualifier = &columns_matcher.qualifier;
+    }
+
+    *matcher_qualifier = std::move(node);
+    res->children.push_back(*matcher_qualifier);
+
+    attachColumnTransformers(res, std::move(transformers));
 
     node = std::move(res);
     return true;
@@ -2453,7 +2612,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parser_exp.parse(pos, ttl_expr, expected))
         return false;
 
-    TTLMode mode;
+    TTLMode mode = {};
     DataDestinationType destination_type = DataDestinationType::DELETE;
     String destination_name;
 
@@ -2554,7 +2713,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     if (parametric.parse(pos, node, expected))
     {
         auto * func = node->as<ASTFunction>();
-        func->no_empty_args = true;
+        func->setNoEmptyArgs(true);
         return true;
     }
 
@@ -2563,7 +2722,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     {
         auto func = make_intrusive<ASTFunction>();
         tryGetIdentifierNameInto(ident, func->name);
-        func->no_empty_args = true;
+        func->setNoEmptyArgs(true);
         node = func;
         return true;
     }

@@ -6,6 +6,7 @@
 #include <Interpreters/DistributedQueryStatusSource.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/DatabaseReplicated.h>
 
 namespace DB
@@ -184,7 +185,7 @@ Chunk DistributedQueryStatusSource::generate()
     bool all_hosts_finished = num_hosts_finished >= waiting_hosts.size();
 
     /// Seems like num_hosts_finished cannot be strictly greater than waiting_hosts.size()
-    assert(num_hosts_finished <= waiting_hosts.size());
+    chassert(num_hosts_finished <= waiting_hosts.size());
 
     if (all_hosts_finished || timeout_exceeded)
         return {};
@@ -211,6 +212,7 @@ Chunk DistributedQueryStatusSource::generate()
         Strings tmp_hosts;
         Strings tmp_active_hosts;
 
+        auto component_guard = Coordination::setCurrentComponent("DistributedQueryStatusSource::generate");
         {
             auto retries_ctl = ZooKeeperRetriesControl("executeDistributedQueryOnCluster", getLogger(getName()), getRetriesInfo());
             retries_ctl.retryLoop(

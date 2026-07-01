@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include <Backups/BackupOperationInfo.h>
+#include <Common/Logger_fwd.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/UUID.h>
@@ -74,6 +75,10 @@ public:
     BackupOperationInfo getInfo(const BackupOperationID & id) const;
     std::vector<BackupOperationInfo> getAllInfos() const;
 
+#if CLICKHOUSE_CLOUD
+    void unlockSnapshot(ASTPtr unlock_query, ContextPtr context);
+#endif
+
 private:
     std::pair<BackupOperationID, BackupStatus> startMakingBackup(const ASTPtr & query, const ContextPtr & context);
     struct BackupStarter;
@@ -133,7 +138,10 @@ private:
     void restoreTablesData(const BackupOperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
 
     std::pair<bool, BackupStatus> addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, const String & query_id,
-                                          bool internal, QueryStatusPtr process_list_element, BackupStatus status);
+                                          bool internal, QueryStatusPtr process_list_element, BackupStatus status, std::map<String, String> settings);
+
+    /// Stores the settings effectively used by the backup engine's reader/writer for the given operation.
+    void setEngineSettings(const BackupOperationID & id, std::map<String, String> engine_settings);
 
     void setStatus(const BackupOperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }

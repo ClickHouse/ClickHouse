@@ -1,8 +1,4 @@
 import logging
-import os
-import re
-import shutil
-import threading
 import time
 
 import pytest
@@ -76,12 +72,58 @@ def started_cluster():
         cluster.shutdown()
 
 
+def stop_refreshable_mvs(node):
+    """Stop refreshable MVs on a node to prevent them from generating DDL entries
+    and creating temporary tables that block DETACH/DROP operations.
+    """
+    node.query(
+        "SYSTEM STOP VIEW db.rmv1; SYSTEM STOP VIEW db.rmv2",
+        ignore_error=True,
+    )
+
+
+def detach_database_with_retry(node, timeout=15):
+    """Detach database with retries. Refreshable materialized views drop temporary
+    tables asynchronously, and those tables stay in the detached_tables map for up
+    to database_atomic_delay_before_drop_table_sec (10s in this test). The DETACH
+    DATABASE command fails while those entries exist. We retry until they are cleaned up.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            node.query("DETACH DATABASE db")
+            return
+        except Exception as e:
+            if "some tables are still in use" in str(e) and time.monotonic() < deadline:
+                time.sleep(1)
+                continue
+            raise
+
+
+def cleanup_database_on_all_nodes():
+    """Drop the database on all nodes to ensure clean state between tests.
+    Stops refreshable MVs first to avoid 'tables still in use' errors from
+    temporary tables that have a delayed drop (database_atomic_delay_before_drop_table_sec).
+    Also cleans up ZooKeeper path to prevent stale table metadata from being synced.
+    """
+    for node in [node1, node2, node3, node4]:
+        stop_refreshable_mvs(node)
+        node.query("DROP DATABASE IF EXISTS db SYNC", ignore_error=True)
+
+    # Clean up ZooKeeper path in case some replicas were not properly dropped.
+    # Stale metadata in ZK can cause "Table already exists" errors when the
+    # database is recreated with the same path.
+    try:
+        zk_client = cluster.get_kazoo_client("zoo1")
+        if zk_client.exists("/test/db"):
+            zk_client.delete("/test/db", recursive=True)
+    except Exception:
+        logging.warning("Failed to clean up ZooKeeper path /test/db", exc_info=True)
+
+
 @pytest.mark.parametrize("with_tables", [False, True])
 def test_drop_database_replica(started_cluster, with_tables: bool):
-    node1.query("DROP DATABASE IF EXISTS db")
-    node2.query("DROP DATABASE IF EXISTS db")
-    node3.query("DROP DATABASE IF EXISTS db")
-    node4.query("DROP DATABASE IF EXISTS db")
+    cleanup_database_on_all_nodes()
 
     zk_path = "/test/db"
     node1.query(
@@ -89,9 +131,9 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
         + r", '{shard}', '{replica}')"
     )
 
-    node1.query(f"CREATE TABLE db.t (x INT) ENGINE=MergeTree ORDER BY x")
+    node1.query("CREATE TABLE db.t (x INT) ENGINE=MergeTree ORDER BY x")
     node1.query(
-        f"CREATE TABLE db.mv_target (x INT) ENGINE=ReplicatedMergeTree ORDER BY x"
+        "CREATE TABLE db.mv_target (x INT) ENGINE=ReplicatedMergeTree ORDER BY x"
     )
     node1.query(
         "CREATE MATERIALIZED VIEW db.rmv1 REFRESH EVERY 1 SECOND APPEND (x INT) ENGINE=MergeTree ORDER BY x AS SELECT 1 AS x"
@@ -101,13 +143,13 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
     )
     with_tables_clause = " WITH TABLES" if with_tables else ""
     assert "SYNTAX_ERROR" in node1.query_and_get_error(
-        f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM TABLE t"
+        "SYSTEM DROP DATABASE REPLICA 's1|r1' FROM TABLE t"
     )
     assert "There is a local database" in node1.query_and_get_error(
-        f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM DATABASE db"
+        "SYSTEM DROP DATABASE REPLICA 's1|r1' FROM DATABASE db"
     )
     assert "There is a local database" in node1.query_and_get_error(
-        f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM DATABASE db"
+        "SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM DATABASE db"
     )
     assert "There is a local database" in node1.query_and_get_error(
         f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM ZKPATH '{zk_path}' {with_tables_clause}"
@@ -131,16 +173,16 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
         + r", '{shard}', '{replica}')"
     )
 
-    node2.query(f"SYSTEM SYNC DATABASE REPLICA db")
-    node3.query(f"SYSTEM SYNC DATABASE REPLICA db")
+    node2.query("SYSTEM SYNC DATABASE REPLICA db")
+    node3.query("SYSTEM SYNC DATABASE REPLICA db")
 
     assert "is active, cannot drop it" in node2.query_and_get_error(
-        f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM DATABASE db"
+        "SYSTEM DROP DATABASE REPLICA 's1|r1' FROM DATABASE db"
     )
 
-    node1.query(f"CREATE TABLE db.t2 (x INT) ENGINE=Log")
-    node1.query(f"CREATE TABLE db.t3 (x INT) ENGINE=Log")
-    node1.query(f"CREATE TABLE db.t4 (x INT) ENGINE=Log")
+    node1.query("CREATE TABLE db.t2 (x INT) ENGINE=Log")
+    node1.query("CREATE TABLE db.t3 (x INT) ENGINE=Log")
+    node1.query("CREATE TABLE db.t4 (x INT) ENGINE=Log")
 
     node4_uuid = node4.query("SELECT serverUUID()").strip()
     node4.query(
@@ -175,7 +217,8 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
     )
     node4.query("ATTACH DATABASE db")
 
-    node3.query("DETACH DATABASE db")
+    stop_refreshable_mvs(node3)
+    detach_database_with_retry(node3)
     node4.query("SYSTEM DROP DATABASE replica 'r1' FROM SHARD 's2' FROM DATABASE db")
     node3.query("ATTACH DATABASE db")
     assert "Database is in readonly mode" in node3.query_and_get_error(
@@ -186,7 +229,8 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
     )
     node4.query("DROP DATABASE db SYNC")
 
-    node2.query("DETACH DATABASE db")
+    stop_refreshable_mvs(node2)
+    detach_database_with_retry(node2)
     node1.query("SYSTEM DROP DATABASE REPLICA 's1|r2' FROM DATABASE db")
     node2.query("ATTACH DATABASE db")
     assert "Database is in readonly mode" in node2.query_and_get_error(
@@ -196,7 +240,8 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
         },
     )
 
-    node1.query("DETACH DATABASE db")
+    stop_refreshable_mvs(node1)
+    detach_database_with_retry(node1)
     node4.query(
         f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM ZKPATH '{zk_path}'  {with_tables_clause}"
     )
@@ -208,7 +253,7 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
         },
     )
 
-    node1.query(f"SYSTEM DROP DATABASE REPLICA 'dummy' FROM SHARD 'dummy'")
+    node1.query("SYSTEM DROP DATABASE REPLICA 'dummy' FROM SHARD 'dummy'")
 
     node1.query("DROP DATABASE db SYNC")
     node2.query("DROP DATABASE db SYNC")
@@ -225,8 +270,8 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
             "distributed_ddl_output_mode": "none",
         },
     )
-    node4.query(f"SYSTEM DROP REPLICA 'dummy' FROM DATABASE db")
-    node4.query(f"SYSTEM DROP REPLICA 'dummy'")
+    node4.query("SYSTEM DROP REPLICA 'dummy' FROM DATABASE db")
+    node4.query("SYSTEM DROP REPLICA 'dummy'")
 
     node4.query("DROP DATABASE db SYNC")
 
@@ -243,7 +288,7 @@ def test_drop_database_replica_with_tables_for_non_existing_db(
 def test_drop_database_replica_with_tables_for_dropped_db(
     started_cluster,
 ):
-    node1.query("DROP DATABASE IF EXISTS db SYNC")
+    cleanup_database_on_all_nodes()
 
     zk_path = "/test/db"
     node1.query(
@@ -251,9 +296,9 @@ def test_drop_database_replica_with_tables_for_dropped_db(
         + r", '{shard}', '{replica}')"
     )
 
-    node1.query(f"CREATE TABLE db.t (x INT) ENGINE=MergeTree ORDER BY x")
+    node1.query("CREATE TABLE db.t (x INT) ENGINE=MergeTree ORDER BY x")
     node1.query(
-        f"CREATE TABLE db.mv_target (x INT) ENGINE=ReplicatedMergeTree ORDER BY x"
+        "CREATE TABLE db.mv_target (x INT) ENGINE=ReplicatedMergeTree ORDER BY x"
     )
     node1.query(
         "CREATE MATERIALIZED VIEW db.rmv1 REFRESH EVERY 1 SECOND APPEND (x INT) ENGINE=MergeTree ORDER BY x AS SELECT 1 AS x"
@@ -271,7 +316,7 @@ def test_drop_database_replica_with_tables_for_dropped_db(
 def test_drop_database_replica_with_tables_for_detached_db(
     started_cluster,
 ):
-    node1.query("DROP DATABASE IF EXISTS db SYNC")
+    cleanup_database_on_all_nodes()
 
     zk_path = "/test/db"
     node1.query(
@@ -279,9 +324,9 @@ def test_drop_database_replica_with_tables_for_detached_db(
         + r", '{shard}', '{replica}')"
     )
 
-    node1.query(f"CREATE TABLE db.t (x INT) ENGINE=MergeTree ORDER BY x")
+    node1.query("CREATE TABLE db.t (x INT) ENGINE=MergeTree ORDER BY x")
     node1.query(
-        f"CREATE TABLE db.mv_target (x INT) ENGINE=ReplicatedMergeTree ORDER BY x"
+        "CREATE TABLE db.mv_target (x INT) ENGINE=ReplicatedMergeTree ORDER BY x"
     )
     node1.query(
         "CREATE MATERIALIZED VIEW db.rmv1 REFRESH EVERY 1 SECOND APPEND (x INT) ENGINE=MergeTree ORDER BY x AS SELECT 1 AS x"
@@ -290,7 +335,8 @@ def test_drop_database_replica_with_tables_for_detached_db(
         "CREATE MATERIALIZED VIEW db.rmv2 REFRESH EVERY 1 SECOND TO db.mv_target AS SELECT 1 AS x"
     )
 
-    node1.query("DETACH DATABASE `db`")
+    stop_refreshable_mvs(node1)
+    detach_database_with_retry(node1)
     assert "There is a detached database" in node1.query_and_get_error(
         f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '{zk_path}/' WITH TABLES"
     )

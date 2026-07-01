@@ -1,3 +1,4 @@
+SET automatic_parallel_replicas_mode = 0;
 set enable_analyzer = 1;
 set enable_parallel_replicas=1, max_parallel_replicas=2, parallel_replicas_local_plan=1;
 

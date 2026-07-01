@@ -178,6 +178,7 @@ The hierarchy of privileges in ClickHouse is shown below:
       - `ALTER CONSTRAINT`
         - `ALTER ADD CONSTRAINT`
         - `ALTER DROP CONSTRAINT`
+        - `ALTER MODIFY CONSTRAINT`
       - `ALTER DELETE`
       - `ALTER FETCH PARTITION`
       - `ALTER FREEZE PARTITION`
@@ -200,6 +201,7 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `ALTER MODIFY STATISTICS`
       - `ALTER TTL`
       - `ALTER UPDATE`
+      - `ALTER TABLE EXECUTE`
     - `ALTER VIEW`
       - `ALTER VIEW MODIFY QUERY`
       - `ALTER VIEW REFRESH`
@@ -304,6 +306,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM REDUCE BLOCKING PARTS`
     - `SYSTEM REPLICATION QUEUES`
     - `SYSTEM REPLICA READINESS`
+    - `SYSTEM RESET DDL WORKER`
     - `SYSTEM RESTART DISK`
     - `SYSTEM RESTART REPLICA`
     - `SYSTEM RESTORE REPLICA`
@@ -339,7 +342,7 @@ The hierarchy of privileges in ClickHouse is shown below:
 Examples of how this hierarchy is treated:
 
 - The `ALTER` privilege includes all other `ALTER*` privileges.
-- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT` and `ALTER DROP CONSTRAINT` privileges.
+- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` and `ALTER MODIFY CONSTRAINT` privileges.
 
 Privileges are applied at different levels. Knowing of a level suggests syntax available for privilege.
 
@@ -432,12 +435,14 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
   - `ALTER CONSTRAINT`. Level: `GROUP`. Aliases: `CONSTRAINT`
   - `ALTER ADD CONSTRAINT`. Level: `TABLE`. Aliases: `ADD CONSTRAINT`
   - `ALTER DROP CONSTRAINT`. Level: `TABLE`. Aliases: `DROP CONSTRAINT`
+  - `ALTER MODIFY CONSTRAINT`. Level: `TABLE`. Aliases: `MODIFY CONSTRAINT`
   - `ALTER TTL`. Level: `TABLE`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
   - `ALTER MATERIALIZE TTL`. Level: `TABLE`. Aliases: `MATERIALIZE TTL`
   - `ALTER SETTINGS`. Level: `TABLE`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
   - `ALTER MOVE PARTITION`. Level: `TABLE`. Aliases: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
   - `ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
   - `ALTER FREEZE PARTITION`. Level: `TABLE`. Aliases: `FREEZE PARTITION`
+  - `ALTER EXECUTE`. Level: `TABLE`. Aliases: `ALTER TABLE EXECUTE`
   - `ALTER VIEW`. Level: `GROUP`
   - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `REFRESH VIEW`
   - `ALTER VIEW MODIFY QUERY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`
@@ -446,7 +451,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
 Examples of how this hierarchy is treated:
 
 - The `ALTER` privilege includes all other `ALTER*` privileges.
-- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT` and `ALTER DROP CONSTRAINT` privileges.
+- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` and `ALTER MODIFY CONSTRAINT` privileges.
 
 **Notes**
 
@@ -773,6 +778,12 @@ By default, for backward compatibility reasons, creating a table with a specific
 however you can change this behaviour by setting [`table_engines_require_grant` to true](https://github.com/ClickHouse/ClickHouse/blob/df970ed64eaf472de1e7af44c21ec95956607ebb/programs/server/config.xml#L853-L855)
 in config.xml.
 :::
+
+Some table engines with external sources may require `READ`/`WRITE` permissions on the corresponding source. See [Sources](#sources).
+
+For example, for the AzureBlobStorage table engine, following grant may be required.
+
+- `GRANT READ, WRITE ON AZURE TO john`
 
 ### ALL {#all}
 

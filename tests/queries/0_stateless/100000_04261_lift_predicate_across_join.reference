@@ -1,0 +1,24 @@
+== inner ==
+1
+1
+inner filter steps off	1
+inner filter steps on	2
+== left preserved ==
+1
+1
+left preserved filter steps on	2
+== left null-producing ==
+1000
+1000
+left null-producing filter steps on	1
+== full ==
+1000
+1000
+full filter steps on	1
+== multi conjunct ==
+9
+9
+== mixed ==
+1
+1
+mixed filter steps on	1

@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/NetException.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
@@ -290,7 +291,7 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     auto query_context = Context::createCopy(from_context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
-    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    query_context->setDDLOrOnClusterInternal(true);
 
     const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
     if (preserve_user && !entry.initiator_user.empty())
@@ -317,7 +318,16 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     }
 
     if (entry.settings)
-        query_context->applySettingsChanges(*entry.settings);
+    {
+        /// Clamp settings to the constraints of the local node, similar to how
+        /// TCPHandler handles secondary queries. Without this, settings from the
+        /// initiator node could bypass stricter constraints on worker nodes.
+        /// Work on a copy to avoid mutating the entry, which may be read later
+        /// (e.g. by DatabaseReplicatedTask::createSyncedNodeIfNeed) or retried.
+        auto settings_changes = *entry.settings;
+        query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->applySettingsChanges(settings_changes);
+    }
 
     return query_context;
 }
@@ -652,7 +662,7 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
 ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
-    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    query_context->setDDLOrOnClusterInternal(true);
     query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
 
@@ -664,6 +674,20 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeRemoveRequest(entry_path + "/try", -1));
         txn->addOp(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
+
+        /// Make sure that we did not disable replicated DDL queries
+        const auto & macros = from_context->getMacros();
+        bool should_check_stop_flag = macros->getMacroMap().contains("replica");
+        if (should_check_stop_flag)
+        {
+            String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
+            stop_flag_path = macros->expand(stop_flag_path);
+
+            zookeeper->createAncestors(stop_flag_path);
+
+            txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
+            txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
+        }
     }
 
     txn->addOp(getOpToUpdateLogPointer());
@@ -682,7 +706,7 @@ Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
 
 void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper)
 {
-    assert(!completely_processed);
+    chassert(!completely_processed);
     if (!entry.settings)
         return;
 
@@ -691,7 +715,7 @@ void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeep
         return;
 
     /// Bool type is really weird, sometimes it's Bool and sometimes it's UInt64...
-    assert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
+    chassert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
     if (!value.safeGet<UInt64>())
         return;
 
@@ -706,9 +730,9 @@ String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
 UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)
 {
     constexpr const char * name = "query-";
-    assert(startsWith(log_entry_name, name));
+    chassert(startsWith(log_entry_name, name));
     UInt32 num = parse<UInt32>(log_entry_name.substr(strlen(name)));
-    assert(num < std::numeric_limits<Int32>::max());
+    chassert(num < std::numeric_limits<Int32>::max());
     return num;
 }
 

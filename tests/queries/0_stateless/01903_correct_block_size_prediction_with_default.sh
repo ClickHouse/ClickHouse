@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings, no-random-settings
+# Tags: long, no-flaky-check, no-random-merge-tree-settings, no-random-settings
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -26,8 +26,8 @@ function test()
     $CLICKHOUSE_CLIENT --max_execution_time 300 --query="SELECT uniq($sql) FROM test_extract $where SETTINGS max_threads=1" --query_id=$uuid_2
     $CLICKHOUSE_CLIENT --query="
         SYSTEM FLUSH LOGS query_log;
-        WITH memory_1 AS (SELECT memory_usage FROM system.query_log WHERE current_database = currentDatabase() AND query_id='$uuid_1' AND type = 'QueryFinish' as memory_1),
-             memory_2 AS (SELECT memory_usage FROM system.query_log WHERE current_database = currentDatabase() AND query_id='$uuid_2' AND type = 'QueryFinish' as memory_2)
+        WITH memory_1 AS (SELECT memory_usage FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query_id='$uuid_1' AND type = 'QueryFinish' as memory_1),
+             memory_2 AS (SELECT memory_usage FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query_id='$uuid_2' AND type = 'QueryFinish' as memory_2)
                 SELECT memory_1.memory_usage <= 1.2 * memory_2.memory_usage OR
                        memory_2.memory_usage <= 1.2 * memory_1.memory_usage FROM memory_1, memory_2;"
 }

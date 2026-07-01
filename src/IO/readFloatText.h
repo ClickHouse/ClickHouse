@@ -5,10 +5,12 @@
 #include <base/shift10.h>
 #include <Common/StringUtils.h>
 
+// NOLINTBEGIN(clang-analyzer-core.UndefinedBinaryOperatorResult,clang-analyzer-optin.core.EnumCastOutOfRange)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunneeded-internal-declaration"
 #include <fast_float/fast_float.h>
 #pragma clang diagnostic pop
+// NOLINTEND(clang-analyzer-core.UndefinedBinaryOperatorResult,clang-analyzer-optin.core.EnumCastOutOfRange)
 
 /** Methods for reading floating point numbers from text with decimal representation.
   * There are "precise", "fast" and "simple" implementations.
@@ -151,7 +153,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
     if (likely(!buf.eof() && (buf_from_memory || buf.position() + MAX_LENGTH <= buf.buffer().end())))
     {
         auto * initial_position = buf.position();
-        auto res = fast_float::from_chars(initial_position, buf.buffer().end(), x);
+        auto res = fast_float::from_chars(initial_position, buf.buffer().end(), x, fast_float::chars_format::general | fast_float::chars_format::allow_leading_plus);
 
         if (unlikely(res.ec != std::errc()))
         {
@@ -271,7 +273,7 @@ static inline bool is_made_of_eight_digits_fast(uint64_t val) noexcept
 
 static inline bool is_made_of_eight_digits_fast(const char * chars) noexcept
 {
-    uint64_t val;
+    uint64_t val = 0;
     ::memcpy(&val, chars, 8);
     return is_made_of_eight_digits_fast(val);
 }
@@ -600,7 +602,7 @@ template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in)
 {
     if constexpr (std::is_same_v<T, BFloat16>)
     {
-        Float32 tmp;
+        Float32 tmp = 0;
         readFloatTextPreciseImpl<Float32, void>(tmp, in);
         x = BFloat16(tmp);
     }
@@ -612,7 +614,7 @@ template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in)
 {
     if constexpr (std::is_same_v<T, BFloat16>)
     {
-        Float32 tmp;
+        Float32 tmp = 0;
         bool res = readFloatTextPreciseImpl<Float32, bool>(tmp, in);
         if (res)
             x = BFloat16(tmp);
@@ -624,10 +626,10 @@ template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in)
 
 template <typename T> void readFloatTextFast(T & x, ReadBuffer & in)
 {
-    bool has_fractional;
+    bool has_fractional = false;
     if constexpr (std::is_same_v<T, BFloat16>)
     {
-        Float32 tmp;
+        Float32 tmp = 0;
         readFloatTextFastImpl<Float32, void>(tmp, in, has_fractional);
         x = BFloat16(tmp);
     }
@@ -637,10 +639,10 @@ template <typename T> void readFloatTextFast(T & x, ReadBuffer & in)
 
 template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in)
 {
-    bool has_fractional;
+    bool has_fractional = false;
     if constexpr (std::is_same_v<T, BFloat16>)
     {
-        Float32 tmp;
+        Float32 tmp = 0;
         bool res = readFloatTextFastImpl<Float32, bool>(tmp, in, has_fractional);
         if (res)
             x = BFloat16(tmp);
@@ -654,7 +656,7 @@ template <typename T> void readFloatTextSimple(T & x, ReadBuffer & in)
 {
     if constexpr (std::is_same_v<T, BFloat16>)
     {
-        Float32 tmp;
+        Float32 tmp = 0;
         readFloatTextSimpleImpl<Float32, void>(tmp, in);
         x = BFloat16(tmp);
     }
@@ -666,7 +668,7 @@ template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in)
 {
     if constexpr (std::is_same_v<T, BFloat16>)
     {
-        Float32 tmp;
+        Float32 tmp = 0;
         bool res = readFloatTextSimpleImpl<Float32, bool>(tmp, in);
         if (res)
             x = BFloat16(tmp);
@@ -685,10 +687,10 @@ template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return try
 /// Don't read exponent part of the number.
 template <typename T> bool tryReadFloatTextNoExponent(T & x, ReadBuffer & in)
 {
-    bool has_fractional;
+    bool has_fractional = false;
     if constexpr (std::is_same_v<T, BFloat16>)
     {
-        Float32 tmp;
+        Float32 tmp = 0;
         bool res = readFloatTextFastImpl<Float32, bool, false>(tmp, in, has_fractional);
         if (res)
             x = BFloat16(tmp);
@@ -705,7 +707,7 @@ template <typename T> bool tryReadFloatTextExt(T & x, ReadBuffer & in, bool & ha
 {
     if constexpr (std::is_same_v<T, BFloat16>)
     {
-        Float32 tmp;
+        Float32 tmp = 0;
         bool res = readFloatTextFastImpl<Float32, bool>(tmp, in, has_fractional);
         if (res)
             x = BFloat16(tmp);
@@ -719,7 +721,7 @@ template <typename T> bool tryReadFloatTextExtNoExponent(T & x, ReadBuffer & in,
 {
     if constexpr (std::is_same_v<T, BFloat16>)
     {
-        Float32 tmp;
+        Float32 tmp = 0;
         bool res = readFloatTextFastImpl<Float32, bool, false>(tmp, in, has_fractional);
         if (res)
             x = BFloat16(tmp);

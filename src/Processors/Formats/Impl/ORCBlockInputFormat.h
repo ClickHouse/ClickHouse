@@ -2,6 +2,7 @@
 #include "config.h"
 #if USE_ORC
 
+#include <Core/BlockMissingValues.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -18,7 +19,7 @@ namespace DB
 
 class ArrowColumnToCHColumn;
 
-class ORCBlockInputFormat : public IInputFormat
+class ORCBlockInputFormat final : public IInputFormat
 {
 public:
     ORCBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_);
@@ -63,7 +64,7 @@ private:
     std::atomic<int> is_stopped{0};
 };
 
-class ORCSchemaReader : public ISchemaReader
+class ORCSchemaReader final : public ISchemaReader
 {
 public:
     ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

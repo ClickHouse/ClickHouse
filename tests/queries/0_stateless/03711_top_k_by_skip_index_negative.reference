@@ -1,0 +1,2 @@
+Prewhere filter column: __topKFilter(a) (removed)
+FUNCTION __topKFilter(a : 0) -> __topKFilter(a) UInt8 : 1

@@ -80,6 +80,17 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** List of types. */
+class ParserTypeList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "type list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return ParserList(std::make_unique<ParserDataType>(), std::make_unique<ParserToken>(TokenType::Comma), false).parse(pos, node, expected);
+    }
+};
+
 /** List of table names. */
 class ParserNameList : public IParserBase
 {
@@ -144,6 +155,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_ttl{Keyword::TTL};
     ParserKeyword s_remove{Keyword::REMOVE};
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
+    ParserKeyword s_add_enum_values(Keyword::ADD_ENUM_VALUES);
     ParserKeyword s_reset_setting(Keyword::RESET_SETTING);
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_type{Keyword::TYPE};
@@ -172,11 +184,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
     /// because ParserDataType parses types as an arbitrary identifiers and
     /// doesn't check that parsed string is existing data type. In this way,
-    /// REMOVE, MODIFY SETTING, or RESET SETTING can be parsed as data type
+    /// REMOVE, MODIFY SETTING, RESET SETTING or ADD ENUM VALUES
+    /// can be parsed as data type
     /// and further parsing will fail. So we just check these keyword and in
     /// case of success return column declaration with name only.
     if (!require_type
-        && (s_remove.checkWithoutMoving(pos, expected) || s_modify_setting.checkWithoutMoving(pos, expected) || s_reset_setting.checkWithoutMoving(pos, expected)))
+        && (s_remove.checkWithoutMoving(pos, expected) || s_modify_setting.checkWithoutMoving(pos, expected) || s_reset_setting.checkWithoutMoving(pos, expected) || s_add_enum_values.checkWithoutMoving(pos, expected)))
     {
         if (!check_keywords_after_name)
             return false;
@@ -222,6 +235,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         && !s_ephemeral.checkWithoutMoving(pos, expected)
         && !s_alias.checkWithoutMoving(pos, expected)
         && !s_auto_increment.checkWithoutMoving(pos, expected)
+        && !s_ttl.checkWithoutMoving(pos, expected)
         && !s_primary_key.checkWithoutMoving(pos, expected)
         && (require_type
             || (!s_comment.checkWithoutMoving(pos, expected)
@@ -290,6 +304,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             auto default_function = make_intrusive<ASTFunction>();
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = make_intrusive<ASTExpressionList>();
+            default_function->children.push_back(default_function->arguments);
             /// Ephemeral columns don't really have secrets but we need to format into a String, hence the strange call
             default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(type->formatForLogging()));
             default_expression = default_function;

@@ -1,0 +1,39 @@
+<test>
+    <create_query>CREATE TABLE lift_orders (orderkey UInt64, payload String) ENGINE = MergeTree ORDER BY orderkey</create_query>
+    <create_query>CREATE TABLE lift_lineitem (orderkey UInt64, payload String) ENGINE = MergeTree ORDER BY orderkey</create_query>
+
+    <fill_query>INSERT INTO lift_orders SELECT number, toString(number) FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO lift_lineitem SELECT number, toString(number) FROM numbers(10000000)</fill_query>
+
+    <!-- predicate is inside the subquery on one side; with the setting on the partner side
+         can use its primary key to prune granules instead of scanning everything -->
+
+    <query tag='inner off'>
+        SELECT count()
+        FROM (SELECT * FROM lift_orders WHERE orderkey = 1234567) AS o
+        INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
+        SETTINGS query_plan_lift_predicate_across_join = 0
+    </query>
+    <query tag='inner on'>
+        SELECT count()
+        FROM (SELECT * FROM lift_orders WHERE orderkey = 1234567) AS o
+        INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
+        SETTINGS query_plan_lift_predicate_across_join = 1
+    </query>
+
+    <query tag='left off'>
+        SELECT sum(l.orderkey)
+        FROM (SELECT * FROM lift_orders WHERE orderkey BETWEEN 1000000 AND 1000100) AS o
+        LEFT JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
+        SETTINGS query_plan_lift_predicate_across_join = 0
+    </query>
+    <query tag='left on'>
+        SELECT sum(l.orderkey)
+        FROM (SELECT * FROM lift_orders WHERE orderkey BETWEEN 1000000 AND 1000100) AS o
+        LEFT JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
+        SETTINGS query_plan_lift_predicate_across_join = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS lift_orders</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lift_lineitem</drop_query>
+</test>

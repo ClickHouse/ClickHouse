@@ -1,3 +1,4 @@
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -22,6 +23,26 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+}
+
+
+namespace
+{
+
+/// Whether the SELECT of an INSERT ... SELECT reads inline data through the `input` table function.
+/// Only in that case does an INSERT with a SELECT carry inline data following the FORMAT clause.
+bool selectReadsInlineDataViaInputFunction(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "input")
+        return true;
+    for (const auto & child : ast->children)
+        if (selectReadsInlineDataViaInputFunction(child))
+            return true;
+    return false;
+}
+
 }
 
 
@@ -128,17 +149,30 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    Pos before_lparen = pos;
+
     /// Is there a list of columns
     if (s_lparen.ignore(pos, expected))
     {
         if (!columns_p.parse(pos, columns, expected))
-            return false;
+        {
+            /// Column list parsing failed entirely (e.g. "((SELECT ..." where the second '(' is not a valid column name).
+            /// Rewind to before the '(' so it can be parsed as part of a SELECT query later.
+            columns.reset();
+            pos = before_lparen;
+        }
+        else
+        {
+            /// Optional trailing comma
+            ParserToken(TokenType::Comma).ignore(pos);
 
-        /// Optional trailing comma
-        ParserToken(TokenType::Comma).ignore(pos);
-
-        if (!s_rparen.ignore(pos, expected))
-            return false;
+            /// If this fails, we want to rewind to before the lparen so we can later check for (SELECT ...)
+            if (!s_rparen.ignore(pos, expected))
+            {
+                columns.reset();
+                pos = before_lparen;
+            }
+        }
     }
 
     /// Check if file is a source of data.
@@ -210,6 +244,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                             "Only one WITH should be presented, either before INSERT or SELECT.");
                     child_select->setExpression(ASTSelectQuery::Expression::WITH,
                         ASTPtr(with_expression_list));
+                    /// WITH was appended after SELECT/TABLES; normalize back to canonical order.
+                    child_select->normalizeChildrenOrder();
                 }
             }
         }
@@ -256,8 +292,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
     }
 
-    /// In case of defined format, data follows it.
-    if (format && !infile)
+    /// In case of defined format, data follows it -- but only for inline-data INSERTs.
+    /// An INSERT ... SELECT has no inline data (the rows come from the SELECT), unless the SELECT
+    /// reads them through the `input` table function. Without `input`, anything after the FORMAT
+    /// (including a `;` query terminator) is not insert data, so we must not look for it nor raise
+    /// the "excessive ';'" error. This matters e.g. for `EXPLAIN ... INSERT ... SELECT ... FORMAT
+    /// <name>;`, where the trailing FORMAT is the EXPLAIN output format, not an insert data format.
+    if (format && !infile && (!select || selectReadsInlineDataViaInputFunction(select)))
     {
         Pos last_token = pos;
         --last_token;

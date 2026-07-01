@@ -18,7 +18,7 @@ CREATE TABLE ${table_name} (a String) engine=MergeTree() ORDER BY tuple() SETTIN
 INSERT INTO ${table_name} SELECT randomString(10000000);
 "
 
-$CLICKHOUSE_CLIENT --query "SELECT * FROM ${table_name} FORMAT Null"
+$CLICKHOUSE_CLIENT --enable_filesystem_cache 1 --query "SELECT * FROM ${table_name} FORMAT Null"
 
 prev_max_size=$($CLICKHOUSE_CLIENT --query "SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
 $CLICKHOUSE_CLIENT --query "SELECT current_size > 0 FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name' FORMAT TabSeparated"
@@ -34,7 +34,7 @@ function select_func {
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${table_name} FORMAT Null SETTINGS filesystem_cache_segments_batch_size=1, max_read_buffer_size_remote_fs=50000"
+        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${table_name} FORMAT Null SETTINGS enable_filesystem_cache=1, filesystem_cache_segments_batch_size=1, max_read_buffer_size_remote_fs=50000"
     done
 }
 

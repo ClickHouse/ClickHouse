@@ -1,4 +1,11 @@
-from helpers.kafka.common_direct import *
+import logging
+import time
+
+from kafka import KafkaProducer
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 from helpers.config_cluster import kafka_sasl_user, kafka_sasl_pass
 
@@ -74,6 +81,7 @@ def test_kafka_sasl(kafka_cluster):
     producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
     producer.send(topic="topic1", value='{"key":1, "value":"test123"}')
     producer.flush()
+    producer.close()
 
     assert_eq_with_retry(
         instance,

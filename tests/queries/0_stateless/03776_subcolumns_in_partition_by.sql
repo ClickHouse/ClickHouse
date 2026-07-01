@@ -1,7 +1,10 @@
 -- Tags: no-parallel-replicas
 -- Tag no-parallel-replicas: result of explain is different
+SET explain_query_plan_default = 'legacy';
 
 set enable_analyzer=1;
+set query_plan_optimize_prewhere=1;
+set optimize_move_to_prewhere=1;
 drop table if exists test;
 create table test (json JSON(d Date)) engine=MergeTree order by tuple() partition by json.d;
 insert into test select '{"d" : "2020-01-01"}';
