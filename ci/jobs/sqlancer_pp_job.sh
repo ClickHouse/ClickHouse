@@ -4,10 +4,11 @@
 #
 # Runs https://github.com/suyZhong/SQLancerPlusPlus against a freshly started
 # clickhouse-server, exercising its built-in `general` provider with the four
-# oracles it ships (NoREC, WHERE, QUERY_PARTITIONING, FUZZING). The image
-# (`clickhouse/sqlancer-pp-test`) bakes a SQLancer++ build whose ClickHouse
-# JDBC dependency has been swapped to the current `com.clickhouse:clickhouse-jdbc`
-# release, which talks to clickhouse-server's HTTP port (8123).
+# oracles it ships (NoREC, WHERE, QUERY_PARTITIONING, FUZZING). The shared image
+# (`clickhouse/sqlancer-test`, also used by the SQLancer job) bakes a SQLancer++
+# build under JDK 25 whose ClickHouse JDBC dependency has been swapped to
+# `com.clickhouse:clickhouse-jdbc` 0.9.8 (client-v2 transport), talking to
+# clickhouse-server's HTTP port (8123).
 #
 # Mirrors `sqlancer_job.sh` in shape so the praktika report consumer remains
 # happy: emits a `result.json` with one entry per oracle plus attached log

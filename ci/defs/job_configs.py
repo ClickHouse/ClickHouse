@@ -1431,10 +1431,10 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqlancer_pp_job.sh",
-                "./ci/docker/sqlancer-pp-test",
+                "./ci/docker/sqlancer-test",
             ],
         ),
-        run_in_docker="clickhouse/sqlancer-pp-test",
+        run_in_docker="clickhouse/sqlancer-test",
         timeout=3600,
     ).parametrize(
         Job.ParamSet(
