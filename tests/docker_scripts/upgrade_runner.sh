@@ -413,6 +413,16 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       Filtered via regex in the secondary pipe below to require the PostgreSQL connection-pool / cleaner-task
 #       context AND the connection-failure symptom together, so real PostgreSQL regressions (auth, protocol,
 #       query errors) are not masked.
+# `MutatePlainMergeTreeTask`/`MergeTreeBackgroundExecutor` + `FUNCTION_THROW_IF_VALUE_IS_NON_ZERO` is another
+#       member of the #39174 family (intentionally-broken mutations retry after the upgrade restart). Test
+#       04341_broken_mutation_part_log_flush runs `ALTER TABLE ... UPDATE x = x + throwIf(1)`, which fails a
+#       plain-MergeTree mutation on purpose; if the mutation is still queued when the server restarts it is
+#       replayed and logs code 395 at `<Error>`. Code 395 is by definition a user `throwIf` expression
+#       evaluating non-zero (an expected error, never a server malfunction), so a genuine upgrade regression
+#       would surface as a different code. Filtered via two regexes in the secondary pipe below, each requiring
+#       the mutation-executor context (`MutatePlainMergeTreeTask` or the `MergeTreeBackgroundExecutor`
+#       background-task wrapper) AND the `FUNCTION_THROW_IF_VALUE_IS_NON_ZERO` code together, so unrelated
+#       mutation-executor errors and unrelated code-395 errors are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -499,6 +509,8 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
     | grep -av -e "PostgreSQLConnectionPool: Connection error" \
     | grep -av -e "DatabasePostgreSQL::removeOutdatedTables.*Connection to .* failed" \
+    | grep -av -e "MutatePlainMergeTreeTask.*FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" \
+    | grep -av -e "MergeTreeBackgroundExecutor: Exception while executing background task.*FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
