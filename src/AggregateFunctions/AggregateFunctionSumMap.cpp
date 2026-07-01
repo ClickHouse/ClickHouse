@@ -1,7 +1,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionSumMapTyped.h>
 #include <Functions/FunctionHelpers.h>
 
-
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -12,12 +13,14 @@
 
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorSum.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/NaNUtils.h>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
-#include <Common/MapWithMemoryTracking.h>
 #include <Common/SetWithMemoryTracking.h>
-
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -35,10 +38,85 @@ namespace ErrorCodes
 namespace
 {
 
+template <typename T>
+void normalizeDecimalFieldImpl(Field & key)
+{
+    auto df = key.safeGet<DecimalField<T>>();
+    auto v = df.getValue().value;
+    UInt32 s = df.getScale();
+    DecimalUtils::normalizeDecimalTrailingZeros(v, s);
+    key = DecimalField<T>(T(v), s);
+}
+
+void normalizeFieldDecimal(Field & key)
+{
+    switch (key.getType())
+    {
+        case Field::Types::Decimal32:  normalizeDecimalFieldImpl<Decimal32>(key);  break;
+        case Field::Types::Decimal64:  normalizeDecimalFieldImpl<Decimal64>(key);  break;
+        case Field::Types::Decimal128: normalizeDecimalFieldImpl<Decimal128>(key); break;
+        case Field::Types::Decimal256: normalizeDecimalFieldImpl<Decimal256>(key); break;
+        default: break;
+    }
+}
+
+struct FieldHash
+{
+    size_t operator()(const Field & x) const
+    {
+        const auto type = x.getType();
+        switch (type)
+        {
+            case Field::Types::UInt64:
+            case Field::Types::Bool:
+                return intHash64(x.safeGet<UInt64>());
+            case Field::Types::Int64:
+                return intHash64(static_cast<UInt64>(x.safeGet<Int64>()));
+            case Field::Types::Float64:
+            {
+                Float64 val = x.safeGet<Float64>();
+                /// All NaN bit patterns are equal under Field::operator==
+                /// (via FloatCompareHelper), so they must hash identically.
+                if (std::isnan(val))
+                    return intHash64(0x7FF8000000000000ULL);
+                /// +0.0 and -0.0 compare equal, so they must hash the same.
+                if (val == 0.0)
+                    return intHash64(0);
+                return intHash64(std::bit_cast<UInt64>(val));
+            }
+            case Field::Types::UInt128:
+                return UInt128Hash()(x.safeGet<UInt128>());
+            case Field::Types::UUID:
+                return UInt128Hash()(x.safeGet<UUID>().toUnderType());
+            case Field::Types::IPv4:
+                return intHash64(x.safeGet<IPv4>().toUnderType());
+            case Field::Types::IPv6:
+                return UInt128Hash()(x.safeGet<IPv6>().toUnderType());
+            case Field::Types::String:
+            {
+                const auto & s = x.safeGet<String>();
+                return CityHash_v1_0_2::CityHash64(s.data(), s.size());
+            }
+            case Field::Types::Int128:
+                return UInt128Hash()(std::bit_cast<UInt128>(x.safeGet<Int128>()));
+            case Field::Types::UInt256:
+                return UInt256Hash()(x.safeGet<UInt256>());
+            case Field::Types::Int256:
+                return UInt256Hash()(std::bit_cast<UInt256>(x.safeGet<Int256>()));
+            default:
+            {
+                /// Decimals, compound types (Array, Tuple, Map, etc.) — use FieldVisitorHash.
+                SipHash hash;
+                applyVisitor(FieldVisitorHash(hash), x);
+                return hash.get64();
+            }
+        }
+    }
+};
+
 struct AggregateFunctionMapData
 {
-    // Map needs to be ordered to maintain function properties
-    MapWithMemoryTracking<Field, Array> merged_maps;
+    UnorderedMapWithMemoryTracking<Field, Array, FieldHash> merged_maps;
 };
 
 /** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of at least 2 arrays -
@@ -67,13 +145,14 @@ class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
     AggregateFunctionMapData, Derived>
 {
 private:
-    static constexpr auto STATE_VERSION_1_MIN_REVISION = 54452;
+    static constexpr auto STATE_VERSION_1_MIN_REVISION = SUMMAP_STATE_VERSION_1_MIN_REVISION;
 
     DataTypePtr keys_type;
     SerializationPtr keys_serialization;
     DataTypes values_types;
     Serializations values_serializations;
     Serializations promoted_values_serializations;
+    bool normalize_decimal_keys = false;
 
 public:
     using Base = IAggregateFunctionDataHelper<AggregateFunctionMapData, Derived>;
@@ -84,6 +163,7 @@ public:
         , keys_type(keys_type_)
         , keys_serialization(keys_type->getDefaultSerialization())
         , values_types(values_types_)
+        , normalize_decimal_keys(keys_type_->getTypeId() == TypeIndex::Dynamic)
     {
         values_serializations.reserve(values_types.size());
         promoted_values_serializations.reserve(values_types.size());
@@ -120,58 +200,18 @@ public:
         const DataTypePtr & keys_type_,
         const DataTypes & values_types_)
     {
-        DataTypes types;
-        types.emplace_back(std::make_shared<DataTypeArray>(keys_type_));
-
-        for (const auto & value_type : values_types_)
+        if constexpr (std::is_same_v<Visitor, FieldVisitorSum>)
         {
-            if constexpr (std::is_same_v<Visitor, FieldVisitorSum>)
+            for (const auto & value_type : values_types_)
             {
                 if (!value_type->isSummable())
                     throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Values for -Map cannot be summed, passed type {}",
                         value_type->getName()};
             }
-
-            DataTypePtr result_type;
-
-            if constexpr (overflow)
-            {
-                if (value_type->onlyNull())
-                    throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Cannot calculate -Map of type {}",
-                        value_type->getName()};
-
-                // Overflow, meaning that the returned type is the same as
-                // the input type. Nulls are skipped.
-                result_type = removeNullable(value_type);
-            }
-            else
-            {
-                auto value_type_without_nullable = removeNullable(value_type);
-
-                // No overflow, meaning we promote the types if necessary.
-                if (!value_type_without_nullable->canBePromoted())
-                    throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Values for -Map are expected to be Numeric, Float or Decimal, passed type {}",
-                        value_type->getName()};
-
-                WhichDataType value_type_to_check(value_type_without_nullable);
-
-                /// Do not promote decimal because of implementation issues of this function design
-                /// Currently we cannot get result column type in case of decimal we cannot get decimal scale
-                /// in method void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
-                /// If we decide to make this function more efficient we should promote decimal type during summ
-                if (value_type_to_check.isDecimal())
-                    result_type = value_type_without_nullable;
-                else
-                    result_type = value_type_without_nullable->promoteNumericType();
-            }
-
-            types.emplace_back(std::make_shared<DataTypeArray>(result_type));
         }
 
-        return std::make_shared<DataTypeTuple>(types);
+        return createSumMapResultType(keys_type_, values_types_, overflow);
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -191,6 +231,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns_, const size_t row_num, Arena *) const override
     {
         const auto & columns = getArgumentColumns(columns_);
+        const size_t num_value_columns = values_types.size();
 
         // Column 0 contains array of keys of known type
         const ColumnArray & array_column0 = assert_cast<const ColumnArray &>(*columns[0]);
@@ -199,34 +240,49 @@ public:
         const size_t keys_vec_offset = offsets0[row_num - 1];
         const size_t keys_vec_size = (offsets0[row_num] - keys_vec_offset);
 
-        // Columns 1..n contain arrays of numeric values to sum
-        auto & merged_maps = this->data(place).merged_maps;
-        for (size_t col = 0, size = values_types.size(); col < size; ++col)
+        // Pre-extract value column data and validate sizes
+        struct ValColRef { const IColumn * col; size_t offset; };
+        ValColRef val_refs_buf[8];
+        std::unique_ptr<ValColRef[]> val_refs_heap;
+        ValColRef * val_refs = num_value_columns <= 8
+            ? val_refs_buf
+            : (val_refs_heap = std::make_unique<ValColRef[]>(num_value_columns)).get();
+
+        for (size_t col = 0; col < num_value_columns; ++col)
         {
             const auto & array_column = assert_cast<const ColumnArray &>(*columns[col + 1]);
-            const IColumn & value_column = array_column.getData();
             const IColumn::Offsets & offsets = array_column.getOffsets();
             const size_t values_vec_offset = offsets[row_num - 1];
             const size_t values_vec_size = (offsets[row_num] - values_vec_offset);
 
-            // Expect key and value arrays to be of same length
             if (keys_vec_size != values_vec_size)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of keys and values arrays do not match");
 
-            // Insert column values for all keys
-            for (size_t i = 0; i < keys_vec_size; ++i)
+            val_refs[col] = {&array_column.getData(), values_vec_offset};
+        }
+
+        // Outer loop over keys, inner loop over value columns.
+        // Each key is looked up once instead of once per value column.
+        auto & merged_maps = this->data(place).merged_maps;
+        for (size_t i = 0; i < keys_vec_size; ++i)
+        {
+            Field key = key_column[keys_vec_offset + i];
+            if (normalize_decimal_keys)
+                normalizeFieldDecimal(key);
+
+            if (!keepKey(key))
+                continue;
+
+            auto [it, inserted] = merged_maps.emplace(key, Array());
+            if (inserted)
+                it->second.resize(num_value_columns);
+
+            for (size_t col = 0; col < num_value_columns; ++col)
             {
-                Field value = value_column[values_vec_offset + i];
-                Field key = key_column[keys_vec_offset + i];
-
-                if (!keepKey(key))
-                    continue;
-
-                auto [it, inserted] = merged_maps.emplace(key, Array());
+                Field value = (*val_refs[col].col)[val_refs[col].offset + i];
 
                 if (inserted)
                 {
-                    it->second.resize(size);
                     it->second[col] = value;
                 }
                 else
@@ -323,11 +379,37 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown version {}, of -Map aggregate function serialization state", *version);
         }
 
-        for (const auto & elem : merged_maps)
+        /// Sort entries by key before serializing to produce a canonical byte
+        /// representation, independent of hash-map iteration order.
+        constexpr bool sort_serialize = true;
+
+        using MapIter = typename std::decay_t<decltype(merged_maps)>::const_iterator;
+        std::vector<MapIter> sorted; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        if constexpr (sort_serialize)
         {
-            keys_serialization->serializeBinary(elem.first, buf, {});
+            sorted.reserve(merged_maps.size());
+            for (auto it = merged_maps.cbegin(); it != merged_maps.cend(); ++it)
+                sorted.push_back(it);
+            std::sort(sorted.begin(), sorted.end(),
+                [](const MapIter & a, const MapIter & b) { return a->first < b->first; });
+        }
+
+        const auto serialize_entry = [&](const Field & key, const Array & values)
+        {
+            keys_serialization->serializeBinary(key, buf, {});
             for (size_t col = 0; col < values_types.size(); ++col)
-                serialize(col, elem.second);
+                serialize(col, values);
+        };
+
+        if constexpr (sort_serialize)
+        {
+            for (const auto & it : sorted)
+                serialize_entry(it->first, it->second);
+        }
+        else
+        {
+            for (const auto & elem : merged_maps)
+                serialize_entry(elem.first, elem.second);
         }
     }
 
@@ -386,6 +468,8 @@ public:
         {
             Field key;
             keys_serialization->deserializeBinary(key, buf, format_settings);
+            if (normalize_decimal_keys)
+                normalizeFieldDecimal(key);
 
             Array values;
             values.resize(values_types.size());
@@ -399,67 +483,67 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        size_t num_columns = values_types.size();
+        const size_t num_columns = values_types.size();
+        const auto & merged_maps = this->data(place).merged_maps;
 
-        // Final step does compaction of keys that have zero values, this mutates the state
-        auto & merged_maps = this->data(place).merged_maps;
+        using MapIter = typename std::decay_t<decltype(merged_maps)>::const_iterator;
 
-        // Remove keys which are zeros or empty. This should be enabled only for sumMap.
-        if constexpr (compact)
+        // Collect iterators, skipping compacted entries without mutating state
+        std::vector<MapIter> sorted; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        sorted.reserve(merged_maps.size());
+
+        for (auto it = merged_maps.cbegin(); it != merged_maps.cend(); ++it)
         {
-            for (auto it = merged_maps.cbegin(); it != merged_maps.cend();)
+            if constexpr (compact)
             {
-                // Key is not compacted if it has at least one non-zero value
-                bool erase = true;
+                bool all_identity = true;
                 for (size_t col = 0; col < num_columns; ++col)
                 {
                     if (!it->second[col].isNull() && it->second[col] != values_types[col]->getDefault())
                     {
-                        erase = false;
+                        all_identity = false;
                         break;
                     }
                 }
-
-                if (erase)
-                    it = merged_maps.erase(it);
-                else
-                    ++it;
+                if (all_identity)
+                    continue;
             }
+            sorted.push_back(it);
         }
 
-        size_t size = merged_maps.size();
+        // Sort by key to maintain the documented sorted-output property
+        std::sort(sorted.begin(), sorted.end(),
+            [](const MapIter & a, const MapIter & b) { return a->first < b->first; }); // NOLINT(clang-analyzer-cplusplus.Move)
+
+        const size_t result_size = sorted.size();
 
         auto & to_tuple = assert_cast<ColumnTuple &>(to);
         auto & to_keys_arr = assert_cast<ColumnArray &>(to_tuple.getColumn(0));
         auto & to_keys_col = to_keys_arr.getData();
 
-        // Advance column offsets
         auto & to_keys_offsets = to_keys_arr.getOffsets();
-        to_keys_offsets.push_back(to_keys_offsets.back() + size);
-        to_keys_col.reserve(size);
+        to_keys_offsets.push_back(to_keys_offsets.back() + result_size);
+        to_keys_col.reserve(result_size);
 
         for (size_t col = 0; col < num_columns; ++col)
         {
             auto & to_values_arr = assert_cast<ColumnArray &>(to_tuple.getColumn(col + 1));
             auto & to_values_offsets = to_values_arr.getOffsets();
-            to_values_offsets.push_back(to_values_offsets.back() + size);
-            to_values_arr.getData().reserve(size);
+            to_values_offsets.push_back(to_values_offsets.back() + result_size);
+            to_values_arr.getData().reserve(result_size);
         }
 
-        // Write arrays of keys and values
-        for (const auto & elem : merged_maps)
+        for (const auto & it : sorted)
         {
-            // Write array of keys into column
-            to_keys_col.insert(elem.first);
+            to_keys_col.insert(it->first);
 
-            // Write 0..n arrays of values
             for (size_t col = 0; col < num_columns; ++col)
             {
                 auto & to_values_col = assert_cast<ColumnArray &>(to_tuple.getColumn(col + 1)).getData();
-                if (elem.second[col].isNull())
+                if (it->second[col].isNull())
                     to_values_col.insertDefault();
                 else
-                    to_values_col.insert(elem.second[col]);
+                    to_values_col.insert(it->second[col]);
             }
         }
     }
@@ -676,7 +760,7 @@ public:
         return false;
     }
 
-    bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum AggregateFunctionStates"); }
+    bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compare AggregateFunctionStates"); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
     bool operator() (Tuple & x) const { return compareImpl<Tuple>(x); }
@@ -885,7 +969,17 @@ FROM multi_metrics;
 
     factory.registerFunction("sumMappedArrays", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
+        assertNoParameters(name, params);
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
+
+        if (isSumMapTypedKeySupported(keys_type->getTypeId()) && areSumMapTypedValuesSupported(values_types)
+            && std::all_of(values_types.begin(), values_types.end(), [](const auto & t) { return t->isSummable(); }))
+        {
+            AggregateFunctionPtr res = createSumMapTyped(keys_type, values_types, arguments, false, tuple_argument, SumMapOp::Sum);
+            if (res)
+                return res;
+        }
+
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMap<false, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMap<false, false>>(keys_type, values_types, arguments, params);
@@ -928,7 +1022,16 @@ FROM VALUES('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1])
 
     factory.registerFunction("minMappedArrays", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
+        assertNoParameters(name, params);
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
+
+        if (isSumMapTypedKeySupported(keys_type->getTypeId()) && areSumMapTypedValuesSupported(values_types))
+        {
+            AggregateFunctionPtr res = createSumMapTyped(keys_type, values_types, arguments, true, tuple_argument, SumMapOp::Min);
+            if (res)
+                return res;
+        }
+
         if (tuple_argument)
             return std::make_shared<AggregateFunctionMinMap<true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionMinMap<false>>(keys_type, values_types, arguments, params);
@@ -971,7 +1074,16 @@ FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], 
 
     factory.registerFunction("maxMappedArrays", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
+        assertNoParameters(name, params);
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
+
+        if (isSumMapTypedKeySupported(keys_type->getTypeId()) && areSumMapTypedValuesSupported(values_types))
+        {
+            AggregateFunctionPtr res = createSumMapTyped(keys_type, values_types, arguments, true, tuple_argument, SumMapOp::Max);
+            if (res)
+                return res;
+        }
+
         if (tuple_argument)
             return std::make_shared<AggregateFunctionMaxMap<true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionMaxMap<false>>(keys_type, values_types, arguments, params);
@@ -1055,7 +1167,17 @@ GROUP BY timeslot;
 
     factory.registerFunction("sumMapWithOverflow", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
+        assertNoParameters(name, params);
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
+
+        if (isSumMapTypedKeySupported(keys_type->getTypeId()) && areSumMapTypedValuesSupported(values_types)
+            && std::all_of(values_types.begin(), values_types.end(), [](const auto & t) { return t->isSummable(); }))
+        {
+            AggregateFunctionPtr res = createSumMapTyped(keys_type, values_types, arguments, true, tuple_argument, SumMapOp::Sum);
+            if (res)
+                return res;
+        }
+
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMap<true, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMap<true, false>>(keys_type, values_types, arguments, params);
@@ -1064,6 +1186,18 @@ GROUP BY timeslot;
     factory.registerFunction("sumMapFiltered", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
+
+        Array keys_filter;
+        if (params.size() == 1 && params.front().tryGet<Array>(keys_filter) && !keys_filter.empty()
+            && isSumMapTypedKeySupported(keys_type->getTypeId()) && areSumMapTypedValuesSupported(values_types)
+            && std::all_of(values_types.begin(), values_types.end(), [](const auto & t) { return t->isSummable(); }))
+        {
+            AggregateFunctionPtr res = createSumMapTyped(
+                keys_type, values_types, arguments, false, tuple_argument, SumMapOp::Sum, keys_filter);
+            if (res)
+                return res;
+        }
+
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<false, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMapFiltered<false, false>>(keys_type, values_types, arguments, params);
@@ -1072,6 +1206,18 @@ GROUP BY timeslot;
     factory.registerFunction("sumMapFilteredWithOverflow", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
+
+        Array keys_filter;
+        if (params.size() == 1 && params.front().tryGet<Array>(keys_filter) && !keys_filter.empty()
+            && isSumMapTypedKeySupported(keys_type->getTypeId()) && areSumMapTypedValuesSupported(values_types)
+            && std::all_of(values_types.begin(), values_types.end(), [](const auto & t) { return t->isSummable(); }))
+        {
+            AggregateFunctionPtr res = createSumMapTyped(
+                keys_type, values_types, arguments, true, tuple_argument, SumMapOp::Sum, keys_filter);
+            if (res)
+                return res;
+        }
+
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<true, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMapFiltered<true, false>>(keys_type, values_types, arguments, params);

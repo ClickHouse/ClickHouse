@@ -106,6 +106,7 @@ inline UInt64 intHashCRC32(const T & x, UInt64 updated_value)
     return updated_value;
 }
 
+/// NOTE: BFloat16 does not match and falls through hashCRC32 - callers need to normalise beforehand.
 template <std::floating_point T>
 requires(sizeof(T) <= sizeof(UInt64))
 inline UInt64 intHashCRC32(T x, UInt64 updated_value)
