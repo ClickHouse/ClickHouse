@@ -64,6 +64,7 @@ public:
     String getName() const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -72,10 +73,10 @@ public:
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
-    ColumnPtr executeWithLowCardinalityColumns(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const override;
-
 private:
+    ColumnPtr executeLowCardinality(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
     ColumnPtr perform(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
@@ -2147,7 +2148,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 {
     if (const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get()))
     {
-        auto value_type = map_type->getValueType();
+        auto value_type = recursiveRemoveLowCardinality(map_type->getValueType());
         return is_null_mode && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
     }
 
@@ -2170,15 +2171,15 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             arguments[1]->getName());
     }
 
-    auto nested_type = array_type->getNestedType();
+    auto nested_type = recursiveRemoveLowCardinality(array_type->getNestedType());
     return is_null_mode && nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
 }
 
 template <ArrayElementExceptionMode mode>
-ColumnPtr FunctionArrayElement<mode>::executeWithLowCardinalityColumns(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+ColumnPtr FunctionArrayElement<mode>::executeLowCardinality(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    if (dry_run || arguments.size() != 2 || !isColumnConst(*arguments[1].column))
+    if (arguments.size() != 2 || !isColumnConst(*arguments[1].column))
         return nullptr;
 
     if (getNullPresense(arguments).has_nullable)
@@ -2226,6 +2227,13 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    if (auto result = executeLowCardinality(arguments, result_type, input_rows_count))
+        return result;
+
+    auto arguments_without_low_cardinality = arguments;
+    if (convertLowCardinalityColumnsToFull(arguments_without_low_cardinality))
+        return executeImpl(arguments_without_low_cardinality, result_type, input_rows_count);
+
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
 

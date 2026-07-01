@@ -121,14 +121,7 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     return indexes;
 }
 
-void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
-{
-    for (auto & column : args)
-    {
-        column.column = recursiveRemoveLowCardinality(column.column);
-        column.type = recursiveRemoveLowCardinality(column.type);
-    }
-}
+
 }
 
 ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
@@ -464,9 +457,6 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     ColumnPtr result;
     if (useDefaultImplementationForLowCardinalityColumns())
     {
-        if ((result = executeWithLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run)))
-            return result;
-
         ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
 
         if (const auto * res_low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(result_type.get()))

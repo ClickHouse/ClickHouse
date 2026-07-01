@@ -98,15 +98,6 @@ protected:
       */
     virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
-    virtual ColumnPtr executeWithLowCardinalityColumns(
-        const ColumnsWithTypeAndName & /*arguments*/,
-        const DataTypePtr & /*result_type*/,
-        size_t /*input_rows_count*/,
-        bool /*dry_run*/) const
-    {
-        return nullptr;
-    }
-
     /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
       * Otherwise, convert all sparse columns to ordinary columns.
       * If default value doesn't change after function execution, returns sparse column as a result.
@@ -566,15 +557,6 @@ public:
       * Returns ColumnLowCardinality if at least one argument is ColumnLowCardinality.
       */
     virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
-
-    virtual ColumnPtr executeWithLowCardinalityColumns(
-        const ColumnsWithTypeAndName & /*arguments*/,
-        const DataTypePtr & /*result_type*/,
-        size_t /*input_rows_count*/,
-        bool /*dry_run*/) const
-    {
-        return nullptr;
-    }
 
     /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
       * Otherwise, convert all sparse columns to ordinary columns.

@@ -69,15 +69,14 @@ public:
     bool isVariadic() const override { return impl.isVariadic(); }
     size_t getNumberOfArguments() const override { return impl.getNumberOfArguments(); }
     bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
-
     bool useDefaultImplementationForLowCardinalityColumns() const override
     {
+        if constexpr (requires { Adapter::use_default_implementation_for_low_cardinality_columns; })
+            return Adapter::use_default_implementation_for_low_cardinality_columns;
         if constexpr (preserve_nested_low_cardinality)
             return false;
-        else
-            return impl.useDefaultImplementationForLowCardinalityColumns();
+        return impl.useDefaultImplementationForLowCardinalityColumns();
     }
-
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override  { return false; }
 
@@ -148,7 +147,15 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto nested_arguments = arguments;
+        auto arguments_to_execute = arguments;
+        if constexpr (requires { Adapter::executeWithLowCardinalityColumns(arguments, result_type, input_rows_count); })
+        {
+            if (auto result = Adapter::executeWithLowCardinalityColumns(arguments, result_type, input_rows_count))
+                return result;
+            convertLowCardinalityColumnsToFull(arguments_to_execute);
+        }
+
+        auto nested_arguments = arguments_to_execute;
         Adapter::extractNestedTypesAndColumns(nested_arguments);
 
         if constexpr (preserve_nested_low_cardinality)
@@ -173,18 +180,6 @@ public:
         }
         else
             return Adapter::wrapColumn(impl.executeImpl(nested_arguments, Adapter::extractResultType(result_type), input_rows_count));
-    }
-
-    ColumnPtr executeWithLowCardinalityColumns(
-        const ColumnsWithTypeAndName & arguments,
-        const DataTypePtr & result_type,
-        size_t input_rows_count,
-        bool dry_run) const override
-    {
-        if constexpr (requires { Adapter::executeWithLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run); })
-            return Adapter::executeWithLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
-        else
-            return nullptr;
     }
 
 private:
@@ -405,6 +400,7 @@ struct MapLikeAdapter
     /// The SQL-level signature is `(Map, String pattern)`; the lambda is constructed internally,
     /// so the first user-facing argument is not a lambda.
     static constexpr bool first_argument_is_lambda = false;
+    static constexpr bool use_default_implementation_for_low_cardinality_columns = false;
 
     /// These functions match keys/values with `LIKE`, which is defined only for String/FixedString.
     /// Their LowCardinality handling is left to the generic machinery (nested LowCardinality is not preserved).
@@ -421,7 +417,7 @@ struct MapLikeAdapter
         if (!map_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a Map", Name::name);
 
-        if (!isStringOrFixedString(types[1]))
+        if (!isStringOrFixedString(removeLowCardinality(types[1])))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be String or FixedString", Name::name);
 
         auto subcolumn_type = removeLowCardinality(position == 0 ? map_type->getKeyType() : map_type->getValueType());
@@ -434,8 +430,11 @@ struct MapLikeAdapter
     {
         checkTypes(types);
         const auto & map_type = assert_cast<const DataTypeMap &>(*types[0]);
+        auto pattern_type = removeLowCardinality(types[1]);
+        auto key_type = recursiveRemoveLowCardinality(map_type.getKeyType());
+        auto value_type = recursiveRemoveLowCardinality(map_type.getValueType());
 
-        DataTypes lambda_argument_types{types[1], map_type.getKeyType(), map_type.getValueType()};
+        DataTypes lambda_argument_types{pattern_type, key_type, value_type};
 
         DataTypePtr result_type;
 
@@ -444,16 +443,17 @@ struct MapLikeAdapter
         else
             result_type = FunctionMapValueLike().getReturnTypeImpl(lambda_argument_types);
 
-        DataTypes argument_types{map_type.getKeyType(), map_type.getValueType()};
+        DataTypes argument_types{key_type, value_type};
         auto function_type = std::make_shared<DataTypeFunction>(argument_types, result_type);
 
-        types = {function_type, types[0]};
+        types = {function_type, std::make_shared<DataTypeMap>(key_type, value_type)};
         MapToNestedAdapter<Name, returns_map>::extractNestedTypes(types);
     }
 
     static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments)
     {
         checkTypes(DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })});
+        convertLowCardinalityColumnsToFull(arguments);
 
         const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
         const auto & pattern_arg = arguments[1];
@@ -489,12 +489,11 @@ struct MapLikeAdapter
     static ColumnPtr executeWithLowCardinalityColumns(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr &,
-        size_t input_rows_count,
-        bool dry_run)
+        size_t input_rows_count)
     {
         /// This fast path builds one dictionary-match bitmap for the whole block, so the LIKE pattern must be constant.
         /// Non-constant patterns remain supported by falling back to the generic LowCardinality handling below.
-        if (dry_run || arguments.size() != 2 || !arguments[0].column || !arguments[1].column || !isColumnConst(*arguments[1].column))
+        if (arguments.size() != 2 || !arguments[0].column || !arguments[1].column || !isColumnConst(*arguments[1].column))
             return nullptr;
 
         if (getNullPresense(arguments).has_nullable)
