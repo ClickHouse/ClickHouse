@@ -40,6 +40,7 @@ namespace MySQLSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -57,6 +58,11 @@ public:
     {
         return name;
     }
+
+    /// The 3rd argument may be a query passed to MySQL as is - a subquery `(SELECT ...)` or `query('SELECT ...')`.
+    /// Such an argument must not be analyzed as an ordinary expression.
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const override { return {2}; }
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
     const char * getStorageEngineName() const override { return "MySQL"; }
@@ -112,10 +118,15 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
 ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
+    /// A query-backed insert is rejected in executeImpl, which is the only path taken by INSERT INTO TABLE
+    /// FUNCTION (it is called with empty cached columns, before any external contact). It must not be rejected
+    /// here, because DESCRIBE TABLE also calls getActualTableStructure with is_insert_query = true and must
+    /// keep returning the inferred structure.
+    ///
     /// Use the effective type-mapping level computed in `parseArguments` (the query-context value,
     /// overridden by a function-local `SETTINGS` clause or named collection).
     return StorageMySQL::getTableStructureFromData(
-        *pool, configuration->database, configuration->table, context,
+        *pool, configuration->database, configuration->table_or_query, context,
         (*effective_settings)[MySQLSetting::mysql_datatypes_support_level]);
 }
 
@@ -124,19 +135,26 @@ StoragePtr TableFunctionMySQL::executeImpl(
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription cached_columns,
-    bool /*is_insert_query*/) const
+    bool is_insert_query) const
 {
+    /// Reject the insert before constructing the storage, so that read-only query-backed sources do not contact
+    /// the external database for schema inference (which could run an expensive or volatile query) only to fail.
+    if (is_insert_query && configuration->table_or_query.isQuery())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Cannot INSERT into the 'mysql' table function: it represents the result of a query passed to MySQL, which is read-only");
+
     /// Carry the effective type-mapping level so that, when the columns are not provided and
     /// `StorageMySQL` infers them itself, it honors the same level as `getActualTableStructure`.
     MySQLSettings mysql_settings;
     mysql_settings[MySQLSetting::mysql_datatypes_support_level]
         = (*effective_settings)[MySQLSetting::mysql_datatypes_support_level];
 
+
     auto res = std::make_shared<StorageMySQL>(
         StorageID(getDatabaseName(), table_name),
         std::move(*pool),
         configuration->database,
-        configuration->table,
+        configuration->table_or_query,
         configuration->replace_query,
         configuration->on_duplicate_clause,
         cached_columns,
