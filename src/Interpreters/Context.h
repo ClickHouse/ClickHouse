@@ -919,6 +919,8 @@ public:
     void setShowLicenseExpirationWarnings(bool value);
     String getMutationWorkload() const;
     void setMutationWorkload(const String & value);
+    String getMoveWorkload() const;
+    void setMoveWorkload(const String & value);
     bool getThrowOnUnknownWorkload() const;
     void setThrowOnUnknownWorkload(bool value);
     bool getCPUSlotPreemption() const;
@@ -1321,6 +1323,7 @@ public:
     void makeQueryContext();
     void makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings);
     void makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings);
+    void makeQueryContextForMove(const MergeTreeSettings & merge_tree_settings);
     void makeSessionContext();
     void makeGlobalContext();
     void makeBackgroundContext(const Poco::Util::AbstractConfiguration & config);

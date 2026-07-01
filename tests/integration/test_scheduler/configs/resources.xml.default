@@ -10,10 +10,13 @@
             <node path="/prio/fair/sys">            <type>fair</type><weight>90</weight></node>
             <node path="/prio/fair/sys/merges">     <type>fifo</type></node>
             <node path="/prio/fair/sys/mutations">  <type>fifo</type></node>
+            <node path="/prio/fair/sys/moves">      <type>fifo</type></node>
             <node path="/prio/fair/prod_merges">    <type>fifo</type><weight>9</weight></node>
             <node path="/prio/fair/prod_mutations"> <type>fifo</type><weight>9</weight></node>
+            <node path="/prio/fair/prod_moves">     <type>fifo</type><weight>9</weight></node>
             <node path="/prio/fair/dev_merges">     <type>fifo</type><weight>9</weight></node>
             <node path="/prio/fair/dev_mutations">  <type>fifo</type><weight>9</weight></node>
+            <node path="/prio/fair/dev_moves">      <type>fifo</type><weight>9</weight></node>
         </network_read>
         <network_write>
             <node path="/">                         <type>inflight_limit</type><max_cost>1000000</max_cost></node>
@@ -25,10 +28,13 @@
             <node path="/prio/fair/sys">            <type>fair</type><weight>90</weight></node>
             <node path="/prio/fair/sys/merges">     <type>fifo</type></node>
             <node path="/prio/fair/sys/mutations">  <type>fifo</type></node>
+            <node path="/prio/fair/sys/moves">      <type>fifo</type></node>
             <node path="/prio/fair/prod_merges">    <type>fifo</type><weight>9</weight></node>
             <node path="/prio/fair/prod_mutations"> <type>fifo</type><weight>9</weight></node>
+            <node path="/prio/fair/prod_moves">     <type>fifo</type><weight>9</weight></node>
             <node path="/prio/fair/dev_merges">     <type>fifo</type><weight>9</weight></node>
             <node path="/prio/fair/dev_mutations">  <type>fifo</type><weight>9</weight></node>
+            <node path="/prio/fair/dev_moves">      <type>fifo</type><weight>9</weight></node>
         </network_write>
     </resources>
     <workload_classifiers>
@@ -56,6 +62,10 @@
             <network_read>/prio/fair/sys/mutations</network_read>
             <network_write>/prio/fair/sys/mutations</network_write>
         </sys_mutations>
+        <sys_moves>
+            <network_read>/prio/fair/sys/moves</network_read>
+            <network_write>/prio/fair/sys/moves</network_write>
+        </sys_moves>
         <prod_merges>
             <network_read>/prio/fair/prod_merges</network_read>
             <network_write>/prio/fair/prod_merges</network_write>
@@ -64,6 +74,10 @@
             <network_read>/prio/fair/prod_mutations</network_read>
             <network_write>/prio/fair/prod_mutations</network_write>
         </prod_mutations>
+        <prod_moves>
+            <network_read>/prio/fair/prod_moves</network_read>
+            <network_write>/prio/fair/prod_moves</network_write>
+        </prod_moves>
         <dev_merges>
             <network_read>/prio/fair/dev_merges</network_read>
             <network_write>/prio/fair/dev_merges</network_write>
@@ -72,5 +86,9 @@
             <network_read>/prio/fair/dev_mutations</network_read>
             <network_write>/prio/fair/dev_mutations</network_write>
         </dev_mutations>
+        <dev_moves>
+            <network_read>/prio/fair/dev_moves</network_read>
+            <network_write>/prio/fair/dev_moves</network_write>
+        </dev_moves>
     </workload_classifiers>
 </clickhouse>

@@ -109,6 +109,7 @@
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/QueryScope.h>
 #include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils.h>
@@ -10127,8 +10128,11 @@ bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
     assignee.scheduleMoveTask(std::make_shared<ExecutableLambdaAdapter>(
         [this, moving_tagger] () mutable
         {
-            ReadSettings read_settings = Context::getGlobalContextInstance()->getReadSettings();
-            WriteSettings write_settings = Context::getGlobalContextInstance()->getWriteSettings();
+            auto task_context = Context::createCopy(getContext()->getBackgroundContext());
+            task_context->makeQueryContextForMove(*getSettings());
+            auto query_scope = QueryScope::create(task_context);
+            ReadSettings read_settings = task_context->getReadSettings();
+            WriteSettings write_settings = task_context->getWriteSettings();
             return moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ false) == MovePartsOutcome::PartsMoved;
         }, moves_assignee_trigger, getStorageID()));
     return true;
