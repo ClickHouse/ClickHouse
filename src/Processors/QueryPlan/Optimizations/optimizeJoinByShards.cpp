@@ -477,21 +477,27 @@ void optimizeJoinByShards(QueryPlan::Node & root)
 /// with `compareAt`. Some types make the two disagree: keys that `compareAt` treats as equal can hash
 /// differently, so hash sharding would scatter them into different shards and the per-shard merge join would
 /// never see the match, returning fewer rows than the `full_sorting_merge` algorithm this one is documented
-/// to mirror. Two known cases:
+/// to mirror. Three known cases:
 ///   - Floating-point: `-0.0` and `+0.0` (and NaNs) compare equal for the merge but their bit patterns hash
 ///     differently.
 ///   - `Object('json')` / `JSON`: `ColumnObject::compareAt` compares the logical path/value map, but the
 ///     hash depends on the physical layout - whether a given path is stored as a typed/dynamic subcolumn or
 ///     serialized into `shared_data`. That layout can differ between blocks (e.g. when the set of dynamic
 ///     paths differs across parts), so two logically-equal objects can hash into different shards.
+///   - `Dynamic`: same problem as `Object`. `ColumnDynamic::compareAt` compares the logical value, but
+///     `ColumnDynamic::computeHashInto` hashes the raw variant storage, which is explicitly documented as not
+///     equal for logically-equal values stored with different variant layouts (a typed variant on one side
+///     vs the shared variant on the other). A plain `Dynamic` join key is rejected earlier by
+///     `TableJoin::inferJoinKeyCommonType`, but only when `allow_dynamic_type_in_join_keys = 0` (the default);
+///     with that compatibility setting enabled a `Dynamic` key reaches this rewrite.
 /// This detects such a type at the top level or nested inside `Nullable`/`LowCardinality`/`Array`/`Tuple`/
-/// `Map` (`Dynamic` keys are already rejected earlier by `TableJoin::inferJoinKeyCommonType`).
+/// `Map`/`Variant`.
 static bool joinKeyTypeBreaksHashSharding(const IDataType & type)
 {
     auto breaks_sharding = [](const IDataType & t)
     {
         WhichDataType which(t);
-        return which.isFloat() || which.isObject();
+        return which.isFloat() || which.isObject() || which.isDynamic();
     };
 
     if (breaks_sharding(type))
@@ -575,12 +581,12 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
                     const auto & left_header = left_sort->getOutputHeader();
                     const auto & right_header = right_sort->getOutputHeader();
 
-                    /// Do not shard when a join key is (or contains) a floating-point type: its hash-based
-                    /// shard selection is not consistent with the merge-join `compareAt` (`-0.0` == `+0.0`,
-                    /// NaN == NaN), so equal keys could land in different shards and the match would be lost
-                    /// (see `joinKeyTypeBreaksHashSharding`). If a key column cannot be found to check its
-                    /// type, be conservative and skip sharding as well. The join then runs as a single merge
-                    /// join, exactly like `full_sorting_merge`.
+                    /// Do not shard when a join key is (or contains) a type whose hash-based shard selection
+                    /// is not consistent with the merge-join `compareAt` - floating-point (`-0.0` == `+0.0`,
+                    /// NaN == NaN), `JSON`/`Object`, or `Dynamic` - so equal keys could land in different
+                    /// shards and the match would be lost (see `joinKeyTypeBreaksHashSharding`). If a key
+                    /// column cannot be found to check its type, be conservative and skip sharding as well.
+                    /// The join then runs as a single merge join, exactly like `full_sorting_merge`.
                     bool can_shard = left_header && right_header;
                     for (size_t i = 0; can_shard && i < clause.key_names_left.size(); ++i)
                     {
