@@ -1147,6 +1147,13 @@ QueryPlan QueryPlan::clone() const
     result.cloneInplace(current_subplan_copy_root, root);
     result.root = current_subplan_copy_root;
 
+    /// Preserve plan-level execution settings so the cloned plan runs under the same resource
+    /// contract as the original (otherwise a pipeline built from the clone would default to
+    /// `max_threads == 0` and `concurrency_control == false`, ignoring the subquery's thread cap
+    /// and bypassing concurrency control).
+    result.max_threads = max_threads;
+    result.concurrency_control = concurrency_control;
+
     return result;
 }
 
