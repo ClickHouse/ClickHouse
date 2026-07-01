@@ -13,6 +13,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -221,6 +223,49 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
                 const auto & col = assert_cast<const DataTypeDateTime64::ColumnType &>(column);
                 encoder.encodeLong(col.getElement(row_num));
             }};
+        }
+        case TypeIndex::Time:
+        {
+            /// ClickHouse `Time` stores whole seconds in Int32. Avro `TIME_MILLIS` is INT32 milliseconds
+            /// since midnight, so we multiply by 1000 on the way out.
+            auto schema = avro::IntSchema();
+            schema.root()->setLogicalType(avro::LogicalType(avro::LogicalType::TIME_MILLIS));
+            return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                Int32 seconds = assert_cast<const ColumnInt32 &>(column).getElement(row_num);
+                encoder.encodeInt(seconds * 1000);
+            }};
+        }
+        case TypeIndex::Time64:
+        {
+            /// Avro has only `TIME_MILLIS` (INT32, scale=3) and `TIME_MICROS` (INT64, scale=6).
+            /// For scale 3/6 we emit the matching logical type so the value round-trips. For any other
+            /// scale (0..2, 4..5, 7..9) fall back to a raw Decimal64 with the column's scale so values
+            /// are preserved, even though a foreign reader cannot recover the time-of-day intent.
+            const auto & provided_type = assert_cast<const DataTypeTime64 &>(*data_type);
+            const UInt32 scale = provided_type.getScale();
+            if (scale == 3)
+            {
+                auto schema = avro::IntSchema();
+                schema.root()->setLogicalType(avro::LogicalType(avro::LogicalType::TIME_MILLIS));
+                return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                {
+                    /// Time64(3) value fits in Int32: max wall-clock value 86_400_000 < 2^31.
+                    const auto & col = assert_cast<const DataTypeTime64::ColumnType &>(column);
+                    encoder.encodeInt(static_cast<Int32>(col.getElement(row_num)));
+                }};
+            }
+            if (scale == 6)
+            {
+                auto schema = avro::LongSchema();
+                schema.root()->setLogicalType(avro::LogicalType(avro::LogicalType::TIME_MICROS));
+                return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                {
+                    const auto & col = assert_cast<const DataTypeTime64::ColumnType &>(column);
+                    encoder.encodeLong(col.getElement(row_num));
+                }};
+            }
+            return createDecimalSchemaWithSerializeFn<DataTypeTime64>(data_type);
         }
         case TypeIndex::Decimal32:
         {

@@ -8,10 +8,13 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
+#include <base/arithmeticOverflow.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -152,6 +155,8 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
             break;
         case TypeIndex::Date32:
             [[fallthrough]];
+        case TypeIndex::Time:
+            [[fallthrough]];
         case TypeIndex::Int32:
             convertAndInsert<T, Int32>(assert_cast<ColumnInt32 &>(column), value, type.idx);
             break;
@@ -172,6 +177,9 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
             break;
         case TypeIndex::DateTime64:
             convertAndInsert<T, Int64>(assert_cast<ColumnDecimal<DateTime64> &>(column), value, type.idx);
+            break;
+        case TypeIndex::Time64:
+            convertAndInsert<T, Int64>(assert_cast<ColumnDecimal<Time64> &>(column), value, type.idx);
             break;
         case TypeIndex::IPv4:
             convertAndInsert<T, UInt32, ColumnIPv4, true>(assert_cast<ColumnIPv4 &>(column), value, type.idx);
@@ -275,6 +283,42 @@ static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t f
     }
 }
 
+/// Build a deserialize fn that decodes an Avro `time-millis` (INT32, ms-since-midnight) or
+/// `time-micros` (INT64, us-since-midnight) and rescales it to a ClickHouse `Time` / `Time64`
+/// target by shifting the decimal point. Used when the user supplies an explicit type hint
+/// whose scale does not match the Avro source scale (e.g. `t Time` over `time-millis`).
+static AvroDeserializer::DeserializeFn createAvroTimeRescaleDeserializeFn(
+    bool source_is_long, Int32 source_scale, UInt32 target_scale, WhichDataType target)
+{
+    const Int32 diff = static_cast<Int32>(target_scale) - source_scale;
+    Int64 factor = 1;
+    for (Int32 i = 0; i < std::abs(diff); ++i)
+        factor *= 10;
+
+    return [target, source_is_long, diff, factor](IColumn & column, avro::Decoder & decoder)
+    {
+        const Int64 raw = source_is_long ? decoder.decodeLong() : static_cast<Int64>(decoder.decodeInt());
+        Int64 converted;
+        if (diff == 0)
+        {
+            converted = raw;
+        }
+        else if (diff > 0)
+        {
+            if (common::mulOverflow(raw, factor, converted))
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "Avro time value overflows the target ClickHouse Time/Time64 scale");
+        }
+        else
+        {
+            converted = raw / factor;
+        }
+        insertNumber(column, target, converted);
+        return true;
+    };
+}
+
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type)
 {
     checkStackSize();
@@ -333,6 +377,19 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return createDecimalDeserializeFn<DataTypeDateTime64>(root_node, target_type, false);
             break;
         case avro::AVRO_INT:
+        {
+            /// Avro `time-millis` (ms-since-midnight) -> ClickHouse Time / Time64: rescale the
+            /// value so the user-supplied target type stores seconds-of-day at the correct
+            /// scale. Without this special case, `insertNumber` would store the raw ms count
+            /// directly, giving wildly wrong values for any target scale != 3.
+            if (root_node->logicalType().type() == avro::LogicalType::TIME_MILLIS
+                && (target.isTime() || target.isTime64()))
+            {
+                const UInt32 target_scale = target.isTime64()
+                    ? assert_cast<const DataTypeTime64 &>(*target_type).getScale()
+                    : 0u;
+                return createAvroTimeRescaleDeserializeFn(/*source_is_long=*/ false, /*source_scale=*/ 3, target_scale, target);
+            }
             if (target_type->isValueRepresentedByNumber())
             {
                 return [target](IColumn & column, avro::Decoder & decoder)
@@ -342,7 +399,19 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 };
             }
             break;
+        }
         case avro::AVRO_LONG:
+        {
+            /// Avro `time-micros` (us-since-midnight) -> ClickHouse Time / Time64: same idea as
+            /// `time-millis`, with source scale 6.
+            if (root_node->logicalType().type() == avro::LogicalType::TIME_MICROS
+                && (target.isTime() || target.isTime64()))
+            {
+                const UInt32 target_scale = target.isTime64()
+                    ? assert_cast<const DataTypeTime64 &>(*target_type).getScale()
+                    : 0u;
+                return createAvroTimeRescaleDeserializeFn(/*source_is_long=*/ true, /*source_scale=*/ 6, target_scale, target);
+            }
             if (target_type->isValueRepresentedByNumber())
             {
                 return [target](IColumn & column, avro::Decoder & decoder)
@@ -352,6 +421,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 };
             }
             break;
+        }
         case avro::AVRO_FLOAT:
             if (target_type->isValueRepresentedByNumber())
             {
@@ -1258,8 +1328,11 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
     {
         case avro::Type::AVRO_INT:
         {
-            if (node->logicalType().type() == avro::LogicalType::DATE)
+            auto logical_type = node->logicalType();
+            if (logical_type.type() == avro::LogicalType::DATE)
                 return {std::make_shared<DataTypeDate32>()};
+            if (logical_type.type() == avro::LogicalType::TIME_MILLIS)
+                return {std::make_shared<DataTypeTime64>(3)};
 
             return {std::make_shared<DataTypeInt32>()};
         }
@@ -1270,6 +1343,8 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
                 return {std::make_shared<DataTypeDateTime64>(3)};
             if (logical_type.type() == avro::LogicalType::TIMESTAMP_MICROS)
                 return {std::make_shared<DataTypeDateTime64>(6)};
+            if (logical_type.type() == avro::LogicalType::TIME_MICROS)
+                return {std::make_shared<DataTypeTime64>(6)};
 
             return std::make_shared<DataTypeInt64>();
         }
