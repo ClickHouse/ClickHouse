@@ -164,7 +164,7 @@ namespace
         static Strings splitAliases(std::string_view str)
         {
             Strings aliases;
-            boost::split(aliases, str, boost::is_any_of(",")); // NOLINT(clang-analyzer-cplusplus.NewDelete)
+            boost::split(aliases, str, boost::is_any_of(","));
             for (auto & alias : aliases)
                 boost::trim(alias);
             return aliases;

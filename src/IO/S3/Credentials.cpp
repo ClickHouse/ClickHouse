@@ -513,7 +513,7 @@ static String getGCPAvailabilityZoneOrException()
     String response_data;
     Poco::StreamCopier::copyToString(rs, response_data);
     Strings zone_info;
-    boost::split(zone_info, response_data, boost::is_any_of("/")); // NOLINT(clang-analyzer-cplusplus.NewDelete)
+    boost::split(zone_info, response_data, boost::is_any_of("/"));
     /// We expect GCP returns a string as "projects/123456789/zones/us-central1a".
     if (zone_info.size() != 4)
         throw DB::Exception(ErrorCodes::GCP_ERROR, "Invalid format of GCP zone information, expect projects/<project-number>/zones/<zone-value>");

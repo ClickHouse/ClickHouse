@@ -178,7 +178,7 @@ CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
         const auto & value = tuple.at(1).safeGet<Int64>();
 
         VectorWithMemoryTracking<String> path;
-        boost::split(path, dotted_path, boost::is_any_of(".")); // NOLINT(clang-analyzer-cplusplus.NewDelete)
+        boost::split(path, dotted_path, boost::is_any_of("."));
 
         CursorTreeNode * node = root.get();
         for (size_t i = 0; i + 1 < path.size(); ++i)

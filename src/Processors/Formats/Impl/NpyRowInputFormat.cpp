@@ -129,7 +129,7 @@ std::vector<size_t> parseShape(String shape_string)
     if (!shape_string.starts_with('(') || !shape_string.ends_with(')'))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect shape format: {}", shape_string);
     std::vector<std::string> result_str;
-    boost::split(result_str, std::string_view(shape_string.data() + 1, shape_string.size() - 2), boost::is_any_of(",")); // NOLINT(clang-analyzer-cplusplus.NewDelete)
+    boost::split(result_str, std::string_view(shape_string.data() + 1, shape_string.size() - 2), boost::is_any_of(","));
 
     std::vector<size_t> shape;
     if (result_str[result_str.size()-1].empty())

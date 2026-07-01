@@ -236,7 +236,7 @@ Strings splitColumnNames(const String & column_names_str)
 
     Strings column_names;
     /// column_names_for_schema_inference is a string in format 'column1,column2,column3,...'
-    boost::split(column_names, column_names_str, boost::is_any_of(",")); // NOLINT(clang-analyzer-cplusplus.NewDelete)
+    boost::split(column_names, column_names_str, boost::is_any_of(","));
     for (auto & column_name : column_names)
     {
         std::string col_name_trimmed = boost::trim_copy(column_name);

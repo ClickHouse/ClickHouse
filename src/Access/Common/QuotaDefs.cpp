@@ -208,7 +208,7 @@ const QuotaKeyTypeInfo & QuotaKeyTypeInfo::get(QuotaKeyType type)
         std::vector<QuotaKeyType> init_base_types;
         String replaced = boost::algorithm::replace_all_copy(init_name, "_or_", "|");
         Strings tokens;
-        boost::algorithm::split(tokens, replaced, boost::is_any_of("|")); // NOLINT(clang-analyzer-cplusplus.NewDelete)
+        boost::algorithm::split(tokens, replaced, boost::is_any_of("|"));
         if (tokens.size() > 1)
         {
             for (const auto & token : tokens)

@@ -50,6 +50,7 @@ Checks: [
 
   '-clang-analyzer-security.ArrayBound', # only false positives
 
+  '-clang-analyzer-cplusplus.NewDelete', # false positive on boost::split/is_any_of, reported inside the header so NOLINT at the call site cannot suppress it
   '-clang-analyzer-cplusplus.NewDeleteLeaks', # false positives, slow
   '-clang-analyzer-unix.Malloc', # fixme, false positive in contrib somehow
 
