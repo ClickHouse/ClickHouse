@@ -135,8 +135,8 @@ void BaseDaemon::loadConfiguration()
     if (config_processor.hasNodeWithNameAndChildNodeWithAttribute(loaded_config, "encryption_codecs", "from_hashicorp_vault"))
     {
         HashiCorpVault::instance().load(config(), "hashicorp_vault");
-        loaded_config = config_processor.loadConfig();
-        config().add(loaded_config.configuration.duplicate(), "default", PRIO_DEFAULT, false);
+        loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
+        config().replace("default", loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 #endif
 }
