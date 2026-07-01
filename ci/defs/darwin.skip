@@ -26,6 +26,7 @@
 03457_numeric_indexed_vector_build
 03702_geometry_functions
 03976_geometry_functions_accept_subtypes
+04402_float_parsing_corner_cases
 
 # SSD cache dictionaries: the SSD_CACHE layout is Linux/FreeBSD-only (uses O_DIRECT and Linux
 # native AIO io_submit/io_getevents); not built on macOS. Needs an I/O-layer port to enable.
