@@ -48,6 +48,28 @@ SELECT '-- deeply nested aggregate ---';
 SELECT * APPLY x -> length(toString(sum(x)))
 FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY number;
 
+-- A `grouping(...)` argument in an APPLY transformer must be suppressed the same
+-- way an aggregate argument is: `grouping` only identifies a GROUP BY key and is
+-- matched against the keys in their original (non-Nullable) form by
+-- GroupingFunctionsResolvePass. Wrapping the matched key Nullable here would make
+-- the rewritten `grouping(key)` stop matching and raise a spurious
+-- "GROUPING function ... is not in GROUP BY keys" error. Covers both the lambda
+-- and function forms and all GROUP BY shapes.
+SELECT '-- ROLLUP, lambda grouping ---';
+SELECT * APPLY x -> grouping(x) FROM numbers(1) GROUP BY number WITH ROLLUP ORDER BY 1;
+
+SELECT '-- ROLLUP, function-form grouping ---';
+SELECT * APPLY grouping FROM numbers(1) GROUP BY number WITH ROLLUP ORDER BY 1;
+
+SELECT '-- CUBE, lambda grouping ---';
+SELECT * APPLY x -> grouping(x) FROM numbers(1) GROUP BY number WITH CUBE ORDER BY 1;
+
+SELECT '-- GROUPING SETS, lambda grouping ---';
+SELECT * APPLY x -> grouping(x) FROM numbers(1) GROUP BY GROUPING SETS ((number), ()) ORDER BY 1;
+
+SELECT '-- ROLLUP, grouping nested inside a function ---';
+SELECT * APPLY x -> grouping(x) + 1 FROM numbers(1) GROUP BY number WITH ROLLUP ORDER BY 1;
+
 -- Sanity: a non-aggregate APPLY must still produce a `Nullable` projection
 -- after `WITH ROLLUP` so the suppression is genuinely scoped to the aggregate
 -- argument path and not a blanket disable.

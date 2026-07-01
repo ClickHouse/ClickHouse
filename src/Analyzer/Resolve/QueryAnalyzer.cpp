@@ -2406,19 +2406,27 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    /// When an APPLY transformer creates an aggregate function (e.g. `* APPLY x -> argMax(x, number)`
-    /// or `* APPLY x -> toString(argMax(x, number))`), the matched columns must NOT be converted to
-    /// Nullable here. Aggregate function arguments use pre-aggregation types (non-Nullable); the Nullable
-    /// wrapping is handled post-aggregation by Rollup/Cube/GroupingSets transforms. Converting here would
-    /// create a type mismatch: the aggregate function would expect Nullable input columns, but the actual
-    /// columns in the Aggregating step are non-Nullable.
-    /// This causes a crash in AggregateFunctionNullVariadic::addBatchSinglePlace.
+    /// When an APPLY transformer creates an aggregate or `grouping` function (e.g.
+    /// `* APPLY x -> argMax(x, number)`, `* APPLY x -> toString(argMax(x, number))` or
+    /// `* APPLY x -> grouping(x)`), the matched columns must NOT be converted to Nullable here.
+    /// Aggregate function arguments use pre-aggregation types (non-Nullable); the Nullable wrapping
+    /// is handled post-aggregation by Rollup/Cube/GroupingSets transforms. Converting here would
+    /// create a type mismatch: the aggregate function would expect Nullable input columns, but the
+    /// actual columns in the Aggregating step are non-Nullable (crash in
+    /// AggregateFunctionNullVariadic::addBatchSinglePlace). A `grouping` argument only identifies a
+    /// GROUP BY key and is matched against the keys in their original form by
+    /// GroupingFunctionsResolvePass, so wrapping it Nullable makes the rewritten argument stop
+    /// matching the key and raises a spurious "GROUPING function ... is not in GROUP BY keys" error.
+    /// This mirrors the suppression the sibling scalar path applies via
+    /// `hasAggregateOrGroupingFunction()` (see applyGroupByUseNullsToExpression).
     ///
-    /// We traverse the APPLY expression tree because the aggregate function may be nested
+    /// We traverse the APPLY expression tree because the aggregate/grouping function may be nested
     /// inside other function calls (e.g. `toString(argMax(x, number))`), not just at the top level.
-    /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregateFunction`) because
-    /// APPLY expressions have not been resolved yet at this point — `FunctionNode::kind` is still `UNKNOWN`.
-    auto has_aggregate_function_in_tree = [](const IQueryTreeNode * root) -> bool
+    /// We match names (not `FunctionNode::isAggregateFunction`) because APPLY expressions have not
+    /// been resolved yet at this point (`FunctionNode::kind` is still `UNKNOWN`). The grouping check
+    /// is an exact name comparison, matching ExpressionsStack::isAggregateOrGroupingFunction (the
+    /// parser always lowercases the `grouping` function name).
+    auto has_aggregate_or_grouping_function_in_tree = [](const IQueryTreeNode * root) -> bool
     {
         if (!root)
             return false;
@@ -2433,7 +2441,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
             if (const auto * func = subtree_node->as<FunctionNode>())
             {
-                if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName()))
+                if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName())
+                    || func->getFunctionName() == "grouping")
                     return true;
             }
 
@@ -2447,7 +2456,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         return false;
     };
 
-    bool has_aggregate_apply_transformer = false;
+    bool has_aggregate_or_grouping_apply_transformer = false;
     for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
     {
         if (auto * apply = transformer->as<ApplyColumnTransformerNode>())
@@ -2462,15 +2471,15 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             {
                 expr_to_check = apply->getExpressionNode().get();
             }
-            if (expr_to_check && has_aggregate_function_in_tree(expr_to_check))
+            if (expr_to_check && has_aggregate_or_grouping_function_in_tree(expr_to_check))
             {
-                has_aggregate_apply_transformer = true;
+                has_aggregate_or_grouping_apply_transformer = true;
                 break;
             }
         }
     }
 
-    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction() && !has_aggregate_apply_transformer)
+    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction() && !has_aggregate_or_grouping_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
