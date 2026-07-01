@@ -32,7 +32,6 @@ public:
         std::shared_ptr<IRestoreCoordination> restore_coordination_,
         const BackupPtr & backup_,
         const ContextMutablePtr & context_,
-        const ContextPtr & query_context_,
         ThreadPool & thread_pool_,
         const std::function<void()> & after_task_callback_);
 
