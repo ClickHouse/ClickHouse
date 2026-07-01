@@ -150,10 +150,18 @@ def run_tests(
         # live so each bugfix build-type entry shrinks) and keep a reserve for the
         # SIGTERM + log/result collection to still complete before the job timeout.
         RESERVE_SECONDS = 600
+        # Info().job_config comes back as a plain dict in PR jobs: the runner
+        # serializes JOB_CONFIG into the workflow-status JSON and
+        # _Environment.from_dict rehydrates only PARAMETER (not JOB_CONFIG), so
+        # attribute access (job_cfg.timeout) would raise AttributeError before
+        # clickhouse-test even starts. Read the timeout defensively from either a
+        # mapping or a Job.Config object, defaulting to 2h when unset.
         job_cfg = Info().job_config
-        job_timeout = (
-            job_cfg.timeout if job_cfg and job_cfg.timeout else 2 * 3600
-        )
+        if isinstance(job_cfg, dict):
+            configured_timeout = job_cfg.get("timeout")
+        else:
+            configured_timeout = getattr(job_cfg, "timeout", None)
+        job_timeout = configured_timeout or 2 * 3600
         elapsed = int(job_stop_watch.duration) if job_stop_watch else 0
         # Floor so a near-exhausted budget still passes a positive timeout to
         # Shell.run (fire the SIGTERM promptly) rather than 0/negative.
@@ -273,6 +281,14 @@ def invert_bugfix_validation_status(test_result: Result) -> bool:
 
 
 def main():
+    # Start the job-wide stopwatch first thing: it is the basis for the
+    # remaining-budget backstop in run_tests (and the flaky/targeted time
+    # limits), so it must begin before any in-job setup that eats into the same
+    # Praktika job timeout - in particular the bugfix-validation block below,
+    # which finds/downloads/copies the master binaries from S3 (a slow fetch can
+    # take minutes). Starting it later would undercount that time and let
+    # outer_timeout drift past the real job deadline into the runner hard-kill.
+    stop_watch = Utils.Stopwatch()
     args = parse_args()
     test_options = [to.strip() for to in args.options.split(",")]
     batch_num, total_batches = 0, 0
@@ -493,8 +509,6 @@ def main():
             )
 
     Shell.check(f"chmod +x {ch_path}/clickhouse")
-
-    stop_watch = Utils.Stopwatch()
 
     res = True
     results = []
