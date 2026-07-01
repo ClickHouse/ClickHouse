@@ -17,7 +17,6 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
-#include <unordered_set>
 
 
 namespace DB
@@ -328,37 +327,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         InsertQuerySettingsPushDownVisitor::Data visitor_data{source_settings_target};
         InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
 
-        /// Preserve INSERT-level precedence for duplicate setting names: if a setting is provided on INSERT-level
-        /// `settings_ast`, the same name coming from the source SELECT should not override it.
-        if (returning_select && settings_ast && source_select_settings_ast)
-        {
-            const auto & insert_settings = settings_ast->as<ASTSetQuery &>();
-            auto & source_settings = source_select_settings_ast->as<ASTSetQuery &>();
-
-            std::unordered_set<String> insert_setting_names;
-            insert_setting_names.reserve(insert_settings.changes.size() + insert_settings.default_settings.size());
-            for (const auto & change : insert_settings.changes)
-                insert_setting_names.insert(change.name);
-            for (const auto & default_setting : insert_settings.default_settings)
-                insert_setting_names.insert(default_setting);
-
-            source_settings.changes.erase(
-                std::remove_if(
-                    source_settings.changes.begin(),
-                    source_settings.changes.end(),
-                    [&](const auto & change) { return insert_setting_names.contains(change.name); }),
-                source_settings.changes.end());
-
-            source_settings.default_settings.erase(
-                std::remove_if(
-                    source_settings.default_settings.begin(),
-                    source_settings.default_settings.end(),
-                    [&](const auto & setting_name) { return insert_setting_names.contains(setting_name); }),
-                source_settings.default_settings.end());
-
-            if (source_settings.changes.empty() && source_settings.default_settings.empty())
-                source_select_settings_ast.reset();
-        }
     }
 
     /// In case of defined format, data follows it -- but only for inline-data INSERTs.
