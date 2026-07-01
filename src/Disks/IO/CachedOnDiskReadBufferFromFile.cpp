@@ -544,10 +544,12 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
                 buf = getCacheReadBuffer(file_segment, info_);
                 if (!buf)
                 {
-                    /// `getCacheReadBuffer` found the cache file truncated outside ClickHouse, discarded the
-                    /// broken segment (now `DETACHED`) and asks us to bypass the cache. Read from the source
-                    /// instead, producing the same state as the `DETACHED` branch, so a truncated cache file
-                    /// is transparently re-fetched rather than failing the read.
+                    /// `getCacheReadBuffer` found the cache file truncated outside ClickHouse and asks us to
+                    /// bypass the cache. The broken segment is intentionally left in place (see the detailed
+                    /// comment in `getCacheReadBuffer`: removing it from this read path would invalidate its
+                    /// priority-queue entry without holding the cache priority lock). Read from the source
+                    /// instead, producing the same read outcome as the `DETACHED` branch, so a truncated cache
+                    /// file is transparently re-fetched rather than failing the read.
                     type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                     buf = getRemoteReadBuffer(file_segment, offset, type, info_);
                 }

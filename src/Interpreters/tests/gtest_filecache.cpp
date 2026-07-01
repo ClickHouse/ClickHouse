@@ -2802,6 +2802,16 @@ TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
     ASSERT_TRUE(fs::is_regular_file(legacy_path));
     ASSERT_EQ(fs::file_size(legacy_path), 8u);
 
+    /// Drop all in-memory references and destroy the first cache instance before reopening the same
+    /// directory below. `FileCache::initialize` acquires an exclusive `status` lock on the cache
+    /// directory (and holds it for the cache's lifetime); a second live `FileCache` on the same path
+    /// would otherwise fail with "Another server instance in same directory is already running".
+    /// Destroying the cache only releases the lock — it keeps the persisted files on disk — which is
+    /// exactly the restart we want to model here.
+    holder.reset();
+    seg.reset();
+    cache.reset();
+
     /// Reopen the cache from disk (a real restart). The persisted state is now the real segment under
     /// its legacy `<offset>` name next to the stale `<offset>_<size>` directory. `loadMetadataForKey`
     /// must restore the segment from the legacy file and must not treat the directory as a second
