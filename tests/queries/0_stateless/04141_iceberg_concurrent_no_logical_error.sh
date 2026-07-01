@@ -53,36 +53,40 @@ for i in $(seq 1 $WRITES); do
     write_script+="INSERT INTO ${TABLE} VALUES (${i});"
 done
 
-declare -a PIDS=()
 for _ in $(seq 1 $READERS); do
     ${CLICKHOUSE_CLIENT} --query "${read_script}" >>"${LOG_FILE}" 2>&1 </dev/null &
-    PIDS+=("$!")
 done
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "${write_script}" >>"${LOG_FILE}" 2>&1 </dev/null &
-PIDS+=("$!")
 
-# Wait on each PID explicitly and fail on any non-zero exit. On debug/sanitizer builds the
-# LOGICAL_ERROR aborts the server, so the failing client exits non-zero but never prints the
-# error string below (it goes to the server log) -- the grep alone would miss the regression
-# there. A single writer and trivial reads over a pinned snapshot do not error under
-# CI-randomized settings, so a non-zero exit is signal, not noise.
+# Wait for all concurrent clients. We deliberately do NOT fail on an individual client's
+# non-zero exit: concurrent metadata commits can make an unrelated reader hit a benign,
+# catchable error (e.g. INCORRECT_DATA reading a partially written metadata.json) that is
+# not the regression under test and does not crash the server. The guarded regression is
+# detected positively below, via both of its manifestations.
+wait
+
 status=0
-for pid in "${PIDS[@]}"; do
-    if ! wait "$pid"; then
+
+# Debug/sanitizer: the "Can't extract iceberg table state" LOGICAL_ERROR is fatal under
+# abort_on_logical_error (forced on there), so it aborts the server and the string reaches
+# the server log, not the client log. Detect the abort by probing liveness (retried once to
+# ignore a transient blip on an otherwise healthy server).
+if ! ${CLICKHOUSE_CLIENT} --query "SELECT 1" >/dev/null 2>&1; then
+    sleep 1
+    if ! ${CLICKHOUSE_CLIENT} --query "SELECT 1" >/dev/null 2>&1; then
+        echo "FAIL: server not responding after concurrent Iceberg access (possible LOGICAL_ERROR abort)"
         status=1
     fi
-done
+fi
 
-# Second, descriptive gate for the release/thrown case: the specific LOGICAL_ERROR
-# "Can't extract iceberg table state from storage snapshot" thrown by `IcebergMetadata::iterate()`
-# and `isDataSortedBySortingKey()` when `datalake_table_state` is missing under concurrent
-# commits. Deterministic counterpart: `04305_iceberg_missing_table_state.sh`.
+# Release: the same LOGICAL_ERROR is a catchable exception carrying the exact message to the
+# client. Deterministic counterpart: 04305_iceberg_missing_table_state.sh.
 if grep -qF "Can't extract iceberg table state" "${LOG_FILE}"; then
+    echo "FAIL: observed the 'Can't extract iceberg table state' LOGICAL_ERROR"
     status=1
 fi
 
 if [ "$status" -ne 0 ]; then
-    echo "FAIL: a concurrent Iceberg client failed or hit the table-state LOGICAL_ERROR"
     cat "${LOG_FILE}"
     exit 1
 fi
