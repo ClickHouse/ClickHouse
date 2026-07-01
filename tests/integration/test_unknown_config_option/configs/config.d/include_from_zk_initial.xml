@@ -1,0 +1,9 @@
+<clickhouse>
+    <!--
+        Minimal placeholder config for the `include_from_zk_top_level` cluster. The test injects a
+        top-level `<include from_zk="/unknown_config_zk_root"/>` via `config.d/` at runtime (after
+        creating the ZooKeeper node) and reloads to assert the imported top-level key is accepted:
+        resolving a `from_zk` include needs a ZooKeeper connection unavailable at config-validation
+        time, so the unknown-config check is skipped rather than rejecting a previously valid config.
+    -->
+</clickhouse>

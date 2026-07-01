@@ -32,6 +32,7 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
+#include <Common/logger_useful.h>
 
 #include <Common/DNSResolver.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -2398,6 +2399,18 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// (never the users config, whose `<include>` targets a separate tree).
         std::unordered_set<std::string> top_level_include_refs;
 
+        /// Whether any *server*-config file declares an explicit `<include_from>` element. Mirrors
+        /// `ConfigProcessor::processConfig`, which falls back to the default `/etc/metrika.xml`
+        /// substitution source only when the processed config declares no `<include_from>` of its
+        /// own; the metrika default is then used to resolve top-level `<include incl="X"/>` refs.
+        bool server_config_has_include_from = false;
+
+        /// Whether a server-config file contains a *top-level* `<include from_zk="..."/>`. Such an
+        /// element imports the children of a ZooKeeper node as top-level keys, but resolving it would
+        /// need a ZooKeeper connection at config-validation time (before `<zookeeper>` itself is
+        /// validated), so the imported keys cannot be determined here — the check bails out below.
+        bool has_unresolvable_top_level_from_zk_include = false;
+
         /// Canonicalize paths so that symlinks (e.g. a symlinked `/etc/clickhouse-server`) and
         /// relative segments do not defeat the merge-set membership test below.
         auto to_canonical = [](const fs::path & p) -> std::string
@@ -2448,6 +2461,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                         continue;
                     if (child->nodeName() == "include_from")
                     {
+                        if (is_server_file)
+                            server_config_has_include_from = true;
                         String src = child->innerText();
                         if (src.empty())
                         {
@@ -2464,12 +2479,55 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     }
                     else if (is_server_file && child->nodeName() == "include")
                     {
+                        /// A top-level `<include .../>` is expanded by `doIncludesRecursive` by
+                        /// importing the *children* of the referenced node into the root, so those
+                        /// child tags become real top-level keys of the merged config. `<include>`
+                        /// accepts exactly one of the substitution attributes `incl`, `from_env`,
+                        /// `from_zk` (see `ConfigProcessor::SUBSTITUTION_ATTRS`); mirror all three so
+                        /// none of them makes a previously valid config rejected as unknown.
                         auto * elem = static_cast<Poco::XML::Element *>(child);
                         if (elem->hasAttribute("incl"))
                         {
+                            /// Resolved later against each `<include_from>` source (a lookup table),
+                            /// exactly as `doIncludesRecursive` resolves an `incl` reference.
                             String ref = elem->getAttribute("incl");
                             if (!ref.empty())
                                 top_level_include_refs.insert(std::move(ref));
+                        }
+                        else if (elem->hasAttribute("from_env"))
+                        {
+                            /// `from_env` is fully resolvable here: the processor wraps the environment
+                            /// variable's value as `<from_env>VALUE</from_env>` and imports its
+                            /// children, so parse it the same way and exempt those imported keys.
+                            const String env_name = elem->getAttribute("from_env");
+                            if (const char * env_val = std::getenv(env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
+                            {
+                                try
+                                {
+                                    Poco::AutoPtr<Poco::XML::Document> env_doc
+                                        = dom_parser.parseString("<from_env>" + std::string{env_val} + "</from_env>");
+                                    if (auto * env_root = env_doc ? env_doc->documentElement() : nullptr)
+                                    {
+                                        for (auto * c = env_root->firstChild(); c; c = c->nextSibling())
+                                        {
+                                            if (c->nodeType() == Poco::XML::Node::ELEMENT_NODE)
+                                                referenced_top_level_keys.insert(c->nodeName());
+                                        }
+                                    }
+                                }
+                                catch (...) // NOLINT(bugprone-empty-catch)
+                                {
+                                    /// A malformed value would already have failed `ConfigProcessor`
+                                    /// before validation is reached; tolerate it here. Ok.
+                                }
+                            }
+                        }
+                        else if (elem->hasAttribute("from_zk"))
+                        {
+                            /// `from_zk` imports the children of a ZooKeeper node, which cannot be
+                            /// resolved without a live connection at config-validation time. Record it
+                            /// so the check bails out rather than falsely rejecting the imported keys.
+                            has_unresolvable_top_level_from_zk_include = true;
                         }
                     }
                 }
@@ -2532,6 +2590,37 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             scan_file(users_path, /*is_server_file=*/false);
             for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(users_path.string()))
                 scan_file(merge_file, /*is_server_file=*/false);
+        }
+
+        /// A top-level `<include from_zk="..."/>` in the server config imports the children of a
+        /// ZooKeeper node as top-level keys, but resolving it needs a ZooKeeper connection that is
+        /// unavailable at config-validation time (it runs before `<zookeeper>` is validated and, on
+        /// the initial load, before any connection exists). The set of legitimately imported keys
+        /// therefore cannot be determined, so rejecting an unrecognized top-level key would be a
+        /// false positive for a previously valid config. Skip the whole check in this rare case —
+        /// fail open, never refuse to start a valid config — and log so a genuine typo remains
+        /// visible. `<skip_check_for_incorrect_settings>` is not required for such setups.
+        if (has_unresolvable_top_level_from_zk_include)
+        {
+            LOG_WARNING(
+                getLogger("ServerSettings"),
+                "Not checking for unknown config options in '{}': it contains a top-level "
+                "<include from_zk=.../>, whose imported top-level keys cannot be resolved without a "
+                "ZooKeeper connection at config-validation time.",
+                config_path);
+            return;
+        }
+
+        /// Mirror `ConfigProcessor::processConfig`: when the server config declares no explicit
+        /// `<include_from>`, the processor still uses the default source `/etc/metrika.xml` if it
+        /// exists. A top-level `<include incl="X"/>` then imports `<X>`'s children from it, so seed
+        /// the same default here (only when there is such a reference to resolve against it) —
+        /// otherwise those imported top-level keys would be wrongly rejected as unknown.
+        if (!server_config_has_include_from && !top_level_include_refs.empty())
+        {
+            static const std::string default_include_from = "/etc/metrika.xml";
+            if (fs::exists(default_include_from))
+                include_from_paths.insert(default_include_from);
         }
 
         for (const auto & include_from_path : include_from_paths)

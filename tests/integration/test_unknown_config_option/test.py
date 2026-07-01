@@ -118,6 +118,34 @@ node_include_from_external = cluster_include_from_external.add_instance(
     stay_alive=True,
 )
 
+# Compatibility case: a top-level `<include from_env="VAR"/>` is expanded by `ConfigProcessor` by
+# wrapping the environment variable's value as `<from_env>VALUE</from_env>` and importing its
+# children into the root, so the imported tag becomes a real top-level key. `from_env` is fully
+# resolvable at config-validation time (the value lives in the environment), so the validator must
+# resolve it the same way and exempt the imported key; otherwise a previously valid config that
+# imports a custom top-level section from the environment fails to start.
+cluster_include_from_env = ClickHouseCluster(__file__, name="include_from_env_top_level")
+node_include_from_env = cluster_include_from_env.add_instance(
+    "node_include_from_env",
+    main_configs=["configs/config.d/include_from_env_top_level.xml"],
+    env_variables={
+        "UNKNOWN_CONFIG_ENV_ROOT": "<my_env_imported_section>env value</my_env_imported_section>"
+    },
+)
+
+# Compatibility case: a top-level `<include from_zk="/path"/>` imports the children of a ZooKeeper
+# node into the root, so they become top-level keys. Resolving them requires a ZooKeeper connection
+# that is unavailable at config-validation time (it runs before `<zookeeper>` is validated), so the
+# validator cannot enumerate the imported keys. To avoid falsely rejecting a previously valid
+# config, the whole unknown-config check is skipped when such an element is present.
+cluster_include_from_zk = ClickHouseCluster(__file__, name="include_from_zk_top_level")
+node_include_from_zk = cluster_include_from_zk.add_instance(
+    "node_include_from_zk",
+    main_configs=["configs/config.d/include_from_zk_initial.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
+)
+
 # Negative case: a non-static handler (e.g. `redirect`) ignores `response_content`. Only a
 # `static` handler consumes a `config://` reference, so the validator must NOT exempt a top-level
 # key referenced from `response_content` on a non-static handler — doing so would let a genuinely
@@ -401,6 +429,20 @@ def start_include_from_external_cluster():
     cluster_include_from_external.start()
     yield
     cluster_include_from_external.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_include_from_env_cluster():
+    cluster_include_from_env.start()
+    yield
+    cluster_include_from_env.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_include_from_zk_cluster():
+    cluster_include_from_zk.start()
+    yield
+    cluster_include_from_zk.shutdown()
 
 
 @pytest.fixture(scope="module")
@@ -917,6 +959,89 @@ def test_top_level_include_from_external_source_accepted(
             ["bash", "-c", f"rm -f {include_config_path} {external_source_path}"]
         )
         node_include_from_external.query("SYSTEM RELOAD CONFIG")
+
+
+def test_metrika_default_include_source_top_level_include_accepted(
+    start_include_from_external_cluster,
+):
+    # When the server config declares no explicit `<include_from>`, `ConfigProcessor` falls back to
+    # the default substitution source `/etc/metrika.xml` if it exists. A top-level `<include
+    # incl="X"/>` then imports `<X>`'s children from that default source into the root, so they
+    # become top-level keys. The validator must seed the same default and exempt those imported keys
+    # — otherwise a configuration that was valid before this check existed (relying on the metrika
+    # default) now fails to start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    metrika_path = "/etc/metrika.xml"
+    metrika_source = (
+        "<clickhouse>"
+        "<metrika_imported_group>"
+        "<my_metrika_section>metrika value</my_metrika_section>"
+        "</metrika_imported_group>"
+        "</clickhouse>"
+    )
+    # Deliberately NO `<include_from>` here: the metrika default must be used to resolve the `incl`
+    # reference and to exempt the imported `<my_metrika_section>`.
+    include_config_path = "/etc/clickhouse-server/config.d/metrika_default_include.xml"
+    include_config = (
+        "<clickhouse>"
+        '<include incl="metrika_imported_group"/>'
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(metrika_path, metrika_source)
+        node_include_from_external.replace_config(include_config_path, include_config)
+        # Reload must succeed: `my_metrika_section` is exempted as a child imported from the default
+        # `/etc/metrika.xml` source by the top-level `<include incl="metrika_imported_group"/>`.
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+        assert node_include_from_external.query("SELECT 1").strip() == "1"
+    finally:
+        node_include_from_external.exec_in_container(
+            ["bash", "-c", f"rm -f {include_config_path} {metrika_path}"]
+        )
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+
+
+def test_top_level_include_from_env_accepted(start_include_from_env_cluster):
+    # A top-level `<include from_env="UNKNOWN_CONFIG_ENV_ROOT"/>` is expanded by `ConfigProcessor` by
+    # wrapping the environment variable's value (`<my_env_imported_section>...</my_env_imported_section>`)
+    # as `<from_env>...</from_env>` and importing its children into the root, so
+    # `<my_env_imported_section>` becomes a top-level key. The validator resolves `from_env` exactly
+    # as the processor does and exempts the imported key, so the node must start. If the imported key
+    # were rejected as unknown, the instance would have failed to start.
+    assert node_include_from_env.query("SELECT 1").strip() == "1"
+
+
+def test_top_level_include_from_zk_accepted(start_include_from_zk_cluster):
+    # A top-level `<include from_zk="/unknown_config_zk_root"/>` imports the children of the ZooKeeper
+    # node (`<my_zk_imported_section>`) into the root, so it becomes a top-level key. Resolving the ZK
+    # node requires a connection that is unavailable at config-validation time, so the validator
+    # cannot enumerate the imported keys; it skips the unknown-config check when such an element is
+    # present rather than falsely rejecting the imported key. Reload must therefore succeed for this
+    # previously valid configuration.
+    zk = cluster_include_from_zk.get_kazoo_client("zoo1")
+    include_config_path = "/etc/clickhouse-server/config.d/top_level_include_from_zk.xml"
+    include_config = (
+        "<clickhouse>"
+        '<include from_zk="/unknown_config_zk_root"/>'
+        "</clickhouse>"
+    )
+    try:
+        zk.create(
+            path="/unknown_config_zk_root",
+            value=b"<my_zk_imported_section>zk value</my_zk_imported_section>",
+            makepath=True,
+        )
+        node_include_from_zk.replace_config(include_config_path, include_config)
+        node_include_from_zk.query("SYSTEM RELOAD CONFIG")
+        assert node_include_from_zk.query("SELECT 1").strip() == "1"
+    finally:
+        node_include_from_zk.exec_in_container(
+            ["bash", "-c", f"rm -f {include_config_path}"]
+        )
+        try:
+            zk.delete(path="/unknown_config_zk_root")
+        except Exception:
+            pass
+        node_include_from_zk.query("SYSTEM RELOAD CONFIG")
 
 
 def test_protocols_nested_handler_prefix_accepted(start_protocols_nested_cluster):
