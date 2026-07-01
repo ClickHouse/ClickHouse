@@ -926,6 +926,15 @@ function engineLabel(n) {
 /// so a superseded batch quietly drops its stale `state` / status / heat-map / render.
 let loadGeneration = 0;
 
+/// A finer-grained token for the `system.query_views_log` heat-map alone. The heat-map is
+/// (re)loaded both at the end of every `loadAll` and standalone whenever the lookback selector
+/// changes, so it can be superseded without a new `loadGeneration`: a standalone reload started
+/// against one graph while a `loadAll` for the same generation rebuilds `state.nodes` and runs
+/// its own heat-map, or two quick lookback changes. Each heat-map load captures this token and
+/// only the latest may reset or apply `state.loadByMv` / `loadByEdge` / `loadMax`, so a stale
+/// reload cannot write keys from a superseded graph onto the current one.
+let viewsLoadGeneration = 0;
+
 async function loadAll() {
     const myGeneration = ++loadGeneration;
     const isLatestLoad = () => myGeneration === loadGeneration;
@@ -1053,13 +1062,21 @@ async function loadViewsLoad(conn, generation) {
     /// the lookback selector, read the current one without bumping it — a standalone heat-map
     /// reload must not cancel an in-flight `loadAll`, but a newer `loadAll` does supersede it.
     if (generation === undefined) generation = loadGeneration;
-    const isLatestLoad = () => generation === loadGeneration;
-    state.loadByMv = new Map();
-    state.loadByEdge = new Map();
-    state.loadMax = { byMv: {}, byEdge: {} };
+    /// On top of the load generation the heat-map carries its own monotonic token: it is reloaded
+    /// at the end of every `loadAll` and standalone on a lookback change, so it can be superseded
+    /// with no new `loadGeneration`. A reload is the latest only while both are still current, so
+    /// a stale batch — a standalone reload whose `state.nodes` a same-generation `loadAll` has
+    /// since rebuilt, or the earlier of two quick lookback changes — neither resets nor applies.
+    const myViewsLoad = ++viewsLoadGeneration;
+    const isLatestLoad = () => generation === loadGeneration && myViewsLoad === viewsLoadGeneration;
 
     const days = Number(state.loadPeriodDays || 0);
     if (!days || !state.nodes.size) {
+        /// Heat-map disabled or no graph to key against: clear it. This path is synchronous, so
+        /// nothing can have superseded us between the token capture above and here.
+        state.loadByMv = new Map();
+        state.loadByEdge = new Map();
+        state.loadMax = { byMv: {}, byEdge: {} };
         return;
     }
 
@@ -1095,14 +1112,29 @@ async function loadViewsLoad(conn, generation) {
         rows = res.rows;
     } catch (e) {
         console.info('system.query_views_log not available:', e.message);
-        if (isLatestLoad())
+        /// query_views_log is unavailable for the current graph: clear any stale heat-map and
+        /// report it — but only while we are still the latest reload, so a superseded probe
+        /// cannot blank a newer heat-map or overwrite its status.
+        if (isLatestLoad()) {
+            state.loadByMv = new Map();
+            state.loadByEdge = new Map();
+            state.loadMax = { byMv: {}, byEdge: {} };
             setStatus(`Loaded ${state.tables.length} tables, ${state.nodes.size} nodes (query_views_log unavailable).`);
+        }
         return;
     }
 
-    /// A newer load started while query_views_log was loading; it owns `state` now, so this
-    /// stale heat-map must not overwrite the newer one (`state.loadByMv` / `loadByEdge` / `loadMax`).
+    /// A newer load or heat-map reload started while query_views_log was loading; it owns `state`
+    /// now, so this stale heat-map must neither reset nor overwrite the newer one
+    /// (`state.loadByMv` / `loadByEdge` / `loadMax`).
     if (!isLatestLoad()) return;
+
+    /// Only now that we are still the latest reload do we replace the heat-map maps. Resetting
+    /// here rather than before the await means a superseded reload leaves the current heat-map
+    /// intact instead of blanking it.
+    state.loadByMv = new Map();
+    state.loadByEdge = new Map();
+    state.loadMax = { byMv: {}, byEdge: {} };
 
     const metricKeys = ['executions', 'total_duration_ms', 'read_rows', 'read_bytes',
                         'written_rows', 'written_bytes', 'peak_memory_usage'];
