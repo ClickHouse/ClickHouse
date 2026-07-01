@@ -545,9 +545,8 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
         /// Get match offset.
 
-        size_t offset = LZ4_readLE16(ip);
+        const size_t offset = LZ4_readLE16(ip);
         ip += 2;
-        UInt8 * match = op - offset;
 
         /// Reject a zero offset (invalid in LZ4 — the minimum match distance is 1) together with an
         /// offset that reaches before the start of the output, in a single unsigned comparison that
@@ -555,8 +554,13 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         /// (`match = op - offset`); for `offset == 0`, `offset - 1` wraps to `SIZE_MAX` and also fails,
         /// so the overlap copy can no longer synthesize output from the destination and wrongly report
         /// success. We fail closed here (the reference decoder is more lenient and returns garbage).
-        if (unlikely(offset - 1 >= static_cast<size_t>(op - output_begin)))
+        /// The check is done before forming `match`, so `op - offset` is never computed for a malformed
+        /// offset that would point before `output_begin` (which would be out-of-range pointer arithmetic).
+        const size_t produced = static_cast<size_t>(op - output_begin);
+        if (unlikely(offset - 1 >= produced))
             return false;
+
+        UInt8 * match = op - offset;
 
         /// Get match length.
 
