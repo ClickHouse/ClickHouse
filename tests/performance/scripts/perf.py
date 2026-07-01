@@ -636,8 +636,17 @@ if not args.use_existing_tables:
     # compatible with the perf comparison. Adding an entry here is a
     # deliberate decision; misspelled or unrelated settings should still
     # fail fast.
+    #
+    # Each entry maps the setting name to the set of lowercased values that
+    # are equivalent to the baseline server's default for it. The setting is
+    # only stripped when the fixture pins it to one of those values, so that
+    # both sides of the A/B comparison build the same table. An enabled value
+    # (e.g. `optimize_row_order_if_no_order_by = 1`) is NOT strippable: the
+    # baseline would build an unoptimized table while the PR side uses the
+    # optimized layout, so it is re-raised as UNKNOWN_SETTING to fail fast
+    # instead of silently comparing incomparable tables.
     strippable_unknown_settings = {
-        "optimize_row_order_if_no_order_by",
+        "optimize_row_order_if_no_order_by": {"0", "false"},
     }
 
     def do_create(connection, index, queries):
@@ -673,7 +682,9 @@ if not args.use_existing_tables:
                             unknown_setting = m.group(1)
                             if unknown_setting in strippable_unknown_settings:
                                 new_query = strip_setting_from_query(
-                                    current_query, unknown_setting
+                                    current_query,
+                                    unknown_setting,
+                                    strippable_unknown_settings[unknown_setting],
                                 )
                                 if new_query != current_query:
                                     print(

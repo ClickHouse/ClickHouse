@@ -251,3 +251,70 @@ def test_table_settings_after_column_comment_is_still_found():
         "ORDER BY tuple() SETTINGS index_granularity = 8192"
     )
     assert strip_setting_from_query(query, SETTING) == expected
+
+
+# `allowed_values` makes the strip value-aware. Stripping is only
+# semantics-preserving when the fixture pins the setting to a value equivalent
+# to the baseline server's default; `perf.py` passes {"0", "false"} for
+# `optimize_row_order_if_no_order_by`. An enabled value (`= 1`) would build an
+# unoptimized baseline table while the PR side uses the optimized layout, so the
+# helper must leave the query unchanged and let `perf.py` re-raise
+# UNKNOWN_SETTING (fail fast) instead of silently comparing different layouts.
+ALLOWED = {"0", "false"}
+
+# (name, value_literal, should_strip)
+VALUE_AWARE_CASES = [
+    ("zero", "0", True),
+    ("false_lower", "false", True),
+    ("false_upper", "FALSE", True),
+    ("one", "1", False),
+    ("true_lower", "true", False),
+    ("true_upper", "TRUE", False),
+]
+
+
+@pytest.mark.parametrize(
+    "case", VALUE_AWARE_CASES, ids=[c[0] for c in VALUE_AWARE_CASES]
+)
+def test_value_aware_only_strips_baseline_default(case):
+    _name, value, should_strip = case
+    base = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple()"
+    query = f"{base} SETTINGS {SETTING} = {value}"
+    result = strip_setting_from_query(query, SETTING, ALLOWED)
+    if should_strip:
+        assert result == base
+    else:
+        # Not a baseline-default value: query must be byte-for-byte unchanged.
+        assert result == query
+
+
+@pytest.mark.parametrize(
+    "case", VALUE_AWARE_CASES, ids=[c[0] for c in VALUE_AWARE_CASES]
+)
+def test_value_aware_first_of_two(case):
+    # The value-aware guard must also apply when the setting is not the only
+    # entry: a non-default value leaves the whole SETTINGS clause intact.
+    _name, value, should_strip = case
+    query = (
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        f"SETTINGS {SETTING} = {value}, index_granularity = 8192"
+    )
+    result = strip_setting_from_query(query, SETTING, ALLOWED)
+    if should_strip:
+        assert result == (
+            "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
+            "SETTINGS index_granularity = 8192"
+        )
+    else:
+        assert result == query
+
+
+def test_value_aware_none_strips_regardless_of_value():
+    # Without `allowed_values` the value is not inspected, so an enabled value
+    # is still stripped. This preserves the default (name-only) behavior.
+    query = (
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        f"SETTINGS {SETTING} = 1"
+    )
+    expected = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple()"
+    assert strip_setting_from_query(query, SETTING) == expected

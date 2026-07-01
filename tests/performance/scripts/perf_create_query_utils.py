@@ -16,7 +16,7 @@ covered by unit tests in ``ci/tests/test_strip_setting_from_query.py``.
 """
 
 
-def strip_setting_from_query(query, setting_name):
+def strip_setting_from_query(query, setting_name, allowed_values=None):
     """Strip a single MergeTree setting from a CREATE TABLE SETTINGS clause.
 
     Used to make a CREATE TABLE backward-compatible with an older server
@@ -24,6 +24,19 @@ def strip_setting_from_query(query, setting_name):
     the old server fall back to its default for that setting, which is
     the desired behavior when the perf test wants to keep the old
     behavior on the PR side by setting the value explicitly.
+
+    Stripping is only semantics-preserving when the fixture pins the
+    setting to a value that is equivalent to the baseline server's
+    default: dropping `optimize_row_order_if_no_order_by = 0` leaves both
+    sides with the optimization off, but dropping an *enabled* value
+    (`= 1`) would build an unoptimized table on the baseline while the PR
+    side uses the optimized layout, silently comparing different on-disk
+    layouts instead of surfacing an unsupported fixture. When
+    `allowed_values` is given (a set of lowercased value strings such as
+    `{"0", "false"}`), the assignment is stripped only if its value is one
+    of them; otherwise the query is returned unchanged so `perf.py`
+    re-raises `UNKNOWN_SETTING` and the benchmark fails fast. When
+    `allowed_values` is `None`, the value is not inspected.
 
     The value of a setting may legitimately contain commas inside quoted
     strings, parentheses, brackets, or braces (e.g. tuples, arrays,
@@ -325,6 +338,19 @@ def strip_setting_from_query(query, setting_name):
                 i -= 1
             break
         i += 1
+
+    # Value-aware guard: stripping the assignment is only semantics-preserving
+    # when its value matches the baseline server's default (see the docstring).
+    # `i` now sits just past the value, so `query[value_start:i]` is the raw
+    # value text. If the caller supplied the set of baseline-equivalent values
+    # and this one is not among them (e.g. an enabled `= 1`), leave the query
+    # unchanged so `perf.py` re-raises `UNKNOWN_SETTING` and fails fast instead
+    # of silently comparing an optimized PR table against an unoptimized
+    # baseline one.
+    if allowed_values is not None:
+        stripped_value = query[value_start:i].strip().lower()
+        if stripped_value not in allowed_values:
+            return query
 
     # When the dropped assignment is the first entry of the SETTINGS clause
     # (no preceding top-level comma to cut from, so `cut_start` stayed at
