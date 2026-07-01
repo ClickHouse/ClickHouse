@@ -1003,13 +1003,7 @@ static Coordination::ZooKeeperResponsePtr
 processLocal(const Coordination::ZooKeeperListRequest & zk_request, Storage & storage, int64_t session_id, bool check_acl)
 {
     ProfileEvents::increment(ProfileEvents::KeeperListRequest);
-    std::shared_ptr<Coordination::ZooKeeperListResponse> response;
-    if (zk_request.getOpNum() == Coordination::OpNum::FilteredListWithStatsAndData)
-        response = std::make_shared<Coordination::ZooKeeperFilteredListWithStatsAndDataResponse>();
-    else if (zk_request.getOpNum() == Coordination::OpNum::SimpleList)
-        response = std::make_shared<Coordination::ZooKeeperSimpleListResponse>();
-    else
-        response = std::make_shared<Coordination::ZooKeeperListResponse>();
+    auto response = std::static_pointer_cast<Coordination::ZooKeeperListResponse>(zk_request.makeResponse());
 
     auto node_holder = storage.nodes.getCommittedNode(zk_request.path);
     const auto * node = node_holder.get();
@@ -1033,21 +1027,9 @@ processLocal(const Coordination::ZooKeeperListRequest & zk_request, Storage & st
 
     bool is_system_node = zk_request.path.starts_with(keeper_system_path);
 
-    auto list_request_type = Coordination::ListRequestType::ALL;
-    bool with_stat = false;
-    bool with_data = false;
-
-    if (const auto * filtered_list = dynamic_cast<const Coordination::ZooKeeperFilteredListRequest *>(&zk_request))
-    {
-        list_request_type = filtered_list->list_request_type;
-
-        // Check if it's the extended version with stats/data support
-        if (const auto * with_stats = dynamic_cast<const Coordination::ZooKeeperFilteredListWithStatsAndDataRequest *>(filtered_list))
-        {
-            with_stat = with_stats->with_stat;
-            with_data = with_stats->with_data;
-        }
-    }
+    const auto list_request_type = zk_request.list_request_type.value_or(Coordination::ListRequestType::ALL);
+    const bool with_stat = zk_request.with_stat.value_or(false);
+    const bool with_data = zk_request.with_data.value_or(false);
 
     if (!is_system_node && node->stats.getNumChildren() == 0)
     {
