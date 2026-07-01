@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+-- ^ polygon clipping uses the wagyu contrib, which is disabled in the fast-test (ENABLE_LIBRARIES=0) build.
 -- Tests for the Mapbox Vector Tile encoding functions: MVTEncodeGeom (scalar geometry projection) and
 -- MVTEncode (aggregate tile assembly). The projection is Web Mercator; the tile format follows the
 -- Mapbox Vector Tile specification 2.1.
