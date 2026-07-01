@@ -28,8 +28,6 @@ bool S3Exception::isRetryableError() const
     /// Looks like these list is quite conservative, add more codes if you wish
     static const UnorderedSetWithMemoryTracking<Aws::S3::S3Errors> unretryable_errors = {
         Aws::S3::S3Errors::NO_SUCH_KEY,
-        Aws::S3::S3Errors::ACCESS_DENIED,
-        Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID,
         Aws::S3::S3Errors::INVALID_SIGNATURE,
         Aws::S3::S3Errors::NO_SUCH_UPLOAD,
         Aws::S3::S3Errors::NO_SUCH_BUCKET,
