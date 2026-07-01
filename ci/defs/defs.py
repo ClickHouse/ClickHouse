@@ -364,7 +364,9 @@ class JobNames:
     SQL_LOGIC_TEST = "SQLLogic test"
     SQL_STORM_TEST = "SQLStorm test"
     SQLANCER = "SQLancer"
-    SQLANCER_PP = "SQLancer++"
+    # No "++": the job name becomes the GitHub Actions job id via
+    # Utils.normalize_string, and '+' is not a valid id character.
+    SQLANCER_PP = "SQLancerPP"
     LLVM_COVERAGE = "LLVM Coverage"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"

@@ -138,7 +138,7 @@ ATTACHED_FILES_ARRAY+=("$OUTPUT_PATH/clickhouse-server.log" "$OUTPUT_PATH/clickh
 
 {
     printf '{\n'
-    printf '  "name": "SQLancer++",\n'
+    printf '  "name": "SQLancerPP",\n'
     printf '  "status": "%s",\n' "$OVERALL_STATUS"
     printf '  "start_time": null,\n'
     printf '  "duration": null,\n'
