@@ -61,6 +61,67 @@ The following settings are supported:
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
 
+## Referencing tables in namespaces {#referencing-tables-in-namespaces}
+
+Data lake catalogs organize tables into namespaces, which can be nested to
+several levels. A table's fully-qualified name inside the catalog is therefore
+`namespace.table` (or `namespace1.namespace2.table` for a nested namespace).
+
+You can reference such a table by quoting the namespace-qualified name as a
+single table identifier:
+
+```sql
+SELECT * FROM catalog_name.`namespace.table`;
+SELECT * FROM catalog_name.`namespace1.namespace2.table`;
+```
+
+As a more convenient alternative, you can also spell out every part with dots.
+The part before the first dot is the catalog database; the remaining parts are
+joined back into the namespace-qualified table name:
+
+```sql
+-- Equivalent to catalog_name.`namespace.table`
+SELECT * FROM catalog_name.namespace.table;
+
+-- Equivalent to catalog_name.`namespace1.namespace2.table`
+SELECT * FROM catalog_name.namespace1.namespace2.table;
+```
+
+This works anywhere a table is referenced, for example `EXISTS TABLE`,
+`DESCRIBE`, and `SHOW CREATE TABLE`.
+
+### Using a namespace as a prefix {#using-a-namespace-as-a-prefix}
+
+You can select a namespace with `USE catalog_name.namespace` so that
+unqualified table names are automatically resolved within that namespace:
+
+```sql
+USE catalog_name.namespace;
+-- Resolved as catalog_name.`namespace.table`
+SELECT * FROM table;
+```
+
+The namespace prefix is only applied when the current database is a
+`DataLakeCatalog` database, and it is cleared as soon as you switch to another
+database with `USE`. Selecting the catalog without a namespace still lets you
+reference tables by their namespace-qualified name:
+
+```sql
+USE catalog_name;
+SELECT * FROM namespace.table;
+```
+
+When a name can be interpreted both as `database.table` and as
+`namespace.table` (for example, when a regular database exists with the same
+name as a namespace), the `database.table` interpretation takes priority. To
+force the namespace interpretation in that case, quote the namespace-qualified
+name:
+
+```sql
+USE catalog_name;
+SELECT * FROM `namespace.table`;
+```
+
 ## Examples {#examples}
 
 See below sections for examples of using the `DataLakeCatalog` engine:
