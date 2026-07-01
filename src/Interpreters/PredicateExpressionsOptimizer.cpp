@@ -44,7 +44,7 @@ bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
 
     const bool has_incompatible_constructs = select_query.group_by_with_cube || select_query.group_by_with_rollup || select_query.group_by_with_totals || select_query.group_by_with_grouping_sets;
     if (select_query.having() && !has_incompatible_constructs)
-        tryMovePredicatesFromHavingToWhere(select_query);
+        tryMovePredicatesFromHavingToWhere(select_query, getContext());
 
     if (!select_query.tables() || select_query.tables()->children.empty())
         return false;
@@ -174,7 +174,7 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_e
     return false;
 }
 
-bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelectQuery & select_query)
+bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelectQuery & select_query, ContextPtr context_)
 {
     ASTs where_predicates;
     ASTs having_predicates;
@@ -191,7 +191,7 @@ bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelect
     for (const auto & moving_predicate : splitConjunctionsAst(select_query.having()))
     {
         TablesWithColumns tables;
-        ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, tables};
+        ExpressionInfoVisitor::Data expression_info{WithContext{context_}, tables};
         ExpressionInfoVisitor(expression_info).visit(moving_predicate);
 
         /// TODO: If there is no group by, where, and prewhere expression, we can push down the stateful function

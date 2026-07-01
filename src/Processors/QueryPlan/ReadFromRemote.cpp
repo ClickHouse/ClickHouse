@@ -28,6 +28,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/PredicateRewriteVisitor.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -65,6 +66,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 parallel_replicas_mark_segment_size;
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
+    extern const SettingsBool enable_optimize_predicate_expression;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
     extern const SettingsBool allow_experimental_analyzer;
@@ -545,7 +547,27 @@ static void addFilters(
     ASTs predicates{predicate};
     PredicateRewriteVisitor::Data data(context, predicates, table_with_columns, optimize_final, optimize_with);
 
-    data.rewriteSubquery(getSelectQuery(query_ast), table_with_columns.columns.getNames());
+    auto & shard_select_query = getSelectQuery(query_ast);
+    data.rewriteSubquery(shard_select_query, table_with_columns.columns.getNames());
+
+    /// rewriteSubquery pushes the predicate into the shard subquery as HAVING, relying on the
+    /// receiving side to move grouping-key predicates back to WHERE. Under the old analyzer that
+    /// move is done by PredicateExpressionsOptimizer; the new analyzer never runs it. An aggregating
+    /// shard subquery stops at WithMergeableState (the initiator merges), so the deferred HAVING
+    /// never executes on the shard and cannot prune partitions/indexes (issue #108284). Do the move
+    /// here so the shard receives a pre-aggregation WHERE, matching the old analyzer. Only aggregating
+    /// subqueries need this: a shard subquery without GROUP BY runs to completion and its own planner
+    /// already turns the HAVING into a WHERE, so leave those untouched. Skip WITH
+    /// CUBE/ROLLUP/TOTALS/GROUPING SETS, where a grouping key can be NULL in super-aggregate rows.
+    /// Gate on enable_optimize_predicate_expression: the old analyzer only calls this move from
+    /// PredicateExpressionsOptimizer::optimize, which returns early when the setting is 0, so
+    /// enable_optimize_predicate_expression = 0 keeps the predicate in HAVING (no shard pruning).
+    const bool has_incompatible_constructs = shard_select_query.group_by_with_cube
+        || shard_select_query.group_by_with_rollup || shard_select_query.group_by_with_totals
+        || shard_select_query.group_by_with_grouping_sets;
+    if (settings[Setting::enable_optimize_predicate_expression] && shard_select_query.groupBy()
+        && shard_select_query.having() && !has_incompatible_constructs)
+        PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(shard_select_query, context);
 }
 
 void ReadFromRemote::addLazyPipe(
