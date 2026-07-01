@@ -2327,6 +2327,10 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
 
+    /// Reject experimental / column-type-requiring codecs in the untyped compression settings.
+    /// Part of `sanityCheck`, but also callable on its own for user `ATTACH`.
+    void checkCompressionCodecSettings() const;
+
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
     /// by a real derived-to-base static_cast (offsets are stored relative to `Data`, not Impl).
@@ -2633,6 +2637,14 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
 
+    /// Reject experimental / column-type-requiring codecs in the untyped MergeTree compression
+    /// settings. Extracted into its own method so it can also run for user `ATTACH` (see
+    /// `MergeTreeData`), where the full sanity check is skipped but this gate must still apply.
+    checkCompressionCodecSettings();
+}
+
+void MergeTreeSettingsImpl::checkCompressionCodecSettings() const
+{
     /// The codec settings below are applied without a column type, which bypasses the
     /// `allow_experimental_codecs` validation of column-level codecs; experimental codecs must not
     /// sneak in through them. `marks_compression_codec` and `primary_key_compression_codec` are
@@ -2841,6 +2853,11 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
 void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
 {
     impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta, background_pool_auto_lowered);
+}
+
+void MergeTreeSettings::checkCompressionCodecSettings() const
+{
+    impl->checkCompressionCodecSettings();
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const

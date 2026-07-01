@@ -1,4 +1,5 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree
+-- (the ATTACH cases below need an explicit table UUID, which requires the Atomic database engine; cf. 04046, 04159)
 -- `PCO` requires a column type, so it must be rejected at CREATE time in the untyped MergeTree
 -- compression settings instead of failing later, at the first write. The `default_compression_codec`
 -- setting is re-resolved with each column's type, but it bypasses the `allow_experimental_codecs`
@@ -63,3 +64,36 @@ SET max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_grou
 SELECT number, count() FROM numbers(1000000) GROUP BY number FORMAT Null; -- { serverError BAD_ARGUMENTS }
 SET max_bytes_before_external_sort = 1, max_bytes_ratio_before_external_sort = 0;
 SELECT number FROM numbers(1000000) ORDER BY number FORMAT Null; -- { serverError BAD_ARGUMENTS }
+
+-- The CREATE-time sanity check is skipped on ATTACH, but the experimental / column-type-requiring
+-- codec gate must still apply to the untyped compression settings on a user ATTACH
+-- (`LoadingStrictnessLevel::ATTACH`); otherwise a full-form `ATTACH TABLE ... SETTINGS
+-- default_compression_codec = 'PCO'` would let the typed experimental `PCO` codec be used even with
+-- `allow_experimental_codecs = 0`. A full-form ATTACH requires an explicit UUID for the Atomic
+-- database engine (cf. 04046, 04159); a distinct UUID per statement avoids store-directory reuse.
+SET allow_experimental_codecs = 0;
+
+DROP TABLE IF EXISTS t_pco_attach_1 SYNC;
+ATTACH TABLE t_pco_attach_1 UUID '00000000-0000-0000-0000-000000004337'
+    (x UInt64) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS default_compression_codec = 'PCO'; -- { serverError BAD_ARGUMENTS }
+
+-- The same holds for a codec chain and for the other untyped compression settings.
+DROP TABLE IF EXISTS t_pco_attach_2 SYNC;
+ATTACH TABLE t_pco_attach_2 UUID '00000000-0000-0000-0000-000000004338'
+    (x UInt64) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS default_compression_codec = 'ZSTD(1), PCO'; -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE IF EXISTS t_pco_attach_3 SYNC;
+ATTACH TABLE t_pco_attach_3 UUID '00000000-0000-0000-0000-000000004339'
+    (x UInt64) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS marks_compression_codec = 'PCO'; -- { serverError BAD_ARGUMENTS }
+
+-- A normal ATTACH with only ordinary untyped codecs is still accepted (the gate did not break the
+-- common re-attach path). Short-form ATTACH reads the stored metadata and also runs the gate.
+DROP TABLE IF EXISTS t_pco_attach_ok SYNC;
+CREATE TABLE t_pco_attach_ok (x UInt64) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS default_compression_codec = 'LZ4';
+DETACH TABLE t_pco_attach_ok;
+ATTACH TABLE t_pco_attach_ok;
+DROP TABLE t_pco_attach_ok SYNC;
