@@ -3288,7 +3288,13 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
     return true;
 }
 
-const NameSet & MergeTreeData::getRootTemporaryDirectoryPrefixes()
+const NameSet & MergeTreeData::getRootTemporaryDirectoryPrefixesForBackgroundCleanup()
+{
+    static const NameSet prefixes = {"tmp_", "tmp-fetch_"};
+    return prefixes;
+}
+
+const NameSet & MergeTreeData::getRootTemporaryDirectoryPrefixesForRecovery()
 {
     static const NameSet prefixes = {"tmp_", "delete_tmp_", "tmp-fetch_"};
     return prefixes;
@@ -4152,7 +4158,7 @@ void MergeTreeData::dropAllData()
     }
 
     LOG_INFO(log, "dropAllData: clearing temporary directories");
-    clearOldTemporaryDirectories(0);
+    clearOldTemporaryDirectories(0, getRootTemporaryDirectoryPrefixesForRecovery());
 
     resetColumnSizes();
     unregisterFromMergeSelection(settings_ptr);
@@ -5272,7 +5278,7 @@ void MergeTreeData::changeSettings(
 
                             const auto entry_path = fs::path(relative_data_path) / name;
                             bool is_temporary_directory = false;
-                            for (const auto & prefix : getRootTemporaryDirectoryPrefixes())
+                            for (const auto & prefix : getRootTemporaryDirectoryPrefixesForRecovery())
                             {
                                 if (startsWith(name, prefix) && disk->existsDirectory(entry_path))
                                 {
