@@ -4,6 +4,7 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
@@ -202,10 +203,10 @@ void SLRUFileCachePriority::iterate(
     probationary_queue.iterate(func, stat, lock);
 }
 
-void SLRUFileCachePriority::resetEvictionPos()
+void SLRUFileCachePriority::resetEvictionPos(EvictionCursor cursor)
 {
-    protected_queue.resetEvictionPos();
-    probationary_queue.resetEvictionPos();
+    protected_queue.resetEvictionPos(cursor);
+    probationary_queue.resetEvictionPos(cursor);
 }
 
 EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
@@ -292,7 +293,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr reservee,
-    bool continue_from_last_eviction_pos,
+    EvictionCursor eviction_cursor,
     size_t max_candidates_size,
     bool is_total_space_cleanup,
     const OriginInfo & origin_info,
@@ -314,7 +315,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            continue_from_last_eviction_pos,
+            eviction_cursor,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -334,7 +335,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            continue_from_last_eviction_pos,
+            eviction_cursor,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -357,7 +358,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            continue_from_last_eviction_pos,
+            eviction_cursor,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -382,7 +383,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            continue_from_last_eviction_pos,
+            eviction_cursor,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -398,7 +399,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            continue_from_last_eviction_pos,
+            eviction_cursor,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -417,7 +418,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     EvictionCandidates & res,
     InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr reservee,
-    bool continue_from_last_eviction_pos,
+    EvictionCursor eviction_cursor,
     size_t max_candidates_size,
     bool is_total_space_cleanup,
     const OriginInfo & origin_info,
@@ -433,7 +434,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         *downgrade_candidates,
         invalidated_entries,
         reservee,
-        continue_from_last_eviction_pos,
+        eviction_cursor,
         max_candidates_size,
         is_total_space_cleanup,
         origin_info,
@@ -477,7 +478,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
             res,
             invalidated_entries,
             reservee,
-            continue_from_last_eviction_pos,
+            eviction_cursor,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -547,7 +548,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     /// As PriorityGuard::WriteLock allows to only move elements,
     /// but not increment size of any of the queues,
     /// we move elements with zero size and increase the size later in a separate callback.
-    res.setAfterEvictWriteFunc([=, this](const CachePriorityGuard::WriteLock & lk) mutable
+    res.addAfterEvictWriteFunc([=, this](const CachePriorityGuard::WriteLock & lk) mutable
     {
         for (auto & [key, key_candidates] : *downgrade_candidates)
         {
@@ -564,7 +565,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
                 /// and reset size for the old entry,
                 /// thus size will be transferred from one entry to another.
                 /// PreActive: iterateImpl skips this entry until setIterator atomically transitions it to Active.
-                auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata, Entry::State::PreActive);
+                auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->getKeyMetadata(), Entry::State::PreActive);
                 auto new_iterator = probationary_queue.add(std::move(empty_entry), lk, /* state_lock */nullptr);
                 downgraded_entries->add(DowngradedEntryInfo{
                     .slru_iterator = iterator,
@@ -579,7 +580,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     });
 
     /// Set incrementing size callback, as explained in the previous comment.
-    res.setAfterEvictStateFunc([=, this](const CacheStateGuard::Lock & lk)
+    res.addAfterEvictStateFunc([=, this](const CacheStateGuard::Lock & lk)
     {
         fiu_do_on(FailPoints::file_cache_slru_downgrade_fail_before_finalize,
         {
@@ -660,7 +661,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     EntryPtr prev_entry = iterator.getEntry();
 
     {
-        auto locked_key = prev_entry->key_metadata->lock();
+        auto locked_key = prev_entry->getKeyMetadata()->lock();
         const auto entry_state = prev_entry->getState();
         chassert(entry_state == Entry::State::Active || entry_state == Entry::State::Evicting);
         if (entry_state != Entry::State::Active)
@@ -705,7 +706,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     /// Holds the real probationary evictions that free room for the downgraded
     /// protected entries (empty if probationary already has room). The downgrade
     /// move itself is committed in the afterEvict* callbacks.
-    EvictionCandidates eviction_candidates(&FileCache::onSegmentEvicted);
+    EvictionCandidates eviction_candidates(getOnEvictCallback());
     FileCacheReserveStat downgrade_stat;
     InvalidatedEntriesInfos invalidated_entries;
 
@@ -715,7 +716,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         eviction_candidates,
         invalidated_entries,
         /* reservee */nullptr,
-        /* continue_from_last_eviction_pos */false,
+        EvictionCursor::FromHead,
         /* max_candidates_size */0,
         /* is_total_space_cleanup */false,
         FileCache::getInternalOrigin(),
@@ -737,11 +738,12 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         removeEntries(invalidated_entries, lock);
 
         /// PreActive: iterateImpl skips this entry until setIterator atomically transitions it to Active.
+        /// prev_entry is in Moving state here, so its KeyMetadata is still alive.
         auto empty_entry = std::make_shared<Entry>(
             prev_entry->key,
             prev_entry->offset,
             /* size */0,
-            prev_entry->key_metadata,
+            prev_entry->getKeyMetadata(),
             Entry::State::PreActive);
 
         return protected_queue.add(
@@ -790,13 +792,14 @@ LRUFileCachePriority::LRUIterator SLRUFileCachePriority::addOrThrow(
             /// there is no corresponding entry in priority queue for it,
             /// because it will mean that cache became inconsistent.
             /// So let's try to fix the situation.
-            auto metadata = entry->key_metadata->tryLock();
-            chassert(metadata);
-            if (metadata)
-            {
-                auto segment_metadata = metadata->tryGetByOffset(entry->offset);
-                metadata->removeFileSegment(entry->offset, segment_metadata->file_segment->lock());
-            }
+            auto metadata = entry->getKeyMetadata()->tryLock();
+            if (!metadata)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot lock key metadata to clean up file segment {}:{}", entry->key, entry->offset);
+
+            auto segment_metadata = metadata->tryGetByOffset(entry->offset);
+            metadata->removeFileSegment(entry->offset, segment_metadata->file_segment->lock());
         }
         catch (...)
         {
@@ -937,10 +940,16 @@ void SLRUFileCachePriority::SLRUIterator::decrementSize(size_t size)
     lru_iterator.decrementSize(size);
 }
 
-void SLRUFileCachePriority::SLRUIterator::invalidate()
+void SLRUFileCachePriority::SLRUIterator::invalidate() noexcept
 {
     assertValid();
     lru_iterator.invalidate();
+}
+
+void SLRUFileCachePriority::SLRUIterator::invalidateBeforeRemove(const CachePriorityGuard::WriteLock & lock) noexcept
+{
+    assertValid();
+    lru_iterator.invalidateBeforeRemove(lock);
 }
 
 bool SLRUFileCachePriority::SLRUIterator::isValid(const CachePriorityGuard::WriteLock & lock) const

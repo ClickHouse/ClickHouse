@@ -579,7 +579,7 @@ private:
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     void generateUpdateSets(RandomGenerator & rg, const SQLTable & t, UpdateSet * first, std::function<UpdateSet *()> add_next);
     std::optional<String>
-    alterSingleTable(RandomGenerator & rg, SQLTable & t, uint32_t nalters, bool no_oracle, bool can_update, bool in_parallel, Alter * at);
+    alterSingleTable(RandomGenerator & rg, SQLTable & t, uint32_t nalters, bool no_oracle, bool in_parallel, Alter * at);
     void generateAlter(RandomGenerator & rg, bool in_parallel, Alter * at);
     void generateHotTableSettingsValues(RandomGenerator & rg, bool create, SettingValues * vals);
     void generateSettingValues(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals);
@@ -626,7 +626,6 @@ private:
         Expr * expr);
     bool generateGroupBy(RandomGenerator & rg, uint32_t ncols, bool enforce_having, bool allow_settings, SelectStatementCore * ssc);
     void addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, SQLType * tp, ColumnSpecial special, Expr * expr);
-    void addWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
     void generateWherePredicate(RandomGenerator & rg, Expr * expr);
     void addJoinClause(RandomGenerator & rg, Expr * expr);
     void generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
@@ -690,6 +689,7 @@ private:
         uint32_t allowed_clauses,
         std::optional<String> recursive,
         Select * sel);
+    void generateExprIn(RandomGenerator & rg, ExprInType * expr);
 
     void generateTopSelect(RandomGenerator & rg, bool force_global_agg, uint32_t allowed_clauses, TopSelect * ts);
     void generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq);
@@ -865,6 +865,8 @@ private:
     }
 
 public:
+    void addWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
+
     std::unique_ptr<SQLType> randomNextType(RandomGenerator & rg, uint64_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> attached_databases
@@ -873,25 +875,25 @@ public:
     const std::function<bool(const SQLView &)> attached_views = [](const SQLView & v) { return v.isAttached(); };
     const std::function<bool(const SQLDictionary &)> attached_dictionaries = [](const SQLDictionary & d) { return d.isAttached(); };
     const std::function<bool(const SQLTable &)> has_mergeable_tables
-        = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily() && t.can_run_merges; };
+        = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true) && t.can_run_merges; };
 
-    const std::function<bool(const SQLTable &)> attached_tables_to_test_format
-        = [](const SQLTable & t) { return t.isAttached() && t.teng != TableEngineValues::GenerateRandom; };
+    const std::function<bool(const SQLTable &)> attached_tables_to_test_format = [](const SQLTable & t)
+    { return t.isAttached() && !t.isNotTruncableEngine() && t.engine.value != TableEngineValues::GenerateRandom; };
     const std::function<bool(const SQLTable &)> attached_tables_to_compare_content = [](const SQLTable & t)
     {
-        return t.isAttached() && !t.isNotTruncableEngine() && t.teng != TableEngineValues::CollapsingMergeTree
-            && t.teng != TableEngineValues::VersionedCollapsingMergeTree && t.is_deterministic;
+        return t.isAttached() && t.engine.value != TableEngineValues::CollapsingMergeTree
+            && t.engine.value != TableEngineValues::VersionedCollapsingMergeTree && t.isDeterministic();
     };
     const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle
-        = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.is_deterministic; };
+        = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.isDeterministic(); };
     const std::function<bool(const SQLTable &)> attached_tables_for_clickhouse_table_peer_oracle
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
     const std::function<bool(const SQLTable &)> attached_tables_for_external_call
         = [](const SQLTable & t) { return t.isAttached() && t.integration == IntegrationCall::Dolor; };
     const std::function<bool(const SQLDictionary &)> attached_dictionaries_to_compare_content
-        = [](const SQLDictionary & d) { return d.isAttached() && d.is_deterministic; };
+        = [](const SQLDictionary & d) { return d.isAttached() && d.isDeterministic(); };
     const std::function<bool(const SQLView &)> attached_views_to_compare_content
-        = [](const SQLView & v) { return v.isAttached() && v.is_deterministic; };
+        = [](const SQLView & v) { return v.isAttached() && v.isDeterministic(); };
     bool rowPolicyForOracle(const SQLPolicy & p) const;
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
@@ -907,8 +909,8 @@ public:
     template <typename T>
     std::function<bool(const T &)> hasTableOrView(const SQLBase & b) const
     {
-        const bool b_is_deterministic = b.is_deterministic;
-        return [b_is_deterministic](const T & t) { return t.isAttached() && (t.is_deterministic || !b_is_deterministic); };
+        const bool b_is_deterministic = b.isDeterministic();
+        return [b_is_deterministic](const T & t) { return t.isAttached() && (t.isDeterministic() || !b_is_deterministic); };
     }
 
     template <TableRequirement req>

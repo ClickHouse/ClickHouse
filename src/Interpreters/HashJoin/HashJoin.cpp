@@ -3,9 +3,7 @@
 #include <memory>
 #include <vector>
 
-#ifdef OS_LINUX
-#    include <unistd.h>
-#endif
+#include <base/getL2CacheSize.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -22,7 +20,9 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/castTypeToEither.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinUtils.h>
@@ -40,6 +40,8 @@
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
+
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 namespace DB
 {
@@ -59,17 +61,9 @@ extern const int INVALID_JOIN_ON_EXPRESSION;
 
 size_t getMinBytesForPrefetchInJoin()
 {
-    /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-    /// Threshold: 4 * max(L2 cache size, 256KB). Cached after first call.
-    static const size_t result = []
-    {
-        size_t l2_size = 0;
-#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
-        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
-            l2_size = ret;
-#endif
-        return 4 * std::max<size_t>(l2_size, 256 * 1024);
-    }();
+    /// Enable prefetch once the hash table no longer fits in L2; below that it
+    /// is cache resident and prefetching is pure overhead. Cached after first call.
+    static const size_t result = getL2CacheSize();
     return result;
 }
 
@@ -153,6 +147,39 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
 }
 
 static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool use_two_level_maps);
+static std::optional<HashJoin::Type> tryGetLowCardinalityMethod(const ColumnPtr & column);
+
+/// A multi-disjunct (OR) join shares a single data->type across all disjuncts. When the disjuncts
+/// pick different packed fixed-key maps (e.g. keys32 for a (UInt16, UInt16) clause and keys64 for a
+/// (UInt32, UInt32) clause), use the widest packed map that can hold all of them instead of
+/// downgrading the whole join to the generic `hashed` map: a narrower packing always fits into a
+/// wider fixed-key map. Only genuinely different key kinds fall back to `hashed`.
+static HashJoin::Type mergeJoinMethods(HashJoin::Type lhs, HashJoin::Type rhs)
+{
+    using Type = HashJoin::Type;
+
+    /// Rank within a packing family (single-level and two-level are ranked separately); 0 = not a
+    /// packed fixed-key map. Within one join all disjuncts are the same level, so two packed types
+    /// being merged always belong to the same family.
+    auto packed_rank = [](Type type) -> int
+    {
+        switch (type)
+        {
+            case Type::keys32: case Type::two_level_keys32:   return 1;
+            case Type::keys64: case Type::two_level_keys64:   return 2;
+            case Type::keys128: case Type::two_level_keys128: return 3;
+            case Type::keys256: case Type::two_level_keys256: return 4;
+            default:                                          return 0;
+        }
+    };
+
+    const int lhs_rank = packed_rank(lhs);
+    const int rhs_rank = packed_rank(rhs);
+    if (lhs_rank != 0 && rhs_rank != 0)
+        return lhs_rank >= rhs_rank ? lhs : rhs;
+
+    return Type::hashed;
+}
 
 HashJoin::HashJoin(
     std::shared_ptr<TableJoin> table_join_,
@@ -160,7 +187,8 @@ HashJoin::HashJoin(
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    bool use_two_level_maps)
+    bool use_two_level_maps,
+    const StatsCollectingParams & stats_collecting_params_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -176,6 +204,7 @@ HashJoin::HashJoin(
     , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
     , enable_lazy_columns_replication(table_join->enableColumnsLazyReplication())
     , enable_prefetch(table_join->enableSoftwarePrefetchInJoin())
+    , stats_collecting_params(stats_collecting_params_)
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -229,6 +258,16 @@ HashJoin::HashJoin(
         sample_block_with_columns_to_add = right_table_keys = materializeBlock(right_sample_block);
     }
 
+    /// Detect a single non-nullable LowCardinality key before the keys are materialized below, so it
+    /// can use a dictionary-aware map. Restricted to a single disjunct and non-two-level maps for now.
+    std::optional<Type> low_cardinality_method;
+    if (table_join->oneDisjunct() && !use_two_level_maps && strictness != JoinStrictness::Asof)
+    {
+        const auto & only_clause_key_names = table_join->getOnlyClause().key_names_right;
+        if (only_clause_key_names.size() == 1)
+            low_cardinality_method = tryGetLowCardinalityMethod(right_table_keys.getByName(only_clause_key_names[0]).column);
+    }
+
     materializeBlockInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
     data->sample_block = prepareRightBlock(data->sample_block);
@@ -272,10 +311,15 @@ HashJoin::HashJoin(
         {
             /// Choose data structure to use for JOIN.
             auto current_join_method = chooseMethod(kind, key_columns, key_sizes.emplace_back(), use_two_level_maps);
+            if (low_cardinality_method)
+            {
+                current_join_method = *low_cardinality_method;
+                LOG_TRACE(log, "Using a dictionary-aware hash map for the single LowCardinality join key");
+            }
             if (data->type == Type::EMPTY)
                 data->type = current_join_method;
             else if (data->type != current_join_method)
-                data->type = Type::hashed;
+                data->type = mergeJoinMethods(data->type, current_join_method);
         }
     }
 
@@ -371,6 +415,10 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
+    if (all_fixed && keys_bytes <= 4)
+        return Type::keys32;
+    if (all_fixed && keys_bytes <= 8)
+        return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
     if (all_fixed && keys_bytes <= 32)
@@ -413,6 +461,10 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
             return Type::two_level_key32;
         case Type::key64:
             return Type::two_level_key64;
+        case Type::keys32:
+            return Type::two_level_keys32;
+        case Type::keys64:
+            return Type::two_level_keys64;
         case Type::keys128:
             return Type::two_level_keys128;
         case Type::keys256:
@@ -426,6 +478,35 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
         default:
             return type;
     }
+}
+
+/// If the column is a single non-nullable LowCardinality key, return the dictionary-aware map type
+/// to use for it. LowCardinality(Nullable(T)) and wide numeric dictionaries fall back to the regular
+/// (materialized) path. Mirrors the single-LowCardinality branch of AggregatedDataVariants::chooseMethod.
+static std::optional<HashJoin::Type> tryGetLowCardinalityMethod(const ColumnPtr & column)
+{
+    using Type = HashJoin::Type;
+
+    const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column.get());
+    if (!low_cardinality_column)
+        return {};
+
+    if (low_cardinality_column->getDictionary().nestedColumnIsNullable())
+        return {};
+
+    const auto * nested = low_cardinality_column->getDictionary().getNestedNotNullableColumn().get();
+
+    /// Numeric keys are intentionally not routed here. A materialized numeric key uses the key* maps,
+    /// which (with `enable_join_fixed_hash_table_conversion`) convert a dense small range to a
+    /// `range*_key*` FixedHashMap after build and can publish the shared fixed-hash-table runtime
+    /// filter; the dictionary-aware map skips both for no measurable gain. The benefit of the
+    /// dictionary-aware map is concentrated on variable-length string keys.
+    if (typeid_cast<const ColumnString *>(nested))
+        return Type::low_cardinality_key_string;
+    if (typeid_cast<const ColumnFixedString *>(nested))
+        return Type::low_cardinality_key_fixed_string;
+
+    return {};
 }
 
 template <typename KeyGetter, bool is_asof_join>
@@ -718,7 +799,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     for (const auto & column_name : right_key_names)
     {
         const auto & column = block.getByName(column_name).column;
-        all_key_columns[column_name] = removeSpecialRepresentations(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
+        auto prepared_key_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+        /// Keep the dictionary for the single-LowCardinality-column maps; their key getter needs it.
+        if (!isLowCardinalityType(data->type))
+            prepared_key_column = prepared_key_column->convertToFullColumnIfLowCardinality();
+        all_key_columns[column_name] = prepared_key_column;
     }
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
@@ -1353,6 +1438,21 @@ HashJoin::~HashJoin()
         LOG_TEST(log, "{}Join data has been already released", instance_log_id);
         return;
     }
+
+    try
+    {
+        if (build_phase_finished && stats_collecting_params.isCollectionAndUseEnabled())
+        {
+            if (const auto ht_size = getTotalRowCount())
+                getHashTablesStatistics<HashJoinEntry>().update(
+                    {.ht_size = ht_size, .source_rows = data->rows_to_join}, stats_collecting_params);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
     LOG_TEST(
         log,
         "{}Join data is being destroyed, {} bytes and {} rows in hash table",
@@ -1953,11 +2053,19 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
 
             auto & columns_info = columns_list.back().columns_info;
             size_t start_row = columns_info.columns.at(0)->size();
+
+            /// Detach all destination columns once (COW-safe: clones only if shared) and append through the
+            /// mutable handles, then move them back. This keeps the per-row append loop free of COW plumbing.
+            MutableColumns mutable_columns;
+            mutable_columns.reserve(columns_info.columns.size());
+            for (auto & column : columns_info.columns)
+                mutable_columns.push_back(IColumn::mutate(std::move(column)));
+
             for (; it.ok(); ++it)
             {
-                for (size_t i = 0; i < columns_info.columns.size(); ++i)
+                for (size_t i = 0; i < mutable_columns.size(); ++i)
                 {
-                    auto & col = columns_info.columns[i]->assumeMutableRef();
+                    auto & col = *mutable_columns[i];
                     /// Check if we insert into non replicated column from a replicated column.
                     if (!columns_info.replicated_columns[i] && it->columns_info->replicated_columns[i])
                     {
@@ -1970,6 +2078,10 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
                     }
                 }
             }
+
+            for (size_t i = 0; i < mutable_columns.size(); ++i)
+                columns_info.columns[i] = std::move(mutable_columns[i]);
+
             size_t new_rows = columns_info.columns.at(0)->size();
             if (new_rows > start_row)
             {
@@ -2209,6 +2321,326 @@ void HashJoin::reinitUsedFlags()
     }
 }
 
+namespace
+{
+
+/// Defensive check that T (= common_type) can hold every value of BuildKey.
+/// `getLeastSupertype` guarantees this in normal flow; this catches contract violations
+/// from future code changes and falls through to pass-all instead of misfiring bounds checks.
+template <typename BuildKey, typename T>
+constexpr bool canLosslesslyHold()
+{
+    if constexpr (std::is_unsigned_v<T> && std::is_signed_v<BuildKey>)
+        return false;
+    else if constexpr (std::is_signed_v<T> == std::is_signed_v<BuildKey>)
+        return sizeof(T) >= sizeof(BuildKey);
+    else /* T signed, BuildKey unsigned */
+        return sizeof(T) > sizeof(BuildKey);
+}
+
+/// Inner loop: for each probe value v of type T, check it falls within BuildKey's value range,
+/// then narrow to BuildKey and reinterpret to the FixedHashMap's unsigned key. The null-mask
+/// merge is split out of the loop body into two specialized paths so each loop stays branchless
+/// and vectorizable.
+template <typename BuildKey, typename HashMapT, typename T>
+void probeFixedHashMapLoop(
+    const HashMapT & ht,
+    std::make_unsigned_t<BuildKey> min_key,
+    size_t range_size,
+    const T * src,
+    const UInt8 * null_map,
+    UInt8 * result,
+    size_t n)
+{
+    using UnsignedBK = std::make_unsigned_t<BuildKey>;
+    static_assert(canLosslesslyHold<BuildKey, T>(),
+                  "probeFixedHashMapLoop instantiated with a probe type that cannot hold BuildKey's full range");
+
+    constexpr T t_lo = static_cast<T>(std::numeric_limits<BuildKey>::min());
+    constexpr T t_hi = static_cast<T>(std::numeric_limits<BuildKey>::max());
+
+    auto probe_one = [&](size_t i) -> UInt8
+    {
+        const T v = src[i];
+        if (v < t_lo || v > t_hi)
+            return 0;
+        const UnsignedBK slot = static_cast<UnsignedBK>(static_cast<BuildKey>(v));
+        const UnsignedBK idx = slot - min_key;
+        return (idx < range_size && ht.has(idx)) ? 1 : 0;
+    };
+
+    if (null_map)
+    {
+        for (size_t i = 0; i < n; ++i)
+            result[i] = probe_one(i) & static_cast<UInt8>(!null_map[i]);
+    }
+    else
+    {
+        for (size_t i = 0; i < n; ++i)
+            result[i] = probe_one(i);
+    }
+}
+
+/// Dispatch over the probe column's element type to call probeFixedHashMapLoop.
+/// Probe types whose value range can't hold BuildKey are filtered out at compile time;
+/// at runtime a non-ColumnVector or excluded type is conservatively passed through (all 1).
+template <typename BuildKey, typename HashMapT>
+ColumnPtr probeFixedHashMap(
+    const HashMapT & ht,
+    std::make_unsigned_t<BuildKey> min_key,
+    size_t range_size,
+    const ColumnWithTypeAndName & values)
+{
+    const IColumn * col = values.column.get();
+    const ColumnUInt8 * nm_col = nullptr;
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(col))
+    {
+        col = &nullable->getNestedColumn();
+        nm_col = &nullable->getNullMapColumn();
+    }
+
+    const size_t n = col->size();
+    auto result_col = ColumnUInt8::create(n);
+    UInt8 * result = result_col->getData().data();
+    const UInt8 * null_map = nm_col ? nm_col->getData().data() : nullptr;
+
+    const bool dispatched = castTypeToEither<
+        ColumnVector<UInt8>, ColumnVector<UInt16>, ColumnVector<UInt32>, ColumnVector<UInt64>,
+        ColumnVector<Int8>, ColumnVector<Int16>, ColumnVector<Int32>, ColumnVector<Int64>>(
+        col,
+        [&](const auto & typed_col) -> bool
+        {
+            using T = typename std::decay_t<decltype(typed_col)>::ValueType;
+            if constexpr (canLosslesslyHold<BuildKey, T>())
+            {
+                probeFixedHashMapLoop<BuildKey, HashMapT, T>(
+                    ht, min_key, range_size,
+                    typed_col.getData().data(), null_map, result, n);
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        });
+
+    if (!dispatched)
+        std::fill_n(result, n, UInt8(1));
+
+    return result_col;
+}
+
+/// Wrap a FixedHashMap as a ProbeFn for the runtime filter to invoke on the probe side.
+template <typename BuildKey, typename HashMapT>
+SharedFixedHashTableRuntimeFilter::ProbeFn buildSharedFilterProbeFn(
+    std::shared_ptr<HashMapT> range_map_arg,
+    std::make_unsigned_t<BuildKey> min_key,
+    size_t range_size)
+{
+    return [range_map = std::move(range_map_arg), min_key, range_size]
+        (const ColumnWithTypeAndName & values) -> ColumnPtr
+    {
+        return probeFixedHashMap<BuildKey, HashMapT>(*range_map, min_key, range_size, values);
+    };
+}
+
+} // anonymous namespace
+
+void HashJoin::publishSharedRuntimeFilters()
+{
+    if (shared_runtime_filters_publish_attempted)
+        return;
+    shared_runtime_filters_publish_attempted = true;
+
+    if (!table_join->joinRuntimeFilterFromFixedHashTable())
+        return;
+
+    const auto & descriptors = table_join->getSharedRuntimeFilterDescriptors();
+    if (descriptors.empty())
+        return;
+
+    if (data->maps.size() != 1)
+        return;
+
+    const bool is_fixed_hash_table =
+        data->type == Type::key8 || data->type == Type::key16 ||
+        data->type == Type::range8_key32 || data->type == Type::range16_key32 ||
+        data->type == Type::range17_key32 || data->type == Type::range18_key32 ||
+        data->type == Type::range8_key64 || data->type == Type::range16_key64 ||
+        data->type == Type::range17_key64 || data->type == Type::range18_key64;
+    if (!is_fixed_hash_table)
+        return;
+
+    /// For a single distinct build key, the existing `== const` runtime filter specialization
+    /// is faster than any hash table probe; leave it active.
+    if (data->keys_to_join <= 1)
+        return;
+
+    auto query_context = CurrentThread::get().tryGetQueryContext();
+    if (!query_context)
+        return;
+    auto lookup = query_context->getRuntimeFilterLookup();
+    if (!lookup)
+        return;
+
+    if (right_table_keys.columns() != 1)
+        return;
+    const String build_key_name = right_table_keys.getByPosition(0).name;
+    const auto & filter_column_type = right_table_keys.getByPosition(0).type;
+
+    /// Only integer-backed build types have meaningful min/max for the bounds check.
+    /// Float, Decimal and DateTime64 (scale) drop out via isValueRepresentedByInteger.
+    const auto build_type = removeNullable(filter_column_type);
+    if (!build_type->isValueRepresentedByInteger())
+        return;
+    const bool build_signed = !build_type->isValueRepresentedByUnsignedInteger();
+
+    auto build_probe_fn = [&]() -> SharedFixedHashTableRuntimeFilter::ProbeFn
+    {
+        SharedFixedHashTableRuntimeFilter::ProbeFn probe_fn;
+        std::visit(
+            [&](auto & map)
+            {
+                using MapType = std::decay_t<decltype(map)>;
+                if constexpr (std::is_same_v<MapType, MapsOne> || std::is_same_v<MapType, MapsAll>)
+                {
+                    auto dispatch = [&]<typename BuildKey>(
+                        auto & range_ptr,
+                        std::make_unsigned_t<BuildKey> min_key,
+                        size_t range_size)
+                    {
+                        if (!range_ptr)
+                            return;
+                        probe_fn = buildSharedFilterProbeFn<BuildKey>(range_ptr, min_key, range_size);
+                    };
+
+                    /// For range_*_key_* the min/range come from `tryConvertToFixedHashMap`'s
+                    /// computed key_range; for key8/key16 the whole key space is the table so
+                    /// min=0 and range = 2^(Key bits).
+                    switch (data->type)
+                    {
+                        case Type::key8:
+                            if (build_signed)
+                                dispatch.template operator()<Int8>(map.key8, UInt8(0), 1ULL << 8);
+                            else
+                                dispatch.template operator()<UInt8>(map.key8, UInt8(0), 1ULL << 8);
+                            break;
+                        case Type::key16:
+                            if (build_signed)
+                                dispatch.template operator()<Int16>(map.key16, UInt16(0), 1ULL << 16);
+                            else
+                                dispatch.template operator()<UInt16>(map.key16, UInt16(0), 1ULL << 16);
+                            break;
+                        case Type::range8_key32:
+                            if (build_signed)
+                                dispatch.template operator()<Int32>(map.range8_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt32>(map.range8_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            break;
+                        case Type::range16_key32:
+                            if (build_signed)
+                                dispatch.template operator()<Int32>(map.range16_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt32>(map.range16_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            break;
+                        case Type::range17_key32:
+                            if (build_signed)
+                                dispatch.template operator()<Int32>(map.range17_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt32>(map.range17_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            break;
+                        case Type::range18_key32:
+                            if (build_signed)
+                                dispatch.template operator()<Int32>(map.range18_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt32>(map.range18_key32,
+                                    static_cast<UInt32>(data->key_range.min_key), data->key_range.size);
+                            break;
+                        case Type::range8_key64:
+                            if (build_signed)
+                                dispatch.template operator()<Int64>(map.range8_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt64>(map.range8_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            break;
+                        case Type::range16_key64:
+                            if (build_signed)
+                                dispatch.template operator()<Int64>(map.range16_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt64>(map.range16_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            break;
+                        case Type::range17_key64:
+                            if (build_signed)
+                                dispatch.template operator()<Int64>(map.range17_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt64>(map.range17_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            break;
+                        case Type::range18_key64:
+                            if (build_signed)
+                                dispatch.template operator()<Int64>(map.range18_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            else
+                                dispatch.template operator()<UInt64>(map.range18_key64,
+                                    data->key_range.min_key, data->key_range.size);
+                            break;
+                        default: break;
+                    }
+                }
+            },
+            data->maps.front());
+        return probe_fn;
+    };
+
+    auto probe_fn = build_probe_fn();
+    if (!probe_fn)
+        return;
+
+    /// Replace any Set/BloomFilter that BuildRuntimeFilterStep installed earlier. The descriptor's
+    /// first element is the rendezvous key (the same key `BuildRuntimeFilterTransform` registered the
+    /// filter under and the probe-side `__applyFilter` looks it up by), not the stable display name.
+    for (const auto & [filter_key, descr_build_key] : descriptors)
+    {
+        if (descr_build_key != build_key_name)
+            continue;
+
+        auto existing = lookup->find(filter_key);
+        if (!existing)
+            continue;
+
+        /// When common_type is wide (e.g. Int64 = UInt64 promotes to Int128), per-row wide-integer
+        /// arithmetic on the probe side can be slower than the existing BloomFilter; skip.
+        const auto target_type = removeNullable(existing->getFilterColumnTargetType());
+        WhichDataType target_which(target_type);
+        if (!target_type->isValueRepresentedByInteger()
+            || target_which.isInt128() || target_which.isUInt128()
+            || target_which.isInt256() || target_which.isUInt256()
+            || target_which.isIPv4()
+            || target_which.isLowCardinality())
+            continue;
+
+        auto filter = std::make_unique<SharedFixedHashTableRuntimeFilter>(
+            existing->getFilterColumnTargetType(),
+            existing->getPassRatioThresholdForDisabling(),
+            existing->getBlocksToSkipBeforeReenabling(),
+            probe_fn);
+        /// `replace` keeps the original registration's display name in the lookup, so stats stay legible.
+        LOG_TRACE(getLogger("HashJoin"), "Published shared fixed-hash-table runtime filter under key '{}'", filter_key);
+        lookup->replace(filter_key, std::move(filter));
+    }
+}
+
 void HashJoin::tryConvertToFixedHashMap()
 {
     if (!canConvertToFixedHashMap())
@@ -2257,17 +2689,28 @@ void HashJoin::onBuildPhaseFinish()
     }
     updateNonJoinedRowsStatus();
 
+    build_phase_finished = true;
+
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
 }
 
 bool HashJoin::hasPostBuildPhase() const
 {
-    return rightTableCanBeReranged() || canConvertToFixedHashMap();
+    /// key8/key16 are already FixedHashMap, so they don't go through tryConvertToFixedHashMap,
+    /// but publishSharedRuntimeFilters still needs to run for them when the feature is on.
+    const bool needs_shared_filter_publish =
+        data && data->rows_to_join && data->maps.size() == 1
+        && (data->type == Type::key8 || data->type == Type::key16)
+        && table_join->joinRuntimeFilterFromFixedHashTable()
+        && !table_join->getSharedRuntimeFilterDescriptors().empty();
+
+    return rightTableCanBeReranged() || canConvertToFixedHashMap() || needs_shared_filter_publish;
 }
 
 void HashJoin::runPostBuildPhase()
 {
     tryRerangeRightTableData();
     tryConvertToFixedHashMap();
+    publishSharedRuntimeFilters();
 }
 }
