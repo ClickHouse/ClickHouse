@@ -3632,10 +3632,10 @@ static void serializeCapture(const LambdaCapture & capture, WriteBuffer & out)
     }
 }
 
-static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in)
+static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in, size_t max_type_complexity)
 {
     readStringBinary(capture.return_name, in);
-    capture.return_type = decodeDataType(in);
+    capture.return_type = decodeDataType(in, max_type_complexity);
 
     UInt64 num_names = 0;
     readVarUInt(num_names, in);
@@ -3647,7 +3647,7 @@ static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in)
     readVarUInt(num_types, in);
     capture.captured_types.resize(num_types);
     for (auto & type : capture.captured_types)
-        type = decodeDataType(in);
+        type = decodeDataType(in, max_type_complexity);
 
     UInt64 num_args = 0;
     readVarUInt(num_args, in);
@@ -3656,7 +3656,7 @@ static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in)
     {
         NameAndTypePair name_and_type;
         readStringBinary(name_and_type.name, in);
-        name_and_type.type = decodeDataType(in);
+        name_and_type.type = decodeDataType(in, max_type_complexity);
         capture.lambda_arguments.push_back(std::move(name_and_type));
     }
 }
@@ -3771,8 +3771,9 @@ static MutableColumnPtr deserializeConstant(
 
     if (WhichDataType(type).isFunction())
     {
+        const size_t max_type_complexity = getBinaryTypeDecodingComplexityLimit(context);
         LambdaCapture capture;
-        deserializeCapture(capture, in);
+        deserializeCapture(capture, in, max_type_complexity);
         auto capture_dag = ActionsDAG::deserialize(in, registry, context);
 
         UInt64 num_captured_columns = 0;
@@ -3781,7 +3782,7 @@ static MutableColumnPtr deserializeConstant(
 
         for (auto & captured_column : captured_columns)
         {
-            captured_column.type = decodeDataType(in);
+            captured_column.type = decodeDataType(in, max_type_complexity);
             captured_column.column = deserializeConstant(*captured_column.type, in, registry, context);
         }
 
@@ -3925,6 +3926,10 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
 
 ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context)
 {
+    /// Plans can be deserialized from an untrusted client (TCPHandler::receiveQueryPlan), so enforce the
+    /// type-complexity guard using the effective setting resolved once from the context.
+    const size_t max_type_complexity = getBinaryTypeDecodingComplexityLimit(context);
+
     size_t nodes_size = 0;
     readVarUInt(nodes_size, in);
 
@@ -3944,7 +3949,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
         node.type = static_cast<ActionType>(action_type);
 
         readStringBinary(node.result_name, in);
-        node.result_type = decodeDataType(in);
+        node.result_type = decodeDataType(in, max_type_complexity);
 
         size_t children_size = 0;
         readVarUInt(children_size, in);
@@ -4005,7 +4010,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             if (column_flags & 4)
             {
                 LambdaCapture capture;
-                deserializeCapture(capture, in);
+                deserializeCapture(capture, in, max_type_complexity);
                 auto capture_dag = ActionsDAG::deserialize(in, registry, context);
 
                 node.function_base = std::make_shared<FunctionCapture>(

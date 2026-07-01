@@ -12,6 +12,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/NativeReader.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/NativeWriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
@@ -177,12 +178,19 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             ColumnsWithTypeAndName set_columns;
             set_columns.reserve(num_columns);
 
+            /// Sets can be deserialized from an untrusted client (TCPHandler::receiveQueryPlan), so enforce the
+            /// type-complexity guard both on the column type and on the column data (which, for a Dynamic column,
+            /// decodes further types via NativeReader). Passing the limit through FormatSettings keeps the guard
+            /// active on that path; internal part reads use null FormatSettings and stay unlimited.
+            FormatSettings format_settings;
+            format_settings.binary.max_binary_type_complexity = getBinaryTypeDecodingComplexityLimit(context);
+
             for (size_t col = 0; col < num_columns; ++col)
             {
-                auto type = decodeDataType(in);
+                auto type = decodeDataType(in, format_settings.binary.max_binary_type_complexity);
                 auto serialization = type->getDefaultSerialization();
                 ColumnPtr column = type->createColumn();
-                NativeReader::readData(*serialization, column, in, {}, num_rows, nullptr, nullptr);
+                NativeReader::readData(*serialization, column, in, &format_settings, num_rows, nullptr, nullptr);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }

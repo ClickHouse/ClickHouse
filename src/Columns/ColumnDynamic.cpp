@@ -12,6 +12,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Interpreters/convertFieldToType.h>
@@ -308,7 +309,7 @@ void ColumnDynamic::get(size_t n, Field & res) const
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data);
-    auto type = decodeDataType(buf);
+    auto type = decodeDataType(buf, getCurrentQueryBinaryTypeComplexityLimit());
     type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
 }
 
@@ -326,7 +327,7 @@ void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data);
-    auto type = decodeDataType(buf);
+    auto type = decodeDataType(buf, getCurrentQueryBinaryTypeComplexityLimit());
     const auto col = type->createColumn();
     type->getDefaultSerialization()->deserializeBinary(*col, buf, getFormatSettings());
     col->getValueNameImpl(name_buf, 0, options);
@@ -359,7 +360,7 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
         auto value = src_shared_variant.getDataAt(src_offset);
         /// Decode data type of this value.
         ReadBufferFromMemory buf(value);
-        auto type = decodeDataType(buf);
+        auto type = decodeDataType(buf, getCurrentQueryBinaryTypeComplexityLimit());
         auto type_name = type->getName();
         /// Check if we have this variant and deserialize value into variant from shared variant data.
         if (auto it = variant_info.variant_name_to_discriminator.find(type_name); it != variant_info.variant_name_to_discriminator.end())
@@ -459,7 +460,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
                 chassert(local_discriminators[prev_size + i] == shared_variant_local_discr);
                 auto value = src_shared_variant.getDataAt(src_offsets[start + i]);
                 ReadBufferFromMemory buf(value);
-                auto type = decodeDataType(buf);
+                auto type = decodeDataType(buf, getCurrentQueryBinaryTypeComplexityLimit());
                 auto type_name = type->getName();
                 /// Check if we have variant with this type. In this case we should extract
                 /// the value from src shared variant and insert it into this variant.
@@ -576,7 +577,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
             {
                 auto value = src_shared_variant.getDataAt(src_offset);
                 ReadBufferFromMemory buf(value);
-                auto type = decodeDataType(buf);
+                auto type = decodeDataType(buf, getCurrentQueryBinaryTypeComplexityLimit());
                 auto type_name = type->getName();
                 /// Check if we have variant with this type. In this case we should extract
                 /// the value from src shared variant and insert it into this variant.
@@ -651,7 +652,7 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
         auto value = src_shared_variant.getDataAt(src_offset);
         /// Decode data type of this value.
         ReadBufferFromMemory buf(value);
-        auto type = decodeDataType(buf);
+        auto type = decodeDataType(buf, getCurrentQueryBinaryTypeComplexityLimit());
         auto type_name = type->getName();
         /// Check if we have this variant and deserialize value into variant from shared variant data.
         if (auto it = variant_info.variant_name_to_discriminator.find(type_name); it != variant_info.variant_name_to_discriminator.end())
@@ -794,7 +795,15 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
     in.ignore(type_and_value_size);
 
     ReadBufferFromMemory buf(type_and_value);
-    auto variant_type = decodeDataType(buf);
+    /// Aggregate-function states holding Dynamic (e.g. groupArray(Dynamic)) reach this method with
+    /// client-supplied bytes during INSERT/merge, so the type-complexity guard must apply here. Unlike the
+    /// hot shared-data read paths, arena deserialization carries no FormatSettings; resolve the limit from
+    /// the query context when there is one (a client query), and leave it unlimited for context-less internal
+    /// use (e.g. background operations on already-validated data).
+    size_t max_type_complexity = 0;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        max_type_complexity = getBinaryTypeDecodingComplexityLimit(query_context);
+    auto variant_type = decodeDataType(buf, max_type_complexity);
     auto variant_name = variant_type->getName();
     /// If we already have such variant, just deserialize it into corresponding variant column.
     auto it = variant_info.variant_name_to_discriminator.find(variant_name);
@@ -848,7 +857,7 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
     {
         auto value = getSharedVariant().getDataAt(variant_col.offsetAt(n));
         ReadBufferFromMemory buf(value);
-        auto type = decodeDataType(buf);
+        auto type = decodeDataType(buf, getCurrentQueryBinaryTypeComplexityLimit());
         hash.update(type->getName());
         auto tmp_column = type->createColumn();
         type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
@@ -899,11 +908,11 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
 
         /// Extract type names from both values.
         ReadBufferFromMemory buf_left(left_value);
-        auto left_data_type = decodeDataType(buf_left);
+        auto left_data_type = decodeDataType(buf_left, getCurrentQueryBinaryTypeComplexityLimit());
         auto left_data_type_name = left_data_type->getName();
 
         ReadBufferFromMemory buf_right(right_value);
-        auto right_data_type = decodeDataType(buf_right);
+        auto right_data_type = decodeDataType(buf_right, getCurrentQueryBinaryTypeComplexityLimit());
         auto right_data_type_name = right_data_type->getName();
 
         /// If rows have different types, we compare type names.
@@ -925,7 +934,7 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
         /// Extract left type name from the value.
         auto left_value = getSharedVariant().getDataAt(left_variant.offsetAt(n));
         ReadBufferFromMemory buf_left(left_value);
-        auto left_data_type = decodeDataType(buf_left);
+        auto left_data_type = decodeDataType(buf_left, getCurrentQueryBinaryTypeComplexityLimit());
         auto left_data_type_name = left_data_type->getName();
 
         /// If rows have different types, we compare type names.
@@ -946,7 +955,7 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
         /// Extract right type name from the value.
         auto right_value = right_dynamic.getSharedVariant().getDataAt(right_variant.offsetAt(m));
         ReadBufferFromMemory buf_right(right_value);
-        auto right_data_type = decodeDataType(buf_right);
+        auto right_data_type = decodeDataType(buf_right, getCurrentQueryBinaryTypeComplexityLimit());
         auto right_data_type_name = right_data_type->getName();
 
         /// If rows have different types, we compare type names.
@@ -1085,7 +1094,7 @@ String ColumnDynamic::getTypeNameAt(size_t row_num) const
     {
         const auto value = getSharedVariant().getDataAt(variant_col.offsetAt(row_num));
         ReadBufferFromMemory buf(value);
-        return decodeDataType(buf)->getName();
+        return decodeDataType(buf, getCurrentQueryBinaryTypeComplexityLimit())->getName();
     }
 
     return variant_info.variant_names[discr];
@@ -1102,7 +1111,7 @@ DataTypePtr ColumnDynamic::getTypeAt(size_t row_num) const
     {
         const auto value = getSharedVariant().getDataAt(variant_col.offsetAt(row_num));
         ReadBufferFromMemory buf(value);
-        return decodeDataType(buf);
+        return decodeDataType(buf, getCurrentQueryBinaryTypeComplexityLimit());
     }
 
     return assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants()[discr];
@@ -1122,7 +1131,7 @@ void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> &
     {
         const auto value = shared_variant.getDataAt(i);
         ReadBufferFromMemory buf(value);
-        names.insert(decodeDataType(buf)->getName());
+        names.insert(decodeDataType(buf, getCurrentQueryBinaryTypeComplexityLimit())->getName());
     }
 }
 
@@ -1440,11 +1449,16 @@ ColumnDynamic::StatisticsPtr ColumnDynamic::getOrCalculateStatistics() const
         calculated_statistics->variants_statistics[variant_name] = variant_column_ptr->getVariantByGlobalDiscriminator(discr).size();
 
     const auto & shared_variant = getSharedVariant();
+    /// Shared-variant payloads can come from client Native input; enforce the guard via the query context
+    /// when present (resolved once, unlimited for context-less internal use) — matches pre-existing behavior.
+    size_t max_type_complexity = 0;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        max_type_complexity = getBinaryTypeDecodingComplexityLimit(query_context);
     for (size_t i = 0; i != shared_variant.size(); ++i)
     {
         auto value = shared_variant.getDataAt(i);
         ReadBufferFromMemory buf(value);
-        auto type = decodeDataType(buf);
+        auto type = decodeDataType(buf, max_type_complexity);
         auto type_name = type->getName();
         if (auto it = calculated_statistics->shared_variants_statistics.find(type_name); it != calculated_statistics->shared_variants_statistics.end())
             ++it->second;

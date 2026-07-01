@@ -343,7 +343,7 @@ void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t 
 
             auto value_data = shared_values->getDataAt(i);
             ReadBufferFromMemory buf(value_data);
-            auto decoded_type = decodeDataType(buf);
+            auto decoded_type = decodeDataType(buf, 0);
 
             if (isNothing(decoded_type))
             {
@@ -2289,7 +2289,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
             {
                 auto value = shared_data_values->getDataAt(j);
                 ReadBufferFromMemory buf(value);
-                auto type_from_shared_data = decodeDataType(buf);
+                auto type_from_shared_data = decodeDataType(buf, 0);
                 if (!isNothing(type_from_shared_data))
                 {
                     auto type_from_dynamic_path = dynamic_paths_ptrs.find(path)->second->getTypeAt(i);

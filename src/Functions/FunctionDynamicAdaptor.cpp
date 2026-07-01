@@ -379,7 +379,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
             /// Deserialize type and value from shared variant row.
             auto value = shared_variant.getDataAt(offsets[i]);
             ReadBufferFromMemory buf(value);
-            auto type = decodeDataType(buf);
+            auto type = decodeDataType(buf, 0);
             auto type_name = type->getName();
 
             /// Check if we already allocated selector index for this variant type.

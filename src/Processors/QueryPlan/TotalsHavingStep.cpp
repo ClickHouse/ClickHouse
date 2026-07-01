@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -208,7 +209,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     bool remove_filter_column = bool(flags & 8);
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptions(aggregates, ctx.in);
+    deserializeAggregateDescriptions(aggregates, ctx.in, getBinaryTypeDecodingComplexityLimit(ctx.context));
 
     std::optional<ActionsDAG> actions_dag;
     String filter_column_name;

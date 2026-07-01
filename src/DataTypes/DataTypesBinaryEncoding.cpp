@@ -29,13 +29,12 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/NullsAction.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteBuffer.h>
-#include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <Core/Settings.h>
 #include <Common/CurrentThread.h>
+#include <IO/WriteBuffer.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <Common/FieldBinaryEncoding.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
@@ -65,14 +64,6 @@ constexpr size_t MAX_ARRAY_SIZE = 1000000;
 /// MAX_ARRAY_SIZE prevents wide types (single Tuple with 10M elements) before allocation. The max_complexity
 /// argument threaded into decodeDataTypeImpl prevents large width × depth (e.g. Tuple(Tuple(...) x 999999) x 10000)
 /// that does not trigger stack overflow or the MAX_ARRAY_SIZE check. max_complexity == 0 means unlimited.
-
-/// Effective limit for callers that don't pass one explicitly (fail-safe: the guard is active by default).
-inline size_t getMaxTypeDecodingComplexity()
-{
-    if (auto query_context = CurrentThread::tryGetQueryContext())
-        return query_context->getSettingsRef()[Setting::input_format_binary_max_type_complexity];
-    return 1000; /// Matches the default input_format_binary_max_type_complexity setting.
-}
 
 /// In future we can introduce more arguments in the JSON data type definition.
 /// To support such changes, use versioning in the serialization of JSON type.
@@ -847,30 +838,22 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type code: {0:#04x}", UInt64(type));
 }
 
-DataTypePtr decodeDataType(ReadBuffer & buf)
-{
-    /// Fail-safe default: enforce the effective limit from the query context. Callers that must decode
-    /// already-stored data unconditionally pass 0 (unlimited) explicitly via the overload below.
-    size_t complexity = 0;
-    return decodeDataTypeImpl(buf, complexity, getMaxTypeDecodingComplexity());
-}
-
 DataTypePtr decodeDataType(ReadBuffer & buf, size_t max_complexity)
 {
     size_t complexity = 0;
     return decodeDataTypeImpl(buf, complexity, max_complexity);
 }
 
-DataTypePtr decodeDataType(const String & data)
+size_t getBinaryTypeDecodingComplexityLimit(const ContextPtr & context)
 {
-    ReadBufferFromString buf(data);
-    return decodeDataType(buf);
+    return context->getSettingsRef()[Setting::input_format_binary_max_type_complexity];
 }
 
-DataTypePtr decodeDataType(std::string_view data)
+size_t getCurrentQueryBinaryTypeComplexityLimit()
 {
-    ReadBufferFromString buf(data);
-    return decodeDataType(buf);
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        return getBinaryTypeDecodingComplexityLimit(query_context);
+    return 0;
 }
 
 }
