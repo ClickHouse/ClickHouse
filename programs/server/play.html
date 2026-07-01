@@ -6273,28 +6273,20 @@ async function reconcileStartup() {
     scheduleSave();
 }
 
-/// Detect query parameters on page load and restore their values from the URL.
-/// If run_immediately is set (and not deferred for tab reconciliation), run after params are ready.
+/// Render the syntax highlighting and parameter inputs for the URL query on page load.
+/// `query_area.value` is populated only from a `#<query>` hash, so reaching this branch means
+/// the URL carries a query (`has_url_query`). In that case `reconcileStartup` below is the
+/// SOLE owner of URL parameter restoration and the auto-run: it reconciles the URL against the
+/// IndexedDB workspace first and, on a stale reload, deliberately preserves a newer saved tab
+/// (`preserve_local_query`) and drops the stale `run=1`. Applying the URL `param_*` values or
+/// auto-running here as well would race that reconciliation: this callback resumes after
+/// tokenization, which can land after `activateTab` has restored the preserved tab, overwriting
+/// its params with stale URL values that the scheduled `persist` would then save. So only
+/// refresh the editor here and let reconciliation apply the parameters and trigger the run.
 if (query_area.value)
 {
     resizeQueryAreaIfSlightlyOverflowing();
-    updateQueryParams().then(() =>
-    {
-        const urlParamValues = {};
-        for (const param of currentQueryParams)
-        {
-            const value = current_url.searchParams.get('param_' + param.name);
-            if (value !== null)
-            {
-                urlParamValues[param.name] = value;
-            }
-        }
-        setParamValues(urlParamValues);
-        if (run_immediately && !defer_run_for_reconcile)
-        {
-            postAll();
-        }
-    });
+    updateQueryParams();
 }
 else if (run_immediately && !defer_run_for_reconcile)
 {
