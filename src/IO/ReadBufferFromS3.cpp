@@ -51,6 +51,7 @@ namespace FailPoints
 {
     extern const char s3_read_buffer_throw_expired_token[];
     extern const char s3_send_request_throw_expired_token[];
+    extern const char s3_read_buffer_force_premature_eof[];
 }
 
 namespace ErrorCodes
@@ -256,17 +257,29 @@ bool ReadBufferFromS3::nextImpl()
         assertWorkingBufferContainedIn(impl->buffer(), internal_buffer);
     BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
 
+    /// Test-only: force a premature stream EOF after a partial read of a full-size object
+    bool force_premature_eof = false;
+    fiu_do_on(FailPoints::s3_read_buffer_force_premature_eof,
+    {
+        if (read_until_position && working_buffer.size() > 1 && offset.load() + 1 < read_until_position)
+        {
+            BufferBase::set(impl->buffer().begin(), 1, impl->offset());
+            force_premature_eof = true;
+        }
+    });
+
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
 
     // release result if possible to free pooled HTTP session for better reuse
     bool is_read_until_position = read_until_position && read_until_position == offset;
-    const bool stream_eof = impl->isStreamEof();
+    bool stream_eof = impl->isStreamEof() || force_premature_eof;
+
     if (stream_eof || is_read_until_position)
     {
         release_reason = fmt::format(
             "{} (read {}/{}, file size: {}, restricted seek: {})",
-            impl->isStreamEof() ? "stream EOF" : "read until position reached",
+            stream_eof ? "stream EOF" : "read until position reached",
             offset.load(), read_until_position.load(),
             file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
 
