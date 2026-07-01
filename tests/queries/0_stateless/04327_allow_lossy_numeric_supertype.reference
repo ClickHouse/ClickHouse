@@ -14,6 +14,11 @@ Float64
 Map(String, Float64)
 Nullable(Float64)
 Map(Float64, String)
+Array(LowCardinality(Float64))
+Array(Float64)
+Array(LowCardinality(Nullable(Float64)))
+Map(String, LowCardinality(Float64))
+Float64
 1
 1
 0.5	3

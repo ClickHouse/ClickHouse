@@ -968,6 +968,10 @@ DataTypePtr tryGetLossyNumericSupertype(const DataTypes & types)
 {
     bool has_float = false;
     bool has_nullable = false;
+    /// Mirror the regular resolver's LowCardinality rule: all non-NULL branches
+    /// LowCardinality -> LowCardinality result; a mix drops it. Otherwise the wrapper
+    /// is silently lost, which corrupts array/map metadata (see 02354_array_lowcardinality).
+    bool all_low_cardinality = true;
     for (const auto & type : types)
     {
         if (canContainNull(*type))
@@ -983,6 +987,8 @@ DataTypePtr tryGetLossyNumericSupertype(const DataTypes & types)
             return nullptr;
         if (isFloat(bare_type))
             has_float = true;
+        if (!typeid_cast<const DataTypeLowCardinality *>(type.get()))
+            all_low_cardinality = false;
     }
 
     if (!has_float)
@@ -991,6 +997,9 @@ DataTypePtr tryGetLossyNumericSupertype(const DataTypes & types)
     DataTypePtr result = std::make_shared<DataTypeFloat64>();
     if (has_nullable)
         result = makeNullable(result);
+    /// LowCardinality wraps Nullable (never the reverse), matching the regular resolver.
+    if (all_low_cardinality)
+        result = std::make_shared<DataTypeLowCardinality>(result);
     return result;
 }
 }
@@ -1021,11 +1030,9 @@ String getNumericVariantSupertypeHint(const DataTypePtr & type)
         return {};
 
     /// Only the final Variant type is visible here, not whether it was inferred (setting applies)
-    /// or stored/cast (it does not), so keep the wording conditional and point the latter at a cast.
-    return ". When this Variant is the inferred common type of if/multiIf/coalesce/ifNull/array/map "
-           "over numeric alternatives, enable setting 'allow_lossy_numeric_supertype' to use a numeric "
-           "supertype (with possible precision loss) instead; a stored Variant column or explicit cast "
-           "is not affected by the setting and needs typed subcolumns or a cast to a specific type";
+    /// or stored/cast (it does not), so keep the wording conditional. Kept short per review.
+    return ". If it is the inferred common type of if/multiIf/coalesce/ifNull/array/map over numeric "
+           "arguments, enable setting 'allow_lossy_numeric_supertype' to use a numeric supertype instead";
 }
 
 DataTypePtr tryGetLeastSupertype(const DataTypes & types)

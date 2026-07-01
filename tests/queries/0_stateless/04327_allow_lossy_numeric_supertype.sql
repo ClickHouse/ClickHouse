@@ -39,6 +39,19 @@ SELECT toTypeName(map(toDecimal64(1, 2), 'x', 0., 'y'));
 -- A nullable numeric Map key resolves to Nullable(Float64), which is an invalid Map key, so it throws.
 SELECT toTypeName(map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2)); -- { serverError BAD_ARGUMENTS }
 
+-- LowCardinality is preserved for functions that keep it (array/map): all-LowCardinality numeric
+-- branches keep LowCardinality on the lossy Float64 result, a mix of LowCardinality and plain drops it,
+-- and LowCardinality(Nullable) yields LowCardinality(Nullable(Float64)). This mirrors getLeastSupertype
+-- so array/map element metadata is not silently corrupted. (Decimal cannot be LowCardinality, so the
+-- lossy LowCardinality path uses Int64 + Float64, which also has no lossless common type.)
+SELECT toTypeName([toLowCardinality(toInt64(1)), toLowCardinality(0.)]);
+SELECT toTypeName([toLowCardinality(toInt64(1)), 0.]);
+SELECT toTypeName([toLowCardinality(toNullable(toInt64(1))), toLowCardinality(toNullable(0.))]);
+SELECT toTypeName(map('a', toLowCardinality(toInt64(1)), 'b', toLowCardinality(0.)));
+-- if/multiIf strip LowCardinality before combining branch types (their lossless path does the same),
+-- so the lossy result is plain Float64 here, matching the existing conditional behavior.
+SELECT toTypeName(if(materialize(1), toLowCardinality(toInt64(1)), toLowCardinality(0.)));
+
 -- End-to-end values: the resolved numeric supertype actually aggregates.
 SELECT sum(if(materialize(1), toDecimal64(1, 2), 0.));
 SELECT avg(multiIf(materialize(1), toInt64(1), 0.));
