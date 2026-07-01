@@ -1075,12 +1075,15 @@ void HTTPHandler::processQuery(
                     filename += disposition_compression;
                 }
             }
-            /// Sanitize filename: strip control and quote characters to avoid header injection.
+            /// Sanitize filename: strip control and quote characters to avoid header injection, and the
+            /// path separators `/` and `\` so a back-quoted, percent-encoded path component (e.g.
+            /// `` `..%2F..%2Fout.Native` ``, whose encoded slashes the path parser preserves as data) cannot
+            /// put request-controlled path-traversal metadata into the attachment filename.
             String safe;
             safe.reserve(filename.size());
             for (char c : filename)
             {
-                if (isControlASCII(static_cast<unsigned char>(c)) || c == '"' || c == '\\')
+                if (isControlASCII(static_cast<unsigned char>(c)) || c == '"' || c == '\\' || c == '/')
                     continue;
                 safe += c;
             }
