@@ -66,6 +66,7 @@ SELECT mapContainsKeyLike(materialize(CAST(map('alpha', 'one'), 'Map(LowCardinal
 SELECT mapContainsKeyLike(materialize(CAST(map('alpha', 'one'), 'Map(LowCardinality(String), String)')), CAST(NULL, 'Nullable(String)')), mapSort(mapExtractKeyLike(materialize(CAST(map('alpha', 'one'), 'Map(LowCardinality(String), String)')), CAST(NULL, 'Nullable(String)')));
 SELECT mapContainsValueLike(materialize(CAST(map('k1', 'alpha'), 'Map(String, LowCardinality(String))')), toNullable('alp%')), mapSort(mapExtractValueLike(materialize(CAST(map('k1', 'alpha'), 'Map(String, LowCardinality(String))')), toNullable('alp%')));
 SELECT mapContainsValueLike(materialize(CAST(map('k1', 'alpha'), 'Map(String, LowCardinality(String))')), CAST(NULL, 'Nullable(String)')), mapSort(mapExtractValueLike(materialize(CAST(map('k1', 'alpha'), 'Map(String, LowCardinality(String))')), CAST(NULL, 'Nullable(String)')));
+SELECT [[10, 2, 13, 15][toNullable(toLowCardinality(1))]][materialize(toLowCardinality(1))];
 
 SELECT materialize(CAST(['x'], 'Array(LowCardinality(String))'))[0]; -- { serverError ZERO_ARRAY_OR_TUPLE_INDEX }
 

@@ -2162,7 +2162,8 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             arguments[0]->getName());
     }
 
-    if (!isNativeInteger(arguments[1]))
+    auto index_type = removeNullable(removeLowCardinality(arguments[1]));
+    if (!isNativeInteger(index_type))
     {
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
