@@ -40,8 +40,20 @@ git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --br
 echo "Download clickhouse-server from the previous release"
 mkdir previous_release_package_folder
 
-echo $previous_release_tag | download_release_packages && echo -e "Download script exit code$OK" >> /test_output/test_results.tsv \
-    || echo -e "Download script failed$FAIL" >> /test_output/test_results.tsv
+# --- download previous release packages: fail closed on a missing required one ---
+# `download_release_packages` exits nonzero when a required previous-release
+# package is missing or fails to download. Stop here at the download boundary
+# with a clear, attributable status instead of letting the later `install_packages`
+# die with an opaque `dpkg` glob error. (`set -e` does not fire inside an
+# `&& ... || ...` list, so the nonzero status must be handled explicitly.)
+if echo $previous_release_tag | download_release_packages; then
+    echo -e "Download script exit code$OK" >> /test_output/test_results.tsv
+else
+    echo -e "Download script failed$FAIL" >> /test_output/test_results.tsv
+    echo -e 'failure\tFailed to download previous release packages' > /test_output/check_status.tsv
+    exit 1
+fi
+# --- end download previous release packages ---
 
 # Check if we cloned previous release repository successfully
 if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
@@ -100,7 +112,7 @@ if [ $((RANDOM % 2)) -eq 0 ]; then
 fi
 
 # Start server from previous release
-configure "${configure_opts[@]}"
+configure "${configure_opts[@]}" --previous-release
 
 # But we still need default disk because some tables loaded only into it
 sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
@@ -137,8 +149,12 @@ configure "${configure_opts[@]}"
 
 # Check that all new/changed setting were added in settings changes history.
 # Some settings can be different for builds with sanitizers, so we check
-# Also the automatic value of 'max_threads' and similar was displayed as "'auto(...)'" in previous versions instead of "auto(...)".
 # settings changes only for non-sanitizer builds.
+# The automatic value of 'max_threads' and similar settings is rendered as auto(N); older releases
+# rendered it as the quoted 'auto(N)' (with the quotes baked into the value). Suppress only this pure
+# rendering difference - a row where the old value is exactly the new value wrapped in single quotes -
+# so it is not reported as a setting change. A genuine change of an auto-valued setting's default is
+# still caught and must have a settings changes history entry.
 IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
@@ -158,6 +174,7 @@ then
   FROM new_settings
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
   WHERE (old_value IS NULL OR new_value != old_value)
+      AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
@@ -177,6 +194,7 @@ then
   FROM new_merge_tree_settings
   LEFT JOIN old_merge_tree_settings ON new_merge_tree_settings.name = old_merge_tree_settings.name
   WHERE (old_value IS NULL OR new_value != old_value)
+      AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
@@ -315,6 +333,7 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `CANNOT_PARSE_TEXT` errors come from:
 #       - 00834_kill_mutation{,_replicated_zookeeper}: `DELETE WHERE toUInt32(s) = 1` on String data ('a', 'b')
 #       - 01414_mutations_and_errors_zookeeper: `MODIFY COLUMN value UInt64` on String data ('Hello')
+#       - 04338_on_fly_mutation_read_overwritten_lc_source: `MODIFY COLUMN v UInt64` on String data ('x')
 #       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
 #       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
@@ -375,6 +394,15 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       this regex covers the other variant (peer wins, read returns EOF or another transient socket error).
 #       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
 #       RaftInstance errors are not masked.
+# `Failed to flush system log system.metric_log` + `DEADLOCK_AVOIDED` is a transient lock-timeout emitted by
+#       `SystemLog<MetricLogElement>::flushImpl` when the background `MetricLog` flush loop races with the
+#       ongoing upgrade-test shutdown sequence. Another worker (DROP/RENAME/DETACH on `system.metric_log`,
+#       or a parallel mutation/merge) holds the table-level write lock, the flush blocks for the 60s timeout,
+#       and then aborts with code 473 (`DEADLOCK_AVOIDED`). Losing a few `MetricLogElement` samples during
+#       shutdown is harmless; the upgrade-check stage is not asserting on metric continuity. Filtered via
+#       regex in the secondary pipe below to require BOTH the `SystemLog` flush wrapper for `metric_log` AND
+#       the `DEADLOCK_AVOIDED` error code together, so unrelated lock-timeout errors and unrelated
+#       `metric_log` errors are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -405,6 +433,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "is lost forever." \
            -e "Unknown index: idx." \
            -e "Cannot parse string 'Hello' as UInt64" \
+           -e "Cannot parse string 'x' as UInt64" \
            -e "Cannot parse string 'Hello' as UInt32" \
            -e "Cannot parse string \'Hello\' as UInt32" \
            -e "Cannot parse string \\'Hello\\' as UInt32" \
@@ -457,6 +486,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "StorageKafka2.*Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
+    | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then

@@ -13,11 +13,22 @@ include(${ClickHouse_SOURCE_DIR}/cmake/generate_export_header.cmake)
 set(BSONCXX_SOURCES
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/private/itoa.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/private/version.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/array/value.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/array/view.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/config/config.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/config/export.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/config/version.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/decimal128.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/detail/postlude.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/detail/prelude.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/document/value.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/document/view.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/element/view.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/exception.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/oid.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/types/id.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/types/value.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/types/view.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/array/element.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/array/value.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/array/view.cpp
@@ -54,6 +65,40 @@ configure_file(
 configure_file(
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/private/config/config.hh.in
         ${BSONCXX_BINARY_DIR}/lib/bsoncxx/private/config/config.hh
+)
+
+# Aggregate forward-declaration headers. Upstream generates these by globbing
+# all `*-fwd.hpp` files and concatenating them into a single `fwd.hpp` umbrella.
+file(GLOB_RECURSE bsoncxx_v_noabi_fwd_headers
+        RELATIVE "${BSONCXX_SOURCES_DIR}/include/bsoncxx/v_noabi"
+        "${BSONCXX_SOURCES_DIR}/include/bsoncxx/v_noabi/bsoncxx/*-fwd.hpp"
+)
+list(SORT bsoncxx_v_noabi_fwd_headers)
+set(BSONCXX_V_NOABI_FWD_INCLUDES "")
+foreach(header IN LISTS bsoncxx_v_noabi_fwd_headers)
+        string(APPEND BSONCXX_V_NOABI_FWD_INCLUDES "#include <${header}> // IWYU pragma: export\n")
+endforeach()
+string(STRIP "${BSONCXX_V_NOABI_FWD_INCLUDES}" BSONCXX_V_NOABI_FWD_INCLUDES)
+configure_file(
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp.in
+        ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp
+        @ONLY
+)
+
+file(GLOB_RECURSE bsoncxx_v1_fwd_headers
+        RELATIVE "${BSONCXX_SOURCES_DIR}/include"
+        "${BSONCXX_SOURCES_DIR}/include/bsoncxx/v1/*-fwd.hpp"
+)
+list(SORT bsoncxx_v1_fwd_headers)
+set(BSONCXX_V1_FWD_INCLUDES "")
+foreach(header IN LISTS bsoncxx_v1_fwd_headers)
+        string(APPEND BSONCXX_V1_FWD_INCLUDES "#include <${header}> // IWYU pragma: export\n")
+endforeach()
+string(STRIP "${BSONCXX_V1_FWD_INCLUDES}" BSONCXX_V1_FWD_INCLUDES)
+configure_file(
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/fwd.hpp.in
+        ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v1/fwd.hpp
+        @ONLY
 )
 
 add_library(_bsoncxx ${BSONCXX_SOURCES})
@@ -99,15 +144,87 @@ clickhouse_generate_export_header(_bsoncxx
 set(MONGOCXX_SOURCES_DIR "${ClickHouse_SOURCE_DIR}/contrib/mongo-cxx-driver/src/mongocxx")
 set(MONGOCXX_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/mongo-cxx-driver/src/mongocxx")
 set(MONGOCXX_SOURCES
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/bson.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/conversions.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/mongoc.cpp
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/numeric_casting.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/scoped_bson.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/aggregate_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/apm.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/auto_encryption_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/bulk_write.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/change_stream.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/client.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/client_encryption.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/client_session.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/collection.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/config/config.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/config/export.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/config/version.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/count_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/cursor.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/data_key_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/database.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/delete_many_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/delete_many_result.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/delete_one_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/delete_one_result.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/detail/postlude.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/detail/prelude.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/distinct_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/encrypt_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/estimated_document_count_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/command_failed.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/command_started.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/command_succeeded.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/server_closed.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/server_description.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/server_description_changed.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/server_heartbeat_failed.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/server_heartbeat_started.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/server_heartbeat_succeeded.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/server_opening.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/topology_closed.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/topology_description.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/topology_description_changed.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/events/topology_opening.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/exception.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/find_one_and_delete_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/find_one_and_replace_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/find_one_and_update_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/find_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/gridfs/bucket.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/gridfs/downloader.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/gridfs/upload_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/gridfs/upload_result.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/gridfs/uploader.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/hint.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/indexes.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/insert_many_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/insert_many_result.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/insert_one_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/insert_one_result.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/instance.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/logger.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/pipeline.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/pool.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/range_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/read_concern.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/read_preference.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/replace_one_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/replace_one_result.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/return_document.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/rewrap_many_datakey_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/rewrap_many_datakey_result.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/search_indexes.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/server_api.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/server_error.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/text_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/tls.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/transaction_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/update_many_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/update_many_result.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/update_one_options.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/update_one_result.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/uri.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/write_concern.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/bulk_write.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/change_stream.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/client.cpp
@@ -117,6 +234,7 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/config.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/export.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/version.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/conversions.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/cursor.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/database.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/events/command_failed_event.cpp
@@ -229,6 +347,39 @@ configure_file(
 configure_file(
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/config/config.hh.in
         ${MONGOCXX_BINARY_DIR}/lib/mongocxx/private/config/config.hh
+)
+
+# Aggregate forward-declaration headers, mirroring upstream's umbrella `fwd.hpp`.
+file(GLOB_RECURSE mongocxx_v_noabi_fwd_headers
+        RELATIVE "${MONGOCXX_SOURCES_DIR}/include/mongocxx/v_noabi"
+        "${MONGOCXX_SOURCES_DIR}/include/mongocxx/v_noabi/mongocxx/*-fwd.hpp"
+)
+list(SORT mongocxx_v_noabi_fwd_headers)
+set(MONGOCXX_V_NOABI_FWD_INCLUDES "")
+foreach(header IN LISTS mongocxx_v_noabi_fwd_headers)
+        string(APPEND MONGOCXX_V_NOABI_FWD_INCLUDES "#include <${header}> // IWYU pragma: export\n")
+endforeach()
+string(STRIP "${MONGOCXX_V_NOABI_FWD_INCLUDES}" MONGOCXX_V_NOABI_FWD_INCLUDES)
+configure_file(
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/fwd.hpp.in
+        ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi/mongocxx/fwd.hpp
+        @ONLY
+)
+
+file(GLOB_RECURSE mongocxx_v1_fwd_headers
+        RELATIVE "${MONGOCXX_SOURCES_DIR}/include"
+        "${MONGOCXX_SOURCES_DIR}/include/mongocxx/v1/*-fwd.hpp"
+)
+list(SORT mongocxx_v1_fwd_headers)
+set(MONGOCXX_V1_FWD_INCLUDES "")
+foreach(header IN LISTS mongocxx_v1_fwd_headers)
+        string(APPEND MONGOCXX_V1_FWD_INCLUDES "#include <${header}> // IWYU pragma: export\n")
+endforeach()
+string(STRIP "${MONGOCXX_V1_FWD_INCLUDES}" MONGOCXX_V1_FWD_INCLUDES)
+configure_file(
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/fwd.hpp.in
+        ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v1/fwd.hpp
+        @ONLY
 )
 
 add_library(_mongocxx ${MONGOCXX_SOURCES})
