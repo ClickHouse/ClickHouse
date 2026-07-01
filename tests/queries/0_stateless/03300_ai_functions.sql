@@ -237,6 +237,15 @@ SELECT aiGenerate('hi', map('temperature', 'hot')); -- { serverError BAD_ARGUMEN
 SELECT '-- Non-integer max_tokens rejected';
 SELECT aiGenerate('hi', map('max_tokens', '3.5')); -- { serverError BAD_ARGUMENTS }
 
+SELECT '-- Negative max_tokens rejected';
+SELECT aiGenerate('hi', map('max_tokens', '-1')); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- Out-of-range max_tokens rejected (exceeds Int64)';
+SELECT aiGenerate('hi', map('max_tokens', '18446744073709551615')); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- Duplicate map key rejected';
+SELECT aiGenerate('hi', map('temperature', '0.1', 'temperature', '0.2')); -- { serverError BAD_ARGUMENTS }
+
 SELECT '-- Non-constant parameter map rejected';
 SELECT aiGenerate(x, map('credentials', x)) FROM tab; -- { serverError ILLEGAL_COLUMN }
 

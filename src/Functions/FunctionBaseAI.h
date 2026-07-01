@@ -98,9 +98,12 @@ public:
         std::map<String, Field, std::less<>> values;
 
         bool has(std::string_view key) const { return values.contains(key); }
-        String getString(std::string_view key) const { return values.at(String(key)).safeGet<String>(); }
-        Float64 getFloat(std::string_view key) const { return values.at(String(key)).safeGet<Float64>(); }
-        UInt64 getUInt(std::string_view key) const { return values.at(String(key)).safeGet<UInt64>(); }
+
+        /// A missing key is a programming error (the spec guarantees resolution): these throw a
+        /// `DB::Exception` rather than `std::map::at`'s `std::out_of_range`.
+        String getString(std::string_view key) const;
+        Float64 getFloat(std::string_view key) const;
+        UInt64 getUInt(std::string_view key) const;
     };
 
     /// Type validator for the optional trailing parameter argument: a `Map(String, String)`.

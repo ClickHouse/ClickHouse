@@ -34,6 +34,9 @@ result	String
 -- Unknown parameter key rejected
 -- Non-numeric temperature rejected
 -- Non-integer max_tokens rejected
+-- Negative max_tokens rejected
+-- Out-of-range max_tokens rejected (exceeds Int64)
+-- Duplicate map key rejected
 -- Non-constant parameter map rejected
 -- Wrong type for parameter argument (not a map)
 -- Wrong map value type (Map(String, Float) not accepted)

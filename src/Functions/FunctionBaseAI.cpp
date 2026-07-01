@@ -15,7 +15,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
@@ -55,6 +54,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -167,6 +167,34 @@ std::vector<AIParamSpec> FunctionBaseAI::allParams() const
     return spec;
 }
 
+namespace
+{
+
+const Field & getResolvedAIParam(const std::map<String, Field, std::less<>> & values, std::string_view key)
+{
+    auto it = values.find(key);
+    if (it == values.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AI function parameter '{}' was not resolved", key);
+    return it->second;
+}
+
+}
+
+String FunctionBaseAI::AIParams::getString(std::string_view key) const
+{
+    return getResolvedAIParam(values, key).safeGet<String>();
+}
+
+Float64 FunctionBaseAI::AIParams::getFloat(std::string_view key) const
+{
+    return getResolvedAIParam(values, key).safeGet<Float64>();
+}
+
+UInt64 FunctionBaseAI::AIParams::getUInt(std::string_view key) const
+{
+    return getResolvedAIParam(values, key).safeGet<UInt64>();
+}
+
 FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     const ContextPtr & context,
     const ColumnsWithTypeAndName & arguments,
@@ -186,7 +214,9 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
         for (const auto & element : map)
         {
             const Tuple & kv = element.safeGet<Tuple>();
-            map_values[kv[0].safeGet<String>()] = kv[1].safeGet<String>();
+            const String & key = kv[0].safeGet<String>();
+            if (!map_values.emplace(key, kv[1].safeGet<String>()).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate AI function parameter '{}' in the parameter map", key);
         }
     }
 
