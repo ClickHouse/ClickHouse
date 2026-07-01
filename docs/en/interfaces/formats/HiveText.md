@@ -145,6 +145,14 @@ independent of the [`date_time_output_format`](/operations/settings/formats#date
 setting, so the output stays parseable by Hive even when that setting is
 `unix_timestamp` or `iso`.
 
+For the same reason, `Bool` values are always written as `true`/`false`,
+independent of the [`bool_true_representation`](/operations/settings/formats#bool_true_representation)
+and [`bool_false_representation`](/operations/settings/formats#bool_false_representation)
+settings, and `NULL` values are always written as Hive's default null sequence
+`\N`, independent of the [`format_csv_null_representation`](/operations/settings/formats#format_csv_null_representation)
+setting. This keeps the output readable by Hive's `LazySimpleSerDe` regardless of
+these generic text settings.
+
 ```sql title="Query"
 SELECT '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555)) FORMAT HiveText;
 ```
