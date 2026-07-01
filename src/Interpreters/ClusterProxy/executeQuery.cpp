@@ -1327,6 +1327,10 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         auto new_query_ast = query_ast.clone();
         auto * insert_ast = new_query_ast->as<ASTInsertQuery>();
         insert_ast->select = std::move(select_ast);
+        /// The per-shard context packet is stripped in `updateContextForParallelReplicas`, but the
+        /// forwarded query text still carries the INSERT's own `SETTINGS` — strip the initiator-only names
+        /// (both `changes` and `default_settings`) from it too.
+        stripInitiatorOnlySettingsFromQuery(new_query_ast);
 
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(

@@ -643,21 +643,24 @@ void HTTPHandler::processQuery(
     const String & response_compression_name = settings[Setting::compression];
     if (!response_compression_name.empty())
     {
+        /// `chooseCompressionMethod` throws for an unrecognized hint and returns `None` for the recognized
+        /// no-op hints (`none`, or `auto` with no matching extension). Only wrap when a codec is actually
+        /// selected, so `compression = 'none'` disables a profile/default codec instead of being rejected.
         CompressionMethod response_compression_method = chooseCompressionMethod({}, response_compression_name);
-        if (response_compression_method == CompressionMethod::None)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Unknown compression method: '{}' in `compression` setting.", response_compression_name);
-        used_output.generic_compression_holder = wrapWriteBufferWithCompressionMethod(
-            used_output.out.get(),
-            response_compression_method,
-            static_cast<int>(http_zlib_compression_level),
-            0,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            nullptr,
-            0,
-            false);
-        used_output.out_maybe_compressed = used_output.generic_compression_holder;
-        used_output.out = used_output.generic_compression_holder;
+        if (response_compression_method != CompressionMethod::None)
+        {
+            used_output.generic_compression_holder = wrapWriteBufferWithCompressionMethod(
+                used_output.out.get(),
+                response_compression_method,
+                static_cast<int>(http_zlib_compression_level),
+                0,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                nullptr,
+                0,
+                false);
+            used_output.out_maybe_compressed = used_output.generic_compression_holder;
+            used_output.out = used_output.generic_compression_holder;
+        }
     }
 
     if (internal_compression)

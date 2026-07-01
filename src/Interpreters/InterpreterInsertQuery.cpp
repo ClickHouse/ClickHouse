@@ -900,13 +900,18 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// query will be executed on all nodes of the cluster
     auto src_cluster = src_storage_cluster->getCluster(local_context);
 
-    /// Actually the query doesn't change, we just serialize it to string
+    /// Actually the query doesn't change, we just serialize it to string. Strip the initiator-only
+    /// settings from the forwarded query text (both `changes` and `default_settings`, across the INSERT
+    /// and its source SELECT) so those names — including the new HTTP table-as-file settings — do not reach
+    /// the shards and trip `UNKNOWN_SETTING` on a rolling upgrade; the per-shard context is stripped below.
+    auto query_to_send = query.clone();
+    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
     String query_str;
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
             /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
-        query.IAST::format(buf, ast_format_settings);
+        query_to_send->IAST::format(buf, ast_format_settings);
         query_str = buf.str();
     }
 
@@ -914,6 +919,13 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
     query_context->setSetting("skip_unavailable_shards", true);
+    /// Same contract as the other remote paths: the inter-server settings packet must not carry the
+    /// initiator-only settings either.
+    {
+        Settings stripped_settings = query_context->getSettingsRef();
+        ClusterProxy::stripInitiatorOnlySettings(stripped_settings);
+        query_context->setSettings(stripped_settings);
+    }
 
     src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
 
