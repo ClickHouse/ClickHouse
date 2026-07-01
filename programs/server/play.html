@@ -2660,6 +2660,13 @@ let load_databases_request_num = 0;
 async function loadDatabases(server_address, user, password) {
     ++load_databases_request_num;
     const current_load_databases_request_num = load_databases_request_num;
+    /// The connection settings (url/user/password) can change while this `system.databases`
+    /// query is in flight; `resetConnectionScopedState` then bumps `connectionGeneration`.
+    /// Capture it now so a response for the previous connection is discarded instead of
+    /// filling the panel with the old server's databases and opening it: every row handler
+    /// created below closes over this connection, so a stale result would keep querying the
+    /// old server until the panel is closed and reopened.
+    const generation = connectionGeneration;
 
     let json = await auxiliaryQuery(server_address, user, password,
         `SELECT database, database = currentDatabase() AS current
@@ -2672,6 +2679,7 @@ async function loadDatabases(server_address, user, password) {
     if (!json) return false;
 
     if (current_load_databases_request_num != load_databases_request_num) return false;
+    if (generation !== connectionGeneration) return false;
 
     let databases_elem = document.getElementById('databases');
     while (databases_elem.firstChild) databases_elem.removeChild(databases_elem.firstChild);
