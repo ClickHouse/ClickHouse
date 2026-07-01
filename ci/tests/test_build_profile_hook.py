@@ -17,7 +17,10 @@ Layers covered:
   propagate (not swallow) an upload rejection so lost telemetry stays visible.
 * The upload transport (``LogCluster.do_query``): the telemetry INSERT runs
   with parallel parsing disabled so its peak parse memory stays under the
-  shared cluster's per-user limit.
+  shared cluster's per-user limit; a transient 5xx rejection (the shared
+  cluster's per-user budget is momentarily saturated by unrelated load) is
+  retried with backoff and the payload is rewound before each retry, while a
+  4xx or a sustained failure is not retried and surfaces loudly.
 """
 
 import os
@@ -34,6 +37,7 @@ from ci.jobs.scripts.job_hooks.build_profile_hook import (
     _should_profile,
     _upload_profile_artifacts,
 )
+from ci.jobs.scripts import log_cluster as log_cluster_mod
 from ci.jobs.scripts.log_cluster import LogCluster
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -224,3 +228,105 @@ def test_do_query_disables_parallel_parsing():
 
     assert cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=b"")
     assert cluster._session.params["input_format_parallel_parsing"] == 0
+
+
+# --- upload transport: transient 5xx is retried, loud on exhaustion -------
+
+
+class _Resp:
+    def __init__(self, status_code):
+        self.status_code = status_code
+        self.ok = status_code < 400
+        self.text = f"code {status_code}"
+
+
+class _SequenceSession:
+    """A session that returns a preset sequence of responses, one per POST."""
+
+    def __init__(self, statuses):
+        self._statuses = list(statuses)
+        self.calls = 0
+
+    def post(self, url, params, data, headers, timeout):
+        self.calls += 1
+        return _Resp(self._statuses.pop(0))
+
+
+def _make_cluster(session):
+    cluster = LogCluster()
+    cluster.is_ready = lambda: True
+    cluster.url = "https://example"
+    cluster._auth = {}
+    cluster._session = session
+    return cluster
+
+
+@pytest.fixture
+def no_sleep(monkeypatch):
+    """Make the backoff instant so retry tests do not actually wait."""
+    monkeypatch.setattr(log_cluster_mod.time, "sleep", lambda _s: None)
+
+
+def test_do_query_retries_transient_5xx_then_succeeds(no_sleep):
+    """A transient 5xx (per-user budget momentarily saturated) is retried.
+
+    The real failure is HTTP 500 / Code 241 MEMORY_LIMIT_EXCEEDED on a tiny
+    (~5 MiB) parse chunk: the shared "ci"-user budget is transiently full from
+    unrelated load, not from this upload. do_query must retry and succeed once a
+    window opens, keeping the telemetry.
+    """
+    session = _SequenceSession([500, 503, 200])
+    cluster = _make_cluster(session)
+
+    assert cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=b"")
+    assert session.calls == 3
+
+
+def test_do_query_fails_loudly_after_exhausting_retries(no_sleep):
+    """A sustained 5xx is not swallowed: do_query returns False after retries.
+
+    Riding out a transient window is fine, but a persistently saturated cluster
+    must still fail so the check goes red rather than reporting a lost upload as
+    success.
+    """
+    session = _SequenceSession([500] * log_cluster_mod._UPLOAD_RETRIES)
+    cluster = _make_cluster(session)
+
+    assert not cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=b"")
+    assert session.calls == log_cluster_mod._UPLOAD_RETRIES
+
+
+def test_do_query_does_not_retry_4xx(no_sleep):
+    """A 4xx (e.g. a malformed query) is a real error, not transient: fail fast."""
+    session = _SequenceSession([400, 200])
+    cluster = _make_cluster(session)
+
+    assert not cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=b"")
+    assert session.calls == 1  # no retry after a 4xx
+
+
+def test_do_query_rewinds_file_payload_between_retries(no_sleep):
+    """The INSERT payload is a file object: it must be rewound before each retry.
+
+    Without the seek(0), the first attempt consumes the file and a retry uploads
+    an empty body, which silently loses the telemetry it was meant to preserve.
+    """
+    import io
+
+    payload = io.BytesIO(b"row-data")
+    bodies_seen = []
+
+    class _RecordingSession:
+        def __init__(self):
+            self.calls = 0
+
+        def post(self, url, params, data, headers, timeout):
+            self.calls += 1
+            bodies_seen.append(data.read())
+            return _Resp(500 if self.calls == 1 else 200)
+
+    cluster = _make_cluster(_RecordingSession())
+
+    assert cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=payload)
+    # Both attempts saw the full payload, not an empty body on the retry.
+    assert bodies_seen == [b"row-data", b"row-data"]

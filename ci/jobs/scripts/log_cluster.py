@@ -1,3 +1,4 @@
+import random
 import time
 import traceback
 
@@ -5,6 +6,17 @@ import requests
 
 from ci.praktika.info import Info
 from ci.praktika.secret import Secret
+
+# The analytics cluster is shared by every "ci"-user query, so its per-user
+# memory budget is frequently near the ceiling from unrelated load. A telemetry
+# INSERT is then rejected mid-parse with a transient 5xx (Code 241
+# MEMORY_LIMIT_EXCEEDED, OvercommitTracker could not free enough) even though
+# its own payload is tiny. Retry such rejections with capped exponential backoff
+# so the upload rides out a busy window; a sustained saturation still exhausts
+# the retries and fails loudly.
+_UPLOAD_RETRIES = 8
+_UPLOAD_BACKOFF_BASE_SECONDS = 2.0
+_UPLOAD_BACKOFF_CAP_SECONDS = 30.0
 
 
 class LogCluster:
@@ -66,7 +78,7 @@ class LogCluster:
             return False
         return True
 
-    def do_query(self, query, data, db_name="", retries=1, timeout=5):
+    def do_query(self, query, data, db_name="", retries=_UPLOAD_RETRIES, timeout=5):
         if not self.is_ready():
             print("ERROR: LogCluster not ready")
             return False
@@ -92,6 +104,11 @@ class LogCluster:
 
         response = None
         for retry in range(retries):
+            # data may be a file object (the INSERT payload). A previous attempt
+            # consumed it, so rewind before resending, or the retry uploads an
+            # empty body.
+            if hasattr(data, "seek"):
+                data.seek(0)
             try:
                 response = self._session.post(
                     url=self.url,
@@ -102,22 +119,30 @@ class LogCluster:
                 )
                 if response.ok:
                     return True
-                else:
-                    print(
-                        f"WARNING: LogCluster query failed with code {response.status_code}"
-                    )
-                if response.status_code >= 500:
-                    # A retryable error
-                    time.sleep(1)
-                    continue
-                else:
+                print(
+                    f"WARNING: LogCluster query failed with code {response.status_code}"
+                    f" (attempt {retry + 1}/{retries})"
+                )
+                if response.status_code < 500:
+                    # Not retryable (e.g. a malformed query): fail fast.
                     break
             except Exception:
-                print("WARNING: LogCluster query failed with exception")
+                print(
+                    f"WARNING: LogCluster query failed with exception"
+                    f" (attempt {retry + 1}/{retries})"
+                )
                 traceback.print_exc()
+            if retry + 1 < retries:
+                # Capped exponential backoff with jitter, so concurrent uploaders
+                # do not retry in lockstep and re-collide on the shared budget.
+                delay = min(
+                    _UPLOAD_BACKOFF_CAP_SECONDS,
+                    _UPLOAD_BACKOFF_BASE_SECONDS * (2**retry),
+                )
+                time.sleep(delay + random.uniform(0, delay))
         if response is not None:
             print(
-                f"ERROR: Failed to query LogCluster, query:\n {query}\n    reason:\n {response.text}"
+                f"ERROR: Failed to query LogCluster after {retries} attempts, query:\n {query}\n    reason:\n {response.text}"
             )
         return False
 
