@@ -148,7 +148,9 @@ When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
 
-When writing C++ code, always prefer ClickHouse types over their standard-library or fixed-width equivalents: use `UInt64` instead of `uint64_t`, `UInt8` instead of `std::byte` or `uint8_t`, `Int32` instead of `int32_t`, and so on. The one exception is strings: prefer `std::string` over `String`. Apply the same rule to header includes: include the ClickHouse header that provides these types (e.g. `<base/types.h>`) instead of the corresponding standard header (e.g. `<cstdint>`).
+When writing C++ code, always prefer ClickHouse types over their standard-library or fixed-width equivalents: use `UInt64` instead of `uint64_t`, `UInt8` instead of `std::byte` or `uint8_t`, `Int32` instead of `int32_t`, and so on. Apply the same rule to header includes: include the ClickHouse header that provides these types (e.g. `<base/types.h>`) instead of the corresponding standard header (e.g. `<cstdint>`).
+
+When writing C++ code, prefer the `-WithMemoryTracking` analogues of the standard containers (e.g. `VectorWithMemoryTracking` instead of `std::vector`) whenever the replacement is compatible with the existing interfaces and won't break compilation.
 
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
 
