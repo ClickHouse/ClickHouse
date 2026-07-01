@@ -35,6 +35,11 @@ Block cutSingleRow(const Block & block, size_t row)
     return result;
 }
 
+bool useLastRightRow(JoinKind kind, JoinStrictness strictness, bool any_take_last_row)
+{
+    return any_take_last_row && strictness == JoinStrictness::Any && !isRight(kind);
+}
+
 }
 
 size_t ConstantJoin::StoredBlock::allocatedBytes() const
@@ -131,8 +136,11 @@ bool ConstantJoin::addBlockToJoin(const Block & source_block, size_t num_rows, b
 
     if (rows)
     {
-        if (any_take_last_row || !selected_right_columns_info)
-            selected_right_columns_info.emplace(cutSingleRow(block_to_save, any_take_last_row ? rows - 1 : 0).getColumns());
+        /// `SEMI` and old `ANY` (`RightAny`) use the first right row. New `ANY` may use the last one,
+        /// depending on the setting.
+        bool take_last_right_row = useLastRightRow(table_join->kind(), table_join->strictness(), any_take_last_row);
+        if (take_last_right_row || !selected_right_columns_info)
+            selected_right_columns_info.emplace(cutSingleRow(block_to_save, take_last_right_row ? rows - 1 : 0).getColumns());
     }
 
     size_t max_bytes_in_join = table_join->sizeLimits().max_bytes;
@@ -351,6 +359,13 @@ ConstantJoinOutputFlags makeConstantJoinOutputFlags(
     const bool is_right_anti = kind == JoinKind::Right && strictness == JoinStrictness::Anti;
 
     ConstantJoinOutputFlags flags;
+    if (isCrossOrComma(kind))
+    {
+        if (has_match)
+            flags.output_matching_rows = MatchingRowsOutput::All;
+        return flags;
+    }
+
     if (has_match)
     {
         if (strictness == JoinStrictness::Any)
@@ -359,7 +374,7 @@ ConstantJoinOutputFlags makeConstantJoinOutputFlags(
             /// but SQL `RIGHT ANY` joins the first matched left row with all right rows.
             if (isRight(kind))
                 flags.output_matching_rows = MatchingRowsOutput::FirstLeftRowWithAllRightRows;
-            else if (isInner(kind) || isCrossOrComma(kind))
+            else if (isInner(kind))
                 flags.output_matching_rows = any_take_last_row
                     ? MatchingRowsOutput::FirstLeftRowWithLastRightRow
                     : MatchingRowsOutput::FirstLeftRowWithFirstRightRow;
@@ -368,10 +383,17 @@ ConstantJoinOutputFlags makeConstantJoinOutputFlags(
                     ? MatchingRowsOutput::AllLeftRowsWithLastRightRow
                     : MatchingRowsOutput::AllLeftRowsWithFirstRightRow;
         }
+        else if (strictness == JoinStrictness::RightAny)
+        {
+            /// Intentionally mirrors `HashJoin`: old `ANY` assumes distinct right keys and emits one right row for
+            /// each matching left row. `RIGHT` and `FULL` unmatched right rows are handled by
+            /// `output_non_matching_right_rows`.
+            flags.output_matching_rows = MatchingRowsOutput::AllLeftRowsWithFirstRightRow;
+        }
+        else if (strictness == JoinStrictness::All)
+            flags.output_matching_rows = MatchingRowsOutput::All;
         else if (strictness == JoinStrictness::Semi)
             flags.output_matching_rows = is_right_semi ? MatchingRowsOutput::FirstLeftRowWithAllRightRows : MatchingRowsOutput::AllLeftRowsWithFirstRightRow;
-        else if (isCrossOrComma(kind) || strictness == JoinStrictness::All)
-            flags.output_matching_rows = MatchingRowsOutput::All;
     }
 
     flags.output_non_matching_left_rows =
@@ -591,13 +613,8 @@ IJoinResult::JoinResultBlock ConstantJoinResult::next()
         }
 
         if (output_flags.output_matching_rows == MatchingRowsOutput::AllLeftRowsWithFirstRightRow
-            || output_flags.output_matching_rows == MatchingRowsOutput::FirstLeftRowWithFirstRightRow)
-        {
-            process_selected_right_row(join.selected_right_columns_info);
-            continue;
-        }
-
-        if (output_flags.output_matching_rows == MatchingRowsOutput::AllLeftRowsWithLastRightRow
+            || output_flags.output_matching_rows == MatchingRowsOutput::FirstLeftRowWithFirstRightRow
+            || output_flags.output_matching_rows == MatchingRowsOutput::AllLeftRowsWithLastRightRow
             || output_flags.output_matching_rows == MatchingRowsOutput::FirstLeftRowWithLastRightRow)
         {
             process_selected_right_row(join.selected_right_columns_info);
@@ -795,7 +812,7 @@ JoinResultPtr ConstantJoin::joinBlock(Block block)
         const auto kind = table_join->kind();
         const auto strictness = table_join->strictness();
         if ((kind == JoinKind::Right && (strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi))
-            || ((kind == JoinKind::Inner || isCrossOrComma(kind)) && strictness == JoinStrictness::Any))
+            || (kind == JoinKind::Inner && strictness == JoinStrictness::Any))
         {
             bool expected = false;
             if (right_rows_matched.compare_exchange_strong(expected, true))
