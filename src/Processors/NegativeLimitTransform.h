@@ -173,10 +173,12 @@ private:
     /// Debug: verify that `queued_row_count` equals the sum of all chunk row counts.
     void assertRowCountConsistency() const
     {
-        [[maybe_unused]] UInt64 actual = 0;
+#ifndef NDEBUG
+        UInt64 actual = 0;
         for (const auto & c : chunks)
             actual += c.getNumRows();
         chassert(actual == queued_row_count);
+#endif
     }
 };
 
