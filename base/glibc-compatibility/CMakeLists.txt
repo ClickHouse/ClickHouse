@@ -1,9 +1,4 @@
 if (GLIBC_COMPATIBILITY)
-    add_subdirectory(memcpy)
-    if(TARGET memcpy)
-        set(MEMCPY_LIBRARY memcpy)
-    endif()
-
     enable_language(ASM)
 
     add_headers_and_sources(glibc_compatibility .)
@@ -46,7 +41,7 @@ if (GLIBC_COMPATIBILITY)
         target_compile_options(glibc-compatibility PRIVATE -fPIC)
     endif ()
 
-    target_link_libraries(global-libs INTERFACE glibc-compatibility ${MEMCPY_LIBRARY})
+    target_link_libraries(global-libs INTERFACE glibc-compatibility)
 
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
 
