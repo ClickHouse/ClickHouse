@@ -1,0 +1,83 @@
+1. Basic lower postprocessor.
+1
+1
+1
+1
+1
+1
+0
+1
+1
+1
+1
+1
+0
+1
+1
+1
+1
+2
+0
+2. Postprocessor using concat.
+1
+0
+1
+0
+3. Postprocessor using substring (prefix matching).
+2
+2
+1
+0
+4. Regex-based postprocessor.
+1
+0
+1
+1
+5. Timestamp removal: postprocessor uses parseDateTimeOrNull to drop timestamp tokens.
+2
+1
+1
+0
+ERROR	2
+INFO	1
+connection	1
+disk	1
+failed	1
+full	1
+server	1
+started	1
+6. Combined preprocessor and postprocessor.
+1
+1
+1
+1
+0
+7. Stop-word filtering postprocessor.
+1
+1
+1
+1
+0
+1
+0
+8. Stop-word postprocessor: empty-mapped tokens must never match vacuously.
+0
+1
+1
+1
+1
+0
+9. hasAllTokens / hasAnyTokens when all array elements are filtered out.
+0
+0
+1
+1
+1
+1
+10. Negative tests.
+- The postprocessor expression must reference the index column
+- The postprocessor expression must be a function, not an identifier
+- The postprocessor expression must return String
+- The postprocessor must not contain non-deterministic functions
+- The postprocessor must not contain arrayJoin
+- A postprocessor that produces a token containing separator characters throws BAD_ARGUMENTS at query time

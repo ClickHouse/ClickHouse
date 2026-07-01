@@ -12,6 +12,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <base/types.h>
@@ -44,6 +45,7 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
+extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 
@@ -208,6 +210,12 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     std::lock_guard lock(mutex);
 
     Int32 schema_id = schema_ptr->getValue<Int32>(f_schema_id);
+
+    /// Databricks UniForm writes a degenerate placeholder schema (e.g. {"schema-id":0,"fields":[]})
+    /// into manifest files, while the real schema with the same schema-id lives in metadata.json.
+    if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
+        return;
+
     current_schema_id = schema_id;
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
@@ -218,7 +226,12 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             type_mapping[f_geography] = f_binary;
             type_mapping[f_geometry] = f_binary;
         }
-        chassert(schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping));
+        /// A schema-id is immutable per the Iceberg spec: re-binding it to different fields is malformed metadata.
+        if (!schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg schema with schema-id {} is bound to two different schemas across metadata versions",
+                schema_id);
     }
     else
     {
@@ -472,7 +485,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     || field->getObject(f_type)->getValue<std::string>(f_type) == "map"))
             {
                 auto old_type = getFieldType(old_json, "type", required);
-                auto transform = std::make_shared<EvolutionFunctionStruct>(std::vector{type}, std::vector{old_type}, old_json, field);
+                auto transform = std::make_shared<EvolutionFunctionStruct>(DataTypes{type}, DataTypes{old_type}, old_json, field);
                 old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
 
                 outputs.push_back(old_node);
@@ -519,8 +532,8 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     old_id,
                     new_id);
             }
-            ColumnPtr default_type_column = type->createColumnConstWithDefaultValue(0);
-            const auto & constant = dag->addColumn({default_type_column, type, name});
+            auto default_type_column = type->createColumnConstWithDefaultValue(0);
+            const auto & constant = dag->addColumn(std::move(default_type_column), type, name);
             outputs.push_back(&constant);
         }
     }
