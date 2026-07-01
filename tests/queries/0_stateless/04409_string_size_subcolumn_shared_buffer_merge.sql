@@ -28,11 +28,13 @@ OPTIMIZE TABLE t_string_size_shared FINAL;
 
 -- Read the `.size` subcolumn and the full string together, with a block much larger than the
 -- granule so one read appends sizes across many granules (the triggering path).
+-- `optimize_functions_to_subcolumns = 0` keeps `length(s)` reading the full String data stream
+-- (the patched deserialize path) instead of being rewritten to the `s.size` subcolumn.
 SELECT countIf(s.size != length(s)) AS bad_s,
        countIf(big.size != length(big)) AS bad_big,
        count() AS total
 FROM t_string_size_shared
-SETTINGS max_threads = 1, max_block_size = 65536;
+SETTINGS max_threads = 1, max_block_size = 65536, optimize_functions_to_subcolumns = 0;
 
 -- Same, reading the `.size` subcolumns only (they are served from the shared sizes buffer).
 SELECT sum(s.size) AS sum_s, sum(big.size) AS sum_big
