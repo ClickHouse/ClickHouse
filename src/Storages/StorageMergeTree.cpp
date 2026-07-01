@@ -2068,13 +2068,19 @@ bool StorageMergeTree::optimize(
         /// Explicit transactions take the sequential path: parallel merges would otherwise share a
         /// single transaction object, which is not designed for concurrent use.
         ///
-        /// To respect the operator's configured merge concurrency (`background_pool_size` *
-        /// `background_merges_mutations_concurrency_ratio`), reserve the slots in the background
+        /// To respect the operator's configured merge concurrency, reserve slots in the background
         /// merge/mutate executor before assigning anything. The reservation is taken under the same
         /// lock and accounted in the same task metric as `MergeTreeBackgroundExecutor::trySchedule`,
         /// so concurrent OPTIMIZE FINAL queries and the background pool all account for these merges,
-        /// the two never race, and the metric never exceeds the configured maximum. The reservation
-        /// is clamped to the currently free capacity, held for the whole query, and released here.
+        /// the two never race, and the metric never exceeds the configured maximum. It is held for
+        /// the whole query and released here.
+        ///
+        /// We request at most `getMaxThreads` (`background_pool_size`) slots, not `getMaxTasksCount`
+        /// (`background_pool_size` * `background_merges_mutations_concurrency_ratio`): these merges
+        /// run synchronously on real threads and cannot be postponed like scheduled executor tasks,
+        /// so a single OPTIMIZE FINAL must not spawn more merge threads than the pool has workers.
+        /// The reservation is additionally clamped to the currently free task capacity, so it also
+        /// backs off while the pool is busy.
         auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
         size_t reserved_merge_slots = 0;
         SCOPE_EXIT({
@@ -2083,7 +2089,8 @@ bool StorageMergeTree::optimize(
         });
 
         if (txn == nullptr && partition_ids.size() > 1 && merge_mutate_executor)
-            reserved_merge_slots = merge_mutate_executor->tryReserveTaskSlots(partition_ids.size());
+            reserved_merge_slots = merge_mutate_executor->tryReserveTaskSlots(
+                std::min(partition_ids.size(), merge_mutate_executor->getMaxThreads()));
 
         const size_t max_concurrent_merges = std::max<size_t>(1, reserved_merge_slots);
 
