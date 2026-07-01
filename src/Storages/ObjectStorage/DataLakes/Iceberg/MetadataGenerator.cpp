@@ -124,6 +124,13 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     std::optional<Int64> user_defined_timestamp)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
+
+    /// These arrays are optional per the Iceberg spec, so external metadata may omit them.
+    /// Seed an empty one (as Array::Ptr so getArray/extract see the right type tag) before use.
+    for (const auto * field : {Iceberg::f_snapshots, Iceberg::f_metadata_log, Iceberg::f_snapshot_log})
+        if (!metadata_object->has(field))
+            metadata_object->set(field, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+
     Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
     if (format_version > 1)
     {
