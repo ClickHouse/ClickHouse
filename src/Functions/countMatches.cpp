@@ -129,17 +129,20 @@ public:
         /// Only one match is required, no need to copy more.
         static const unsigned matches_limit = 1;
 
-        Pos pos = reinterpret_cast<Pos>(src.data());
+        Pos begin = reinterpret_cast<Pos>(src.data());
         Pos end = reinterpret_cast<Pos>(src.data() + src.size());
+        Pos pos = begin;
 
         uint64_t match_count = 0;
         while (pos < end)
         {
-            if (re.match(pos, end - pos, matches, matches_limit))
+            /// Match over the whole string starting at `pos`, so that the characters before `pos` are seen as context
+            /// for zero-width assertions such as `\b` and `^`. The returned offsets are relative to `begin`.
+            if (re.match(begin, end - begin, pos - begin, matches, matches_limit))
             {
                 if (matches[0].length > 0)
                 {
-                    pos += matches[0].offset + matches[0].length;
+                    pos = begin + matches[0].offset + matches[0].length;
                     ++match_count;
                 }
                 else
