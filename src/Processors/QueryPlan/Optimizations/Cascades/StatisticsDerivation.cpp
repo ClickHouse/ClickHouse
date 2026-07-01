@@ -107,6 +107,78 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
         group_id, group->statistics->dump());
 }
 
+Float64 clampJoinRowCount(JoinKind kind, JoinStrictness strictness, Float64 base, Float64 left, Float64 right)
+{
+    /// Paste is position-wise (no keys): one output row per aligned pair.
+    if (kind == JoinKind::Paste)
+        return std::min(left, right);
+    /// Cross/comma product keeps the multiplicative estimate.
+    if (kind == JoinKind::Cross || kind == JoinKind::Comma)
+        return base;
+
+    /// A full join keeps unmatched rows from both sides, so it is at least the larger side regardless
+    /// of strictness. (Checked before the semi/any bounds, which apply only to one preserved side.)
+    if (kind == JoinKind::Full)
+        return std::max(base, std::max(left, right));
+
+    const Float64 preserved = (kind == JoinKind::Right) ? right : left;
+
+    /// Semi/anti filter the preserved side, so the output cannot exceed it.
+    if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
+        return std::min(base, preserved);
+
+    if (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny || strictness == JoinStrictness::Asof)
+    {
+        /// Outer any/asof keep every preserved-side row (one match each).
+        if (kind == JoinKind::Left || kind == JoinKind::Right)
+            return preserved;
+        /// Inner asof keeps one nearest match per left row, so it is bounded by the left side.
+        if (strictness == JoinStrictness::Asof)
+            return std::min(base, left);
+        /// Inner any dedups to matching keys (measured: 1000 rows of one key ANY-join 1 row -> 1), so
+        /// it cannot exceed either side.
+        return std::min(base, std::min(left, right));
+    }
+
+    /// Strictness All/Unspecified: an outer join keeps every preserved-side row, so the output is at
+    /// least the preserved side.
+    if (kind == JoinKind::Left)
+        return std::max(base, left);
+    if (kind == JoinKind::Right)
+        return std::max(base, right);
+    return base;
+}
+
+Float64 clampJoinMaxRowCount(JoinKind kind, JoinStrictness strictness, Float64 product, Float64 left, Float64 right)
+{
+    /// Position-wise: exactly the shorter side.
+    if (kind == JoinKind::Paste)
+        return std::min(left, right);
+    /// A full join can emit every row from both sides when the keys are disjoint.
+    if (kind == JoinKind::Full)
+        return std::max(product, left + right);
+
+    const Float64 preserved = (kind == JoinKind::Right) ? right : left;
+    const bool reduces_to_preserved =
+        strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti
+        || strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny
+        || strictness == JoinStrictness::Asof;
+
+    /// Semi/anti/any keep at most one row per preserved-side row (anti can keep the whole preserved
+    /// side even when the other side is empty), so the preserved side is the upper bound.
+    if (reduces_to_preserved && (kind == JoinKind::Left || kind == JoinKind::Right))
+        return preserved;
+
+    /// An outer join with matches can multiply up to the product but never drops below the preserved
+    /// side (unmatched rows are kept).
+    if (kind == JoinKind::Left)
+        return std::max(product, left);
+    if (kind == JoinKind::Right)
+        return std::max(product, right);
+    /// Inner (any strictness), cross, comma: the product is a valid upper bound.
+    return product;
+}
+
 ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     const JoinStepLogical & join_step,
     const ExpressionStatistics & left_statistics,
@@ -202,7 +274,18 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
         }
     }
 
-    statistics.estimated_bytes_per_row = left_statistics.estimated_bytes_per_row + right_statistics.estimated_bytes_per_row;
+    /// Constrain the inner-product estimate to the join semantics (outer joins keep the preserved side,
+    /// semi/anti/any bound it). Applied after the join-order hint so a hint cannot exceed a semantic
+    /// upper bound (e.g. a semi join above its preserved-side row count).
+    const auto & join_operator = join_step.getJoinOperator();
+    statistics.estimated_row_count = clampJoinRowCount(join_operator.kind, join_operator.strictness,
+        statistics.estimated_row_count, left_statistics.estimated_row_count, right_statistics.estimated_row_count);
+    statistics.max_row_count = clampJoinMaxRowCount(join_operator.kind, join_operator.strictness,
+        statistics.max_row_count, left_statistics.max_row_count, right_statistics.max_row_count);
+
+    /// Width comes from the actual join output columns; summing both inputs double-counts join keys and
+    /// can include columns the join does not emit.
+    statistics.estimated_bytes_per_row = estimateRowWidthFromHeader(*join_step.getOutputHeader());
 
     for (auto & column_statistics : statistics.column_statistics)
         if (Float64(column_statistics.second.num_distinct_values) > statistics.estimated_row_count)
@@ -288,6 +371,10 @@ ExpressionStatistics StatisticsDerivation::deriveExpressionStatistics(const Expr
 {
     ExpressionStatistics result_statistics = input_statistics;
     QueryPlanOptimizations::remapColumnStats(result_statistics.column_statistics, expression_step.getExpression());
+    /// Keep the input row width: most projections pass columns through, and the input width may carry
+    /// storage-derived or hinted byte sizes that a header-based type-default estimate would discard.
+    /// TODO: recompute only for added/dropped columns (needs per-column widths); an arrayJoin also
+    /// grows the row count (preserves_number_of_rows is false), which we do not estimate yet.
     return result_statistics;
 }
 
