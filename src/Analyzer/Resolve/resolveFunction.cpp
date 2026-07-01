@@ -1599,8 +1599,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         ///
         /// `getSetting` and `rowNumberInAllBlocks` are non-deterministic but must NOT be shared: the cache
         /// is global across scopes, and e.g. `SETTINGS` can change `getSetting`'s result for every scope.
+        ///
+        /// Server-constant functions (`hostName`, `serverUUID`, `tcpPort`, ...) must NOT be shared either:
+        /// their `FunctionBase` captures `context->isDistributed()` at construction (via `FunctionConstantBase`),
+        /// which gates `isSuitableForConstantFolding`. Reusing the `FunctionBase` built in one scope for a
+        /// different scope (e.g. an inner sub-SELECT over `clusterAllReplicas` versus the outer query) lets
+        /// the wrong `is_distributed` decide whether to fold the call, producing a header mismatch between
+        /// the local plan and the distributed shards.
         if (function && !function->isDeterministic()
-            && function_name != "getSetting" && function_name != "rowNumberInAllBlocks")
+            && function_name != "getSetting" && function_name != "rowNumberInAllBlocks"
+            && !function->isServerConstant())
         {
             auto hash = function_node_ptr->getTreeHash();
             function_base_cache = &functions_cache[hash];
