@@ -141,6 +141,8 @@ Binary encoding for ClickHouse data types:
 | QBit(T, N, stride)                                                                                      | 0x37<element_type_encoding><var_uint_dimension><var_uint_stride>                                                                                                                                                                                                                                                                                                         |
 |---------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 
+For type QBit the 0x37 encoding is used only when stride differs from the dimension N. When stride == N (including when the third argument is written explicitly, as in QBit(Float32, 4, 4)) the type is canonicalized to the two-argument QBit(T, N) form and encoded as 0x36 above, so its binary encoding stays byte-identical to a non-strided QBit.
+
 Interval kind binary encoding:
 |---------------|-----------------|
 | Interval kind | Binary encoding |
