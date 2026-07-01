@@ -378,6 +378,18 @@ static void splitAndModifyMutationCommands(
 
                 part_columns.rename(rename_from, rename_to);
             }
+            else if (part->getSerializationInfos().isMissingColumn(rename_from))
+            {
+                /// A missing column has no physical data but its marker must track
+                /// the rename. Record the RENAME_COLUMN so getColumnsForNewDataPart
+                /// carries the marker under the new name.
+                for_file_renames.push_back(
+                {
+                     .type = MutationCommand::Type::RENAME_COLUMN,
+                     .column_name = rename_from,
+                     .rename_to = rename_to
+                });
+            }
         }
 
         /// When the source part is non-wide-or-non-full (Compact or packed), `MutateFromLogEntryTask::prepare`
@@ -677,6 +689,14 @@ getColumnsForNewDataPart(
                     renamed_columns_to_from.emplace(command.rename_to, original_name);
                     renamed_columns_from_to.emplace(original_name, command.rename_to);
                 }
+                else if (serialization_infos.isMissingColumn(command.column_name))
+                {
+                    /// A column marked as missing on INSERT has no data files and is
+                    /// absent from part_columns, but its missing-columns marker must
+                    /// follow the rename so the read path keeps filling it correctly.
+                    renamed_columns_to_from.emplace(command.rename_to, command.column_name);
+                    renamed_columns_from_to.emplace(command.column_name, command.rename_to);
+                }
             }
             continue;
         }
@@ -775,6 +795,40 @@ getColumnsForNewDataPart(
 
         new_info = old_info->createWithType(*old_type, *new_type, settings);
         new_serialization_infos.emplace(new_name, std::move(new_info));
+    }
+
+    /// Carry over the missing-columns markers for columns that stay absent from
+    /// the new part. A missing column has no data files in the source part; if
+    /// this mutation does not materialize it (it is not present in updated_header),
+    /// it remains missing and the read path must keep filling it with the frozen
+    /// default. Without this, a column that was marked missing on INSERT and later
+    /// gained a DEFAULT expression via ALTER MODIFY COLUMN would read the new
+    /// default expression instead of the frozen value after an unrelated mutation
+    /// silently dropped the marker.
+    {
+        SerializationInfoByName::MissingColumns new_missing;
+        for (const auto & mc : serialization_infos.getMissingColumns())
+        {
+            auto it = renamed_columns_from_to.find(mc.name);
+            auto new_name = it == renamed_columns_from_to.end() ? mc.name : it->second;
+
+            /// Column was dropped or is no longer part of the schema.
+            if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
+                continue;
+            /// Column is materialized by this mutation (present in updated_header),
+            /// so it is written in full and is no longer missing.
+            if (updated_header.has(new_name))
+                continue;
+
+            auto entry = mc;
+            entry.name = new_name;
+            new_missing.push_back(std::move(entry));
+        }
+        if (!new_missing.empty())
+        {
+            std::sort(new_missing.begin(), new_missing.end());
+            new_serialization_infos.setMissingColumns(std::move(new_missing));
+        }
     }
 
     /// Column mutations preserve source part serialization settings even when they differ from storage defaults,

@@ -1275,6 +1275,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_positions", false, false, "New setting"},
+            {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
