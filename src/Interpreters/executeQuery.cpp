@@ -1376,6 +1376,20 @@ static void takeConstructionSettingsFromSetQuery(ASTSetQuery & set_query, Constr
             result = change.value;
             return true;
         });
+        /// A `name = DEFAULT` reset lives in `default_settings` and is applied after all `changes`
+        /// (`InterpreterSetQuery` runs `resetSettingsToDefaultValue` last), so it wins: the effective
+        /// construction value becomes the setting's default (absent). Erase the reset and drop any captured
+        /// `changes` value, so e.g. `limit = 3, limit = DEFAULT` leaves no construction limit.
+        bool has_reset = false;
+        std::erase_if(set_query.default_settings, [&](const String & reset_name)
+        {
+            if (reset_name != name)
+                return false;
+            has_reset = true;
+            return true;
+        });
+        if (has_reset)
+            result = std::nullopt;
         return result;
     };
 
@@ -1826,6 +1840,42 @@ static void applyQueryConstructionSettings(
     base_select->setIsIntoOutfileWithStdout(false);
     base_select->setIsOutfileAppend(false);
     base_select->setIsOutfileTruncate(false);
+
+    /// Reject a construction setting that appears in BOTH the query's own (`SELECT`-local) `SETTINGS` and
+    /// the trailing query-level `SETTINGS` (e.g. `... SETTINGS limit = 5 FORMAT TSV SETTINGS limit = 2`).
+    /// Normal application makes the SELECT-local clause win (it is applied last), but the reattached-settings
+    /// merge treats the query-level clause as the outer scope — so the two precedences disagree. Reject
+    /// rather than silently pick one, matching the `sort`+`order` and ambiguous UNION-arm rejections.
+    if (base_settings)
+    {
+        if (const auto * trailing = base_settings->as<ASTSetQuery>())
+        {
+            const ASTSetQuery * local = nullptr;
+            if (base_select->list_of_selects && !base_select->list_of_selects->children.empty())
+                if (auto * last_select = base_select->list_of_selects->children.back()->as<ASTSelectQuery>())
+                    if (auto last_settings = last_select->settings())
+                        local = last_settings->as<ASTSetQuery>();
+            if (local)
+            {
+                static constexpr std::string_view construction_names[] = {
+                    "select", "filter", "order", "sort", "limit", "offset", "page"};
+                auto mentions = [](const ASTSetQuery & s, std::string_view name)
+                {
+                    if (s.changes.tryGet(name))
+                        return true;
+                    for (const auto & reset_name : s.default_settings)
+                        if (reset_name == name)
+                            return true;
+                    return false;
+                };
+                for (std::string_view name : construction_names)
+                    if (mentions(*trailing, name) && mentions(*local, name))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Construction setting `{}` is set in both the query's own `SETTINGS` clause and the "
+                            "trailing query-level `SETTINGS` clause; set it in only one.", name);
+            }
+        }
+    }
 
     /// All construction settings (`select` / `filter` / `order` / `sort` / `limit` / `offset` / `page`)
     /// are consumed here — materialized into the outer wrapper's `SELECT` / `WHERE` / `ORDER BY` /

@@ -72,3 +72,8 @@ SELECT '-- repeated nested `select`: last value wins (projects `b`, not `a`)';
 SELECT b FROM (SELECT number AS a, number * 2 AS b FROM numbers(3) SETTINGS select = 'a', select = 'b') ORDER BY b;
 SELECT '-- repeated top-level `limit`: last value wins and no leftover re-caps the wrapped query (7 rows)';
 SELECT number FROM numbers(100) ORDER BY number SETTINGS limit = 3, limit = 5, limit = 7;
+
+SELECT '-- a `= DEFAULT` reset after a value makes the construction setting absent (subquery returns all 10)';
+SELECT count() FROM (SELECT number FROM numbers(10) SETTINGS limit = 3, limit = DEFAULT);
+SELECT '-- the same construction setting in both the SELECT-local and trailing query-level SETTINGS is rejected';
+SELECT number FROM numbers(10) SETTINGS limit = 5 FORMAT TSV SETTINGS limit = 2; -- { serverError BAD_ARGUMENTS }
