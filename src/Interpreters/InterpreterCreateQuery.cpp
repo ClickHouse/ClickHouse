@@ -2580,6 +2580,18 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
     /// read still uses the pinned snapshot (it takes priority over both the cache and a fresh capture).
     auto populate_context = Context::createCopy(context);
     populate_context->setSetting("enable_shared_storage_snapshot_in_query", false);
+
+    /// The pinned snapshot lives only in this server's contexts (`populate_context` and its query context,
+    /// pinned below). The population must therefore read the source locally, from that pinned snapshot. If
+    /// the internal `INSERT ... SELECT` is instead dispatched to remote replicas (parallel replicas) or
+    /// through a distributed write, those remote executions do not carry the pin: they read a fresh
+    /// snapshot of the source - which breaks the exactly-once cut, because rows inserted concurrently with
+    /// the population are then read remotely and also delivered to the view live - and they would re-send
+    /// `INSERT INTO` the just-created view on other replicas. Force the local pinned-snapshot path by
+    /// disabling `parallel_distributed_insert_select` and parallel-replica reading for this insert.
+    populate_context->setSetting("parallel_distributed_insert_select", Field{0});
+    populate_context->setSetting("enable_parallel_replicas", Field{0});
+
     StorageSnapshotPtr snapshot;
     {
         auto source_lock = source->lockExclusively(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
