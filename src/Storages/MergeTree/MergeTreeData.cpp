@@ -19,6 +19,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressionCodecQuantize.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/QueryProcessingStage.h>
@@ -5161,6 +5162,25 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     auto part_type = PartType::Wide;
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
+
+    /// The trained `pq` method of the `Quantize(...)` codec stores a per-part codebook (one artifact for the whole
+    /// column, trained at serialization suffix). A compact part serializes each granule with a fresh serialization
+    /// state, which would train and write a separate codebook per granule and leave the reader unable to pair each row
+    /// with its granule's codebook. Force a wide part when any column carries `Quantize('pq', ...)`, so the codebook is
+    /// part-level. The data-independent Quantize methods are stateless per row and work in either part format.
+    if (part_type == PartType::Compact)
+    {
+        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        for (const auto & column : metadata_snapshot->getColumns())
+        {
+            const auto params = tryExtractQuantizeCodecParams(column.codec);
+            if (params && params->method == "pq")
+            {
+                part_type = PartType::Wide;
+                break;
+            }
+        }
+    }
 
     return {part_type, PartStorageType::Full};
 }
