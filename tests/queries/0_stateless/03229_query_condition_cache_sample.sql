@@ -3,19 +3,18 @@
 -- no-parallel-replicas: the query condition cache is populated per replica, so the poisoning is
 --   not reliably reproducible with parallel replicas
 
--- Tests that a sampled query does not poison the query condition cache for a later non-sampled query.
--- The cache key encodes only the WHERE/PREWHERE predicate, not the SAMPLE clause, so a sampling-narrowed
--- mark mask must never be written (issue: SAMPLE facet of the #104203 query-condition-cache family).
-
-SET allow_experimental_analyzer = 1;
+-- Bug #104203: SAMPLE clauses in SELECTs confuse ("poison") the query condition cache.
+-- This was resolved by not writing in the query condition cache for SELECTs with SAMPLE clause.
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab (sk UInt64, id UInt64, v String)
-ENGINE = MergeTree ORDER BY (sk, id) SAMPLE BY sk
+CREATE TABLE tab (sample_key UInt64, id UInt64, val String)
+ENGINE = MergeTree
+ORDER BY (sample_key, id)
+SAMPLE BY sample_key
 SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
 
--- 12 separate parts, each with several marks; the sampling key varies so SAMPLE prunes whole marks.
+-- Insert 6 parts. The sampling key varies so SAMPLE prunes whole marks.
 SYSTEM STOP MERGES tab;
 INSERT INTO tab SELECT sipHash64(number * 100 + 1), number, 'hit' FROM numbers(100000);
 INSERT INTO tab SELECT sipHash64(number * 100 + 2), number, 'hit' FROM numbers(100000);
@@ -23,32 +22,26 @@ INSERT INTO tab SELECT sipHash64(number * 100 + 3), number, 'hit' FROM numbers(1
 INSERT INTO tab SELECT sipHash64(number * 100 + 4), number, 'hit' FROM numbers(100000);
 INSERT INTO tab SELECT sipHash64(number * 100 + 5), number, 'hit' FROM numbers(100000);
 INSERT INTO tab SELECT sipHash64(number * 100 + 6), number, 'hit' FROM numbers(100000);
-INSERT INTO tab SELECT sipHash64(number * 100 + 7), number, 'hit' FROM numbers(100000);
-INSERT INTO tab SELECT sipHash64(number * 100 + 8), number, 'hit' FROM numbers(100000);
-INSERT INTO tab SELECT sipHash64(number * 100 + 9), number, 'hit' FROM numbers(100000);
-INSERT INTO tab SELECT sipHash64(number * 100 + 10), number, 'hit' FROM numbers(100000);
-INSERT INTO tab SELECT sipHash64(number * 100 + 11), number, 'hit' FROM numbers(100000);
-INSERT INTO tab SELECT sipHash64(number * 100 + 12), number, 'hit' FROM numbers(100000);
 
--- WHERE on a non-key column: predicate is moved to PREWHERE (runtime write path).
-SELECT '--- WHERE on non-key column (PREWHERE write path)';
-SET optimize_move_to_prewhere = true;
+SELECT '--- WHERE on non-primary-key column';
 
 SYSTEM DROP QUERY CONDITION CACHE;
-SELECT 'A sampled query must not write to the query condition cache.';
-SELECT count() FROM tab SAMPLE 0.1 WHERE v = 'hit' SETTINGS use_query_condition_cache = true FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
-SELECT 'A later non-sampled query returns the full count (not poisoned).';
-SELECT count() FROM tab WHERE v = 'hit' SETTINGS use_query_condition_cache = true;
 
--- WHERE on a key-prefix column: predicate is resolved by index analysis (analysis write path).
-SELECT '--- WHERE on key column (index-analysis write path)';
+SELECT 'A SAMPLEing query must NOT write to the query condition cache.';
+SELECT count() FROM tab SAMPLE 0.1 WHERE val = 'hit' FORMAT Null;
+SELECT count() FROM system.query_condition_cache;
+
+SELECT 'A non-SAMPLEing query must returns the entire table content.';
+SELECT count() FROM tab WHERE val = 'hit' SETTINGS use_query_condition_cache = true;
+
+SELECT '--- WHERE on primary key column';
 
 SYSTEM DROP QUERY CONDITION CACHE;
-SELECT 'A sampled query must not write to the query condition cache.';
-SELECT count() FROM tab SAMPLE 0.1 WHERE id = 42 SETTINGS use_query_condition_cache = true FORMAT Null;
+
+SELECT 'A SAMPLEing query must NOT write to the query condition cache.';
+SELECT count() FROM tab SAMPLE 0.1 WHERE id = 42 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
-SELECT 'A later non-sampled query returns the full count (not poisoned).';
-SELECT count() FROM tab WHERE id = 42 SETTINGS use_query_condition_cache = true;
+SELECT 'A non-SAMPLEing query must returns the entire table content.';
+SELECT count() FROM tab WHERE id = 42;
 
 DROP TABLE tab;

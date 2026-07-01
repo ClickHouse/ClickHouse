@@ -1,10 +1,10 @@
---- WHERE on non-key column (PREWHERE write path)
-A sampled query must not write to the query condition cache.
+--- WHERE on non-primary-key column
+A SAMPLEing query must NOT write to the query condition cache.
 0
-A later non-sampled query returns the full count (not poisoned).
-1200000
---- WHERE on key column (index-analysis write path)
-A sampled query must not write to the query condition cache.
+A non-SAMPLEing query must returns the entire table content.
+600000
+--- WHERE on primary key column
+A SAMPLEing query must NOT write to the query condition cache.
 0
-A later non-sampled query returns the full count (not poisoned).
-12
+A non-SAMPLEing query must returns the entire table content.
+6
