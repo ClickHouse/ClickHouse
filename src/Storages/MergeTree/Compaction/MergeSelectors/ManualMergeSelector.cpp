@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 
+#include <algorithm>
 #include <deque>
 #include <mutex>
 #include <unordered_map>
@@ -13,10 +14,25 @@ namespace DB
 namespace
 {
 
+/// A single SYSTEM SCHEDULE MERGE request. Both things a scheduled merge is tracked by live in one
+/// object so they are always retired together: `parts` (the source part names, in order) drives
+/// select()/lookupRange(), and `part_infos` (the same parts, parsed) drives the SYNC MERGES coverage
+/// check. `assigned` is set once select() has handed the merge to the background executor; the object
+/// then stays so SYNC MERGES can keep waiting for the merge's part_log row, and is dropped only by
+/// clearScheduledParts() once that command has fully synced it. Keeping one object avoids the
+/// divergence where a merge satisfied by a covering part (so select() never matched its sources) is
+/// cleared from the coverage list while its stale, impossible-to-match entry survives in a separate
+/// queue and starves every later SCHEDULE MERGE on the same table.
+struct ScheduledMerge
+{
+    Names parts;
+    std::vector<MergeTreePartInfo> part_infos;
+    bool assigned = false;
+};
+
 struct ManualMergeSelectorTableInfo
 {
-    std::deque<Names> queue;
-    std::vector<MergeTreePartInfo> scheduled_part_infos;
+    std::deque<ScheduledMerge> scheduled_merges;
 };
 
 std::mutex registry_mutex;
@@ -82,16 +98,21 @@ PartsRanges ManualMergeSelector::select(
     const RangeFilter & range_filter) const
 {
     auto [info, lock] = getTableInfo(storage_id);
-    if (info->queue.empty())
-        return {};
 
     PartsRanges ranges;
+    auto merge_it = info->scheduled_merges.begin();
     for (const auto & constraint : merge_constraints)
     {
-        if (info->queue.empty())
+        /// Skip merges already handed to the executor. They stay in the deque so SYNC MERGES can
+        /// still wait for their part_log row and are removed only by clearScheduledParts(), but they
+        /// must not be dispatched again. Pending merges are matched strictly in FIFO order: the first
+        /// one whose source parts are not yet present locally stops this cycle, exactly as before.
+        while (merge_it != info->scheduled_merges.end() && merge_it->assigned)
+            ++merge_it;
+        if (merge_it == info->scheduled_merges.end())
             break;
 
-        auto range = lookupRange(parts_ranges, info->queue.front());
+        auto range = lookupRange(parts_ranges, merge_it->parts);
         if (!range)
             break;
 
@@ -101,8 +122,9 @@ PartsRanges ManualMergeSelector::select(
         if (range_filter && !range_filter(range.value()))
             break;
 
-        info->queue.pop_front();
+        merge_it->assigned = true;
         ranges.push_back(std::move(range.value()));
+        ++merge_it;
     }
 
     return ranges;
@@ -112,16 +134,24 @@ void ManualMergeSelector::push(const StorageID & id, const Names & parts_to_merg
 {
     auto [info, lock] = getTableInfo(id);
 
+    ScheduledMerge merge;
+    merge.parts = parts_to_merge;
+    merge.part_infos.reserve(parts_to_merge.size());
     for (const auto & name : parts_to_merge)
-        info->scheduled_part_infos.push_back(MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING));
+        merge.part_infos.push_back(MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING));
 
-    info->queue.push_back(parts_to_merge);
+    info->scheduled_merges.push_back(std::move(merge));
 }
 
 std::vector<MergeTreePartInfo> ManualMergeSelector::getScheduledPartInfos(const StorageID & id)
 {
     auto [info, lock] = getTableInfo(id);
-    return info->scheduled_part_infos;
+
+    std::vector<MergeTreePartInfo> part_infos;
+    for (const auto & merge : info->scheduled_merges)
+        part_infos.insert(part_infos.end(), merge.part_infos.begin(), merge.part_infos.end());
+
+    return part_infos;
 }
 
 bool ManualMergeSelector::isAllScheduledPartsCovered(const std::vector<MergeTreePartInfo> & scheduled_part_infos, const ActiveDataPartSet & active_set)
@@ -146,9 +176,16 @@ void ManualMergeSelector::clearScheduledParts(const StorageID & id, const NameSe
 {
     auto [info, lock] = getTableInfo(id);
 
-    std::erase_if(info->scheduled_part_infos, [&](const MergeTreePartInfo & part_info)
+    /// Drop every scheduled merge whose source parts are all in `part_names` (the snapshot SYNC MERGES
+    /// captured and has now fully synced). Removing the whole object retires both carriers at once, so
+    /// no stale entry survives in select()'s view to starve later schedules -- even when the merge was
+    /// satisfied by a covering part and select() never matched its sources. A merge added by a
+    /// concurrent SCHEDULE MERGE after the snapshot has a source part outside `part_names` and is left
+    /// intact.
+    std::erase_if(info->scheduled_merges, [&](const ScheduledMerge & merge)
     {
-        return part_names.contains(part_info.getPartNameV1());
+        return std::all_of(merge.parts.begin(), merge.parts.end(),
+            [&](const String & name) { return part_names.contains(name); });
     });
 }
 
