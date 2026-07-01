@@ -221,7 +221,12 @@ bool CacheMetadata::useRealDiskSize() const
 void CacheMetadata::fillStatVFS()
 {
     const auto stat = getStatVFS(path);
-    fs_block_size.store(stat.f_bsize, std::memory_order_release);
+    /// Use `f_frsize` (the fundamental filesystem block/fragment size), not `f_bsize` (the preferred I/O
+    /// block size), because on-disk space is accounted in `f_frsize` units (`f_blocks`, `f_bfree`, `f_bavail`
+    /// are all counted in `f_frsize`), and `FileCacheSettings` already computes total space via `f_frsize`.
+    /// Fall back to `f_bsize` when `f_frsize` is reported as zero.
+    const size_t block_size = stat.f_frsize != 0 ? stat.f_frsize : stat.f_bsize;
+    fs_block_size.store(block_size, std::memory_order_release);
 }
 
 String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind)
