@@ -8,8 +8,8 @@ DROP TABLE IF EXISTS st_04489;
 
 CREATE TABLE st_04489 (a UInt32, b UInt32, c UInt32, s AggregateFunction(uniqExact, UInt64)) ENGINE = MergeTree ORDER BY (a, b, c);
 
--- Each (a, b, c) group accumulates > 100000 distinct values, so the uniqExact sets become two-level.
-INSERT INTO st_04489 SELECT number % 4, number % 3, number % 2, uniqExactState(number) FROM numbers_mt(4000000) GROUP BY 1, 2, 3;
+-- Each of the 12 (a, b, c) groups gets 125000 distinct values, above the 100000 uniqExact auto-two-level threshold.
+INSERT INTO st_04489 SELECT number % 4, number % 3, number % 2, uniqExactState(number) FROM numbers_mt(1500000) GROUP BY 1, 2, 3;
 
 -- The race is timing dependent but TSAN detected the problem
 SELECT a, b, c, uniqExactMerge(s) FROM st_04489 GROUP BY GROUPING SETS ((a), (b), (c), (a, b), (b, c)) SETTINGS max_threads = 16, group_by_two_level_threshold = 1, group_by_use_nulls = 1 FORMAT Null;
