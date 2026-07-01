@@ -73,7 +73,6 @@ void CSVRowOutputFormat::writeBeforeExtremes()
 }
 
 
-void registerOutputFormatCSV(FormatFactory & factory);
 void registerOutputFormatCSV(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)

@@ -12,13 +12,10 @@
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Scheduler/IResourceManager.h>
-#include <Common/Scheduler/MemoryReservation.h>
 #include <Common/logger_useful.h>
-#include <array>
 #include <chrono>
 #include <memory>
 
@@ -27,14 +24,6 @@ namespace CurrentMetrics
 {
     extern const Metric Query;
     extern const Metric QueryNonInternal;
-}
-
-namespace ProfileEvents
-{
-    extern const Event UserThrottlerBytes;
-    extern const Event UserThrottlerSleepMicroseconds;
-    extern const Event AllUsersThrottlerBytes;
-    extern const Event AllUsersThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -62,7 +51,6 @@ namespace Setting
     extern const SettingsBool trace_profile_events;
     extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
-    extern const SettingsUInt64 reserve_memory;
 }
 
 namespace ErrorCodes
@@ -73,7 +61,6 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -129,39 +116,17 @@ ProcessList::EntryPtr ProcessList::insert(
     bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal;
     std::shared_ptr<QueryStatus> query;
 
-    // Acquire a query slot and a memory reservation from the resource scheduler if necessary.
+    // Acquire a query slot from resource scheduler if necessary.
     // NOTE: There is a separate independent limit for the whole server `max_concurrent_queries`.
     // NOTE: If that limit is exhausted, the query will be later blocked and wait while holding a query slot.
-    // NOTE: `MemoryReservation` admission may block here and evict other queries. The query may still be
-    // rejected below by reject-fast `ProcessList` checks (`max_concurrent_queries*`, duplicate query id,
-    // etc.), in which case the reservation was performed in vain. We accept this trade-off: the query slot
-    // is already acquired at this point, and the upcoming multi-resource scheduler will admit query slots
-    // and memory reservations together as a single allocation. Splitting their admission across the
-    // `ProcessList` mutex would prevent that unification and is a worse design overall.
     QuerySlotPtr query_slot;
-    MemoryReservationPtr memory_reservation;
     if (!is_unlimited_query)
     {
-        /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
-        auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();
-        String query_resource_name = workload_entity_storage->getQueryResourceName();
+        String query_resource_name = query_context->getWorkloadEntityStorage().getQueryResourceName();
         if (!query_resource_name.empty())
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
                 query_slot = std::make_unique<QuerySlot>(link);
-        }
-        String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
-        if (!memory_reservation_resource_name.empty())
-        {
-            if (ResourceLink link = query_context->getWorkloadClassifier()->get(memory_reservation_resource_name))
-            {
-                // The link must point to a space-shared resource; fail loudly instead of dereferencing null.
-                if (!link.allocation_queue)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
-                        memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory]);
-            }
         }
     }
 
@@ -356,7 +321,6 @@ ProcessList::EntryPtr ProcessList::insert(
                 settings[Setting::priority],
                 std::chrono::milliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
             std::move(query_slot),
-            std::move(memory_reservation),
             std::move(thread_group),
             query_kind,
             settings,
@@ -395,20 +359,14 @@ ProcessList::EntryPtr ProcessList::insert(
 
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {
-            total_network_throttler = std::make_shared<Throttler>(
-                settings[Setting::max_network_bandwidth_for_all_users],
-                ProfileEvents::AllUsersThrottlerBytes,
-                ProfileEvents::AllUsersThrottlerSleepMicroseconds);
+            total_network_throttler = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_all_users]);
         }
 
         if (!user_process_list.user_throttler)
         {
             if (settings[Setting::max_network_bandwidth_for_user])
-                user_process_list.user_throttler = std::make_shared<Throttler>(
-                    settings[Setting::max_network_bandwidth_for_user],
-                    total_network_throttler,
-                    ProfileEvents::UserThrottlerBytes,
-                    ProfileEvents::UserThrottlerSleepMicroseconds);
+                user_process_list.user_throttler
+                    = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_user], total_network_throttler);
             else if (settings[Setting::max_network_bandwidth_for_all_users])
                 user_process_list.user_throttler = total_network_throttler;
         }
@@ -497,7 +455,6 @@ QueryStatus::QueryStatus(
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
     QuerySlotPtr && query_slot_,
-    MemoryReservationPtr && memory_reservation_,
     ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
     const Settings & query_settings_,
@@ -508,7 +465,6 @@ QueryStatus::QueryStatus(
     , normalized_query_hash(normalized_query_hash_)
     , client_info(client_info_)
     , query_slot(std::move(query_slot_))
-    , memory_reservation(std::move(memory_reservation_))
     , thread_group(std::move(thread_group_))
     , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
     , priority_handle(std::move(priority_handle_))
@@ -527,18 +483,12 @@ QueryStatus::QueryStatus(
     overflow_mode = query_settings_[Setting::timeout_overflow_mode];
 }
 
-void QueryStatus::releaseWorkloadResources()
-{
-    memory_reservation.reset();
-    query_slot.reset();
-}
-
 QueryStatus::~QueryStatus()
 {
 #if !defined(NDEBUG)
     /// Check that all executors were invalidated.
     for (const auto & [_, e] : executors)
-        chassert(!e->executor);
+        assert(!e->executor);
 #endif
 
     if (auto * memory_tracker = getMemoryTracker())
@@ -630,7 +580,7 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     throwProperExceptionIfNeeded(max_exec_time, 0);
 
     std::lock_guard lock(executors_mutex);
-    chassert(!executors.contains(e));
+    assert(!executors.contains(e));
     executors[e] = std::make_shared<ExecutorHolder>(e);
 }
 
@@ -640,7 +590,7 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 
     {
         std::lock_guard lock(executors_mutex);
-        chassert(executors.contains(e));
+        assert(executors.contains(e));
         executor_holder = executors[e];
         executors.erase(e);
     }
@@ -671,12 +621,6 @@ void QueryStatus::throwIfKilled()
     if (!is_killed.load())
         return;
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), 0);
-}
-
-CancelReason QueryStatus::getCancelReason() const
-{
-    std::lock_guard<std::mutex> lock(cancel_mutex);
-    return cancel_reason;
 }
 
 bool QueryStatus::checkTimeLimitSoft()
@@ -716,12 +660,6 @@ ThrottlerPtr QueryStatus::getUserNetworkThrottler()
     return user_process_list->user_throttler;
 }
 
-MemoryTracker * QueryStatus::getMemoryTracker() const
-{
-    if (!thread_group)
-        return nullptr;
-    return &thread_group->memory_tracker;
-}
 
 QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_query_id, const String & current_user)
 {

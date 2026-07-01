@@ -92,14 +92,12 @@ DataTypePtr flattenTuple(const DataTypePtr & type)
 
 ColumnPtr flattenTuple(const ColumnPtr & column)
 {
-    const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get());
+    bool is_nullable_tuple = typeid_cast<const ColumnNullable *>(column.get()) != nullptr;
     Columns flattened_columns;
     Columns offset_columns;
-    flattenTupleColumnImpl(column_nullable ? column_nullable->getNestedColumnPtr() : column, flattened_columns, offset_columns);
+    flattenTupleColumnImpl(removeNullable(column), flattened_columns, offset_columns);
     ColumnPtr result_column = ColumnTuple::create(flattened_columns);
-    if (column_nullable)
-        return ColumnNullable::create(result_column, column_nullable->getNullMapColumnPtr());
-    return result_column;
+    return is_nullable_tuple ? makeNullable(result_column) : result_column;
 }
 
 }
