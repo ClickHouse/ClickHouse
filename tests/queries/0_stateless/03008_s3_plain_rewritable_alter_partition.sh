@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache, no-replicated-database, no-random-detach
+# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache, no-replicated-database, no-random-detach, no-flaky-check
 # no-random-detach: test checks system.parts
+# no-flaky-check: test runs too long in the flaky check (which reruns each test many times)
 # Tag no-shared-merge-tree: does not support replication
 # Tag no-distributed-cache: requires investigation
 # Tag no-replicated-database: plain rewritable should not be shared between replicas
