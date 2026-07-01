@@ -411,7 +411,6 @@ private:
         struct Restriction
         {
             TUInt required = 0;
-            TUInt forbidden = 0;
             JoinKind kind = JoinKind::Inner;
             bool present = false;
         };
@@ -736,10 +735,12 @@ void JoinOrderOptimizer::initDPsubScratch()
         if (!edge)
             continue;
         dpsub_data.edge_source_mask[i] = toMask(edge.getSourceRelations());
-        if (auto pin_it = query_graph.pinned.find(edge); pin_it != query_graph.pinned.end())
+        /// ON-clause predicates of an outer join are pinned to the single null-supplying
+        /// relation; the pin becomes applicable exactly when that relation is joined.
+        if (auto pin_it = query_graph.outer_join_conditions.find(edge); pin_it != query_graph.outer_join_conditions.end())
         {
             dpsub_data.edge_pinned[i] = 1;
-            dpsub_data.edge_pin_mask[i] = toMask(pin_it->second);
+            dpsub_data.edge_pin_mask[i] = static_cast<UInt32>(1) << pin_it->second;
         }
     }
 
@@ -750,9 +751,8 @@ void JoinOrderOptimizer::initDPsubScratch()
         if (rel >= num_relations)
             continue;
         auto & native = dpsub_data.restriction_by_rel[rel];
-        native.required = toMask(restriction.required_partners);
-        native.forbidden = toMask(restriction.forbidden_partners);
-        native.kind = restriction.kind;
+        native.required = toMask(restriction.first);
+        native.kind = restriction.second;
         native.present = true;
     }
 
@@ -790,8 +790,6 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrderMask(UInt32 left_mas
                 /// If there are any bits set in `restriction.required`
                 /// that are not set in `rhs`, the bitwise AND (&) results in a non-zero value
                 if (restriction.required & ~rhs)
-                    return {};
-                if (restriction.forbidden & rhs)
                     return {};
                 return restriction.kind;
             }
@@ -1028,11 +1026,18 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
     if (!entry.left && !entry.right)
         return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats);
 
-    JoinOperator join_operator(
-        entry.kind,
-        JoinStrictness::All,
-        JoinLocality::Unspecified,
-        std::ranges::to<std::vector>(entry.edges | std::views::transform([](const auto * e) { return *e; })));
+    JoinOperator join_operator(entry.kind, JoinStrictness::All, JoinLocality::Unspecified);
+    /// A filter predicate applied at an outer join step must not go to the ON clause, where it
+    /// would affect matching instead of filtering and let non-matching rows of the preserved side
+    /// survive NULL-extended. Apply it after the join instead (see `solveGreedy`).
+    bool is_inner_step = isInner(entry.kind) || isCrossOrComma(entry.kind);
+    for (const auto * e : entry.edges)
+    {
+        if (is_inner_step || query_graph.outer_join_conditions.contains(*e))
+            join_operator.expression.push_back(*e);
+        else
+            join_operator.residual_filter.push_back(*e);
+    }
 
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
