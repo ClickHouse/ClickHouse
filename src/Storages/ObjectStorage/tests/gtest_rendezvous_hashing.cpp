@@ -95,7 +95,7 @@ namespace
         void deserialize(ReadBuffer &, size_t) override {}
         String getIdentifier() const override { return "stub"; }
         String getFormatName() const override { return "Parquet"; }
-        std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> &) const override { return nullptr; }
+        std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> &, size_t) const override { return nullptr; }
     };
 
     // Head of the list must contains all paths for files with numbers from file_nums

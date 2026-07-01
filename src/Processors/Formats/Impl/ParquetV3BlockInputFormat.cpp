@@ -333,12 +333,18 @@ ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_gro
 {
 }
 
-std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const
+std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(
+    const std::vector<size_t> & matching_row_groups, size_t caller_file_num_row_groups) const
 {
+    /// A caller that knows the file's total row-group count (e.g. the object-storage
+    /// query-condition-cache read path, where it equals the number of cached marks) passes it here so
+    /// the resulting bucket carries the same fail-close `checkFileMatchesBucketAssignment` guard as
+    /// splitter- and cluster-derived buckets. 0 means "unknown"; keep whatever this prototype carries.
+    const size_t result_file_num_row_groups = caller_file_num_row_groups != 0 ? caller_file_num_row_groups : file_num_row_groups;
     if (matching_row_groups.empty())
         return nullptr;
     if (row_group_ids.empty())
-        return std::make_shared<ParquetFileBucketInfo>(matching_row_groups, file_num_row_groups);
+        return std::make_shared<ParquetFileBucketInfo>(matching_row_groups, result_file_num_row_groups);
     std::unordered_set<size_t> matching_set(matching_row_groups.begin(), matching_row_groups.end());
     std::vector<size_t> filtered;
     for (size_t rg : row_group_ids)
@@ -346,7 +352,7 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
             filtered.push_back(rg);
     if (filtered.empty())
         return nullptr;
-    return std::make_shared<ParquetFileBucketInfo>(std::move(filtered), file_num_row_groups);
+    return std::make_shared<ParquetFileBucketInfo>(std::move(filtered), result_file_num_row_groups);
 }
 
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);

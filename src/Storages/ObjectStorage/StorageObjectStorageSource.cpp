@@ -847,7 +847,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     object_info->getFileFormat().value_or(configuration->format));
                 if (file_bucket_info)
                 {
-                    auto filtered = file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
+                    /// Pass the total row-group count (equal to the number of cached marks) so the
+                    /// cache-derived bucket fails close via `checkFileMatchesBucketAssignment` if the
+                    /// object is overwritten with a different number of row groups, matching the
+                    /// splitter and cluster-task read paths.
+                    auto filtered = file_bucket_info->filterByMatchingRowGroups(matching_row_groups, total_row_groups);
                     if (!filtered)
                         continue;
                     object_info->file_bucket_info = std::move(filtered);

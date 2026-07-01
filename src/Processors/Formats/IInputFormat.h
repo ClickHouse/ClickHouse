@@ -57,7 +57,13 @@ struct FileBucketInfo
     virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
     virtual String getIdentifier() const = 0;
     virtual String getFormatName() const = 0;
-    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const = 0;
+    /// Returns a new bucket that keeps only `matching_row_groups`. `file_num_row_groups` is the total
+    /// number of row groups in the file as known by the caller (0 = unknown). When it is non-zero the
+    /// returned bucket carries it, so the read path keeps the fail-close
+    /// `checkFileMatchesBucketAssignment` guard against a concurrent overwrite; when it is zero the
+    /// bucket keeps whatever total this prototype already had.
+    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(
+        const std::vector<size_t> & matching_row_groups, size_t file_num_row_groups) const = 0;
 
     virtual ~FileBucketInfo() = default;
 };
