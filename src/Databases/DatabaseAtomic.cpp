@@ -14,6 +14,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/AsyncLoader.h>
 #include <Common/CurrentThread.h>
@@ -397,6 +398,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         chassert(!table_data_path_saved.empty());
         db.tables.erase(table_name_);
         db.table_name_to_path.erase(table_name_);
+        /// This path bypasses detachTableUnlocked, so clear stale async-load names
+        /// here too, otherwise getAllTableNames keeps suggesting the old name (#91777).
+        db.eraseAsyncLoadState(table_name_);
         if (has_symlink)
             db.tryRemoveSymlink(table_name_);
         return table_data_path_saved;
@@ -419,6 +423,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table_.get()))
             if (mv->hasInnerTable())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move MaterializedView with inner table to other database");
+        if (const auto * ts = dynamic_cast<const StorageTimeSeries *>(table_.get()))
+            if (ts->hasInnerTables())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move TimeSeries table with inner tables to other database");
     };
 
     String table_data_path;
