@@ -181,6 +181,7 @@ These are the distance functions for vector similarity search that use `QBit` da
 
 * [`L2DistanceTransposed`](../functions/distance-functions.md#L2DistanceTransposed)
 * [`cosineDistanceTransposed`](../functions/distance-functions.md#cosineDistanceTransposed)
+* [`dotProductTransposed`](../functions/distance-functions.md#dotProductTransposed)
 )DOCS_MD",
             .syntax = "QBit(T, dim)",
             .examples = {},
