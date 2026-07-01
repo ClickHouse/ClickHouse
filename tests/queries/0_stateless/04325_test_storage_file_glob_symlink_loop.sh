@@ -97,6 +97,26 @@ mkdir -p "$TEST_DIR_ABS/overprune/root/deep/mid"
 printf "row1\n" > "$TEST_DIR_ABS/overprune/root/f.txt"
 ln -s ../.. "$TEST_DIR_ABS/overprune/root/deep/mid/back"
 
+# Adjacent globstars through the zero-level re-application escape, over a symlink
+# loop: `globstarloop/root/top.txt`, `globstarloop/root/a/back -> ..`
+# (canonical(`root/a/back`) == canonical(`root`)). Pattern `root/**/**/*.txt`
+# reaches `top.txt` ONLY through the zero-level re-application chain: both `**`
+# segments match zero directory levels and the trailing `*.txt` is re-applied at
+# `root` itself. Each re-application re-enters `root`, which the caller frame
+# already holds on `active_dirs_on_stack`, so it MUST be exempt from the cycle
+# guard (the `zero_level_reapplication` escape). If that escape were dropped, the
+# re-application would see `canonical(root)` already on the stack and return
+# early, silently dropping `top.txt` (0 rows instead of 1). The `back -> ..`
+# symlink still forms a genuine loop during the recursive descent, which the
+# guard breaks (canonical(`root/a/back`) == on-stack `root`), so the walk
+# terminates with no `Too many levels of symbolic links` exception. This locks
+# down the `**/**` interaction with a symlink loop, which the two sibling tests
+# (04489 adjacent globstars without symlinks, and the scenarios above without the
+# `**/**` interaction) do not cover.
+mkdir -p "$TEST_DIR_ABS/globstarloop/root/a"
+printf "row1\n" > "$TEST_DIR_ABS/globstarloop/root/top.txt"
+ln -s .. "$TEST_DIR_ABS/globstarloop/root/a/back"
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -164,6 +184,15 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/adj/root/a*
 # not prune the match even though canonical(`.../mid/back`) equals the on-stack root.
 echo "bounded-finite-tail-after-last-globstar"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/overprune/root/**/mid/*/*.txt', 'TSV', 'val String')"
+
+# Adjacent globstars over a symlink loop, exercising the zero-level re-application
+# escape while the remaining suffix still has another whole-segment `**`: must
+# return 1 (`top.txt`) and must not raise `Too many levels of symbolic links`.
+# The row is reachable only through the zero-level re-application chain that
+# re-enters the on-stack root, so it verifies the escape; the `back -> ..`
+# symlink loop is broken by the guard during the recursive descent.
+echo "adjacent-globstars-through-symlink-loop"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/globstarloop/root/**/**/*.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"
