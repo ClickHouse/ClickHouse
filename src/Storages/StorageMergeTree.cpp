@@ -2069,23 +2069,45 @@ bool StorageMergeTree::optimize(
         /// Explicit transactions take the sequential path: parallel merges would otherwise share a
         /// single transaction object, which is not designed for concurrent use.
         ///
-        /// The parallelism is bounded by the currently free capacity of the background merge pool
-        /// (`background_pool_size` * `background_merges_mutations_concurrency_ratio` minus the merges
-        /// and mutations already running), so a foreground OPTIMIZE FINAL does not start more merges
-        /// than the operator's configured merge concurrency. This reads the same
-        /// `BackgroundMergesAndMutationsPoolTask` counter that background merge selection consults.
-        size_t max_concurrent_merges = 1;
-        if (auto merge_mutate_executor = getContext()->getMergeMutateExecutor())
+        /// To respect the operator's configured merge concurrency (`background_pool_size` *
+        /// `background_merges_mutations_concurrency_ratio`), reserve the slots in the same
+        /// `BackgroundMergesAndMutationsPoolTask` counter that background merge selection consults,
+        /// before assigning anything. The reservation is atomic and clamped to the free capacity, so
+        /// concurrent OPTIMIZE FINAL queries and the background pool all account for these merges, and
+        /// the counter never exceeds `getMaxTasksCount()` (which `getMaxSourcePartsBytesForMerge`
+        /// treats as a logical error). The reservation is held for the whole query and released here.
+        size_t reserved_merge_slots = 0;
+        auto & merge_pool_task_metric = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask];
+        SCOPE_EXIT({
+            if (reserved_merge_slots)
+                merge_pool_task_metric.fetch_sub(static_cast<Int64>(reserved_merge_slots), std::memory_order_relaxed);
+        });
+
+        if (txn == nullptr && partition_ids.size() > 1)
         {
-            const size_t max_tasks = merge_mutate_executor->getMaxTasksCount();
-            const auto occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
-            const size_t free_slots = (occupied >= 0 && static_cast<size_t>(occupied) < max_tasks) ? max_tasks - static_cast<size_t>(occupied) : 1;
-            max_concurrent_merges = std::min(partition_ids.size(), std::max<size_t>(1, free_slots));
+            if (auto merge_mutate_executor = getContext()->getMergeMutateExecutor())
+            {
+                const Int64 max_tasks = static_cast<Int64>(merge_mutate_executor->getMaxTasksCount());
+                const Int64 wanted = std::min<Int64>(static_cast<Int64>(partition_ids.size()), std::max<Int64>(1, max_tasks));
+
+                Int64 occupied = merge_pool_task_metric.load(std::memory_order_relaxed);
+                while (occupied < max_tasks)
+                {
+                    const Int64 grant = std::min(wanted, max_tasks - occupied);
+                    if (merge_pool_task_metric.compare_exchange_weak(occupied, occupied + grant, std::memory_order_relaxed))
+                    {
+                        reserved_merge_slots = static_cast<size_t>(grant);
+                        break;
+                    }
+                }
+            }
         }
+
+        const size_t max_concurrent_merges = std::max<size_t>(1, reserved_merge_slots);
 
         std::optional<PreformattedMessage> failure_reason;
 
-        if (max_concurrent_merges > 1 && txn == nullptr)
+        if (max_concurrent_merges > 1)
         {
             /// Each task writes only its own slot, so no synchronization is needed for the results.
             /// A default-constructed std::expected holds a value (i.e. "assigned successfully").
