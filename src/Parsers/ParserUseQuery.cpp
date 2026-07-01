@@ -44,28 +44,28 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    /// Support USE db.prefix syntax for DataLakeCatalog databases
-    /// Parse additional dot-separated parts and join them into the database name
+    /// `USE db.namespace` for DataLakeCatalog databases: fold the dot-separated parts into
+    /// a single database name; the interpreter splits it back into database and prefix.
     if (s_dot.ignore(pos, expected))
     {
         String database_name;
-        tryGetIdentifierNameInto(database, database_name);
+        /// A query-parameter database identifier extracts as an empty name and cannot be folded.
+        if (!tryGetIdentifierNameInto(database, database_name) || database_name.empty())
+            return false;
 
+        ParserIdentifier part_p;
         do
         {
-            ASTPtr next_part;
-            if (!name_p.parse(pos, next_part, expected))
+            ASTPtr part;
+            if (!part_p.parse(pos, part, expected))
                 return false;
-            String part_name;
-            tryGetIdentifierNameInto(next_part, part_name);
-            database_name += "." + part_name;
+            database_name += "." + getIdentifierName(part);
         } while (s_dot.ignore(pos, expected));
 
         database = make_intrusive<ASTIdentifier>(database_name);
     }
 
     auto query = make_intrusive<ASTUseQuery>();
-
     query->set(query->database, database);
     node = query;
 

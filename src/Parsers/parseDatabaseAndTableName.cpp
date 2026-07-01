@@ -8,6 +8,36 @@
 namespace DB
 {
 
+bool foldNamespacesIntoTableName(IParser::Pos & pos, Expected & expected, ASTPtr & table)
+{
+    ParserToken s_dot(TokenType::Dot);
+    ParserIdentifier part_parser;
+
+    String table_name;
+    /// A query-parameter identifier extracts as an empty name.
+    bool table_has_name = tryGetIdentifierNameInto(table, table_name) && !table_name.empty();
+
+    bool folded = false;
+    while (s_dot.ignore(pos, expected))
+    {
+        /// A query-parameter table identifier cannot be folded into a namespace-qualified name.
+        if (!table_has_name)
+            return false;
+
+        ASTPtr part;
+        if (!part_parser.parse(pos, part, expected))
+            return false;
+
+        table_name += "." + getIdentifierName(part);
+        folded = true;
+    }
+
+    if (folded)
+        table = make_intrusive<ASTIdentifier>(table_name);
+
+    return true;
+}
+
 bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String & database_str, String & table_str)
 {
     ParserToken s_dot(TokenType::Dot);
@@ -30,21 +60,11 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
             return false;
         }
 
+        if (!foldNamespacesIntoTableName(pos, expected, table))
+            return false;
+
         tryGetIdentifierNameInto(database, database_str);
         tryGetIdentifierNameInto(table, table_str);
-
-        /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
-        /// Join all additional parts into the table name
-        while (s_dot.ignore(pos))
-        {
-            ASTPtr next_part;
-            if (!table_parser.parse(pos, next_part, expected))
-                return false;
-
-            String next_part_name;
-            tryGetIdentifierNameInto(next_part, next_part_name);
-            table_str += "." + next_part_name;
-        }
     }
     else
     {
@@ -69,20 +89,8 @@ bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr 
         if (!table_parser.parse(pos, table, expected))
             return false;
 
-        /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
-        /// Join all additional parts into the table name
-        while (s_dot.ignore(pos, expected))
-        {
-            ASTPtr next_part;
-            if (!table_parser.parse(pos, next_part, expected))
-                return false;
-
-            String current_table_name;
-            String next_part_name;
-            tryGetIdentifierNameInto(table, current_table_name);
-            tryGetIdentifierNameInto(next_part, next_part_name);
-            table = make_intrusive<ASTIdentifier>(current_table_name + "." + next_part_name);
-        }
+        if (!foldNamespacesIntoTableName(pos, expected, table))
+            return false;
     }
 
     return true;
@@ -145,13 +153,17 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
                     database = std::move(first_identifier);
                     table = getIdentifierName(ast);
 
-                    /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
-                    /// Join all additional parts into the table name
+                    /// Fold namespace parts into the table name (DataLakeCatalog databases):
+                    /// db.ns1.ns2.table -> table `ns1.ns2.table`
                     while (ParserToken{TokenType::Dot}.ignore(pos, expected))
                     {
                         if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                         {
-                            /// db.namespace.*
+                            /// db.namespace.* means everything inside the namespace, which is the
+                            /// `namespace.` prefix of namespace-qualified table names. Keep the
+                            /// trailing dot: a bare `namespace` prefix would also match namespaces
+                            /// that merely start with the same characters (e.g. `namespace2`).
+                            table += ".";
                             wildcard = true;
                             return true;
                         }

@@ -1,6 +1,5 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -13,6 +12,7 @@
 #include <Parsers/ParserWithElement.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
 
@@ -132,20 +132,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!name_p.parse(pos, table, expected))
                 return false;
 
-            /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
-            /// Join all additional parts into the table name
-            while (s_dot.ignore(pos, expected))
-            {
-                ASTPtr next_part;
-                if (!name_p.parse(pos, next_part, expected))
-                    return false;
-
-                String current_table_name;
-                String next_part_name;
-                tryGetIdentifierNameInto(table, current_table_name);
-                tryGetIdentifierNameInto(next_part, next_part_name);
-                table = make_intrusive<ASTIdentifier>(current_table_name + "." + next_part_name);
-            }
+            if (!foldNamespacesIntoTableName(pos, expected, table))
+                return false;
         }
     }
 

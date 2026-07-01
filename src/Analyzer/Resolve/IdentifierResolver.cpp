@@ -304,8 +304,8 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 
     auto current_db_info = context->getCurrentDatabase();
     const String & current_database = current_db_info.database;
-    /// `DatabaseCatalog::isDatalakeCatalog` was renamed/broadened to `isRemoteDatabase` (which also
-    /// covers MySQL/PostgreSQL), so check the engine name to keep this datalake-specific.
+    /// Namespaced table names are specific to data lake catalogs, so check the engine name
+    /// (`isRemoteDatabase` would also cover MySQL/PostgreSQL).
     auto current_db_ptr = DatabaseCatalog::instance().tryGetDatabase(current_database);
     bool is_current_db_datalake = current_db_ptr && current_db_ptr->getEngineName() == DataLake::DATABASE_ENGINE_NAME;
 
@@ -398,42 +398,27 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     return result;
 }
 
-/// used as a fallback when normal resolution fails for DataLakeCatalog databases
+/// Fallback resolution for DataLakeCatalog databases whose table names are namespace-qualified:
+/// `namespace.table` is a table name within the current catalog, and a bare `table` gets the
+/// namespace prefix selected by `USE catalog.namespace` (if any).
 StoragePtr IdentifierResolver::tryResolveDatalakeTable(
     const Identifier & table_identifier,
     const ContextPtr & context,
     const CurrentDatabaseInfo & current_db_info)
 {
-    const String & current_database = current_db_info.database;
-    const String & table_prefix = current_db_info.table_prefix;
-
-    auto current_db = DatabaseCatalog::instance().tryGetDatabase(current_database);
+    auto current_db = DatabaseCatalog::instance().tryGetDatabase(current_db_info.database);
     if (!current_db)
         return nullptr;
 
-    size_t parts_size = table_identifier.getPartsSize();
-
-    if (parts_size == 1)
+    String table_name = table_identifier.getFullName();
+    if (!table_identifier.isCompound())
     {
-        /// Single-part identifier: apply table prefix if set
-        /// for example, with USE catalog.namespace, "table" becomes "namespace.table"
-        if (!table_prefix.empty())
-        {
-            String combined_table_name = table_prefix + "." + table_identifier[0];
-            if (auto storage = current_db->tryGetTable(combined_table_name, context))
-                return storage;
-        }
-    }
-    else if (parts_size == 2)
-    {
-        /// Two-part identifier where first part could be a namespace
-        /// for example, "namespace.table" -> try as "namespace.table" within current catalog
-        String combined_table_name = table_identifier[0] + "." + table_identifier[1];
-        if (auto storage = current_db->tryGetTable(combined_table_name, context))
-            return storage;
+        if (current_db_info.table_prefix.empty())
+            return nullptr;
+        table_name = current_db_info.table_prefix + "." + table_name;
     }
 
-    return nullptr;
+    return current_db->tryGetTable(table_name, context);
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
