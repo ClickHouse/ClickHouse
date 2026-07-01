@@ -155,18 +155,27 @@ def run_tests(
         # _Environment.from_dict rehydrates only PARAMETER (not JOB_CONFIG), so
         # attribute access (job_cfg.timeout) would raise AttributeError before
         # clickhouse-test even starts. Read the timeout defensively from either a
-        # mapping or a Job.Config object, defaulting to 2h when unset.
+        # mapping or a Job.Config object.
         job_cfg = Info().job_config
         configured_timeout = job_cfg.get("timeout") if isinstance(job_cfg, dict) else getattr(job_cfg, "timeout", None)
-        job_timeout = configured_timeout or 2 * 3600
-        elapsed = int(job_stop_watch.duration) if job_stop_watch else 0
-        # Bound Shell.run by the time actually left before Praktika hard-kills the
-        # job (job_timeout - elapsed), reserving RESERVE_SECONDS of that for the
-        # SIGTERM + log/result collection. Once the reserve is already gone this goes
-        # <= 0; clamp to a minimal positive value (NOT a fixed floor like 60s, which
-        # would outlast the real remaining time and let the runner hard-kill fire
-        # first, losing logs) so clickhouse-test is SIGTERMed promptly instead.
-        outer_timeout = max(1, job_timeout - elapsed - RESERVE_SECONDS)
+        if configured_timeout:
+            # Bound Shell.run by the time actually left before Praktika hard-kills
+            # the job (configured_timeout - elapsed), reserving RESERVE_SECONDS of
+            # that for the SIGTERM + log/result collection. Once the reserve is
+            # already gone this goes <= 0; clamp to a minimal positive value (NOT a
+            # fixed floor like 60s, which would outlast the real remaining time and
+            # let the runner hard-kill fire first, losing logs) so clickhouse-test
+            # is SIGTERMed promptly instead.
+            elapsed = int(job_stop_watch.duration) if job_stop_watch else 0
+            outer_timeout = max(1, configured_timeout - elapsed - RESERVE_SECONDS)
+        else:
+            # No CI job timeout to mirror: local / non-CI runs never populate
+            # JOB_CONFIG (generate_local_run_environment leaves it unset and the
+            # local path skips _pre_run). Leave the run unbounded as it has always
+            # been, rather than imposing a synthetic cap that would SIGTERM a
+            # healthy local ASan/debug run mid-flight. The backstop is only meant to
+            # mirror a real job-level deadline.
+            outer_timeout = None
     return Shell.run(command, verbose=True, timeout=outer_timeout)
 
 
