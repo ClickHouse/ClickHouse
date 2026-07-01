@@ -48,6 +48,21 @@ def test_table_rotation(start_cluster):
     assert int(node1.query("select count() from system.metric_log").strip()) > 0
     assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log")
 
+    # The wide `metric_log` here is configured with an explicit <engine>. With
+    # `add_minmax_index_for_numeric_columns` defaulting to true, it would otherwise gain one
+    # implicit min-max skip index per numeric column (~1500), which makes the wide->transposed
+    # rotation below time out while flushing. `createSystemLog` must opt config-supplied
+    # MergeTree-family system logs out of the implicit index, so none is materialized.
+    assert (
+        int(
+            node1.query(
+                "SELECT count() FROM system.data_skipping_indices "
+                "WHERE database = 'system' AND table = 'metric_log' AND name LIKE 'auto_minmax_index_%'"
+            ).strip()
+        )
+        == 0
+    )
+
     node1.replace_in_config(LOG_PATH, ">wide<", ">transposed<")
 
     # transposed mode
