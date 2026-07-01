@@ -78,6 +78,21 @@ SELECT
     =
     (SELECT groupArray((name, timestamp, money, flag)) FROM (SELECT * FROM tab_opt_out));
 
+-- The assertion above only reads the base part. Force a read of the projection `p` to prove that the
+-- opt-out also suppresses row reordering inside the projection part: with `optimize_row_order = 0` the
+-- projection keeps the insertion order within each `name` group (the projection's stable sort key),
+-- rather than the compression-optimized order. The expected order is the insertion order (read from the
+-- opted-out `tab_opt_out`, which is guaranteed to preserve it) stably re-sorted by `name`.
+SELECT 'opt_out projection part preserves insertion order';
+SELECT
+    (SELECT groupArray((name, money)) FROM tab_opt_out_projection
+        SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, force_optimize_projection_name = 'p')
+    =
+    (SELECT groupArray((name, money)) FROM
+        (SELECT name, money FROM
+            (SELECT name, money, rowNumberInAllBlocks() AS rn FROM tab_opt_out)
+            ORDER BY name, rn));
+
 SELECT 'optimized differs from insertion order';
 SELECT
     (SELECT groupArray((name, timestamp, money, flag)) FROM (SELECT * FROM tab_optimized))
