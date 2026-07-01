@@ -64,6 +64,7 @@ static struct InitFiu
     ONCE(smt_merge_task_sleep_in_prepare) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
+    ONCE(merge_tree_refresh_parts_throw_once) \
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
@@ -101,6 +102,9 @@ static struct InitFiu
     REGULAR(file_cache_slru_downgrade_fail_before_finalize) \
     REGULAR(file_cache_modify_size_limits_fail) \
     REGULAR(check_table_query_delay_for_part) \
+    REGULAR(database_catalog_throw_on_table_shutdown) \
+    REGULAR(database_catalog_throw_on_table_prepare_shutdown) \
+    REGULAR(database_replicated_throw_on_stop_replication) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
     REGULAR(taskstats_counters_reset_throw) \
@@ -122,6 +126,7 @@ static struct InitFiu
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
     ONCE(receive_timeout_on_table_status_response) \
+    ONCE(unexpected_packet_in_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
     REGULAR(delta_kernel_force_credentials_fingerprint_drift) \
     ONCE(delta_kernel_force_stale_token_error) \
