@@ -27,7 +27,12 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/setThreadName.h>
+#include <Common/Stopwatch.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
+#include <IO/SharedThreadPools.h>
+#include <base/sleep.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -60,6 +65,7 @@ namespace FailPoints
 {
     extern const char database_catalog_throw_on_table_shutdown[];
     extern const char database_catalog_throw_on_table_prepare_shutdown[];
+    extern const char database_catalog_shutdown_sleep_per_table[];
 }
 namespace
 {
@@ -571,16 +577,16 @@ void DatabaseWithOwnTablesBase::shutdown()
         tables_snapshot = tables;
     }
 
-    /// If a table throws while shutting down (e.g. a ZooKeeper timeout), we must still release the
-    /// references this catalog holds on every table: the UUID -> storage mapping keeps the storage
-    /// (and this database) alive otherwise, so it would be destroyed only when DatabaseCatalog is
-    /// destroyed at process exit - after the Poco logger registry and the static thread pools are
-    /// already gone, which aborts. Remember the first error and rethrow it after the cleanup.
+    /// A failing table shutdown must still release the references the catalog holds (the UUID ->
+    /// storage mappings): otherwise the storage stays alive until DatabaseCatalog is destroyed at
+    /// process exit, after loggers and static pools are gone, which aborts. Record the first error
+    /// and rethrow it once all cleanup has run.
     std::exception_ptr first_error;
 
-    /// The prepare phase can throw too: e.g. StorageReplicatedMergeTree::flushAndPrepareForShutdown
-    /// catches preparation failures, sets an immediate deadline and rethrows. Keep going so the
-    /// cleanup below still runs for every table.
+    /// Prepare phase runs sequentially. Some tables flush into other tables here (e.g. a Buffer
+    /// table flushes to its destination in flushAndPrepareForShutdown); doing this in parallel
+    /// could write into a table that has already entered shutdown-prepared read-only mode and
+    /// silently drop rows. This phase is cheap relative to the shutdown drain below.
     for (const auto & kv : tables_snapshot)
     {
         auto table_id = kv.second->getStorageID();
@@ -601,31 +607,120 @@ void DatabaseWithOwnTablesBase::shutdown()
         }
     }
 
-    for (const auto & kv : tables_snapshot)
+    /// Shutdown phase runs in parallel. IStorage::shutdown is the expensive, table-independent work
+    /// (ZooKeeper sessions, interserver endpoints, background pools) and is documented safe to call
+    /// concurrently. Prepare already ran above, so call shutdown() directly rather than
+    /// flushAndShutdown() — that avoids re-running the prepare/flush and racing dependent tables.
+    if (!tables_snapshot.empty())
     {
-        auto table_id = kv.second->getStorageID();
-        try
+        Stopwatch watch;
+        const auto db_name = getDatabaseName();
+        /// Tables carrying a UUID require the database to have one too (memory-backed databases
+        /// like system / information_schema have neither).
+        if (tables_snapshot.begin()->second->getStorageID().hasUUID())
+            chassert(db_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+
+        /// Errors from the parallel tasks are collected here. Held in a shared_ptr so a task that
+        /// somehow outlives this frame cannot dangle a reference into it.
+        struct ErrorRecorder
         {
-            fiu_do_on(FailPoints::database_catalog_throw_on_table_shutdown,
+            std::mutex mutex;
+            std::exception_ptr error;
+            void record(std::exception_ptr e)
             {
-                /// Test-only: emulate a table flushAndShutdown that throws (e.g. a ZooKeeper timeout).
-                /// Skip predefined databases so only the user table under test triggers it.
-                if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while shutting down table {}", table_id.getNameForLogs());
-            });
-            kv.second->flushAndShutdown();
-        }
-        catch (...)
+                std::lock_guard lock(mutex);
+                if (!error)
+                    error = e;
+            }
+        };
+        auto recorder = std::make_shared<ErrorRecorder>();
+
+        /// Lazy-init for non-server binaries (client/keeper) that reach this via a Database destructor.
+        auto & shared_pool = getDatabaseCatalogShutdownTablesThreadPool();
+        shared_pool.initializeWithDefaultSettingsIfNotInitialized();
+        ThreadPoolCallbackRunnerLocal<void> runner(shared_pool.get(), ThreadName::SHUTDOWN_TABLES);
+        /// Reserve so enqueueAndKeepTrack can't fail while tracking an already-scheduled task,
+        /// which would make the inline fallback run a duplicate.
+        runner.reserve(tables_snapshot.size());
+
+        for (const auto & kv : tables_snapshot)
         {
+            /// Capture only owned state (shared_ptr / logger), never `this` or the stack frame.
+            auto run_task = [log_ptr = log, table = kv.second, recorder]
+            {
+                std::optional<StorageID> table_id;
+                try
+                {
+                    table_id = table->getStorageID();
+                }
+                catch (...)
+                {
+                    recorder->record(std::current_exception());
+                    tryLogCurrentException(log_ptr, "Failed to read storage ID during shutdown");
+                    return;
+                }
+
+                try
+                {
+                    fiu_do_on(FailPoints::database_catalog_shutdown_sleep_per_table,
+                    {
+                        /// Skip predefined databases so a test enabling this failpoint only slows
+                        /// the user database under test.
+                        if (!DatabaseCatalog::isPredefinedDatabase(table_id->database_name))
+                            sleepForSeconds(1);
+                    });
+
+                    fiu_do_on(FailPoints::database_catalog_throw_on_table_shutdown,
+                    {
+                        if (!DatabaseCatalog::isPredefinedDatabase(table_id->database_name))
+                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while shutting down table {}", table_id->getNameForLogs());
+                    });
+                    table->shutdown();
+                }
+                catch (...)
+                {
+                    recorder->record(std::current_exception());
+                    tryLogCurrentException(log_ptr, fmt::format("Failed to shut down table {}", table_id->getNameForLogs()));
+                }
+
+                /// Release the catalog's reference even if shutdown() threw.
+                if (table_id->hasUUID())
+                {
+                    try
+                    {
+                        DatabaseCatalog::instance().removeUUIDMapping(table_id->uuid);
+                    }
+                    catch (...)
+                    {
+                        recorder->record(std::current_exception());
+                        tryLogCurrentException(log_ptr, fmt::format("Failed to remove UUID mapping for table {}", table_id->getNameForLogs()));
+                    }
+                }
+            };
+
+            try
+            {
+                runner.enqueueAndKeepTrack(run_task);
+            }
+            catch (...)
+            {
+                /// Scheduling failed (fault injector, pool exhausted). Run inline so this table is
+                /// still shut down and its reference released. Reserve above guarantees this only
+                /// happens when the task was never scheduled, so there is no duplicate.
+                tryLogCurrentException(log, "Failed to schedule shutdown task, running inline");
+                run_task();
+            }
+        }
+        runner.waitForAllToFinish();
+
+        {
+            std::lock_guard lock(recorder->mutex);
             if (!first_error)
-                first_error = std::current_exception();
-            tryLogCurrentException(log, fmt::format("Failed to shut down table {}", table_id.getNameForLogs()));
+                first_error = recorder->error;
         }
-        if (table_id.hasUUID())
-        {
-            chassert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
-            DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
-        }
+
+        LOG_INFO(log, "Shut down {} tables in {} in {} ms",
+            tables_snapshot.size(), backQuoteIfNeed(db_name), watch.elapsedMilliseconds());
     }
 
     {
