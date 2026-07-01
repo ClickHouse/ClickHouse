@@ -64,11 +64,36 @@ namespace ErrorCodes
 /// rejects as not well-formed before the substitution is read. Escaping '>' turns `]]>` into `]]&gt;`,
 /// which parses and decodes back to the exact original bytes. The extra escaping of `"` and `'` is
 /// harmless for text content — they round-trip to the same characters.
+///
+/// A carriage return is additionally emitted as the numeric character reference `&#13;`. XML end-of-line
+/// handling (XML 1.0, section 2.11) rewrites a literal `\r` or the sequence `\r\n` to a single `\n` when
+/// the synthetic `<from_env>`/`<from_zk>` document is reparsed. That would silently corrupt a literal
+/// substitution — for example a multi-line secret or a setting copied with Windows line endings. A
+/// character reference is resolved after end-of-line normalization, so `&#13;` round-trips to the exact
+/// original `\r` byte.
 static std::string escapeForXMLText(const std::string & s)
 {
     WriteBufferFromOwnString buf;
     writeXMLStringForTextElementOrAttributeValue(s, buf);
-    return buf.str();
+    std::string escaped = buf.str();
+
+    /// `writeXMLStringForTextElementOrAttributeValue` does not escape '\r', so do it here to keep the
+    /// exact original bytes across the reparse. Any '\r' remaining in `escaped` is a genuine carriage
+    /// return from the input: the escaping above only emits the entities `&lt; &amp; &gt; &quot; &apos;`
+    /// and copies every other byte verbatim.
+    if (escaped.find('\r') == std::string::npos)
+        return escaped;
+
+    std::string result;
+    result.reserve(escaped.size() + 4);
+    for (char c : escaped)
+    {
+        if (c == '\r')
+            result += "&#13;";
+        else
+            result += c;
+    }
+    return result;
 }
 
 /// For cutting preprocessed path to this base
