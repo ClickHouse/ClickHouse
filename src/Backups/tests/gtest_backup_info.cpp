@@ -348,6 +348,17 @@ TEST(BackupInfo, NormalizedStringUsesFrozenS3NamedCollection)
     EXPECT_NE(first.toNormalizedString(context), third.toNormalizedString(context));
 }
 
+#if USE_AWS_S3
+TEST(BackupInfo, NormalizedStringUsesS3BackupPathJoinSemantics)
+{
+    auto context = getContext().context;
+    auto info = BackupInfo::fromString("S3(collection, '/absolute')");
+    info.frozen_named_collection = makeNamedCollection({{"url", "s3://bucket/base"}});
+
+    EXPECT_THROW((void)info.toNormalizedString(context), Exception);
+}
+#endif
+
 TEST(BackupInfo, NormalizedStringRejectsUnresolvedNamedCollectionWithoutContext)
 {
     auto info = BackupInfo::fromString("S3(collection)");

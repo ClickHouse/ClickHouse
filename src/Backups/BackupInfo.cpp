@@ -523,11 +523,7 @@ namespace
 
     String appendPath(String base, const String & path)
     {
-        if (path.empty())
-            return base;
-        if (base.empty() || base.back() == '/')
-            return base + path;
-        return base + "/" + path;
+        return (fs::path(base) / path).string();
     }
 }
 
