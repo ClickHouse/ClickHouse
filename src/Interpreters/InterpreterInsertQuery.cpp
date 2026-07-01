@@ -776,15 +776,23 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     //
     // With `use_strict_insert_block_limits`, the deduplication info (source block number) is stamped
     // by a per-stream `AddDeduplicationInfoTransform` *after* the fan-out (see below), so each parallel
-    // branch restarts its block numbering from zero. Together with a non-empty `insert_deduplication_token`
-    // (whose dedup id is `token` + source block number, independent of the block contents) that produces
-    // identical ids across branches, which `MergeTreeSink` treats as duplicates and skips - silently
-    // dropping rows of a single parallel `INSERT`. Keep such inserts single-stream (as before), so the
-    // numbering stays global. Without a token the ids are redefined from the data hash, so they stay unique.
-    const bool strict_tokenized_insert = !async_insert
+    // branch restarts its block numbering from zero. When the deduplication id folds in that source block
+    // number, two identical squashed blocks that land on different branches get identical ids, which
+    // `MergeTreeSink` / `ReplicatedMergeTreeSink` treat as duplicates and skip - silently dropping rows of
+    // a single parallel `INSERT`. The source block number participates in the id:
+    //  - for any non-empty `insert_deduplication_token` (the id is `token` + source block number,
+    //    independent of the block contents), and
+    //  - for a token-less insert unless `insert_deduplication_version = old_separate_hashes`, which for a
+    //    token-less SOURCE block derives the id from the data hash alone and drops the source number;
+    //    `new_unified_hash` (the default) and `compatible_double_hashes` still append the source number for
+    //    a synchronous insert, so identical blocks on different branches collide.
+    // Keep such strict inserts single-stream (as before), so the numbering stays global.
+    const auto dedup_version = context->getServerSettings()[ServerSetting::insert_deduplication_version].value;
+    const bool strict_dedup_single_stream = !async_insert
         && settings[Setting::use_strict_insert_block_limits]
-        && !settings[Setting::insert_deduplication_token].value.empty();
-    const size_t insert_threads = (async_insert || strict_tokenized_insert) ? 1 : max_insert_threads;
+        && (!settings[Setting::insert_deduplication_token].value.empty()
+            || dedup_version != InsertDeduplicationVersions::OLD_SEPARATE_HASHES);
+    const size_t insert_threads = (async_insert || strict_dedup_single_stream) ? 1 : max_insert_threads;
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table,
         query_ptr,

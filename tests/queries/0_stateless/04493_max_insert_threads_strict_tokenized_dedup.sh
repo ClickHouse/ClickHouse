@@ -28,8 +28,11 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t_strict_tokenized_insert (x UInt64) ENGINE 
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --use_strict_insert_block_limits=1 --insert_deduplication_token='tok' -q \
     "EXPLAIN PIPELINE INSERT INTO t_strict_tokenized_insert VALUES (1)" | grep -c "MergeTreeSink"
 
-# Without a token, the strict plain INSERT can still fan out to parallel streams: four sinks.
-$CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --use_strict_insert_block_limits=1 -q \
+# The single-stream fallback is gated on use_strict_insert_block_limits: a tokenized insert without
+# strict limits stamps the source block number in the single-stream head, before the fan-out, so it can
+# still parallelize the writing side. Four sinks. (The strict token-less default new_unified_hash case,
+# which must also fall back, is covered by 04494.)
+$CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --insert_deduplication_token='tok' -q \
     "EXPLAIN PIPELINE INSERT INTO t_strict_tokenized_insert VALUES (1)" | grep -c "MergeTreeSink"
 
 # All rows must arrive under the strict + tokenized combination, even though the input is
