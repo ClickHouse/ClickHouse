@@ -3534,34 +3534,30 @@ namespace
             {
                 throw Exception(
                     ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD,
-                    "Column `{}` is not suitable as OneOf presence indicator. Ensure that Enum has all tags and there is one extra with "
-                    "value 0 that indicates absence of the element.",
+                    "Column `{}` is not suitable as OneOf presence indicator. Ensure that the Enum contains the value 0 "
+                    "(which indicates an omitted element) and the tag number of every oneof case that has a matching column.",
                     oneof_name);
             };
 
-            /// oneof presence indicator contains all tags
-            ///   although it is Ok if there is discrepancy in names
-            auto check_enum = [&throw_incompatible_oneof](const auto * data_type_enum, const OneofDescriptor * oneof_descriptor)
+            /// The presence Enum must be able to represent the oneof cases that actually have a
+            /// backing column: it must contain the 'omitted' marker 0 and the tag of this oneof
+            /// case. Extra (dead) Enum values are harmless and allowed; oneof cases without a
+            /// column impose no requirement (they are skipped and read as omitted). This keeps the
+            /// Enum decoupled from the full set of `.proto` tags, restoring protobuf forward/backward
+            /// schema evolution, while still rejecting an Enum that cannot hold a tag it will be asked
+            /// to store (which would otherwise write an out-of-range value into the Enum column).
+            auto check_enum
+                = [&throw_incompatible_oneof](const auto * data_type_enum, const OneofDescriptor * oneof_descriptor, int field_tag)
             {
-                int64_t expected_size = data_type_enum->getValues().size();
+                /// Compare by numeric value in int64_t so the protobuf field number is never narrowed
+                /// to the Enum's underlying type (which could wrap around for large tags).
+                boost::container::flat_set<int64_t> enum_values_sorted;
+                enum_values_sorted.reserve(data_type_enum->getValues().size());
+                for (const auto & elem : data_type_enum->getValues())
+                    enum_values_sorted.insert(elem.second);
 
-                if (expected_size == oneof_descriptor->field_count() + 1)
-                {
-                    boost::container::flat_set<size_t> enum_values_sorted;
-                    enum_values_sorted.reserve(expected_size);
-                    boost::container::flat_set<size_t> oneof_values_sorted;
-                    oneof_values_sorted.reserve(expected_size);
-
-                    for (const auto & elem : data_type_enum->getValues())
-                        enum_values_sorted.insert(elem.second);
-                    for (int fnum = 0; fnum < oneof_descriptor->field_count(); ++fnum)
-                        oneof_values_sorted.insert(oneof_descriptor->field(fnum)->number());
-
-                    oneof_values_sorted.insert(0); // 'omitted' marker
-
-                    if (oneof_values_sorted == enum_values_sorted)
-                        return;
-                }
+                if (enum_values_sorted.contains(0) && enum_values_sorted.contains(field_tag))
+                    return;
 
                 throw_incompatible_oneof(oneof_descriptor->name());
             };
@@ -3595,12 +3591,12 @@ namespace
                             if (data_type_id == TypeIndex::Enum8)
                             {
                                 const auto * data_type_enum8 = assert_cast<const DataTypeEnum8 *>(data_types_[idx].get());
-                                check_enum(data_type_enum8, oneof_descriptor);
+                                check_enum(data_type_enum8, oneof_descriptor, field_tag);
                             }
                             else if (data_type_id == TypeIndex::Enum16)
                             {
                                 const auto * data_type_enum16 = assert_cast<const DataTypeEnum16 *>(data_types_[idx].get());
-                                check_enum(data_type_enum16, oneof_descriptor);
+                                check_enum(data_type_enum16, oneof_descriptor, field_tag);
                             }
                             else
                                 check_int_type_suitable_for_oneof_presence(data_type_id, oneof_descriptor->name());
