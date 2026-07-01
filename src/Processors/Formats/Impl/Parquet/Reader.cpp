@@ -474,6 +474,10 @@ void Reader::prepareBloomFilterCondition()
     /// Index in output block -> arrow column info.
     std::vector<std::optional<std::pair</*primitive_idx*/ size_t, parquet::ColumnDescriptor>>>
         bf_eligible_columns(extended_sample_block.columns());
+    /// Index in output block -> whether at least one surviving row group can use the dictionary page
+    /// for this column. Used below to exempt the exact dictionary filter from the bloom filter's
+    /// set-size cap (see hash_many).
+    std::vector<bool> dict_filter_eligible_columns(extended_sample_block.columns(), false);
     bool any_column_eligible_for_bf = false;
     for (size_t primitive_idx = 0; primitive_idx < primitive_columns.size(); ++primitive_idx)
     {
@@ -491,22 +495,26 @@ void Reader::prepareBloomFilterCondition()
         /// low-cardinality one stays dictionary-encoded - so we must scan all row groups rather than
         /// assume the first one is representative, otherwise later row groups silently lose pruning.
         bool any_row_group_eligible = false;
+        bool any_row_group_dict_eligible = false;
         for (const RowGroup & row_group : row_groups)
         {
             const parq::ColumnChunk * column_chunk_meta = row_group.columns[primitive_idx].meta;
             bool has_bloom_filter = options.format.parquet.bloom_filter_push_down
                 && column_chunk_meta->meta_data.__isset.bloom_filter_offset;
-            if (has_bloom_filter || columnChunkCanUseDictionaryFilter(*column_chunk_meta))
-            {
-                any_row_group_eligible = true;
+            bool dict_eligible = columnChunkCanUseDictionaryFilter(*column_chunk_meta);
+            any_row_group_eligible |= has_bloom_filter || dict_eligible;
+            any_row_group_dict_eligible |= dict_eligible;
+            /// Dictionary eligibility already implies overall eligibility, so once we have seen it
+            /// there is nothing left to learn from the remaining row groups.
+            if (any_row_group_dict_eligible)
                 break;
-            }
         }
         if (!any_row_group_eligible)
             continue;
 
         parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
         bf_eligible_columns[column_info.idx_in_output_block].emplace(primitive_idx, std::move(desc));
+        dict_filter_eligible_columns[column_info.idx_in_output_block] = any_row_group_dict_eligible;
         any_column_eligible_for_bf = true;
     }
 
@@ -536,7 +544,14 @@ void Reader::prepareBloomFilterCondition()
             const auto & pair = bf_eligible_columns.at(column_idx);
             if (!pair.has_value())
                 return std::nullopt;
-            if (column->size() > options.bloom_filter_max_set_size)
+            /// The `bloom_filter_max_set_size` cutoff exists because a large queried set is unlikely to
+            /// be ruled out by a probabilistic bloom filter and would make us read many filter blocks
+            /// for nothing. The dictionary filter is exact and reads no extra data per value, so that
+            /// rationale does not apply: capping here would silently disable dictionary pruning for
+            /// `IN` lists with more than `bloom_filter_max_set_size` elements, which is exactly the
+            /// workload this feature targets. So keep the cap only for columns that can use nothing but
+            /// the bloom filter.
+            if (!dict_filter_eligible_columns[column_idx] && column->size() > options.bloom_filter_max_set_size)
                 return std::nullopt;
             const auto & [primitive_idx, descriptor] = *pair;
             auto hashes = parquetTryHashColumn(column.get(), &descriptor);
