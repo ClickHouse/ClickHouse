@@ -2345,7 +2345,9 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
         checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
 
-    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && settings.allow_inferring_nullable_columns;
+    /// LowCardinality(Nullable(...)) holds nulls inside the dictionary, so canBeInsideNullable() is false; exclude it explicitly.
+    bool type_hint_not_nullable_capable = type_hint && !type_hint->isLowCardinalityNullable() && !removeNullable(type_hint)->canBeInsideNullable();
+    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
