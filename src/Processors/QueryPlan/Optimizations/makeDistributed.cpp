@@ -108,6 +108,13 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
 
         if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
         {
+            /// The old interpreter plans read-in-order before the query plan is optimized (with
+            /// query_plan_read_in_order = 0). The shipped fragments do not carry the in-order contract,
+            /// so reject it cleanly here instead of failing on a non-serializable finish-sorting step.
+            if (read->getQueryInfo().input_order_info)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "make_distributed_plan does not support a read-in-order distributed read");
+
             if (read->hasPinnedBlockNumbers())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "make_distributed_plan does not support a distributed read with a pinned block-number "
@@ -1048,7 +1055,10 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
 #if CLICKHOUSE_CLOUD
                 ReadFromMergeTree * read_merge_tree = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
-                if (read_merge_tree && !optimization_settings.distributed_plan_prefer_replicas_over_workers)
+                /// A read using a feature the worker step cannot reproduce from shipped parts (see
+                /// `canCreateFrom`) goes to a full replica below, which re-plans the read locally.
+                if (read_merge_tree && !optimization_settings.distributed_plan_prefer_replicas_over_workers
+                    && ReadFromMergeTreeAtWorker::canCreateFrom(*read_merge_tree))
                 {
                     /// Ship each bucket's authoritative marks (and FINAL borders + index) the same way the
                     /// replica path does, so the worker reads exactly its slice and does FINAL per-lane.
