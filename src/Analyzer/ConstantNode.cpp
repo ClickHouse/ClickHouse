@@ -203,7 +203,14 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
         /// Also for Dynamic and Object types we can lose types information, so we need to create a Field carefully.
-        auto constant_value_ast = getCachedAST(from_column);
+        ASTPtr constant_value_ast = getCachedAST(from_column);
+
+        /// datetimes are serialized as UTC wall-clock text, so cast them through the UTC-typed sibling first -
+        /// this keeps the exact instant under any parser mode, unlike the DST-ambiguous local text
+        auto utc_type = changeDateTimeTimeZoneToUTC(constant_value_type);
+        if (utc_type.get() != constant_value_type.get())
+            constant_value_ast = makeASTFunction("_CAST", std::move(constant_value_ast), make_intrusive<ASTLiteral>(utc_type->getName()));
+
         auto constant_type_name_ast = make_intrusive<ASTLiteral>(constant_value_type->getName());
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
     }

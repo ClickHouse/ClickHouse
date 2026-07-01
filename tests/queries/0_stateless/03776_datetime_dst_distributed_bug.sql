@@ -89,7 +89,7 @@ SETTINGS prefer_localhost_replica = 0;
 
 DROP TABLE IF EXISTS ts_data_dt_dst_03776;
 
--- Variant/JSON reparse constants via date_time_input_format, so they must not receive the ISO form
+-- Variant/JSON reparse constants via date_time_input_format, so they keep the plain local text
 SELECT '-- Test 10: Variant(DateTime64) constant via remote with basic input format';
 SELECT '2025-10-26 05:00:01.000000'::Variant(DateTime64(6, 'Europe/Prague')) FROM remote('127.0.0.1', 'system.one')
 SETTINGS prefer_localhost_replica = 0, date_time_input_format = 'basic';
@@ -97,3 +97,31 @@ SETTINGS prefer_localhost_replica = 0, date_time_input_format = 'basic';
 SELECT '-- Test 11: JSON typed path constant via remote with basic input format';
 SELECT '{"a" : "2025-10-26 05:00:01.000000"}'::JSON(a DateTime64(6, 'Europe/Prague')) FROM remote('127.0.0.1', 'system.one')
 SETTINGS prefer_localhost_replica = 0, date_time_input_format = 'basic';
+
+-- the UTC double-cast must keep the exact instant under any parser mode
+CREATE TABLE ts_data_dst_03776 (
+    ts UInt64,
+    dt DateTime64(6, 'Europe/Prague') DEFAULT fromUnixTimestamp64Micro(ts, 'Europe/Prague')
+) ENGINE = MergeTree ORDER BY dt;
+
+INSERT INTO ts_data_dst_03776 (ts) VALUES (1761429601000000), (1761433201000000), (1761436801000000), (1761440401000000), (1761444001000000);
+
+SELECT '-- Test 12: DST range filter via remote with basic cast mode';
+WITH
+    toDateTime64('2025-10-26 00:00:00', 6, 'Europe/Prague') AS min_dt,
+    (min_dt + INTERVAL 3 HOUR) AS max_dt
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), ts_data_dst_03776)
+WHERE dt > min_dt AND dt < max_dt
+SETTINGS prefer_localhost_replica = 0, cast_string_to_date_time_mode = 'basic';
+
+SELECT '-- Test 13: exact post-DST match via remote with basic cast mode';
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), ts_data_dst_03776)
+WHERE dt = toDateTime64(1761440401, 6, 'Europe/Prague')
+SETTINGS prefer_localhost_replica = 0, cast_string_to_date_time_mode = 'basic';
+
+SELECT '-- Test 14: array carrier via remote with basic cast mode';
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), ts_data_dst_03776)
+WHERE has([toDateTime64(1761440401, 6, 'Europe/Prague')], dt)
+SETTINGS prefer_localhost_replica = 0, cast_string_to_date_time_mode = 'basic';
+
+DROP TABLE ts_data_dst_03776;

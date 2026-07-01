@@ -12,18 +12,26 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
+
+#include <Common/DateLUT.h>
+#include <IO/WriteHelpers.h>
 
 #include <Common/FieldVisitorToString.h>
 
@@ -1262,13 +1270,20 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::DateTime64:
         {
-            /// use ISO/UTC here - a local-time string is ambiguous around DST, so a shard could read back the wrong hour
-            /// but Variant/Dynamic/JSON reparse the string via date_time_input_format, so keep the plain local text for them
-            FormatSettings format_settings;
-            if (!is_inside_variant_or_dynamic && !is_inside_object)
-                format_settings.date_time_output_format = FormatSettings::DateTimeOutputFormat::ISO;
+            /// write UTC wall-clock text - with the UTC-typed cast added by ConstantNode::toASTImpl it keeps
+            /// the exact instant under any parser mode, unlike the DST-ambiguous local text
+            /// Variant/Dynamic/JSON reparse plain strings without that cast, so they keep the local text
             WriteBufferFromOwnString buf;
-            data_type->getDefaultSerialization()->serializeText(*column, row, buf, format_settings);
+            if (is_inside_variant_or_dynamic || is_inside_object)
+                data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
+            else if (data_type->getTypeId() == TypeIndex::DateTime)
+                writeDateTimeText(assert_cast<const ColumnVector<UInt32> &>(*column).getData()[row], buf, DateLUT::instance("UTC"));
+            else
+                writeDateTimeText(
+                    assert_cast<const ColumnDecimal<DateTime64> &>(*column).getData()[row],
+                    assert_cast<const DataTypeDateTime64 &>(*data_type).getScale(),
+                    buf,
+                    DateLUT::instance("UTC"));
             return Field(buf.str());
         }
         case TypeIndex::UInt8:
@@ -1400,6 +1415,73 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type)
 {
     return getFieldFromColumnForASTLiteralImpl(column, row, data_type, /*is_inside_object=*/ false, /*is_inside_variant_or_dynamic=*/ false);
+}
+
+DataTypePtr changeDateTimeTimeZoneToUTC(const DataTypePtr & type)
+{
+    switch (type->getTypeId())
+    {
+        case TypeIndex::DateTime:
+        {
+            const auto & datetime_type = assert_cast<const DataTypeDateTime &>(*type);
+            if (datetime_type.hasExplicitTimeZone() && datetime_type.getTimeZone().getTimeZone() == "UTC")
+                return type;
+            return std::make_shared<DataTypeDateTime>("UTC");
+        }
+        case TypeIndex::DateTime64:
+        {
+            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*type);
+            if (datetime64_type.hasExplicitTimeZone() && datetime64_type.getTimeZone().getTimeZone() == "UTC")
+                return type;
+            return std::make_shared<DataTypeDateTime64>(datetime64_type.getScale(), "UTC");
+        }
+        case TypeIndex::Nullable:
+        {
+            const auto & nested = assert_cast<const DataTypeNullable &>(*type).getNestedType();
+            auto rewritten = changeDateTimeTimeZoneToUTC(nested);
+            if (rewritten.get() == nested.get())
+                return type;
+            return std::make_shared<DataTypeNullable>(rewritten);
+        }
+        case TypeIndex::Array:
+        {
+            const auto & nested = assert_cast<const DataTypeArray &>(*type).getNestedType();
+            auto rewritten = changeDateTimeTimeZoneToUTC(nested);
+            if (rewritten.get() == nested.get())
+                return type;
+            return std::make_shared<DataTypeArray>(rewritten);
+        }
+        case TypeIndex::Map:
+        {
+            const auto & map_type = assert_cast<const DataTypeMap &>(*type);
+            auto rewritten_key = changeDateTimeTimeZoneToUTC(map_type.getKeyType());
+            auto rewritten_value = changeDateTimeTimeZoneToUTC(map_type.getValueType());
+            if (rewritten_key.get() == map_type.getKeyType().get() && rewritten_value.get() == map_type.getValueType().get())
+                return type;
+            return std::make_shared<DataTypeMap>(rewritten_key, rewritten_value);
+        }
+        case TypeIndex::Tuple:
+        {
+            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
+            const auto & elements = tuple_type.getElements();
+            DataTypes rewritten_elements;
+            rewritten_elements.reserve(elements.size());
+            bool changed = false;
+            for (const auto & element : elements)
+            {
+                rewritten_elements.push_back(changeDateTimeTimeZoneToUTC(element));
+                changed |= rewritten_elements.back().get() != element.get();
+            }
+            if (!changed)
+                return type;
+            if (tuple_type.hasExplicitNames())
+                return std::make_shared<DataTypeTuple>(rewritten_elements, tuple_type.getElementNames());
+            return std::make_shared<DataTypeTuple>(rewritten_elements);
+        }
+        /// Variant/Dynamic/JSON values keep local text (see above), so their types must stay unchanged
+        default:
+            return type;
+    }
 }
 
 }

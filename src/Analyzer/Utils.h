@@ -220,4 +220,7 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
 
+/// Returns the type with all DateTime/DateTime64 time zones rewritten to UTC (skipping Variant/Dynamic/JSON), or the same type if nothing changed
+DataTypePtr changeDateTimeTimeZoneToUTC(const DataTypePtr & type);
+
 }
