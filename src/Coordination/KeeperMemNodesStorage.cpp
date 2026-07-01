@@ -205,32 +205,6 @@ std::vector<std::string> KeeperMemNodesStorage::listCommittedChildrenNames(std::
     return res;
 }
 
-void KeeperMemNodesStorage::visitCommittedChildren(std::string_view path, const Node * node, std::function<bool(std::string_view /*name*/, const Node *)> check_node) const
-{
-    if (!node)
-    {
-        auto node_it = container.find(path);
-        if (node_it == container.end())
-            onStorageInconsistency("Child not found");
-        node = &node_it->value;
-    }
-    const CompactChildrenSet & set = node->getChildren();
-    std::string child_path(path);
-    if (!child_path.ends_with("/"))
-        child_path.push_back('/');
-    size_t prefix_length = child_path.size();
-    for (std::string_view child_name : set)
-    {
-        child_path.resize(prefix_length);
-        child_path += child_name;
-        auto node_it = container.find(child_path);
-        if (node_it == container.end())
-            onStorageInconsistency("Failed to find a child for stats/data");
-        if (!check_node(child_name, &node_it->value))
-            break;
-    }
-}
-
 bool KeeperMemNodesStorage::addCommittedNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest)
 {
     auto it = container.find(path);

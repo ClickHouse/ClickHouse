@@ -140,12 +140,6 @@ struct KeeperNodesStorage
     ///   NodeHolder getCommittedNode(std::string_view path);
     ///   UncommittedNodeRef getUncommittedNode(std::string_view path);
     ///
-    ///   /// List children with their stats and data. Stops early if callback returns false.
-    ///   /// If `node` is nullptr, the implementation will find node by path if needed.
-    ///   void visitCommittedChildren(
-    ///       std::string_view path, const Node * node,
-    ///       std::function<bool(std::string_view /*name*/, const Node *)> check_node) const;
-    ///
     ///   /// Traverses subtree in pre-order (parent before children). Stops early and returns false
     ///   /// if callback returns false or if more than `limit` nodes are found.
     ///   /// Returns true if the whole subtree was visited (reported to check_node).

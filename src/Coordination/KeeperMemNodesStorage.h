@@ -120,10 +120,6 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
 
     std::vector<std::string> listCommittedChildrenNames(std::string_view path, const Node * node) const;
 
-    void visitCommittedChildren(
-        std::string_view path, const Node * node,
-        std::function<bool(std::string_view /*name*/, const Node *)> check_node) const;
-
     /// Traverses subtree in pre-order (parent before children). Stops early and returns false
     /// if callback returns false or if more than `limit` nodes are found.
     /// Returns true if the whole subtree was visited (reported to check_node).

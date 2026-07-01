@@ -737,22 +737,27 @@ processLocal(const Coordination::ZooKeeperListRecursiveRequest & zk_request, Sto
         const std::string & current_path = response->children[frontier];
         std::filesystem::path current_path_fs(current_path);
 
-        storage.nodes.visitCommittedChildren(
-            current_path, /*node=*/ nullptr,
-            [&](std::string_view child_name, const auto * child_node) -> bool
+        std::vector<std::string> children_names = storage.nodes.listCommittedChildrenNames(current_path);
+        for (const std::string & child_name : children_names)
+        {
+            std::string child_path = (current_path_fs / child_name).generic_string();
+
+            if (check_acl)
             {
-                auto child_path = (current_path_fs / child_name).generic_string();
-                if (!check_acl || storage.checkACL(child_node->stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
-                {
-                    if (response->children.size() - 1 >= zk_request.children_nodes_limit)
-                    {
-                        reached_limit = true;
-                        return false;
-                    }
-                    response->children.emplace_back(child_path);
-                }
-                return true;
-            });
+                const auto child_node_holder = storage.nodes.getCommittedNode(child_path);
+                const auto * child_node = child_node_holder.get();
+                chassert(child_node != nullptr);
+                if (!storage.checkACL(child_node->stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+                    continue;
+            }
+
+            if (response->children.size() - 1 >= zk_request.children_nodes_limit)
+            {
+                reached_limit = true;
+                break;
+            }
+            response->children.emplace_back(child_path);
+        }
 
         if (reached_limit)
             break;
@@ -1031,61 +1036,67 @@ processLocal(const Coordination::ZooKeeperListRequest & zk_request, Storage & st
     const bool with_stat = zk_request.with_stat.value_or(false);
     const bool with_data = zk_request.with_data.value_or(false);
 
-    if (!is_system_node && node->stats.getNumChildren() == 0)
+    std::vector<std::string> children_names;
+
+    /// (Save NodeStorage the trouble of looking for children if we know there are none.)
+    if (is_system_node || node->stats.getNumChildren() != 0)
     {
-        /// (Save NodeStorage the trouble of looking for children if we know there are none.)
+        if constexpr (std::is_same_v<Storage, KeeperMemoryStorage>)
+            /// Pass additional `nodes` argument, as an optimization.
+            children_names = storage.nodes.listCommittedChildrenNames(zk_request.path, node);
+        else
+            children_names = storage.nodes.listCommittedChildrenNames(zk_request.path);
     }
-    else if (!with_stat && !with_data && Coordination::ListRequestType::ALL == list_request_type)
+
+    if (!with_stat && !with_data && Coordination::ListRequestType::ALL == list_request_type)
     {
         /// Only need children names, no stats or data.
         /// We don't check children ACLs here because existence of znodes is not secret in zookeeper.
-        if constexpr (std::is_same_v<Storage, KeeperMemoryStorage>)
-            /// Pass additional `nodes` argument, as an optimization.
-            response->names = storage.nodes.listCommittedChildrenNames(zk_request.path, node);
-        else
-            response->names = storage.nodes.listCommittedChildrenNames(zk_request.path);
+        response->names = std::move(children_names);
     }
     else
     {
-        bool auth_failed = false;
-        storage.nodes.visitCommittedChildren(
-            zk_request.path, node,
-            [&](std::string_view child_name, const auto * child_node)
+        std::string child_path = zk_request.path;
+        if (!child_path.ends_with("/"))
+            child_path += "/";
+        size_t child_path_prefix = child_path.size();
+        for (const std::string & child_name : children_names)
+        {
+            /// (Reuse a string for a little bit of speed.)
+            child_path.resize(child_path_prefix);
+            child_path += child_name;
+
+            const auto child_node_holder = storage.nodes.getCommittedNode(child_path);
+            const auto * child_node = child_node_holder.get();
+            chassert(child_node != nullptr);
+
+            /// Check child's ACLs because we're going to report its data or stats - this
+            /// information should not be accessible without Read permission.
+            /// (Even if only list_request_type filtering is enabled, we'll expose the
+            ///  is_ephemeral flag, which is also secret.)
+            if (check_acl && !storage.checkACL(child_node->stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+                return auth_error();
+
+            using enum Coordination::ListRequestType;
+            if (Coordination::ListRequestType::ALL != list_request_type)
             {
-                /// Check child's ACLs because we're going to report its data or stats - this
-                /// information should not be accessible without Read permission.
-                /// (Even if only list_request_type filtering is enabled, we'll expose the
-                ///  is_ephemeral flag, which is also secret.)
-                if (check_acl && !storage.checkACL(child_node->stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
-                {
-                    auth_failed = true;
-                    return false;
-                }
+                bool is_ephemeral = child_node->stats.isEphemeral();
+                if ((is_ephemeral && list_request_type == PERSISTENT_ONLY) ||
+                    (!is_ephemeral && list_request_type == EPHEMERAL_ONLY))
+                    continue;
+            }
 
-                using enum Coordination::ListRequestType;
-                if (Coordination::ListRequestType::ALL != list_request_type)
-                {
-                    bool is_ephemeral = child_node->stats.isEphemeral();
-                    if ((is_ephemeral && list_request_type == PERSISTENT_ONLY) ||
-                        (!is_ephemeral && list_request_type == EPHEMERAL_ONLY))
-                        return true;
-                }
+            response->names.emplace_back(child_name);
 
-                response->names.emplace_back(child_name);
-
-                if (with_stat)
-                {
-                    Coordination::Stat child_stat;
-                    child_node->stats.setResponseStat(child_stat);
-                    response->stats.emplace_back(child_stat);
-                }
-                if (with_data)
-                    response->data.emplace_back(child_node->getData());
-
-                return true;
-            });
-        if (auth_failed)
-            return auth_error();
+            if (with_stat)
+            {
+                Coordination::Stat child_stat;
+                child_node->stats.setResponseStat(child_stat);
+                response->stats.emplace_back(child_stat);
+            }
+            if (with_data)
+                response->data.emplace_back(child_node->getData());
+        }
     }
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
