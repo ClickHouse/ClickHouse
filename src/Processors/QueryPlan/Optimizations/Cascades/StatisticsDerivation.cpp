@@ -119,7 +119,7 @@ Float64 clampJoinRowCount(JoinKind kind, JoinStrictness strictness, Float64 base
     /// A full join keeps unmatched rows from both sides, so it is at least the larger side regardless
     /// of strictness. (Checked before the semi/any bounds, which apply only to one preserved side.)
     if (kind == JoinKind::Full)
-        return std::max(base, std::max(left, right));
+        return std::max({base, left, right});
 
     const Float64 preserved = (kind == JoinKind::Right) ? right : left;
 
@@ -137,7 +137,7 @@ Float64 clampJoinRowCount(JoinKind kind, JoinStrictness strictness, Float64 base
             return std::min(base, left);
         /// Inner any dedups to matching keys (measured: 1000 rows of one key ANY-join 1 row -> 1), so
         /// it cannot exceed either side.
-        return std::min(base, std::min(left, right));
+        return std::min({base, left, right});
     }
 
     /// Strictness All/Unspecified: an outer join keeps every preserved-side row, so the output is at
