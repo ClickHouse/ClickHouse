@@ -22,7 +22,7 @@ masked, exactly as in `SHOW CREATE TABLE`.
 ## Columns {#columns}
 
 - `name` ([String](/sql-reference/data-types/string)) — Name of the handler.
-- `protocol` ([Nullable(String)](/sql-reference/data-types/nullable)) — Composable protocol the handler is restricted to, or NULL for all http/https protocols.
+- `protocol` ([Nullable(String)](/sql-reference/data-types/nullable)) — Composable protocol the handler is restricted to, or NULL if the handler is active on all HTTP endpoints (the built-in `http`/`https` ports and every HTTP-type composable protocol listener).
 - `url_match_type` ([String](/sql-reference/data-types/string)) — How the URL is matched: `exact`, `prefix` or `regexp`.
 - `url` ([String](/sql-reference/data-types/string)) — The URL pattern that the handler matches.
 - `methods` ([Array(String)](/sql-reference/data-types/array)) — Allowed HTTP methods.

@@ -24,7 +24,7 @@ Creates a handler with a specified `name`. The name is used for managing handler
 
 ## Clauses {#clauses}
 
-- `PROTOCOL` — optional. If a protocol name is specified, the handler is active only for the specified [composable protocol](/operations/settings/composable-protocols). Otherwise, it is active for all of http/https protocols.
+- `PROTOCOL` — optional. If a protocol name is specified, the handler is active only for the specified [composable protocol](/operations/settings/composable-protocols). Otherwise, the handler is active on all HTTP endpoints: the built-in `http`/`https` ports and every HTTP-type [composable protocol](/operations/settings/composable-protocols) listener.
 - `URL` — mandatory. Can be in the form of an exact URL, a `URL PREFIX`, or a `URL REGEXP`. For exact URLs and prefixes, ambiguity is checked at creation/alter time and an exception is thrown if there is ambiguity. For regexp, ambiguity cannot be checked. The URL is matched without the `?` query string and the `#` fragment identifier.
 - `METHODS` — optional. The list of allowed HTTP methods. By default, it is only `GET`. The supported methods are `GET`, `POST`, `PUT` and `DELETE`.
 - `TYPE` — optional. The only supported type for now is `query`.

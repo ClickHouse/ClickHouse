@@ -27,7 +27,8 @@ struct SQLDefinedHandler
     String name;
 
     /// If set, the handler is active only for the composable protocol with this name.
-    /// If not set, the handler is active for all of http/https protocols.
+    /// If not set, the handler is active on all HTTP endpoints: the built-in http/https
+    /// ports and every HTTP-type composable protocol listener.
     std::optional<String> protocol;
 
     URLMatchType url_match_type = URLMatchType::Exact;
