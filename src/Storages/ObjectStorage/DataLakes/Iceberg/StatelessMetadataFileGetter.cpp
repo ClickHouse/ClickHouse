@@ -11,6 +11,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 
 #include <Core/NamesAndTypes.h>
@@ -57,6 +58,11 @@ namespace ErrorCodes
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
+namespace FailPoints
+{
+extern const char iceberg_slow_manifest_read[];
+}
+
 namespace Setting
 {
 extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
@@ -85,6 +91,12 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
         /// Do not utilize filesystem cache if more precise cache enabled
         if (use_iceberg_metadata_cache)
             read_settings.enable_filesystem_cache = false;
+
+        // Test-only: simulate realistic per-object latency.
+        fiu_do_on(FailPoints::iceberg_slow_manifest_read,
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        });
 
         auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
         auto manifest_file_deserializer = std::make_unique<Iceberg::AvroForIcebergDeserializer>(
