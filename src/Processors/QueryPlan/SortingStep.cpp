@@ -246,14 +246,14 @@ SortingStep::SortingStep(
     const SharedHeader & input_header,
     SortDescription prefix_description_,
     SortDescription result_description_,
-    size_t max_block_size_,
+    const Settings & settings_,
     UInt64 limit_)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::FinishSorting)
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , limit(limit_)
-    , sort_settings(max_block_size_)
+    , sort_settings(settings_)
 {
 }
 

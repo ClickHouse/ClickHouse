@@ -77,7 +77,7 @@ public:
         const SharedHeader & input_header,
         SortDescription prefix_description_,
         SortDescription result_description_,
-        size_t max_block_size_,
+        const Settings & settings_,
         UInt64 limit_);
 
     /// MergingSorted
