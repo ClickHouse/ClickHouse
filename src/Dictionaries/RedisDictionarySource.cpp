@@ -13,6 +13,12 @@
 
 #include <Dictionaries/RedisSource.h>
 
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <Common/typeid_cast.h>
+#include <IO/WriteBufferFromString.h>
+#include <Formats/FormatSettings.h>
+
 namespace DB
 {
     namespace ErrorCodes

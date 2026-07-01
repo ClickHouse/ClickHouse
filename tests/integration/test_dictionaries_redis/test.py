@@ -90,7 +90,9 @@ LAYOUTS = [
 ]
 
 DICTIONARIES = []
-
+REGR_DICTIONARIES = []
+REGR_KEY_FIELD = Field("KeyField", "String", is_key=True, default_value_for_get="missing")
+REGR_LAYOUTS = [Layout("complex_key_cache")]
 
 def get_dict(source, layout, fields, suffix_name, dict_configs_path):
     structure = DictionaryStructure(layout, fields)
@@ -105,6 +107,7 @@ def get_dict(source, layout, fields, suffix_name, dict_configs_path):
 
 def generate_dict_configs():
     global DICTIONARIES
+    global REGR_DICTIONARIES
     global cluster
     dict_configs_path = os.path.join(SCRIPT_DIR, "configs/dictionaries")
     worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
@@ -113,7 +116,8 @@ def generate_dict_configs():
 
     if os.path.exists(dict_configs_path):
         shutil.rmtree(dict_configs_path)
-    os.mkdir(dict_configs_path)
+
+    os.makedirs(dict_configs_path, exist_ok=True)
 
     def make_source(name, db_index, storage_type):
         return SourceRedis(
@@ -151,7 +155,6 @@ def generate_dict_configs():
         "node", main_configs=main_configs, dictionaries=dictionaries, with_redis=True
     )
 
-
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
@@ -160,6 +163,12 @@ def started_cluster():
         cluster.start()
         assert len(FIELDS) == len(VALUES)
         for dicts in DICTIONARIES:
+            for dictionary in dicts:
+                logging.debug(f"Preparing {dictionary.name}")
+                dictionary.prepare_source(cluster)
+                logging.debug(f"Prepared {dictionary.name}")
+
+        for dicts in REGR_DICTIONARIES:
             for dictionary in dicts:
                 logging.debug(f"Preparing {dictionary.name}")
                 dictionary.prepare_source(cluster)
@@ -213,7 +222,6 @@ def test_redis_dictionaries(started_cluster, id):
         for query, answer in queries_with_answers:
             assert node.query(query) == str(answer) + "\n"
 
-    # Checks, that dictionaries can be reloaded.
     node.query("system reload dictionaries")
 
 
