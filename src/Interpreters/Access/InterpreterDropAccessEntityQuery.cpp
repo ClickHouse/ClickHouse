@@ -6,10 +6,12 @@
 #include <Access/MaskingPolicy.h>
 #include <Access/DefinerDependencies.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -56,11 +58,14 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
         {
             if (definer_dependencies.hasDependencies(name))
             {
-                auto object_storage_ids = definer_dependencies.getObjectsForDefiner(name);
+                auto object_uuids = definer_dependencies.getObjectsForDefiner(name);
                 std::vector<String> objects;
-                objects.reserve(object_storage_ids.size());
-                for (const auto & id : object_storage_ids)
-                    objects.push_back(id.getNameForLogs());
+                objects.reserve(object_uuids.size());
+                for (const auto & uuid : object_uuids)
+                {
+                    const auto table = DatabaseCatalog::instance().tryGetByUUID(uuid).second;
+                    objects.push_back(table ? table->getStorageID().getNameForLogs() : toString(uuid));
+                }
                 throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "User `{}` is used as a definer of {}.", name, toString(objects));
             }
         }

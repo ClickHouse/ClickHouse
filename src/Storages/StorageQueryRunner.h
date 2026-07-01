@@ -8,6 +8,9 @@ namespace DB
 
 class QueryRunnerDispatcher;
 enum class QueryRunnerMode : uint8_t;
+struct QueryRunnerSettings;
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 class StorageQueryRunner final : public IStorage, WithContext
 {
@@ -18,11 +21,7 @@ public:
         ConstraintsDescription constraints_,
         const String & comment,
         const ASTPtr & sql_security_,
-        const String & cluster_name_,
-        UInt64 shard_num_,
-        QueryRunnerMode mode_,
-        UInt64 num_threads_,
-        UInt64 max_queue_size_,
+        const QueryRunnerSettings & settings,
         ContextPtr context_);
 
     ~StorageQueryRunner() override;
@@ -34,6 +33,8 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
     void drop() override;
+
+    void waitForQueriesToFinish(const QueryStatusPtr & query_status);
 
     bool supportsParallelInsert() const override { return true; }
 

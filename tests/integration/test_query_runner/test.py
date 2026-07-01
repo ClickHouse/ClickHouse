@@ -27,7 +27,7 @@ def started_cluster():
 
 
 def runner_ddl(columns, mode, location):
-    cluster_setting = ", cluster = 'qr_cluster', shard_num = 1" if location == "cluster" else ""
+    cluster_setting = ", cluster = 'qr_cluster', shard = '1'" if location == "cluster" else ""
     return (
         f"CREATE OR REPLACE TABLE runner ({columns}) "
         f"ENGINE = QueryRunner SETTINGS mode = '{mode}'{cluster_setting}"
@@ -184,15 +184,34 @@ def test_shutdown():
 
 def test_definer_dependency():
     node_query_runner.query("CREATE USER query_runner_definer")
+    node_query_runner.query("CREATE DATABASE qr_definer_db")
     node_query_runner.query(
-        runner_ddl("query String", "synchronous", "local")
-        + " DEFINER = query_runner_definer SQL SECURITY DEFINER"
+        "CREATE TABLE qr_definer_db.runner (query String) "
+        "ENGINE = QueryRunner SETTINGS mode = 'synchronous' "
+        "DEFINER = query_runner_definer SQL SECURITY DEFINER"
     )
     assert "HAVE_DEPENDENT_OBJECTS" in node_query_runner.query_and_get_error("DROP USER query_runner_definer")
-    node_query_runner.query("DETACH TABLE runner")
-    node_query_runner.query("ATTACH TABLE runner")
+    node_query_runner.query("DETACH TABLE qr_definer_db.runner")
+    node_query_runner.query("ATTACH TABLE qr_definer_db.runner")
     assert "HAVE_DEPENDENT_OBJECTS" in node_query_runner.query_and_get_error("DROP USER query_runner_definer")
-    node_query_runner.query("RENAME TABLE runner TO runner_renamed")
+    node_query_runner.query("RENAME TABLE qr_definer_db.runner TO qr_definer_db.runner_renamed")
     assert "HAVE_DEPENDENT_OBJECTS" in node_query_runner.query_and_get_error("DROP USER query_runner_definer")
-    node_query_runner.query("DROP TABLE runner_renamed SYNC")
+    node_query_runner.query("RENAME DATABASE qr_definer_db TO qr_definer_db_renamed")
+    assert "HAVE_DEPENDENT_OBJECTS" in node_query_runner.query_and_get_error("DROP USER query_runner_definer")
+    node_query_runner.query("DROP TABLE qr_definer_db_renamed.runner_renamed SYNC")
     node_query_runner.query("DROP USER query_runner_definer")
+    node_query_runner.query("DROP DATABASE qr_definer_db_renamed")
+
+
+def test_wait_query_runner():
+    node_query_runner.query("CREATE OR REPLACE TABLE target (x UInt64) ENGINE = MergeTree ORDER BY tuple()")
+    node_query_runner.query(runner_ddl("query String, delay_microseconds UInt64", "asynchronous", "local"))
+    node_query_runner.query(
+        "INSERT INTO runner VALUES "
+        "('INSERT INTO default.target VALUES (1)', 500000), "
+        "('INSERT INTO default.target VALUES (2)', 500000), "
+        "('INSERT INTO default.target VALUES (3)', 500000)"
+    )
+    node_query_runner.query("SYSTEM WAIT QUERY RUNNER runner")
+    assert node_query_runner.query("SELECT x FROM target ORDER BY x") == "1\n2\n3\n"
+    node_query_runner.query("DROP TABLE runner")

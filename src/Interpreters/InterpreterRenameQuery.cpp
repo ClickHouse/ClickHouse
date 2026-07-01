@@ -8,7 +8,6 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
-#include <Access/DefinerDependencies.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
@@ -195,11 +194,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id);
             if (exchange_tables)
                 NamedCollectionFactory::instance().renameDependencies(to_table_id, from_table_id);
-
-            if (exchange_tables)
-                DefinerDependencies::instance().exchange(from_table_id, to_table_id);
-            else
-                DefinerDependencies::instance().rename(from_table_id, to_table_id);
         }
         catch (...)
         {

@@ -14,8 +14,10 @@ CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'no_such
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS unknown_setting = 1; -- { serverError UNKNOWN_SETTING }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost' SQL SECURITY NONE; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost' DEFINER = default SQL SECURITY DEFINER; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS shard_num = 2; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', shard_num = 5; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS shard = '2'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', shard = '5'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', shard = 'nope'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS shard = 'all'; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query LowCardinality(String)) ENGINE = QueryRunner; -- { serverError BAD_ARGUMENTS }
 
 SELECT * FROM runner; -- { serverError NOT_IMPLEMENTED }
@@ -25,3 +27,11 @@ ALTER TABLE runner MODIFY SQL SECURITY INVOKER; -- { serverError NOT_IMPLEMENTED
 
 CREATE TABLE runner2 (query String) ENGINE = QueryRunner SETTINGS mode = 'synchronous', threads = 2, max_queue_size = 100 SQL SECURITY INVOKER;
 SHOW CREATE TABLE runner2;
+
+CREATE TABLE runner_random (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', shard = 'random';
+CREATE TABLE runner_all (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', shard = 'all';
+
+SYSTEM WAIT QUERY RUNNER runner;
+SYSTEM WAIT QUERY RUNNER runner2;
+SYSTEM WAIT QUERY RUNNER runner_random;
+SYSTEM WAIT QUERY RUNNER runner_all;

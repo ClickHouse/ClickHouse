@@ -27,7 +27,7 @@ CREATE TABLE runner
 ENGINE = QueryRunner
 SETTINGS
     cluster = 'cluster_name',
-    shard_num = 1,
+    shard = '1',
     mode = 'asynchronous',
     threads = 4,
     max_queue_size = 1000
@@ -49,7 +49,7 @@ The column `query` is mandatory, and the other columns are optional.
 | Setting | Default | Meaning |
 |---|---|---|
 | `cluster` | `''` | Name of the cluster to send the queries to. If empty, the queries are executed locally. |
-| `shard_num` | `1` | 1-based index of the cluster's shard to send the queries to. Requires the `cluster` setting. |
+| `shard` | `'1'` | 1-based index of the cluster's shard to send the queries to, or `'random'` to pick a random shard per query, or `'all'` to run each query on every shard. Requires the `cluster` setting. |
 | `mode` | `'asynchronous'` | In the `synchronous` mode, INSERT returns after all queries of the inserted batch have finished. In the `asynchronous` mode, INSERT returns as soon as the queries are queued. |
 | `threads` | `4` | Number of background threads executing the queries. |
 | `max_queue_size` | `1000` | Maximum number of queued queries. When the queue is full, newly inserted queries are discarded, and an error is logged. |
@@ -84,9 +84,9 @@ The user under whom they run is determined by the `SQL SECURITY` clause:
 
 When the `cluster` setting is specified, the queries are sent to the specified cluster.
 
-A single QueryRunner table targets a single shard, selected by `shard_num` (the
-cluster's `shard_num = 1` by default). A replica within the shard is chosen according to the server's
-`load_balancing` setting.
+The target shard is selected by `shard`: a fixed 1-based index (`'1'` by default), `'random'` to pick a
+random shard for each query, or `'all'` to run each query on every shard of the cluster. A replica within
+the shard is chosen according to the server's `load_balancing` setting.
 
 The `database` column sets the default database of the connection to the remote server. Because the
 default database is set once per connection, each distinct `database` value uses its own
@@ -100,8 +100,15 @@ produced them). On the initiating server, the dispatched queries are recorded in
 with `is_internal = 1`.
 
 Because the engine discards query results, it always runs the dispatched queries with
-`discard_query_result = 1`, so the result data of SELECT queries is not transferred over the network
-(this overrides any `discard_query_result` value set in the `settings` column).
+`discard_query_data = 1`, so the result data of SELECT queries is not transferred over the network
+(this overrides any `discard_query_data` value set in the `settings` column).
+
+## Waiting for queries to finish {#waiting-for-queries-to-finish}
+
+In asynchronous mode, the following query can be used to block until every query submitted to the table so far has finished:
+```sql
+SYSTEM WAIT QUERY RUNNER runner;
+```
 
 ## Example {#example}
 

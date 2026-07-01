@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -36,10 +37,14 @@
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/thread_local_rng.h>
 
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <random>
+#include <set>
 #include <unordered_set>
 
 
@@ -61,6 +66,7 @@ namespace Setting
     extern const SettingsBool log_queries;
     extern const SettingsMilliseconds log_queries_min_query_duration_ms;
     extern const SettingsLogQueriesType log_queries_min_type;
+    extern const SettingsBool log_query_settings;
 }
 
 namespace QueryRunnerSetting
@@ -68,7 +74,7 @@ namespace QueryRunnerSetting
     extern const QueryRunnerSettingsString cluster;
     extern const QueryRunnerSettingsUInt64 max_queue_size;
     extern const QueryRunnerSettingsQueryRunnerMode mode;
-    extern const QueryRunnerSettingsUInt64 shard_num;
+    extern const QueryRunnerSettingsString shard;
     extern const QueryRunnerSettingsUInt64 threads;
 }
 
@@ -84,6 +90,36 @@ namespace
     const String DATABASE_COLUMN = "database";
     const String SETTINGS_COLUMN = "settings";
     const String DELAY_MICROSECONDS_COLUMN = "delay_microseconds";
+
+    enum class ShardSelectorKind : uint8_t
+    {
+        Fixed,
+        Random,
+        All,
+    };
+
+    struct ShardSelector
+    {
+        ShardSelectorKind kind;
+        UInt64 fixed_shard_num;
+    };
+
+    ShardSelector parseShardSelector(const String & value)
+    {
+        if (value == "random")
+            return {ShardSelectorKind::Random, 0};
+        if (value == "all")
+            return {ShardSelectorKind::All, 0};
+
+        UInt64 shard_num = 0;
+        if (!tryParse<UInt64>(shard_num, value) || shard_num < 1)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The 'shard' setting of the QueryRunner engine must be a positive integer, 'random' or 'all', got '{}'",
+                value);
+
+        return {ShardSelectorKind::Fixed, shard_num};
+    }
 }
 
 struct QueryRunnerJobOrigin
@@ -95,11 +131,52 @@ struct QueryRunnerJobOrigin
     String authenticated_user;
 };
 
-struct QueryRunnerSyncBatch
+class PrefixLatch
 {
-    static constexpr std::chrono::milliseconds poll_interval{100};
+public:
+    /// Wait for all of [0, next_seq) to retire.
+    void waitForAllIssued(const QueryStatusPtr & query_status)
+    {
+        std::unique_lock l(mutex);
+        const UInt64 threshold = next_seq;
+        while (!cv.wait_for(l, poll_interval, [&] { return in_progress.empty() || *in_progress.begin() >= threshold; }))
+        {
+            if (query_status)
+            {
+                query_status->checkTimeLimit();
+            }
+        }
+    }
 
-    explicit QueryRunnerSyncBatch(size_t remaining_) : remaining(remaining_) {}
+    UInt64 issue()
+    {
+        std::lock_guard l(mutex);
+        UInt64 result = next_seq++;
+        in_progress.insert(result);
+        return result;
+    }
+
+    void retire(UInt64 seq)
+    {
+        {
+            std::lock_guard l(mutex);
+            in_progress.erase(seq);
+        }
+        cv.notify_all();
+    }
+
+private:
+    static constexpr std::chrono::milliseconds poll_interval{100};
+    std::mutex mutex;
+    std::condition_variable cv;
+    UInt64 next_seq = 0;
+    std::set<UInt64> in_progress;
+};
+
+class CountDownLatch
+{
+public:
+    explicit CountDownLatch(size_t remaining_) : remaining(remaining_) {}
 
     void countDown()
     {
@@ -111,6 +188,21 @@ struct QueryRunnerSyncBatch
         }
         cv.notify_all();
     }
+
+    void wait(const QueryStatusPtr & query_status)
+    {
+        std::unique_lock lock(mutex);
+        while (!cv.wait_for(lock, poll_interval, [this] { return remaining == 0; }))
+        {
+            if (query_status)
+            {
+                query_status->checkTimeLimit();
+            }
+        }
+    }
+
+private:
+    static constexpr std::chrono::milliseconds poll_interval{100};
 
     std::mutex mutex;
     std::condition_variable cv;
@@ -124,7 +216,8 @@ struct QueryRunnerJob
     SettingsChanges settings_changes;
     std::chrono::steady_clock::time_point deadline;
     std::shared_ptr<const QueryRunnerJobOrigin> origin;
-    std::shared_ptr<QueryRunnerSyncBatch> batch;
+    std::shared_ptr<CountDownLatch> batch;
+    UInt64 seq = 0;
 };
 
 /// Used to cancel the remote queries and unblock the dispatcher's workers on shutdown.
@@ -209,13 +302,13 @@ public:
     QueryRunnerDispatcher(
         ContextPtr global_context_,
         const String & cluster_name_,
-        UInt64 shard_num_,
+        ShardSelector shard_selector_,
         UInt64 num_threads_,
         UInt64 max_queue_size_,
         LoggerPtr log_)
         : WithContext(global_context_)
         , cluster_name(cluster_name_)
-        , shard_num(shard_num_)
+        , shard_selector(shard_selector_)
         , queue(max_queue_size_)
         , num_threads(num_threads_)
         , max_queue_size(max_queue_size_)
@@ -242,16 +335,22 @@ public:
 
     void submit(QueryRunnerJob job)
     {
-        const auto batch = job.batch;
+        job.seq = pending.issue();
         if (!queue.tryPush(std::move(job)))
         {
             if (queue.isFinished())
                 LOG_WARNING(log, "The table is shutting down, discarding the query");
             else
                 LOG_ERROR(LogFrequencyLimiter(log, 5), "The queue is full (max_queue_size = {}), discarding the query", max_queue_size);
-            if (batch)
-                batch->countDown();
+            if (job.batch)
+                job.batch->countDown();
+            pending.retire(job.seq);
         }
+    }
+
+    void waitForAllPending(const QueryStatusPtr & query_status)
+    {
+        pending.waitForAllIssued(query_status);
     }
 
     void shutdown()
@@ -268,8 +367,11 @@ public:
 
         QueryRunnerJob job;
         while (queue.tryPop(job))
+        {
             if (job.batch)
                 job.batch->countDown();
+            pending.retire(job.seq);
+        }
 
         cluster_executors.cancelAll();
         pool.wait();
@@ -287,6 +389,7 @@ private:
 
             if (job.batch)
                 job.batch->countDown();
+            pending.retire(job.seq);
         }
     }
 
@@ -350,7 +453,7 @@ private:
         }
 
         /// The engine always discards query results, so there is no point in transferring them over the network.
-        job_context->setSetting("discard_query_result", true);
+        job_context->setSetting("discard_query_data", true);
 
         return job_context;
     }
@@ -388,10 +491,10 @@ private:
         }
     }
 
-    ConnectionPoolWithFailoverPtr getPool(const String & database)
+    ConnectionPoolWithFailoverPtr getPool(UInt64 shard_num, const String & database)
     {
         std::lock_guard lock(pools_mutex);
-        if (auto it = pools.find(database); it != pools.end())
+        if (auto it = pools.find({shard_num, database}); it != pools.end())
             return it->second;
 
         const auto cluster = getContext()->getCluster(cluster_name);
@@ -420,14 +523,43 @@ private:
                 address.priority));
 
         const auto connection_pool = std::make_shared<ConnectionPoolWithFailover>(std::move(replica_pools), settings[Setting::load_balancing]);
-        pools.emplace(database, connection_pool);
+        pools.emplace(std::pair{shard_num, database}, connection_pool);
         return connection_pool;
     }
 
     void executeOnCluster(const QueryRunnerJob & job, ContextMutablePtr job_context)
     {
+        if (shard_selector.kind == ShardSelectorKind::Fixed)
+        {
+            executeOnShard(shard_selector.fixed_shard_num, job, job_context);
+            return;
+        }
+
+        const size_t num_shards = getContext()->getCluster(cluster_name)->getShardsInfo().size();
+        if (shard_selector.kind == ShardSelectorKind::Random)
+        {
+            std::uniform_int_distribution<UInt64> distribution(1, num_shards);
+            executeOnShard(distribution(thread_local_rng), job, job_context);
+            return;
+        }
+
+        for (UInt64 shard = 1; shard <= num_shards; ++shard)
+        {
+            try
+            {
+                executeOnShard(shard, job, job_context);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to execute a query");
+            }
+        }
+    }
+
+    void executeOnShard(UInt64 shard_num, const QueryRunnerJob & job, ContextMutablePtr job_context)
+    {
         const auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(job_context->getSettingsRef());
-        auto connection = getPool(job.database)->get(timeouts, getContext()->getSettingsRef(), /*force_connected=*/ true);
+        auto connection = getPool(shard_num, job.database)->get(timeouts, getContext()->getSettingsRef(), /*force_connected=*/ true);
 
         auto registered = RegisteredRemoteQueryExecutor::tryCreate(cluster_executors, *connection, job.query, std::make_shared<const Block>(), job_context);
         if (!registered)
@@ -492,6 +624,9 @@ private:
         elem.client_info = job_context->getClientInfo();
         elem.is_internal = true;
 
+        if (settings[Setting::log_query_settings])
+            elem.query_settings = std::make_shared<Settings>(settings);
+
         if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
         {
             elem.exception_code = getCurrentExceptionCode();
@@ -504,7 +639,7 @@ private:
     static constexpr std::string_view client_name = "QueryRunner";
 
     const String cluster_name;
-    const size_t shard_num;
+    const ShardSelector shard_selector;
     ClientInfo client_info;
     ConcurrentBoundedQueue<QueryRunnerJob> queue;
     const size_t num_threads;
@@ -516,8 +651,10 @@ private:
     std::condition_variable shutdown_called_cv;
     bool shutdown_called = false;
 
+    PrefixLatch pending;
+
     std::mutex pools_mutex;
-    std::map<String, ConnectionPoolWithFailoverPtr> pools TSA_GUARDED_BY(pools_mutex);
+    std::map<std::pair<UInt64, String>, ConnectionPoolWithFailoverPtr> pools TSA_GUARDED_BY(pools_mutex);
 
     RemoteQueryExecutorRegistry cluster_executors;
 };
@@ -559,9 +696,9 @@ public:
         const ColumnPtr settings_column = get_column(SETTINGS_COLUMN);
         const ColumnPtr delay_column = get_column(DELAY_MICROSECONDS_COLUMN);
 
-        std::shared_ptr<QueryRunnerSyncBatch> batch;
+        std::shared_ptr<CountDownLatch> batch;
         if (synchronous)
-            batch = std::make_shared<QueryRunnerSyncBatch>(rows);
+            batch = std::make_shared<CountDownLatch>(rows);
 
         const auto submit_time = std::chrono::steady_clock::now();
 
@@ -594,12 +731,7 @@ public:
         }
 
         if (batch)
-        {
-            std::unique_lock lock(batch->mutex);
-            while (!batch->cv.wait_for(lock, QueryRunnerSyncBatch::poll_interval, [&] { return batch->remaining == 0; }))
-                if (query_status)
-                    query_status->checkTimeLimit();
-        }
+            batch->wait(query_status);
     }
 
 private:
@@ -616,17 +748,15 @@ StorageQueryRunner::StorageQueryRunner(
     ConstraintsDescription constraints_,
     const String & comment,
     const ASTPtr & sql_security_,
-    const String & cluster_name_,
-    UInt64 shard_num_,
-    QueryRunnerMode mode_,
-    UInt64 num_threads_,
-    UInt64 max_queue_size_,
+    const QueryRunnerSettings & settings,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , mode(mode_)
+    , mode(settings[QueryRunnerSetting::mode])
     , log(getLogger("StorageQueryRunner (" + table_id_.getFullTableName() + ")"))
 {
+    const String & cluster_name = settings[QueryRunnerSetting::cluster];
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_));
     storage_metadata.setConstraints(std::move(constraints_));
@@ -634,7 +764,7 @@ StorageQueryRunner::StorageQueryRunner(
 
     if (sql_security_)
     {
-        if (!cluster_name_.empty())
+        if (!cluster_name.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "SQL SECURITY and DEFINER have no effect in the cluster mode and cannot be used together with the 'cluster' setting of the QueryRunner engine");
@@ -644,12 +774,18 @@ StorageQueryRunner::StorageQueryRunner(
         if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
             DefinerDependencies::instance().addDependency(*storage_metadata.definer, table_id_);
     }
-    else if (cluster_name_.empty())
+    else if (cluster_name.empty())
         storage_metadata.sql_security_type = SQLSecurityType::INVOKER;
 
     setInMemoryMetadata(storage_metadata);
 
-    dispatcher = std::make_unique<QueryRunnerDispatcher>(getContext(), cluster_name_, shard_num_, num_threads_, max_queue_size_, log);
+    dispatcher = std::make_unique<QueryRunnerDispatcher>(
+        getContext(),
+        cluster_name,
+        parseShardSelector(settings[QueryRunnerSetting::shard]),
+        settings[QueryRunnerSetting::threads],
+        settings[QueryRunnerSetting::max_queue_size],
+        log);
 }
 
 StorageQueryRunner::~StorageQueryRunner() = default;
@@ -662,6 +798,11 @@ void StorageQueryRunner::startup()
 void StorageQueryRunner::shutdown(bool /*is_drop*/)
 {
     dispatcher->shutdown();
+}
+
+void StorageQueryRunner::waitForQueriesToFinish(const QueryStatusPtr & query_status)
+{
+    dispatcher->waitForAllPending(query_status);
 }
 
 SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
@@ -798,22 +939,22 @@ void registerStorageQueryRunner(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'max_queue_size' setting of the QueryRunner engine must be at least 1");
 
         const String & cluster_name = settings[QueryRunnerSetting::cluster];
-        const UInt64 shard_num = settings[QueryRunnerSetting::shard_num];
+        const ShardSelector shard_selector = parseShardSelector(settings[QueryRunnerSetting::shard]);
 
         if (cluster_name.empty())
         {
-            if (settings[QueryRunnerSetting::shard_num].changed)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'shard_num' setting of the QueryRunner engine requires the 'cluster' setting");
+            if (settings[QueryRunnerSetting::shard].changed)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'shard' setting of the QueryRunner engine requires the 'cluster' setting");
         }
         else if (args.mode <= LoadingStrictnessLevel::CREATE)
         {
             args.getLocalContext()->checkAccess(AccessType::REMOTE);
             auto cluster = args.getContext()->getCluster(cluster_name);
-            if (shard_num < 1 || shard_num > cluster->getShardsInfo().size())
+            if (shard_selector.kind == ShardSelectorKind::Fixed && shard_selector.fixed_shard_num > cluster->getShardsInfo().size())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "The 'shard_num' setting of the QueryRunner engine must be in the range [1, {}] for cluster '{}', got {}",
-                    cluster->getShardsInfo().size(), cluster_name, shard_num);
+                    "The 'shard' setting of the QueryRunner engine must be in the range [1, {}] for cluster '{}', got {}",
+                    cluster->getShardsInfo().size(), cluster_name, shard_selector.fixed_shard_num);
         }
 
         validateColumns(args.columns);
@@ -824,11 +965,7 @@ void registerStorageQueryRunner(StorageFactory & factory)
             args.constraints,
             args.comment,
             args.query.sql_security,
-            cluster_name,
-            shard_num,
-            settings[QueryRunnerSetting::mode],
-            num_threads,
-            max_queue_size,
+            settings,
             args.getContext());
     },
     {

@@ -2646,7 +2646,7 @@ SELECT * FROM test;
 Allows query to return a partial result after cancel.
 )", 0) \
     \
-    DECLARE(Bool, discard_query_result, false, R"(
+    DECLARE(Bool, discard_query_data, false, R"(
 If enabled, the server skips sending query result rows to the client. The query is still executed and logged fully on the server, and the client still receives the remaining packets.
 
 Used for shadow traffic, benchmarks, and fuzzing.
