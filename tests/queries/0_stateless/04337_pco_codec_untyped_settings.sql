@@ -1,5 +1,8 @@
--- Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree
+-- Tags: no-fasttest, no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree
 -- (the ATTACH cases below need an explicit table UUID, which requires the Atomic database engine; cf. 04046, 04159)
+-- no-parallel: that fixed table UUID is server-global, so concurrent runs of this test (e.g. the
+-- flaky check's parallel workers) collide on it and fail the ATTACH with `TABLE_ALREADY_EXISTS`
+-- before the codec-setting gate is reached, instead of the expected `BAD_ARGUMENTS` (cf. 04159).
 -- `PCO` requires a column type, so it must be rejected at CREATE time in the untyped MergeTree
 -- compression settings instead of failing later, at the first write. The `default_compression_codec`
 -- setting is re-resolved with each column's type, but it bypasses the `allow_experimental_codecs`
