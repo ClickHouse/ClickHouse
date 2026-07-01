@@ -17,7 +17,7 @@ To declare a column of `QBit` type, use the following syntax:
 column_name QBit(element_type, dimension)
 ```
 
-* `element_type` – the type of each vector element. The allowed types are `BFloat16`, `Float32` and `Float64`
+* `element_type` – the type of each vector element. The allowed types are `Int8`, `BFloat16`, `Float32` and `Float64`
 * `dimension` – the number of elements in each vector
 
 ## Creating QBit {#creating-qbit}
@@ -60,6 +60,26 @@ SELECT * FROM vectors ORDER BY id;
 
 The conversion also works explicitly with `CAST`, for example `CAST(embedding AS QBit(Float32, 8))`.
 
+## Converting QBit to arrays {#converting-qbit-to-arrays}
+
+The reverse conversion reconstructs the original vector from the bit-transposed representation, so casting a `QBit` to an `Array` returns the stored values. This is the inverse of [converting arrays to `QBit`](#converting-arrays-to-qbit):
+
+```sql
+SELECT [1, 2, 3, 4]::QBit(Float32, 4)::Array(Float32) AS vec;
+```
+
+```text
+┌─vec───────┐
+│ [1,2,3,4] │
+└───────────┘
+```
+
+The reconstructed array uses the `QBit`'s element type, and its elements are then converted to the requested array element type. A cast that also changes the element type, such as `QBit(Float32, N)` to `Array(Float64)`, therefore works as well.
+
+An `Array` -> `QBit` -> `Array` round trip is lossless for `Int8`, `Float32` and `Float64`. For `BFloat16` it matches a direct conversion to `BFloat16` — the only precision lost is that of `BFloat16` itself.
+
+When the `dimension` is not a multiple of 8, the trailing padding elements present in the internal representation are dropped, so the result always has exactly `dimension` elements.
+
 ## QBit subcolumns {#qbit-subcolumns}
 
 `QBit` implements a subcolumn access pattern that allows you to access individual bit planes of the stored vectors. Each bit position can be accessed using the `.N` syntax, where `N` is the bit position:
@@ -80,6 +100,7 @@ SELECT bin(vec.1) FROM test;
 
 The number of accessible subcolumns depends on the element type:
 
+* `Int8`: 8 subcolumns (1-8)
 * `BFloat16`: 16 subcolumns (1-16)
 * `Float32`: 32 subcolumns (1-32)
 * `Float64`: 64 subcolumns (1-64)
@@ -90,3 +111,4 @@ These are the distance functions for vector similarity search that use `QBit` da
 
 * [`L2DistanceTransposed`](../functions/distance-functions.md#L2DistanceTransposed)
 * [`cosineDistanceTransposed`](../functions/distance-functions.md#cosineDistanceTransposed)
+* [`dotProductTransposed`](../functions/distance-functions.md#dotProductTransposed)

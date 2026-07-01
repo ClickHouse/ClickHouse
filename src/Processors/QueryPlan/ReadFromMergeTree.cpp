@@ -70,6 +70,7 @@
 #include <Common/DateLUT.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -80,6 +81,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <city.h>
+
+#include <boost/functional/hash.hpp>
 
 #include <fmt/ranges.h>
 
@@ -137,6 +140,32 @@ bool isNodeDeterministic(const ActionsDAG::Node * node)
     for (const auto * child : node->children)
         if (!isNodeDeterministic(child))
             return false;
+    return true;
+}
+
+/// Like `VirtualColumnUtils::isDeterministic`, but treats `__topKFilter` as deterministic.
+/// Mirrors `isDeterministicAllowingTopKFilter` in `updateQueryConditionCache.cpp` — both
+/// gates must agree, otherwise QCC writes and reads diverge on TopK plans.
+///
+/// Unlike `isNodeDeterministic`, this also rejects non-deterministic `COLUMN` nodes (such
+/// as query-time constants `now()` / `today()`). Without that check, queries whose filter
+/// captures such constants could write QCC entries and reuse them later when the constant's
+/// value has changed.
+bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+        if (!isDeterministicAllowingTopKFilter(child))
+            return false;
+
+    if (node->type == ActionsDAG::ActionType::COLUMN)
+        return node->isDeterministic();
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+
+    if (!node->function_base->isDeterministic())
+        return node->function_base->getName() == "__topKFilter";
+
     return true;
 }
 
@@ -265,6 +294,7 @@ namespace MergeTreeSetting
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -2646,7 +2676,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     else
     {
         if (!table_has_unique_key) /// consult/skip side of the query-condition cache; disabled for UK reads (see above).
-            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
+            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, context_, log);
 
         auto get_indexes_size = [&]() -> size_t
         {
@@ -2778,8 +2808,21 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 && !vector_search_parameters.has_value())
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
-            if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
-                condition_hash = outputs.front()->getHash();
+            /// `isDeterministicAllowingTopKFilter` keeps the previous `COLUMN`-node strictness
+            /// of `VirtualColumnUtils::isDeterministic` (rejects non-deterministic constants like
+            /// `now()` / `today()`) while admitting `__topKFilter` — its non-determinism is gated
+            /// by the TopK plan salt combined into `condition_hash` below, mirroring the write
+            /// path in `updateQueryConditionCache`.
+            if (outputs.size() == 1 && isDeterministicAllowingTopKFilter(outputs.front()))
+            {
+                size_t hash = outputs.front()->getHash();
+                /// Match the salting done on the read side in `filterPartsByQueryConditionCache` and
+                /// on the write side in `updateQueryConditionCache` so write/read keys agree under
+                /// `ORDER BY ... LIMIT N` plans.
+                if (top_k_filter_info)
+                    boost::hash_combine(hash, top_k_filter_info->condition_hash);
+                condition_hash = hash;
+            }
         }
 
         /// Fill query condition cache with ranges excluded by index analysis.
@@ -3031,7 +3074,9 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
 {
     if (isVectorColumnReplaced())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector column unexpectedly already replaced.");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
+            "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
     std::erase(all_column_names, vector_column);
     all_column_names.emplace_back("_distance");
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
@@ -4588,7 +4633,24 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
 void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
 {
     top_k_filter_info = top_k_filter_info_;
-    reader_settings.use_query_condition_cache = false;
+
+    /// A TopK granule-skip decision recorded for one part is computed against the running
+    /// `__topKFilter` threshold, which is derived from the rows of *all* parts the query reads.
+    /// The query condition cache key is `(table_uuid, part_name, condition_hash)`, so an entry
+    /// written for a part stays matchable as long as that part keeps its name - even after a
+    /// *different* part is dropped or mutated and the threshold that made the granule skippable
+    /// no longer holds. Fold a hash of the whole part-set snapshot into the salt so that any
+    /// change to the set of parts read (`DROP PARTITION`, mutation, merge, new `INSERT`) yields a
+    /// fresh key and the now-stale decisions of the unchanged parts are never reused.
+    SipHash parts_hash;
+    for (const auto & part_with_ranges : getParts())
+        parts_hash.update(part_with_ranges.data_part->name);
+
+    /// `size_t` (not `UInt64`) so `boost::hash_combine` binds its seed argument on platforms where
+    /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
+    size_t combined_hash = top_k_filter_info->condition_hash;
+    boost::hash_combine(combined_hash, parts_hash.get64());
+    top_k_filter_info->condition_hash = combined_hash;
 }
 
 bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) const
