@@ -9,6 +9,12 @@ SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_randomize = 0;
+-- The tables declare auto_statistics_types='uniq'. If those stats are materialized
+-- on insert, the optimizer gets real cardinalities and dphyp picks a different
+-- (equal-result) join order, so the EXPLAIN below differs. Pin insert-time
+-- materialization off (the default) to keep the plan deterministic under
+-- settings randomization.
+SET materialize_statistics_on_insert = 0;
 SET explain_query_plan_default = 'legacy';
 
 CREATE TABLE R1 (

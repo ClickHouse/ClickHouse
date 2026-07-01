@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database
+# Tags: long, no-replicated-database, no-random-settings, no-random-merge-tree-settings
 # no-replicated-database: hypothetical indexes are session-scoped and not replicated
+# no-random-settings, no-random-merge-tree-settings: the test asserts exact EXPLAIN WHATIF
+#   diagnostics (plan shape, applicability, statistical-vs-applicability source, part/mark
+#   counts) that shift under randomized optimizer/statistics settings — e.g.
+#   materialize_statistics_on_insert makes auto-stats materialize so WHATIF reports
+#   'source: statistical', and query_plan_optimize_lazy_final rewrites the FINAL plan.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -106,11 +111,7 @@ $CLICKHOUSE_CLIENT -n -q "
     SETTINGS index_granularity = 100;
     INSERT INTO t_hypo_final SELECT number, number FROM numbers(100);
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_final (b) TYPE minmax GRANULARITY 1;
-    -- Pin the non-lazy FINAL plan: with query_plan_optimize_lazy_final the FINAL is
-    -- rewritten into a LazyReadReplacingFinalStep, so the read step no longer reports
-    -- isQueryWithFinal() and WHATIF reports 'applicable' instead of the not_applicable
-    -- guard this case is meant to exercise. Randomization sets it on, so force it off.
-    EXPLAIN WHATIF SELECT * FROM t_hypo_final FINAL WHERE b = 42 SETTINGS query_plan_optimize_lazy_final = 0;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_final FINAL WHERE b = 42;
 " | grep -E '^With |^\s+status:|^\s+reason:'
 
 echo "--- CREATE rejects text index (explicit unsupported-type path) ---"
