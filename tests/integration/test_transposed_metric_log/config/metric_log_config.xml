@@ -12,7 +12,7 @@
     ENGINE MergeTree
     PARTITION BY toYYYYMM(event_date)
     ORDER BY (event_date, event_time)
-    SETTINGS ttl_only_drop_parts=1, merge_selecting_sleep_ms='50000'
+    SETTINGS ttl_only_drop_parts=1, merge_selecting_sleep_ms='50000', add_minmax_index_for_numeric_columns = 0
     </engine>
     </metric_log>
 </clickhouse>
