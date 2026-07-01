@@ -107,12 +107,9 @@ public:
         typename ResultDataType::ColumnType::MutablePtr result_col;
         if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
         {
-            /// result_type is the DataTypeDateTime64 this function returns (the input type for a
-            /// DateTime64 input, or DateTime64(default_scale) for a Date32 input), so its scale is
-            /// the scale the result column must carry. The result data is already computed at this
-            /// scale below; the column object must declare the same scale, otherwise it is
-            /// structurally inconsistent with its type (a scale-3 column labelled DateTime64(8)).
-            const auto scale = typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale();
+            auto scale = DataTypeDateTime64::default_scale;
+            if constexpr (std::is_same_v<InputDataType, DateTime64>)
+                scale = static_cast<UInt8>(typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale());
             result_col = ResultDataType::ColumnType::create(input_rows_count, scale);
         }
         else

@@ -190,3 +190,4 @@
 04257_file_log_rename_and_recreate
 04318_skip_unavailable_shards_mode
 04319_skip_unavailable_shards_mode_table_missing
+04402_float_parsing_corner_cases
