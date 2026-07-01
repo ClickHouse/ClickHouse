@@ -88,3 +88,12 @@ SELECT count() FROM remote('127.0.0.1', currentDatabase(), ts_data_dt_dst_03776)
 SETTINGS prefer_localhost_replica = 0;
 
 DROP TABLE IF EXISTS ts_data_dt_dst_03776;
+
+-- Variant/JSON reparse constants via date_time_input_format, so they must not receive the ISO form
+SELECT '-- Test 10: Variant(DateTime64) constant via remote with basic input format';
+SELECT '2025-10-26 05:00:01.000000'::Variant(DateTime64(6, 'Europe/Prague')) FROM remote('127.0.0.1', 'system.one')
+SETTINGS prefer_localhost_replica = 0, date_time_input_format = 'basic';
+
+SELECT '-- Test 11: JSON typed path constant via remote with basic input format';
+SELECT '{"a" : "2025-10-26 05:00:01.000000"}'::JSON(a DateTime64(6, 'Europe/Prague')) FROM remote('127.0.0.1', 'system.one')
+SETTINGS prefer_localhost_replica = 0, date_time_input_format = 'basic';

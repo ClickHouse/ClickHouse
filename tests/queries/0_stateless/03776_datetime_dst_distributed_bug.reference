@@ -16,3 +16,7 @@
 1
 -- Test 9: All DateTime rows count via remote
 5
+-- Test 10: Variant(DateTime64) constant via remote with basic input format
+2025-10-26 05:00:01.000000
+-- Test 11: JSON typed path constant via remote with basic input format
+{"a":"2025-10-26 05:00:01.000000"}
