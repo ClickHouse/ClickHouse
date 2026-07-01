@@ -148,7 +148,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
                         "Cannot create column with type '{}' because Nullable Tuple type is not allowed. "
-                        "Set setting allow_experimental_nullable_tuple_type = 1 in order to allow it",
+                        "Set setting enable_nullable_tuple_type = 1 in order to allow it",
                         data_type.getName());
                 }
             }

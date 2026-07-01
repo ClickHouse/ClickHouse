@@ -286,6 +286,9 @@ const ArrowViewArray & checkedCastView(const arrow::Array & array, const String 
 /// because value_length(i) = offset[i+1] - offset[i], so the last element needs
 /// offset[length].  This must be checked before any call to value_offset(i) or
 /// GetView(i) to prevent an over-read of the offsets buffer.
+/// When length == 0, no offsets are accessed at all (every caller's iteration loop
+/// is skipped), so no bytes are required.  This accepts the 0-byte offsets buffers
+/// that Apache Arrow Java < 19.0.0 emits for empty String/Binary columns.
 template <typename ArrowBinaryArray>
 void checkBinaryOffsetsBuffer(const ArrowBinaryArray & chunk, const String & column_name)
 {
@@ -296,7 +299,9 @@ void checkBinaryOffsetsBuffer(const ArrowBinaryArray & chunk, const String & col
             column_name, chunk.length(), chunk.offset());
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
-    const size_t count_plus_one = static_cast<size_t>(chunk.offset()) + static_cast<size_t>(chunk.length()) + 1;
+    const size_t count_plus_one = chunk.length() > 0
+        ? static_cast<size_t>(chunk.offset()) + static_cast<size_t>(chunk.length()) + 1
+        : 0;
     size_t required = 0;
     if (unlikely(__builtin_mul_overflow(sizeof(typename ArrowBinaryArray::offset_type), count_plus_one, &required)))
         throw Exception(
@@ -997,7 +1002,7 @@ static ColumnWithTypeAndName readColumnWithTimeData(const std::shared_ptr<arrow:
 {
     const auto & arrow_type = static_cast<const TimeType &>(*(arrow_column->type()));
     const UInt8 scale = arrow_type.unit() * 3;
-    auto internal_type = std::make_shared<DataTypeDateTime64>(scale);
+    auto internal_type = std::make_shared<DataTypeTime64>(scale);
     auto internal_column = internal_type->createColumn();
     validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCast<TimeArray>(chunk, column_name); });
     internal_column->reserve(arrow_column->length());
@@ -1010,7 +1015,7 @@ static ColumnWithTypeAndName readColumnWithTimeData(const std::shared_ptr<arrow:
         const auto & chunk = checkedCast<TimeArray>(*(arrow_column->chunk(chunk_i)), column_name);
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
-            assert_cast<DataTypeDateTime64::ColumnType &>(*internal_column).insertValue(chunk.Value(value_i));
+            assert_cast<DataTypeTime64::ColumnType &>(*internal_column).insertValue(chunk.Value(value_i));
         }
     }
 
@@ -2347,7 +2352,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
         checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
 
-    bool type_hint_not_nullable_capable = type_hint && !removeNullable(type_hint)->canBeInsideNullable();
+    /// LowCardinality(Nullable(...)) holds nulls inside the dictionary, so canBeInsideNullable() is false; exclude it explicitly.
+    bool type_hint_not_nullable_capable = type_hint && !type_hint->isLowCardinalityNullable() && !removeNullable(type_hint)->canBeInsideNullable();
     bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
@@ -2403,7 +2409,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
 {
     if (!status.ok())
-        throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
+        throwFromArrowStatus(status, ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}'", format_name, column_name);
 }
 
 static std::shared_ptr<arrow::DataType> unwrapArrowExtensionTypesRecursively(const std::shared_ptr<arrow::DataType> & type)

@@ -2,6 +2,7 @@
 
 #include <ranges>
 #include <IO/copyData.h>
+#include <fmt/ranges.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
@@ -924,13 +925,35 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
     /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion - The server aborts legitimately, can't be used
     /// terminate_with_exception, terminate_with_std_exception - Terminates the server
+    /// tcp_handler_fail_connection_setup - Fails every new TCP connection setup, so once enabled the fuzzer can neither
+    ///     reconnect nor disable it again over its TCP connection (it would deadlock; the test controls it over HTTP)
     loadServerSettings<String>(
         this->failpoints,
         "failpoints",
         "SELECT \"name\" FROM \"system\".\"fail_points\""
         " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
-        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion')");
+        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion', "
+        "'tcp_handler_fail_connection_setup')");
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
+    /// Probe which function_implementation values the server supports. They depend on how the binary
+    /// was compiled and on the host CPU (e.g. no x86-64 tag is available on aarch64 builds), and an
+    /// unsupported value raises NO_SUITABLE_FUNCTION_IMPLEMENTATION, so test each candidate. Only
+    /// default, x86-64-v3 and x86-64-v4 implementations are registered in the server's source.
+    this->function_implementations.clear();
+    for (const auto & entry : {"default", "x86-64-v3", "x86-64-v4"})
+    {
+        if (processServerQuery(
+                false, fmt::format("SELECT ignore(sipHash64(materialize(1))) SETTINGS function_implementation = '{}' FORMAT Null;", entry)))
+        {
+            this->function_implementations.emplace_back(entry);
+        }
+    }
+    LOG_INFO(
+        log,
+        "Found {} entries for function implementations{}{}",
+        this->function_implementations.size(),
+        this->function_implementations.empty() ? "" : ": ",
+        fmt::join(this->function_implementations, ", "));
     loadFunctions();
 }
 
