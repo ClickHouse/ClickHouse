@@ -68,6 +68,17 @@ SELECT number, count() FROM numbers(1000000) GROUP BY number FORMAT Null; -- { s
 SET max_bytes_before_external_sort = 1, max_bytes_ratio_before_external_sort = 0;
 SELECT number FROM numbers(1000000) ORDER BY number FORMAT Null; -- { serverError BAD_ARGUMENTS }
 
+-- An experimental codec that does not require a column type (e.g. `ALP`) is not caught by the
+-- "requires a column type" check above, so `temporary_files_codec` must reject it via the
+-- experimental-codec gate as well (even with `allow_experimental_codecs = 1`, since experimental
+-- codecs can only be specified per column, not through an untyped compression setting).
+SET temporary_files_codec = 'ALP';
+SELECT number FROM numbers(1000000) ORDER BY number FORMAT Null; -- { serverError BAD_ARGUMENTS }
+-- The same holds inside a codec chain, which surfaces the inner experimental codec.
+SET temporary_files_codec = 'ALP, ZSTD(1)';
+SELECT number FROM numbers(1000000) ORDER BY number FORMAT Null; -- { serverError BAD_ARGUMENTS }
+SET temporary_files_codec = 'LZ4';
+
 -- The CREATE-time sanity check is skipped on ATTACH, but the experimental / column-type-requiring
 -- codec gate must still apply to the untyped compression settings on a user ATTACH
 -- (`LoadingStrictnessLevel::ATTACH`); otherwise a full-form `ATTACH TABLE ... SETTINGS

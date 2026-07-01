@@ -78,9 +78,18 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
     auto codec = CompressionCodecFactory::instance().get(settings.compression_codec);
 
     /// `temporary_files_codec` is an untyped compression setting: the codec is resolved without a
-    /// column type. A codec that needs the column type to compress (e.g. the experimental `PCO`)
-    /// could otherwise be accepted here and only fail later, at the first spill write. Reject it up
-    /// front, consistent with the other untyped compression settings (`marks_compression_codec`, ...).
+    /// column type, which bypasses the `allow_experimental_codecs` validation of column-level codecs.
+    /// An experimental codec (e.g. `ALP`, or `PCO`) must not sneak in through it, so reject it up
+    /// front, consistent with the other untyped compression settings (`marks_compression_codec`, the
+    /// `<compression>` config selector, ...); experimental codecs can only be specified per column.
+    if (codec->isExperimental())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Codec {} is experimental and cannot be used for temporary files. Experimental codecs can only be"
+            " specified per column (with the 'allow_experimental_codecs' setting enabled)",
+            settings.compression_codec);
+
+    /// A codec that needs the column type to compress (e.g. the experimental `PCO`) could otherwise be
+    /// accepted here and only fail later, at the first spill write. Reject it up front as well.
     if (codec->requiresColumnTypeToCompress())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Codec {} requires a column type to compress and cannot be used for temporary files",
