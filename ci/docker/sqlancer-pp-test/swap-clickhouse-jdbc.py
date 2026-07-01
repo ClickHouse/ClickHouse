@@ -2,10 +2,14 @@
 """Patch the SQLancer++ source tree for use against ClickHouse:
 
 1. Replace the legacy `ru.yandex.clickhouse:clickhouse-jdbc:0.3.2` Maven
-   dependency in `pom.xml` with the latest `com.clickhouse:clickhouse-jdbc`
-   shaded-all artifact (version is queried from Maven Central at build time
-   so we always ship the most recent driver). The legacy driver's HTTP
-   response parser can't handle current ClickHouse server output.
+   dependency in `pom.xml` with the `com.clickhouse:clickhouse-jdbc` shaded-all
+   artifact, pinned to the same version as the SQLancer job's
+   `com.clickhouse:client-v2` (0.9.8). At 0.9.x the driver's default
+   implementation (`com.clickhouse.jdbc.ClickHouseDriver`) is the client-v2
+   backed one - V1 is only used when `clickhouse.jdbc.v1=true` - so SQLancer++
+   reaches the server over the same client-v2 transport as the SQLancer job.
+   The legacy driver's HTTP response parser can't handle current ClickHouse
+   server output.
 2. Extend the `CLICKHOUSE.url` template in `dbconfigs/jdbc.properties` to carry
    `user` and `password` query parameters. SQLancer++'s generic provider only
    passes the URL string (no JDBC Properties) into `DriverManager.getConnection`,
@@ -27,16 +31,12 @@ import argparse
 import pathlib
 import re
 import sys
-import urllib.request
-import xml.etree.ElementTree as ET
 
-# Maven Central's `maven-metadata.xml` is the canonical source for the latest
-# release of an artifact - it lists every published version plus an explicit
-# <release>/<latest> pointer. The `solrsearch` API has stale-index issues and
-# returned 0.9.0 long after 0.9.8 was published, so don't go through it.
-MAVEN_METADATA_URL = (
-    "https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc/maven-metadata.xml"
-)
+# Pin the JDBC driver to the same version the SQLancer job uses for
+# `com.clickhouse:client-v2` (see ci/docker/sqlancer-test), so both jobs talk to
+# the server over the same client-v2 transport and the build stays reproducible.
+# clickhouse-jdbc >= 0.8 defaults to the client-v2-backed implementation.
+DEFAULT_JDBC_VERSION = "0.9.8"
 
 LEGACY_DEP = re.compile(
     r"\s*<dependency>\s*<groupId>ru\.yandex\.clickhouse</groupId>"
@@ -61,21 +61,6 @@ NEW_CLICKHOUSE_LINES = (
     "CLICKHOUSE.user=sqlancer\n"
     "CLICKHOUSE.password=sqlancer"
 )
-
-
-def resolve_latest_jdbc_version() -> str:
-    with urllib.request.urlopen(MAVEN_METADATA_URL, timeout=30) as resp:
-        root = ET.fromstring(resp.read())
-    versioning = root.find("versioning")
-    if versioning is None:
-        sys.exit(f"Maven metadata at {MAVEN_METADATA_URL} has no <versioning> element")
-    # Prefer <release>; fall back to <latest> (older artifacts may omit
-    # <release>). <latest> can include snapshots, but com.clickhouse only
-    # publishes releases, so it is safe here.
-    version = versioning.findtext("release") or versioning.findtext("latest")
-    if not version:
-        sys.exit(f"Maven metadata at {MAVEN_METADATA_URL} has neither <release> nor <latest>")
-    return version
 
 
 def patch_pom(repo: pathlib.Path, version: str) -> None:
@@ -126,11 +111,11 @@ def main() -> None:
     parser.add_argument(
         "--jdbc-version",
         default=None,
-        help="Pin a specific clickhouse-jdbc version (default: resolve latest from Maven Central)",
+        help=f"clickhouse-jdbc version (default: {DEFAULT_JDBC_VERSION}, matching the SQLancer job's client-v2)",
     )
     args = parser.parse_args()
 
-    version = args.jdbc_version or resolve_latest_jdbc_version()
+    version = args.jdbc_version or DEFAULT_JDBC_VERSION
     print(f"swap-clickhouse-jdbc: using com.clickhouse:clickhouse-jdbc:{version}")
 
     repo = pathlib.Path(args.repo)
