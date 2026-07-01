@@ -2,6 +2,8 @@
 
 #include <base/scope_guard.h>
 
+#include <ctime>
+
 
 #if USE_SSL
 
@@ -46,22 +48,17 @@ X509Certificate::X509Certificate(X509Certificate && other) noexcept
 
 X509Certificate::X509Certificate(const std::string & path)
 {
-    BIO_ptr bio(BIO_new(BIO_s_mem()), BIO_free);
+    BIO_ptr bio(BIO_new_file(path.c_str(), "r"), BIO_free);
 
     if (!bio)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new failed: {}", getOpenSSLErrors());
-
-    BIO * file = BIO_new_file(path.c_str(), "r");
-
-    if (!file)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
 
-    certificate = PEM_read_bio_X509(file, nullptr, nullptr, nullptr);
+    certificate = PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr);
     if (!certificate)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed for file {}: {}", path, getOpenSSLErrors());
 }
 
-X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const std::string & source_description)
+static X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const std::string & source_description)
 {
     X509Certificate::List certs;
 
@@ -111,7 +108,7 @@ X509Certificate::List X509Certificate::fromFile(const std::string & path)
 
 X509Certificate::List X509Certificate::fromBuffer(const std::string & buffer)
 {
-    BIO_ptr bio(BIO_new_mem_buf(buffer.c_str(), buffer.size()), BIO_free);
+    BIO_ptr bio(BIO_new_mem_buf(buffer.c_str(), static_cast<int>(buffer.size())), BIO_free);
     if (!bio)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
 
@@ -136,10 +133,14 @@ std::string X509Certificate::serialNumber() const
 {
     ASN1_INTEGER * serial = X509_get_serialNumber(certificate);
     BIGNUM * bn = ASN1_INTEGER_to_BN(serial, nullptr);
+    if (!bn)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "ASN1_INTEGER_to_BN failed: {}", getOpenSSLErrors());
 
     SCOPE_EXIT({ BN_free(bn); });
 
     char * hex = BN_bn2hex(bn);
+    if (!hex)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "BN_bn2hex failed: {}", getOpenSSLErrors());
     std::string result(hex);
 
     SCOPE_EXIT({ OPENSSL_free(hex); });
@@ -225,6 +226,29 @@ std::string X509Certificate::expiresOn() const
     return reinterpret_cast<char *>(not_before->data);
 }
 
+static time_t asn1TimeToTimeT(const ASN1_TIME * time)
+{
+    if (!time)
+        return 0;
+
+    struct tm tm_time{};
+    if (ASN1_TIME_to_tm(time, &tm_time) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "ASN1_TIME_to_tm failed: {}", getOpenSSLErrors());
+
+    /// ASN1_TIME_to_tm yields a broken-down time in UTC, so convert it back with timegm (not mktime).
+    return timegm(&tm_time);
+}
+
+time_t X509Certificate::notBefore() const
+{
+    return asn1TimeToTimeT(X509_get0_notBefore(certificate));
+}
+
+time_t X509Certificate::notAfter() const
+{
+    return asn1TimeToTimeT(X509_get0_notAfter(certificate));
+}
+
 const X509Certificate::Subjects::container & X509Certificate::Subjects::at(Type type_) const
 {
     return subjects[static_cast<size_t>(type_)];
@@ -282,7 +306,7 @@ bool X509Certificate::Subjects::operator==(const X509Certificate::Subjects & rhs
     return true;
 }
 
-X509Certificate::Subjects X509Certificate::extractAllSubjects()
+X509Certificate::Subjects X509Certificate::extractAllSubjects() const
 {
     Subjects subjects;
 
@@ -300,8 +324,8 @@ X509Certificate::Subjects X509Certificate::extractAllSubjects()
         return subjects;
 
     const auto * names = reinterpret_cast<const STACK_OF(GENERAL_NAME) *>(cert_names.get());
-    uint8_t count = OPENSSL_sk_num(reinterpret_cast<const _STACK *>(names));
-    for (uint8_t i = 0; i < count; ++i)
+    int count = OPENSSL_sk_num(reinterpret_cast<const _STACK *>(names));
+    for (int i = 0; i < count; ++i)
     {
         const GENERAL_NAME * name = static_cast<const GENERAL_NAME *>(OPENSSL_sk_value(reinterpret_cast<const _STACK *>(names), i));
 

@@ -1,10 +1,17 @@
 #pragma once
 
 #include <pdqsort.h>
+#include <ipnsort.h>
+#include <driftsort.h>
+
+#include <algorithm>
+#include <iterator>
+#include <memory>
 
 #ifndef NDEBUG
 
 #include <pcg_random.hpp>
+#include <base/defines.h>
 #include <base/getThreadId.h>
 
 /** Same as libcxx std::__debug_less. Just without dependency on private part of standard library.
@@ -23,7 +30,7 @@ public:
     {
         bool lhs_less_than_rhs = cmp(lhs, rhs);
         if (lhs_less_than_rhs)
-            assert(!cmp(rhs, lhs));
+            chassert(!cmp(rhs, lhs));
 
         return lhs_less_than_rhs;
     }
@@ -33,7 +40,7 @@ public:
     {
         bool lhs_less_than_rhs = cmp(lhs, rhs);
         if (lhs_less_than_rhs)
-            assert(!cmp(rhs, lhs));
+            chassert(!cmp(rhs, lhs));
 
         return lhs_less_than_rhs;
     }
@@ -61,7 +68,7 @@ using ComparatorWrapper = Comparator;
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wold-style-cast"
-
+#pragma clang diagnostic ignored "-Wimplicit-int-float-conversion"
 #include <miniselect/floyd_rivest_select.h>
 
 template <typename RandomIt, typename Compare>
@@ -117,6 +124,14 @@ void partial_sort(RandomIt first, RandomIt middle, RandomIt last)
 
 #pragma clang diagnostic pop
 
+/** Unstable sort. Uses ipnsort (a C++ port of the Rust standard library's `slice::sort_unstable`
+  * by Lukas Bergdoll and Orson Peters): pattern-defeating quicksort with sorting-network small
+  * sort, a block partition with good instruction-level parallelism for expensive comparators, and
+  * a heapsort fallback for an O(n log n) worst case. It detects already-sorted and reverse-sorted
+  * runs, avoiding the worst case on those inputs. ipnsort needs raw pointers, so the always
+  * contiguous iterators are converted with `std::to_address`; the rare non-contiguous
+  * random-access iterators (e.g. reverse iterators over contiguous storage) keep using pdqsort.
+  */
 template <typename RandomIt, typename Compare>
 void sort(RandomIt first, RandomIt last, Compare compare)
 {
@@ -125,7 +140,10 @@ void sort(RandomIt first, RandomIt last, Compare compare)
 #endif
 
     ComparatorWrapper<Compare> compare_wrapper = compare;
-    ::pdqsort(first, last, compare_wrapper);
+    if constexpr (std::contiguous_iterator<RandomIt>)
+        ::ipnsort::sort(std::to_address(first), std::to_address(last), compare_wrapper);
+    else
+        ::pdqsort(first, last, compare_wrapper);
 }
 
 template <typename RandomIt>
@@ -134,6 +152,29 @@ void sort(RandomIt first, RandomIt last)
     using value_type = typename std::iterator_traits<RandomIt>::value_type;
     using comparator = std::less<value_type>;
     ::sort(first, last, comparator());
+}
+
+/** Stable sort. Uses driftsort (a C++ port of the Rust standard library's `slice::sort` by Orson
+  * Peters and Lukas Bergdoll): a powersort merge tree over detected runs with a stable
+  * scratch-based quicksort, much faster than `std::stable_sort` (it allocates up to n/2 extra
+  * memory). driftsort needs raw pointers; non-contiguous iterators keep using `std::stable_sort`.
+  */
+template <typename RandomIt, typename Compare>
+void stableSort(RandomIt first, RandomIt last, Compare compare)
+{
+    ComparatorWrapper<Compare> compare_wrapper = compare;
+    if constexpr (std::contiguous_iterator<RandomIt>)
+        ::driftsort::sort(std::to_address(first), std::to_address(last), compare_wrapper);
+    else
+        std::stable_sort(first, last, compare_wrapper);
+}
+
+template <typename RandomIt>
+void stableSort(RandomIt first, RandomIt last)
+{
+    using value_type = typename std::iterator_traits<RandomIt>::value_type;
+    using comparator = std::less<value_type>;
+    ::stableSort(first, last, comparator());
 }
 
 /** Try to fast sort elements for common sorting patterns:

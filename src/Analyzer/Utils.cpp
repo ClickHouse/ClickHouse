@@ -4,6 +4,7 @@
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 
@@ -25,7 +26,6 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Common/FieldVisitorToString.h>
-#include <DataTypes/DataTypesDecimal.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -50,7 +50,10 @@
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
+#include <Core/Streaming/CursorTree_fwd.h>
+
 #include <ranges>
+
 namespace DB
 {
 namespace Setting
@@ -105,7 +108,7 @@ bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root
         if (table_node || table_function_node)
         {
             const auto & table_storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-            if (table_storage->getStorageID() == storage->getStorageID())
+            if (table_storage && table_storage->getStorageID() == storage->getStorageID())
                 return true;
         }
 
@@ -198,15 +201,25 @@ void makeUniqueColumnNamesInBlock(Block & block)
 
     for (auto & column_with_type : block)
     {
-        if (!block_column_names.contains(column_with_type.name))
-        {
-            block_column_names.insert(column_with_type.name);
+        if (block_column_names.insert(column_with_type.name).second)
             continue;
-        }
 
-        column_with_type.name += '_';
-        column_with_type.name += std::to_string(unique_column_name_counter);
-        ++unique_column_name_counter;
+        /// The base name collides with a name we have already kept or produced.
+        /// Loop until we find a suffix that is unused anywhere in the block,
+        /// including by names we are about to keep and by names we have already
+        /// renamed. Register the renamed name to prevent further collisions.
+        ///
+        /// Example: for input `a, a, a_1`, the second `a` is renamed to `a_1`
+        /// and the third column (`a_1`) is renamed to `a_2`, instead of leaving
+        /// the block with two `a_1` columns.
+        String new_name;
+        do
+        {
+            new_name = column_with_type.name + '_' + std::to_string(unique_column_name_counter);
+            ++unique_column_name_counter;
+        } while (!block_column_names.insert(new_name).second);
+
+        column_with_type.name = std::move(new_name);
     }
 }
 
@@ -266,7 +279,11 @@ bool checkCorrelatedColumn(
     ///
     /// X would have lambda as a source node
     /// Y comes from outer scope and requires ordinary check.
-    if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+    ///
+    /// Similarly, INTERPOLATE creates fake columns with InterpolateNode as the source.
+    /// These are expression arguments, not table expressions, so they cannot be correlated.
+    auto source_type = column_source->getNodeType();
+    if (source_type == QueryTreeNodeType::LAMBDA || source_type == QueryTreeNodeType::INTERPOLATE)
         return false;
 
     bool is_correlated = false;
@@ -369,7 +386,7 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     if (value.isNull())
         return false;
 
-    UInt8 predicate_value = value.safeGet<UInt8>();
+    auto predicate_value = static_cast<UInt8>(value.safeGet<UInt8>());
     return predicate_value > 0;
 }
 
@@ -387,9 +404,9 @@ static ASTPtr convertIntoTableExpressionAST(
         const auto & identifier = identifier_node.getIdentifier();
 
         if (identifier.getPartsSize() == 1)
-            table_expression_node_ast = std::make_shared<ASTTableIdentifier>(identifier[0]);
+            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0]);
         else if (identifier.getPartsSize() == 2)
-            table_expression_node_ast = std::make_shared<ASTTableIdentifier>(identifier[0], identifier[1]);
+            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0], identifier[1]);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Identifier for table expression must contain 1 or 2 parts. Actual '{}'",
@@ -402,7 +419,7 @@ static ASTPtr convertIntoTableExpressionAST(
         table_expression_node_ast = table_expression_node->toAST(convert_to_ast_options);
     }
 
-    auto result_table_expression = std::make_shared<ASTTableExpression>();
+    auto result_table_expression = make_intrusive<ASTTableExpression>();
     result_table_expression->children.push_back(table_expression_node_ast);
 
     std::optional<TableExpressionModifiers> table_expression_modifiers;
@@ -440,11 +457,22 @@ static ASTPtr convertIntoTableExpressionAST(
 
         const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
         if (sample_size_ratio.has_value())
-            result_table_expression->sample_size = std::make_shared<ASTSampleRatio>(*sample_size_ratio);
+            result_table_expression->sample_size = make_intrusive<ASTSampleRatio>(*sample_size_ratio);
 
         const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
-            result_table_expression->sample_offset = std::make_shared<ASTSampleRatio>(*sample_offset_ratio);
+            result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
+
+        const auto & stream_settings = table_expression_modifiers->getStreamSettings();
+        if (stream_settings.has_value())
+        {
+            ASTStreamSettings::StreamSettings ast_stream_settings;
+            if (stream_settings->cursor_tree)
+                ast_stream_settings.cursor_tree = cursorTreeToMap(stream_settings->cursor_tree);
+
+            result_table_expression->stream_settings = make_intrusive<ASTStreamSettings>(std::move(ast_stream_settings));
+            result_table_expression->children.push_back(result_table_expression->stream_settings);
+        }
     }
 
     return result_table_expression;
@@ -472,7 +500,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(
         {
             auto table_expression_ast = convertIntoTableExpressionAST(table_expression, convert_to_ast_options);
 
-            auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
+            auto tables_in_select_query_element_ast = make_intrusive<ASTTablesInSelectQueryElement>();
             tables_in_select_query_element_ast->children.push_back(std::move(table_expression_ast));
             tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
 
@@ -586,6 +614,15 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
 
         switch (node_type)
         {
+            case QueryTreeNodeType::IDENTIFIER:
+            {
+                /** An unresolved identifier can appear in a join tree if the query tree
+                  * was not fully resolved (e.g. a subquery inside an unresolved table function
+                  * argument). Treat it like a leaf table expression.
+                  */
+                result.push_back(std::move(node_to_process));
+                break;
+            }
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
@@ -661,6 +698,8 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
 
         switch (node_type)
         {
+            case QueryTreeNodeType::IDENTIFIER:
+                [[fallthrough]];
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
             case QueryTreeNodeType::QUERY:
@@ -1198,10 +1237,10 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 namespace
 {
 
-Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object)
+Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object, bool is_inside_dynamic)
 {
     if (isColumnConst(*column))
-        return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, is_inside_object);
+        return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, is_inside_object, is_inside_dynamic);
 
     switch (data_type->getTypeId())
     {
@@ -1211,7 +1250,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             const auto & nullable_column = assert_cast<const ColumnNullable &>(*column);
             if (nullable_column.isNullAt(row))
                 return Null();
-            return getFieldFromColumnForASTLiteralImpl(nullable_column.getNestedColumnPtr(), row, nullable_data_type.getNestedType(), is_inside_object);
+            return getFieldFromColumnForASTLiteralImpl(nullable_column.getNestedColumnPtr(), row, nullable_data_type.getNestedType(), is_inside_object, is_inside_dynamic);
         }
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::Date32:
@@ -1220,33 +1259,21 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
             return Field(buf.str());
         }
-        case TypeIndex::DateTime:
-        {
-            /// for DateTime64 and DateTime, we must NOT use text serialization because formatted datetime strings
-            /// are ambiguous during DST transitions (the same local time can correspond to
-            /// two different UTC timestamps, different by 1 hour). Instead we return raw numeric value which
-            /// is wrapped in CAST() by ConstantNode::toASTImpl, so timestamp will be not ambiguous
-            const auto & datetime_col = assert_cast<const ColumnVector<UInt32> &>(*column);
-            return Field(datetime_col.getData()[row]);
-        }
+        case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::DateTime64:
         {
-            /// The reason of this: see the comment above.
-            ///
-            /// Logic behind it -- it is complicated to convert DateTime64 to string and then convert it back,
-            /// considering the problem with DST above. Also, it is not possible to convert DT64 from integer
-            /// so we convert DT64 to Decimal64, then we convert Decimal to string and we have '<int>.<frac>'
-            /// This string structure can be converted fine to DT64
-            ///
-            /// This complicated logic is used to avoid bugs regarding DST on remote execution, where we send
-            /// the query in text format to execution node
-            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
-            const auto & decimal_col = assert_cast<const ColumnDecimal<DateTime64> &>(*column);
-            Int64 raw_value = decimal_col.getData()[row].value;
-            UInt32 scale = datetime64_type.getScale();
-
+            /// Serialize DateTime/DateTime64 in ISO 8601 form in UTC, e.g. '2025-10-26T01:00:01.000000Z'.
+            /// The default local-time text form is ambiguous across DST transitions: the same wall-clock
+            /// time can map to two UTC instants one hour apart (e.g. the repeated 02:00 hour after a
+            /// fall-back), so a shard reading the literal back may pick the wrong instant. The UTC/ISO form
+            /// has no such ambiguity and round-trips exactly through the _CAST added by ConstantNode::toASTImpl.
+            /// Inside a Dynamic the value degrades to an untyped literal (there is no DateTime type to cast
+            /// back into), so keep the default local text there to preserve the existing representation.
+            FormatSettings format_settings;
+            if (!is_inside_dynamic)
+                format_settings.date_time_output_format = FormatSettings::DateTimeOutputFormat::ISO;
             WriteBufferFromOwnString buf;
-            writeText(DateTime64(raw_value), scale, buf, true /* trailing_zeros */);
+            data_type->getDefaultSerialization()->serializeText(*column, row, buf, format_settings);
             return Field(buf.str());
         }
         case TypeIndex::UInt8:
@@ -1268,7 +1295,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             Array array;
             array.reserve(end - start);
             for (size_t i = start; i != end; ++i)
-                array.push_back(getFieldFromColumnForASTLiteralImpl(nested_column, i, nested_data_type, is_inside_object));
+                array.push_back(getFieldFromColumnForASTLiteralImpl(nested_column, i, nested_data_type, is_inside_object, is_inside_dynamic));
             return array;
         }
         case TypeIndex::Map:
@@ -1286,8 +1313,8 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 Object object;
                 for (size_t i = start; i != end; ++i)
                 {
-                    auto key_field = convertFieldToString(getFieldFromColumnForASTLiteralImpl(key_column, i, map_type.getKeyType(), is_inside_object));
-                    auto value_field = getFieldFromColumnForASTLiteralImpl(value_column, i, map_type.getValueType(), is_inside_object);
+                    auto key_field = convertFieldToString(getFieldFromColumnForASTLiteralImpl(key_column, i, map_type.getKeyType(), is_inside_object, is_inside_dynamic));
+                    auto value_field = getFieldFromColumnForASTLiteralImpl(value_column, i, map_type.getValueType(), is_inside_object, is_inside_dynamic);
                     object[key_field] = value_field;
                 }
 
@@ -1296,7 +1323,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 
             const auto & nested_type = assert_cast<const DataTypeMap &>(*data_type).getNestedType();
             const auto & nested_column = assert_cast<const ColumnMap &>(*column).getNestedColumnPtr();
-            return getFieldFromColumnForASTLiteralImpl(nested_column, row, nested_type, is_inside_object);
+            return getFieldFromColumnForASTLiteralImpl(nested_column, row, nested_type, is_inside_object, is_inside_dynamic);
         }
         case TypeIndex::Tuple:
         {
@@ -1305,7 +1332,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             Tuple tuple;
             tuple.reserve(element_columns.size());
             for (size_t i = 0; i != element_types.size(); ++i)
-                tuple.push_back(getFieldFromColumnForASTLiteralImpl(element_columns[i], row, element_types[i], is_inside_object));
+                tuple.push_back(getFieldFromColumnForASTLiteralImpl(element_columns[i], row, element_types[i], is_inside_object, is_inside_dynamic));
             return tuple;
         }
         case TypeIndex::Variant:
@@ -1317,7 +1344,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 return Null();
             const auto & variant = variant_column.getVariantPtrByGlobalDiscriminator(global_discr);
             size_t variant_offset = variant_column.offsetAt(row);
-            return getFieldFromColumnForASTLiteralImpl(variant, variant_offset, variant_types[global_discr], is_inside_object);
+            return getFieldFromColumnForASTLiteralImpl(variant, variant_offset, variant_types[global_discr], is_inside_object, is_inside_dynamic);
         }
         case TypeIndex::Dynamic:
         {
@@ -1325,7 +1352,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             const auto & variant_column = dynamic_column.getVariantColumn();
             auto global_discr = variant_column.globalDiscriminatorAt(row);
             if (global_discr != dynamic_column.getSharedVariantDiscriminator())
-                return getFieldFromColumnForASTLiteralImpl(dynamic_column.getVariantColumnPtr(), row, dynamic_column.getVariantInfo().variant_type, is_inside_object);
+                return getFieldFromColumnForASTLiteralImpl(dynamic_column.getVariantColumnPtr(), row, dynamic_column.getVariantInfo().variant_type, is_inside_object, /*is_inside_dynamic=*/ true);
 
             const auto & shared_variant = dynamic_column.getSharedVariant();
             auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
@@ -1334,7 +1361,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             auto tmp_column = type->createColumn();
             tmp_column->reserve(1);
             type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, {});
-            return getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, type, is_inside_object);
+            return getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, type, is_inside_object, /*is_inside_dynamic=*/ true);
         }
         case TypeIndex::Object:
         {
@@ -1342,10 +1369,10 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             const auto & typed_paths_types = assert_cast<const DataTypeObject &>(*data_type).getTypedPaths();
             Object object;
             for (const auto & [path, path_column] : object_column.getTypedPaths())
-                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, typed_paths_types.at(path), true);
+                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, typed_paths_types.at(path), true, is_inside_dynamic);
 
             for (const auto & [path, path_column] : object_column.getDynamicPaths())
-                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, std::make_shared<DataTypeDynamic>(), true);
+                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, std::make_shared<DataTypeDynamic>(), true, is_inside_dynamic);
 
             const auto & shared_data_offsets = object_column.getSharedDataOffsets();
             const auto [shared_paths, shared_values] = object_column.getSharedDataPathsAndValues();
@@ -1363,7 +1390,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 auto tmp_column = dynamic_type->createColumn();
                 tmp_column->reserve(1);
                 dynamic_serialization->deserializeBinary(*tmp_column, buf, format_settings);
-                object[path] = getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, dynamic_type, true);
+                object[path] = getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, dynamic_type, true, is_inside_dynamic);
             }
 
             return is_inside_object ? Field(object) : Field(convertObjectToString(object));
@@ -1377,7 +1404,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type)
 {
-    return getFieldFromColumnForASTLiteralImpl(column, row, data_type, false);
+    return getFieldFromColumnForASTLiteralImpl(column, row, data_type, /*is_inside_object=*/ false, /*is_inside_dynamic=*/ false);
 }
 
 }

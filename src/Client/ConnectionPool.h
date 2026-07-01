@@ -54,6 +54,7 @@ protected:
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
 using ConnectionPoolPtrs = std::vector<ConnectionPoolPtr>;
+using ConnectionPoolEntries = std::vector<IConnectionPool::Entry>;
 
 /** A common connection pool, without fault tolerance.
   */
@@ -104,7 +105,7 @@ protected:
             proto_send_chunked, proto_recv_chunked,
             SSHKey(), /*jwt*/ "", quota_key,
             cluster, cluster_secret,
-            client_name, compression, secure, bind_host);
+            client_name, compression, secure, "", bind_host);
     }
 
 private:

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Storages/MergeTree/Compaction/MergeSelectors/PartitionStatistics.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
-#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
+#include <Storages/MergeTree/Compaction/PartitionStatistics.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -17,7 +17,7 @@ struct MergeSelectorChoice
 {
     PartsRange range;
     PartsRange range_patches;
-    MergeType merge_type;
+    MergeType merge_type{};
 
     /// If this merges down to a single part in a partition
     bool final = false;
@@ -27,16 +27,23 @@ using MergeSelectorChoices = std::vector<MergeSelectorChoice>;
 class MergeSelectorApplier
 {
 public:
-    const std::vector<size_t> max_merge_sizes;
+    const std::vector<MergeConstraint> merge_constraints;
     const bool merge_with_ttl_allowed = false;
     const bool aggressive = false;
     const IMergeSelector::RangeFilter range_filter = nullptr;
+    const StorageID storage_id;
+    /// If true, the table is read-only (the `table_readonly` MergeTree setting): no merges of any kind run —
+    /// neither regular merges, nor recompression, nor TTL drop/delete merges. (Tables with a TTL are never
+    /// marked read-only, so no TTL work is stranded; see `SystemLog::prepareTable`.)
+    const bool readonly = false;
 
     MergeSelectorApplier(
-        std::vector<size_t> && max_merge_sizes_,
+        std::vector<MergeConstraint> && merge_constraints_,
         bool merge_with_ttl_allowed_,
         bool aggressive_,
-        IMergeSelector::RangeFilter range_filter_);
+        IMergeSelector::RangeFilter range_filter_,
+        StorageID storage_id_,
+        bool readonly_ = false);
 
     MergeSelectorChoices chooseMergesFrom(
         const PartsRanges & ranges,

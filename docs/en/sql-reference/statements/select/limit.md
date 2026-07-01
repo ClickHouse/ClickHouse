@@ -6,8 +6,6 @@ title: 'LIMIT Clause'
 doc_type: 'reference'
 ---
 
-# LIMIT clause
-
 The `LIMIT` clause controls how many rows are returned from your query results.
 
 ## Basic syntax {#basic-syntax}
@@ -67,7 +65,7 @@ Use decimal values between 0 and 1 to select a percentage of rows:
 
 :::note
 - Fractions must be [Float64](../../data-types/float.md) values greater than 0 and less than 1.
-- Fractional row counts are rounded to the nearest whole number.
+- Fractional row counts are rounded to the next whole number.
 :::
 
 ## Combining limit types {#combining-limit-types}
@@ -119,6 +117,25 @@ SELECT * FROM (
 ```
 
 Row 6 is included because it has the same value (`2`) as row 5.
+
+The same applies when the offset is specified with the `OFFSET` keyword:
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 3 OFFSET 2 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+Skipping the first 2 rows and taking 3 would normally return `1, 1, 2`, but the second `2` is included because it ties with the last row.
 
 :::note
 `WITH TIES` is not supported with negative limits.

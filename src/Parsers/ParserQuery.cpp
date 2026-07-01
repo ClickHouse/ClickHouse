@@ -12,6 +12,7 @@
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserParallelWithQuery.h>
+#include <Parsers/ParserHypotheticalIndexQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -25,6 +26,8 @@
 #include <Parsers/ParserUpdateQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserCopyQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
@@ -69,6 +72,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserAlterNamedCollectionQuery alter_named_collection_p;
     ParserCreateIndexQuery create_index_p;
     ParserDropIndexQuery drop_index_p;
+    ParserHypotheticalIndexQuery hypothetical_index_p;
     ParserDropAccessEntityQuery drop_access_entity_p;
     ParserMoveAccessEntityQuery move_access_entity_p;
     ParserGrantQuery grant_p;
@@ -102,6 +106,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || alter_named_collection_p.parse(pos, node, expected)
         || create_index_p.parse(pos, node, expected)
         || drop_index_p.parse(pos, node, expected)
+        || hypothetical_index_p.parse(pos, node, expected)
         || drop_access_entity_p.parse(pos, node, expected)
         || move_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
@@ -134,6 +139,21 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// It allows to use ClickHouse as a calculator, to process queries like `1 + 2` without the SELECT keyword.
         ParserSelectQuery implicit_select_p(true);
         res = implicit_select_p.parse(pos, node, expected);
+
+        /// Wrap the bare SelectQuery in SelectWithUnionQuery to match the normal
+        /// parsing path. This ensures formatting roundtrip consistency: when formatted
+        /// as "SELECT ..." and reparsed, the SQL parser produces SelectWithUnionQuery.
+        if (res && node->as<ASTSelectQuery>())
+        {
+            auto list_node = make_intrusive<ASTExpressionList>();
+            list_node->children.push_back(node);
+
+            auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
+            select_with_union->list_of_selects = list_node;
+            select_with_union->children.push_back(select_with_union->list_of_selects);
+
+            node = std::move(select_with_union);
+        }
     }
 
     return res;

@@ -6,6 +6,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
 #include <Common/re2.h>
+#include <Common/config_version.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
@@ -213,7 +214,9 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
 
             for (size_t j = 0; j < labels.size(); ++j)
             {
-                wb << labels[j] << "=\"" << label_values[j] << "\",";
+                wb << labels[j] << '=';
+                writeDoubleQuotedString(label_values[j], wb);
+                wb << ',';
             }
 
             wb << "le=\"";
@@ -239,7 +242,8 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
                 {
                     wb << ',';
                 }
-                wb << labels[j] << "=\"" << label_values[j] << '"';
+                wb << labels[j] << '=';
+                writeDoubleQuotedString(label_values[j], wb);
             }
             wb << '}';
         }
@@ -255,7 +259,8 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
                 {
                     wb << ',';
                 }
-                wb << labels[j] << "=\"" << label_values[j] << '"';
+                wb << labels[j] << '=';
+                writeDoubleQuotedString(label_values[j], wb);
             }
             wb << '}';
         }
@@ -281,7 +286,7 @@ void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const Dim
     convertHelpToSingleLine(help_text);
 
     writeOutLine(wb, "# HELP", base_name, help_text);
-    writeOutLine(wb, "# TYPE", base_name, "gauge");
+    writeOutLine(wb, "# TYPE", base_name, family.getTypeString());
 
     family.forEachMetric([&wb, &family, &base_name](const DimensionalMetrics::LabelValues & label_values, const DimensionalMetrics::Metric & metric)
     {
@@ -296,7 +301,8 @@ void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const Dim
                 {
                     wb << ',';
                 }
-                wb << labels[i] << "=\"" << label_values[i] << '"';
+                wb << labels[i] << '=';
+                writeDoubleQuotedString(label_values[i], wb);
             }
             wb << '}';
         }
@@ -310,6 +316,23 @@ void PrometheusMetricsWriter::writeDimensionalMetrics(WriteBuffer & wb) const
     {
         writeDimensionalMetric(wb, family);
     });
+}
+
+void PrometheusMetricsWriter::writeInfo(WriteBuffer & wb) const
+{
+    std::string key{"ClickHouse_Info"};
+
+    writeOutLine(wb, "# HELP", key, "ClickHouse server information");
+    writeOutLine(wb, "# TYPE", key, "gauge");
+
+    wb << key << '{';
+    wb << "name=\"" << VERSION_NAME << "\"";
+    wb << ",version=\"" << VERSION_STRING << "\"";
+    wb << ",version_describe=\"" << VERSION_DESCRIBE << "\"";
+    wb << ",version_major=\"" << VERSION_MAJOR << "\"";
+    wb << ",version_minor=\"" << VERSION_MINOR << "\"";
+    wb << ",version_patch=\"" << VERSION_PATCH << "\"";
+    wb << '}' << " 1" << '\n';
 }
 
 

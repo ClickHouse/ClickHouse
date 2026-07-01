@@ -22,7 +22,7 @@ static std::string makeTestArray(size_t size)
 {
     std::string res(size, '\0');
     for (size_t i = 0; i < res.size(); ++i)
-        res[i] = i % 256;
+        res[i] = static_cast<char>(i % 256);
     return res;
 }
 

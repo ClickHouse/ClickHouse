@@ -17,7 +17,7 @@ node_options = dict(
         "configs/config.d/zookeeper_session_timeout.xml",
         "configs/config.d/storage_configuration.xml",
     ],
-    tmpfs=["/external:size=200M", "/internal:size=1M"],
+    tmpfs=["/test_rename_column_external:size=200M", "/test_rename_column_internal:size=1M"],
 )
 
 cluster = ClickHouseCluster(__file__)
@@ -178,7 +178,7 @@ def insert(
                     )
                 )
             node.query(";\n".join(query))
-        except QueryRuntimeException as ex:
+        except QueryRuntimeException:
             if not ignore_exception:
                 raise
 
@@ -217,7 +217,7 @@ def select(
                     ):
                         continue
                     assert r == expected_result
-            except QueryRuntimeException as ex:
+            except QueryRuntimeException:
                 if not ignore_exception:
                     raise
             break

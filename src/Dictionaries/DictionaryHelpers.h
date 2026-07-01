@@ -2,15 +2,19 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
 #include <Dictionaries/IDictionary.h>
@@ -80,10 +84,10 @@ public:
     {
         size_t attributes_to_fetch_size = attributes_to_fetch_names.size();
 
-        assert(attributes_to_fetch_size == attributes_to_fetch_types.size());
+        chassert(attributes_to_fetch_size == attributes_to_fetch_types.size());
 
         bool has_default = attributes_to_fetch_default_values_columns;
-        assert(!has_default || attributes_to_fetch_size == attributes_to_fetch_default_values_columns->size());
+        chassert(!has_default || attributes_to_fetch_size == attributes_to_fetch_default_values_columns->size());
 
         for (size_t i = 0; i < attributes_to_fetch_size; ++i)
             attributes_to_fetch_name_to_index.emplace(attributes_to_fetch_names[i], i);
@@ -202,9 +206,9 @@ public:
     }
 private:
     NamesAndTypes dictionary_attributes_names_and_types;
-    std::unordered_map<String, size_t> attributes_to_fetch_name_to_index;
-    std::vector<bool> attributes_to_fetch_filter;
-    std::vector<DefaultValueProvider> attributes_default_value_providers;
+    UnorderedMapWithMemoryTracking<String, size_t> attributes_to_fetch_name_to_index;
+    VectorWithMemoryTracking<bool> attributes_to_fetch_filter;
+    VectorWithMemoryTracking<DefaultValueProvider> attributes_default_value_providers;
 };
 
 static inline void insertDefaultValuesIntoColumns( /// NOLINT
@@ -260,8 +264,10 @@ class DictionaryAttributeColumnProvider
 public:
     using ColumnType =
         std::conditional_t<std::is_same_v<DictionaryAttributeType, Array>, ColumnArray,
-            std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
-                ColumnVectorOrDecimal<DictionaryAttributeType>>>;
+            std::conditional_t<std::is_same_v<DictionaryAttributeType, Map>, ColumnMap,
+                std::conditional_t<std::is_same_v<DictionaryAttributeType, Object>, ColumnObject,
+                    std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
+                        ColumnVectorOrDecimal<DictionaryAttributeType>>>>>;
 
     using ColumnPtr = typename ColumnType::MutablePtr;
 
@@ -276,6 +282,28 @@ public:
             }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
+        }
+        if constexpr (std::is_same_v<DictionaryAttributeType, Map>)
+        {
+            if (const auto * map_type = typeid_cast<const DataTypeMap *>(dictionary_attribute.type.get()))
+                return ColumnMap::create(map_type->getNestedType()->createColumn());
+
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Map attribute type.");
+        }
+        if constexpr (std::is_same_v<DictionaryAttributeType, Object>)
+        {
+            auto non_nullable_type = removeNullable(dictionary_attribute.type);
+            if (const auto * object_type = typeid_cast<const DataTypeObject *>(non_nullable_type.get()))
+            {
+                UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_path_columns;
+                typed_path_columns.reserve(object_type->getTypedPaths().size());
+                for (const auto & [path, type] : object_type->getTypedPaths())
+                    typed_path_columns[path] = type->createColumn();
+
+                return ColumnObject::create(std::move(typed_path_columns), object_type->getMaxDynamicPaths(), object_type->getMaxDynamicTypes());
+            }
+
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Object attribute type.");
         }
         if constexpr (std::is_same_v<DictionaryAttributeType, String>)
         {
@@ -370,12 +398,22 @@ public:
         if (use_attribute_default_value)
             return static_cast<DefaultValueType>(default_value);
 
-        assert(default_values_column != nullptr);
+        chassert(default_values_column != nullptr);
 
         if constexpr (std::is_same_v<DefaultColumnType, ColumnArray>)
         {
             Field field = (*default_values_column)[row];
             return field.safeGet<Array>();
+        }
+        else if constexpr (std::is_same_v<DefaultColumnType, ColumnMap>)
+        {
+            Field field = (*default_values_column)[row];
+            return field.safeGet<Map>();
+        }
+        else if constexpr (std::is_same_v<DefaultColumnType, ColumnObject>)
+        {
+            Field field = (*default_values_column)[row];
+            return field.safeGet<Object>();
         }
         else if constexpr (std::is_same_v<DefaultColumnType, ColumnString>)
             return default_values_column->getDataAt(row);
@@ -434,7 +472,7 @@ public:
         : key_columns(key_columns_)
         , complex_key_arena(complex_key_arena_)
     {
-        assert(!key_columns.empty());
+        chassert(!key_columns.empty());
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
@@ -460,7 +498,7 @@ public:
 
     KeyType extractCurrentKey()
     {
-        assert(current_key_index < keys_size);
+        chassert(current_key_index < keys_size);
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
@@ -594,10 +632,10 @@ Block mergeBlockWithPipe(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    PullingPipelineExecutor executor(io.pipeline);
-
     io.executeWithCallbacks([&]()
     {
+        PullingPipelineExecutor executor(io.pipeline);
+
         Block block;
         while (executor.pull(block))
         {

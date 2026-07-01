@@ -1,4 +1,5 @@
 import logging
+import re
 import traceback
 import random
 from pyspark.sql import SparkSession
@@ -50,6 +51,31 @@ class SparkAndClickHouseCheck:
             return False
         return True
 
+    def _clickhouse_engine_matches(self, client, table: SparkTable):
+        expected_by_format = {
+            LakeFormat.Iceberg: "Iceberg",
+            LakeFormat.DeltaLake: "DeltaLake",
+            LakeFormat.Paimon: "Paimon",
+        }
+        expected = expected_by_format.get(table.lake_format)
+        # Read the declared engine from the DDL rather than system.tables.engine:
+        # with lazy_load_tables, system.tables reports StorageTableProxy's name
+        # ("TableProxy") until the table is first materialized, which is not an
+        # engine swap. SHOW CREATE reflects the real (possibly REPLACEd) engine
+        # without forcing a load.
+        ddl = client.query(f"SHOW CREATE TABLE {table.get_clickhouse_path()};")
+        ddl = ddl if isinstance(ddl, str) else ""
+        match = re.search(r"ENGINE\s*=\s*([A-Za-z0-9_]+)", ddl)
+        if not match:
+            # Could not determine the engine: proceed with the check rather than
+            # silently skip it. An unparseable SHOW CREATE shape is a diagnostic
+            # gap, not evidence that the engine is wrong.
+            return True, ddl.strip()
+        engine = match.group(1)
+        if expected is None:
+            return True, engine
+        return engine.startswith(expected), engine
+
     def check_table(self, cluster, spark: SparkSession, table: SparkTable) -> bool:
         try:
             clickhouse_predicate = ""
@@ -68,6 +94,13 @@ class SparkAndClickHouseCheck:
                 command=cluster.client_bin_path,
             )
 
+            engine_ok, ch_engine = self._clickhouse_engine_matches(client, table)
+            if not engine_ok:
+                self.logger.warning(
+                    f"Skipping check for {table.get_clickhouse_path()}: ClickHouse engine is '{ch_engine}', but the descriptor expects {table.lake_format.name}"
+                )
+                return True
+
             # There is multithreading, so time travel is now required
             if table.lake_format == LakeFormat.Iceberg:
                 result = spark.sql(
@@ -75,7 +108,7 @@ class SparkAndClickHouseCheck:
                 ).collect()
                 snapshots = [r.snapshot_id for r in result]
                 timestamps = [r.committed_at for r in result]
-            else:
+            elif table.lake_format == LakeFormat.DeltaLake:
                 result = spark.sql(
                     f"DESCRIBE HISTORY {table.get_table_full_path()};"
                 ).collect()
@@ -85,7 +118,7 @@ class SparkAndClickHouseCheck:
                 len(timestamps) == 0 or random.randint(1, 2) == 1
             ):
                 next_snapshot = random.choice(snapshots)
-                clickhouse_predicate = f" SETTINGS {"iceberg_snapshot_id" if table.lake_format == LakeFormat.Iceberg else "delta_lake_snapshot_version"} = {next_snapshot}"
+                clickhouse_predicate = f" SETTINGS {'iceberg_snapshot_id' if table.lake_format == LakeFormat.Iceberg else 'delta_lake_snapshot_version'} = {next_snapshot}"
                 spark_predicate = f" VERSION AS OF {next_snapshot}"
                 extra_predicate = f" on snapshot {next_snapshot}"
             elif len(timestamps) > 0:
@@ -144,9 +177,9 @@ class SparkAndClickHouseCheck:
             SELECT MD5(CONCAT_WS('', COLLECT_LIST(row_hash))) as table_hash
             FROM (
                 SELECT MD5(CONCAT({concat_cols})) as row_hash
-                FROM (SELECT {', '.join([f"{v} AS {k}" for k, v in spark_strings.items()])}
+                FROM (SELECT {', '.join([f'{v} AS {k}' for k, v in spark_strings.items()])}
                       FROM {table.get_table_full_path()}{spark_predicate}) x
-                ORDER BY {', '.join([f"{k} ASC NULLS FIRST" for k in spark_strings.keys()])}
+                ORDER BY {', '.join([f'{k} ASC NULLS FIRST' for k in spark_strings.keys()])}
             );
             """
             result = spark.sql(query).collect()
@@ -167,17 +200,15 @@ class SparkAndClickHouseCheck:
                 [col.column_name for col in order_by_cols]
             )
             # Generate hash for each row in ClickHouse
-            clickhouse_hash = client.query(
-                f"""
+            clickhouse_hash = client.query(f"""
             SELECT lower(hex(MD5(arrayStringConcat(groupArray(row_hash), '')))) as table_hash
             FROM (
                 SELECT lower(hex(MD5({concat_cols}))) as row_hash
-                FROM (SELECT {', '.join([f"{v} AS {k}" for k, v in clickhouse_strings.items()])}
+                FROM (SELECT {', '.join([f'{v} AS {k}' for k, v in clickhouse_strings.items()])}
                       FROM {table.get_clickhouse_path()}) x
-                ORDER BY {', '.join([f"{k} ASC NULLS FIRST" for k in clickhouse_strings.keys()])}
+                ORDER BY {', '.join([f'{k} ASC NULLS FIRST' for k in clickhouse_strings.keys()])}
             ){clickhouse_predicate};
-            """
-            )
+            """)
             if not isinstance(clickhouse_hash, str) or clickhouse_hash == "":
                 self.logger.error(f"No hash found for {table.get_clickhouse_path()}")
                 return False
@@ -189,5 +220,5 @@ class SparkAndClickHouseCheck:
         except Exception as e:
             # If an error happens, ignore it, but log it
             traceback.print_exc()
-            self.logger.error(str(e))
+            self.logger.exception(e)
         return True
