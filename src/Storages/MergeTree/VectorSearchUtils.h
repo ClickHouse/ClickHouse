@@ -2,6 +2,12 @@
 #include <Core/Types.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <boost/container/small_vector.hpp>
+
+#include <optional>
+#include <utility>
+#include <vector>
+
 namespace DB
 {
 
@@ -25,6 +31,21 @@ struct NearestNeighbours
 {
     std::vector<UInt64> rows;
     std::optional<std::vector<float>> distances;
+};
+
+/// Row filter for vector index filtered_search (see filterMarksUsingIndex).
+struct GranuleRowFilter
+{
+    size_t granule_row_base = 0;
+    size_t granule_row_end = 0;
+    size_t granule_row_span = 0;
+    /// Sorted, non-overlapping [row_begin, row_end) intervals in part-level row offsets.
+    boost::container::small_vector<std::pair<size_t, size_t>, 4> allowed_part_row_ranges;
+};
+
+struct ANNSearchOverrides
+{
+    std::optional<GranuleRowFilter> row_filter;
 };
 
 }

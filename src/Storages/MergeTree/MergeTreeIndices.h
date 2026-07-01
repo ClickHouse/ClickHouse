@@ -5,10 +5,12 @@
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -16,6 +18,9 @@
 namespace DB
 {
 
+class MergeTreeIndexGranularity;
+
+struct ANNSearchOverrides;
 class IDataPartStorage;
 
 namespace Internal
@@ -173,7 +178,10 @@ public:
     /// Returns the N nearest neighbors of a reference vector in the index granule.
     /// The nearest neighbors are returned as row positions.
     /// If VectorSearchParameters::return_distances = true, then the distances are returned as well.
-    virtual NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
+    /// overrides.row_filter restricts keys to allowed_part_row_ranges; fewer than requested hits is allowed.
+    virtual NearestNeighbours calculateApproximateNearestNeighbors(
+        MergeTreeIndexGranulePtr /*granule*/,
+        const ANNSearchOverrides & /*overrides*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }

@@ -302,11 +302,17 @@ If additional filter conditions cannot be evaluated using indexes (primary key i
 
 *Additional filters can be evaluated using the primary key index*
 
-If additional filter conditions can be evaluated using the [primary key](mergetree.md#primary-key) (i.e., they form a prefix of the primary key) and
-- the filter condition eliminates at least one row within a part, the ClickHouse will fall back to pre-filtering for the "surviving" ranges within the part,
-- the filter condition eliminates no rows within a part, the ClickHouse will perform post-filtering for the part.
+If additional filter conditions can be evaluated using the [primary key](mergetree.md#primary-key), ClickHouse applies primary key analysis to skip marks within each part:
 
-In practical use cases, the latter case is rather unlikely.
+- If the filter leaves all marks in a part unchanged, ClickHouse performs post-filtering on the part: the vector similarity index runs on the full part, then the `WHERE` clause is applied to the index hits.
+
+- If the filter removes one or more marks within a part (partial primary key pruning), ClickHouse still uses the vector similarity index on the surviving marks. The search runs as `filtered_search` with a row filter derived from the primary-key ranges, not as a brute-force scan over those rows.
+
+  Approximate search under a tight row filter may return fewer than `LIMIT` neighbors even when more qualifying rows exist in the part. That is expected for an approximate index; the row count need not match a query that scans the surviving ranges without the vector index.
+
+  Setting [vector_search_index_fetch_multiplier](../../../operations/settings/settings#vector_search_index_fetch_multiplier) (default: `1.0`) multiplies how many neighbors are fetched from the index before additional filters are applied and can improve recall under partial primary key pruning. With the default value, the fetch size stays equal to `LIMIT`.
+
+To force exact brute-force search over rows that survive other filters (disabling the vector index path), set `vector_search_filter_strategy = 'prefilter'` as described below.
 
 *Additional filters can be evaluated using skipping index*
 
@@ -345,7 +351,7 @@ SETTING vector_search_index_fetch_multiplier = 3.0;
 
 ClickHouse will fetch 3.0 x 10 = 30 nearest neighbors from the vector index in each part and afterwards evaluate the additional filters.
 Only the ten closest neighbors will be returned.
-We note that setting `vector_search_index_fetch_multiplier` can mitigate the problem but in extreme cases (very selective WHERE condition), it is still possible that less than N requested rows returned.
+We note that setting `vector_search_index_fetch_multiplier` can mitigate the problem but in extreme cases (very selective `WHERE` condition, or partial primary key pruning with few allowed rows per vector index granule), it is still possible that less than `N` requested rows are returned.
 
 **Rescoring**
 

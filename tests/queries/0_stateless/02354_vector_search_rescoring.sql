@@ -101,13 +101,14 @@ LIMIT 3
 SETTINGS vector_search_with_rescoring = 0;
 
 -- Since filter will select partial ranges from part, brute-force search will select 4,5,6
+-- Brute-force baseline for partial PK range.
 WITH [1.0, 0.0] AS reference_vec
 SELECT id, attr1
 FROM tab
 WHERE id > 3
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
-SETTINGS vector_search_with_rescoring = 0;
+SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 0;
 
 SELECT 'Test for filter that selects full part, optimization will take effect';
 

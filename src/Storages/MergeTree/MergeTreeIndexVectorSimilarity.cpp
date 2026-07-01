@@ -14,6 +14,7 @@
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
+#include <base/defines.h>
 #include <Core/Field.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -24,9 +25,13 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
 
+#include <algorithm>
 #include <cmath>
 #include <ranges>
 #include <string_view>
+
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MarkRange.h>
 
 #include <fmt/ranges.h>
 
@@ -109,6 +114,39 @@ String joinByComma(const T & t)
         return fmt::format("{}", fmt::join(keys, ", "));
     }
     std::unreachable();
+}
+
+bool granuleLocalKeyAllowed(USearchIndex::vector_key_t key, const GranuleRowFilter & filter)
+{
+    if (filter.granule_row_end <= filter.granule_row_base)
+        return false;
+
+    const auto key_u64 = static_cast<UInt64>(key);
+    if (key_u64 >= filter.granule_row_span)
+        return false;
+
+    const size_t part_row = filter.granule_row_base + static_cast<size_t>(key_u64);
+    const auto & allowed_part_row_ranges = filter.allowed_part_row_ranges;
+    if (allowed_part_row_ranges.empty())
+        return false;
+
+    if (allowed_part_row_ranges.size() == 1)
+    {
+        const auto & [row_begin, row_end] = allowed_part_row_ranges.front();
+        return part_row >= row_begin && part_row < row_end;
+    }
+
+    const auto interval_it = std::upper_bound(
+        allowed_part_row_ranges.begin(),
+        allowed_part_row_ranges.end(),
+        part_row,
+        [](size_t row, const std::pair<size_t, size_t> & interval) { return row < interval.first; });
+
+    if (interval_it == allowed_part_row_ranges.begin())
+        return false;
+
+    const auto & [row_begin, row_end] = *std::prev(interval_it);
+    return part_row >= row_begin && part_row < row_end;
 }
 
 }
@@ -537,7 +575,8 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
     return false;
 }
 
-NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
+NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(
+    MergeTreeIndexGranulePtr granule_, const ANNSearchOverrides & overrides) const
 {
     if (!parameters)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected vector_search_parameters to be set");
@@ -557,16 +596,24 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
         granule->scalar_kind, ErrorCodes::INCORRECT_QUERY, "reference vector in the SELECT query");
 
     size_t limit = parameters->limit;
-    if (parameters->additional_filters_present || is_rescoring)
-        /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
-        /// Similarly, if rescoring is on, fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY ... LIMIT.
+    if (parameters->additional_filters_present || is_rescoring || overrides.row_filter.has_value())
         limit = std::min(static_cast<size_t>(static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier)), max_limit);
 
-    /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
-    /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
-    /// synchronize index access, see https://github.com/unum-cloud/usearch/issues/500. As a workaround, we extended USearch' search method
-    /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
-    auto search_result = index->search(parameters->reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
+    auto search_result = [&]()
+    {
+        if (!overrides.row_filter.has_value())
+        {
+            /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
+            /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
+            /// synchronize index access, see https://github.com/unum-cloud/usearch/issues/500. As a workaround, we extended USearch' search method
+            /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
+            return index->search(parameters->reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
+        }
+
+        auto predicate = [rf = overrides.row_filter.value()](USearchIndex::vector_key_t key) { return granuleLocalKeyAllowed(key, rf); };
+        return index->filtered_search(parameters->reference_vector.data(), limit, std::move(predicate), USearchIndex::any_thread(), false, expansion_search);
+    }();
+
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
 

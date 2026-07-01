@@ -1,7 +1,9 @@
+#include <numeric>
 #include <optional>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <unordered_map>
 #include <unordered_set>
 #include <boost/functional/hash.hpp>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
@@ -2185,6 +2187,205 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     return res;
 }
 
+namespace
+{
+
+/// Partial PK pruning: build row filter, cache ANN per skip-index granule, merge hints for MergeTreeRangeReader.
+
+void sortAndMergeAllowedPartRowRanges(boost::container::small_vector<std::pair<size_t, size_t>, 4> & intervals)
+{
+    if (intervals.empty())
+        return;
+
+    std::sort(intervals.begin(), intervals.end());
+
+    size_t merged_size = 1;
+    for (size_t interval_idx = 1; interval_idx < intervals.size(); ++interval_idx)
+    {
+        auto & last = intervals[merged_size - 1];
+        const auto & current = intervals[interval_idx];
+        if (current.first <= last.second)
+            last.second = std::max(last.second, current.second);
+        else
+            intervals[merged_size++] = current;
+    }
+    intervals.resize(merged_size);
+}
+
+GranuleRowFilter buildGranuleRowFilterForPartialPk(
+    const MergeTreeIndexGranularity & index_granularity,
+    size_t index_mark,
+    size_t skip_index_granularity,
+    const MarkRanges & pk_ranges_for_index_mark)
+{
+    GranuleRowFilter granule_row_filter;
+
+    const size_t base_mark = index_mark * skip_index_granularity;
+    const size_t end_mark = std::min(base_mark + skip_index_granularity, index_granularity.getMarksCountWithoutFinal());
+    granule_row_filter.granule_row_base = index_granularity.getMarkStartingRow(base_mark);
+    granule_row_filter.granule_row_end = index_granularity.getMarkStartingRow(end_mark);
+    granule_row_filter.granule_row_span = granule_row_filter.granule_row_end - granule_row_filter.granule_row_base;
+
+    auto & allowed_part_row_ranges = granule_row_filter.allowed_part_row_ranges;
+    for (const auto & pk_range : pk_ranges_for_index_mark)
+    {
+        const size_t intersect_begin_mark = std::max(pk_range.begin, base_mark);
+        const size_t intersect_end_mark = std::min(pk_range.end, end_mark);
+        if (intersect_begin_mark >= intersect_end_mark)
+            continue;
+
+        const size_t row_begin = index_granularity.getMarkStartingRow(intersect_begin_mark);
+        const size_t row_end = index_granularity.getMarkStartingRow(intersect_end_mark);
+        if (row_begin >= row_end)
+            continue;
+
+        allowed_part_row_ranges.emplace_back(row_begin, row_end);
+    }
+
+    sortAndMergeAllowedPartRowRanges(allowed_part_row_ranges);
+    return granule_row_filter;
+}
+
+struct PartialPkVectorSearchHints
+{
+    std::optional<NearestNeighbours> merged;
+    bool skip_vector_distance_hints = false;
+    std::unordered_set<size_t> merged_index_marks;
+
+    /// Returns false if this skip-index granule was already handled (e.g. OR over PK ranges).
+    bool tryMergeGranuleHintsOnce(
+        size_t index_mark,
+        const NearestNeighbours & nn,
+        const MergeTreeIndexGranularity & index_granularity,
+        size_t skip_index_granularity)
+    {
+        if (!merged_index_marks.insert(index_mark).second)
+            return false;
+
+        if (nn.rows.empty())
+            return true;
+
+        if (!nn.distances.has_value())
+        {
+            /// `_distance` optimization needs distances for every granule in the part.
+            skip_vector_distance_hints = true;
+            merged.reset();
+            return true;
+        }
+
+        if (skip_vector_distance_hints)
+            return true;
+
+        if (!merged.has_value())
+        {
+            merged.emplace();
+            merged->distances.emplace();
+        }
+
+        const size_t granule_base_row = index_granularity.getMarkStartingRow(index_mark * skip_index_granularity);
+        chassert(nn.rows.size() == nn.distances->size());
+        for (size_t j = 0; j < nn.rows.size(); ++j)
+        {
+            merged->rows.push_back(granule_base_row + nn.rows[j]);
+            merged->distances->push_back((*nn.distances)[j]);
+        }
+
+        return true;
+    }
+
+    void finalize(RangesInDataPartReadHints & read_hints)
+    {
+        chassert(!read_hints.vector_search_results.has_value());
+
+        if (!skip_vector_distance_hints && merged.has_value() && merged->distances.has_value() && !merged->rows.empty())
+        {
+            auto & rows_out = merged->rows;
+            auto & distances_out = *merged->distances;
+            chassert(rows_out.size() == distances_out.size());
+            std::vector<size_t> permutation(rows_out.size());
+            std::iota(permutation.begin(), permutation.end(), 0);
+            std::sort(permutation.begin(), permutation.end(), [&](size_t lhs, size_t rhs) { return rows_out[lhs] < rows_out[rhs]; });
+            std::vector<UInt64> sorted_rows(rows_out.size());
+            std::vector<float> sorted_distances(distances_out.size());
+            for (size_t p = 0; p < permutation.size(); ++p)
+            {
+                sorted_rows[p] = rows_out[permutation[p]];
+                sorted_distances[p] = distances_out[permutation[p]];
+            }
+            merged->rows = std::move(sorted_rows);
+            distances_out = std::move(sorted_distances);
+
+            read_hints.vector_search_results = std::move(merged);
+        }
+        else
+            read_hints.vector_search_results.reset();
+    }
+};
+
+struct PartialPkVectorSearchCache
+{
+    std::unordered_map<size_t, MarkRanges> pk_ranges_by_index_mark;
+    std::unordered_map<size_t, NearestNeighbours> vector_search_results_by_index_mark;
+    /// Number of outer-loop (i, index_mark) visits still pending; drops to zero before cache erase.
+    std::unordered_map<size_t, size_t> remaining_uses_by_index_mark;
+
+    void collectPkRangesByIndexMark(size_t ranges_size, const MarkRanges & pk_ranges, const MarkRanges & index_ranges)
+    {
+        for (size_t i = 0; i < ranges_size; ++i)
+        {
+            const MarkRange & index_range = index_ranges[i];
+            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+            {
+                pk_ranges_by_index_mark[index_mark].push_back(pk_ranges[i]);
+                ++remaining_uses_by_index_mark[index_mark];
+            }
+        }
+    }
+
+    /// Caller must not use the returned reference after releaseIndexMarkIfUnused for the same index_mark.
+    const NearestNeighbours & getOrRunAnnForIndexMark(
+        size_t index_mark,
+        MergeTreeIndexGranulePtr & granule,
+        const MergeTreeIndexConditionPtr & condition,
+        const MergeTreeIndexGranularity & index_granularity,
+        size_t skip_index_granularity)
+    {
+        auto search_result_it = vector_search_results_by_index_mark.find(index_mark);
+        if (search_result_it == vector_search_results_by_index_mark.end())
+        {
+            GranuleRowFilter granule_row_filter = buildGranuleRowFilterForPartialPk(
+                index_granularity, index_mark, skip_index_granularity, pk_ranges_by_index_mark.at(index_mark));
+
+            if (granule_row_filter.allowed_part_row_ranges.empty())
+            {
+                search_result_it = vector_search_results_by_index_mark.emplace(index_mark, NearestNeighbours{}).first;
+            }
+            else
+            {
+                ANNSearchOverrides ann_overrides{.row_filter = std::move(granule_row_filter)};
+                search_result_it = vector_search_results_by_index_mark.emplace(
+                    index_mark,
+                    condition->calculateApproximateNearestNeighbors(granule, ann_overrides)).first;
+            }
+        }
+        return search_result_it->second;
+    }
+
+    void releaseIndexMarkIfUnused(size_t index_mark)
+    {
+        auto uses_it = remaining_uses_by_index_mark.find(index_mark);
+        chassert(uses_it != remaining_uses_by_index_mark.end());
+        if (--uses_it->second == 0)
+        {
+            remaining_uses_by_index_mark.erase(uses_it);
+            vector_search_results_by_index_mark.erase(index_mark);
+            pk_ranges_by_index_mark.erase(index_mark);
+        }
+    }
+};
+
+}
+
 std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexPtr index_helper,
     MergeTreeIndexConditionPtr condition,
@@ -2219,13 +2420,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         part->index_granularity_info.fixed_index_granularity,
         part->index_granularity_info.index_granularity_bytes);
 
-    /// The vector similarity index can only be used if the PK did not prune some ranges within the part.
-    /// (the vector index is built on the entire part).
-    const bool all_match  = (marks_count == ranges.getNumberOfMarks());
-    if (index_helper->isVectorSimilarityIndex() && !all_match)
-    {
-        return {ranges, in_read_hints};
-    }
+    /// Partial PK: still run vector index and restrict hits to surviving marks.
+    const bool all_match = (marks_count == ranges.getNumberOfMarks());
 
     MarkRanges index_ranges;
     for (const auto & range : ranges)
@@ -2338,9 +2534,17 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             {
                 if (current_granule_num == *it)
                 {
-                    MarkRange data_range(
-                        std::max(ranges[i].begin, index_mark * skip_index_granularity),
-                        std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
+                    const size_t data_range_begin = std::max(ranges[i].begin, index_mark * skip_index_granularity);
+                    const size_t data_range_end = std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity);
+                    if (data_range_begin >= data_range_end)
+                    {
+                        ++it;
+                        if (it == filtered_granules.end())
+                            break;
+                        ++current_granule_num;
+                        continue;
+                    }
+                    MarkRange data_range(data_range_begin, data_range_end);
 
                     if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                         res.push_back(data_range);
@@ -2366,6 +2570,14 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
 
+        /// Merge per-granule hits into part-level row offsets for MergeTreeRangeReader.
+        PartialPkVectorSearchHints vector_search_hints;
+        PartialPkVectorSearchCache vector_search_cache;
+        const bool use_vector_search_cache = index_helper->isVectorSimilarityIndex() && !all_match;
+
+        if (use_vector_search_cache)
+            vector_search_cache.collectPkRangesByIndexMark(ranges_size, ranges, index_ranges);
+
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
@@ -2379,10 +2591,20 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
-                    read_hints.vector_search_results = condition->calculateApproximateNearestNeighbors(granule);
+                    std::optional<NearestNeighbours> uncached_vector_search_result;
+                    const NearestNeighbours * nn_ptr = nullptr;
+                    if (use_vector_search_cache)
+                        nn_ptr = &vector_search_cache.getOrRunAnnForIndexMark(
+                            index_mark, granule, condition, *part->index_granularity, skip_index_granularity);
+                    else
+                    {
+                        uncached_vector_search_result = condition->calculateApproximateNearestNeighbors(granule, ANNSearchOverrides{});
+                        nn_ptr = &uncached_vector_search_result.value();
+                    }
+                    const NearestNeighbours & nn = *nn_ptr;
 
-                    /// We need to sort the result ranges ascendingly
-                    auto rows = read_hints.vector_search_results.value().rows;
+                    /// We need to sort the result ranges ascendingly (granule-local row ids).
+                    auto rows = nn.rows;
                     std::sort(rows.begin(), rows.end());
 #ifndef NDEBUG
                     /// Duplicates should in theory not be possible but better be safe than sorry ...
@@ -2390,26 +2612,55 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (has_duplicates)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #endif
-                    if (!(read_hints.vector_search_results.value().distances.has_value()))
-                        read_hints = {};
+                    /// Same index_mark can be reached from several PK ranges (OR).
+                    const bool first_visit_to_index_mark = vector_search_hints.tryMergeGranuleHintsOnce(
+                        index_mark, nn, *part->index_granularity, skip_index_granularity);
 
-                    for (auto row : rows)
+                    if (!use_vector_search_cache || first_visit_to_index_mark)
                     {
-                        size_t num_marks = part->index_granularity->countMarksForRows(index_mark * skip_index_granularity, row);
-
-                        MarkRange data_range(
-                            std::max(ranges[i].begin, (index_mark * skip_index_granularity) + num_marks),
-                            std::min(ranges[i].end, (index_mark * skip_index_granularity) + num_marks + 1));
-
-                        if (!res.empty() && data_range.end == res.back().end)
-                            /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.
-                            continue;
-
-                        if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
-                            res.push_back(data_range);
+                        /// With partial PK, one ANN run covers all PK ranges in this granule; emit marks once.
+                        const MarkRanges * pk_ranges_for_index_mark = nullptr;
+                        MarkRanges single_pk_range;
+                        if (use_vector_search_cache)
+                            pk_ranges_for_index_mark = &vector_search_cache.pk_ranges_by_index_mark.at(index_mark);
                         else
-                            res.back().end = data_range.end;
+                        {
+                            single_pk_range.push_back(ranges[i]);
+                            pk_ranges_for_index_mark = &single_pk_range;
+                        }
+
+                        const size_t granule_base_row = part->index_granularity->getMarkStartingRow(index_mark * skip_index_granularity);
+
+                        for (auto row : rows)
+                        {
+                            const size_t absolute_mark = part->index_granularity->getMarkRangeForRowOffset(granule_base_row + row).begin;
+
+                            std::optional<MarkRange> data_range;
+                            for (const auto & pk_range : *pk_ranges_for_index_mark)
+                            {
+                                if (absolute_mark < pk_range.begin || absolute_mark >= pk_range.end)
+                                    continue;
+
+                                data_range = MarkRange(absolute_mark, absolute_mark + 1);
+                                break;
+                            }
+
+                            if (!data_range)
+                                continue;
+
+                            if (!res.empty() && data_range->end == res.back().end)
+                                /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.
+                                continue;
+
+                            if (res.empty() || data_range->begin - res.back().end > min_marks_for_seek)
+                                res.push_back(*data_range);
+                            else
+                                res.back().end = data_range->end;
+                        }
                     }
+
+                    if (use_vector_search_cache)
+                        vector_search_cache.releaseIndexMarkIfUnused(index_mark);
                 }
                 else
                 {
@@ -2419,9 +2670,11 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (!may_be_true)
                         continue;
 
-                    MarkRange data_range(
-                        std::max(ranges[i].begin, index_mark * skip_index_granularity),
-                        std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
+                    const size_t data_range_begin = std::max(ranges[i].begin, index_mark * skip_index_granularity);
+                    const size_t data_range_end = std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity);
+                    if (data_range_begin >= data_range_end)
+                        continue;
+                    MarkRange data_range(data_range_begin, data_range_end);
 
                     if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                         res.push_back(data_range);
@@ -2432,6 +2685,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
             last_index_mark = index_range.end - 1;
         }
+
+        if (index_helper->isVectorSimilarityIndex())
+            vector_search_hints.finalize(read_hints);
     }
 
     return {res, read_hints};
