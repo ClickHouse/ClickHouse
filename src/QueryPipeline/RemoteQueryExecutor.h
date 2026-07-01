@@ -306,6 +306,16 @@ private:
     bool was_cancelled = false;
     std::mutex was_cancelled_mutex;
 
+    /** Set by `finish` (under `was_cancelled_mutex`) while it owns the drain loop, which runs
+      * with `was_cancelled_mutex` released so a concurrent hard cancel can preempt it. A
+      * concurrent `finish` that observes `was_cancelled` (which the draining call sets via its
+      * own `tryCancel` before releasing the mutex) must not eagerly `disconnect` the connections
+      * in that case: tearing them down under the active `receivePacket` throws
+      * `No more packets are available`. The draining call (or the destructor) cleans up instead.
+      * Guarded by `was_cancelled_mutex`, like `was_cancelled`.
+      */
+    bool draining = false;
+
     /** Set by `abortDrain` to make `finish`'s drain loop exit early when a
       * concurrent hard cancellation arrives. The drain loop checks this atomic
       * after each packet so the hard cancel does not have to wait for the full

@@ -825,7 +825,7 @@ void RemoteQueryExecutor::finish()
             {
                 finished = true;
             }
-            else if (was_cancelled && !finished && connections)
+            else if (was_cancelled && !finished && connections && !draining)
             {
                 /// The query was already cancelled (e.g. concurrently from the pipeline) but its
                 /// connections may still hold undelivered packets - the server keeps sending the data,
@@ -838,6 +838,13 @@ void RemoteQueryExecutor::finish()
                 /// (see #93018). So disconnect them, forcing a clean reconnect on reuse. This mirrors the
                 /// cleanup done in the destructor, but performs it eagerly so it cannot be skipped if
                 /// `finished` later becomes true through another path.
+                ///
+                /// The `!draining` guard excludes the case where another `finish` call is currently
+                /// draining these connections: it set `was_cancelled` via its own `tryCancel` before
+                /// releasing `was_cancelled_mutex` and is now blocked in `receivePacket` with the mutex
+                /// released. Disconnecting here would tear the connections down under that active read,
+                /// making it throw `No more packets are available`. The draining call finishes the
+                /// drain (or the destructor disconnects) instead.
                 connections->disconnect();
                 finished = true;
             }
@@ -854,6 +861,11 @@ void RemoteQueryExecutor::finish()
         /// If connections weren't created yet, query wasn't sent or was already finished, nothing to do.
         if (!connections || !sent_query || finished)
             return;
+
+        /// Take ownership of the drain loop before releasing the mutex. A concurrent `finish` that
+        /// observes the `was_cancelled` we just set (via `tryCancel` above) will now skip its eager
+        /// `disconnect` branch instead of tearing down the connections while we read from them.
+        draining = true;
     }
 
     /// Mark `finished` only when the drain loop has actually drained every replica:
@@ -872,6 +884,13 @@ void RemoteQueryExecutor::finish()
     ///     disconnects the remaining connections instead of returning them to the pool with
     ///     unread packets.
     SCOPE_EXIT({
+        /// Re-acquire the mutex to release ownership of the drain loop and publish `finished`
+        /// consistently with the disconnect branch above (which reads `draining` and `finished`
+        /// under the same mutex). We are past the drain loop and hold no lock here, so taking it
+        /// cannot deadlock; the lock order (`was_cancelled_mutex` then a `connections` method) is
+        /// the same as in `tryCancel` and the disconnect branch.
+        LockAndBlocker guard(was_cancelled_mutex);
+        draining = false;
         if (!connections->hasActiveConnections())
             finished = true;
     });
