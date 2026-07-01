@@ -9,10 +9,9 @@ enum class MergeTreeSerializationInfoVersion : uint8_t
 {
     BASIC = 0,
     WITH_TYPES = 1,
-    /// Like `WITH_TYPES`, but each column also stores a `has_internal_statistics` flag. When a column
-    /// already has the serialization-relevant count in external statistics (e.g. `StatisticsBasic`
-    /// with the default count), the flag is `false` and the per-column counts are omitted from
-    /// `serialization.json` (read from the external statistics instead).
+    /// Same on-disk shape as `WITH_TYPES`. The per-column counts (num_rows/num_defaults) are always
+    /// written inline in `serialization.json`, reconciled with the exact counts from the explicit
+    /// statistics at write time (see `EstimatesBuilder` and `IMergeTreeDataPart::getEstimates`).
     WITH_EXTERNAL_STATISTICS = 2,
 };
 

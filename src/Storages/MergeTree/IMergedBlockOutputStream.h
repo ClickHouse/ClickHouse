@@ -5,7 +5,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
-#include <DataTypes/Serializations/SerializationStatisticsBuilder.h>
+#include <DataTypes/Serializations/EstimatesBuilder.h>
 #include <Common/Logger.h>
 
 #include <optional>
@@ -34,10 +34,18 @@ public:
         MergeTreeData::DataPart::Checksums checksums;
         ColumnsSubstreams columns_substreams;
         ColumnsStatistics statistics;
+        /// The estimates (num_rows/num_defaults per column and subcolumn) to persist in
+        /// `serialization.json`, when the file is written outside the output stream (column-only
+        /// mutations). Populated via `getSerializationEstimates`.
+        Estimates serialization_estimates;
     };
 
     virtual void write(const Block & block) = 0;
     virtual void cancel() noexcept = 0;
+
+    /// The estimates of the written data reconciled with the exact counts from the explicit statistics
+    /// (`external_estimates`), for persisting in `serialization.json`.
+    Estimates getSerializationEstimates(const Estimates & external_estimates);
 
     MergeTreeIndexGranularityPtr getIndexGranularity() const
     {
@@ -90,11 +98,10 @@ protected:
 
     bool reset_columns = false;
     SerializationInfo::Settings info_settings;
-    /// Builds the lightweight serialization statistics (num_rows/num_defaults) of the columns being
-    /// written, so the persisted counts reflect the actually-written data. Only present when
-    /// `reset_columns` is set (merges and mutations); inserts choose the kind from the in-memory
-    /// block in `MergeTreeDataWriter` instead.
-    std::optional<SerializationStatisticsBuilder> serialization_statistics_builder;
+    /// Samples the estimates (num_rows/num_defaults) of the columns being written, so the counts
+    /// persisted in `serialization.json` reflect the actually-written data. Always present; the kinds
+    /// themselves are chosen upstream (in `MergeTreeDataWriter` for inserts, in `MergeTask` for merges).
+    std::optional<EstimatesBuilder> estimates_builder;
 };
 
 using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;

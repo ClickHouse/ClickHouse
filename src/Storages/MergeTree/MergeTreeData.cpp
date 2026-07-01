@@ -32,7 +32,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/Serializations/SerializationStatisticsBuilder.h>
+#include <DataTypes/Serializations/EstimatesBuilder.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/hasNullable.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -10809,9 +10810,30 @@ ReservationPtr MergeTreeData::balancedReservation(
     return reserved_space;
 }
 
-template <typename DataPartPtr>
-static void addPartToSerializationHints(const DataPartPtr & part, const ColumnsDescription & storage_columns, SerializationInfoByName & hints)
+/// Add the estimates of a column (and its subcolumns) from `src` into the per-table hint aggregate
+/// `dst`, walking the info tree to build the subcolumn paths.
+static void addColumnEstimateToHints(const String & key, const SerializationInfo & info, const Estimates & src, Estimates & dst)
 {
+    if (auto it = src.find(key); it != src.end())
+    {
+        auto & dst_estimate = dst[key];
+        dst_estimate.rows_count += it->second.rows_count;
+        dst_estimate.num_defaults = dst_estimate.num_defaults.value_or(0) + it->second.num_defaults.value_or(0);
+    }
+
+    if (const auto * info_tuple = typeid_cast<const SerializationInfoTuple *>(&info))
+    {
+        const auto & names = info_tuple->getElementNames();
+        for (size_t i = 0; i < names.size(); ++i)
+            addColumnEstimateToHints(Nested::concatenateName(key, names[i]), *info_tuple->getElementInfo(i), src, dst);
+    }
+}
+
+template <typename DataPartPtr>
+static void addPartToSerializationHints(
+    const DataPartPtr & part, const ColumnsDescription & storage_columns, SerializationInfoByName & hints, Estimates & hint_estimates)
+{
+    const auto part_estimates = part->getEstimates();
     const auto & part_columns = part->getColumnsDescription();
     for (const auto & [name, info] : part->getSerializationInfos())
     {
@@ -10825,14 +10847,8 @@ static void addPartToSerializationHints(const DataPartPtr & part, const ColumnsD
             continue;
 
         chassert(new_hint->structureEquals(*info));
-        SerializationStatisticsBuilder::addStatistics(*new_hint, *info);
+        addColumnEstimateToHints(name, *info, part_estimates, hint_estimates);
     }
-}
-
-static void chooseSerializationHintKinds(SerializationInfoByName & hints)
-{
-    for (const auto & [name, hint] : hints)
-        SerializationStatisticsBuilder::chooseKindsFromStatistics(*hint);
 }
 
 void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
@@ -10856,12 +10872,13 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     const auto & storage_columns = metadata_snapshot->getColumns();
 
     serialization_hints = SerializationInfoByName(storage_columns.getAllPhysical(), settings);
+    serialization_hint_estimates.clear();
     auto range = getDataPartsStateRange(DataPartState::Active);
 
     for (const auto & part : range)
-        addPartToSerializationHints(part, storage_columns, serialization_hints);
+        addPartToSerializationHints(part, storage_columns, serialization_hints, serialization_hint_estimates);
 
-    chooseSerializationHintKinds(serialization_hints);
+    EstimatesBuilder::chooseKinds(serialization_hints, serialization_hint_estimates);
 }
 
 template <typename AddedParts, typename RemovedParts>
@@ -10885,9 +10902,9 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
     const auto & storage_columns = metadata_snapshot->getColumns();
 
     for (const auto & part : added_parts)
-        addPartToSerializationHints(part, storage_columns, serialization_hints);
+        addPartToSerializationHints(part, storage_columns, serialization_hints, serialization_hint_estimates);
 
-    chooseSerializationHintKinds(serialization_hints);
+    EstimatesBuilder::chooseKinds(serialization_hints, serialization_hint_estimates);
 }
 
 SerializationInfoByName MergeTreeData::getSerializationHints() const

@@ -23,15 +23,17 @@ public:
     void serialializeKindStackBinary(WriteBuffer & out) const override;
     void deserializeFromKindsBinary(ReadBuffer & in) override;
 
-    void toJSON(Poco::JSON::Object & object) const override;
-    void fromJSON(const Poco::JSON::Object & object) override;
+    void fromJSON(const Poco::JSON::Object & object, const String & key, Estimates & estimates) override;
 
     const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
     ISerialization::KindStack getElementKindStack(size_t i) const { return elems[i]->getKindStack(); }
     size_t getNumElements() const { return elems.size(); }
 
-    /// Looks up an element's info by name; returns nullptr when there is no such element. Used by
-    /// `SerializationStatisticsBuilder` to combine source-part counts matching elements by name.
+    /// Names of the tuple elements, parallel to the element infos. Used to build subcolumn paths when
+    /// walking the info tree together with a flat, path-keyed set of estimates.
+    const Names & getElementNames() const { return names; }
+
+    /// Looks up an element's info by name; returns nullptr when there is no such element.
     const MutableSerializationInfoPtr * tryGetElementInfo(const String & name) const
     {
         auto it = name_to_elem.find(name);
@@ -39,7 +41,7 @@ public:
     }
 
 protected:
-    void writeJSONFields(WriteBuffer & out, const String * name, bool has_internal_statistics) const override;
+    void writeJSONFields(WriteBuffer & out, const String * name, const String & key, const Estimates & estimates) const override;
 
 private:
     MutableSerializationInfos elems;

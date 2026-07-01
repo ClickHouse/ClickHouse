@@ -233,8 +233,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         auto part_columns = total_columns_list ? *total_columns_list : columns_list;
         auto serialization_infos = new_part->getSerializationInfos();
 
-        /// Persist the counts of the actually-written data, keeping the kinds chosen at prepare time.
-        serialization_statistics_builder->applyStatistics(serialization_infos);
         files_to_remove_after_sync
             = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_columns, serialization_infos, checksums);
 
@@ -368,21 +366,18 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     const auto & serialization_infos = new_part->getSerializationInfos();
     if (serialization_infos.needsPersistence())
     {
-        /// Under WITH_EXTERNAL_STATISTICS, omit the per-column counts for columns whose default count
-        /// is persisted in the external statistics; they are read back from there at load time (see
-        /// `SerializationInfo::fromJSON` and `IMergeTreeDataPart::loadColumns`).
-        NameSet columns_with_external_statistics;
-        if (serialization_infos.getVersion() >= MergeTreeSerializationInfoVersion::WITH_EXTERNAL_STATISTICS)
-        {
-            for (const auto & [column_name, column_stats] : gathered_data.statistics)
-                if (column_stats->hasDefaultsCount())
-                    columns_with_external_statistics.insert(column_name);
-        }
+        /// Reconcile the sampled estimates of the written data with the exact counts from the explicit
+        /// statistics, and persist them inline (num_rows/num_defaults per column and subcolumn).
+        auto estimates = getSerializationEstimates(gathered_data.statistics.getEstimates());
 
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {
-            serialization_infos.writeJSON(buffer, columns_with_external_statistics);
+            serialization_infos.writeJSON(buffer, estimates);
         });
+
+        /// Keep the counts on the in-memory part too, so it exposes them via `getEstimates` (e.g. as a
+        /// source part of a later merge) without being reloaded from disk.
+        new_part->setSerializationEstimates(estimates);
     }
 
     const auto & statistics = gathered_data.statistics;
@@ -465,8 +460,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation, permuted_columns_cache);
-    if (reset_columns)
-        serialization_statistics_builder->add(block);
+    /// Sample the estimates of the written data (all part kinds, inserts included) so the counts
+    /// persisted in `serialization.json` reflect what was actually written.
+    if (estimates_builder)
+        estimates_builder->add(block);
 
     rows_count += rows;
 }

@@ -1356,7 +1356,7 @@ static void finalizeMutatedPart(
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
-        serialization_infos.writeJSON(out_hashing);
+        serialization_infos.writeJSON(out_hashing, all_gathered_data.serialization_estimates);
         out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
@@ -1365,6 +1365,7 @@ static void finalizeMutatedPart(
 
     const auto & statistics = all_gathered_data.statistics;
     new_data_part->setEstimates(statistics.getEstimates());
+    new_data_part->setSerializationEstimates(all_gathered_data.serialization_estimates);
 
     if (!statistics.empty())
     {
@@ -2710,6 +2711,11 @@ private:
             out_mut->finalizeIndexGranularity();
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
+
+            /// Reconcile the sampled counts of the written columns with the exact counts from the
+            /// explicit statistics, for persisting in `serialization.json` (written by `finalizeMutatedPart`).
+            ctx->all_gathered_data.serialization_estimates
+                = out_mut->getSerializationEstimates(ctx->all_gathered_data.statistics.getEstimates());
 
             /// Add checksums of projection parts that were rebuilt during this mutation.
             /// `MergedColumnOnlyOutputStream::fillChecksums` no longer adds them because that addition

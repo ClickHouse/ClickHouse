@@ -24,8 +24,8 @@ namespace DB
 ///
 /// For column types that support sparse serialization, `basic` statistics also estimate the number
 /// of default values (`num_defaults`, sampled via `getRatioOfDefaultRows`). When such an external
-/// statistic exists for a column it can serve as the authoritative source of the default count for
-/// choosing the serialization kind, instead of the lightweight per-part count (`SerializationStatistics`).
+/// statistic exists for a column it serves as the authoritative source of the default count for
+/// choosing the serialization kind, taking precedence over the counts sampled by `EstimatesBuilder`.
 class StatisticsBasic : public IStatistics
 {
 public:

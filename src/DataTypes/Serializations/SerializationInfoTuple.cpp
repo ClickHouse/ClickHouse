@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/NestedUtils.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
@@ -51,9 +52,7 @@ MutableSerializationInfoPtr SerializationInfoTuple::clone() const
     for (const auto & elem : elems)
         elems_cloned.push_back(elem ? elem->clone() : nullptr);
 
-    auto ret = std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names);
-    ret->statistics = statistics;
-    return ret;
+    return std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names);
 }
 
 MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
@@ -92,41 +91,27 @@ void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in)
         elem->deserializeFromKindsBinary(in);
 }
 
-void SerializationInfoTuple::writeJSONFields(WriteBuffer & out, const String * name, bool has_internal_statistics) const
+void SerializationInfoTuple::writeJSONFields(WriteBuffer & out, const String * name, const String & key, const Estimates & estimates) const
 {
-    SerializationInfo::writeJSONFields(out, name, has_internal_statistics);
+    SerializationInfo::writeJSONFields(out, name, key, estimates);
     writeString(R"(,"subcolumns":[)", out);
 
     bool first = true;
-    for (const auto & elem : elems)
+    for (size_t i = 0; i < elems.size(); ++i)
     {
         if (!first)
             writeChar(',', out);
         first = false;
 
-        /// Subcolumns have no external statistics of their own, so their counts are always stored inline.
-        elem->writeJSON(out, nullptr, /*has_internal_statistics=*/true);
+        elems[i]->writeJSON(out, nullptr, Nested::concatenateName(key, names[i]), estimates);
     }
 
     writeChar(']', out);
 }
 
-void SerializationInfoTuple::toJSON(Poco::JSON::Object & object) const
+void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object, const String & key, Estimates & estimates)
 {
-    SerializationInfo::toJSON(object);
-    Poco::JSON::Array subcolumns;
-    for (const auto & elem : elems)
-    {
-        Poco::JSON::Object sub_column_json;
-        elem->toJSON(sub_column_json);
-        subcolumns.add(sub_column_json);
-    }
-    object.set("subcolumns", subcolumns);
-}
-
-void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object)
-{
-    SerializationInfo::fromJSON(object);
+    SerializationInfo::fromJSON(object, key, estimates);
 
     if (!object.has("subcolumns"))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
@@ -139,7 +124,7 @@ void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object)
             "Expected: {}, got: {}", elems.size(), subcolumns->size());
 
     for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->fromJSON(*subcolumns->getObject(static_cast<unsigned>(i)));
+        elems[i]->fromJSON(*subcolumns->getObject(static_cast<unsigned>(i)), Nested::concatenateName(key, names[i]), estimates);
 }
 
 }

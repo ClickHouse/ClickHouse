@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Block.h>
+#include <Storages/Statistics/Statistics.h>
 #include <base/EnumReflection.h>
 
 #include <Poco/JSON/JSON.h>
@@ -27,7 +28,6 @@ constexpr auto KEY_VERSION = "version";
 constexpr auto KEY_NUM_ROWS = "num_rows";
 constexpr auto KEY_COLUMNS = "columns";
 constexpr auto KEY_NUM_DEFAULTS = "num_defaults";
-constexpr auto KEY_HAS_INTERNAL_STATISTICS = "has_internal_statistics";
 constexpr auto KEY_KIND = "kind";
 constexpr auto KEY_NAME = "name";
 
@@ -69,16 +69,9 @@ SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, cons
 {
 }
 
-SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_, const SerializationStatistics & statistics_)
-    : settings(settings_)
-    , kind_stack(kind_stack_)
-    , statistics(statistics_)
-{
-}
-
 MutableSerializationInfoPtr SerializationInfo::clone() const
 {
-    return std::make_shared<SerializationInfo>(kind_stack, settings, statistics);
+    return std::make_shared<SerializationInfo>(kind_stack, settings);
 }
 
 /// Returns true if all rows with default values of type 'lhs'
@@ -211,7 +204,7 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
     }
 }
 
-void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name, bool has_internal_statistics) const
+void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name, const String & key, const Estimates & estimates) const
 {
     writeJSONKeyValue(KEY_KIND, ISerialization::kindStackToString(kind_stack), out);
 
@@ -221,67 +214,45 @@ void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name, 
         writeJSONKeyValue(KEY_NAME, *name, out);
     }
 
-    if (settings.version >= MergeTreeSerializationInfoVersion::WITH_EXTERNAL_STATISTICS)
+    /// The counts are supplied externally (from `EstimatesBuilder`); a (sub)column with no estimate is
+    /// written with zero counts.
+    size_t num_rows = 0;
+    size_t num_defaults = 0;
+    if (auto it = estimates.find(key); it != estimates.end())
     {
-        /// Record whether the counts are stored here (internally) or in the external statistics.
-        writeChar(',', out);
-        writeJSONKeyValue(KEY_HAS_INTERNAL_STATISTICS, has_internal_statistics, out);
-
-        if (!has_internal_statistics)
-            return;
+        num_rows = it->second.rows_count;
+        num_defaults = it->second.num_defaults.value_or(0);
     }
 
     writeChar(',', out);
-    writeJSONKeyValue(KEY_NUM_DEFAULTS, statistics.num_defaults, out);
+    writeJSONKeyValue(KEY_NUM_DEFAULTS, num_defaults, out);
 
     writeChar(',', out);
-    writeJSONKeyValue(KEY_NUM_ROWS, statistics.num_rows, out);
+    writeJSONKeyValue(KEY_NUM_ROWS, num_rows, out);
 }
 
-void SerializationInfo::writeJSON(WriteBuffer & out, const String * name, bool has_internal_statistics) const
+void SerializationInfo::writeJSON(WriteBuffer & out, const String * name, const String & key, const Estimates & estimates) const
 {
     writeChar('{', out);
-    writeJSONFields(out, name, has_internal_statistics);
+    writeJSONFields(out, name, key, estimates);
     writeChar('}', out);
 }
 
-void SerializationInfo::toJSON(Poco::JSON::Object & object) const
-{
-    object.set(KEY_KIND, ISerialization::kindStackToString(kind_stack));
-    object.set(KEY_NUM_DEFAULTS, statistics.num_defaults);
-    object.set(KEY_NUM_ROWS, statistics.num_rows);
-}
-
-void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
+void SerializationInfo::fromJSON(const Poco::JSON::Object & object, const String & key, Estimates & estimates)
 {
     if (!object.has(KEY_KIND))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed field '{}' in SerializationInfo of columns", KEY_KIND);
 
     kind_stack = ISerialization::stringToKindStack(object.getValue<String>(KEY_KIND));
 
-    if (settings.version >= MergeTreeSerializationInfoVersion::WITH_EXTERNAL_STATISTICS)
-    {
-        /// The flag is mandatory; do not assume a default (fail-close).
-        if (!object.has(KEY_HAS_INTERNAL_STATISTICS))
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Missed field '{}' in SerializationInfo of columns", KEY_HAS_INTERNAL_STATISTICS);
-
-        /// When the counts are not stored here, they are recovered from the external statistics; leave
-        /// them at 0 and mark the info so the caller backfills them before any kind decision.
-        if (!object.getValue<bool>(KEY_HAS_INTERNAL_STATISTICS))
-        {
-            counts_are_external = true;
-            return;
-        }
-    }
-
     if (!object.has(KEY_NUM_DEFAULTS) || !object.has(KEY_NUM_ROWS))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Missed field '{}' or '{}' in SerializationInfo of columns",
             KEY_NUM_DEFAULTS, KEY_NUM_ROWS);
 
-    statistics.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
-    statistics.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
+    Estimate & estimate = estimates[key];
+    estimate.rows_count = object.getValue<size_t>(KEY_NUM_ROWS);
+    estimate.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
 }
 
 SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settings & settings_)
@@ -333,7 +304,7 @@ bool SerializationInfoByName::needsPersistence() const
     return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
 }
 
-void SerializationInfoByName::writeJSON(WriteBuffer & out, const NameSet & columns_with_external_statistics) const
+void SerializationInfoByName::writeJSON(WriteBuffer & out, const Estimates & estimates) const
 {
     auto version = getVersion();
 
@@ -348,10 +319,7 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out, const NameSet & colum
             writeChar(',', out);
         first = false;
 
-        /// A column whose serialization-relevant count is available in external statistics does not
-        /// store the count inline (only meaningful under `WITH_EXTERNAL_STATISTICS`).
-        bool has_internal_statistics = !columns_with_external_statistics.contains(name);
-        info->writeJSON(out, &name, has_internal_statistics);
+        info->writeJSON(out, &name, name, estimates);
     }
     writeChar(']', out);
 
@@ -399,7 +367,7 @@ SerializationInfoByName SerializationInfoByName::clone() const
     return res;
 }
 
-SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesAndTypesList & columns, const std::string & json_str)
+SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesAndTypesList & columns, const std::string & json_str, Estimates & estimates)
 {
     Poco::JSON::Parser parser;
     auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
@@ -519,7 +487,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
                     "Found unexpected column '{}' in serialization infos", name);
 
             auto info = it->second->createSerializationInfo(infos.settings);
-            info->fromJSON(*elem_object);
+            info->fromJSON(*elem_object, name, estimates);
             infos.emplace(name, std::move(info));
         }
     }
@@ -527,11 +495,11 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     return infos;
 }
 
-SerializationInfoByName SerializationInfoByName::readJSON(const NamesAndTypesList & columns, ReadBuffer & in)
+SerializationInfoByName SerializationInfoByName::readJSON(const NamesAndTypesList & columns, ReadBuffer & in, Estimates & estimates)
 {
     String json_str;
     readString(json_str, in);
-    return readJSONFromString(columns, json_str);
+    return readJSONFromString(columns, json_str, estimates);
 }
 
 }

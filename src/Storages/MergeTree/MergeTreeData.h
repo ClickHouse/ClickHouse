@@ -1594,6 +1594,9 @@ protected:
     /// It changes only when set of parts is changed and is
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints{{}};
+    /// The estimates (row/default counts per column and subcolumn) aggregated across the active parts,
+    /// from which the kinds of @serialization_hints are chosen. Same lifetime and protection.
+    Estimates serialization_hint_estimates;
 
     /// A cache for metadata snapshots for patch parts.
     /// The key is a partition id of patch part.

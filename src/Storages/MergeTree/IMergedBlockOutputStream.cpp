@@ -38,8 +38,19 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
         (*storage_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     }
 {
-    if (reset_columns)
-        serialization_statistics_builder.emplace(columns_list, info_settings);
+    /// Sample the estimates of the actually-written data for every part (inserts included), so the
+    /// counts persisted in `serialization.json` reflect what was written.
+    estimates_builder.emplace(columns_list, info_settings);
+}
+
+Estimates IMergedBlockOutputStream::getSerializationEstimates(const Estimates & external_estimates)
+{
+    if (!estimates_builder)
+        return {};
+
+    /// Prefer the exact default counts from the explicit statistics over the sampled ones.
+    estimates_builder->mergeEstimates(external_estimates);
+    return estimates_builder->getEstimates();
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(

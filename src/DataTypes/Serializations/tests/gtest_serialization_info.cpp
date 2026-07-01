@@ -8,12 +8,14 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
-#include <DataTypes/Serializations/SerializationStatisticsBuilder.h>
+#include <DataTypes/Serializations/EstimatesBuilder.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Storages/Statistics/Statistics.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
@@ -44,12 +46,20 @@ SerializationInfoSettings alwaysDefaultSettings()
     return s;
 }
 
-SerializationStatistics makeData(size_t num_rows, size_t num_defaults)
+Estimate makeEstimate(size_t num_rows, size_t num_defaults)
 {
-    SerializationStatistics d;
-    d.num_rows = num_rows;
-    d.num_defaults = num_defaults;
-    return d;
+    Estimate estimate;
+    estimate.rows_count = num_rows;
+    estimate.num_defaults = num_defaults;
+    return estimate;
+}
+
+/// A single-column set of estimates keyed by `key`, for the round-trip tests.
+Estimates makeEstimates(const String & key, size_t num_rows, size_t num_defaults)
+{
+    Estimates estimates;
+    estimates.emplace(key, makeEstimate(num_rows, num_defaults));
+    return estimates;
 }
 
 Poco::JSON::Object makeKindObj(const std::string & kind, size_t num_rows, size_t num_defaults)
@@ -59,6 +69,15 @@ Poco::JSON::Object makeKindObj(const std::string & kind, size_t num_rows, size_t
     obj.set("num_rows", static_cast<Poco::UInt64>(num_rows));
     obj.set("num_defaults", static_cast<Poco::UInt64>(num_defaults));
     return obj;
+}
+
+/// Serialize a single info (with the counts from `estimates`) and parse the result back into a JSON object.
+Poco::JSON::Object::Ptr writeAndParse(const SerializationInfo & info, const String & key, const Estimates & estimates)
+{
+    WriteBufferFromOwnString out;
+    info.writeJSON(out, nullptr, key, estimates);
+    Poco::JSON::Parser parser;
+    return parser.parse(out.str()).extract<Poco::JSON::Object::Ptr>();
 }
 
 void expectMalformedKindFails([[maybe_unused]] const std::string & kind)
@@ -72,7 +91,8 @@ void expectMalformedKindFails([[maybe_unused]] const std::string & kind)
             {
                 SerializationInfo info({ISerialization::Kind::DEFAULT}, defaultSettings());
                 auto obj = makeKindObj(kind, 100, 10);
-                info.fromJSON(obj);
+                Estimates estimates;
+                info.fromJSON(obj, "c", estimates);
             }
             catch (const DB::Exception & e)
             {
@@ -89,41 +109,41 @@ void expectMalformedKindFails([[maybe_unused]] const std::string & kind)
 TEST(SerializationInfoJSON, RoundTripDefault)
 {
     ISerialization::KindStack kind_stack{ISerialization::Kind::DEFAULT};
-    SerializationInfo info(kind_stack, defaultSettings(), makeData(1000, 100));
+    SerializationInfo info(kind_stack, defaultSettings());
 
-    Poco::JSON::Object obj;
-    info.toJSON(obj);
+    auto obj = writeAndParse(info, "c", makeEstimates("c", 1000, 100));
 
-    EXPECT_EQ(obj.getValue<std::string>("kind"), "Default");
-    EXPECT_EQ(obj.getValue<size_t>("num_rows"), 1000);
-    EXPECT_EQ(obj.getValue<size_t>("num_defaults"), 100);
+    EXPECT_EQ(obj->getValue<std::string>("kind"), "Default");
+    EXPECT_EQ(obj->getValue<size_t>("num_rows"), 1000);
+    EXPECT_EQ(obj->getValue<size_t>("num_defaults"), 100);
 
     SerializationInfo restored(kind_stack, defaultSettings());
-    restored.fromJSON(obj);
+    Estimates estimates;
+    restored.fromJSON(*obj, "c", estimates);
 
     EXPECT_EQ(restored.getKindStack(), kind_stack);
-    EXPECT_EQ(restored.getStatistics().num_rows, 1000);
-    EXPECT_EQ(restored.getStatistics().num_defaults, 100);
+    EXPECT_EQ(estimates.at("c").rows_count, 1000u);
+    EXPECT_EQ(estimates.at("c").num_defaults.value_or(0), 100u);
 }
 
 TEST(SerializationInfoJSON, RoundTripSparse)
 {
     ISerialization::KindStack kind_stack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE};
-    SerializationInfo info(kind_stack, defaultSettings(), makeData(1000000, 950000));
+    SerializationInfo info(kind_stack, defaultSettings());
 
-    Poco::JSON::Object obj;
-    info.toJSON(obj);
+    auto obj = writeAndParse(info, "c", makeEstimates("c", 1000000, 950000));
 
-    EXPECT_EQ(obj.getValue<std::string>("kind"), "Sparse");
-    EXPECT_EQ(obj.getValue<size_t>("num_rows"), 1000000);
-    EXPECT_EQ(obj.getValue<size_t>("num_defaults"), 950000);
+    EXPECT_EQ(obj->getValue<std::string>("kind"), "Sparse");
+    EXPECT_EQ(obj->getValue<size_t>("num_rows"), 1000000);
+    EXPECT_EQ(obj->getValue<size_t>("num_defaults"), 950000);
 
     SerializationInfo restored({ISerialization::Kind::DEFAULT}, defaultSettings());
-    restored.fromJSON(obj);
+    Estimates estimates;
+    restored.fromJSON(*obj, "c", estimates);
 
     EXPECT_EQ(restored.getKindStack(), kind_stack);
-    EXPECT_EQ(restored.getStatistics().num_rows, 1000000);
-    EXPECT_EQ(restored.getStatistics().num_defaults, 950000);
+    EXPECT_EQ(estimates.at("c").rows_count, 1000000u);
+    EXPECT_EQ(estimates.at("c").num_defaults.value_or(0), 950000u);
 }
 
 TEST(SerializationInfoJSON, RoundTripDetachedOverSparse)
@@ -134,49 +154,60 @@ TEST(SerializationInfoJSON, RoundTripDetachedOverSparse)
     ///   "DetachedOverSparse" -> [Default, Detached, Sparse]
     /// So the round-trip reverses the inner order.
     ISerialization::KindStack kind_stack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE, ISerialization::Kind::DETACHED};
-    SerializationInfo info(kind_stack, defaultSettings(), makeData(500, 490));
+    SerializationInfo info(kind_stack, defaultSettings());
 
-    Poco::JSON::Object obj;
-    info.toJSON(obj);
+    auto obj = writeAndParse(info, "c", makeEstimates("c", 500, 490));
 
-    EXPECT_EQ(obj.getValue<std::string>("kind"), "DetachedOverSparse");
+    EXPECT_EQ(obj->getValue<std::string>("kind"), "DetachedOverSparse");
 
     SerializationInfo restored({ISerialization::Kind::DEFAULT}, defaultSettings());
-    restored.fromJSON(obj);
+    Estimates estimates;
+    restored.fromJSON(*obj, "c", estimates);
 
     ISerialization::KindStack expected_after_roundtrip{
         ISerialization::Kind::DEFAULT, ISerialization::Kind::DETACHED, ISerialization::Kind::SPARSE};
     EXPECT_EQ(restored.getKindStack(), expected_after_roundtrip);
-    EXPECT_EQ(restored.getStatistics().num_rows, 500);
-    EXPECT_EQ(restored.getStatistics().num_defaults, 490);
+    EXPECT_EQ(estimates.at("c").rows_count, 500u);
+    EXPECT_EQ(estimates.at("c").num_defaults.value_or(0), 490u);
 }
 
 TEST(SerializationInfoJSON, RoundTripZeroRows)
 {
     ISerialization::KindStack kind_stack{ISerialization::Kind::DEFAULT};
-    SerializationInfo info(kind_stack, defaultSettings(), makeData(0, 0));
+    SerializationInfo info(kind_stack, defaultSettings());
 
-    Poco::JSON::Object obj;
-    info.toJSON(obj);
+    auto obj = writeAndParse(info, "c", makeEstimates("c", 0, 0));
 
     SerializationInfo restored({ISerialization::Kind::DEFAULT}, defaultSettings());
-    restored.fromJSON(obj);
+    Estimates estimates;
+    restored.fromJSON(*obj, "c", estimates);
 
-    EXPECT_EQ(restored.getStatistics().num_rows, 0);
-    EXPECT_EQ(restored.getStatistics().num_defaults, 0);
+    EXPECT_EQ(estimates.at("c").rows_count, 0u);
+    EXPECT_EQ(estimates.at("c").num_defaults.value_or(0), 0u);
     EXPECT_EQ(restored.getKindStack(), kind_stack);
+}
+
+TEST(SerializationInfoJSON, WriteWithoutEstimateWritesZeroCounts)
+{
+    /// A column absent from the estimates is written with zero counts.
+    SerializationInfo info({ISerialization::Kind::DEFAULT}, defaultSettings());
+    auto obj = writeAndParse(info, "c", Estimates{});
+
+    EXPECT_EQ(obj->getValue<size_t>("num_rows"), 0);
+    EXPECT_EQ(obj->getValue<size_t>("num_defaults"), 0);
 }
 
 TEST(SerializationInfoJSON, FromJSONMissingFieldThrows)
 {
     SerializationInfo info({ISerialization::Kind::DEFAULT}, defaultSettings());
+    Estimates estimates;
 
     {
         Poco::JSON::Object obj;
         obj.set("kind", "Default");
         obj.set("num_rows", 100);
         /// missing num_defaults
-        EXPECT_THROW(info.fromJSON(obj), DB::Exception);
+        EXPECT_THROW(info.fromJSON(obj, "c", estimates), DB::Exception);
     }
 
     {
@@ -184,7 +215,7 @@ TEST(SerializationInfoJSON, FromJSONMissingFieldThrows)
         obj.set("kind", "Default");
         obj.set("num_defaults", 10);
         /// missing num_rows
-        EXPECT_THROW(info.fromJSON(obj), DB::Exception);
+        EXPECT_THROW(info.fromJSON(obj, "c", estimates), DB::Exception);
     }
 
     {
@@ -192,22 +223,22 @@ TEST(SerializationInfoJSON, FromJSONMissingFieldThrows)
         obj.set("num_rows", 100);
         obj.set("num_defaults", 10);
         /// missing kind
-        EXPECT_THROW(info.fromJSON(obj), DB::Exception);
+        EXPECT_THROW(info.fromJSON(obj, "c", estimates), DB::Exception);
     }
 }
 
-TEST(SerializationInfoJSON, FromJSONOverwritesExistingData)
+TEST(SerializationInfoJSON, FromJSONReadsKindAndCounts)
 {
-    ISerialization::KindStack initial_stack{ISerialization::Kind::DEFAULT};
-    SerializationInfo info(initial_stack, defaultSettings(), makeData(1, 0));
+    SerializationInfo info({ISerialization::Kind::DEFAULT}, defaultSettings());
 
     auto obj = makeKindObj("Sparse", 2000, 1999);
-    info.fromJSON(obj);
+    Estimates estimates;
+    info.fromJSON(obj, "c", estimates);
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE};
     EXPECT_EQ(info.getKindStack(), expected);
-    EXPECT_EQ(info.getStatistics().num_rows, 2000);
-    EXPECT_EQ(info.getStatistics().num_defaults, 1999);
+    EXPECT_EQ(estimates.at("c").rows_count, 2000u);
+    EXPECT_EQ(estimates.at("c").num_defaults.value_or(0), 1999u);
 }
 
 TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
@@ -229,14 +260,15 @@ TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
     SerializationInfoByName infos(columns, settings);
 
     WriteBufferFromOwnString out;
-    infos.writeJSON(out);
+    infos.writeJSON(out, {});
     auto json = out.str();
 
     EXPECT_THAT(json, testing::HasSubstr(R"("name":"string\"with\\escapes")"));
     EXPECT_THAT(json, testing::HasSubstr(R"("subcolumns")"));
     EXPECT_THAT(json, testing::HasSubstr(R"("types_serialization_versions")"));
 
-    auto restored = SerializationInfoByName::readJSONFromString(columns, json);
+    Estimates estimates;
+    auto restored = SerializationInfoByName::readJSONFromString(columns, json, estimates);
     EXPECT_EQ(restored.getVersion(), MergeTreeSerializationInfoVersion::WITH_TYPES);
     EXPECT_EQ(restored.getSettings().string_serialization_version, MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
     EXPECT_TRUE(restored.getSettings().propagate_types_serialization_versions_to_nested_types);
@@ -244,68 +276,36 @@ TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
     EXPECT_NE(restored.tryGet("tuple"), nullptr);
 }
 
-TEST(SerializationInfoByNameJSON, WithExternalStatisticsRoundTrip)
+TEST(SerializationInfoByNameJSON, WriteJSONCarriesEstimatesForColumnsAndSubcolumns)
 {
-    SerializationInfoSettings settings;
-    settings.ratio_of_defaults_for_sparse = 0.5;
-    settings.choose_kind = true;
-    settings.version = MergeTreeSerializationInfoVersion::WITH_EXTERNAL_STATISTICS;
+    SerializationInfoSettings settings = defaultSettings();
+    settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
 
-    auto string_type = std::make_shared<DataTypeString>();
+    auto uint_type = std::make_shared<DataTypeUInt64>();
     NamesAndTypesList columns
     {
-        {"inline_col", string_type},
-        {"external_col", string_type},
+        {"scalar", uint_type},
+        {"tuple", std::make_shared<DataTypeTuple>(DataTypes{uint_type, uint_type}, Strings{"a", "b"})},
     };
 
     SerializationInfoByName infos(columns, settings);
-    /// `inline_col` keeps its counts in `serialization.json`; `external_col` is declared to have them
-    /// in external statistics, so they must be omitted and its `has_internal_statistics` flag is false.
-    infos.at("inline_col")->backfillStatistics(1000, 100);
-    NameSet columns_with_external_statistics{"external_col"};
+
+    Estimates estimates;
+    estimates.emplace("scalar", makeEstimate(1000, 100));
+    estimates.emplace("tuple", makeEstimate(1000, 0));
+    estimates.emplace("tuple.a", makeEstimate(1000, 900));
+    estimates.emplace("tuple.b", makeEstimate(1000, 5));
 
     WriteBufferFromOwnString out;
-    infos.writeJSON(out, columns_with_external_statistics);
-    auto json = out.str();
+    infos.writeJSON(out, estimates);
 
-    EXPECT_THAT(json, testing::HasSubstr(R"("has_internal_statistics":true)"));
-    EXPECT_THAT(json, testing::HasSubstr(R"("has_internal_statistics":false)"));
+    Estimates restored;
+    SerializationInfoByName::readJSONFromString(columns, out.str(), restored);
 
-    auto restored = SerializationInfoByName::readJSONFromString(columns, json);
-    EXPECT_EQ(restored.getVersion(), MergeTreeSerializationInfoVersion::WITH_EXTERNAL_STATISTICS);
-
-    ASSERT_NE(restored.tryGet("inline_col"), nullptr);
-    ASSERT_NE(restored.tryGet("external_col"), nullptr);
-
-    /// `inline_col` carries its counts inline and is not marked external.
-    EXPECT_FALSE(restored.at("inline_col")->countsAreExternal());
-    EXPECT_EQ(restored.at("inline_col")->getStatistics().num_rows, 1000u);
-    EXPECT_EQ(restored.at("inline_col")->getStatistics().num_defaults, 100u);
-
-    /// `external_col` omits its counts and is marked for backfill from external statistics.
-    EXPECT_TRUE(restored.at("external_col")->countsAreExternal());
-    EXPECT_EQ(restored.at("external_col")->getStatistics().num_rows, 0u);
-    EXPECT_EQ(restored.at("external_col")->getStatistics().num_defaults, 0u);
-
-    /// After backfilling, the column is no longer marked external.
-    restored.at("external_col")->backfillStatistics(2000, 1500);
-    EXPECT_FALSE(restored.at("external_col")->countsAreExternal());
-    EXPECT_EQ(restored.at("external_col")->getStatistics().num_defaults, 1500u);
-}
-
-TEST(SerializationInfoJSON, FromJSONMissingHasInternalStatisticsFlagThrows)
-{
-    /// Under WITH_EXTERNAL_STATISTICS the flag is mandatory (fail-close).
-    SerializationInfoSettings settings;
-    settings.version = MergeTreeSerializationInfoVersion::WITH_EXTERNAL_STATISTICS;
-
-    SerializationInfo info({ISerialization::Kind::DEFAULT}, settings);
-    Poco::JSON::Object obj;
-    obj.set("kind", "Default");
-    obj.set("num_rows", 100);
-    obj.set("num_defaults", 10);
-    /// missing has_internal_statistics
-    EXPECT_THROW(info.fromJSON(obj), DB::Exception);
+    EXPECT_EQ(restored.at("scalar").num_defaults.value_or(0), 100u);
+    EXPECT_EQ(restored.at("tuple.a").num_defaults.value_or(0), 900u);
+    EXPECT_EQ(restored.at("tuple.b").num_defaults.value_or(0), 5u);
+    EXPECT_EQ(restored.at("tuple.a").rows_count, 1000u);
 }
 
 /// Malformed kind tests.
@@ -351,40 +351,40 @@ TEST(SerializationInfoJSON, FromJSONKindJustOver)
 
 /// chooseKindStack tests
 
-TEST(SerializationStatisticsBuilder, ChooseKindStackDefaultBelowThreshold)
+TEST(EstimatesBuilder, ChooseKindStackDefaultBelowThreshold)
 {
-    auto kind_stack = SerializationStatisticsBuilder::chooseKindStack(makeData(1000, 900), defaultSettings()); /// 0.9 < 0.9375
+    auto kind_stack = EstimatesBuilder::chooseKindStack(makeEstimate(1000, 900), defaultSettings()); /// 0.9 < 0.9375
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT};
     EXPECT_EQ(kind_stack, expected);
 }
 
-TEST(SerializationStatisticsBuilder, ChooseKindStackSparseAboveThreshold)
+TEST(EstimatesBuilder, ChooseKindStackSparseAboveThreshold)
 {
-    auto kind_stack = SerializationStatisticsBuilder::chooseKindStack(makeData(1000, 950), defaultSettings()); /// 0.95 > 0.9375
+    auto kind_stack = EstimatesBuilder::chooseKindStack(makeEstimate(1000, 950), defaultSettings()); /// 0.95 > 0.9375
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE};
     EXPECT_EQ(kind_stack, expected);
 }
 
-TEST(SerializationStatisticsBuilder, ChooseKindStackAlwaysDefault)
+TEST(EstimatesBuilder, ChooseKindStackAlwaysDefault)
 {
-    auto kind_stack = SerializationStatisticsBuilder::chooseKindStack(makeData(1000, 1000), alwaysDefaultSettings());
+    auto kind_stack = EstimatesBuilder::chooseKindStack(makeEstimate(1000, 1000), alwaysDefaultSettings());
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT};
     EXPECT_EQ(kind_stack, expected);
 }
 
-TEST(SerializationStatisticsBuilder, ChooseKindStackZeroRows)
+TEST(EstimatesBuilder, ChooseKindStackZeroRows)
 {
-    auto kind_stack = SerializationStatisticsBuilder::chooseKindStack(makeData(0, 0), defaultSettings());
+    auto kind_stack = EstimatesBuilder::chooseKindStack(makeEstimate(0, 0), defaultSettings());
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT};
     EXPECT_EQ(kind_stack, expected);
 }
 
-/// The builder mirrors the tuple tree, so the kind is chosen independently for each tuple element.
-TEST(SerializationStatisticsBuilder, TuplePerElementKinds)
+/// The builder samples each tuple element independently, so the kind is chosen per element.
+TEST(EstimatesBuilder, TuplePerElementKinds)
 {
     auto uint_type = std::make_shared<DataTypeUInt64>();
     auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{uint_type, uint_type}, Strings{"a", "b"});
@@ -403,7 +403,7 @@ TEST(SerializationStatisticsBuilder, TuplePerElementKinds)
     Block block{{std::move(tuple_column), tuple_type, "t"}};
 
     SerializationInfoByName infos(columns, defaultSettings());
-    SerializationStatisticsBuilder builder(columns, defaultSettings());
+    EstimatesBuilder builder(columns, defaultSettings());
     builder.add(block);
     builder.chooseKinds(infos);
 
@@ -414,14 +414,14 @@ TEST(SerializationStatisticsBuilder, TuplePerElementKinds)
 }
 
 /// `addDefaults` (used for columns missing from a source part) recurses into tuple elements.
-TEST(SerializationStatisticsBuilder, AddDefaultsRecursesIntoTupleElements)
+TEST(EstimatesBuilder, AddDefaultsRecursesIntoTupleElements)
 {
     auto uint_type = std::make_shared<DataTypeUInt64>();
     auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{uint_type, uint_type}, Strings{"a", "b"});
     NamesAndTypesList columns{{"t", tuple_type}};
 
     SerializationInfoByName infos(columns, defaultSettings());
-    SerializationStatisticsBuilder builder(columns, defaultSettings());
+    EstimatesBuilder builder(columns, defaultSettings());
     builder.addDefaults("t", 1000);
     builder.chooseKinds(infos);
 
@@ -430,6 +430,32 @@ TEST(SerializationStatisticsBuilder, AddDefaultsRecursesIntoTupleElements)
     /// Every element saw only default rows, so each is chosen sparse.
     EXPECT_EQ(info_tuple->getElementKindStack(0), (ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
     EXPECT_EQ(info_tuple->getElementKindStack(1), (ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
+}
+
+/// The exact default count from the explicit statistics overrides the sampled one.
+TEST(EstimatesBuilder, MergeEstimatesPrefersExternalDefaults)
+{
+    auto uint_type = std::make_shared<DataTypeUInt64>();
+    NamesAndTypesList columns{{"c", uint_type}};
+
+    /// Sample a column with no default rows (would be chosen Default).
+    auto col = ColumnUInt64::create();
+    for (size_t i = 0; i < 1000; ++i)
+        col->insertValue(i + 1);
+    Block block{{std::move(col), uint_type, "c"}};
+
+    SerializationInfoByName infos(columns, defaultSettings());
+    EstimatesBuilder builder(columns, defaultSettings());
+    builder.add(block);
+
+    /// External statistics say the column is almost all-default; this must win.
+    Estimates external;
+    external.emplace("c", makeEstimate(1000, 990));
+    builder.mergeEstimates(external);
+    builder.chooseKinds(infos);
+
+    EXPECT_EQ(infos.getKindStack("c"), (ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
+    EXPECT_EQ(builder.getEstimates().at("c").num_defaults.value_or(0), 990u);
 }
 
 }

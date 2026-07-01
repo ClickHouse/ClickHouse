@@ -1243,10 +1243,29 @@ Estimates IMergeTreeDataPart::getEstimates() const
         return *estimates;
 
     Estimates new_estimates;
-    auto statistics = loadStatistics();
 
-    for (const auto & [column_name, stats] : statistics)
-        new_estimates.emplace(column_name, stats->getEstimate());
+    /// The explicit statistics (set at write time or loaded lazily) provide min/max/cardinality and the
+    /// exact default counts for the columns that have them.
+    if (external_estimates.has_value())
+    {
+        new_estimates = *external_estimates;
+    }
+    else
+    {
+        for (const auto & [column_name, stats] : loadStatistics())
+            new_estimates.emplace(column_name, stats->getEstimate());
+    }
+
+    /// The serialization counts cover every column and subcolumn; fill in what the explicit statistics
+    /// do not provide (subcolumns, and columns without a default-count statistic).
+    for (const auto & [key, serialization_estimate] : serialization_estimates)
+    {
+        auto & dst = new_estimates[key];
+        if (dst.rows_count == 0)
+            dst.rows_count = serialization_estimate.rows_count;
+        if (!dst.num_defaults.has_value())
+            dst.num_defaults = serialization_estimate.num_defaults;
+    }
 
     estimates = std::move(new_estimates);
     return *estimates;
@@ -1255,7 +1274,15 @@ Estimates IMergeTreeDataPart::getEstimates() const
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 {
     std::lock_guard lock(estimates_mutex);
-    estimates = new_estimates;
+    external_estimates = new_estimates;
+    estimates.reset();
+}
+
+void IMergeTreeDataPart::setSerializationEstimates(const Estimates & new_estimates)
+{
+    std::lock_guard lock(estimates_mutex);
+    serialization_estimates = new_estimates;
+    estimates.reset();
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
@@ -2117,32 +2144,7 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
     SerializationInfoByName infos({});
     if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
-        infos = SerializationInfoByName::readJSON(loaded_columns, *in);
-
-    /// Columns persisted under WITH_EXTERNAL_STATISTICS may have omitted their per-column counts; the
-    /// default count then lives in the external statistics. Recover it so that merges/mutations can
-    /// re-decide the serialization kind from complete counts (the only consumer of these counts).
-    {
-        Names columns_to_backfill;
-        for (const auto & [column_name, column_info] : infos)
-            if (column_info->countsAreExternal())
-                columns_to_backfill.push_back(column_name);
-
-        if (!columns_to_backfill.empty())
-        {
-            auto external_statistics = loadStatistics(columns_to_backfill);
-            for (const auto & column_name : columns_to_backfill)
-            {
-                auto stats_it = external_statistics.find(column_name);
-                if (stats_it == external_statistics.end() || !stats_it->second->hasDefaultsCount())
-                    throw Exception(ErrorCodes::CORRUPTED_DATA,
-                        "Serialization info of column '{}' in part {} refers to external statistics, but they are missing",
-                        column_name, name);
-
-                infos.at(column_name)->backfillStatistics(stats_it->second->getNumRows(), stats_it->second->estimateDefaults());
-            }
-        }
-    }
+        infos = SerializationInfoByName::readJSON(loaded_columns, *in, serialization_estimates);
 
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)

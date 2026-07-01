@@ -7,7 +7,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/Serializations/SerializationStatisticsBuilder.h>
+#include <DataTypes/Serializations/EstimatesBuilder.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -880,10 +880,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
     SerializationInfoByName infos(columns, settings);
-    SerializationStatisticsBuilder statistics_builder(columns, settings);
-    statistics_builder.add(block);
-    statistics_builder.chooseKinds(infos);
-    statistics_builder.applyStatistics(infos);
+    EstimatesBuilder estimates_builder(columns, settings);
+    estimates_builder.add(block);
+    estimates_builder.chooseKinds(infos);
 
     for (const auto & [column_name, _] : columns)
     {
@@ -1074,10 +1073,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
     SerializationInfoByName infos(columns, settings);
-    SerializationStatisticsBuilder statistics_builder(columns, settings);
-    statistics_builder.add(block);
-    statistics_builder.chooseKinds(infos);
-    statistics_builder.applyStatistics(infos);
+    EstimatesBuilder estimates_builder(columns, settings);
+    estimates_builder.add(block);
+    estimates_builder.chooseKinds(infos);
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
 

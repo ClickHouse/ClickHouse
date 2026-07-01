@@ -383,6 +383,11 @@ Estimate ColumnStatistics::getEstimate() const
     if (stats.contains(StatisticsType::Uniq))
         info.estimated_cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
 
+    /// The exact number of default values (from `Basic` on a sparse-capable column). Used, together
+    /// with the sampled counts, to choose sparse serialization when writing `serialization.json`.
+    if (hasDefaultsCount())
+        info.num_defaults = estimateDefaults();
+
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
     {
         const auto & basic_stats = assert_cast<const StatisticsBasic &>(*it->second);

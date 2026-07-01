@@ -115,7 +115,7 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
     tracks_string = isStringOrFixedString(data_type);
     tracks_null = isNullableOrLowCardinalityNullable(data_type_);
     /// The default count is only meaningful for columns that can be stored sparsely; it is the
-    /// signal used to choose sparse serialization from statistics (see `SerializationStatistics`).
+    /// signal used to choose sparse serialization from statistics (see `Estimate::num_defaults`).
     tracks_defaults = data_type_->supportsSparseSerialization();
 }
 

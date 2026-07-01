@@ -183,7 +183,11 @@ public:
     ColumnsStatistics loadStatistics() const;
     ColumnsStatistics loadStatistics(const Names & required_columns) const;
     Estimates getEstimates() const;
+    /// Set the estimates from the explicit column statistics (min/max/cardinality and exact counts).
     void setEstimates(const Estimates & new_estimates);
+    /// Set the counts read from / written to `serialization.json` (per column and subcolumn). Set at
+    /// write time so an in-memory part (never `loadColumns`-ed) still exposes them via `getEstimates`.
+    void setSerializationEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -777,10 +781,18 @@ private:
     /// It is used while reading from wide parts.
     std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
 
-    /// Small state of finalized statistics for suitable statistics types.
-    /// Lazily initialized on a first access.
+    /// The merged estimates (explicit statistics + serialization counts), lazily computed and cached
+    /// on first access by `getEstimates`.
     mutable std::mutex estimates_mutex;
     mutable std::optional<Estimates> estimates TSA_GUARDED_BY(estimates_mutex);
+
+    /// The estimates from the explicit column statistics. Set at write time; loaded lazily from the
+    /// statistics files otherwise. Merged into `getEstimates`.
+    std::optional<Estimates> external_estimates;
+
+    /// The row/default counts read from / written to `serialization.json` (per column and subcolumn).
+    /// Set during `loadColumns` and at write time; merged into `getEstimates`.
+    Estimates serialization_estimates;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

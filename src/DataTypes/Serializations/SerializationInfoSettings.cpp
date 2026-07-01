@@ -38,8 +38,7 @@ void SerializationInfoSettings::tryDowngradeToBasic()
 {
     /// Only `WITH_TYPES` may be downgraded: it differs from `BASIC` solely by the type-level
     /// serialization versions, so when those are all at their defaults the two are equivalent.
-    /// `WITH_EXTERNAL_STATISTICS` carries additional semantics (per-column `has_internal_statistics`)
-    /// beyond the type versions and must never be downgraded.
+    /// `WITH_EXTERNAL_STATISTICS` is an explicit, higher version and must never be downgraded.
     if (version != MergeTreeSerializationInfoVersion::WITH_TYPES)
         return;
 
