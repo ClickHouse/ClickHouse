@@ -129,7 +129,7 @@ def test_role_recompute_coalesced_on_reread(started_cluster):
 
     # Build a live EnabledRoles set for u2 on node2: this subscribes RoleCache and marks every granted
     # role as referenced, so a later change to one of them triggers a recalculation.
-    node2.query("SELECT 1", user="u2")
+    node2.query_with_retry("SELECT 1", user="u2")
 
     baseline = get_role_recalculations(node2)
 

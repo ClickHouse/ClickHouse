@@ -26,10 +26,10 @@ public:
         AccessEntityType type{};
     };
 
-    /// A handler is called once per sendNotifications() with the changes of that batch that match the
-    /// subscription. sendNotifications() drains the whole queue in one pass, so a refresh that touches many
-    /// entities arrives as a single call: the subscriber updates its bookkeeping for each change and runs
-    /// any expensive recomputation just once per batch (a single rebuild instead of one per changed entity).
+    /// A handler is called once per delivered batch with the changes of that batch that match the subscription.
+    /// sendNotifications drains the current queue into a batch, delivers it, and repeats until the queue is empty.
+    /// A refresh that touches many entities therefore arrives as a single call, and handler-enqueued changes are
+    /// also delivered before sendNotifications returns (as additional batches).
     using OnChangedHandler = std::function<void(const std::vector<Change> & changes)>;
 
     /// Subscribes for all changes of entities of a given type.

@@ -60,14 +60,18 @@ scope_guard AccessChangesNotifier::subscribeForChanges(AccessEntityType type, co
 scope_guard AccessChangesNotifier::subscribeForChanges(const UUID & id, const OnChangedHandler & handler)
 {
     std::lock_guard lock{handlers->mutex};
-    auto it = handlers->by_id.emplace(id, std::list<OnChangedHandler>{}).first;
-    auto & list = it->second;
+    auto & list = handlers->by_id[id];
     list.push_back(handler);
     auto handler_it = std::prev(list.end());
 
-    return [my_handlers = handlers, it, handler_it]
+    /// Capture `id`, not the map iterator: inserting another by-id subscription can rehash `by_id` and
+    /// invalidate the iterator (the `std::list` iterator `handler_it` stays valid across rehashes).
+    return [my_handlers = handlers, id, handler_it]
     {
         std::lock_guard lock2{my_handlers->mutex};
+        auto it = my_handlers->by_id.find(id);
+        if (it == my_handlers->by_id.end())
+            return;
         auto & list2 = it->second;
         list2.erase(handler_it);
         if (list2.empty())
