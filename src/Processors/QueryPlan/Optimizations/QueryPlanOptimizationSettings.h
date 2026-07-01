@@ -89,6 +89,9 @@ struct QueryPlanOptimizationSettings
     bool limit_by_in_order;
     bool optimize_sorting_by_input_stream_properties;
     bool aggregation_in_order;
+    bool topn_aggregation;
+    float topn_aggregation_max_ndv_ratio;
+    UInt64 topn_aggregation_max_limit;
     bool optimize_projection;
     bool use_query_condition_cache;
     bool read_in_order_through_join;

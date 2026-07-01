@@ -354,6 +354,9 @@ void optimizeTreeSecondPass(
 
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
+
+                if (optimization_settings.topn_aggregation)
+                    optimizeTopNAggregation(*frame.node, nodes, optimization_settings);
             }
 
             /// Traverse all children first.
@@ -445,10 +448,10 @@ void optimizeTreeSecondPass(
             /// optimized under — deferred set building, reused index/PK analysis, etc.) and override, with the
             /// subquery's values, exactly the settings that gate an optimization which can call
             /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`),
-            /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeDistinctInOrder`
-            /// (`distinct_in_order`) and `tryReuseStorageOrderingForWindowFunctions`
-            /// (`reuse_storage_ordering_for_window_functions`). If a new such optimization is added, its gate
-            /// must be added here too.
+            /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeTopNAggregation`
+            /// (`topn_aggregation`), `optimizeDistinctInOrder` (`distinct_in_order`) and
+            /// `tryReuseStorageOrderingForWindowFunctions` (`reuse_storage_ordering_for_window_functions`).
+            /// If a new such optimization is added, its gate must be added here too.
             auto local_optimization_settings = optimization_settings;
             if (auto local_context = read_from_local->getContext())
             {
@@ -456,6 +459,9 @@ void optimizeTreeSecondPass(
                 local_optimization_settings.read_in_order = subquery_optimization_settings.read_in_order;
                 local_optimization_settings.read_in_order_through_join = subquery_optimization_settings.read_in_order_through_join;
                 local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
+                local_optimization_settings.topn_aggregation = subquery_optimization_settings.topn_aggregation;
+                local_optimization_settings.topn_aggregation_max_ndv_ratio = subquery_optimization_settings.topn_aggregation_max_ndv_ratio;
+                local_optimization_settings.topn_aggregation_max_limit = subquery_optimization_settings.topn_aggregation_max_limit;
                 local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
                     = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
