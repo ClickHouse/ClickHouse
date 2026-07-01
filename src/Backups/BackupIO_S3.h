@@ -48,7 +48,6 @@ public:
         const String & secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
-        const String & external_id,
         bool allow_s3_native_copy,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
@@ -62,8 +61,6 @@ public:
 
     void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
-
-    std::map<String, String> getSerializedSettings() const override;
 
 private:
     const S3::URI s3_uri;
@@ -84,7 +81,6 @@ public:
         const String & secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
-        const String & external_id,
         bool allow_s3_native_copy,
         const String & storage_class_name,
         const ReadSettings & read_settings_,
@@ -106,8 +102,6 @@ public:
 
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
-
-    std::map<String, String> getSerializedSettings() const override;
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;

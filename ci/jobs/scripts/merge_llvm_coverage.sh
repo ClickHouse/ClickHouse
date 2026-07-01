@@ -98,7 +98,7 @@ echo "Using workspace path: $WORKSPACE_PATH"
         -object ./unit_tests_dbms   \
         -format=lcov   \
         -path-equivalence=ci/tmp/build,$WORKSPACE_PATH \
-        -ignore-filename-regex='contrib|_gtest_|\.pb\.|\.generated\.|/(QueryFuzzer|ThreadFuzzer|fuzzQuery|fuzzBits|StorageFuzzQuery|hasThreadFuzzer)\.(cpp|h)$|/fuzzers/' \
+        -ignore-filename-regex='contrib|_gtest_|\.pb\.|\.generated\.' \
         -skip-expansions \
         > llvm_coverage.info
 
@@ -143,13 +143,12 @@ genhtml "llvm_coverage.info" \
     --hierarchical \
     --css-file $WORKSPACE_PATH/ci/jobs/scripts/css.css \
     --prefix $WORKSPACE_PATH \
-    --ignore-errors inconsistent,inconsistent \
+    --ignore-errors inconsistent \
     --ignore-errors category \
     --ignore-errors corrupt \
     --ignore-errors unsupported \
     --ignore-errors source \
     --ignore-errors branch \
-    --ignore-errors range,range \
-    --ignore-errors count,count \
+    --ignore-errors range \
     --filter missing \
     --quiet 
