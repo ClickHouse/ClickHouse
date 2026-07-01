@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ObjectFilterStep.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -50,7 +51,7 @@ std::unique_ptr<IQueryPlanStep> ObjectFilterStep::deserialize(Deserialization & 
     String filter_column_name;
     readStringBinary(filter_column_name, ctx.in);
 
-    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, getBinaryTypeDecodingComplexityLimit(ctx.context));
 
     return std::make_unique<ObjectFilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name));
 }

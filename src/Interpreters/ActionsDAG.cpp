@@ -3749,7 +3749,8 @@ static MutableColumnPtr deserializeConstant(
     const IDataType & type,
     ReadBuffer & in,
     DeserializedSetsRegistry & registry,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    size_t max_type_complexity)
 {
     if (WhichDataType(type).isSet())
     {
@@ -3771,10 +3772,9 @@ static MutableColumnPtr deserializeConstant(
 
     if (WhichDataType(type).isFunction())
     {
-        const size_t max_type_complexity = getBinaryTypeDecodingComplexityLimit(context);
         LambdaCapture capture;
         deserializeCapture(capture, in, max_type_complexity);
-        auto capture_dag = ActionsDAG::deserialize(in, registry, context);
+        auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity);
 
         UInt64 num_captured_columns = 0;
         readVarUInt(num_captured_columns, in);
@@ -3783,7 +3783,7 @@ static MutableColumnPtr deserializeConstant(
         for (auto & captured_column : captured_columns)
         {
             captured_column.type = decodeDataType(in, max_type_complexity);
-            captured_column.column = deserializeConstant(*captured_column.type, in, registry, context);
+            captured_column.column = deserializeConstant(*captured_column.type, in, registry, context, max_type_complexity);
         }
 
         auto function_expression = std::make_shared<FunctionExpression>(
@@ -3924,11 +3924,11 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
         writeVarUInt(node_to_id.at(output), out);
 }
 
-ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context)
+ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity)
 {
-    /// Plans can be deserialized from an untrusted client (TCPHandler::receiveQueryPlan), so enforce the
-    /// type-complexity guard using the effective setting resolved once from the context.
-    const size_t max_type_complexity = getBinaryTypeDecodingComplexityLimit(context);
+    /// max_type_complexity is the type-complexity guard resolved once by the caller: the effective setting for
+    /// client-reachable QueryPlan packets, or unlimited (0) for trusted internal metadata (e.g. data-lake
+    /// schema transforms deserialized with the global context).
 
     size_t nodes_size = 0;
     readVarUInt(nodes_size, in);
@@ -3969,7 +3969,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             if ((column_flags & 2) == 0)
                 node.is_deterministic_constant = false;
 
-            node.column = deserializeConstant(*node.result_type, in, registry, context);
+            node.column = deserializeConstant(*node.result_type, in, registry, context, max_type_complexity);
         }
 
         if (node.type == ActionType::INPUT)
@@ -4011,7 +4011,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             {
                 LambdaCapture capture;
                 deserializeCapture(capture, in, max_type_complexity);
-                auto capture_dag = ActionsDAG::deserialize(in, registry, context);
+                auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity);
 
                 node.function_base = std::make_shared<FunctionCapture>(
                     std::make_shared<ExpressionActions>(
