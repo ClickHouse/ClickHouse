@@ -438,8 +438,8 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_min_columns_for_join_lazy_indexing", CHSetting(columnsRange, {}, false)},
        {"query_plan_optimize_join_order_algorithm",
         CHSetting(
-            [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"greedy", "dpsize"}); },
-            {"'greedy'", "'dpsize'"},
+            [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"greedy", "dpsize", "dphyp", "dpsub"}); },
+            {"'greedy'", "'dpsize'", "'dphyp'", "'dpsub'"},
             false)},
        {"query_plan_optimize_join_order_limit",
         CHSetting(
@@ -668,7 +668,9 @@ std::unordered_map<String, CHSetting> serverSettings = {
          [](RandomGenerator & rg, FuzzConfig &)
          {
              static const DB::Strings choices
-                 = {"'simple', date_time_input_format = 'basic'", "'iso', date_time_input_format = 'best_effort'"};
+                 = {"'simple', date_time_input_format = 'basic'",
+                    "'iso', date_time_input_format = 'best_effort'",
+                    "'unix_timestamp', date_time_input_format = 'basic'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1059,15 +1061,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {},
          false)},
     {"insert_quorum_parallel", trueOrFalseSettingNoOracle},
-    {"insert_select_deduplicate",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings choices = {"0", "1", "'auto'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
     {"insert_shard_id",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 2)); }, {}, false)},
@@ -1151,10 +1144,11 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"};
+             static const DB::Strings choices
+                 = {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'", "'pread_fake_async'"};
              return rg.pickRandomly(choices);
          },
-         {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"},
+         {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'", "'pread_fake_async'"},
          false)},
     {"reserve_memory", CHSetting(bytesRange, {}, false)},
     {"url_wildcard_max_directories_to_read", CHSetting(highRange, {}, false)},
@@ -1656,7 +1650,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'sync'", "'auto'"};
+             static const DB::Strings choices = {"'sync'", "'async'", "'auto'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -2198,6 +2192,17 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         static const auto overflowSetting = CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
+                static const DB::Strings choices = {"'throw'", "'break'"};
+                return rg.pickRandomly(choices);
+            },
+            {},
+            false);
+
+        /// Only group_by_overflow_mode is typed OverflowModeGroupBy, which also accepts 'any';
+        /// the other overflow settings are plain OverflowMode (throw/break) and reject 'any'.
+        static const auto groupByOverflowSetting = CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
                 static const DB::Strings choices = {"'throw'", "'break'", "'any'"};
                 return rg.pickRandomly(choices);
             },
@@ -2206,7 +2211,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
 
         serverSettings.insert(
             {{"distinct_overflow_mode", overflowSetting},
-             {"group_by_overflow_mode", overflowSetting},
+             {"group_by_overflow_mode", groupByOverflowSetting},
              {"join_overflow_mode", overflowSetting},
              {"read_overflow_mode", overflowSetting},
              {"read_overflow_mode_leaf", overflowSetting},

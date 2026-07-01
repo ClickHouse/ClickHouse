@@ -204,10 +204,10 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'sqrt'", "'linear'"};
+             static const DB::Strings choices = {"'constant'", "'sqrt'", "'linear'"};
              return rg.pickRandomly(choices);
          },
-         {"'sqrt'", "'linear'"},
+         {"'constant'", "'sqrt'", "'linear'"},
          false)},
     {"map_serialization_version",
      CHSetting(
@@ -222,10 +222,10 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'basic'", "'with_buckets'", "'advanced'"};
+             static const DB::Strings choices = {"'basic'", "'with_buckets'"};
              return rg.pickRandomly(choices);
          },
-         {"'basic'", "'with_buckets'", "'advanced'"},
+         {"'basic'", "'with_buckets'"},
          false)},
     {"marks_compress_block_size", highRangeNonZeroSetting},
     {"materialize_projections_on_insert", trueOrFalseSetting},
@@ -327,10 +327,10 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'Simple'", "'Trivial'", "'StochasticSimple'"};
+             static const DB::Strings choices = {"'Simple'", "'Trivial'", "'StochasticSimple'", "'Manual'"};
              return rg.pickRandomly(choices);
          },
-         {"'Simple'", "'Trivial'", "'StochasticSimple'"},
+         {"'Simple'", "'Trivial'", "'StochasticSimple'", "'Manual'"},
          false)},
     {"merge_selector_base",
      CHSetting(
