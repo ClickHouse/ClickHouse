@@ -1854,6 +1854,11 @@ void incrementNoTrace(Event event, Count amount)
     DB::CurrentThread::getProfileEvents().incrementNoTrace(event, amount);
 }
 
+void incrementSignalSafe(Event event, Count amount)
+{
+    DB::CurrentThread::getProfileEvents().incrementSignalSafe(event, amount);
+}
+
 double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
 {
     /// It's possible that we'll have slightly inconsistent values between wait time and busy time. But since we take the value of CPU wait time first,
@@ -1905,6 +1910,18 @@ void Counters::incrementNoTrace(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, cpu);
+        current = current->parent;
+    } while (current != nullptr);
+}
+
+void Counters::incrementSignalSafe(Event event, Count amount)
+{
+    Counters * current = this;
+    /// Must stay async-signal-safe (called from signal/crash handlers), so unlike `incrementNoTrace`
+    /// it does not call `sched_getcpu`; `cpu = -1` routes every level to its row 0.
+    do
+    {
+        current->fetchAdd(event, amount, -1);
         current = current->parent;
     } while (current != nullptr);
 }

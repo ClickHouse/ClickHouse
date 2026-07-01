@@ -112,6 +112,7 @@ namespace ProfileEvents
 
         void increment(Event event, Count amount = 1);
         void incrementNoTrace(Event event, Count amount = 1);
+        void incrementSignalSafe(Event event, Count amount = 1);
 
         struct Snapshot
         {
@@ -190,6 +191,10 @@ namespace ProfileEvents
     /// The same as above but ignores value of setting 'trace_profile_events'
     /// and never sends profile event to trace log.
     void incrementNoTrace(Event event, Count amount = 1);
+
+    /// Async-signal-safe variant of `incrementNoTrace` (no `sched_getcpu`). Use ONLY from
+    /// signal/crash handlers.
+    void incrementSignalSafe(Event event, Count amount = 1);
 
     /// Get name of event by identifier. Returns statically allocated string.
     const std::string_view & getName(Event event);
