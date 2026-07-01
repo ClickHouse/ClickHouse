@@ -46,3 +46,13 @@ SELECT changeYear(toDateTime64('2024-01-01 00:00:00.000000', 6), 2500);
 SELECT '-- Verify fractional seconds are preserved';
 SELECT changeYear(toDateTime64('2024-03-15 08:30:45.999999999', 9), 2023);
 SELECT changeMonth(toDateTime64('2024-03-15 08:30:45.999999999', 9), 7);
+
+SELECT '-- In-range year past the representable scale=9 boundary (2262-04-11 23:47:16.854775807) must clamp, not overflow';
+SELECT changeYear(toDateTime64('2024-01-01 00:00:00.000000000', 9), 2299);
+SELECT changeYear(toDateTime64('2024-01-01 00:00:00.000000000', 9), 2263);
+SELECT changeYear(toDateTime64('2024-01-01 00:00:00.000000000', 9), 2262);
+
+SELECT '-- Component change moving a representable scale=9 value past the boundary must clamp, not overflow';
+SELECT changeMonth(toDateTime64('2262-01-01 00:00:00.000000000', 9), 12);
+SELECT changeDay(toDateTime64('2262-04-01 00:00:00.000000000', 9), 30);
+SELECT changeDay(toDateTime64('2262-04-01 00:00:00.000000000', 9), 10);

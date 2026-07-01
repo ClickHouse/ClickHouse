@@ -31,3 +31,11 @@
 -- Verify fractional seconds are preserved
 2023-03-15 08:30:45.999999999
 2024-07-15 08:30:45.999999999
+-- In-range year past the representable scale=9 boundary (2262-04-11 23:47:16.854775807) must clamp, not overflow
+2262-04-11 23:47:16.854775807
+2262-04-11 23:47:16.854775807
+2262-01-01 00:00:00.000000000
+-- Component change moving a representable scale=9 value past the boundary must clamp, not overflow
+2262-04-11 23:47:16.854775807
+2262-04-11 23:47:16.854775807
+2262-04-10 00:00:00.000000000

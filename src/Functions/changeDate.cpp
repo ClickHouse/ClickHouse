@@ -290,20 +290,26 @@ public:
         else if (isDateTime(result_type))
             result = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
         else
+        {
+            const Int64 whole_seconds = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
 #ifndef __clang_analyzer__
             /// ^^ This looks funny. It is the least terrible suppression of a false positive reported by clang-analyzer (a sub-class
             /// of clang-tidy checks) deep down in 'decimalFromComponents'. Usual suppressions of the form NOLINT* don't work here (they
             /// would only affect code in _this_ file), and suppressing the issue in 'decimalFromComponents' may suppress true positives.
-            result = DecimalUtils::dateTimeFromComponents(
-                date_lut.makeDateTime(year, month, day, hours, minutes, seconds),
-                fraction,
-                static_cast<UInt32>(scale));
+            DateTime64 result_val;
+            if (DecimalUtils::tryGetDateTimeFromComponents(whole_seconds, fraction, static_cast<UInt32>(scale), result_val))
+                result = result_val;
+            else
+                /// The requested components do not fit into DateTime64 at this scale (for example, a year close to 2299 at
+                /// scale 9, where seconds * 10^9 overflows Int64). Clamp to the nearest representable boundary; the min/max
+                /// checks below finish the clamp. Overflow direction follows the sign of the whole-seconds value.
+                result = whole_seconds < 0 ? min_date : max_date;
 #else
-        {
             UNUSED(fraction);
+            UNUSED(whole_seconds);
             result = 0;
-        }
 #endif
+        }
 
         if (result < min_date)
             return min_date;
