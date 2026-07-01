@@ -269,10 +269,12 @@ TEST(KeeperStorage, BackgroundFlushAndMerge)
 
     auto count_living_children = [&](const std::string & parent)
     {
+        DB::Arena arena;
+        ChildrenSet2 children;
+        storage.listCommittedChildrenNames(NodePath(parent).withCalculatedHash(), children, arena);
         size_t count = 0;
-        storage.visitCommittedChildren(
-            NodePath(parent).withCalculatedHash(), /*full_node=*/ false,
-            [&](std::string_view, const NodeRef &, const FullNode *) { ++count; return true; });
+        for (const auto & entry : children.set)
+            count += entry.action != NodeAction::Remove;
         return count;
     };
 

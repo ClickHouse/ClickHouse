@@ -71,10 +71,7 @@ struct SortedFile
 
     /// See SortedRun for explanation of these methods.
     BlockPtr getBlockCoveringPath(NodePath path, BlockCache * block_cache) const;
-    bool visitChildren(
-        NodePath range_start, NodePath range_end, bool full_node,
-        const std::function<bool(std::string_view /*name*/, const NodeRef &, const FullNode *)> & check_node,
-        ChildrenSet2 & seen, DB::Arena & arena_, BlockCache * block_cache) const;
+    void listChildrenNames(NodePath range_start, NodePath range_end, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const;
 
     /// Hint to the block cache that this file's blocks are no longer needed, e.g. the file was
     /// removed from the visible set and is pending deletion from disk.

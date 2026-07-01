@@ -210,17 +210,10 @@ struct Memtable
     /// the Create was committed but the Remove wasn't.
     NodeRef appendNode(FullNode & node, bool strict);
 
-    /// Inserts into `seen`, calls callback only for newly inserted entries with action == Create.
-    /// If load_node is provided, calls it to obtain the FullNode to pass to check_node; otherwise passes nullptr.
-    /// Returns false if stopped early because `check_node` returned false.
-    bool visitChildren(
-        const NodePathWithHash & path,
-        const std::function<NodeRef(const NodePathWithHash &)> & load_node,
-        const std::function<bool(std::string_view /*name*/, const NodeRef &, const FullNode *)> & check_node,
-        ChildrenSet2 & seen, DB::Arena & arena) const;
+    void listChildrenNames(const NodePathWithHash & path, ChildrenSet2 & out, DB::Arena & arena) const;
 
     /// Make an immutable memtable with all of this Memtable's nodes, suitable only for iterating
-    /// over all nodes. `children` is not populated, visitChildren won't work.
+    /// over all nodes. `children` is not populated, listChildrenNames won't work.
     /// The latest (mutable) block is copied, other blocks are just referenced by BlockPtr.
     MemtablePtr takeSnapshot() const;
 };

@@ -55,16 +55,14 @@ BlockPtr SortedRun::getBlockCoveringPath(NodePath path, BlockCache * block_cache
     return (*file_it)->getBlockCoveringPath(path, block_cache);
 }
 
-bool SortedRun::visitChildren(
-    NodePath range_start, NodePath range_end, bool full_node,
-    const std::function<bool(std::string_view /*name*/, const NodeRef &, const FullNode *)> & check_node,
-    ChildrenSet2 & seen, DB::Arena & arena, BlockCache * block_cache) const
+void SortedRun::listChildrenNames(
+    NodePath range_start, NodePath range_end, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const
 {
     /// Tighten the (exclusive) lower bound by the run's cutoff: nodes <= cutoff were merged away.
     if (min_path_cutoff && min_path_cutoff->compare(range_start) > 0)
         range_start = *min_path_cutoff;
     if (range_start.compare(range_end) >= 0)
-        return true; // empty range (cutoff is past all children)
+        return; // empty range (cutoff is past all children)
 
     /// The range may span several files. Find the first file that may contain a node > range_start,
     /// and iterate until a file starts at/after range_end.
@@ -76,11 +74,8 @@ bool SortedRun::visitChildren(
         const SortedFile & file = **file_it;
         if (file.blocks.front().min_path.compare(range_end) >= 0)
             break;
-        if (!file.visitChildren(range_start, range_end, full_node, check_node, seen, arena, block_cache))
-            return false;
+        file.listChildrenNames(range_start, range_end, out, arena, block_cache);
     }
-
-    return true;
 }
 
 SortedRunWriter::SortedRunWriter(SortedRunPtr sorted_run_, StorageState * storage_)

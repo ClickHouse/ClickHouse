@@ -111,15 +111,16 @@ public:
 
     NodeRef appendCommittedNode(FullNode & node);
 
-    /// If full_node is false, only children names are reported, callback is called with nullptr FullNode.
-    /// Stops early if the callback returns false.
-    /// used for deduplication.
-    void visitCommittedChildren(
-        const NodePathWithHash & path, bool full_node,
-        const std::function<bool(std::string_view /*name*/, const NodeRef &, const FullNode *)> & check_node) const;
-    void visitCommittedChildren(
-        const NodePathWithHash & path, bool full_node, ChildrenSet2 & seen, DB::Arena & arena,
-        const std::function<bool(std::string_view /*name*/, const NodeRef &, const FullNode *)> & check_node) const;
+    /// Get children. The caller should ignore set entries with action == Remove.
+    ///
+    /// (Why not also have a function that outputs children's FullNode-s or at least NodeRef-s
+    ///  along the way, instead of just names? After all, SortedFile has to iterate over whole nodes
+    ///  just to extract their names; can't it read FullNode-s along the way? That would be
+    ///  incorrect because when a node is Update-d by a memtable it's not added to the memtable's
+    ///  children sets, so the FullNode we get from SortedFile may be outdated, even though its name
+    ///  is still correct. We could parse a FullNode from SortedFile along the way, but then do a
+    ///  NodeRefCache lookup, but it's unclear whether this is worth the trouble.)
+    void listCommittedChildrenNames(const NodePathWithHash & path, ChildrenSet2 & out, DB::Arena & arena) const;
 
     /// Very minimal stats.
     /// TODO: Make AsynchronousMetrics call into StorageState to directly populate the metrics map with lots of stats like number and size of memtables and runs and files, compressed and uncompressed sizes, number of blocks, number of entries and nodes in memtables and files.
@@ -141,10 +142,7 @@ public:
     /// Call periodically to remove obsolete UncommittedMemtable-s.
     void cleanupUncommittedState(int64_t committed_zxid);
 
-    /// Note: callback might be called with storage_mutex locked.
-    void visitUncommittedChildren(
-        const NodePathWithHash & path, bool full_node,
-        const std::function<bool(std::string_view /*name*/, const NodeRef &, const FullNode *)> & check_node) const;
+    void listUncommittedChildrenNames(const NodePathWithHash & path, ChildrenSet2 & out, DB::Arena & arena) const;
 
     /// Sleeps for a short time if background work fell behind.
     /// Call before each write, with storage_mutex unlocked.

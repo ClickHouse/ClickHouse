@@ -59,10 +59,8 @@ BlockPtr SortedFile::getBlockCoveringPath(NodePath path, BlockCache * block_cach
     return getOrLoadBlock(static_cast<uint32_t>(block_it - blocks.begin()), block_cache);
 }
 
-bool SortedFile::visitChildren(
-    NodePath range_start, NodePath range_end, bool full_node,
-    const std::function<bool(std::string_view /*name*/, const NodeRef &, const FullNode *)> & check_node,
-    ChildrenSet2 & seen, DB::Arena & arena_, BlockCache * block_cache) const
+void SortedFile::listChildrenNames(
+    NodePath range_start, NodePath range_end, ChildrenSet2 & out, DB::Arena & arena_, BlockCache * block_cache) const
 {
     auto block_it = std::partition_point(
         blocks.begin(), blocks.end(),
@@ -77,7 +75,7 @@ bool SortedFile::visitChildren(
         const uint32_t block_idx = static_cast<uint32_t>(block_it - blocks.begin());
         BlockPtr block = getOrLoadBlock(block_idx, block_cache);
 
-        NodeRef ref{.action = NodeAction::Create, .offset = 0, .block = block};
+        NodeRef ref{.block = block};
         NodePath node_path;
         uint32_t serialized_size = 0;
         NodeAction action = NodeAction::Remove;
@@ -90,29 +88,11 @@ bool SortedFile::visitChildren(
             if (node_path.compare(range_start) <= 0)
                 continue; /// before the range (range_start is exclusive)
             if (node_path.compare(range_end) >= 0)
-                return true; /// past the range (range_end is exclusive)
+                return; /// past the range (range_end is exclusive)
 
-            std::string_view child_name = node_path.baseName();
-            const auto [_, inserted] = seen.insert(child_name, action, arena_);
-            if (inserted && action != NodeAction::Remove)
-            {
-                if (full_node)
-                {
-                    FullNode full_node_buf;
-                    ref.readWithKnownPath(full_node_buf, node_path);
-                    if (!check_node(child_name, ref, &full_node_buf))
-                        return false;
-                }
-                else
-                {
-                    if (!check_node(child_name, {}, nullptr))
-                        return false;
-                }
-            }
+            out.insert(node_path.baseName(), action, arena_);
         }
     }
-
-    return true;
 }
 
 void SortedFile::removeFromBlockCache(BlockCache * block_cache) const

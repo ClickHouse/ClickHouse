@@ -47,13 +47,9 @@ struct SortedRun
     BlockPtr getBlockCoveringPath(NodePath path, BlockCache * block_cache) const;
 
     /// Scan the nodes with range_start < path < range_end (both bounds exclusive) and report the
-    /// last component of each path to the callback. The caller passes the range that selects
-    /// exactly the direct children of some node.
-    /// Returns false if stopped early because check_node returned false.
-    bool visitChildren(
-        NodePath range_start, NodePath range_end, bool full_node,
-        const std::function<bool(std::string_view /*name*/, const NodeRef &, const FullNode *)> & check_node,
-        ChildrenSet2 & seen, DB::Arena & arena, BlockCache * block_cache) const;
+    /// last component of each path. The caller passes the range that selects exactly the direct
+    /// children of some node.
+    void listChildrenNames(NodePath range_start, NodePath range_end, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const;
 
     /// === Writing and merging ===
 

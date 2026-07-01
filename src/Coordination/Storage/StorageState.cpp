@@ -216,46 +216,18 @@ NodeRef StorageState::appendCommittedNode(FullNode & node)
     return ref;
 }
 
-void StorageState::visitCommittedChildren(
-    const NodePathWithHash & path, bool full_node,
-    const std::function<bool(std::string_view /*name*/, const NodeRef &, const FullNode *)> & check_node) const
-{
-    DB::Arena arena;
-    ChildrenSet2 seen;
-    visitCommittedChildren(path, full_node, seen, arena, check_node);
-}
-
-void StorageState::visitCommittedChildren(
-    const NodePathWithHash & path, bool full_node, ChildrenSet2 & seen, DB::Arena & arena,
-    const std::function<bool(std::string_view /*name*/, const NodeRef &, const FullNode *)> & check_node) const
+void StorageState::listCommittedChildrenNames(
+    const NodePathWithHash & path, ChildrenSet2 & out, DB::Arena & arena) const
 {
     /// Visit memtables and sorted runs from newest to oldest, recording the first (newest)
-    /// occurrence of each child name in `seen`.
-
-    /// Memtables don't get whole nodes as byproduct of listing children, and they don't even have
-    /// means of finding a node by path. Give them a callback to help out with that.
-    std::function<NodeRef(const NodePathWithHash &)> load_node;
-    if (full_node)
-    {
-        load_node = [&](const NodePathWithHash & child_path)
-        {
-            NodeRef ref;
-            bool found = node_cache.tryGet(child_path.hash, ref);
-            chassert(found);
-            return ref;
-        };
-    }
+    /// occurrence of each child name in `out`. This includes tombstones; e.g. if the latest
+    /// memtable removed a child, its listChildrenNames will insert an action=Remove into `out`,
+    /// then listChildrenNames in older memtables and files won't insert this child into `out`.
 
     if (mutable_memtable)
-    {
-        if (!mutable_memtable->visitChildren(path, load_node, check_node, seen, arena))
-            return;
-    }
+        mutable_memtable->listChildrenNames(path, out, arena);
     for (auto it = immutable_memtables.rbegin(); it != immutable_memtables.rend(); ++it)
-    {
-        if (!(*it)->visitChildren(path, load_node, check_node, seen, arena))
-            return;
-    }
+        (*it)->listChildrenNames(path, out, arena);
 
     if (!sorted_runs.empty())
     {
@@ -274,10 +246,7 @@ void StorageState::visitCommittedChildren(
         const NodePath range_end(range_end_str, path.path.depth + 1);
 
         for (auto it = sorted_runs.rbegin(); it != sorted_runs.rend(); ++it)
-        {
-            if (!(*it)->visitChildren(range_start, range_end, full_node, check_node, seen, arena, block_cache.get()))
-                return;
-        }
+            (*it)->listChildrenNames(range_start, range_end, out, arena, block_cache.get());
     }
 }
 
@@ -338,45 +307,15 @@ void StorageState::cleanupUncommittedState(int64_t committed_zxid)
     }
 }
 
-void StorageState::visitUncommittedChildren(
-    const NodePathWithHash & path, bool full_node,
-    const std::function<bool(std::string_view /*name*/, const NodeRef &, const FullNode *)> & check_node) const
+void StorageState::listUncommittedChildrenNames(
+    const NodePathWithHash & path, ChildrenSet2 & out, DB::Arena & arena) const
 {
-    DB::Arena arena;
-    ChildrenSet2 seen;
-
     for (auto it = uncommitted.rbegin(); it != uncommitted.rend(); ++it)
-    {
-        std::function<NodeRef(const NodePathWithHash &)> load_node;
-        if (full_node)
-        {
-            load_node = [&](const NodePathWithHash & child_path)
-            {
-                /// The latest child info may be in a later memtable than the child-name entry,
-                /// because Update action doesn't touch Memtable::children. So we look at all
-                /// memtables here, not just `it`.
-                for (auto inner_it = uncommitted.rbegin();; ++inner_it)
-                {
-                    const auto * lookup = inner_it->nodes.find(child_path.hash);
-                    if (lookup)
-                    {
-                        NodeRef ref = lookup->getMapped();
-                        chassert(ref); // not a tombstone
-                        return ref;
-                    }
-                    /// Node must be present in memtable `it`, if nowhere else.
-                    chassert(inner_it != it);
-                }
-            };
-        }
-
-        if (!it->memtable->visitChildren(path, load_node, check_node, seen, arena))
-            return;
-    }
+        it->memtable->listChildrenNames(path, out, arena);
 
     {
         std::shared_lock lock(*storage_mutex);
-        visitCommittedChildren(path, full_node, seen, arena, check_node);
+        listCommittedChildrenNames(path, out, arena);
     }
 }
 

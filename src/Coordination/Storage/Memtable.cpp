@@ -147,41 +147,15 @@ NodeRef Memtable::appendNode(FullNode & node, bool strict)
     return ref;
 }
 
-bool Memtable::visitChildren(
-    const NodePathWithHash & path,
-    const std::function<NodeRef(const NodePathWithHash &)> & load_node,
-    const std::function<bool(std::string_view /*name*/, const NodeRef &, const FullNode *)> & check_node,
-    ChildrenSet2 & seen, DB::Arena & arena_) const
+void Memtable::listChildrenNames(const NodePathWithHash & path, ChildrenSet2 & out, DB::Arena & arena_) const
 {
     const auto * lookup = children.find(path.hash);
-    if (lookup)
-    {
-        auto it = lookup->getMapped().iterate();
-        std::string child_path_buf;
-        FullNode full_node_buf;
-        ChildrenSet2::Entry entry;
-        while (it.next(entry))
-        {
-            std::string_view child_name = entry.str();
-            const auto [_, inserted] = seen.insert(child_name, entry.action, arena_);
-            if (inserted && entry.action != NodeAction::Remove)
-            {
-                NodeRef ref;
-                const FullNode * full_node = nullptr;
-                if (load_node)
-                {
-                    NodePathWithHash child_path = path.path.childPath(child_name, child_path_buf).withCalculatedHash();
-                    ref = load_node(child_path);
-                    chassert(ref);
-                    ref.readWithKnownPath(full_node_buf, child_path);
-                    full_node = &full_node_buf;
-                }
-                if (!check_node(child_name, ref, full_node))
-                    return false;
-            }
-        }
-    }
-    return true;
+    if (!lookup)
+        return;
+    auto it = lookup->getMapped().iterate();
+    ChildrenSet2::Entry entry;
+    while (it.next(entry))
+        out.insert(entry.str(), entry.action, arena_);
 }
 
 MemtablePtr Memtable::takeSnapshot() const
