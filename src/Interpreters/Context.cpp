@@ -5218,7 +5218,7 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
 {
     ThrottlerPtr throttler;
     {
-        std::lock_guard lock(shared->mutex);
+        SharedLockGuard lock(shared->mutex);
         throttler = shared->remote_read_throttler;
     }
 
@@ -5240,7 +5240,7 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
 {
     ThrottlerPtr throttler;
     {
-        std::lock_guard lock(shared->mutex);
+        SharedLockGuard lock(shared->mutex);
         throttler = shared->remote_write_throttler;
     }
 
@@ -5262,7 +5262,7 @@ ThrottlerPtr Context::getLocalReadThrottler() const
 {
     ThrottlerPtr throttler;
     {
-        std::lock_guard lock(shared->mutex);
+        SharedLockGuard lock(shared->mutex);
         throttler = shared->local_read_throttler;
     }
 
@@ -5280,7 +5280,7 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
 {
     ThrottlerPtr throttler;
     {
-        std::lock_guard lock(shared->mutex);
+        SharedLockGuard lock(shared->mutex);
         throttler = shared->local_write_throttler;
     }
 
