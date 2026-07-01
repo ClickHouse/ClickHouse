@@ -29,8 +29,17 @@
 #include <aws/core/utils/HashingUtils.h>
 
 #include <base/defines.h>
+#include <Common/Exception.h>
 
 #include <optional>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
 
 namespace DB::S3
 {
@@ -42,7 +51,7 @@ struct S3RequestSettings;
 /// `Algorithm` and the SDK-free helpers live in `IO/S3/ChecksumAlgorithm.h`.
 namespace RequestChecksum
 {
-inline std::optional<Aws::S3::Model::ChecksumAlgorithm> toSDKFlexibleChecksumAlgorithm(Algorithm algorithm)
+inline Aws::S3::Model::ChecksumAlgorithm toSDKFlexibleChecksumAlgorithm(Algorithm algorithm)
 {
     switch (algorithm)
     {
@@ -51,7 +60,7 @@ inline std::optional<Aws::S3::Model::ChecksumAlgorithm> toSDKFlexibleChecksumAlg
         case Algorithm::SHA256:
             return Model::ChecksumAlgorithm::SHA256;
         case Algorithm::MD5:
-            return std::nullopt;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MD5 cannot be used as an AWS flexible checksum algorithm");
     }
     UNREACHABLE();
 }
@@ -74,13 +83,11 @@ inline void setChecksum(T & target, Algorithm algorithm, const std::string & che
     UNREACHABLE();
 }
 
-inline std::optional<std::string> calculateFlexibleChecksum(Model::UploadPartRequest & req, Algorithm algorithm)
+inline std::string calculateFlexibleChecksum(Model::UploadPartRequest & req, Algorithm algorithm)
 {
     const auto sdk_algorithm = toSDKFlexibleChecksumAlgorithm(algorithm);
-    if (!sdk_algorithm)
-        return std::nullopt;
 
-    chassert(req.GetChecksumAlgorithm() == *sdk_algorithm);
+    chassert(req.GetChecksumAlgorithm() == sdk_algorithm);
     switch (algorithm)
     {
         case Algorithm::CRC32:
@@ -88,7 +95,7 @@ inline std::optional<std::string> calculateFlexibleChecksum(Model::UploadPartReq
         case Algorithm::SHA256:
             return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateSHA256(*(req.GetBody())));
         case Algorithm::MD5:
-            return std::nullopt;
+            break;
     }
     UNREACHABLE();
 }
@@ -100,8 +107,7 @@ inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
 {
     if constexpr (requires { request.SetChecksumAlgorithm(Model::ChecksumAlgorithm::CRC32); })
     {
-        if (auto sdk_algorithm = toSDKFlexibleChecksumAlgorithm(algorithm))
-            request.SetChecksumAlgorithm(*sdk_algorithm);
+        request.SetChecksumAlgorithm(toSDKFlexibleChecksumAlgorithm(algorithm));
     }
 }
 };
@@ -134,7 +140,7 @@ public:
         /// AWSClient::AddChecksumToRequest [1] for more details).
         ///
         ///   [1]: https://github.com/aws/aws-sdk-cpp/blob/b0ee1c0d336dbb371c34358b68fba6c56aae2c92/src/aws-cpp-sdk-core/source/client/AWSClient.cpp#L783-L839
-        if (!hasRequestChecksum() && !checksum)
+        if (!hasFlexibleChecksum() && !checksum)
             return "";
         return BaseRequest::GetChecksumAlgorithmName();
     }
@@ -192,7 +198,7 @@ public:
         RequestChecksum::setChecksumAlgorithm(*this, algorithm);
     }
 
-    bool hasRequestChecksum() const
+    bool hasFlexibleChecksum() const
     {
         return RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm);
     }
@@ -227,15 +233,15 @@ class UploadPartRequest : public ExtendedRequest<Model::UploadPartRequest>
 {
 public:
     void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
-    bool RequestChecksumRequired() const override { return hasRequestChecksum(); }
-    bool ShouldComputeContentMd5() const override { return !hasRequestChecksum() && checksum; }
+    bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
+    bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum() && checksum; }
 };
 
 class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>
 {
 public:
-    bool RequestChecksumRequired() const override { return hasRequestChecksum(); }
-    bool ShouldComputeContentMd5() const override { return !hasRequestChecksum() && checksum; }
+    bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
+    bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum() && checksum; }
 };
 
 class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>

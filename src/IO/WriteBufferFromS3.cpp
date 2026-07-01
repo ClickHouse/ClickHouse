@@ -532,11 +532,8 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
     {
         req.setUploadChecksumAlgorithm(*checksum_algorithm);
         auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(req, *checksum_algorithm);
-        if (!checksum)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing flexible checksum for part #{} of multipart upload", part_number);
-
-        S3::RequestChecksum::setChecksum(req, *checksum_algorithm, *checksum);
-        multipart_checksums.push_back(std::move(*checksum));
+        S3::RequestChecksum::setChecksum(req, *checksum_algorithm, checksum);
+        multipart_checksums.push_back(std::move(checksum));
     }
 
     return req;

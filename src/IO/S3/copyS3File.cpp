@@ -389,7 +389,7 @@ namespace
             normal_part_size = part_size;
         }
 
-        String prepareUploadPartRequest(Aws::AmazonWebServiceRequest & request) const
+        String prepareChecksums(Aws::AmazonWebServiceRequest & request) const
         {
             if (!usesFlexibleUploadChecksumHeader())
                 return {};
@@ -399,11 +399,8 @@ namespace
             upload_part_request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
 
             auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(upload_part_request, *upload_checksum_algorithm);
-            if (!checksum)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing flexible checksum for multipart upload request");
-
-            S3::RequestChecksum::setChecksum(upload_part_request, *upload_checksum_algorithm, *checksum);
-            return *checksum;
+            S3::RequestChecksum::setChecksum(upload_part_request, *upload_checksum_algorithm, checksum);
+            return checksum;
         }
 
         bool usesFlexibleUploadChecksumHeader() const
@@ -421,7 +418,7 @@ namespace
                 Stopwatch watch;
 
                 auto request = makeUploadPartRequest(task.part_number, task.part_offset, task.part_size);
-                auto checksum = prepareUploadPartRequest(*request);
+                auto checksum = prepareChecksums(*request);
                 auto tag = processUploadPartRequest(*request);
 
                 watch.stop();
@@ -429,7 +426,7 @@ namespace
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
                 part_tag = std::move(tag);
-                /// Empty unless a flexible checksum was requested; `prepareUploadPartRequest` guarantees a
+                /// Empty unless a flexible checksum was requested; `prepareChecksums` guarantees a
                 /// non-empty value in that case (it throws otherwise), so there is nothing to re-check here.
                 part_checksum = std::move(checksum);
                 auto finished_count = ++num_finished_parts;
@@ -681,7 +678,11 @@ namespace
             , src_key(src_key_)
             , offset(src_offset_)
             , size(src_size_)
-            , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
+            /// Native multipart copy is disabled for `S3Express` buckets: there `Client::doRequest` forces
+            /// `CreateMultipartUpload` to use a flexible checksum, but the copy path does not propagate the per-part
+            /// checksums returned by `UploadPartCopy` into `CompleteMultipartUpload`, which then fails. Large objects
+            /// fall back to read-and-reupload via `fallback_method`, which checksums each part correctly.
+            , supports_multipart_copy(client_ptr_->supportsMultiPartCopy() && !client_ptr_->isS3ExpressBucket())
             , read_settings(read_settings_)
             , fallback_method(std::move(fallback_method_))
         {
