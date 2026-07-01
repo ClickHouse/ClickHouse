@@ -171,6 +171,11 @@ def test_split_topology_rolling_upgrade(start_cluster):
     # newer follower over-announces, and the newer coordinator throws on an
     # unknown stream when an older follower under-announces. We exercise both
     # directions by iterating each node as the initiator.
+    # Insert from exactly one node and sync the rest so every replica sees the same 1M rows.
+    # The count() assertion below is sensitive to the total row count — inserting once per
+    # node (as in `test_backward_compatability` above) would leave the replicated table
+    # somewhere between 1M and 3M rows depending on replication timing, and parallel-replicas
+    # dedupe would still let `sum()`/`limit` queries look correct while `count()` amplifies.
     for num in range(len(split_topology_nodes)):
         node = split_topology_nodes[num]
         node.query("drop table if exists ts sync")
@@ -181,7 +186,11 @@ def test_split_topology_rolling_upgrade(start_cluster):
             order by (a)
         """
         )
-        node.query("insert into ts select number % 100000 from numbers_mt(1000000) ORDER BY ALL")
+    split_topology_nodes[0].query(
+        "insert into ts select number % 100000 from numbers_mt(1000000) ORDER BY ALL"
+    )
+    for node in split_topology_nodes:
+        node.query("system sync replica ts")
         node.query("optimize table ts final")
 
     split_settings = {
