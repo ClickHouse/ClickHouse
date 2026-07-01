@@ -843,6 +843,7 @@ The string encoding of the tuple data type presents similar challenges as with t
 For example, in the following table, the tuple contains an enum with a tick and parenthesis in the name, which can cause parsing issues if not handled properly:
 
 ```sql
+SET enable_nullable_tuple_type = 1;
 CREATE OR REPLACE TABLE foo
 (
    `t` Tuple(
