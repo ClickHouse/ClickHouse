@@ -6261,27 +6261,29 @@ async function reconcileStartup() {
             /// Merge instead: keep the live workspace (and its active tab) and bring the saved
             /// tabs alongside it, so neither the fresh work nor the persisted tabs are lost.
             /// Merely skipping the restore is not enough: the trailing `scheduleSave` would
-            /// `clear()` the store (see `persist`) and drop the saved tabs permanently. Re-id
-            /// the live tabs onto fresh ids past the saved sequence first — both id sequences
-            /// start at `t1`, so keeping the originals would collide with the saved tabs.
+            /// `clear()` the store (see `persist`) and drop the saved tabs permanently.
             captureActiveTab();
             const liveTabs = tabs;
-            const idRemap = new Map();
-            for (const t of liveTabs) {
-                const newId = 't' + (++tabSeq);
-                idRemap.set(t.id, newId);
-                t.id = newId;
-            }
-            activeTabId = idRemap.get(activeTabId) || activeTabId;
-            /// Keep Back/Forward resolving to the live tab: the current history entry (if any)
-            /// still references the pre-remap id.
-            if (history.state && idRemap.has(history.state.tabId)) {
-                history.replaceState(
-                    { ...history.state, tabId: idRemap.get(history.state.tabId) },
-                    document.title, window.location.href);
+            /// Both id sequences start at `t1`, so the saved ids can collide with the live ids.
+            /// Keep the LIVE ids stable and re-id the colliding restored (saved) tabs instead:
+            /// any browser-history entries created during the load window reference the live
+            /// bootstrap ids, and Back/Forward must keep resolving those to the live tabs. The
+            /// saved tabs have no history entries in this session (just loaded from IndexedDB),
+            /// so re-id'ing them is safe. Re-id'ing the live tabs instead would leave older,
+            /// un-remapped live-id entries resolving to same-id saved tabs and overwriting their
+            /// persisted query/result state — a worse, durable data loss.
+            const liveIds = new Set(liveTabs.map(t => t.id));
+            for (const t of savedTabs) {
+                if (liveIds.has(t.id)) t.id = 't' + (++tabSeq);
             }
             /// Saved tabs keep their persisted order and come first; the live workspace follows.
             tabs = savedTabs.concat(liveTabs);
+            /// The bootstrap tabs default to the same titles as the persisted workspace
+            /// (`Query A`, `Query B`, ...), so the merge can leave duplicate titles. Titles double
+            /// as the unique `tab=` reconciliation key (see `uniqueTitle`), so de-conflict the live
+            /// titles against the saved ones (saved tabs keep theirs). `tabs` is already the merged
+            /// list, so `uniqueTitle` sees every title and excludes the tab itself by id.
+            for (const t of liveTabs) t.title = uniqueTitle(t.title, t.id);
             renderTabBar();
             scheduleSave();
             return;   /// skip URL param reconciliation and auto-run: the user is already editing
