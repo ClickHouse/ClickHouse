@@ -21,6 +21,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <limits>
@@ -102,17 +103,13 @@ Field parseAIParamValue(AIParamKind kind, const String & raw, std::string_view n
         }
     }
 
-    /// AIParamKind::UInt
+    /// AIParamKind::UInt. Overflow-checked so a value above UInt64 max is rejected rather than
+    /// silently wrapping (e.g. "18446744073709551616" -> 0); the Int64 cap is applied on top.
     UInt64 value;
-    try
-    {
-        value = parseFromString<UInt64>(raw);
-    }
-    catch (...)
-    {
+    ReadBufferFromString buf(raw);
+    if (!tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(value, buf) || !buf.eof())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "AI function parameter '{}' must be a non-negative integer, got '{}'", name, raw);
-    }
     checkUIntFitsInt64(value, name);
     return Field(value);
 }

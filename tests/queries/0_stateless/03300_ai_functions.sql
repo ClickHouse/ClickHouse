@@ -243,6 +243,9 @@ SELECT aiGenerate('hi', map('max_tokens', '-1')); -- { serverError BAD_ARGUMENTS
 SELECT '-- Out-of-range max_tokens rejected (exceeds Int64)';
 SELECT aiGenerate('hi', map('max_tokens', '18446744073709551615')); -- { serverError BAD_ARGUMENTS }
 
+SELECT '-- Overflowing max_tokens rejected (exceeds UInt64, must not wrap)';
+SELECT aiGenerate('hi', map('max_tokens', '18446744073709551616')); -- { serverError BAD_ARGUMENTS }
+
 SELECT '-- Duplicate map key rejected';
 SELECT aiGenerate('hi', map('temperature', '0.1', 'temperature', '0.2')); -- { serverError BAD_ARGUMENTS }
 

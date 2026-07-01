@@ -36,6 +36,7 @@ result	String
 -- Non-integer max_tokens rejected
 -- Negative max_tokens rejected
 -- Out-of-range max_tokens rejected (exceeds Int64)
+-- Overflowing max_tokens rejected (exceeds UInt64, must not wrap)
 -- Duplicate map key rejected
 -- Non-constant parameter map rejected
 -- Wrong type for parameter argument (not a map)
