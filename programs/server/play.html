@@ -2754,10 +2754,17 @@ async function loadDatabases(server_address, user, password) {
         /// On success the row is marked open, remembered for the next restore, and the refresh
         /// button is attached. Restoring passes set_current = false so the highlight is left alone.
         const openDatabase = (set_current = true) => {
+            /// The connection settings can change (url/user/password edited) while this load is in
+            /// flight; `resetConnectionScopedState` then clears `opened_databases`. Capture the
+            /// generation now so a stale load does not re-add its database to the set afterwards —
+            /// that entry would otherwise resurrect the database on the next panel reopen against
+            /// the new connection. Only the connection-scoped set is guarded: the row's own DOM
+            /// (table list, opened flag, refresh button) reflects the load it actually performed.
+            const generation = connectionGeneration;
             return refreshTables(set_current).then(ok => {
                 if (ok !== false) {
                     database.dataset['opened'] = 1;
-                    opened_databases.add(elem.database);
+                    if (generation === connectionGeneration) opened_databases.add(elem.database);
                     database_link.after(refresh_button);
                 }
                 return ok;
@@ -4586,10 +4593,11 @@ const completionOverlay = document.getElementById('completion-overlay');
 /// Sorted (by lowercased word) array of { w, lw } for prefix lookup.
 let completionWords = [];
 let completionsLoadStarted = false;
-/// Bumped whenever the connection settings change, to invalidate a cached or in-flight load.
-/// `system.completions` is filtered by the connected user's privileges, so suggestions must not
-/// outlive the connection they were loaded for.
-let completionsLoadGeneration = 0;
+/// Bumped whenever the connection settings change, to invalidate anything loaded for the previous
+/// connection. Both `system.completions` (filtered by the connected user's privileges) and the set
+/// of expanded databases are connection-scoped, so an in-flight load must not apply its result
+/// after the connection it was started for is gone.
+let connectionGeneration = 0;
 /// How many times each completion was accepted in this session — accepted completions
 /// bubble to the top of the candidate list on subsequent uses.
 let completionUsage = new Map();
@@ -4647,7 +4655,7 @@ async function loadCompletions() {
         return;
     }
     completionsLoadStarted = true;
-    const generation = completionsLoadGeneration;
+    const generation = connectionGeneration;
 
     try {
         const response = await fetch(buildCompletionUrl(), {
@@ -4656,7 +4664,7 @@ async function loadCompletions() {
             headers: { 'Authorization': 'never' },
         });
         /// The connection settings changed while loading — discard this stale result.
-        if (generation !== completionsLoadGeneration) {
+        if (generation !== connectionGeneration) {
             return;
         }
         if (!response.ok) {
@@ -4668,7 +4676,7 @@ async function loadCompletions() {
             return;
         }
         const text = await response.text();
-        if (generation !== completionsLoadGeneration) {
+        if (generation !== connectionGeneration) {
             return;
         }
         const seen = new Set();
@@ -4687,7 +4695,7 @@ async function loadCompletions() {
         updateCompletions();
     } catch (e) {
         /// Network error or aborted — allow a retry on a later focus.
-        if (generation === completionsLoadGeneration) {
+        if (generation === connectionGeneration) {
             completionsLoadStarted = false;
         }
         console.error('Failed to load completions:', e);
@@ -4701,7 +4709,7 @@ async function loadCompletions() {
 /// auto-expand same-named databases (and fire `system.tables` queries) on a different
 /// server or user when the panel is reopened.
 function resetConnectionScopedState() {
-    completionsLoadGeneration++;
+    connectionGeneration++;
     completionsLoadStarted = false;
     completionWords = [];
     closeCompletions();
