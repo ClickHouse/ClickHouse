@@ -2748,6 +2748,24 @@ let tabSeq = 0;          /// monotonic counter for synthetic, stable tab ids
 let tabTitleSeq = 0;     /// counter for default titles "Query A", "Query B", ...
 let dbReady = null;      /// Promise<IDBDatabase|null>; null result means persistence is unavailable
 
+/// The page is interactive from first paint (the bootstrap tab holds the URL query, if any),
+/// but the saved workspace is only read from IndexedDB asynchronously in `reconcileStartup`.
+/// If the user types/pastes a query, creates a tab, or starts a run during that window, the
+/// live in-memory state is NEWER than the saved one, and the restore must NOT clobber it.
+/// `bootstrap_dirty` records such interaction; `bootstrap_settled` is set once reconciliation
+/// takes over, after which these signals are irrelevant (and reconciliation's own synthetic
+/// edits/runs must not set the flag).
+let bootstrap_dirty = false;
+let bootstrap_settled = false;
+function markBootstrapDirty(e) {
+    /// Only genuine user actions count. The page programmatically dispatches input events and
+    /// calls run helpers during bootstrap/reconciliation; those carry `isTrusted === false`
+    /// (or arrive after `bootstrap_settled`) and must be ignored.
+    if (bootstrap_settled) return;
+    if (e && e.isTrusted === false) return;
+    bootstrap_dirty = true;
+}
+
 /// Start of the last query
 let last_query_start = 0;
 
@@ -4113,6 +4131,7 @@ async function switchToTab(id) {
 }
 
 function addTab() {
+    markBootstrapDirty();   /// user created a tab; reconciliation must preserve it
     captureActiveTab();
     refreshCurrentHistoryEntry(getActiveTab());
     const tab = makeTab();
@@ -4648,6 +4667,7 @@ function storeCredentials() {
 document.getElementById('controls').addEventListener('submit', e =>
 {
     e.preventDefault();
+    markBootstrapDirty(e);   /// a manual run before reconciliation must keep this tab's state
     if (in_flight) {
         cancel();
     } else {
@@ -4660,6 +4680,7 @@ document.getElementById('controls').addEventListener('submit', e =>
 document.getElementById('run-all').addEventListener('click', e =>
 {
     e.preventDefault();
+    markBootstrapDirty(e);
     if (!in_flight) {
         postAll();
         storeCredentials();
@@ -4669,6 +4690,7 @@ document.getElementById('run-all').addEventListener('click', e =>
 document.addEventListener('keydown', event => {
     /// Firefox has code 13 for Enter and Chromium has code 10.
     if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
+        markBootstrapDirty(event);
         if (in_flight) {
             cancel();
         } else if (event.shiftKey && isMultiQuery) {
@@ -6116,6 +6138,7 @@ async function updateQueryParams()
             /// `setParamValues` (on restore) dispatch synthetic input events for the resize
             /// above, and syncing on those would spam history / fight the restore.
             if (!e.isTrusted) return;
+            markBootstrapDirty(e);   /// user edited a parameter before reconciliation
             /// Parameters are tab-owned: persist edited values into the active tab, and keep
             /// the URL/history entry in sync (replaceState, since the query is unchanged) so a
             /// reload's URL params are never stale relative to the saved tab.
@@ -6131,8 +6154,13 @@ async function updateQueryParams()
     }
 }
 
-query_area.addEventListener('input', () =>
+query_area.addEventListener('input', (e) =>
 {
+    /// A real keystroke/paste into the editor before reconciliation completes means the live
+    /// query is newer than the saved workspace; keep it. `restoreFromHistory`/bootstrap dispatch
+    /// synthetic input events (`isTrusted === false`), which `markBootstrapDirty` ignores.
+    markBootstrapDirty(e);
+
     resizeQueryAreaIfSlightlyOverflowing();
 
     /// Run the update synchronously instead of with a setTimeout: the heavy work
@@ -6201,6 +6229,10 @@ const defer_run_for_reconcile = run_immediately && has_url_query;
 /// Reconcile the freshly loaded URL (query + tab name) against tabs saved in IndexedDB.
 async function reconcileStartup() {
     const loaded = await loadFromDb();
+    /// From here on reconciliation owns the workspace; any programmatic edits/runs it triggers
+    /// below (activateTab's synthetic input, a deferred auto-run) must no longer set the flag.
+    /// The value captured during the `await` above (real user interaction) is what we act on.
+    bootstrap_settled = true;
     let activated = false;
     /// Set when the matched tab's saved query/params are newer than the URL (a stale reload
     /// of an edited-but-not-resynced tab). In that case the URL is NOT authoritative, so we
@@ -6221,6 +6253,38 @@ async function reconcileStartup() {
         if (loaded.meta) {
             tabSeq = Math.max(tabSeq, loaded.meta.tabSeq || 0);
             tabTitleSeq = Math.max(tabTitleSeq, loaded.meta.tabTitleSeq || 0);
+        }
+
+        if (bootstrap_dirty) {
+            /// The user interacted with the bootstrap workspace while IndexedDB was still
+            /// loading, so the live tabs are NEWER than the saved ones. Do not overwrite them.
+            /// Merge instead: keep the live workspace (and its active tab) and bring the saved
+            /// tabs alongside it, so neither the fresh work nor the persisted tabs are lost.
+            /// Merely skipping the restore is not enough: the trailing `scheduleSave` would
+            /// `clear()` the store (see `persist`) and drop the saved tabs permanently. Re-id
+            /// the live tabs onto fresh ids past the saved sequence first — both id sequences
+            /// start at `t1`, so keeping the originals would collide with the saved tabs.
+            captureActiveTab();
+            const liveTabs = tabs;
+            const idRemap = new Map();
+            for (const t of liveTabs) {
+                const newId = 't' + (++tabSeq);
+                idRemap.set(t.id, newId);
+                t.id = newId;
+            }
+            activeTabId = idRemap.get(activeTabId) || activeTabId;
+            /// Keep Back/Forward resolving to the live tab: the current history entry (if any)
+            /// still references the pre-remap id.
+            if (history.state && idRemap.has(history.state.tabId)) {
+                history.replaceState(
+                    { ...history.state, tabId: idRemap.get(history.state.tabId) },
+                    document.title, window.location.href);
+            }
+            /// Saved tabs keep their persisted order and come first; the live workspace follows.
+            tabs = savedTabs.concat(liveTabs);
+            renderTabBar();
+            scheduleSave();
+            return;   /// skip URL param reconciliation and auto-run: the user is already editing
         }
 
         tabs = savedTabs;
@@ -6304,8 +6368,10 @@ async function reconcileStartup() {
     /// detected in the query takes its URL value when present and is cleared to empty (its
     /// default) when absent. Skipped on a stale reload, where the saved params are newer.
     /// Done after reconciliation so it targets the reconciled active tab; the auto-run itself
-    /// is still gated on run=1 below.
-    if (url_query && !preserve_local_query) {
+    /// is still gated on run=1 below. Also skipped when the user already edited the bootstrap
+    /// workspace during the load window (`bootstrap_dirty`): their live params are newer and
+    /// must not be replaced by the URL's.
+    if (url_query && !preserve_local_query && !bootstrap_dirty) {
         await updateQueryParams();
         const urlParamValues = {};
         for (const param of currentQueryParams) {
@@ -6321,7 +6387,7 @@ async function reconcileStartup() {
     /// (`preserve_local_query`), the persisted local edit is newer than the URL and was never
     /// run by the user, so the stale `run=1` must not execute it; just sync the restored tab
     /// into the URL instead (with the `run=1` directive already dropped above).
-    if (defer_run_for_reconcile && query_area.value && !preserve_local_query) {
+    if (defer_run_for_reconcile && query_area.value && !preserve_local_query && !bootstrap_dirty) {
         postAll();   /// saves history itself on completion
     } else if (activated) {
         syncHistory();   /// reflect the restored active tab in the URL (replaceState)
