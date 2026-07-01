@@ -1262,13 +1262,8 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::DateTime64:
         {
-            /// Serialize DateTime/DateTime64 in ISO 8601 form in UTC, e.g. '2025-10-26T01:00:01.000000Z'.
-            /// The default local-time text form is ambiguous across DST transitions: the same wall-clock
-            /// time can map to two UTC instants one hour apart (e.g. the repeated 02:00 hour after a
-            /// fall-back), so a shard reading the literal back may pick the wrong instant. The UTC/ISO form
-            /// has no such ambiguity and round-trips exactly through the _CAST added by ConstantNode::toASTImpl.
-            /// Inside a Dynamic the value degrades to an untyped literal (there is no DateTime type to cast
-            /// back into), so keep the default local text there to preserve the existing representation.
+            /// Serialize DateTime/DateTime64 as ISO 8601 in UTC, since the local-time form is ambiguous across DST
+            /// Inside a Dynamic it degrades to an untyped literal, so keep the default local text there
             FormatSettings format_settings;
             if (!is_inside_dynamic)
                 format_settings.date_time_output_format = FormatSettings::DateTimeOutputFormat::ISO;
