@@ -5272,9 +5272,31 @@ window.onpopstate = function(event) {
     /// newer entry that `writeHistoryEntry` last recorded, not at this one).
     tab.lastSavedQuery = event.state.query;
     if (event.state.params) tab.params = event.state.params;
-    /// Adopt the entry's result snapshot (its own producing query/params), or clear it.
-    /// This avoids leaving a stale snapshot attached to a different query.
-    tab.result = event.state.result || null;
+    /// Adopt the entry's result snapshot (its own producing query/params), or clear it. This
+    /// avoids leaving a stale snapshot attached to a different query. Modern entries nest the
+    /// snapshot under `result`; legacy flat entries (predating per-tab state) store the produced
+    /// result at the TOP level, and `restoreFromHistory` still renders them via `state.result ||
+    /// state`. Normalize such a flat entry into a nested snapshot rather than treating it as "no
+    /// result" — otherwise the tab bar would hide despite a visible result and the next
+    /// persist/switch would drop the restored snapshot. A truly result-less entry stays null.
+    if (event.state.result) {
+        tab.result = event.state.result;
+    } else if (event.state.data != null || (event.state.multi && event.state.multi.length)) {
+        const flat = event.state;
+        tab.result = {
+            ran: true,
+            query: flat.query,
+            params: flat.params || {},
+            format: flat.format,
+            ok: flat.ok,
+            data: flat.data ?? null,
+            multi: flat.multi ?? null,
+            color_modes: flat.color_modes || {},
+            elapsed_ns: flat.elapsed_ns,
+        };
+    } else {
+        tab.result = null;
+    }
     restoreFromHistory(event.state, token).then(() => { if (token === request_num) renderTabBar(); });
     scheduleSave();
 };
