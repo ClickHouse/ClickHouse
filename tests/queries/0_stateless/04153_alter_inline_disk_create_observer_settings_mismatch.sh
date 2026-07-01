@@ -120,9 +120,15 @@ wait ${ALTER_PID}
 # 1. The mismatched-settings CREATE was rejected with BAD_ARGUMENTS.
 echo -n "mismatch_create_rejected: "
 grep -qE "BAD_ARGUMENTS" "${CREATE_MISMATCH_LOG}" && echo yes || echo no
-# 2. The SHADOW ALTER was also rejected.
+# 2. The SHADOW ALTER was also rejected. Accept CANNOT_OPEN_FILE alongside BAD_ARGUMENTS:
+# the rejector ALTER's inline cache-wrap disk is built during validation, rolled back, then
+# rebuilt on the apply path; if the validation build's FileCache StatusFile flock is not yet
+# released by its async destructor, the rebuild is rejected with CANNOT_OPEN_FILE instead of
+# the storage-policy guard's BAD_ARGUMENTS. Both reject the ALTER and leave the disk rolled
+# back (the fresh S3 CREATE below proves it); accept either so the marker does not depend on
+# cache-teardown timing (cf. 04150).
 echo -n "alter_rejected: "
-grep -qE "BAD_ARGUMENTS" "${ALTER_LOG}" && echo yes || echo no
+grep -qE "BAD_ARGUMENTS|CANNOT_OPEN_FILE" "${ALTER_LOG}" && echo yes || echo no
 
 # 3. The disk name must be free now (no leaked tentative entry). A fresh CREATE
 # with a THIRD set of settings S3 (`max_size = '4Mi'`, different from both S1's

@@ -160,9 +160,14 @@ wait ${ALTER_PID}
 ${CLICKHOUSE_CLIENT} --query "SYSTEM NOTIFY FAILPOINT disk_from_ast_unscoped_observer_pause_after_sentinel;"
 wait ${CREATE_PID}
 
-# Verify outcomes.
+# Verify outcomes. Accept CANNOT_OPEN_FILE alongside BAD_ARGUMENTS: the rejector ALTER's
+# inline cache-wrap disk is built during validation, rolled back, then rebuilt on the apply
+# path; if the validation build's FileCache StatusFile flock is not yet released by its async
+# destructor, the rebuild is rejected with CANNOT_OPEN_FILE instead of the storage-policy
+# guard's BAD_ARGUMENTS. Both reject the ALTER and leave the table unchanged; accept either
+# so the marker does not depend on cache-teardown timing (cf. 04150).
 echo -n "alter_rejected: "
-grep -qE "BAD_ARGUMENTS" "${ALTER_LOG}" && echo yes || echo no
+grep -qE "BAD_ARGUMENTS|CANNOT_OPEN_FILE" "${ALTER_LOG}" && echo yes || echo no
 echo -n "mismatch_create_rejected: "
 grep -qE "BAD_ARGUMENTS" "${CREATE_MISMATCH_LOG}" && echo yes || echo no
 
