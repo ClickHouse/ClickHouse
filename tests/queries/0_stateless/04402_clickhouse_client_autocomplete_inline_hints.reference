@@ -1,0 +1,11 @@
+ghost_text: OK
+tab_accept: OK
+right_accept: OK
+down_navigate: OK
+multi_line_navigate: OK
+enter_accept: OK
+right_no_list: OK
+stale_selection_enter_commits: OK
+hints_off: OK
+in_query_priority: OK
+in_query_alias_candidate: OK
