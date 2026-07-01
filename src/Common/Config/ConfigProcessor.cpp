@@ -630,31 +630,39 @@ void ConfigProcessor::doIncludesRecursive(
     if (attr_nodes["from_hashicorp_vault"])
     {
         if (!HashiCorpVault::instance().isLoaded())
-            throw Poco::Exception(
-                "Element <" + node->nodeName()
-                + "> has 'from_hashicorp_vault' attribute but vault is not loaded.");
-
-        std::string hashicorp_vault_key_value;
-        if (static_cast<Element *>(node)->hasAttribute("hashicorp_vault_key"))
-            hashicorp_vault_key_value = static_cast<Element *>(node)->getAttribute("hashicorp_vault_key");
-
-        if (hashicorp_vault_key_value.empty())
-            throw Poco::Exception(
-                "Element <" + node->nodeName()
-                + "> has 'from_hashicorp_vault' attribute and does not have valid 'hashicorp_vault_key' attribute");
-
-        XMLDocumentPtr vault_document;
-
-        auto get_vault_node = [&](const std::string & name) -> const Node *
         {
-            String vault_val = HashiCorpVault::instance().readSecret(name, hashicorp_vault_key_value);
+            /// If the config document being processed contains a <hashicorp_vault> section,
+            /// vault will be loaded later, so skip the substitution for now.
+            /// Otherwise, fail closed — vault cannot be loaded.
+            if (!getRootNode(config.get())->getNodeByPath("hashicorp_vault"))
+                throw Poco::Exception(
+                    "Element <" + node->nodeName()
+                    + "> has 'from_hashicorp_vault' attribute but vault is not loaded.");
+        }
+        else
+        {
+            std::string hashicorp_vault_key_value;
+            if (static_cast<Element *>(node)->hasAttribute("hashicorp_vault_key"))
+                hashicorp_vault_key_value = static_cast<Element *>(node)->getAttribute("hashicorp_vault_key");
 
-            vault_document = dom_parser.parseString("<from_hashicorp_vault>" + vault_val + "</from_hashicorp_vault>");
+            if (hashicorp_vault_key_value.empty())
+                throw Poco::Exception(
+                    "Element <" + node->nodeName()
+                    + "> has 'from_hashicorp_vault' attribute and does not have valid 'hashicorp_vault_key' attribute");
 
-            return getRootNode(vault_document.get());
-        };
+            XMLDocumentPtr vault_document;
 
-        process_include(attr_nodes["from_hashicorp_vault"], get_vault_node, "Vault secret is not set: ");
+            auto get_vault_node = [&](const std::string & name) -> const Node *
+            {
+                String vault_val = HashiCorpVault::instance().readSecret(name, hashicorp_vault_key_value);
+
+                vault_document = dom_parser.parseString("<from_hashicorp_vault>" + vault_val + "</from_hashicorp_vault>");
+
+                return getRootNode(vault_document.get());
+            };
+
+            process_include(attr_nodes["from_hashicorp_vault"], get_vault_node, "Vault secret is not set: ");
+        }
     }
 
     if (included_something)
