@@ -1,3 +1,6 @@
+-- Tags: no-flaky-check
+-- no-flaky-check: can exceed the flaky-check time budget under random debug-build settings; this PR only changed the table SETTINGS line
+
 set output_format_json_quote_64bit_integers=0;
 
 drop table if exists source;
