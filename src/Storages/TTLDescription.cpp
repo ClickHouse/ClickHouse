@@ -1,9 +1,11 @@
 #include <Storages/TTLDescription.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnConst.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
@@ -21,6 +23,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -39,6 +42,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int BAD_TTL_EXPRESSION;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -67,6 +71,83 @@ TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateD
 namespace
 {
 
+/// Reject TTL expressions that feed an AggregateFunction state into a function which cannot consume it
+/// (e.g. `toDateTime(state)`), while still accepting state-aware functions like `finalizeAggregation`.
+///
+/// We only execute the individual functions that directly receive an argument whose type contains an
+/// AggregateFunction state (including states nested inside Tuple/Array/Map/etc.). Executing the whole
+/// expression instead would make DDL validity depend on synthetic default values: a data-dependent
+/// error from an unrelated downstream function - e.g. division by zero in `intDiv(100, finalizeAggregation(state))`
+/// when the default state finalizes to 0 - would turn a perfectly valid TTL into a CREATE TABLE failure.
+/// Walking nodes individually also makes the check independent of short-circuit evaluation, so an
+/// unsupported consumer hidden in a not-taken `if`/`multiIf` branch is still validated.
+///
+/// Higher-order functions (e.g. `arrayMap`) keep their lambda body in a separate inner DAG owned by a
+/// `FunctionCapture`. Executing the outer node on a synthetic empty array would reduce the lambda over
+/// zero rows and never reach the body, so we recurse into the lambda DAG instead. Only the type error
+/// is translated into a clear message; all other exceptions are rethrown.
+void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
+{
+    for (const auto & node : actions_dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        /// Descend into lambda bodies of higher-order functions to validate consumers hidden inside them.
+        if (const auto * function_capture = dynamic_cast<const FunctionCapture *>(node.function_base.get()))
+        {
+            checkActionsDAGForAggregateFunctions(function_capture->getAcionsDAG(), expression_kind);
+            continue;
+        }
+
+        bool consumes_aggregate_state = false;
+        bool has_lambda_argument = false;
+        ColumnsWithTypeAndName arguments;
+        arguments.reserve(node.children.size());
+        for (const auto * child : node.children)
+        {
+            if (hasAggregateFunctionType(child->result_type))
+                consumes_aggregate_state = true;
+
+            /// A lambda argument cannot be materialized into a column; the higher-order function that
+            /// receives it is validated through the captured lambda DAG above, so skip executing it here.
+            if (WhichDataType(child->result_type).isFunction())
+            {
+                has_lambda_argument = true;
+                break;
+            }
+
+            /// Preserve constant arguments as constants - some functions (e.g. `CAST`) require a
+            /// constant argument and otherwise throw an unrelated error during this synthetic execution.
+            ColumnPtr column = child->column
+                ? child->column->cloneResized(1)
+                : child->result_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+            arguments.emplace_back(std::move(column), child->result_type, child->result_name);
+        }
+
+        if (!consumes_aggregate_state || has_lambda_argument)
+            continue;
+
+        try
+        {
+            node.function_base->execute(arguments, node.result_type, /*input_rows_count=*/ 1, /*dry_run=*/ true);
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                    "TTL {}expression uses AggregateFunction column in a function that cannot handle it. "
+                    "Use `finalizeAggregation` to extract the value first: {}", expression_kind, e.message());
+            throw;
+        }
+    }
+}
+
+void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expression, std::string_view expression_kind)
+{
+    checkActionsDAGForAggregateFunctions(expression->getActionsDAG(), expression_kind);
+}
+
 void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious)
 {
     /// Do not apply this check in ATTACH queries for compatibility reasons and if explicitly allowed.
@@ -87,6 +168,8 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
                                     func.getName());
             }
         }
+
+        checkTTLExpressionForAggregateFunctions(ttl_expression, /*expression_kind=*/ "");
     }
 
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
@@ -196,6 +279,38 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     return result;
 }
 
+/// Collect the argument expressions of every aggregate function found in the AST.
+static void collectAggregateFunctionArguments(const ASTPtr & ast, ASTs & arguments)
+{
+    if (const auto * function = ast->as<ASTFunction>(); function && AggregateUtils::isAggregateFunction(*function))
+    {
+        if (function->arguments)
+            for (const auto & argument : function->arguments->children)
+                arguments.push_back(argument);
+    }
+
+    for (const auto & child : ast->children)
+        collectAggregateFunctionArguments(child, arguments);
+}
+
+/// Validate the aggregate-function arguments of a `GROUP BY ... SET` assignment. These argument
+/// expressions (e.g. `toDateTime(ts)` in `SET out = max(toDateTime(ts))`) are evaluated later by
+/// TTLAggregationAlgorithm and are not part of the main TTL expression, so an unsupported
+/// AggregateFunction-state consumer there would otherwise pass CREATE TABLE and fail at merge time.
+static void checkTTLGroupBySetForAggregateFunctions(
+    const ASTPtr & assignment_expression, const NamesAndTypesList & columns, const ContextPtr & context)
+{
+    ASTs aggregate_arguments;
+    collectAggregateFunctionArguments(assignment_expression, aggregate_arguments);
+
+    for (const auto & argument : aggregate_arguments)
+    {
+        auto argument_ast = argument->clone();
+        auto argument_expression = buildExpressionAndSets(argument_ast, columns, context).expression;
+        checkTTLExpressionForAggregateFunctions(argument_expression, /*expression_kind=*/ "GROUP BY SET ");
+    }
+}
+
 ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
 {
     auto ast = expression_ast->clone();
@@ -294,6 +409,9 @@ TTLDescription TTLDescription::getTTLFromAST(
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
                     "Invalid expression for assignment of column {}. Should contain an aggregate function", assignment.column_name);
 
+                if (!is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
+                    checkTTLGroupBySetForAggregateFunctions(ass_expression, columns.getAllPhysical(), context);
+
                 ass_expression = addTypeConversionToAST(std::move(ass_expression), columns.getPhysical(assignment.column_name).type->getName());
                 aggregations.emplace_back(assignment.column_name, std::move(ass_expression));
                 aggregation_columns_set.insert(assignment.column_name);
@@ -339,6 +457,13 @@ TTLDescription TTLDescription::getTTLFromAST(
                 set_part.expression_result_column_name = value->getColumnName();
                 set_part.expression = expr_analyzer.getActions(false);
 
+                /// The post-aggregation expression (including the implicit cast to the target column type)
+                /// is executed later by TTLAggregationAlgorithm. When an aggregate returns an AggregateFunction
+                /// state itself (e.g. `any(ts)`), casting it to an incompatible target type (e.g. `DateTime`)
+                /// must be rejected here instead of failing during the TTL merge.
+                if (!is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
+                    checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
+
                 result.set_parts.emplace_back(set_part);
 
                 for (const auto & descr : expr_analyzer.getAnalyzedData().aggregate_descriptions)
@@ -354,6 +479,10 @@ TTLDescription TTLDescription::getTTLFromAST(
     }
 
     checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+
+    if (where_expression && !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
+        checkTTLExpressionForAggregateFunctions(where_expression, /*expression_kind=*/ "WHERE ");
+
     return result;
 }
 
