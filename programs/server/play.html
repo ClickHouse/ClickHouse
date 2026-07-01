@@ -4498,18 +4498,22 @@ window.onpopstate = function(event) {
     invalidateInFlight();
     const token = request_num;
     const tab = resolveTabForState(event.state);
-    /// If the entry named a now-closed tab and we recreated a fresh one, adopt the new id into
-    /// this history entry so repeated Back/Forward to it lands on the same recreated tab instead
-    /// of spawning a duplicate each time. (Normal and legacy title-only entries keep their id.)
-    /// Restamp the recreated tab's (disambiguated) title into BOTH the history state and the
-    /// URL's `tab=` key as well: otherwise the entry/URL keep pointing at the closed tab's old
-    /// title, and a later reload of this URL would make startup reconciliation match a live tab
-    /// that has since taken that title and overwrite it with this entry's query.
-    if (event.state.tabId && event.state.tabId !== tab.id) {
-        const recreated_url = new URL(location.href);
-        recreated_url.searchParams.set('tab', tab.title);
+    /// Keep this history entry's identity in sync with the tab it actually resolves to, restamping
+    /// BOTH the state's `tabId`/`tabName` and the URL's `tab=` key. Two cases need it:
+    ///   - The entry named a now-closed tab and we recreated a fresh one (`tabId` changed): adopt
+    ///     the new id so repeated Back/Forward lands on the same recreated tab instead of spawning
+    ///     a duplicate each time.
+    ///   - The entry's `tabId` still resolves to a live tab, but that tab's title has since changed
+    ///     (e.g. the startup dirty-merge de-conflicted a live bootstrap tab's title): the entry/URL
+    ///     still hold the stale `tabName`.
+    /// In both cases, without the restamp a later reload of this URL would make startup
+    /// reconciliation match a persisted tab by the stale title and overwrite it with this entry's
+    /// query. (Normal and legacy title-only entries already match and are left untouched.)
+    if (event.state.tabId && (event.state.tabId !== tab.id || event.state.tabName !== tab.title)) {
+        const restamped_url = new URL(location.href);
+        restamped_url.searchParams.set('tab', tab.title);
         history.replaceState({ ...event.state, tabId: tab.id, tabName: tab.title },
-            document.title, recreated_url.href);
+            document.title, restamped_url.href);
     }
     activeTabId = tab.id;
     tab.query = event.state.query;
@@ -6284,6 +6288,25 @@ async function reconcileStartup() {
             /// titles against the saved ones (saved tabs keep theirs). `tabs` is already the merged
             /// list, so `uniqueTitle` sees every title and excludes the tab itself by id.
             for (const t of liveTabs) t.title = uniqueTitle(t.title, t.id);
+            /// Renaming a live tab above changes its title, but the current URL's `tab=` key (and
+            /// the browser-history entry written during the load window via `syncHistory`) still
+            /// carries the pre-rename title. A reload of that URL would then make startup
+            /// reconciliation match the persisted saved tab by the old title and overwrite it.
+            /// Restamp the current entry/URL to the active live tab's new title. (Older load-window
+            /// entries keep the stable live `tabId` and are restamped lazily by `onpopstate` on
+            /// Back/Forward.)
+            const active_tab = getActiveTab();
+            if (active_tab) {
+                const restamp_url = new URL(location.href);
+                const cur_tab_param = restamp_url.searchParams.get('tab');
+                if (cur_tab_param !== null && cur_tab_param !== active_tab.title) {
+                    restamp_url.searchParams.set('tab', active_tab.title);
+                    const cur_state = history.state;
+                    const new_state = (cur_state && cur_state.tabId === active_tab.id)
+                        ? { ...cur_state, tabName: active_tab.title } : cur_state;
+                    history.replaceState(new_state, document.title, restamp_url.href);
+                }
+            }
             renderTabBar();
             scheduleSave();
             return;   /// skip URL param reconciliation and auto-run: the user is already editing
