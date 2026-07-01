@@ -6,6 +6,7 @@ ORDER BY s SETTINGS index_granularity = 1;
 
 INSERT INTO t_primary_index_memory SELECT repeat('a', 10000) FROM numbers(150000)
 SETTINGS
+    max_insert_threads = 1,
     max_block_size = 32,
     max_memory_usage = '100M',
     max_insert_block_size = 1024,
