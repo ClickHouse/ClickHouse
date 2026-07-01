@@ -1,5 +1,6 @@
--- Tags: no-sanitizers
+-- Tags: no-sanitizers, no-flaky-check
 -- no-sanitizers: too slow
+-- no-flaky-check: can exceed the flaky-check time budget under random debug-build settings; this PR only changed the table SETTINGS line
 
 -- Verify that statistics are reused between queries with identical "distributed to replicas" sub-plans.
 
