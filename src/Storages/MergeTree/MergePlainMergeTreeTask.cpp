@@ -22,6 +22,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char merge_throw_after_commit_before_part_log[];
+    extern const char merge_pause_after_commit_before_part_log[];
 }
 
 namespace ErrorCodes
@@ -207,6 +208,11 @@ void MergePlainMergeTreeTask::finish()
         write_part_log(ExecutionStatus::fromCurrentException("", true));
         throw;
     }
+
+    /// The result part is active but its part_log row is queued only below. A test pauses here to
+    /// hold that window open deterministically and observe that SYSTEM SYNC MERGES (and its retries)
+    /// wait for the part_log write rather than returning as soon as the part becomes active.
+    FailPointInjection::pauseFailPoint(FailPoints::merge_pause_after_commit_before_part_log);
 
     write_part_log({});
 

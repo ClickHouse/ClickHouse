@@ -2189,8 +2189,9 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
-    /// Source parts of the merges scheduled so far. Captured before the loop because
-    /// isAllScheduledPartsCovered() drains the scheduler's pending set as parts get covered.
+    /// Source parts of the merges scheduled so far. Captured before the loop so the part_log wait
+    /// and the final clearScheduledParts() are scoped to exactly these parts, even if a concurrent
+    /// SCHEDULE MERGE adds more meanwhile.
     const NameSet scheduled_part_names = ManualMergeSelector::getScheduledPartNames(table_id);
     auto & merge_list = getContext()->getMergeList();
 
@@ -2228,7 +2229,15 @@ void InterpreterSystemQuery::syncMerges()
         if (ManualMergeSelector::isAllScheduledPartsCovered(table_id, active_set)
             && !merge_list.hasUnfinishedMergeOfSourceParts(table_id, scheduled_part_names)
             && !(replicated_merge_tree && replicated_merge_tree->hasInFlightFetchCoveringParts(scheduled_part_names)))
+        {
+            /// The command has fully succeeded: the scheduled parts are covered and their part_log
+            /// rows are queued. Drop them now (not inside the coverage check) so a call that times
+            /// out or is cancelled while still waiting for part_log leaves the set intact for a
+            /// retry. Scope to the names captured at the start so a concurrent SCHEDULE MERGE that
+            /// added new parts meanwhile keeps waiting for its own merges.
+            ManualMergeSelector::clearScheduledParts(table_id, scheduled_part_names);
             return;
+        }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(poll_delay.getCurrentDelay()));
         poll_delay.up();
