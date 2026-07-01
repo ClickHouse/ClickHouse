@@ -3036,17 +3036,32 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         /// that previously streamed in PK order. The small-table threshold below (`total_marks_pk >
         /// read_streams`) likewise compares against the read parallelism, so we only fire when there
         /// are enough marks for the parallel read to distribute work across those streams.
+        ///
+        /// The rejection requires two ratios to exceed the threshold:
+        ///  - `selected_marks_pk / total_marks_pk`: the primary key failed to prune the read, which is
+        ///    the parallelism-loss case this guard targets (read-in-order serializes each part).
+        ///  - `selected_marks / total_marks_pk`: the *final* read (after skip indexes) is still large.
+        /// `selected_marks_pk` reflects only the primary-key step, while `selected_marks` is the mark
+        /// count after skip indexes too. For a table `ORDER BY ts` with a selective skip index on
+        /// `user_id`, `WHERE user_id = ... ORDER BY ts` has `selected_marks_pk == total_marks_pk` (the
+        /// PK cannot use `user_id`) yet a tiny `selected_marks` (the skip index pruned the read). There
+        /// the read is already small, so read-in-order streams it cheaply and in low memory; replacing
+        /// that with a global sort would regress it and risk `MEMORY_LIMIT_EXCEEDED`. Since
+        /// `selected_marks <= selected_marks_pk`, gating on `selected_marks` as well only ever makes the
+        /// guard fire less often, and it keeps read-in-order for skip-index-accelerated queries.
         if (read_streams > 1
             && !analysis_result.readFromProjection()
             && analysis_result.total_marks_pk > read_streams
             && static_cast<double>(analysis_result.selected_marks_pk)
+                > static_cast<double>(analysis_result.total_marks_pk) * max_ratio
+            && static_cast<double>(analysis_result.selected_marks)
                 > static_cast<double>(analysis_result.total_marks_pk) * max_ratio)
         {
             LOG_DEBUG(log, "Read-in-order optimization rejected: "
-                "primary key selected {}/{} marks (ratio {:.2f} exceeds threshold {:.2f})",
+                "primary key selected {}/{} marks, final selection {} marks "
+                "(both ratios exceed threshold {:.2f})",
                 analysis_result.selected_marks_pk, analysis_result.total_marks_pk,
-                static_cast<double>(analysis_result.selected_marks_pk) / static_cast<double>(analysis_result.total_marks_pk),
-                max_ratio);
+                analysis_result.selected_marks, max_ratio);
             /// In `check_only` mode this is only a probe, so restore the previous order; in a real
             /// call the guard fired, so commit the "no read-in-order" decision by clearing it.
             query_info.input_order_info = check_only ? prev_input_order_info : InputOrderInfoPtr{};
