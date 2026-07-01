@@ -2808,7 +2808,11 @@ TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
     /// would otherwise fail with "Another server instance in same directory is already running".
     /// Destroying the cache only releases the lock — it keeps the persisted files on disk — which is
     /// exactly the restart we want to model here.
-    holder.reset();
+    /// `holder` is a `FileSegmentsHolderPtr` (a `std::unique_ptr<FileSegmentsHolder>`) whose pointee
+    /// also has a `reset` method, so a bare `holder.reset()` is an ambiguous call (flagged by
+    /// `readability-ambiguous-smartptr-reset-call`); assign `nullptr` to unambiguously destroy the
+    /// holder (which completes and releases its segments via `~FileSegmentsHolder`).
+    holder = nullptr;
     seg.reset();
     cache.reset();
 
