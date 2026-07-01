@@ -66,23 +66,23 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
     params.caLocation = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_CA_LOCATION, "");
 
     params.verificationMode = Poco::Net::SSLManager::VAL_VER_MODE;
-    if (config.hasProperty(prefix + Poco::Net::SSLManager::CFG_VER_MODE))
+    if (config.hasProperty(ssl_prefix + Poco::Net::SSLManager::CFG_VER_MODE))
     {
         // either: none, relaxed, strict, once
-        std::string mode = config.getString(prefix + Poco::Net::SSLManager::CFG_VER_MODE);
+        std::string mode = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_VER_MODE);
         params.verificationMode = Poco::Net::Utility::convertVerificationMode(mode);
     }
 
-    params.verificationDepth = config.getInt(prefix + Poco::Net::SSLManager::CFG_VER_DEPTH, Poco::Net::SSLManager::VAL_VER_DEPTH);
+    params.verificationDepth = config.getInt(ssl_prefix + Poco::Net::SSLManager::CFG_VER_DEPTH, Poco::Net::SSLManager::VAL_VER_DEPTH);
     params.loadDefaultCAs
-        = config.getBool(prefix + Poco::Net::SSLManager::CFG_ENABLE_DEFAULT_CA, Poco::Net::SSLManager::VAL_ENABLE_DEFAULT_CA);
-    params.cipherList = config.getString(prefix + Poco::Net::SSLManager::CFG_CIPHER_LIST, Poco::Net::SSLManager::VAL_CIPHER_LIST);
-    params.cipherList = config.getString(prefix + Poco::Net::SSLManager::CFG_CYPHER_LIST, params.cipherList); // for backwards compatibility
-    bool require_tlsv1 = config.getBool(prefix + Poco::Net::SSLManager::CFG_REQUIRE_TLSV1, false);
-    bool require_tlsv1_1 = config.getBool(prefix + Poco::Net::SSLManager::CFG_REQUIRE_TLSV1_1, false);
-    bool require_tlsv1_2 = config.getBool(prefix + Poco::Net::SSLManager::CFG_REQUIRE_TLSV1_2, false);
-    params.dhParamsFile = config.getString(prefix + Poco::Net::SSLManager::CFG_DH_PARAMS_FILE, "");
-    params.ecdhCurve = config.getString(prefix + Poco::Net::SSLManager::CFG_ECDH_CURVE, "");
+        = config.getBool(ssl_prefix + Poco::Net::SSLManager::CFG_ENABLE_DEFAULT_CA, Poco::Net::SSLManager::VAL_ENABLE_DEFAULT_CA);
+    params.cipherList = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_CIPHER_LIST, Poco::Net::SSLManager::VAL_CIPHER_LIST);
+    params.cipherList = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_CYPHER_LIST, params.cipherList); // for backwards compatibility
+    bool require_tlsv1 = config.getBool(ssl_prefix + Poco::Net::SSLManager::CFG_REQUIRE_TLSV1, false);
+    bool require_tlsv1_1 = config.getBool(ssl_prefix + Poco::Net::SSLManager::CFG_REQUIRE_TLSV1_1, false);
+    bool require_tlsv1_2 = config.getBool(ssl_prefix + Poco::Net::SSLManager::CFG_REQUIRE_TLSV1_2, false);
+    params.dhParamsFile = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_DH_PARAMS_FILE, "");
+    params.ecdhCurve = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_ECDH_CURVE, "");
 
     Poco::Net::Context::Usage usage = Poco::Net::Context::CLIENT_USE;
     if (require_tlsv1_2)
@@ -93,7 +93,7 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
         usage = Poco::Net::Context::TLSV1_CLIENT_USE;
     request_context = new Poco::Net::Context(usage, params);
 
-    std::string disabled_protocols_list = config.getString(prefix + Poco::Net::SSLManager::CFG_DISABLE_PROTOCOLS, "");
+    std::string disabled_protocols_list = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_DISABLE_PROTOCOLS, "");
     Poco::StringTokenizer dp_tok(disabled_protocols_list, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
     int disabled_protocols = 0;
     for (const auto & dp_token : dp_tok)
@@ -112,13 +112,13 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
 
     request_context->disableProtocols(disabled_protocols);
 
-    bool cache_sessions = config.getBool(prefix + Poco::Net::SSLManager::CFG_CACHE_SESSIONS, false);
+    bool cache_sessions = config.getBool(ssl_prefix + Poco::Net::SSLManager::CFG_CACHE_SESSIONS, false);
     request_context->enableSessionCache(cache_sessions);
 
     // Set to false in order to avoid memory leak
     request_context->enableExtendedCertificateVerification(false);
 
-    bool prefer_server_ciphers = config.getBool(prefix + Poco::Net::SSLManager::CFG_PREFER_SERVER_CIPHERS, false);
+    bool prefer_server_ciphers = config.getBool(ssl_prefix + Poco::Net::SSLManager::CFG_PREFER_SERVER_CIPHERS, false);
     if (prefer_server_ciphers)
         request_context->preferServerCiphers();
 }
