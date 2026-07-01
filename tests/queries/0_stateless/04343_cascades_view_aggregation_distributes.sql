@@ -17,6 +17,7 @@ INSERT INTO dims VALUES (1, 'a');
 
 CREATE VIEW agg_view AS SELECT key AS k, sum(val) AS total FROM facts GROUP BY key;
 
+SET explain_query_plan_default = 'legacy';
 SET allow_experimental_analyzer = 1;
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;

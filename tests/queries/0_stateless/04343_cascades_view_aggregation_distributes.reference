@@ -1,27 +1,14 @@
-Output: name, sum(val)
-
-GatherExchange
-└──Sorting
-   │  Sort description: name ASC
-   └──JoinLogical (Shuffle HashJoin )
-      │  Join: d[1000000] ⋈ agg_view[1000000]
-      │  ResultRows: 1000000
-      │  Type: INNER
-      │  Strictness: ALL
-      │  Locality: UNSPECIFIED
-      │  Expression: equals(__table1.key, __table2.k)
-      ├──ShuffleExchange
-      │  └──ReadFromMergeTree (ParallelRead default.dims)
-      │        Read type: Default
-      │        Parts: 1 | Granules: 1
-      │        Output: name, key
-      └──Aggregating
-         │  Keys: key
-         │  Aggregates: sum(val)
-         │  Skip merging: 0
-         └──ShuffleExchange
-            └──ReadFromMergeTree (ParallelRead default.facts)
-                  Read type: Default
-                  Parts: 1 | Granules: 1
-                  Output: key, val
+Expression (Project names)
+  GatherExchange
+    Expression ((Before ORDER BY + Projection))
+      Sorting
+        JoinLogical (Shuffle HashJoin )
+          Expression (Change column names to column identifiers)
+            ShuffleExchange
+              ReadFromMergeTree (ParallelRead default.dims)
+          Expression ((Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))
+            Aggregating
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ShuffleExchange
+                  ReadFromMergeTree (ParallelRead default.facts)
 a	10

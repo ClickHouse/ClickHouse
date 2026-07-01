@@ -1,204 +1,98 @@
 -- EXISTS (rewritten to LEFT SEMI)
-Output: count()
-
-MergingAggregated
-│  Keys:
-│  Aggregates: count()
-└──GatherExchange
-   └──Aggregating
-      │  Keys:
-      │  Aggregates: count()
-      │  Skip merging: 0
-      └──JoinLogical (Broadcast HashJoin  swapped)
-         │  Join: test_orders[1000] ⋉ test_lineitem
-         │  ResultRows: unknown
-         │  Type: LEFT
-         │  Strictness: SEMI
-         │  Locality: UNSPECIFIED
-         │  Expression: equals(exists(__table2).__table1.o_orderkey, __table1.o_orderkey)
-         ├──ReadFromMergeTree (ParallelRead default.test_orders)
-         │     Read type: Default
-         │     Parts: 4 | Granules: 4
-         │     Output: o_orderkey
-         └──Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-            │  Filter column: l_orderkey = l_orderkey
-            └──ReadFromMergeTree (ReplicatedRead default.test_lineitem)
-                  Read type: Default
-                  Parts: 1 | Granules: 1
-                  Output: l_orderkey
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + WHERE))
+          JoinLogical (Broadcast HashJoin  swapped)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Create result for always true EXISTS expression)
+              Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
+                ReadFromMergeTree (ReplicatedRead default.test_lineitem)
 20
 20
 -- RIGHT SEMI JOIN (commuted to LEFT SEMI: orders=ParallelRead, lineitem=Broadcast)
-Output: count()
-
-MergingAggregated
-│  Keys:
-│  Aggregates: count()
-└──GatherExchange
-   └──Aggregating
-      │  Keys:
-      │  Aggregates: count()
-      │  Skip merging: 0
-      └──JoinLogical (Broadcast HashJoin )
-         │  Join: test_orders[1000] ⋉ test_lineitem[20]
-         │  ResultRows: 1000
-         │  Type: LEFT
-         │  Strictness: SEMI
-         │  Locality: UNSPECIFIED
-         │  Expression: equals(__table1.l_orderkey, __table2.o_orderkey)
-         ├──ReadFromMergeTree (ParallelRead default.test_orders)
-         │     Read type: Default
-         │     Parts: 4 | Granules: 4
-         │     Output: o_orderkey
-         └──ReadFromMergeTree (ReplicatedRead default.test_lineitem)
-               Read type: Default
-               Parts: 1 | Granules: 1
-               Output: l_orderkey
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.test_lineitem)
 20
 20
 -- RIGHT ANY JOIN (RightAny strictness, not commutable)
-Output: count()
-
-MergingAggregated
-│  Keys:
-│  Aggregates: count()
-└──GatherExchange
-   └──Aggregating
-      │  Keys:
-      │  Aggregates: count()
-      │  Skip merging: 0
-      └──JoinLogical (Shuffle HashJoin )
-         │  Join: test_orders ⟖ test_lineitem
-         │  ResultRows: unknown
-         │  Type: RIGHT
-         │  Strictness: RIGHT_ANY
-         │  Locality: UNSPECIFIED
-         │  Expression: equals(__table1.o_orderkey, __table2.l_orderkey)
-         ├──ShuffleExchange
-         │  └──ReadFromMergeTree (ParallelRead default.test_orders)
-         │        Read type: Default
-         │        Parts: 4 | Granules: 4
-         │        Output: o_orderkey
-         └──ShuffleExchange
-            └──ReadFromMergeTree (ParallelRead default.test_lineitem)
-                  Read type: Default
-                  Parts: 1 | Granules: 1
-                  Output: l_orderkey
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_lineitem)
 20
 20
 -- LEFT SEMI JOIN (lineitem broadcast, no swap needed)
-Output: count()
-
-MergingAggregated
-│  Keys:
-│  Aggregates: count()
-└──GatherExchange
-   └──Aggregating
-      │  Keys:
-      │  Aggregates: count()
-      │  Skip merging: 0
-      └──JoinLogical (Broadcast HashJoin )
-         │  Join: test_orders[1000] ⋉ test_lineitem[20]
-         │  ResultRows: 1000
-         │  Type: LEFT
-         │  Strictness: SEMI
-         │  Locality: UNSPECIFIED
-         │  Expression: equals(__table2.l_orderkey, __table1.o_orderkey)
-         ├──ReadFromMergeTree (ParallelRead default.test_orders)
-         │     Read type: Default
-         │     Parts: 4 | Granules: 4
-         │     Output: o_orderkey
-         └──ReadFromMergeTree (ReplicatedRead default.test_lineitem)
-               Read type: Default
-               Parts: 1 | Granules: 1
-               Output: l_orderkey
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.test_lineitem)
 20
 20
 -- RIGHT ANTI JOIN (commuted to LEFT ANTI: orders=ParallelRead, lineitem=Broadcast)
-Output: count()
-
-MergingAggregated
-│  Keys:
-│  Aggregates: count()
-└──GatherExchange
-   └──Aggregating
-      │  Keys:
-      │  Aggregates: count()
-      │  Skip merging: 0
-      └──JoinLogical (Broadcast HashJoin )
-         │  Join: test_orders[1000] ⋉̸ test_lineitem[20]
-         │  ResultRows: 1000
-         │  Type: LEFT
-         │  Strictness: ANTI
-         │  Locality: UNSPECIFIED
-         │  Expression: equals(__table1.l_orderkey, __table2.o_orderkey)
-         ├──ReadFromMergeTree (ParallelRead default.test_orders)
-         │     Read type: Default
-         │     Parts: 4 | Granules: 4
-         │     Output: o_orderkey
-         └──ReadFromMergeTree (ReplicatedRead default.test_lineitem)
-               Read type: Default
-               Parts: 1 | Granules: 1
-               Output: l_orderkey
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.test_lineitem)
 980
 980
 -- RIGHT JOIN (RIGHT ALL, not commutable, broadcast blocked)
-Output: count()
-
-MergingAggregated
-│  Keys:
-│  Aggregates: count()
-└──GatherExchange
-   └──Aggregating
-      │  Keys:
-      │  Aggregates: count()
-      │  Skip merging: 0
-      └──JoinLogical (Shuffle HashJoin )
-         │  Join: test_orders[1000] ⟖ test_lineitem[20]
-         │  ResultRows: 20
-         │  Type: RIGHT
-         │  Strictness: ALL
-         │  Locality: UNSPECIFIED
-         │  Expression: equals(__table1.o_orderkey, __table2.l_orderkey)
-         ├──ShuffleExchange
-         │  └──ReadFromMergeTree (ParallelRead default.test_orders)
-         │        Read type: Default
-         │        Parts: 4 | Granules: 4
-         │        Output: o_orderkey
-         └──ShuffleExchange
-            └──ReadFromMergeTree (ParallelRead default.test_lineitem)
-                  Read type: Default
-                  Parts: 1 | Granules: 1
-                  Output: l_orderkey
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_lineitem)
 20
 20
 -- FULL JOIN (FULL ALL, not commutable, broadcast blocked)
-Output: count()
-
-MergingAggregated
-│  Keys:
-│  Aggregates: count()
-└──GatherExchange
-   └──Aggregating
-      │  Keys:
-      │  Aggregates: count()
-      │  Skip merging: 0
-      └──JoinLogical (Shuffle HashJoin )
-         │  Join: test_orders[1000] ⟗ test_lineitem[20]
-         │  ResultRows: 1020
-         │  Type: FULL
-         │  Strictness: ALL
-         │  Locality: UNSPECIFIED
-         │  Expression: equals(__table1.o_orderkey, __table2.l_orderkey)
-         ├──ShuffleExchange
-         │  └──ReadFromMergeTree (ParallelRead default.test_orders)
-         │        Read type: Default
-         │        Parts: 4 | Granules: 4
-         │        Output: o_orderkey
-         └──ShuffleExchange
-            └──ReadFromMergeTree (ParallelRead default.test_lineitem)
-                  Read type: Default
-                  Parts: 1 | Granules: 1
-                  Output: l_orderkey
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_lineitem)
 1000
 1000

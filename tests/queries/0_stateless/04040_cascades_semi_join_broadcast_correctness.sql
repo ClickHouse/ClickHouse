@@ -7,6 +7,7 @@
 -- The filter table (test_lineitem) is small so the optimizer prefers broadcast
 -- when it is safe — these tests verify that broadcast is blocked when unsafe.
 
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;

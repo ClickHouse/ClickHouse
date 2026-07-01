@@ -4,6 +4,7 @@
 -- equal keys across nodes.  Only the preserved side(s) may be advertised; FULL preserves
 -- neither.  Results must match the non-distributed baseline.
 
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
