@@ -146,7 +146,6 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
     /// `mutex` is already locked.
     if (all_policies_read)
         return;
-    all_policies_read = true;
 
     subscription = access_control.subscribeForChanges<RowPolicy>(
         [this](const std::vector<AccessChangesNotifier::Change> & changes)
@@ -162,6 +161,8 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
             mixFiltersIfNeeded();
         });
 
+    /// Start clean: a previous attempt may have thrown mid-scan.
+    all_policies.clear();
     for (const UUID & id : access_control.findAll<RowPolicy>())
     {
         auto policy = access_control.tryRead<RowPolicy>(id);
@@ -170,6 +171,9 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
             all_policies.emplace(id, PolicyInfo(policy));
         }
     }
+
+    /// Set only after the subscription and the initial read succeed.
+    all_policies_read = true;
 }
 
 

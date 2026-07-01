@@ -34,7 +34,6 @@ void SettingsProfilesCache::ensureAllProfilesRead()
     /// `mutex` is already locked.
     if (all_profiles_read)
         return;
-    all_profiles_read = true;
 
     subscription = access_control.subscribeForChanges<SettingsProfile>(
         [this](const std::vector<AccessChangesNotifier::Change> & changes)
@@ -50,6 +49,9 @@ void SettingsProfilesCache::ensureAllProfilesRead()
             mergeSettingsAndConstraintsIfNeeded();
         });
 
+    /// Start clean: a previous attempt may have thrown mid-scan.
+    all_profiles.clear();
+    profiles_by_name.clear();
     for (const UUID & id : access_control.findAll<SettingsProfile>())
     {
         auto profile = access_control.tryRead<SettingsProfile>(id);
@@ -59,6 +61,9 @@ void SettingsProfilesCache::ensureAllProfilesRead()
             profiles_by_name[profile->getName()] = id;
         }
     }
+
+    /// Set only after the subscription and the initial read succeed.
+    all_profiles_read = true;
 }
 
 

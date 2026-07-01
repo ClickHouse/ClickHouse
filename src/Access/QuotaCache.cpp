@@ -289,7 +289,6 @@ void QuotaCache::ensureAllQuotasRead()
     /// `mutex` is already locked.
     if (all_quotas_read)
         return;
-    all_quotas_read = true;
 
     subscription = access_control.subscribeForChanges<Quota>(
         [this](const std::vector<AccessChangesNotifier::Change> & changes)
@@ -305,12 +304,17 @@ void QuotaCache::ensureAllQuotasRead()
             chooseQuotaToConsumeIfNeeded();
         });
 
+    /// Start clean: a previous attempt may have thrown mid-scan.
+    all_quotas.clear();
     for (const UUID & quota_id : access_control.findAll<Quota>())
     {
         auto quota = access_control.tryRead<Quota>(quota_id);
         if (quota)
             all_quotas.emplace(quota_id, QuotaInfo(quota, quota_id));
     }
+
+    /// Set only after the subscription and the initial read succeed.
+    all_quotas_read = true;
 }
 
 

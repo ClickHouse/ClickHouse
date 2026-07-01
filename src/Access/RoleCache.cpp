@@ -116,7 +116,6 @@ void RoleCache::ensureSubscribed()
     /// Lazy (not in the ctor): `changes_notifier` is constructed after the caches in `AccessControl`.
     if (subscribed)
         return;
-    subscribed = true;
 
     /// A single subscription for all roles: each batch updates the cached roles and runs one coalesced
     /// recalculation, instead of one subscription (and one recalculation) per role.
@@ -136,6 +135,9 @@ void RoleCache::ensureSubscribed()
             }
             collectEnabledRolesIfNeeded(&notifications);
         });
+
+    /// Set after the subscription is established.
+    subscribed = true;
 }
 
 
