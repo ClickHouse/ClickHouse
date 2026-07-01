@@ -145,6 +145,37 @@ def test_absent_setting_is_unchanged():
     assert strip_setting_from_query(query, SETTING) == query
 
 
+def test_setting_only_after_as_select_is_unchanged():
+    # The setting is absent from the table's own SETTINGS clause and appears
+    # only in a query-level SETTINGS after `AS SELECT`. The name scan must stop
+    # at the `AS` boundary (as the value scan does) and leave the query
+    # byte-for-byte unchanged, so `perf.py` re-raises the original error and
+    # fails fast. Before the name scan honoured trailing clauses, it ran past
+    # `AS SELECT` and cut from a comma in the SELECT column list, silently
+    # rewriting `SELECT a, b FROM src ...` down to `SELECT a`.
+    query = (
+        "CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS index_granularity = 8192 "
+        f"AS SELECT a, b FROM src SETTINGS {SETTING} = 0"
+    )
+    assert strip_setting_from_query(query, SETTING) == query
+
+
+def test_setting_in_table_settings_wins_over_occurrence_after_as():
+    # The real setting is in the table SETTINGS and the name also appears in the
+    # SELECT after `AS`. Only the table setting is stripped; the SELECT (commas
+    # and all) is preserved intact.
+    query = (
+        f"CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0, "
+        f"index_granularity = 8192 AS SELECT a, b, c FROM src SETTINGS {SETTING} = 0"
+    )
+    expected = (
+        "CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() SETTINGS "
+        f"index_granularity = 8192 AS SELECT a, b, c FROM src SETTINGS {SETTING} = 0"
+    )
+    assert strip_setting_from_query(query, SETTING) == expected
+
+
 def test_setting_name_inside_comment_literal_is_preserved():
     # The setting name appears both inside a column COMMENT literal and as the
     # real setting. Only the real setting must be removed; the literal text

@@ -98,6 +98,21 @@ def strip_setting_from_query(query, setting_name):
     if settings_pos < 0:
         return query
 
+    def is_word_at(text, pos, word):
+        """Case-insensitive word-boundary match of `word` at `pos`."""
+        wlen = len(word)
+        if text[pos : pos + wlen].upper() != word:
+            return False
+        if pos > 0 and (text[pos - 1].isalnum() or text[pos - 1] == "_"):
+            return False
+        end = pos + wlen
+        return end >= len(text) or not (text[end].isalnum() or text[end] == "_")
+
+    # Keywords that can follow the SETTINGS clause at the top level of a
+    # CREATE TABLE (`AS SELECT ...`, `AS other_table`, `COMMENT '...'`,
+    # `EMPTY AS SELECT ...`) and therefore terminate it.
+    trailing_clause_keywords = ("AS", "COMMENT", "EMPTY")
+
     # Locate `setting_name = ` at the top level of the SETTINGS clause:
     # outside string and backtick literals, outside `--`, `#`, `/* */`
     # comments, and at bracket depth 0 (so a literal containing the
@@ -162,6 +177,19 @@ def strip_setting_from_query(query, setting_name):
             depth -= 1
             i += 1
             continue
+        if (
+            depth == 0
+            and i > settings_pos + len("SETTINGS")
+            and any(is_word_at(query, i, kw) for kw in trailing_clause_keywords)
+        ):
+            # A trailing clause (`AS SELECT ...`, `COMMENT '...'`) ends the
+            # SETTINGS clause. Stop the name scan here, exactly as the value
+            # scan below does, so the setting name is only matched inside the
+            # table's own SETTINGS. Without this, the scan would run past
+            # `AS SELECT ...` and could match the name inside a query-level
+            # SETTINGS or, worse, cut from a comma in the SELECT column list,
+            # silently rewriting the baseline DDL instead of failing fast.
+            break
         if depth == 0 and c == ",":
             # Top-level comma: the separator between two settings. Remember
             # the last one before the matched name so the cut can remove the
@@ -206,21 +234,6 @@ def strip_setting_from_query(query, setting_name):
         cut_start = last_top_level_comma
     else:
         cut_start = name_start
-
-    def is_word_at(text, pos, word):
-        """Case-insensitive word-boundary match of `word` at `pos`."""
-        wlen = len(word)
-        if text[pos : pos + wlen].upper() != word:
-            return False
-        if pos > 0 and (text[pos - 1].isalnum() or text[pos - 1] == "_"):
-            return False
-        end = pos + wlen
-        return end >= len(text) or not (text[end].isalnum() or text[end] == "_")
-
-    # Keywords that can follow the SETTINGS clause at the top level of a
-    # CREATE TABLE (`AS SELECT ...`, `AS other_table`, `COMMENT '...'`,
-    # `EMPTY AS SELECT ...`) and therefore terminate it.
-    trailing_clause_keywords = ("AS", "COMMENT", "EMPTY")
 
     # Scan from the start of the value to find its end at the next
     # top-level comma or semicolon, a keyword starting a trailing
