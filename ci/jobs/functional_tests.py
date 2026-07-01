@@ -131,19 +131,7 @@ def run_tests(
     # that bound (plus the worker shutdown wind-down) so the external SIGTERM
     # fires only for a genuinely frozen process and never pre-empts the graceful
     # `GLOBAL_TIME_LIMIT_EXIT_CODE` stop (which would be reported as "Server died").
-    if global_time_limit > 0:
-        outer_timeout = global_time_limit + 900
-    else:
-        # Regular runs pass no graceful --global_time_limit, so without an external
-        # bound a frozen clickhouse-test/worker (e.g. a stuck test or --hung-check on
-        # the networked MinIO) runs until the job is force-cancelled - observed
-        # as a stateless MinIO job still "running" after 6h. Bound it by the job's own
-        # configured timeout, leaving margin to still SIGTERM clickhouse-test and
-        # collect logs/results before the job-level timeout fires.
-        job_cfg = Info().job_config
-        outer_timeout = (
-            job_cfg.timeout - 600 if job_cfg and job_cfg.timeout and job_cfg.timeout > 600 else 2 * 3600
-        )
+    outer_timeout = global_time_limit + 900 if global_time_limit > 0 else None
     return Shell.run(command, verbose=True, timeout=outer_timeout)
 
 
