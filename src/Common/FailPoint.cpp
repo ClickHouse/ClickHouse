@@ -67,6 +67,7 @@ static struct InitFiu
     PAUSEABLE(rmt_fetch_part_pause_before_part_log) \
     REGULAR(rmt_fetch_throw_after_commit_before_part_log) \
     REGULAR(merge_throw_after_commit_before_part_log) \
+    ONCE(merge_tree_refresh_parts_throw_once) \
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
