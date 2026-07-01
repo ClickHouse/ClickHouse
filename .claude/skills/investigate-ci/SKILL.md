@@ -334,7 +334,10 @@ This is the cheap, decisive triage — run it **before** downloading any artifac
 since a `FLAKY` verdict usually makes the heavy download unnecessary.
 
 Run **one** batch query against `play.clickhouse.com` for all failed test names. The `checks`
-table is publicly readable via the `play` user. Adapt the threshold to `$1` (default `14`).
+table is publicly readable via the `play` user. The query below always computes the same fixed
+7/14/30/90-day buckets; `$1` (default `14`) does **not** change the SQL — it selects **which
+precomputed bucket is the gate** you read for the verdict (`fail_<$1>d`). If `$1` is not one of
+7/14/30/90, round to the nearest bucket (or add that column).
 
 **Guard the empty case:** if no test names were extracted, `test_name IN ()` is invalid SQL —
 skip and report "no named tests to classify" (the failure may be a build/infra error; go to
