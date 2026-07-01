@@ -386,9 +386,14 @@ DROP TABLE chain_small;
 -- set would see two rows and needlessly fall back to a full scan on the
 -- first recursive step.
 DROP TABLE IF EXISTS conv_edges;
-CREATE TABLE conv_edges (parent UInt16, child UInt16) ENGINE = MergeTree ORDER BY parent SETTINGS index_granularity = 8192;
+-- Small granularity + `OPTIMIZE ... FINAL` for the same determinism reason as
+-- the other `read_rows` proofs: the `walk_conv` assertion below must come from
+-- mark pruning inside one part, not from the two inserts staying in separate
+-- parts, which a background merge could otherwise collapse into a single mark.
+CREATE TABLE conv_edges (parent UInt16, child UInt16) ENGINE = MergeTree ORDER BY parent SETTINGS index_granularity = 128;
 INSERT INTO conv_edges VALUES (0, 1), (1, 2);
 INSERT INTO conv_edges SELECT number + 1000, number + 30000 FROM numbers(5000);
+OPTIMIZE TABLE conv_edges FINAL;
 
 WITH RECURSIVE walk_conv AS
 (
