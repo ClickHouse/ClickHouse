@@ -86,6 +86,7 @@ def run_tests(
     random_order=False,
     global_time_limit=0,
     build_type=None,
+    job_stop_watch=None,
 ):
     test_output_file = f"{temp_dir}/test_result.txt"
     if batch_num and batch_total:
@@ -137,13 +138,26 @@ def run_tests(
         # Regular runs pass no graceful --global_time_limit, so without an external
         # bound a frozen clickhouse-test/worker (e.g. a stuck test or --hung-check on
         # the networked MinIO) runs until the job is force-cancelled - observed
-        # as a stateless MinIO job still "running" after 6h. Bound it by the job's own
-        # configured timeout, leaving margin to still SIGTERM clickhouse-test and
-        # collect logs/results before the job-level timeout fires.
+        # as a stateless MinIO job still "running" after 6h.
+        #
+        # Bound it by the job's *remaining* budget, not the static configured
+        # timeout: run_tests is entered only after INSTALL/START have already
+        # consumed part of the budget, and bugfix validation enters it once per
+        # build type. Timing off the full `job_config.timeout` would let this
+        # Shell.run outlive the job-level (GitHub) timeout - the runner is then
+        # force-cancelled and we lose logs/results instead of getting a controlled
+        # SIGTERM. So subtract the elapsed time (from the job-wide stopwatch, read
+        # live so each bugfix build-type entry shrinks) and keep a reserve for the
+        # SIGTERM + log/result collection to still complete before the job timeout.
+        RESERVE_SECONDS = 600
         job_cfg = Info().job_config
-        outer_timeout = (
-            job_cfg.timeout - 600 if job_cfg and job_cfg.timeout and job_cfg.timeout > 600 else 2 * 3600
+        job_timeout = (
+            job_cfg.timeout if job_cfg and job_cfg.timeout else 2 * 3600
         )
+        elapsed = int(job_stop_watch.duration) if job_stop_watch else 0
+        # Floor so a near-exhausted budget still passes a positive timeout to
+        # Shell.run (fire the SIGTERM promptly) rather than 0/negative.
+        outer_timeout = max(60, job_timeout - elapsed - RESERVE_SECONDS)
     return Shell.run(command, verbose=True, timeout=outer_timeout)
 
 
@@ -720,6 +734,7 @@ def main():
                 random_order=True,
                 rerun_count=rerun_count,
                 global_time_limit=global_time_limit,
+                job_stop_watch=stop_watch,
             )
 
         elif is_targeted_check:
@@ -741,6 +756,7 @@ def main():
                 random_order=True,
                 rerun_count=rerun_count,
                 global_time_limit=global_time_limit,
+                job_stop_watch=stop_watch,
             )
 
         else:
@@ -753,6 +769,7 @@ def main():
                 rerun_count=rerun_count,
                 global_time_limit=global_time_limit,
                 build_type=build_types[0] if is_bugfix_validation else None,
+                job_stop_watch=stop_watch,
             )
 
         test_result = ft_res_processor.run(runner_exit_code=runner_exit_code)
@@ -887,6 +904,7 @@ def main():
                         random_order=True,
                         rerun_count=1,
                         build_type=bugfix_bt,
+                        job_stop_watch=stop_watch,
                     )
                     bt_result = ft_res_processor_bt.run(
                         runner_exit_code=bt_runner_exit_code
