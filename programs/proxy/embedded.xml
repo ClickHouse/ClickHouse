@@ -1,0 +1,29 @@
+<!-- Config that is used when proxy server is run without config file. -->
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <console>true</console>
+    </logger>
+
+    <tcp_port>9090</tcp_port>
+
+    <upstreams>
+        <clusters>
+            <default>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <!-- port with enabled proxy header parsing -->
+                    <tcp_port>9011</tcp_port>
+                </replica>
+            </default>
+        </clusters>
+    </upstreams>
+
+    <routing>
+        <default>
+             <action>
+                <route_to>default</route_to>
+            </action>
+        </default>
+    </routing>
+</clickhouse>
