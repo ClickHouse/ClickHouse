@@ -32,9 +32,8 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_text_index_lazy_apply;
     extern const SettingsTextIndexPostingListApplyMode text_index_posting_list_apply_mode;
-    extern const SettingsFloat text_index_density_threshold;
+    extern const SettingsFloat text_index_lazy_intersection_density_threshold;
     extern const SettingsFloat text_index_hint_max_selectivity;
 }
 
@@ -43,7 +42,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
@@ -88,20 +86,16 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
 
-    /// Validate lazy mode request once; actual support is determined from the on-disk sparse-index header.
+    /// Lazy mode is requested per query; actual support is determined from the on-disk sparse-index header.
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
     const auto & ctx_settings = condition_text.getContext()->getSettingsRef();
     const auto apply_mode = ctx_settings[Setting::text_index_posting_list_apply_mode].value;
 
-    if (apply_mode == TextIndexPostingListApplyMode::LAZY && !ctx_settings[Setting::allow_experimental_text_index_lazy_apply])
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Lazy posting list apply mode requires setting allow_experimental_text_index_lazy_apply = 1");
-
     lazy_mode_requested = (apply_mode == TextIndexPostingListApplyMode::LAZY);
-    lazy_density_threshold = ctx_settings[Setting::text_index_density_threshold].value;
+    lazy_intersection_density_threshold = ctx_settings[Setting::text_index_lazy_intersection_density_threshold].value;
 
-    if (!std::isfinite(lazy_density_threshold) || lazy_density_threshold < 0.0f || lazy_density_threshold > 1.0f)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting text_index_density_threshold must be a value in [0.0, 1.0], got {}", lazy_density_threshold);
+    if (!std::isfinite(lazy_intersection_density_threshold) || lazy_intersection_density_threshold < 0.0f || lazy_intersection_density_threshold > 1.0f)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting text_index_lazy_intersection_density_threshold must be a value in [0.0, 1.0], got {}", lazy_intersection_density_threshold);
 
     if (index_granule_)
         setIndexGranule(std::move(index_granule_));
@@ -286,6 +280,14 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
 
         if (search_query->tokens.empty() && search_query->patterns.empty())
         {
+            /// Token and phrase searches with no search tokens never match (row-level returns 0, e.g. when a
+            /// postprocessor maps every needle token to empty). Encode this as an explicit no-match so direct
+            /// read agrees with the row-scan path; otherwise an always-true virtual column would wrongly keep
+            /// all rows once granule pruning cannot mask it (e.g. under OR).
+            if (search_query->function_name == "hasAnyTokens" || search_query->function_name == "hasAllTokens"
+                || search_query->search_mode == TextSearchMode::Phrase)
+                continue;
+
             /// Always return true for empty needles.
             is_always_true[i] = true;
         }
@@ -752,7 +754,12 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
     chassert(search_query->patterns.empty());
 
     if (search_query->tokens.empty())
+    {
+        /// hasAnyTokens / hasAllTokens whose needle tokens were all dropped (e.g. by a postprocessor): no
+        /// match, so fill zeros for every row read, matching fillColumn and the row-scan path.
+        column_data.resize_fill(old_size + num_rows, 0);
         return;
+    }
 
     const auto & analyzer = granule->getAnalyzer();
     const auto & query_builder = analyzer.getQueryBuilder(*search_query);
@@ -834,7 +841,7 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
     if (search_query->search_mode == TextSearchMode::Any)
         lazyUnionPostingLists(column, cursors, old_size, row_offset, num_rows);
     else if (search_query->search_mode == TextSearchMode::All)
-        lazyIntersectPostingLists(column, cursors, old_size, row_offset, num_rows, lazy_density_threshold);
+        lazyIntersectPostingLists(column, cursors, old_size, row_offset, num_rows, lazy_intersection_density_threshold);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
 }

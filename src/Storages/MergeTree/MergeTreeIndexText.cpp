@@ -1,21 +1,22 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 
-#include <Core/Settings.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNullable.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/IDataType.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Interpreters/Context.h>
@@ -31,6 +32,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
@@ -1549,28 +1551,31 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
         document.size(),
         [&](const char * token_start, size_t token_length)
         {
-            bool inserted = false;
-            TokenToPostingsBuilderMap::LookupResult it;
-
-            const std::string_view token(token_start, token_length);
-            ArenaKeyHolder key_holder{token, *arena};
-            tokens_map.emplace(key_holder, it, inserted);
-
-            auto & posting_list_builder = it->getMapped();
-            posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
-
-            if (position_map)
-            {
-                TokenToPositionListMap::LookupResult pos_it;
-                position_map->emplace(key_holder, pos_it, inserted);
-                auto & positions_builder = pos_it->getMapped();
-                positions_builder.add(static_cast<UInt32>(current_row), token_position);
-            }
-
-            ++num_processed_tokens;
+            addToken({token_start, token_length}, token_position);
             ++token_position;
             return false;
         });
+}
+
+void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
+{
+    bool inserted = false;
+    TokenToPostingsBuilderMap::LookupResult it;
+    ArenaKeyHolder key_holder(token, *arena);
+    tokens_map.emplace(key_holder, it, inserted);
+
+    PostingListBuilder & posting_list_builder = it->getMapped();
+    posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
+
+    if (position_map)
+    {
+        TokenToPositionListMap::LookupResult pos_it;
+        position_map->emplace(key_holder, pos_it, inserted);
+        auto & positions_builder = pos_it->getMapped();
+        positions_builder.add(static_cast<UInt32>(current_row), token_position);
+    }
+
+    ++num_processed_tokens;
 }
 
 void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
@@ -1634,13 +1639,14 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     MergeTreeIndexTextParams params_,
     TokenizerPtr tokenizer_,
     const IPostingListCodec * posting_list_codec_,
-    MergeTreeIndexTextPreprocessorPtr preprocessor_)
+    MergeTreeIndexTextPreprocessorPtr preprocessor_,
+    MergeTreeIndexTextPostprocessorPtr postprocessor_)
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
     , tokenizer(tokenizer_)
-    , posting_list_codec(posting_list_codec_)
     , granule_builder(params, tokenizer_, posting_list_codec_)
     , preprocessor(preprocessor_)
+    , postprocessor(postprocessor_)
 {
 }
 
@@ -1674,27 +1680,15 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     const auto & index_column = block.getByName(index_column_name);
     auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
-    if (isArray(index_column.type))
+    if (postprocessor->hasActions())
     {
-        const auto & column_array = assert_cast<const ColumnArray &>(*preprocessed_column);
-
-        const IColumn & column_data = column_array.getData();
-        const auto & column_offsets = column_array.getOffsets();
-
-        const bool data_is_nullable = column_data.isNullable();
-
-        for (size_t i = offset; i < offset + rows_read; ++i)
-        {
-            for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
-            {
-                if (data_is_nullable && column_data.isNullAt(element_idx))
-                    continue;
-
-                const std::string_view ref = column_data.getDataAt(element_idx);
-                granule_builder.addDocument(ref);
-            }
-            granule_builder.incrementCurrentRow();
-        }
+        ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
+        ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));
+        addDocumentsFromArray<false>(postprocessed, 0, rows_read);
+    }
+    else if (isArray(index_column.type))
+    {
+        addDocumentsFromArray<true>(preprocessed_column, offset, rows_read);
     }
     else
     {
@@ -1714,6 +1708,37 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     *pos += rows_read;
 }
 
+template <bool tokenize>
+void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read)
+{
+    const ColumnArray * column_array = assert_cast<const ColumnArray *>(column.get());
+    const IColumn & column_data = column_array->getData();
+    const IColumn::Offsets & column_offsets = column_array->getOffsets();
+    const bool data_is_nullable = column_data.isNullable();
+
+    for (size_t i = start_row; i < start_row + rows_read; ++i)
+    {
+        /// Dense position counter: dropped (empty/null) tokens leave no gap, so positions
+        /// reflect the surviving token sequence only.
+        UInt32 token_position = 0;
+        for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+        {
+            if (data_is_nullable && column_data.isNullAt(element_idx))
+                continue;
+
+            const std::string_view ref = column_data.getDataAt(element_idx);
+            if (ref.empty())
+                continue;
+
+            if constexpr (tokenize)
+                granule_builder.addDocument(ref);
+            else
+                granule_builder.addToken(ref, token_position++);
+        }
+        granule_builder.incrementCurrentRow();
+    }
+}
+
 MergeTreeIndexText::MergeTreeIndexText(
     StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
@@ -1725,6 +1750,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     , tokenizer(std::move(tokenizer_))
     , posting_list_codec(std::move(posting_list_codec_))
     , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
+    , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
 {
 }
 
@@ -1775,12 +1801,12 @@ MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor);
+    return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor, postprocessor);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, tokenizer.get(), preprocessor, params.positions);
+    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, tokenizer.get(), preprocessor, postprocessor, params.positions);
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
@@ -1802,6 +1828,7 @@ DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
 
 static const String ARGUMENT_TOKENIZER = "tokenizer";
 static const String ARGUMENT_PREPROCESSOR = "preprocessor";
+static const String ARGUMENT_POSTPROCESSOR = "postprocessor";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
@@ -1897,6 +1924,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
 
     auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
+    auto postprocessor_ast = extractASTOption(options, ARGUMENT_POSTPROCESSOR, false);
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
 
     /// The parameters below can be set in the index definition or via the `text_index_*` table settings.
@@ -1917,7 +1945,8 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         dictionary_block_frontcoding_compression,
         posting_list_block_size,
         positions,
-        std::move(preprocessor_ast)};
+        std::move(preprocessor_ast),
+        std::move(postprocessor_ast)};
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
@@ -1935,6 +1964,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
 
     auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
+    auto postprocessor_ast = extractASTOption(options, ARGUMENT_POSTPROCESSOR, false);
     TokenizerFactory::instance().get(tokenizer_ast);
 
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE)
@@ -1991,6 +2021,10 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     /// However it will be parsed again for index construction, generally immediately after this call.
     /// This is a bit redundant but that doesn't impact performance anyhow because the expression is intended to be simple enough.
     MergeTreeIndexTextPreprocessor preprocessor(preprocessor_ast, index);
+
+    /// Create the postprocessor for validation.
+    /// This validates the token transformation expression (always String -> String).
+    MergeTreeIndexTextPostprocessor postprocessor(postprocessor_ast, index);
 }
 
 }
