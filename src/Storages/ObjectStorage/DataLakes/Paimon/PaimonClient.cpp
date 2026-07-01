@@ -173,7 +173,10 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
     {
         if (object_storage->exists(StoredObject(relative_path_with_metadata.relative_path)))
         {
-            auto buf = createReadBuffer(relative_path_with_metadata, object_storage, getContext(), log);
+            /// The LATEST hint is a mutable pointer file overwritten in place on every
+            /// commit. Bypass caching layers, which cache the file size and would return a
+            /// stale-length prefix if the writer rewrites it while we read (avoid_caches).
+            auto buf = createReadBuffer(relative_path_with_metadata, object_storage, getContext(), log, /*read_settings=*/ std::nullopt, /*avoid_caches=*/ true);
             String hint_version_string;
             readStringUntilEOF(hint_version_string, *buf);
             {

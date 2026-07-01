@@ -1099,7 +1099,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
-    const std::optional<ReadSettings> & read_settings)
+    const std::optional<ReadSettings> & read_settings,
+    bool avoid_caches)
 {
     const auto & settings = context_->getSettingsRef();
     const auto & effective_read_settings = read_settings.has_value() ? read_settings.value() : context_->getReadSettings();
@@ -1129,6 +1130,14 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     bool use_page_cache = !use_distributed_cache && !use_filesystem_cache
         && effective_read_settings.page_cache_settings.cache && effective_read_settings.use_page_cache_for_object_storage;
 
+    if (avoid_caches)
+    {
+        /// All of these snapshot the file size and would serve a stale-length prefix if the
+        /// object is rewritten under us; skip them entirely for mutable objects.
+        use_distributed_cache = false;
+        use_filesystem_cache = false;
+        use_page_cache = false;
+    }
 
     /// We need object metadata for a few use cases:
     /// 1. object size suggests whether we need to use prefetch

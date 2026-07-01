@@ -34,7 +34,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
-    const std::optional<ReadSettings> & read_settings = std::nullopt);
+    const std::optional<ReadSettings> & read_settings = std::nullopt,
+    /// Bypass all caching layers (page/filesystem/distributed cache). These snapshot the
+    /// file size and cannot see a concurrent external rewrite, so they must not be used to
+    /// read mutable objects such as a data-lake "current version" pointer file.
+    bool avoid_caches = false);
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args);
 std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context);
