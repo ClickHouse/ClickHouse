@@ -1147,6 +1147,14 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
 /// settings packet is stripped separately, on the per-shard context.
 static void stripInitiatorOnlySettingsFromQueryText(ASTInsertQuery & query)
 {
+    /// An `INSERT ... SELECT ... SETTINGS ...` keeps the source SELECT's own SETTINGS node too:
+    /// `ParserInsertQuery` copies those settings onto the INSERT (via `InsertQuerySettingsPushDownVisitor`)
+    /// but does not remove them from the SELECT, and `ASTInsertQuery::formatImpl` serializes the SELECT
+    /// after this — so a setting written on the source SELECT would otherwise still ride along in the
+    /// forwarded query text. Strip the SELECT subtree with the shared query strip (both `changes` and
+    /// `default_settings`, across every SETTINGS carrier it contains); it is a no-op when there is no SELECT.
+    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query.select);
+
     if (!query.settings_ast)
         return;
 

@@ -6,3 +6,5 @@
 1	0	0
 -- ReadFromCluster (a SELECT via the fileCluster IStorageCluster) does not forward initiator-only settings in the query text
 1	0	0
+-- an initiator-only setting on the source SELECT (not the INSERT) is stripped from the forwarded query text
+1	0	0
