@@ -20,6 +20,13 @@ INSERT INTO with_fill_in_pr SELECT number % 3, number FROM system.numbers LIMIT 
 
 SET use_index_for_in_with_subqueries = 1;
 
+-- `WITH FILL` cannot be serialized in a sort description (`serializeSortDescription` throws
+-- `NOT_IMPLEMENTED`). The "distributed plan" CI configuration enables `serialize_query_plan` in the
+-- default profile, which would make this subquery's plan serialization fail with an error unrelated
+-- to the `Not-ready Set` recovery this test exercises. Keep the plan un-serialized so the test is
+-- deterministic across configurations.
+SET serialize_query_plan = 0;
+
 -- Sanity check: the query produces the correct result without the failpoint.
 -- Rows with dt = number % 3 == 2 have idx in {2, 5, 8, ..., 99998} (min 2, max 99998); `WITH FILL`
 -- (default step 1) fills the ordered result to {2, 3, ..., 99998}, so the outer set matches every
