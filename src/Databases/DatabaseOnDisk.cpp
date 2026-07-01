@@ -59,6 +59,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsBool use_declared_schema_for_parameterized_views;
 }
 
 namespace ErrorCodes
@@ -111,7 +112,14 @@ std::pair<String, StoragePtr> createTableFromAST(
     bool has_columns = true;
     if (ast_create_query.is_dictionary)
         has_columns = false;
-    if (ast_create_query.isParameterizedView())
+    /// Parameterized views normally do not carry a column list. But when
+    /// `use_declared_schema_for_parameterized_views` is enabled and an explicit schema was
+    /// declared at creation time, that schema is part of the stored metadata and must be
+    /// restored on reload/ATTACH; otherwise `SHOW COLUMNS`/`system.columns` would lose the
+    /// declared schema and `validateParameterizedViewSchema` would silently stop checking it.
+    if (ast_create_query.isParameterizedView()
+        && !(context->getSettingsRef()[Setting::use_declared_schema_for_parameterized_views]
+             && ast_create_query.columns_list && ast_create_query.columns_list->columns))
         has_columns = false;
 
     if (has_columns)

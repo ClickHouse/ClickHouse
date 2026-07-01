@@ -82,6 +82,7 @@
 #include <Interpreters/WasmModuleManager.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/validateParameterizedViewSchema.h>
 #include <Core/SettingsQuirks.h>
 #include <Core/UUID.h>
 #include <Access/AccessControl.h>
@@ -359,6 +360,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
+    extern const SettingsBool use_declared_schema_for_parameterized_views;
 }
 
 namespace MergeTreeSetting
@@ -2878,18 +2880,31 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
-            auto view_metadata = table->getInMemoryMetadataPtr(getQueryContext(), false);
-            auto query = view_metadata->getSelectQuery().inner_query->clone();
+            auto original_view_metadata = table->getInMemoryMetadataPtr(getQueryContext(), false);
+            auto query = original_view_metadata->getSelectQuery().inner_query->clone();
             NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
             StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
 
             ASTCreateQuery create;
             create.set(create.select, query);
-            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
+
+            auto sql_security = make_intrusive<ASTSQLSecurity>();
+            sql_security->type = original_view_metadata->sql_security_type;
+            if (original_view_metadata->definer)
+                sql_security->definer = make_intrusive<ASTUserNameWithHost>(*original_view_metadata->definer);
+            create.set(create.sql_security, sql_security);
+
+            auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
+
+            if (getSettingsRef()[Setting::use_declared_schema_for_parameterized_views])
+                validateParameterizedViewSchema(table_name, sample_block->getNamesAndTypesList(), original_view_metadata->getColumns());
+
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
                                                      /* comment */ "",
+                                                    /* context */ shared_from_this(),
                                                      /* is_parameterized_view */ true);
             res->startup();
             function->setPreferSubqueryToFunctionFormatting(true);
@@ -3149,10 +3164,15 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
+
+    if (getSettingsRef()[Setting::use_declared_schema_for_parameterized_views])
+        validateParameterizedViewSchema(table_name, sample_block->getNamesAndTypesList(), original_view_metadata->getColumns());
+
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
                                                 ColumnsDescription(sample_block->getNamesAndTypesList()),
             /* comment */ "",
+            /* context */ shared_from_this(),
             /* is_parameterized_view */ true);
     res->startup();
     return res;

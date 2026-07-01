@@ -148,6 +148,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+    extern const SettingsBool use_declared_schema_for_parameterized_views;
 }
 
 namespace ServerSetting
@@ -896,7 +897,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.select)
     {
         if (create.isParameterizedView())
+        {
+            if (getContext()->getSettingsRef()[Setting::use_declared_schema_for_parameterized_views] && create.columns_list && create.columns_list->columns)
+            {
+                properties.columns = getColumnsDescription(
+                    *create.columns_list->columns,
+                    getContext(),
+                    mode,
+                    is_restore_from_backup
+                );
+            }
             return properties;
+        }
 
         if (create.aliases_list)
         {
