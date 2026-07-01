@@ -1,0 +1,11 @@
+SELECT * FROM a.`b.c`
+SELECT * FROM a.`b.c.d`
+EXISTS TABLE a.`b.c`
+SHOW CREATE TABLE a.`b.c`
+DESCRIBE TABLE a.`b.c`
+INSERT INTO a.`b.c` FORMAT Values
+USE `a.b`
+USE `a.b.c`
+GRANT SELECT ON a.`b.`* TO test_user
+GRANT SELECT ON a.`b.c.`* TO test_user
+GRANT SELECT ON a.`b.c` TO test_user
