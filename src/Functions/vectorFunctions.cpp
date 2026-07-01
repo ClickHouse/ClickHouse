@@ -1410,6 +1410,7 @@ public:
 
 inline constexpr char L2DistanceTransposedName[] = "L2DistanceTransposed";
 inline constexpr char CosineDistanceTransposedName[] = "cosineDistanceTransposed";
+inline constexpr char DotProductTransposedName[] = "dotProductTransposed";
 
 
 /// Helper to detect if Traits has is_transposed member, defaults to false
@@ -1509,6 +1510,7 @@ extern FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
 
 extern FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_);
 extern FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_);
+extern FunctionPtr createFunctionArrayDotProductTransposed(ContextPtr context_);
 
 struct DotProduct
 {
@@ -1625,6 +1627,15 @@ struct CosineDistanceTransposedTraits
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistanceTransposed;
 };
 
+struct DotProductTransposedTraits
+{
+    static constexpr auto name = "dotProductTransposed";
+    static constexpr bool is_transposed = true;
+
+    static FunctionPtr CreateTupleFunction(ContextPtr) { return nullptr; } /// NOLINT(readability-identifier-naming)
+    static constexpr auto CreateArrayFunction = createFunctionArrayDotProductTransposed;
+};
+
 using TupleOrArrayFunctionDotProduct = TupleOrArrayFunction<DotProduct>;
 
 using TupleOrArrayFunctionL1Norm = TupleOrArrayFunction<L1NormTraits>;
@@ -1642,6 +1653,7 @@ using TupleOrArrayFunctionCosineDistance = TupleOrArrayFunction<CosineDistanceTr
 
 using TupleOrArrayFunctionL2DistanceTransposed = TupleOrArrayFunction<L2DistanceTransposedTraits>;
 using TupleOrArrayFunctionCosineDistanceTransposed = TupleOrArrayFunction<CosineDistanceTransposedTraits>;
+using TupleOrArrayFunctionDotProductTransposed = TupleOrArrayFunction<DotProductTransposedTraits>;
 
 REGISTER_FUNCTION(VectorFunctions)
 {
@@ -2476,6 +2488,47 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
     factory.registerFunction<TupleOrArrayFunctionCosineDistanceTransposed>(documentation_cosine_distance_transposed);
 
+    /// DotProductTransposed documentation
+    FunctionDocumentation::Description description_dot_product_transposed = R"(
+Calculates the approximate [dot product](https://en.wikipedia.org/wiki/Dot_product) (inner product) of two vectors (the values of the vectors are the coordinates). Unlike the distance functions, this is a similarity measure: the larger the returned value, the more similar the vectors are.
+    )";
+    FunctionDocumentation::Syntax syntax_dot_product_transposed = "dotProductTransposed(vector1, vector2, p)";
+    FunctionDocumentation::Arguments arguments_dot_product_transposed
+        = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}},
+           {"reference", "Reference vector.", {"Array(T)"}},
+           {"p",
+            "Number of bits from each vector element to use in the calculation (1 to element bit-width). The quantization level controls "
+            "the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more "
+            "bits increases accuracy at the cost of performance.",
+            {"UInt"}}};
+    FunctionDocumentation::ReturnedValue returned_value_dot_product_transposed
+        = {"Returns the approximate dot product of the two vectors. Always returns `Float64`.", {"Float64"}};
+    FunctionDocumentation::Examples examples_dot_product_transposed
+        = {{"Basic usage",
+            R"(
+CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, [0, 1]);
+SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
+)",
+            R"(
+┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
+│                                        2 │
+└──────────────────────────────────────────┘
+            )"}};
+    FunctionDocumentation::IntroducedIn introduced_in_dot_product_transposed = {26, 7};
+    FunctionDocumentation::Category category_dot_product_transposed = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_dot_product_transposed
+        = {description_dot_product_transposed,
+           syntax_dot_product_transposed,
+           arguments_dot_product_transposed,
+           {},
+           returned_value_dot_product_transposed,
+           examples_dot_product_transposed,
+           introduced_in_dot_product_transposed,
+           category_dot_product_transposed};
+
+    factory.registerFunction<TupleOrArrayFunctionDotProductTransposed>(documentation_dot_product_transposed);
+
     // Register aliases for distance functions
     factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::Case::Insensitive);
@@ -2485,6 +2538,7 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
     factory.registerAlias("distanceCosine", TupleOrArrayFunctionCosineDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2Transposed", L2DistanceTransposedName, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceCosineTransposed", CosineDistanceTransposedName, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("scalarProductTransposed", DotProductTransposedName, FunctionFactory::Case::Insensitive);
 
     /// L1Normalize documentation
     FunctionDocumentation::Description description_l1_normalize = R"(
