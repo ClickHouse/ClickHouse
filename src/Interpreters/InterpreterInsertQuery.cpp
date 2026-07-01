@@ -773,7 +773,18 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // keeps `sink_stream_size` at 1 (preserving the previous behavior) unless all destinations
     // support parallel inserts, so this stays a no-op for the default `max_insert_threads = 0`.
     // Asynchronous inserts have their own batching/flush mechanism, so they keep a single stream.
-    const size_t insert_threads = async_insert ? 1 : max_insert_threads;
+    //
+    // With `use_strict_insert_block_limits`, the deduplication info (source block number) is stamped
+    // by a per-stream `AddDeduplicationInfoTransform` *after* the fan-out (see below), so each parallel
+    // branch restarts its block numbering from zero. Together with a non-empty `insert_deduplication_token`
+    // (whose dedup id is `token` + source block number, independent of the block contents) that produces
+    // identical ids across branches, which `MergeTreeSink` treats as duplicates and skips - silently
+    // dropping rows of a single parallel `INSERT`. Keep such inserts single-stream (as before), so the
+    // numbering stays global. Without a token the ids are redefined from the data hash, so they stay unique.
+    const bool strict_tokenized_insert = !async_insert
+        && settings[Setting::use_strict_insert_block_limits]
+        && !settings[Setting::insert_deduplication_token].value.empty();
+    const size_t insert_threads = (async_insert || strict_tokenized_insert) ? 1 : max_insert_threads;
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table,
         query_ptr,
