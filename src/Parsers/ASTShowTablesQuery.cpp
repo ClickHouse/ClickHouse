@@ -57,7 +57,10 @@ String ASTShowTablesQuery::getFrom() const
 
 void ASTShowTablesQuery::formatLike(WriteBuffer & ostr, const FormatSettings &) const
 {
-    if (!like.empty())
+    /// Emit the clause whenever a `LIKE` was present, even with an empty pattern: `SHOW TABLES NOT
+    /// LIKE ''` / `SHOW TABLES ILIKE ''` set `not_like` / `case_insensitive_like` while leaving
+    /// `like` empty, and dropping the clause would lose those flags on a format -> parse round-trip.
+    if (!like.empty() || not_like || case_insensitive_like)
     {
         ostr << (not_like ? " NOT" : "")
             << (case_insensitive_like ? " ILIKE " : " LIKE ")
@@ -76,45 +79,49 @@ void ASTShowTablesQuery::formatLimit(WriteBuffer & ostr, const FormatSettings & 
 
 void ASTShowTablesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    /// The `FULL` modifier is parsed for every `SHOW` variant (before the selector keyword), so it
+    /// must be emitted here for every variant. Otherwise `SHOW FULL TABLES` formats as `SHOW TABLES`
+    /// and re-parses with `full = false`, which both loses semantics (`full` changes the result
+    /// columns) and breaks the format -> parse tree-hash round-trip the rewrite-rule matcher relies on.
+    ostr << "SHOW " << (full ? "FULL " : "");
+
     if (databases)
     {
-        ostr << "SHOW DATABASES";
+        ostr << "DATABASES";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
-
     }
     else if (clusters)
     {
-        ostr << "SHOW CLUSTERS";
+        ostr << "CLUSTERS";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
-
     }
     else if (cluster)
     {
-        ostr << "SHOW CLUSTER";
+        ostr << "CLUSTER";
         ostr << " " << backQuoteIfNeed(cluster_str);
     }
     else if (caches)
     {
-        ostr << "SHOW FILESYSTEM CACHES";
+        ostr << "FILESYSTEM CACHES";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
     }
     else if (m_settings)
     {
-        ostr << "SHOW " << (changed ? "CHANGED " : "") << "SETTINGS";
+        ostr << (changed ? "CHANGED " : "") << "SETTINGS";
         formatLike(ostr, settings);
     }
     else if (merges)
     {
-        ostr << "SHOW MERGES";
+        ostr << "MERGES";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
     }
     else
     {
-        ostr << "SHOW " << (temporary ? "TEMPORARY " : "") <<
+        ostr << (temporary ? "TEMPORARY " : "") <<
              (dictionaries ? "DICTIONARIES" : "TABLES");
 
         if (from)
