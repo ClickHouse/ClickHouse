@@ -21,6 +21,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Parsers/IAST.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
@@ -671,6 +672,56 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         {
             if (!columns_present_in_parts.contains(storage_column.name) && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
+        }
+
+        /// Partial fix for (1) above: for Nested subcolumns whose DEFAULT transitively depends on
+        /// an already-expired column, also expire them — vertical merge cannot materialize them
+        /// correctly, and the wrong array dimensions corrupt shared Nested offsets.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/86123
+        {
+            auto & expired_columns = global_ctx->new_data_part->expired_columns;
+            bool changed = true;
+            while (changed)
+            {
+                changed = false;
+                for (const auto & storage_column : global_ctx->storage_columns)
+                {
+                    if (expired_columns.contains(storage_column.name))
+                        continue;
+                    if (columns_present_in_parts.contains(storage_column.name))
+                        continue;
+
+                    auto split = Nested::splitName(storage_column.name);
+                    if (split.second.empty())
+                        continue;
+
+                    auto col_default = columns_desc.getDefault(storage_column.name);
+                    if (!col_default || !col_default->expression)
+                        continue;
+
+                    IdentifierNameSet identifiers;
+                    col_default->expression->collectIdentifierNames(identifiers);
+
+                    for (const auto & identifier : identifiers)
+                    {
+                        /// An identifier in the DEFAULT expression may reference a subcolumn (e.g. `m.keys`),
+                        /// while `expired_columns` holds physical storage column names (e.g. `m`). Resolve the
+                        /// identifier back to its storage column before the lookup. Identifiers that are not
+                        /// columns at all (e.g. lambda parameters) are ignored.
+                        auto resolved = columns_desc.tryGetColumn(
+                            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), identifier);
+                        if (!resolved)
+                            continue;
+
+                        if (expired_columns.contains(resolved->getNameInStorage()))
+                        {
+                            expired_columns.emplace(storage_column.name);
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+            }
         }
     }
 
