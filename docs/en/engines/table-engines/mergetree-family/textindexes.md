@@ -86,12 +86,12 @@ CREATE TABLE table
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
+                                [, positions = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
-                                [, positions = 0 | 1 ]
                             )
 )
 ENGINE = MergeTree
@@ -121,12 +121,12 @@ ALTER TABLE table
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
+                                [, positions = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
-                                [, positions = 0 | 1 ]
                             )
 
 ```
@@ -324,7 +324,7 @@ When the column is of type `Array(String)`, the postprocessor still operates on 
 Usage of non-deterministic functions is disallowed.
 
 The postprocessor is applied to each generated token during index build (for the `array` tokenizer, each array element is a token). At query time, the behavior depends on the function:
-- For `hasToken`, `hasAllTokens`, and `hasAnyTokens` (with any tokenizer): the postprocessor is applied to both the haystack tokens and the search needle, enabling fully normalized matching (e.g., case-insensitive search).
+- For `hasToken`, `hasAllTokens`, `hasAnyTokens`, and `hasPhrase` (with any supported tokenizer): the postprocessor is applied to both the haystack tokens and the search needle, enabling fully normalized matching (e.g., case-insensitive search). For `hasPhrase`, the postprocessed tokens are positioned densely, so a token the postprocessor drops leaves no positional gap and the phrase still matches across it — e.g. with a stop-word postprocessor that drops `the`, `hasPhrase(col, 'see cat')` matches a document `see the cat`.
 - For all other functions (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): only the search needle is postprocessed for the index-hint lookup; the row-level predicate still compares against the original column values.
 
 Examples:
@@ -430,8 +430,9 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 **Function support**.
 
 For predicates that consult the text index, the preprocessor and postprocessor are applied to the search value before the granule-level check so that the index lookup uses the same tokens that were stored at index build.
-For most functions (`=`, `IN`, `hasPhrase`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), the text index is used only to skip irrelevant data blocks; ClickHouse still verifies each surviving row using the original predicate against the original column data.
+For most functions (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), the text index is used only to skip irrelevant data blocks; ClickHouse still verifies each surviving row using the original predicate against the original column data.
 For token search functions (`hasToken`, `hasAllTokens`, `hasAnyTokens`), the text index is the primary evaluation path: ClickHouse normalizes the needle through the same preprocessor, tokenizer, and postprocessor that were applied at index build time, and uses this normalized form for both indexed and non-indexed table parts. With a postprocessor, the haystack tokens are also normalized at query time (for any tokenizer, not only `array`), so both sides of the comparison are consistently transformed and the result does not depend on whether the index is read directly (setting `query_plan_direct_read_from_text_index`) or whether a given part has a materialized index — e.g. enabling case-insensitive matching for `hasAllTokens(col, ['FOO'])` with a `lower` postprocessor.
+Without `positions`, `hasPhrase` uses the index only as a hint and verifies each surviving row with the original predicate; a postprocessor additionally normalizes both the phrase and the haystack tokens the same way, so the result is independent of the read path, and tokens the postprocessor drops do not break phrase adjacency. With `positions = 1`, `hasPhrase` uses exact direct reads (still applying the postprocessor, if any).
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
 | Function | Supports a preprocessor | Compatible tokenizers | Supports a postprocessor |
@@ -464,7 +465,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 There is no fallback to using the index as a hint: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
 The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
 
-**Other arguments (optional)**.
+**Experimental: Positions argument (optional)**.
 
 Experimental parameter `positions` (default: `0`) controls whether the index stores token positions.
 When set to `1`, the index additionally stores positional data (in a `.pos` file) which enables exact phrase matching via direct reads for the [`hasPhrase`](#functions-example-hasphrase) function.
@@ -472,6 +473,11 @@ Storing positions increases the on-disk size of the index and the write cost, so
 The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
 Creating an index with `positions = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_positions`](/operations/settings/merge-tree-settings#allow_experimental_text_index_positions) to be enabled.
 Set `positions = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
+
+:::warning
+This argument is experimental and should only be used for testing.
+Set MergeTree setting [`allow_experimental_text_index_positions`](/operations/settings/merge-tree-settings#allow_experimental_text_index_positions) to enable storing positions.
+:::
 
 <details markdown="1">
 
@@ -1107,20 +1113,40 @@ SELECT * FROM events WHERE data.level IN ('error', 'critical');
 
 ### Phrase search {#text-index-phrase-search}
 
-Text index supports phrase search via the `hasPhrase` function.
-All tokens in the phrase must appear consecutively and in the same order in the document.
+A regular text index search, for example
+
+```sql
+SELECT *
+FROM tab
+WHERE hasAllTokens(col, 'weather in Tokyo')
+```
+
+matches all rows that contain the given tokens in arbitrary order.
+In the example, row `While she stayed in Tokyo, the weather was great.` matches the filter.
+
+In contrast, phrase search means matching the tokens in the given order.
+For example,
+
+```sql
+SELECT *
+FROM tab
+WHERE hasPhrase(col, 'weather in Tokyo')
+```
+
+matches any row that contains the token sequence `weather in Tokyo` like `How is the weather in Tokyo?`?
 
 The text index accelerates phrase search by intersecting the posting lists for all tokens in the phrase to identify candidate granules.
 Within those granules, ClickHouse then verifies exact token adjacency.
+This process is relatively costly and slower than regular text search queries.
+To speed phrase search queries up, please enable position storage in the text index (see `Optional parameters` above).
 
-`hasPhrase` is supported with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, and `asciiCJK`.
-
-The phrase string is tokenized using the index's configured tokenizer.
-Tokenizer separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')` for the `splitByNonAlpha` tokenizer.
+`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, and `asciiCJK`.
+The given phrase string is tokenized using the index's tokenizer.
+Separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')`, assuming `splitByNonAlpha` is used as tokenizer.
 
 #### Example {#text-index-phrase-search-example}
 
-```sql title="Query"
+```sql
 CREATE TABLE tab (
     id UInt32,
     text String,
@@ -1297,11 +1323,10 @@ This optimization supports only functions `like` and `ilike`.
 
 ### Caching {#caching}
 
-Different caches are available to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
+Different server-wide caches exist to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
 Currently, there are caches for the deserialized headers, tokens, and posting lists of the text index to reduce I/O.
-They can be enabled via settings [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), [use_text_index_tokens_cache](/operations/settings/settings#use_text_index_tokens_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache).
+Use settings [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), [use_text_index_tokens_cache](/operations/settings/settings#use_text_index_tokens_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache) to disable reading and writing from/to the individual caches by queries.
 
-By default, all caches are disabled.
 To clear the caches, use statement [SYSTEM CLEAR TEXT INDEX CACHES](../../../sql-reference/statements/system#drop-text-index-caches)
 
 Please refer the following server settings to configure the caches.
@@ -1398,6 +1423,11 @@ This sparse index structure is similar to ClickHouse's [sparse primary key index
 The posting lists for all tokens are laid out sequentially in the postings list file.
 To save space while still allowing fast intersection and union operations, the posting lists are stored as [roaring bitmaps](https://roaringbitmap.org/).
 If the posting list is larger than `posting_list_block_size`, it is split into multiple blocks that are stored sequentially to the postings lists file.
+
+**Positions file (.pos)**
+
+Optional, only if index argument `positions = 1`.
+Stores the positions of the tokens within matching rows.
 
 **Merging of text indexes**
 

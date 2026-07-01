@@ -57,7 +57,7 @@ started	1
 1
 1
 1
-1
+0
 1
 0
 8. Stop-word postprocessor: empty-mapped tokens must never match vacuously.
@@ -81,4 +81,3 @@ started	1
 - The postprocessor must not contain non-deterministic functions
 - The postprocessor must not contain arrayJoin
 - A postprocessor that produces a token containing separator characters throws BAD_ARGUMENTS at query time
-- A postprocessor cannot be combined with positions (would break positional phrase search)

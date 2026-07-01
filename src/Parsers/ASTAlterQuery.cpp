@@ -284,6 +284,12 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
                      ;
         constraint->format(ostr, settings, state, frame);
     }
+    else if (type == ASTAlterCommand::MODIFY_CONSTRAINT)
+    {
+        ostr << "MODIFY CONSTRAINT " << (if_exists ? "IF EXISTS " : "")
+                     ;
+        constraint_decl->format(ostr, settings, state, frame);
+    }
     else if (type == ASTAlterCommand::ADD_PROJECTION)
     {
         ostr << "ADD PROJECTION " << (if_not_exists ? "IF NOT EXISTS " : "")
