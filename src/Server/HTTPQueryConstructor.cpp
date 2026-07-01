@@ -86,6 +86,14 @@ String tryParseFilterComponent(const String & component)
     return {};
 }
 
+/// A fully back-quoted component (`` `name` ``) is an explicit identifier (a database/table name), so it
+/// must be treated as a name — never a filter — even when it contains characters that look like a filter
+/// operator, e.g. `` `a=1` `` or `` `a>1` ``. Otherwise such a table name is misparsed as a filter.
+bool isFullyBackQuotedComponent(const String & component)
+{
+    return component.size() >= 2 && component.front() == '`' && component.back() == '`';
+}
+
 }
 
 
@@ -112,7 +120,7 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
     for (size_t i = 0; i < components.size(); ++i)
     {
         String filter_expr;
-        if (allow_filters)
+        if (allow_filters && !isFullyBackQuotedComponent(components[i]))
             filter_expr = tryParseFilterComponent(components[i]);
 
         if (!filter_expr.empty())
