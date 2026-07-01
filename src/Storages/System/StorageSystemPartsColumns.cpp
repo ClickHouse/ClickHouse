@@ -15,6 +15,8 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <IO/ReadSettings.h>
+#include <Interpreters/Context.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/IDatabase.h>

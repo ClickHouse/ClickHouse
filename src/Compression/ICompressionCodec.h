@@ -7,6 +7,7 @@
 #include <base/types.h>
 
 #include <memory>
+#include <optional>
 
 class SipHash;
 
@@ -44,10 +45,14 @@ public:
     UInt64 getHash() const;
 
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
-    UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
+    virtual UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
 
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
+
+    /// Exact compressed payload size (no header) for the given input. std::nullopt if this codec cannot determine its output size cheaply.
+    /// Same value as doCompressData  would return, computed without actually compressing.
+    virtual std::optional<UInt32> tryGetCompressedSize(const char * /*source*/, UInt32 /*source_size*/) const { return std::nullopt; }
 
     /// Report decompression errors as CANNOT_DECOMPRESS, not CORRUPTED_DATA
     void setExternalDataFlag() { decompression_error_code = ErrorCodes::CANNOT_DECOMPRESS; }
@@ -102,7 +107,8 @@ protected:
     /// This is used for fuzz testing
     friend int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
-    /// Return size of compressed data without header
+    /// Upper bound on the compressed data size without the header. While compressing, a codec may temporarily write more bytes
+    /// into `dest` than its final result, so the bound covers those writes too and may exceed the actual compressed size.
     virtual UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const { return uncompressed_size; }
 
     /// Actually compress data without header

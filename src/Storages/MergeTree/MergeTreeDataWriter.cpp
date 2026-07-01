@@ -964,7 +964,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         /*reset_columns=*/false,
         /*blocks_are_granules_size=*/false,
         context->getWriteSettings(),
-        static_cast<WrittenOffsetSubstreams *>(nullptr));
+        static_cast<WrittenOffsetSubstreams *>(nullptr),
+        WriteOrigin::Insert,
+        /*is_explicit_recompression=*/ false);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1037,7 +1039,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     Block block,
     const ProjectionDescription & projection,
     MergeTreeIndices indices,
-    bool merge_is_needed)
+    bool merge_is_needed,
+    WriteOrigin write_origin)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1162,7 +1165,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
         data.getContext()->getWriteSettings(),
-        static_cast<WrittenOffsetSubstreams *>(nullptr));
+        static_cast<WrittenOffsetSubstreams *>(nullptr),
+        write_origin,
+        /*is_explicit_recompression=*/ false);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1195,8 +1200,17 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         query_settings,
         *data.getSettings());
 
-    return writeProjectionPartImpl(
-        projection.name, false /* is_temp */, parent_part, data, log, std::move(block), projection, std::move(indices), merge_is_needed);
+        return writeProjectionPartImpl(
+            projection.name,
+            false /* is_temp */,
+            parent_part,
+            data,
+            log,
+            std::move(block),
+            projection,
+            std::move(indices),
+            merge_is_needed,
+            WriteOrigin::Insert);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1220,7 +1234,16 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
 
     auto part_name = fmt::format("{}_{}", projection.name, block_num);
     auto new_part = writeProjectionPartImpl(
-        part_name, /*is_temp=*/ true, parent_part, data, log, std::move(block), projection, std::move(indices), /*merge_is_needed=*/true);
+        part_name,
+        /*is_temp=*/true,
+        parent_part,
+        data,
+        log,
+        std::move(block),
+        projection,
+        std::move(indices),
+        /*merge_is_needed=*/true,
+        WriteOrigin::MergeOrMutation);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;

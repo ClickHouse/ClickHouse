@@ -8741,6 +8741,13 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
     return getContext()->chooseCompressionCodec(part_size_compressed, part_size_ratio);
 }
 
+bool MergeTreeData::isExplicitRecompression(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto best_ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getRecompressionTTLs(), ttl_infos.recompression_ttl, current_time, true);
+    return best_ttl_entry && !CompressionCodecFactory::isDefaultCodec(best_ttl_entry->recompression_codec);
+}
+
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds) const
 {
     DataParts res;
@@ -11226,7 +11233,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         /*reset_columns_=*/false,
         /*blocks_are_granules_size=*/false,
         /*write_settings=*/{},
-        /*written_offset_substreams=*/nullptr);
+        /*written_offset_substreams=*/nullptr,
+        /*write_origin=*/ WriteOrigin::Insert, /// Empty 0-row part (also reached by mutations): no data is written, so codec selection never runs and these two args have no effect.
+        /*is_explicit_recompression=*/ false);
 
     bool sync_on_insert = (*settings)[MergeTreeSetting::fsync_after_insert];
 

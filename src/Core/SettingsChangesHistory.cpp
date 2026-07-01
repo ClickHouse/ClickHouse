@@ -1274,6 +1274,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
+            {"allow_experimental_adaptive_codec_selection", false, false, "New setting."},
             {"allow_experimental_text_index_positions", false, false, "New setting"},
         });
 

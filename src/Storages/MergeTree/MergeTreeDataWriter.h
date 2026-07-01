@@ -139,7 +139,8 @@ private:
         Block block,
         const ProjectionDescription & projection,
         MergeTreeIndices indices,
-        bool merge_is_needed);
+        bool merge_is_needed,
+        WriteOrigin write_origin);
 
     MergeTreeData & data;
     LoggerPtr log;
