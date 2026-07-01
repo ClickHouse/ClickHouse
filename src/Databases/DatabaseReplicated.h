@@ -81,7 +81,11 @@ public:
     /// If current query is initial, then the following methods add metadata updating ZooKeeper operations to current ZooKeeperMetadataTransaction.
     void dropTable(ContextPtr, const String & table_name, bool sync) override;
     void dropDetachedTable(
-        ContextPtr local_context, const String & table_name, bool sync, const std::function<void()> & dependency_cleanup) override;
+        ContextPtr local_context,
+        const String & table_name,
+        bool sync,
+        const StoragePtr & detached_table,
+        const std::function<void()> & dependency_cleanup) override;
     bool hasDetachedTableMetadataInZooKeeper(ContextPtr local_context, const String & table_name) const;
     bool dropDetachedTableMetadataIfExistsInZooKeeper(ContextPtr local_context, const String & table_name);
     void renameTable(ContextPtr context, const String & table_name, IDatabase & to_database,

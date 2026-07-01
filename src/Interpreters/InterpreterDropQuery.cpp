@@ -473,7 +473,8 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
     UUID detached_table_uuid = detached_create->uuid;
     StorageID detached_table_id(table_id.getDatabaseName(), table_name, detached_table_uuid);
 
-    /// Load the table to check if it can be dropped (e.g. size limits)
+    /// Load the table before metadata is moved to `metadata_dropped`.
+    /// The same "stub" StoragePtr is used for size checks and for the dropped-table queue.
     String data_path = DatabaseCatalog::getStoreDirPath(detached_table_uuid);
     detached_create->setDatabase(table_id.getDatabaseName());
     detached_create->setTable(table_name);
@@ -496,6 +497,7 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
         context_,
         table_name,
         query.sync,
+        detached_table,
         [detached_table_id, check_ref_deps, check_loading_deps]()
         {
             DatabaseCatalog::instance().removeDependencies(detached_table_id, check_ref_deps, check_loading_deps, false);

@@ -250,11 +250,19 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
 }
 
 void DatabaseAtomic::dropDetachedTable(
-    ContextPtr local_context, const String & table_name, const bool sync, const std::function<void()> & dependency_cleanup)
+    ContextPtr local_context,
+    const String & table_name,
+    const bool sync,
+    const StoragePtr & detached_table,
+    const std::function<void()> & dependency_cleanup)
 {
     auto drop_info = prepareDropDetachedTable(local_context, table_name);
+    chassert(detached_table);
+    chassert(detached_table->getStorageID().getDatabaseName() == drop_info.storage_id.getDatabaseName());
+    chassert(detached_table->getStorageID().getTableName() == drop_info.storage_id.getTableName());
+    chassert(detached_table->getStorageID().uuid == drop_info.storage_id.uuid);
     commitDropDetachedTableMetadata(local_context, table_name, drop_info);
-    finishDropDetachedTable(table_name, sync, dependency_cleanup, drop_info);
+    finishDropDetachedTable(table_name, sync, detached_table, dependency_cleanup, drop_info);
 }
 
 DatabaseAtomic::DropDetachedTableInfo DatabaseAtomic::prepareDropDetachedTable(ContextPtr local_context, const String & table_name)
@@ -291,15 +299,23 @@ DatabaseAtomic::DropDetachedTableInfo DatabaseAtomic::prepareDropDetachedTable(C
 void DatabaseAtomic::finishDropDetachedTable(
     const String & table_name,
     const bool sync,
+    const StoragePtr & detached_table,
     const std::function<void()> & dependency_cleanup,
     DropDetachedTableInfo & drop_info)
 {
     auto db_disk = getDisk();
 
     chassert(drop_info.table_metadata_path_drop.has_value());
+    chassert(detached_table);
+    chassert(detached_table->getStorageID().getDatabaseName() == drop_info.storage_id.getDatabaseName());
+    chassert(detached_table->getStorageID().getTableName() == drop_info.storage_id.getTableName());
+    chassert(detached_table->getStorageID().uuid == drop_info.storage_id.uuid);
     LOG_TRACE(log, "Table {} ready for remove.", table_name);
+
+    /// `detached_table` was reconstructed from detached metadata before the metadata move.
+    /// Passing it here keeps queue registration from reading the moved metadata file.
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(
-        drop_info.storage_id, nullptr, db_disk, *drop_info.table_metadata_path_drop, sync);
+        drop_info.storage_id, detached_table, db_disk, *drop_info.table_metadata_path_drop, sync);
 
     /// UUID reservation must survive until `dropTableFinally` calls `removeUUIDMappingFinally`.
     /// Before this point, `reservation` destructor restores previous state on exceptions/cancellation.

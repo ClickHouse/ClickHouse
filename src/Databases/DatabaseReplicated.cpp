@@ -2263,7 +2263,11 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
 }
 
 void DatabaseReplicated::dropDetachedTable(
-    ContextPtr local_context, const String & table_name, bool sync, const std::function<void()> & dependency_cleanup)
+    ContextPtr local_context,
+    const String & table_name,
+    bool sync,
+    const StoragePtr & detached_table,
+    const std::function<void()> & dependency_cleanup)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::dropDetachedTable");
     waitDatabaseStarted();
@@ -2309,7 +2313,7 @@ void DatabaseReplicated::dropDetachedTable(
             tables_metadata_digest = new_digest;
     }
 
-    finishDropDetachedTable(table_name, sync, dependency_cleanup, drop_info);
+    finishDropDetachedTable(table_name, sync, detached_table, dependency_cleanup, drop_info);
 
     if (digest_updated)
     {
