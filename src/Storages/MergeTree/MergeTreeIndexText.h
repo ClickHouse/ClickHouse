@@ -82,6 +82,7 @@ struct MergeTreeIndexTextParams
     size_t positions = 0;
     String positions_codec = "none";
     ASTPtr preprocessor;
+    ASTPtr postprocessor;
 };
 
 using PostingList = roaring::Roaring;
@@ -446,6 +447,9 @@ struct MergeTreeIndexTextGranuleBuilder
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
+    // Adds a document to the granule. The document is inserted directly as a single token.
+    void addToken(std::string_view token, UInt32 token_position);
+
     void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }
 
@@ -474,6 +478,9 @@ struct MergeTreeIndexTextGranuleBuilder
 class MergeTreeIndexTextPreprocessor;
 using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
 
+class MergeTreeIndexTextPostprocessor;
+using MergeTreeIndexTextPostprocessorPtr = std::shared_ptr<MergeTreeIndexTextPostprocessor>;
+
 struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 {
     MergeTreeIndexAggregatorText(
@@ -481,7 +488,8 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
         MergeTreeIndexTextParams params_,
         TokenizerPtr tokenizer_,
         const IPostingListCodec * posting_list_codec_,
-        MergeTreeIndexTextPreprocessorPtr preprocessor_);
+        MergeTreeIndexTextPreprocessorPtr preprocessor_,
+        MergeTreeIndexTextPostprocessorPtr postprocessor_);
 
     ~MergeTreeIndexAggregatorText() override = default;
 
@@ -491,12 +499,17 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     void setCurrentRow(size_t row) { granule_builder.setCurrentRow(row); }
     UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
 
+private:
+    /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
+    template <bool tokenize>
+    void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read);
+
     String index_column_name;
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
-    const IPostingListCodec * posting_list_codec = nullptr;
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
@@ -531,6 +544,7 @@ public:
     std::unique_ptr<ITokenizer> tokenizer;
     std::unique_ptr<IPostingListCodec> posting_list_codec;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
 };
 
 }

@@ -312,7 +312,7 @@ private:
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
-    LoggerPtr log = nullptr;
+    LoggerPtr log = getLogger("RemoteQueryExecutor");
 
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     bool shard_skip_reported = false;
