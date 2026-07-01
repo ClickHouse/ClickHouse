@@ -31,7 +31,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 
 To use `ALTER USER` you must have the [ALTER USER](../../../sql-reference/statements/grant.md#access-management) privilege.
 
-`SET variable = value` is an alias for `MODIFY SETTING variable = value`: it changes a single setting in place while keeping the rest. Prefer it (or `MODIFY SETTING`) over the bare `SETTINGS` clause, which replaces the whole settings list.
+`SET variable = value` is an alias for `MODIFY SETTING variable = value`: it changes a single setting in place while keeping the rest. Prefer it (or `MODIFY SETTING`) over the bare `SETTINGS` clause, which replaces the whole settings list and also removes all inherited (parent) profiles.
 
 ## GRANTEES Clause {#grantees-clause}
 

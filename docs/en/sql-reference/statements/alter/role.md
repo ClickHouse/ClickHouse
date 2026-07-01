@@ -23,4 +23,4 @@ ALTER ROLE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ADD PROFILES 'profile_name' [,...] ]
 ```
 
-`SET variable = value` is an alias for `MODIFY SETTING variable = value`: it changes a single setting in place while keeping the rest, unlike the bare `SETTINGS` clause which replaces the whole list.
+`SET variable = value` is an alias for `MODIFY SETTING variable = value`: it changes a single setting in place while keeping the rest, unlike the bare `SETTINGS` clause which replaces the whole settings list and also removes all inherited (parent) profiles.
