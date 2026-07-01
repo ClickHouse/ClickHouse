@@ -241,25 +241,32 @@ void DistinctTransform::transform(Chunk & chunk)
 #undef M
     }
 
+    const auto new_set_size = data.getTotalRowCount();
+    const size_t num_selected = new_set_size - old_set_size;
+
     /// Just go to the next chunk if there isn't any new record in the current one.
-    size_t new_set_size = data.getTotalRowCount();
-    if (new_set_size == old_set_size)
+    if (num_selected == 0)
         return;
 
     if (!set_size_limits.check(new_set_size, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         return;
 
-    for (auto & column : columns)
-        column = column->filter(filter, -1);
+    if (num_selected == num_rows)
+    {
+        /// Every row is a new distinct value: keep the chunk unchanged, without copying it.
+        chunk.setColumns(std::move(columns), num_rows);
+    }
+    else
+    {
+        for (auto & column : columns)
+            column = column->filter(filter, -1);
 
-    chunk.setColumns(std::move(columns), new_set_size - old_set_size);
+        chunk.setColumns(std::move(columns), num_selected);
+    }
 
     /// Stop reading if we already reach the limit
     if (limit_hint && new_set_size >= limit_hint)
-    {
         stopReading();
-        return;
-    }
 }
 
 }

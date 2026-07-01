@@ -149,9 +149,10 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             bool has_cache_entry = false;
             if (query_condition_cache)
             {
+                const auto query_condition_cache_key = last_object_info->getIdentifier(/*include_file_bucket_info=*/ false);
                 auto matching_marks = query_condition_cache->read(
                     storage_id.uuid,
-                    last_object_info->getFileName(),
+                    query_condition_cache_key,
                     *format_filter_info->condition_hash);
                 if (matching_marks.has_value())
                 {
@@ -192,10 +193,17 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
     return result;
 }
 
-String ObjectInfo::getIdentifier() const
+String ObjectInfo::getIdentifier(bool include_file_bucket_info) const
 {
-    String result = getPath();
-    if (file_bucket_info)
+    return getIdentifierForPath(getPath(), include_file_bucket_info);
+}
+
+String ObjectInfo::getIdentifierForPath(const String & path, bool include_file_bucket_info) const
+{
+    String result = path;
+    if (relative_path_with_metadata.read_source_index)
+        result = std::to_string(*relative_path_with_metadata.read_source_index) + ":" + result;
+    if (include_file_bucket_info && file_bucket_info)
         result += file_bucket_info->getIdentifier();
     return result;
 }
