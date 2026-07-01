@@ -719,7 +719,10 @@ bool LRUFileCachePriority::tryIncreasePriority(
     CachePriorityGuard & queue_guard,
     CacheStateGuard &)
 {
-    auto lock = queue_guard.writeLock();
+    auto lock = queue_guard.tryWriteLock();
+    if (!lock.owns_lock())
+        return false;
+
     const auto & entry = iterator.getEntry();
     chassert(entry->getState() == Entry::State::Active);
 
