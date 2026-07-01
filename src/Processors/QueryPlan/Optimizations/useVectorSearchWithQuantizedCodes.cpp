@@ -8,7 +8,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
-#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Functions/productQuantization.h>
+#include <Functions/vectorQuantization.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
@@ -129,6 +131,12 @@ bool optimizeVectorSearchWithQuantizedCodes(
     /// by default an ORDER BY distance LIMIT on a Quantize-coded column runs as an exact full-precision scan. Only engage
     /// when the user asks for it via `vector_search_use_quantized_codes`.
     if (!read_step->getContext()->getSettingsRef()[Setting::vector_search_use_quantized_codes])
+        return false;
+
+    /// The shortlist uses internal functions (`__quantizeDistance`/`__pqDistance`) that are not registered in
+    /// FunctionFactory, so a remote node could not deserialize the plan. Leave the query exact when the plan is
+    /// distributed (the vector-search-index path is skipped for the same reason above).
+    if (settings.make_distributed_plan)
         return false;
 
     /// Number of rows the final top-k needs (includes any OFFSET).
@@ -322,23 +330,22 @@ bool optimizeVectorSearchWithQuantizedCodes(
     const ActionsDAG::Node * approx_node = nullptr;
     if (is_pq)
     {
-        /// _approx := pqDistance(vec.quantized, vec.pq_codebook, ref, dim, m, nbits, is_l2). The codebook is read as a
-        /// per-part broadcast column; `bits` carries nbits for the `pq` method.
+        /// _approx := __pqDistance(vec.quantized, vec.pq_codebook, ref, dim, m, nbits, is_l2). The codebook is read as a
+        /// per-part broadcast column; `bits` carries nbits for the `pq` method. `__pqDistance` is an internal function
+        /// built directly (not resolved through FunctionFactory) so it is not exposed as a public SQL function.
         const auto & codebook_node = approx_dag.findInOutputs(codebook_column);
         const auto & m_node = approx_dag.addColumn(
             uint64_type->createColumnConst(1, Field(static_cast<UInt64>(params->m))), uint64_type, "__quantize_m");
-        auto pq_distance = FunctionFactory::instance().get("pqDistance", context);
         ActionsDAG::NodeRawConstPtrs distance_arguments{
             &code_node, &codebook_node, &reference_node, &dimensions_node, &m_node, &bits_node, &is_l2_node};
-        approx_node = &approx_dag.addFunction(pq_distance, std::move(distance_arguments), approx_column_name);
+        approx_node = &approx_dag.addFunction(createInternalFunctionPQDistanceResolver(), std::move(distance_arguments), approx_column_name);
     }
     else
     {
-        /// _approx := quantizeDistance(vec.quantized, ref, method, dim, bits, is_l2).
-        auto quantize_distance = FunctionFactory::instance().get("quantizeDistance", context);
+        /// _approx := __quantizeDistance(vec.quantized, ref, method, dim, bits, is_l2) (internal function, see above).
         ActionsDAG::NodeRawConstPtrs distance_arguments{
             &code_node, &reference_node, &method_node, &dimensions_node, &bits_node, &is_l2_node};
-        approx_node = &approx_dag.addFunction(quantize_distance, std::move(distance_arguments), approx_column_name);
+        approx_node = &approx_dag.addFunction(createInternalFunctionQuantizeDistanceResolver(), std::move(distance_arguments), approx_column_name);
     }
     approx_dag.getOutputs().push_back(approx_node);
 

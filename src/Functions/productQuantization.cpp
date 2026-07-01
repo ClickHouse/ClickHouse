@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/productQuantization.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -9,7 +10,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Common/FunctionDocumentation.h>
 #include <Common/ProductQuantization.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
@@ -64,14 +64,10 @@ void checkVectorArgument(const DataTypePtr & type, const String & fn, size_t idx
             "Argument #{} of function {} must be Array(Float32|Float64|BFloat16)", idx + 1, fn);
 }
 
-/// Reinterpret the codebook FixedString argument as a flat float array; validates the byte size. The codebook is
-/// constant within a block: either a query-level constant (`ColumnConst`, ad-hoc use) or the per-part codebook read as
-/// a `ColumnConst` by `SerializationPQCodebook` (the planner path). A non-const full column is also accepted (all rows
-/// equal), reading row 0.
-/// A per-row view of the codebook argument. `stride` is the number of floats between rows: 0 for a constant codebook
-/// (the codec broadcasts the per-part codebook as a ColumnConst - row 0 serves every row), or `expected_floats` for a
-/// non-constant column (`pqTrain` produces one codebook per row, so each row must use its own - indexing `row * stride`
-/// avoids silently scoring later rows against row 0's codebook).
+/// A per-row view of the codebook argument, validated for byte size. `stride` is the number of floats between rows:
+/// 0 for a constant codebook (the planner path: `SerializationPQCodebook` reads the per-part codebook as a `ColumnConst`,
+/// so row 0 serves every row), or `expected_floats` for a non-constant column (each row uses its own codebook - indexing
+/// `row * stride` avoids silently scoring later rows against row 0's codebook).
 struct CodebookView
 {
     const float * data = nullptr;
@@ -98,160 +94,12 @@ CodebookView getCodebook(const ColumnWithTypeAndName & arg, const String & fn, s
 
 }
 
-/// pqTrain(samples, dimensions, m, nbits) -> FixedString(k * dimensions * 4)
-/// Trains M=`m` per-subspace PQ codebooks (k=2^nbits centroids each) from a sample set of vectors passed as a constant
-/// `Array(Array(Float32))` (e.g. `groupArray(vec)` over a sample). Returns the flat codebook as a FixedString.
-class FunctionPQTrain : public IFunction
-{
-public:
-    static constexpr auto name = "pqTrain";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPQTrain>(); }
-
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 4; }
-    bool useDefaultImplementationForConstants() const override { return false; }
-    /// The samples arg is typically an aggregate (groupArray), so it is NOT required constant - only the scalar params.
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        const auto * outer = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
-        if (!outer || !checkAndGetDataType<DataTypeArray>(outer->getNestedType().get()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument of function {} must be Array(Array(Float32)) - a set of sample vectors", name);
-
-        const UInt64 dimensions = getConstUInt(arguments[1], name, 1);
-        const UInt64 m = getConstUInt(arguments[2], name, 2);
-        const UInt64 nbits = getConstUInt(arguments[3], name, 3);
-        if (const std::string err = ProductQuantization::validateParams(dimensions, m, nbits); !err.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {}: {}", name, err);
-
-        return std::make_shared<DataTypeFixedString>(ProductQuantization::codebookFloats(dimensions, m, nbits) * sizeof(float));
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        const UInt64 dimensions = getConstUInt(arguments[1], name, 1);
-        const UInt64 m = getConstUInt(arguments[2], name, 2);
-        const UInt64 nbits = getConstUInt(arguments[3], name, 3);
-        const size_t fs_bytes = assert_cast<const DataTypeFixedString &>(*result_type).getN();
-
-        /// `samples` is an Array(Array(Float32)) (typically a single-row groupArray, but trained per row in general).
-        ColumnPtr samples_col = arguments[0].column->convertToFullColumnIfConst();
-        const auto * outer = checkAndGetColumn<ColumnArray>(samples_col.get());
-        if (!outer)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must be Array(Array(Float32))", name);
-        const auto * inner = checkAndGetColumn<ColumnArray>(&outer->getData());
-        if (!inner)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must be Array(Array(Float32))", name);
-        const auto & outer_offsets = outer->getOffsets();
-
-        auto col_res = ColumnFixedString::create(fs_bytes);
-        auto & chars = col_res->getChars();
-        chars.resize_fill(input_rows_count * fs_bytes, 0);
-
-        VectorWithMemoryTracking<float> flat;
-        VectorWithMemoryTracking<float> vbuf;
-        for (size_t r = 0; r < input_rows_count; ++r)
-        {
-            const size_t begin = r == 0 ? 0 : outer_offsets[r - 1];
-            const size_t num_samples = outer_offsets[r] - begin;
-            /// An empty sample set would otherwise "train" an all-zero codebook and look successful; surface it instead.
-            if (num_samples == 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires a non-empty set of sample vectors to train a codebook", name);
-            flat.resize(num_samples * dimensions);
-            for (size_t j = 0; j < num_samples; ++j)
-            {
-                readVectorRow(*inner, begin + j, vbuf);
-                if (vbuf.size() != dimensions)
-                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                        "Sample vector #{} has {} elements but function {} was declared with {} dimensions", begin + j, vbuf.size(), name, dimensions);
-                std::memcpy(flat.data() + j * dimensions, vbuf.data(), dimensions * sizeof(float));
-            }
-            /// `trainCodebook` owns the (transient) codebook buffer; copy it straight into the result FixedString.
-            std::memcpy(
-                &chars[r * fs_bytes],
-                ProductQuantization::trainCodebook(flat.data(), num_samples, dimensions, m, nbits).data(),
-                fs_bytes);
-        }
-        return col_res;
-    }
-};
-
-/// pqEncode(vec, codebook, dimensions, m, nbits) -> FixedString(m * code_bytes)
-class FunctionPQEncode : public IFunction
-{
-public:
-    static constexpr auto name = "pqEncode";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPQEncode>(); }
-
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 5; }
-    bool useDefaultImplementationForConstants() const override { return false; }
-    /// The codebook (arg 1) need not be a query constant: it may be the result of `pqTrain` (not constant-folded). Only
-    /// the scalar params are required constant; `getCodebook` requires a constant codebook column.
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2, 3, 4}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        checkVectorArgument(arguments[0].type, name, 0);
-        if (!checkAndGetDataType<DataTypeFixedString>(arguments[1].type.get()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of function {} (codebook) must be a FixedString", name);
-        const UInt64 dimensions = getConstUInt(arguments[2], name, 2);
-        const UInt64 m = getConstUInt(arguments[3], name, 3);
-        const UInt64 nbits = getConstUInt(arguments[4], name, 4);
-        if (const std::string err = ProductQuantization::validateParams(dimensions, m, nbits); !err.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {}: {}", name, err);
-        return std::make_shared<DataTypeFixedString>(ProductQuantization::bytesPerVector(dimensions, m, nbits));
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        /// Dry-run / empty blocks pass zero-row (and possibly non-const) columns; nothing to encode, and the codebook is
-        /// not materialized yet.
-        if (input_rows_count == 0)
-            return result_type->createColumn();
-
-        const UInt64 dimensions = getConstUInt(arguments[2], name, 2);
-        const UInt64 m = getConstUInt(arguments[3], name, 3);
-        const UInt64 nbits = getConstUInt(arguments[4], name, 4);
-        const size_t n = assert_cast<const DataTypeFixedString &>(*result_type).getN();
-        const CodebookView codebook = getCodebook(arguments[1], name, ProductQuantization::codebookFloats(dimensions, m, nbits));
-
-        ColumnPtr vec_column = arguments[0].column->convertToFullColumnIfConst();
-        const auto * col_arr = checkAndGetColumn<ColumnArray>(vec_column.get());
-        if (!col_arr)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be an array", name);
-
-        auto col_res = ColumnFixedString::create(n);
-        auto & chars = col_res->getChars();
-        chars.resize_fill(input_rows_count * n, 0);
-
-        /// Build the encoder once for a constant codebook (stride 0); rebuild per row for a per-row codebook column.
-        std::shared_ptr<ProductQuantization::Encoder> encoder;
-        VectorWithMemoryTracking<float> buf;
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            readVectorRow(*col_arr, row, buf);
-            if (buf.size() != dimensions)
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                    "Vector at row {} has {} elements but function {} was declared with {} dimensions", row, buf.size(), name, dimensions);
-            if (!encoder || codebook.stride != 0)
-                encoder = ProductQuantization::prepareEncoder(codebook.row(row), dimensions, m, nbits);
-            ProductQuantization::encode(*encoder, buf.data(), reinterpret_cast<char *>(&chars[row * n]));
-        }
-        return col_res;
-    }
-};
-
-/// pqDistance(code, codebook, query, dimensions, m, nbits, is_l2) -> Float32  (asymmetric distance computation)
+/// Internal-only `__pqDistance(code, codebook, query, dimensions, m, nbits, is_l2) -> Float32` (asymmetric ADC).
+/// Injected into the query plan by the vector-search optimizer; not registered in `FunctionFactory` (not user-callable).
 class FunctionPQDistance : public IFunction
 {
 public:
-    static constexpr auto name = "pqDistance";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPQDistance>(); }
+    static constexpr auto name = "__pqDistance";
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 7; }
@@ -325,49 +173,9 @@ public:
     }
 };
 
-REGISTER_FUNCTION(ProductQuantization)
+FunctionOverloadResolverPtr createInternalFunctionPQDistanceResolver()
 {
-    factory.registerFunction<FunctionPQTrain>(FunctionDocumentation{
-        .description = "Trains Product Quantization sub-codebooks (k=2^nbits centroids per subspace) via k-means from a "
-                       "constant set of sample vectors `Array(Array(Float32))`. Returns the flat codebook as a FixedString.",
-        .syntax = "pqTrain(samples, dimensions, m, nbits)",
-        .arguments = {{"samples", "Sample vectors.", {"Array(Array(Float32))"}},
-                      {"dimensions", "Vector dimensions.", {"const UInt*"}},
-                      {"m", "Number of subspaces (dimensions must be a multiple of m).", {"const UInt*"}},
-                      {"nbits", "Bits per subspace code (k = 2^nbits centroids), 1..16.", {"const UInt*"}}},
-        .returned_value = {"The trained codebook.", {"FixedString"}},
-        .examples = {{"Train", "SELECT length(pqTrain([[1.,2.,3.,4.],[5.,6.,7.,8.]], 4, 2, 1))", "32"}},
-        .introduced_in = {26, 8},
-        .category = FunctionDocumentation::Category::Distance});
-
-    factory.registerFunction<FunctionPQEncode>(FunctionDocumentation{
-        .description = "Encodes a vector into Product Quantization codes (m bytes, or 2m for nbits>8) against a trained codebook.",
-        .syntax = "pqEncode(vec, codebook, dimensions, m, nbits)",
-        .arguments = {{"vec", "Vector to encode.", {"Array(Float32)"}},
-                      {"codebook", "Codebook from pqTrain.", {"FixedString"}},
-                      {"dimensions", "Vector dimensions.", {"const UInt*"}},
-                      {"m", "Number of subspaces.", {"const UInt*"}},
-                      {"nbits", "Bits per subspace code.", {"const UInt*"}}},
-        .returned_value = {"The PQ code.", {"FixedString"}},
-        .examples = {{"Encode", "SELECT length(pqEncode([1.,2.,3.,4.], pqTrain([[1.,2.,3.,4.]], 4, 2, 1), 4, 2, 1))", "2"}},
-        .introduced_in = {26, 8},
-        .category = FunctionDocumentation::Category::Distance});
-
-    factory.registerFunction<FunctionPQDistance>(FunctionDocumentation{
-        .description = "Asymmetric distance between a PQ code and a full-precision query vector, using the trained codebook. "
-                       "`is_l2` selects L2Distance (1) versus cosineDistance (0).",
-        .syntax = "pqDistance(code, codebook, query, dimensions, m, nbits, is_l2)",
-        .arguments = {{"code", "PQ code from pqEncode.", {"FixedString"}},
-                      {"codebook", "Codebook from pqTrain.", {"FixedString"}},
-                      {"query", "Full-precision query vector.", {"const Array(Float32)"}},
-                      {"dimensions", "Vector dimensions.", {"const UInt*"}},
-                      {"m", "Number of subspaces.", {"const UInt*"}},
-                      {"nbits", "Bits per subspace code.", {"const UInt*"}},
-                      {"is_l2", "1 for L2Distance, 0 for cosineDistance.", {"const UInt*"}}},
-        .returned_value = {"The approximate distance.", {"Float32"}},
-        .examples = {{"Distance", "WITH pqTrain([[1.,0.]],2,2,1) AS cb SELECT round(pqDistance(pqEncode([1.,0.], cb, 2,2,1), cb, [1.,0.], 2,2,1, 1), 3)", "0"}},
-        .introduced_in = {26, 8},
-        .category = FunctionDocumentation::Category::Distance});
+    return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionPQDistance>());
 }
 
 }
