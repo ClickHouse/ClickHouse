@@ -404,19 +404,31 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
     if (converted.isNull())
         return std::nullopt;
 
-    /// `strict` conversion is supposed to reject any lossy conversion by returning a null `Field`,
-    /// but it does not honour that contract for `DateTime64`/`Time64` scale reduction: there
-    /// `convertFieldToType` silently truncates a higher-scale value to a lower scale (e.g. `1.23` of
-    /// scale 2 becomes `1.2` of scale 1). Folding or pruning on such a truncated value would change
-    /// query results: for a `DateTime64(1)` column,
-    /// `dt = toDateTime64('1970-01-01 00:00:01.20', 1) AND dt != toDateTime64('1970-01-01 00:00:01.23', 2)`
-    /// must keep the row `1.20` (because `1.20 != 1.23`), but both constants would collapse to `1.2`
-    /// and the whole `AND` would be folded to `false`.
+    /// `strict` conversion is supposed to reject any lossy conversion by returning a null `Field`, but
+    /// `convertFieldToType` does not honour that contract for several value-narrowing conversions of a
+    /// typed constant, so `converted.isNull()` alone is not enough:
+    ///   - `DateTime64`/`Time64` scale reduction silently truncates a higher-scale value to a lower one
+    ///     (e.g. `1.23` of scale 2 becomes `1.2` of scale 1). For a `DateTime64(1)` column,
+    ///     `dt = toDateTime64('1970-01-01 00:00:01.20', 1) AND dt != toDateTime64('1970-01-01 00:00:01.23', 2)`
+    ///     must keep the row `1.20` (because `1.20 != 1.23`), but both constants would collapse to `1.2`.
+    ///   - `DateTime`/`DateTime64` -> `Date`/`Date32` truncation drops the intra-day part, even though the
+    ///     comparison is evaluated in the wider (`DateTime`) domain (a `Date` value promotes to midnight).
+    ///     For a `Date` column,
+    ///     `d = toDate('2024-01-01') AND d != toDateTime('2024-01-01 12:34:56')` must keep the row
+    ///     `2024-01-01` (which differs from `2024-01-01 12:34:56`), but the `DateTime` constant would
+    ///     truncate to the day and the whole `AND` would fold to `false`.
+    ///   - `Float64` -> `Float32` narrowing likewise loses precision.
     ///
-    /// Guard against it by requiring the conversion to be exactly reversible. We only check
-    /// decimal-backed results (`DateTime64`/`Time64`/`Decimal`), where this truncation can occur, so
-    /// the already-correct string/integer/float conversions are left untouched.
-    if (Field::isDecimal(converted.getType()))
+    /// Guard against these by requiring the conversion to be exactly reversible: convert the value back to
+    /// the constant's original type and demand it round-trips to the original value; otherwise skip the
+    /// optimization (which only forgoes a fold and never changes results).
+    ///
+    /// This is done only for non-string constants. A string constant is parsed directly at the column's
+    /// resolution, so it never carries the finer resolution that triggers the truncation; and round-tripping
+    /// it back through the string rendering of a number/date/time would spuriously fail even for exact folds
+    /// (e.g. the `Float64` `3.0` renders back as `"3"`, and a `Date` renders back as its day number), which
+    /// would silently disable the already-correct string-constant folds.
+    if (!isStringOrFixedString(from_type))
     {
         auto round_trip = tryConvertFieldToType(converted, *from_type, expr_type.get(), {}, /*strict=*/true);
         if (round_trip.isNull() || !accurateEquals(round_trip, original_value))
