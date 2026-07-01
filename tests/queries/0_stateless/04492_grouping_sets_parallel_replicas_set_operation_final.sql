@@ -15,6 +15,10 @@ SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+-- With the old analyzer, a non-zero automatic_parallel_replicas_mode disables parallel
+-- replicas (InterpreterSelectQuery resets allow_experimental_parallel_reading_from_replicas),
+-- so pin it to 0 to keep the ParallelReplicasUsedCount assertion below deterministic.
+SET automatic_parallel_replicas_mode = 0;
 
 -- UNION ALL: grouping-sets branch first, FINAL branch second.
 SELECT NULL FROM t_gs_final GROUP BY GROUPING SETS ((sign), ('x'))
