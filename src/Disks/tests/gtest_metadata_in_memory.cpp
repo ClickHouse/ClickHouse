@@ -259,3 +259,48 @@ TEST_F(MetadataInMemoryTest, TestDirectoryModificationTimeRollback)
     /// The original mtime must be restored.
     EXPECT_EQ(metadata->getLastModified("dir").epochTime(), 1000000000);
 }
+
+/// `truncateFile(path, 0)` must stay idempotent across metadata backends, matching the disk-backed
+/// `MetadataStorageFromDisk::TruncateMetadataFileOperation` and the public `IDisk::truncateFile`
+/// contract codified by `DiskObjectStorageTest.TruncateFileToZero`: truncating a missing file to
+/// zero is a no-op, truncating an existing file to zero drops its blobs, and only a non-zero target
+/// on a missing file is an error.
+TEST_F(MetadataInMemoryTest, TestTruncateMissingFileToZero)
+{
+    auto metadata = getMetadataStorage();
+
+    /// Truncating a missing file to zero is a no-op and must not create the file.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->truncateFile("missing_file", 0);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_FALSE(metadata->existsFile("missing_file"));
+
+    /// Truncating a missing file to a non-zero size is still an error.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->truncateFile("missing_file", 5);
+        EXPECT_THROW(transaction->commit(DB::NoCommitOptions{}), DB::Exception);
+    }
+    EXPECT_FALSE(metadata->existsFile("missing_file"));
+
+    /// Truncating an existing file to zero keeps the file but drops its blobs.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile(
+            "existing_file",
+            {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "existing_file", 111)});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->getFileSize("existing_file"), 111);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->truncateFile("existing_file", 0);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_TRUE(metadata->existsFile("existing_file"));
+    EXPECT_EQ(metadata->getFileSize("existing_file"), 0);
+    EXPECT_TRUE(metadata->getStorageObjects("existing_file").empty());
+}

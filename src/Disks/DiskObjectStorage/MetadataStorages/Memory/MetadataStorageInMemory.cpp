@@ -898,7 +898,15 @@ void MetadataStorageInMemoryTransaction::truncateFile(const std::string & path, 
     {
         auto * entry = metadata_storage.findFile(path);
         if (!entry)
+        {
+            /// Mirror the disk-backed `TruncateMetadataFileOperation`: truncating a missing file to
+            /// zero is an idempotent no-op, and only a non-zero target size is an error. This keeps the
+            /// public `IDisk::truncateFile` contract identical across metadata backends, as codified by
+            /// `DiskObjectStorageTest.TruncateFileToZero`.
+            if (target_size == 0)
+                return;
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
+        }
 
         recordBlobGroupBefore(entry->blob_group);
 
