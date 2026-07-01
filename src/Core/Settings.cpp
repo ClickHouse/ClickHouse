@@ -1557,6 +1557,15 @@ Possible value:
 
 - Positive integer.
 )", 0) \
+    DECLARE(UInt64, merge_tree_min_compressed_bytes_per_read_stream, (64 * 1024), R"(
+Per-stream overhead cost expressed as byte-equivalent. Controls the maximum number of read streams created for MergeTree scans using the formula: `max_streams = sqrt(total_compressed_column_bytes / this_setting)`. This prevents creating too many streams when per-stream overhead (thread scheduling, pipeline processor creation, aggregate state initialization/merge, ExecutingGraph traversal) would outweigh the benefit of parallelism.
+
+The default of 64 KB is derived from the cost model `T(N) = W/N + F + V·N`, where `W` is useful work, `F` is fixed pipeline overhead, and `V` is per-stream variable cost. The optimal stream count is `sqrt(W/V)`. Expressing `W` in bytes via throughput gives `C = throughput · V ≈ 400 MB/s · 0.17 ms ≈ 64 KB`. Increasing this value reduces the number of streams (more conservative); decreasing it allows more streams. Set to 0 to disable this optimization.
+
+Possible values:
+
+- Positive integer.
+)", 0) \
     DECLARE(UInt64, merge_tree_min_rows_for_seek, 0, R"(
 If the distance between two data blocks to be read in one file is less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file but reads the data sequentially.
 

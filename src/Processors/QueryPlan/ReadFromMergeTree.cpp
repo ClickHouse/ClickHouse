@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <base/sort.h>
 
+#include <cmath>
+
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
@@ -240,6 +242,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem;
     extern const SettingsUInt64 merge_tree_min_rows_for_concurrent_read_for_remote_filesystem;
     extern const SettingsUInt64 merge_tree_min_bytes_for_concurrent_read;
+    extern const SettingsUInt64 merge_tree_min_compressed_bytes_per_read_stream;
     extern const SettingsUInt64 merge_tree_min_rows_for_concurrent_read;
     extern const SettingsFloat merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability;
     extern const SettingsBool merge_tree_use_const_size_tasks_for_remote_reading;
@@ -1125,6 +1128,51 @@ Pipe ReadFromMergeTree::readByLayers(
     return Pipe::unitePipes(std::move(pipes));
 }
 
+/// Cap the number of read streams based on the actual compressed size of the columns being read.
+///
+/// The mark-based stream reduction uses index_granularity_bytes (e.g. 10 MB) as a proxy for bytes
+/// per mark. For narrow columns (e.g. UInt16 where each mark is ~4 KB compressed), this overestimates
+/// by ~2000x and creates far too many streams. Each stream spawns a full pipeline processor chain
+/// whose overhead (thread scheduling, graph traversal, aggregate state init/merge) grows superlinearly
+/// with stream count.
+///
+/// Cost model: T(N) = W/N + F + V·N, where W = useful work, F = fixed overhead, V = per-stream
+/// variable cost. Optimal N = sqrt(W/V). Expressing in bytes: W = total_bytes / throughput, and
+/// C = throughput · V is the byte-equivalent per-stream overhead cost, giving:
+///     optimal_N = sqrt(total_compressed_bytes / C)
+/// The setting merge_tree_min_compressed_bytes_per_read_stream provides C (default 64 KB, 0 disables).
+static void capStreamsByCompressedBytes(
+    size_t & num_streams,
+    const RangesInDataParts & parts_with_ranges,
+    const Names & column_names,
+    const Settings & settings,
+    LoggerPtr log,
+    std::string_view context_hint = {})
+{
+    const size_t overhead_cost_bytes = settings[Setting::merge_tree_min_compressed_bytes_per_read_stream];
+    if (overhead_cost_bytes == 0)
+        return;
+
+    size_t total_compressed_bytes = 0;
+    for (const auto & part : parts_with_ranges)
+        for (const auto & col_name : column_names)
+            if (auto col = part.data_part->tryGetColumn(col_name))
+                total_compressed_bytes += part.data_part->getColumnSize(col->getNameInStorage()).data_compressed;
+
+    if (total_compressed_bytes == 0)
+        return;
+
+    const size_t max_streams_by_volume = std::max<size_t>(
+        1, static_cast<size_t>(std::sqrt(static_cast<double>(total_compressed_bytes) / static_cast<double>(overhead_cost_bytes))));
+
+    if (max_streams_by_volume < num_streams)
+    {
+        LOG_DEBUG(log, "Reducing num_streams from {} to {}{} (total_compressed_bytes={}, overhead_cost={})",
+            num_streams, max_streams_by_volume, context_hint, total_compressed_bytes, overhead_cost_bytes);
+        num_streams = max_streams_by_volume;
+    }
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1168,6 +1216,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             else
                 num_streams = parts_with_ranges.size();
         }
+
+        capStreamsByCompressedBytes(num_streams, parts_with_ranges, column_names, settings, log);
     }
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
@@ -1363,6 +1413,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             num_streams = std::max(
                 (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
         }
+
+        capStreamsByCompressedBytes(num_streams, parts_with_ranges, column_names, settings, log);
     }
 
     bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
@@ -1734,6 +1786,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     chassert(num_streams == requested_num_streams);
     num_streams = std::min<size_t>(num_streams, settings[Setting::max_final_threads]);
+
+    if (num_streams > 1)
+        capStreamsByCompressedBytes(num_streams, parts_with_ranges, column_names, settings, log, " in FINAL");
 
     /// If do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
     /// We have all parts in parts vector, where parts with same partition are nearby.
