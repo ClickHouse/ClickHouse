@@ -1,0 +1,14 @@
+-- multi-key fold (IN): EXPLAIN must not contain dictGet or a dictionary() subquery
+dictGet occurrences in plan (expect 0): 0
+dictionary() subquery occurrences in plan (expect 0): 0
+-- multi-key fold (IN): result with optimization on
+1
+3
+-- multi-key fold (IN): result with optimization off (must match)
+1
+3
+-- single-key fold (=): EXPLAIN must not contain dictGet or a dictionary() subquery
+dictGet occurrences in plan (expect 0): 0
+dictionary() subquery occurrences in plan (expect 0): 0
+-- single-key fold (=): result
+2
