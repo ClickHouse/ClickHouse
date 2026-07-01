@@ -719,7 +719,10 @@ void ColumnLowCardinality::applyNegatedNullMap(const NullMap & map, size_t offse
             "Null map of size {} at offset {} does not match {} of size {}",
             map.size(), offset, getName(), size());
 
-    idx.setIndexesWhereMaskZero(map, getDictionary().getNullValueIndex(), offset);
+    /// Only the null value index is read from the dictionary here; the actual mutation happens on `idx`.
+    /// Use the const overload of `getDictionary` so the non-const `WrappedPtr` accessor does not go through
+    /// `assumeMutableRef` and trip `chassert(use_count() == 1)` when the dictionary is shared.
+    idx.setIndexesWhereMaskZero(map, std::as_const(*this).getDictionary().getNullValueIndex(), offset);
 }
 
 ColumnLowCardinality::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)
