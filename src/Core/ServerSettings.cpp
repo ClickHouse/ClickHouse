@@ -39,6 +39,7 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/String.h>
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
@@ -2796,11 +2797,17 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         Poco::Util::AbstractConfiguration::Keys children;
         config.keys(section, children);
 
-        /// A present-but-empty section is a valid (degenerate) `GraphiteMergeTree` config:
-        /// `setGraphitePatternsFromConfig` accepts it, keeping the default column names and no
-        /// rollup rules. Rejecting it would make a previously valid config fail to start.
+        /// A present-but-empty *container* section is a valid (degenerate) `GraphiteMergeTree`
+        /// config: `setGraphitePatternsFromConfig` accepts it, keeping the default column names and
+        /// no rollup rules. Rejecting it would make a previously valid config fail to start.
+        ///
+        /// But `config.keys` reports only child *elements*, so a scalar leaf key such as
+        /// `<max_thred_pool_size>16</max_thred_pool_size>` (a typo'd setting — exactly what this
+        /// check must catch) also has zero children. A `GraphiteMergeTree` section never carries a
+        /// scalar value of its own, so a childless section with a non-empty value is not a rollup
+        /// section: exempt the empty container, but let the valued leaf fall through and be rejected.
         if (children.empty())
-            return true;
+            return Poco::trim(config.getString(section, "")).empty();
 
         for (const auto & child : children)
         {
