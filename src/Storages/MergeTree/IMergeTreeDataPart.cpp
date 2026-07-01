@@ -1235,60 +1235,50 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_colu
     return loadStatisticsWide(required_columns_set);
 }
 
-Estimates IMergeTreeDataPart::getEstimates() const
+Estimates IMergeTreeDataPart::buildEstimates(Estimates serialization_counts, const Estimates & statistics_estimates)
 {
-    std::lock_guard lock(estimates_mutex);
+    if (statistics_estimates.empty())
+        return serialization_counts;
 
-    if (estimates.has_value())
-        return *estimates;
-
-    Estimates new_estimates;
-
-    /// The explicit statistics (set at write time or loaded lazily) provide min/max/cardinality and the
-    /// exact default counts for the columns that have them.
-    if (external_estimates.has_value())
+    /// The explicit statistics provide min/max/cardinality and the exact default counts for the columns
+    /// that have them; the serialization counts cover every column and subcolumn and fill in what the
+    /// statistics do not provide (subcolumns, and columns without a default-count statistic).
+    Estimates result = statistics_estimates;
+    for (const auto & [key, serialization_estimate] : serialization_counts)
     {
-        new_estimates = *external_estimates;
-    }
-    else
-    {
-        for (const auto & [column_name, stats] : loadStatistics())
-            new_estimates.emplace(column_name, stats->getEstimate());
-    }
-
-    /// The serialization counts cover every column and subcolumn; fill in what the explicit statistics
-    /// do not provide (subcolumns, and columns without a default-count statistic).
-    for (const auto & [key, serialization_estimate] : serialization_estimates)
-    {
-        auto & dst = new_estimates[key];
+        auto & dst = result[key];
         if (dst.rows_count == 0)
             dst.rows_count = serialization_estimate.rows_count;
         if (!dst.num_defaults.has_value())
             dst.num_defaults = serialization_estimate.num_defaults;
     }
 
-    estimates = std::move(new_estimates);
-    return *estimates;
+    return result;
 }
 
-void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
+Estimates IMergeTreeDataPart::getEstimates() const
 {
     std::lock_guard lock(estimates_mutex);
-    external_estimates = new_estimates;
-    estimates.reset();
+    return estimates;
 }
 
-void IMergeTreeDataPart::setSerializationEstimates(const Estimates & new_estimates)
+void IMergeTreeDataPart::setEstimates(Estimates serialization_counts, const Estimates & statistics_estimates)
 {
     std::lock_guard lock(estimates_mutex);
-    serialization_estimates = new_estimates;
-    estimates.reset();
+    estimates = buildEstimates(std::move(serialization_counts), statistics_estimates);
 }
 
-Estimates IMergeTreeDataPart::getSerializationEstimates() const
+void IMergeTreeDataPart::loadEstimates()
 {
+    Estimates statistics_estimates;
+    for (const auto & [column_name, stats] : loadStatistics())
+        statistics_estimates.emplace(column_name, stats->getEstimate());
+
+    if (statistics_estimates.empty())
+        return;
+
     std::lock_guard lock(estimates_mutex);
-    return serialization_estimates;
+    estimates = buildEstimates(std::move(estimates), statistics_estimates);
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
@@ -1349,6 +1339,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
         loadDefaultCompressionCodec();
         loadSourcePartsSet();
+        loadEstimates(); /// Must be called after loadChecksums() as loading the statistics uses the checksums.
     }
     catch (...)
     {
@@ -2149,8 +2140,15 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     }
 
     SerializationInfoByName infos({});
+    Estimates serialization_counts;
     if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
-        infos = SerializationInfoByName::readJSON(loaded_columns, *in, serialization_estimates);
+        infos = SerializationInfoByName::readJSON(loaded_columns, *in, serialization_counts);
+
+    {
+        /// `loadEstimates` merges the explicit statistics in later, once the checksums are loaded.
+        std::lock_guard lock(estimates_mutex);
+        estimates = std::move(serialization_counts);
+    }
 
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)

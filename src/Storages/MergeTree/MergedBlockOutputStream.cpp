@@ -364,35 +364,35 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
 
     const auto & serialization_infos = new_part->getSerializationInfos();
+    const auto & statistics = gathered_data.statistics;
+    auto statistics_estimates = statistics.getEstimates();
+
+    /// This stream's builder samples only the columns written through it. A vertical merge writes
+    /// the gathered (non-merging) columns through separate column-only streams, whose counts
+    /// `MergeTask` accumulates into `gathered_data.serialization_estimates`. Combine both and
+    /// reconcile with the counts from the explicit statistics; persist the result inline
+    /// (num_rows/num_defaults per column and subcolumn).
+    auto serialization_counts = getSerializationEstimates({});
+    EstimatesBuilder::addEstimates(serialization_counts, gathered_data.serialization_estimates);
+    EstimatesBuilder::mergeEstimates(serialization_counts, statistics_estimates);
+
+    /// Columns removed from the part after being written (e.g. fully expired by a TTL, removed by
+    /// `removeEmptyColumnsFromPart`) must not keep estimates: the next merge would count their rows
+    /// again as all-default for the missing column, and the in-memory part would diverge from a
+    /// reloaded one.
+    EstimatesBuilder::filterEstimates(serialization_counts, serialization_infos);
+
     if (serialization_infos.needsPersistence())
     {
-        /// This stream's builder samples only the columns written through it. A vertical merge writes
-        /// the gathered (non-merging) columns through separate column-only streams, whose counts
-        /// `MergeTask` accumulates into `gathered_data.serialization_estimates`. Combine both and
-        /// reconcile with the counts from the explicit statistics; persist the result inline
-        /// (num_rows/num_defaults per column and subcolumn).
-        auto estimates = getSerializationEstimates({});
-        EstimatesBuilder::addEstimates(estimates, gathered_data.serialization_estimates);
-        EstimatesBuilder::mergeEstimates(estimates, gathered_data.statistics.getEstimates());
-
-        /// Columns removed from the part after being written (e.g. fully expired by a TTL, removed by
-        /// `removeEmptyColumnsFromPart`) must not keep estimates: the next merge would count their rows
-        /// again as all-default for the missing column, and the in-memory part would diverge from a
-        /// reloaded one.
-        EstimatesBuilder::filterEstimates(estimates, serialization_infos);
-
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {
-            serialization_infos.writeJSON(buffer, estimates);
+            serialization_infos.writeJSON(buffer, serialization_counts);
         });
-
-        /// Keep the counts on the in-memory part too, so it exposes them via `getEstimates` (e.g. as a
-        /// source part of a later merge) without being reloaded from disk.
-        new_part->setSerializationEstimates(estimates);
     }
 
-    const auto & statistics = gathered_data.statistics;
-    new_part->setEstimates(statistics.getEstimates());
+    /// Set the estimates on the in-memory part, so it exposes them via `getEstimates` (e.g. as a
+    /// source part of a later merge) without being reloaded from disk.
+    new_part->setEstimates(std::move(serialization_counts), statistics_estimates);
 
     if (!statistics.empty())
     {

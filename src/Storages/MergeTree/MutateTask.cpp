@@ -1416,8 +1416,7 @@ static void finalizeMutatedPart(
     }
 
     const auto & statistics = all_gathered_data.statistics;
-    new_data_part->setEstimates(statistics.getEstimates());
-    new_data_part->setSerializationEstimates(all_gathered_data.serialization_estimates);
+    new_data_part->setEstimates(all_gathered_data.serialization_estimates, statistics.getEstimates());
 
     if (!statistics.empty())
     {

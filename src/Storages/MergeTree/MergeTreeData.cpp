@@ -10835,10 +10835,10 @@ template <typename DataPartPtr>
 static void updateSerializationHintsForPart(
     const DataPartPtr & part, const ColumnsDescription & storage_columns, SerializationInfoByName & hints, Estimates & hint_estimates, bool remove)
 {
-    /// Use only the counts persisted in `serialization.json`: unlike `getEstimates`, they never touch
-    /// the disk (this runs under the data parts lock, inside the no-throw section of a part commit)
-    /// and stay constant for the lifetime of the part, which subtraction on removal relies upon.
-    const auto part_estimates = part->getSerializationEstimates();
+    /// A part's estimates are populated once, when it is loaded or written, so this never touches the
+    /// disk (this runs under the data parts lock, inside the no-throw section of a part commit) and
+    /// the values subtracted when the part is removed are exactly the ones that were added.
+    const auto part_estimates = part->getEstimates();
     const auto & part_columns = part->getColumnsDescription();
     for (const auto & [name, info] : part->getSerializationInfos())
     {
