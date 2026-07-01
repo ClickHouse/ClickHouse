@@ -186,6 +186,7 @@ public:
         const std::string & onelake_tenant_id,
         const std::string & onelake_client_id,
         const std::string & onelake_client_secret,
+        bool onelake_use_blob_endpoint_,
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
@@ -197,10 +198,12 @@ public:
     }
 
     String getTenantId() const { return tenant_id; }
+    std::optional<ObjectStorageCatalogInitializationOptions> getObjectStorageInitializationOptions() const override;
 
 protected:
     /// Parameters for OneLake OAuth.
     const std::string tenant_id;
+    const bool onelake_use_blob_endpoint;
 };
 
 class BigLakeCatalog : public RestCatalog

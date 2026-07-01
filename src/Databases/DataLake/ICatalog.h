@@ -135,6 +135,16 @@ struct CatalogSettings
     DB::SettingsChanges allChanged() const;
 };
 
+struct ObjectStorageCatalogInitializationOptions
+{
+    struct OneLakeOptions
+    {
+        bool use_blob_endpoint = true;
+    };
+
+    std::optional<OneLakeOptions> onelake;
+};
+
 /// Base class for catalog implementation.
 /// Used for communication with the catalog.
 class ICatalog
@@ -208,6 +218,11 @@ public:
     virtual bool isTransactional() const { return false; }
 
     virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
+    {
+        return std::nullopt;
+    }
+
+    virtual std::optional<ObjectStorageCatalogInitializationOptions> getObjectStorageInitializationOptions() const
     {
         return std::nullopt;
     }

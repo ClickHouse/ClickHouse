@@ -4,6 +4,7 @@
 #if USE_AWS_S3
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/Settings.h>
+#include <Databases/DataLake/RestCatalog.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageURL.h>
@@ -1066,19 +1067,29 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
     }
 }
 
-void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
+void StorageS3Configuration::fromAST(
+    ASTs & args,
+    ContextPtr context,
+    bool with_structure,
+    const ObjectStorageInitializationContext * initialization_context)
 {
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
     chassert(s3_settings != nullptr);
-    if (!biglake_adc_client_id.empty())
+
+    if (initialization_context && initialization_context->catalog
+        && initialization_context->catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE)
     {
+        auto biglake_catalog = std::dynamic_pointer_cast<DataLake::BigLakeCatalog>(initialization_context->catalog);
+        if (!biglake_catalog)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not BigLake type");
+
         s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
-        s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = biglake_adc_client_id;
-        s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = biglake_adc_client_secret;
-        s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = biglake_adc_refresh_token;
+        s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = biglake_catalog->getGoogleADCClientId();
+        s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = biglake_catalog->getGoogleADCClientSecret();
+        s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = biglake_catalog->getGoogleADCRefreshToken();
     }
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
         || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;

@@ -5,6 +5,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/assert_cast.h>
+#include <Databases/DataLake/RestCatalog.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <azure/storage/common/storage_credential.hpp>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -875,16 +876,33 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
     setPaths({parsed_arguments.blob_path});
 }
 
-void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
+void StorageAzureConfiguration::fromAST(
+    ASTs & engine_args,
+    ContextPtr context,
+    bool with_structure,
+    const ObjectStorageInitializationContext * initialization_context)
 {
     AzureStorageParsedArguments parsed_arguments;
-    if (!onelake_client_id.empty())
+    if (initialization_context && initialization_context->catalog
+        && initialization_context->catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
     {
-        parsed_arguments.initializeForOneLake(engine_args, context, onelake_use_blob_endpoint);
+        auto onelake_catalog = std::dynamic_pointer_cast<DataLake::OneLakeCatalog>(initialization_context->catalog);
+        if (!onelake_catalog)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not OneLake type");
+
+        auto options = initialization_context->catalog->getObjectStorageInitializationOptions();
+        const bool use_blob_endpoint = options && options->onelake
+            ? options->onelake->use_blob_endpoint
+            : true;
+
+        parsed_arguments.initializeForOneLake(
+            engine_args,
+            context,
+            use_blob_endpoint);
         parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
-            onelake_tenant_id,
-            onelake_client_id,
-            onelake_client_secret
+            onelake_catalog->getTenantId(),
+            onelake_catalog->getClientId(),
+            onelake_catalog->getClientSecret()
         );
     }
     else

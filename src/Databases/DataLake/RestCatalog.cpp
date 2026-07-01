@@ -285,12 +285,14 @@ OneLakeCatalog::OneLakeCatalog(
     const std::string & onelake_tenant_id,
     const std::string & onelake_client_id,
     const std::string & onelake_client_secret,
+    bool onelake_use_blob_endpoint_,
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     DB::ContextPtr context_)
     : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, context_)
     , tenant_id(onelake_tenant_id)
+    , onelake_use_blob_endpoint(onelake_use_blob_endpoint_)
 {
     client_id = onelake_client_id;
     client_secret = onelake_client_secret;
@@ -301,6 +303,15 @@ OneLakeCatalog::OneLakeCatalog(
         access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
     }
     config = loadConfig();
+}
+
+std::optional<ObjectStorageCatalogInitializationOptions> OneLakeCatalog::getObjectStorageInitializationOptions() const
+{
+    ObjectStorageCatalogInitializationOptions options;
+    options.onelake = ObjectStorageCatalogInitializationOptions::OneLakeOptions{
+        .use_blob_endpoint = onelake_use_blob_endpoint,
+    };
+    return options;
 }
 
 AccessToken RestCatalog::retrieveAccessToken() const

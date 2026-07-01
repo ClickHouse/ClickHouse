@@ -99,7 +99,8 @@ void StorageObjectStorageConfiguration::initialize(
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
-    const StorageID * table_id)
+    const StorageID * table_id,
+    const ObjectStorageInitializationContext * initialization_context)
 {
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
@@ -114,7 +115,7 @@ void StorageObjectStorageConfiguration::initialize(
     else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
     else
-        configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
+        configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure, initialization_context);
 
     if (configuration_to_initialize.isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

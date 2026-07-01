@@ -125,30 +125,21 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
-    void setInitializationAsOneLake(const String & client_id_, const String & client_secret_, const String & tenant_id_, bool use_blob_endpoint_)
-    {
-        onelake_client_id = client_id_;
-        onelake_client_secret = client_secret_;
-        onelake_tenant_id = tenant_id_;
-        onelake_use_blob_endpoint = use_blob_endpoint_;
-    }
-
 protected:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
+    void fromAST(
+        ASTs & args,
+        ContextPtr context,
+        bool with_structure,
+        const ObjectStorageInitializationContext * initialization_context) override;
     ASTPtr extractExtraCredentials(ASTs & args);
 
     Path blob_path;
     Paths blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;
     DiskPtr disk;
-
-    String onelake_client_id;
-    String onelake_client_secret;
-    String onelake_tenant_id;
-    bool onelake_use_blob_endpoint = true;
 
     void initializeFromParsedArguments(const AzureStorageParsedArguments & parsed_arguments);
 };
