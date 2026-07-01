@@ -14,12 +14,20 @@
 
 SET enable_analyzer = 1;
 
+-- A small `index_granularity` plus `OPTIMIZE ... FINAL` gives a single part with
+-- many marks, so the `read_rows` proof below is deterministic: it relies on
+-- primary-key mark pruning within one part rather than on the two inserts happening
+-- to stay in separate parts (a background merge could otherwise collapse them into
+-- a single 8192-row mark and defeat part-level pruning). The chain keys (`from_id`
+-- 0..9) all fall in the first mark, while the unrelated filler (`from_id` >= 1000)
+-- fills later marks, so each recursive step's `from_id IN (...)` lookup reads only
+-- that first mark.
 DROP TABLE IF EXISTS edges;
 CREATE TABLE edges
 (
     from_id UInt64,
     to_id UInt64
-) ENGINE = MergeTree ORDER BY from_id SETTINGS index_granularity = 8192;
+) ENGINE = MergeTree ORDER BY from_id SETTINGS index_granularity = 128;
 
 -- Insert a chain: 0->1->2->...->9
 INSERT INTO edges SELECT number, number + 1 FROM numbers(10);
@@ -27,6 +35,8 @@ INSERT INTO edges SELECT number, number + 1 FROM numbers(10);
 -- Insert many unrelated rows to make index usage measurable.
 -- from_id range [1000, 6000) has no connection to the chain above.
 INSERT INTO edges SELECT number + 1000, number + 1000000 FROM numbers(5000);
+
+OPTIMIZE TABLE edges FINAL;
 
 -- Recursive CTE: traverse the chain starting from 0 using explicit JOIN.
 WITH RECURSIVE traverse AS
@@ -287,11 +297,16 @@ DROP TABLE tree;
 -- (100 -> ... -> 110, no filler), each walked by its own recursive branch.
 DROP TABLE IF EXISTS chain_big;
 DROP TABLE IF EXISTS chain_small;
-CREATE TABLE chain_big (from_id UInt64, to_id UInt64) ENGINE = MergeTree ORDER BY from_id SETTINGS index_granularity = 8192;
+-- Small granularity + `OPTIMIZE ... FINAL` for the same determinism reason as
+-- `edges`: the `walk_branch_cap2` proof below asserts a low `read_rows` for the
+-- `chain_big` branch, which must come from mark pruning inside one part, not from
+-- the two inserts staying in separate parts.
+CREATE TABLE chain_big (from_id UInt64, to_id UInt64) ENGINE = MergeTree ORDER BY from_id SETTINGS index_granularity = 128;
 CREATE TABLE chain_small (from_id UInt64, to_id UInt64) ENGINE = MergeTree ORDER BY from_id;
 INSERT INTO chain_big SELECT number, number + 1 FROM numbers(10);
 INSERT INTO chain_big SELECT number + 1000, number + 1000000 FROM numbers(5000);
 INSERT INTO chain_small SELECT number + 100, number + 101 FROM numbers(10);
+OPTIMIZE TABLE chain_big FINAL;
 
 -- A branch-local `recursive_cte_max_in_filter_cardinality = 0` must disable
 -- the optimization for that branch (the `chain_big` walk full-scans on every
@@ -439,8 +454,12 @@ DROP TABLE enum_edges;
 -- throw (e.g. it can hit `max_memory_usage` while materializing many wide
 -- keys); the unoptimized scan never builds that set, so a failure there falls
 -- back to the plain scan rather than failing the query.
+-- Small granularity + `OPTIMIZE ... FINAL` so the positive (normal-limit) proof
+-- just below is deterministic: the wide `'k'` chain keys all fall in the first
+-- mark of a single part and the `'z'` filler fills later marks, so an indexed
+-- lookup reads only the first mark instead of relying on part-level pruning.
 DROP TABLE IF EXISTS str_chain;
-CREATE TABLE str_chain (cur String, nxt String) ENGINE = MergeTree ORDER BY cur SETTINGS index_granularity = 8192;
+CREATE TABLE str_chain (cur String, nxt String) ENGINE = MergeTree ORDER BY cur SETTINGS index_granularity = 128;
 INSERT INTO str_chain
     SELECT repeat('k', 2000) || toString(number) AS cur,
            repeat('k', 2000) || toString(number + 1) AS nxt
@@ -453,6 +472,34 @@ INSERT INTO str_chain
     SELECT repeat('z', 2000) || toString(number) AS cur,
            repeat('z', 2000) || toString(number) AS nxt
     FROM numbers(5000);
+OPTIMIZE TABLE str_chain FINAL;
+
+-- Positive counterpart to the `max_bytes_in_set = 1` fallback below: with the
+-- default (unlimited) set-size limits the wide `String` join keys are pushed into
+-- the index, so each recursive step reads only the first mark holding the `'k'`
+-- chain, not the `'z'` filler. This proves the String-key optimization actually
+-- fires in the normal case; the small-limit case that follows proves the fallback.
+WITH RECURSIVE str_walk_opt AS
+(
+    SELECT repeat('k', 2000) || '0' AS cur
+  UNION ALL
+    SELECT e.nxt AS cur
+    FROM str_chain AS e
+    INNER JOIN str_walk_opt AS w ON e.cur = w.cur
+)
+SELECT count() FROM str_walk_opt;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT read_rows < 10000 AS str_key_optimized
+FROM system.query_log
+WHERE
+    current_database = currentDatabase()
+    AND query LIKE '%RECURSIVE str_walk_opt%'
+    AND query NOT LIKE '%system.query_log%'
+    AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
 
 WITH RECURSIVE str_walk AS
 (
