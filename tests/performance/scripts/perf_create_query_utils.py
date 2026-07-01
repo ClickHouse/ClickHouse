@@ -35,16 +35,39 @@ def strip_setting_from_query(query, setting_name):
     clause cannot be matched.
     """
 
-    def find_keyword_outside_literals(text, keyword, start=0):
-        """Return the index of `keyword` in `text` ignoring matches inside
-        string literals or `--`/`#`/`/* */` comments. Case-insensitive."""
-        keyword_upper = keyword.upper()
-        klen = len(keyword_upper)
-        i = start
+    def is_word_at(text, pos, word):
+        """Case-insensitive word-boundary match of `word` at `pos`."""
+        wlen = len(word)
+        if text[pos : pos + wlen].upper() != word:
+            return False
+        if pos > 0 and (text[pos - 1].isalnum() or text[pos - 1] == "_"):
+            return False
+        end = pos + wlen
+        return end >= len(text) or not (text[end].isalnum() or text[end] == "_")
+
+    # Keywords that can follow the SETTINGS clause at the top level of a
+    # CREATE TABLE (`AS SELECT ...`, `AS other_table`, `COMMENT '...'`,
+    # `EMPTY AS SELECT ...`) and therefore terminate it.
+    trailing_clause_keywords = ("AS", "COMMENT", "EMPTY")
+
+    def find_table_settings_keyword(text):
+        """Return the index of the table's own top-level `SETTINGS` keyword,
+        ignoring matches inside string/backtick literals or `--`/`#`/`/* */`
+        comments and inside brackets. Return -1 when there is no table-level
+        SETTINGS clause -- including when a top-level `AS` / `COMMENT` /
+        `EMPTY` clause is reached first, in which case any later `SETTINGS` is
+        a query-level clause (e.g. on `AS SELECT ...`), not the table's own.
+        Treating that as "not found" makes the caller leave the query
+        unchanged so `perf.py` fails fast on a misplaced setting instead of
+        silently stripping a query-level clause. Bracket depth is tracked so a
+        column-level `COMMENT` inside the schema parens does not end the scan
+        early."""
+        i = 0
         n = len(text)
         quote = None
         line_comment = False
         block_comment = False
+        depth = 0
         while i < n:
             c = text[i]
             next_c = text[i + 1] if i + 1 < n else ""
@@ -84,34 +107,29 @@ def strip_setting_from_query(query, setting_name):
                 quote = c
                 i += 1
                 continue
-            # Word-boundary aware match.
-            if text[i : i + klen].upper() == keyword_upper:
-                before_ok = i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")
-                after = text[i + klen] if i + klen < n else ""
-                after_ok = not (after.isalnum() or after == "_")
-                if before_ok and after_ok:
+            if c in "([{":
+                depth += 1
+                i += 1
+                continue
+            if c in ")]}":
+                if depth > 0:
+                    depth -= 1
+                i += 1
+                continue
+            if depth == 0:
+                if is_word_at(text, i, "SETTINGS"):
                     return i
+                # A top-level trailing clause reached before any table-level
+                # SETTINGS: the table has none of its own, so a following
+                # SETTINGS belongs to `AS SELECT ...` and must not be edited.
+                if any(is_word_at(text, i, kw) for kw in trailing_clause_keywords):
+                    return -1
             i += 1
         return -1
 
-    settings_pos = find_keyword_outside_literals(query, "SETTINGS")
+    settings_pos = find_table_settings_keyword(query)
     if settings_pos < 0:
         return query
-
-    def is_word_at(text, pos, word):
-        """Case-insensitive word-boundary match of `word` at `pos`."""
-        wlen = len(word)
-        if text[pos : pos + wlen].upper() != word:
-            return False
-        if pos > 0 and (text[pos - 1].isalnum() or text[pos - 1] == "_"):
-            return False
-        end = pos + wlen
-        return end >= len(text) or not (text[end].isalnum() or text[end] == "_")
-
-    # Keywords that can follow the SETTINGS clause at the top level of a
-    # CREATE TABLE (`AS SELECT ...`, `AS other_table`, `COMMENT '...'`,
-    # `EMPTY AS SELECT ...`) and therefore terminate it.
-    trailing_clause_keywords = ("AS", "COMMENT", "EMPTY")
 
     # Locate `setting_name = ` at the top level of the SETTINGS clause:
     # outside string and backtick literals, outside `--`, `#`, `/* */`

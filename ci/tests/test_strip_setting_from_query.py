@@ -204,3 +204,50 @@ def test_settings_keyword_inside_comment_literal_is_not_matched():
         "ENGINE = MergeTree ORDER BY tuple()"
     )
     assert strip_setting_from_query(query, SETTING) == expected
+
+
+def test_no_table_settings_only_query_settings_after_as_select_is_unchanged():
+    # There is no table-level SETTINGS clause; the only SETTINGS is a
+    # query-level clause after `AS SELECT`. The initial keyword search must stop
+    # at the top-level `AS` and report "no table SETTINGS" instead of latching
+    # onto the query-level clause. Otherwise the helper would silently strip a
+    # query-level clause, letting `perf.py` continue with the PR side on the new
+    # default and the baseline on the old one -- invalidating the comparison
+    # instead of surfacing the fixture bug. The query must be byte-for-byte.
+    query = (
+        "CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() "
+        f"AS SELECT a, b FROM src SETTINGS {SETTING} = 0"
+    )
+    assert strip_setting_from_query(query, SETTING) == query
+
+
+def test_no_table_settings_as_other_table_query_settings_is_unchanged():
+    # `CREATE TABLE t AS src SETTINGS ...`: the trailing SETTINGS is query-level
+    # (there is no table-level clause), so the helper must leave it untouched.
+    query = f"CREATE TABLE t AS src SETTINGS {SETTING} = 0"
+    assert strip_setting_from_query(query, SETTING) == query
+
+
+def test_no_table_settings_empty_as_select_query_settings_is_unchanged():
+    # `EMPTY AS SELECT` also terminates the table definition; a SETTINGS after it
+    # is query-level and must not be stripped.
+    query = (
+        "CREATE TABLE t ENGINE = MergeTree ORDER BY tuple() "
+        f"EMPTY AS SELECT a FROM src SETTINGS {SETTING} = 0"
+    )
+    assert strip_setting_from_query(query, SETTING) == query
+
+
+def test_table_settings_after_column_comment_is_still_found():
+    # A column-level COMMENT inside the schema parens must not be mistaken for a
+    # top-level trailing clause that ends the search early: the real table-level
+    # SETTINGS still follows and its target setting must be stripped.
+    query = (
+        "CREATE TABLE t (a UInt64 COMMENT 'note') ENGINE = MergeTree "
+        f"ORDER BY tuple() SETTINGS {SETTING} = 1, index_granularity = 8192"
+    )
+    expected = (
+        "CREATE TABLE t (a UInt64 COMMENT 'note') ENGINE = MergeTree "
+        "ORDER BY tuple() SETTINGS index_granularity = 8192"
+    )
+    assert strip_setting_from_query(query, SETTING) == expected
