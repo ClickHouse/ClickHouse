@@ -716,7 +716,8 @@ void S3ObjectStorage::applyNewSettings(
     /// (getClient throws ACCESS_DENIED), which read() propagates instead of falling back to the cached client.
     if ((options.allow_client_change
             && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
-        || restriction_mode_changed)
+        || restriction_mode_changed
+        || options.force_client_rebuild)
     {
         auto new_client = getClient(uri, *modified_settings, context, for_disk_s3, disk_name);
         client.set(std::move(new_client));

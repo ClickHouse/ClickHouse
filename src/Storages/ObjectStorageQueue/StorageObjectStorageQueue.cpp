@@ -551,6 +551,16 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     LOG_TRACE(log, "Shut down storage");
 }
 
+void StorageObjectStorageQueue::rebuildObjectStorageClient(ContextPtr rebuild_context)
+{
+    /// Force a client rebuild under `rebuild_context` (re-resolving credentials) without detaching the table.
+    /// The client is hot-swapped in the object storage (MultiVersion), so the concurrently-running streaming
+    /// task keeps using the storage and picks up the new client on its next operation.
+    IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = true, .force_client_rebuild = true};
+    object_storage->applyNewSettings(
+        rebuild_context->getConfigRef(), configuration->getTypeName() + ".", rebuild_context, options);
+}
+
 void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
