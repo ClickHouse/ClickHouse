@@ -260,6 +260,15 @@ public:
 
     QueryKind getQueryKind() const override { return QueryKind::System; }
 
+    /// `getID` is the constant `"SYSTEM query"` for every `SYSTEM` statement, and almost all of the
+    /// fields that distinguish one statement from another (`type`, the target names, cache keys,
+    /// replica/disk selectors, the `ON CLUSTER` name, ...) are plain members kept outside `children`.
+    /// Without folding them into the tree hash, no-child statements such as `SYSTEM FLUSH LOGS` and
+    /// `SYSTEM SHUTDOWN` — or `SYSTEM DROP REPLICA 'a'` and `SYSTEM DROP REPLICA 'b'` — would share
+    /// one tree hash. The rewrite-rule matcher treats an equal tree hash as semantic equality, so a
+    /// rule template for one `SYSTEM` statement would over-match an unrelated one.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };

@@ -2,6 +2,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Poco/String.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <IO/WriteBuffer.h>
@@ -34,6 +35,109 @@ namespace
 
         return type_index_to_type_name;
     }
+}
+
+void ASTSystemQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold every semantic field kept outside `children` into the hash. The `ASTPtr` members
+    /// (`database`, `table`, `query_settings`, `backup_source`, `scheduled_merge_parts`) are part of
+    /// `children` and are hashed through the child recursion, so they are not repeated here. See the
+    /// header comment for why the rewrite-rule matcher needs this.
+    hash_state.update(type);
+    hash_state.update(if_exists);
+    hash_state.update(target_model);
+    hash_state.update(target_function);
+    hash_state.update(replica);
+    hash_state.update(shard);
+    hash_state.update(zk_name);
+    hash_state.update(full_replica_zk_path);
+    hash_state.update(replica_zk_path);
+    hash_state.update(is_drop_whole_replica);
+    hash_state.update(with_tables);
+    hash_state.update(storage_policy);
+    hash_state.update(volume);
+    hash_state.update(disk);
+    hash_state.update(seconds);
+    hash_state.update(untracked_memory_size);
+
+    hash_state.update(query_result_cache_tag.has_value());
+    if (query_result_cache_tag)
+        hash_state.update(*query_result_cache_tag);
+
+    hash_state.update(filesystem_cache_name);
+    hash_state.update(distributed_cache_server_id);
+    hash_state.update(distributed_cache_drop_connections);
+    hash_state.update(key_to_drop);
+
+    hash_state.update(offset_to_drop.has_value());
+    if (offset_to_drop)
+        hash_state.update(*offset_to_drop);
+
+    hash_state.update(backup_name);
+    hash_state.update(schema_cache_storage);
+    hash_state.update(schema_cache_format);
+    hash_state.update(queue_path);
+    hash_state.update(fail_point_name);
+    hash_state.update(fail_point_action);
+    hash_state.update(delta_kernel_tracing_level);
+    hash_state.update(coverage_test_name);
+    hash_state.update(sync_replica_mode);
+
+    hash_state.update(src_replicas.size());
+    for (const auto & src_replica : src_replicas)
+        hash_state.update(src_replica);
+
+    hash_state.update(tables.size());
+    for (const auto & [table_database, table_name] : tables)
+    {
+        hash_state.update(table_database);
+        hash_state.update(table_name);
+    }
+
+    /// `ServerType` (SYSTEM START/STOP LISTEN): fold its type, custom name and exclusion sets.
+    hash_state.update(server_type.type);
+    hash_state.update(server_type.custom_name);
+    hash_state.update(server_type.exclude_types.size());
+    for (auto excluded_type : server_type.exclude_types)
+        hash_state.update(excluded_type);
+    hash_state.update(server_type.exclude_custom_names.size());
+    for (const auto & excluded_name : server_type.exclude_custom_names)
+        hash_state.update(excluded_name);
+
+#if USE_XRAY
+    /// Fields set only for SYSTEM INSTRUMENT ADD / REMOVE.
+    hash_state.update(instrumentation_function_name);
+    hash_state.update(instrumentation_handler_name);
+    hash_state.update(instrumentation_entry_type);
+    hash_state.update(instrumentation_point.has_value());
+    if (instrumentation_point)
+    {
+        hash_state.update(instrumentation_point->index());
+        std::visit(
+            [&](const auto & value)
+            {
+                using T = std::decay_t<decltype(value)>;
+                if constexpr (!std::is_same_v<T, Instrumentation::All>)
+                    hash_state.update(value);
+            },
+            *instrumentation_point);
+    }
+    hash_state.update(instrumentation_arguments.size());
+    for (const auto & argument : instrumentation_arguments)
+    {
+        hash_state.update(argument.index());
+        std::visit([&](const auto & value) { hash_state.update(value); }, argument);
+    }
+    hash_state.update(instrumentation_subquery);
+#endif
+
+    hash_state.update(fake_time_for_view.has_value());
+    if (fake_time_for_view)
+        hash_state.update(*fake_time_for_view);
+
+    /// The `ON CLUSTER` name (inherited from `ASTQueryWithOnCluster`) is a plain member too.
+    hash_state.update(cluster);
 }
 
 const char * ASTSystemQuery::typeToString(Type type)
