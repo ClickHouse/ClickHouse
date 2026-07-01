@@ -87,6 +87,28 @@ FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3); -- { serverError TYPE_
 SELECT *
 FROM 03271_parametrized_v_expl(upper_bound = 3);
 
+-- Lifecycle: the declared schema must survive reload from stored metadata (DETACH/ATTACH).
+DETACH TABLE 03271_parametrized_v_expl;
+ATTACH TABLE 03271_parametrized_v_expl;
+DETACH TABLE 03271_parametrized_v_expl_mismatch;
+ATTACH TABLE 03271_parametrized_v_expl_mismatch;
+
+-- Should still return one column 'n' of type 'UInt64' after reload
+SHOW COLUMNS IN 03271_parametrized_v_expl;
+
+-- Should still return one column 'n' of type 'UInt64' after reload
+SELECT *
+FROM system.columns
+WHERE table = '03271_parametrized_v_expl' AND database = currentDatabase();
+
+-- Matching schema still succeeds after reload
+SELECT *
+FROM 03271_parametrized_v_expl(upper_bound = 3);
+
+-- Mismatched schema still throws after reload
+SELECT *
+FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
+
 SET enable_analyzer = 0;
 SET use_declared_schema_for_parameterized_views = 1;
 
