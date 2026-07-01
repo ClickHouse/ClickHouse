@@ -707,12 +707,12 @@ Pipe ReadFromMergeTree::readInOrder(
 
     MergeTreeReadPoolPtr pool;
 
-    /// Authoritative set of (parent_info, projection_name) reported by the coordinator for this
-    /// split's stream. Populated below when parallel-replicas is on and the initiator speaks the
-    /// announcement-response protocol (DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE).
-    /// On followers, the pool is constructed over all local parts but the stream owns only a
-    /// subset assigned by the snapshot replica; this set drives source-construction filtering
-    /// below so phantom consumers are never built.
+    /// Used when reading multiple table splits with parallel replicas. The initiator node owns
+    /// the decision of which parts are assigned to which split (in particular, because it is
+    /// the only node that actually does index analysis by default). It communicates its decision
+    /// in response to the announcement request and followers should use that to filter out parts
+    /// that don't belong to the given split. This is only relevant for InOrder reading,
+    /// because the Default reading mode doesn't split the table into multiple streams.
     std::optional<std::set<std::pair<MergeTreePartInfo, String>>> initiator_selected_parts;
 
     if (is_parallel_reading_from_replicas)
