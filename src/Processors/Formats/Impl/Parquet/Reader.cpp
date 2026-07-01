@@ -965,6 +965,13 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
 {
     if (options.dictionary_filter_limit_bytes == 0)
         return false;
+    /// We deliberately require a declared `dictionary_page_offset`. Some legacy writers omit it and
+    /// point `data_page_offset` at the dictionary page instead (the "undeclared dictionary page"
+    /// shape handled in `initializeDataPage`); dictionary filtering stays disabled for those files.
+    /// Determining the dictionary page's byte range in that shape needs the offset index (its page
+    /// locations), which is not available at this pruning stage, and such files also typically lack
+    /// the `encoding_stats` that this check requires below. The cost of the limitation is only a
+    /// missed optimization (a full row-group scan), never a wrong result.
     if (!column_meta.meta_data.__isset.dictionary_page_offset)
         return false;
     /// We assume that the dictionary page is immediately followed by the first data page.
