@@ -16,10 +16,18 @@ class ThreadStatus;
 class CountingTransform final : public ExceptionKeepingTransform
 {
 public:
+    enum class InsertSource : uint8_t
+    {
+        Direct,
+        MaterializedView,
+    };
+
     explicit CountingTransform(
         SharedHeader header,
+        InsertSource source_,
         std::shared_ptr<const EnabledQuota> quota_ = nullptr)
         : ExceptionKeepingTransform(header, header)
+        , source(source_)
         , quota(std::move(quota_)) {}
 
     String getName() const override { return "CountingTransform"; }
@@ -34,6 +42,11 @@ public:
         process_elem = elem;
     }
 
+    void setInsertSource(InsertSource source_)
+    {
+        source = source_;
+    }
+
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override
     {
@@ -45,6 +58,7 @@ public:
 protected:
     ProgressCallback progress_callback;
     QueryStatusPtr process_elem;
+    InsertSource source;
 
     /// Quota is used to limit amount of written bytes.
     std::shared_ptr<const EnabledQuota> quota;

@@ -309,6 +309,10 @@
     \
     M(InsertedRows, "Number of rows INSERTed to all tables.", ValueType::Number) \
     M(InsertedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) INSERTed to all tables.", ValueType::Bytes) \
+    M(DirectInsertedRows, "Number of rows inserted by direct INSERT queries, excluding materialized views.", ValueType::Number) \
+    M(DirectInsertedBytes, "Number of uncompressed bytes inserted by direct INSERT queries, excluding materialized views.", ValueType::Bytes) \
+    M(MaterializedViewInsertedRows, "Number of rows inserted into target tables of materialized views.", ValueType::Number) \
+    M(MaterializedViewInsertedBytes, "Number of uncompressed bytes inserted into target tables of materialized views.", ValueType::Bytes) \
     M(DelayedInserts, "Number of times the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.", ValueType::Number) \
     M(RejectedInserts, "Number of times the INSERT of a block to a MergeTree table was rejected with 'Too many parts' exception due to high number of active data parts for partition.", ValueType::Number) \
     M(DelayedInsertsMilliseconds, "Total number of milliseconds spent while the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.", ValueType::Milliseconds) \

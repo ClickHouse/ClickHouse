@@ -10,6 +10,10 @@ namespace ProfileEvents
 {
     extern const Event InsertedRows;
     extern const Event InsertedBytes;
+    extern const Event DirectInsertedRows;
+    extern const Event DirectInsertedBytes;
+    extern const Event MaterializedViewInsertedRows;
+    extern const Event MaterializedViewInsertedBytes;
 }
 
 
@@ -27,6 +31,19 @@ void CountingTransform::onConsume(Chunk chunk)
 
     ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.written_rows);
     ProfileEvents::increment(ProfileEvents::InsertedBytes, written_bytes);
+
+    switch (source)
+    {
+        case InsertSource::Direct:
+            ProfileEvents::increment(ProfileEvents::DirectInsertedRows, local_progress.written_rows);
+            ProfileEvents::increment(ProfileEvents::DirectInsertedBytes, written_bytes);
+            break;
+
+        case InsertSource::MaterializedView:
+            ProfileEvents::increment(ProfileEvents::MaterializedViewInsertedRows, local_progress.written_rows);
+            ProfileEvents::increment(ProfileEvents::MaterializedViewInsertedBytes, written_bytes);
+            break;
+    }
 
     if (process_elem)
         process_elem->updateProgressOut(local_progress);
