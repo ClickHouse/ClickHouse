@@ -79,6 +79,10 @@ int mainEntryExampleEncryptDecrypt(int argc, char ** argv)
         DB::ConfigProcessor config_processor(argv[1], false, true);
         bool has_zk_includes = {};
         DB::XMLDocumentPtr config_xml = config_processor.processConfig(&has_zk_includes);
+
+        zkutil::ZooKeeperPtr zookeeper;
+        std::unique_ptr<zkutil::ZooKeeperNodeCache> zk_node_cache;
+
         if (has_zk_includes)
         {
             DB::EventNotifier::init(); // Event notifier is needed for correct ZK work
@@ -92,17 +96,18 @@ int mainEntryExampleEncryptDecrypt(int argc, char ** argv)
             conf.add(bootstrap_configuration);
 
             zkutil::ZooKeeperArgs args(*bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
-            auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(args));
+            zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(args));
 
-            zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
-            config_xml = config_processor.processConfig(&has_zk_includes, &zk_node_cache);
+            zk_node_cache = std::make_unique<zkutil::ZooKeeperNodeCache>([&zookeeper] { return zookeeper; });
+            config_xml = config_processor.processConfig(&has_zk_includes, zk_node_cache.get());
         }
+
         DB::ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
         if (config_processor.hasNodeWithNameAndChildNodeWithAttribute(config_xml, "encryption_codecs", "from_hashicorp_vault"))
         {
             DB::HashiCorpVault::instance().load(*configuration, "hashicorp_vault");
-            config_xml = config_processor.processConfig(&has_zk_includes, &zk_node_cache);
+            config_xml = config_processor.processConfig(&has_zk_includes, zk_node_cache ? zk_node_cache.get() : nullptr);
             configuration = new Poco::Util::XMLConfiguration(config_xml);
         }
 
