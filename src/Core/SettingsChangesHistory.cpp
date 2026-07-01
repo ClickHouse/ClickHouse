@@ -55,7 +55,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
             {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
             {"columns_cache_max_estimated_compressed_bytes_to_write_to_cache", 0, 0, "New setting: cap on the estimated compressed bytes a query reads to permit columns cache writes (0 = half of columns_cache_size)."},
-            {"columns_cache_max_bytes_to_write_to_cache", 0, 0, "New setting: per-query cap on bytes written to the columns cache (0 = half of columns_cache_size)."},
+            {"columns_cache_max_bytes_to_write_to_cache", 0, 0, "New setting: soft per-query threshold on bytes written to the columns cache; advisory, may be exceeded by up to one cache entry (0 = half of columns_cache_size)."},
             {"allow_experimental_url_wildcard_from_index_pages", false, false, "New setting to enable expanding wildcards in the `url` table function by listing HTTP index pages."},
             {"url_wildcard_max_directories_to_read", 100000, 100000, "New setting to limit the number of directories read when expanding wildcards in the `url` table function."},
             {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
