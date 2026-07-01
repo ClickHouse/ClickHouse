@@ -2465,8 +2465,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             auto local_component_guard = Coordination::setCurrentComponent(component_name);
             for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
             {
-                /// Skip temporary directories, file 'format_version.txt' and directory 'detached'.
+                /// Skip temporary directories, projection directories, file 'format_version.txt' and directory 'detached'.
                 if (startsWith(it->name(), "tmp")
+                    || endsWith(it->name(), ".proj") || endsWith(it->name(), ".tmp_proj")
                     || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME
                     || it->name() == DETACHED_DIR_NAME)
                     continue;

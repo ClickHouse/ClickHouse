@@ -2194,32 +2194,32 @@ private:
         /// Create hardlinks for unchanged files
         for (auto it = ctx->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
-            if (!entries_to_hardlink.contains(it->name()))
-            {
-                /// Do nothing for skipped files
-            }
-            else if (it->isFile())
+            if (it->isFile() && entries_to_hardlink.contains(it->name()))
             {
                 ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
                     ctx->source_part->getDataPartStorage(), it->name(), it->name());
                 hardlinked_files.insert(it->name());
             }
-            else
+        }
+
+        /// Hardlink unchanged projections (layout-independent discovery: nested children or flat siblings)
+        for (auto proj = ctx->source_part->getDataPartStorage().iterateProjections(/*include_temp=*/ false); proj->isValid(); proj->next())
+        {
+            if (!entries_to_hardlink.contains(proj->name()))
+                continue;
+
+            ctx->new_data_part->getDataPartStorage().createProjection(proj->name());
+
+            auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjection(proj->name());
+            auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjection(proj->name());
+
+            for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
             {
-                // it's a projection part directory
-                ctx->new_data_part->getDataPartStorage().createProjection(it->name());
+                projection_data_part_storage_dst->createHardLinkFrom(
+                    *projection_data_part_storage_src, p_it->name(), p_it->name());
 
-                auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjection(it->name());
-                auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjection(it->name());
-
-                for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
-                {
-                    projection_data_part_storage_dst->createHardLinkFrom(
-                        *projection_data_part_storage_src, p_it->name(), p_it->name());
-
-                    auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
-                    hardlinked_files.insert(file_name_with_projection_prefix);
-                }
+                auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
+                hardlinked_files.insert(file_name_with_projection_prefix);
             }
         }
 
@@ -2500,30 +2500,42 @@ private:
                     hardlinked_files.insert(it->name());
                 }
             }
-            else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
+        }
+
+        /// Hardlink unchanged projections (layout-independent discovery: nested children or flat siblings)
+        for (auto proj = ctx->source_part->getDataPartStorage().iterateProjections(/*include_temp=*/ false); proj->isValid(); proj->next())
+        {
+            const String projection_dir = proj->name();
+            if (ctx->files_to_skip.contains(projection_dir))
+                continue;
+
+            auto rename_it = std::find_if(ctx->files_to_rename.begin(), ctx->files_to_rename.end(), [&projection_dir](const auto & rename_pair)
             {
-                // it's a projection part directory
-                ctx->new_data_part->getDataPartStorage().createProjection(destination);
+                return rename_pair.first == projection_dir;
+            });
+            if (rename_it != ctx->files_to_rename.end())
+                continue;
 
-                auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjection(destination);
-                auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjection(destination);
+            ctx->new_data_part->getDataPartStorage().createProjection(projection_dir);
 
-                for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
+            auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjection(projection_dir);
+            auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjection(projection_dir);
+
+            for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
+            {
+                if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
                 {
-                    if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
-                    {
-                        projection_data_part_storage_dst->copyFileFrom(
-                            *projection_data_part_storage_src, p_it->name(), p_it->name());
-                    }
-                    else
-                    {
-                        auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
+                    projection_data_part_storage_dst->copyFileFrom(
+                        *projection_data_part_storage_src, p_it->name(), p_it->name());
+                }
+                else
+                {
+                    auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
 
-                        projection_data_part_storage_dst->createHardLinkFrom(
-                            *projection_data_part_storage_src, p_it->name(), p_it->name());
+                    projection_data_part_storage_dst->createHardLinkFrom(
+                        *projection_data_part_storage_src, p_it->name(), p_it->name());
 
-                        hardlinked_files.insert(file_name_with_projection_prefix);
-                    }
+                    hardlinked_files.insert(file_name_with_projection_prefix);
                 }
             }
         }

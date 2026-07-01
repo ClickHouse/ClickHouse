@@ -17,7 +17,15 @@ class PackedFilesWriter;
 class DataPartStorageOnDiskBase : public IDataPartStorage
 {
 public:
-    DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_);
+    DataPartStorageOnDiskBase(
+        VolumePtr volume_,
+        std::string root_path_,
+        std::string part_dir_,
+        ProjectionStorageFormat projection_storage_format_ = ProjectionStorageFormat::LEGACY_NESTED);
+
+    ProjectionStorageFormat getProjectionStorageFormat() const override { return projection_storage_format; }
+
+    DataPartProjectionIteratorPtr iterateProjections(bool include_temp) const override;
 
     std::string getFullPath() const override;
     std::string getRelativePath() const override;
@@ -159,8 +167,20 @@ public:
 
 protected:
 
-    DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
-    virtual MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const = 0;
+    /// TODO: check if default value is needed at c-tor at all (we can't plumb it to create anyway)
+    DataPartStorageOnDiskBase(
+        VolumePtr volume_,
+        std::string root_path_,
+        std::string part_dir_,
+        DiskTransactionPtr transaction_,
+        ProjectionStorageFormat projection_storage_format_ = ProjectionStorageFormat::LEGACY_NESTED);
+
+    virtual MutableDataPartStoragePtr create(
+        VolumePtr volume_,
+        std::string root_path_,
+        std::string part_dir_,
+        bool initialize_,
+        ProjectionStorageFormat projection_storage_format_) const = 0;
 
     /// Lazily load the per-part skp_idx.packed archive (if any). Subsequent calls return the
     /// cached reader (or nullptr if no archive exists). Used internally by the readFile /
@@ -197,6 +217,7 @@ protected:
     VolumePtr volume;
     std::string root_path;
     std::string part_dir;
+    ProjectionStorageFormat projection_storage_format;
     DiskTransactionPtr transaction;
     bool has_shared_transaction = false;
 

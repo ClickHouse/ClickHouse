@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ReadSettings.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
@@ -58,7 +59,8 @@ private:
         const VolumePtr & volume_,
         const String & root_path_,
         const String & part_dir_,
-        const ReadSettings & read_settings);
+        const ReadSettings & read_settings,
+        IDataPartStorage::ProjectionStorageFormat projection_format = IDataPartStorage::ProjectionStorageFormat::LEGACY_NESTED);
 
     const MergeTreeData & data;
     const String name;

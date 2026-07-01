@@ -19,31 +19,118 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_)
-    : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_))
+DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(
+    VolumePtr volume_,
+    std::string root_path_,
+    std::string part_dir_,
+    ProjectionStorageFormat projection_storage_format_)
+    : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_), projection_storage_format_)
 {
 }
 
 DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(
-    VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_)
-    : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_), std::move(transaction_))
+    VolumePtr volume_,
+    std::string root_path_,
+    std::string part_dir_,
+    DiskTransactionPtr transaction_,
+    ProjectionStorageFormat projection_storage_format_)
+    : DataPartStorageOnDiskBase(
+        std::move(volume_), std::move(root_path_), std::move(part_dir_), std::move(transaction_), projection_storage_format_)
 {
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskFull::create(
-    VolumePtr volume_, std::string root_path_, std::string part_dir_, bool /*initialize_*/) const
+    VolumePtr volume_,
+    std::string root_path_,
+    std::string part_dir_,
+    bool /*initialize_*/,
+    ProjectionStorageFormat projection_storage_format_) const
 {
-    return std::make_shared<DataPartStorageOnDiskFull>(std::move(volume_), std::move(root_path_), std::move(part_dir_));
+    return std::make_shared<DataPartStorageOnDiskFull>(
+        std::move(volume_), std::move(root_path_), std::move(part_dir_), projection_storage_format_);
+}
+
+namespace
+{
+    std::pair<std::string, std::string> getProjectionStorageRootAndDir(
+        const std::string & root_path,
+        const std::string & part_dir,
+        const std::string & name,
+        IDataPartStorage::ProjectionStorageFormat format)
+    {
+        switch (format)
+        {
+            case IDataPartStorage::ProjectionStorageFormat::LEGACY_NESTED:
+                return {fs::path(root_path) / part_dir, name};
+            case IDataPartStorage::ProjectionStorageFormat::FLAT:
+                return {root_path, part_dir + "." + name};
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected projection storage format: {}", static_cast<int>(format));
+        }
+    }
+}
+
+IDataPartStorage::ProjectionStorageFormat DataPartStorageOnDiskFull::detectProjectionAndItsFormat(const std::string & name) const
+{
+    ProjectionStorageFormat detected = ProjectionStorageFormat::NONE;
+
+    const auto disk = volume->getDisk();
+
+    const auto [proj_root_first, proj_dir_first] = getProjectionStorageRootAndDir(root_path, part_dir, name, projection_storage_format);
+    if (disk->existsDirectory(fs::path(proj_root_first) / proj_dir_first))
+    {
+        /// Probing the configured format first
+        detected = projection_storage_format;
+    }
+    else
+    {
+        /// Now probing the other remaining format if needed
+        ProjectionStorageFormat other = (projection_storage_format == ProjectionStorageFormat::LEGACY_NESTED)
+            ? ProjectionStorageFormat::FLAT
+            : ProjectionStorageFormat::LEGACY_NESTED;
+        const auto [proj_root_other, proj_dir_other] = getProjectionStorageRootAndDir(root_path, part_dir, name, other);
+        if (disk->existsDirectory(fs::path(proj_root_other) / proj_dir_other))
+            detected = other;
+    }
+
+    return detected;
+}
+
+bool DataPartStorageOnDiskFull::hasProjection(const std::string & name)
+{
+    return detectProjectionAndItsFormat(name) != ProjectionStorageFormat::NONE;
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(volume, std::string(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr));
+    ProjectionStorageFormat detected = detectProjectionAndItsFormat(name);
+
+    if (detected == ProjectionStorageFormat::NONE)
+        detected = projection_storage_format;
+
+    /// If projection is found - build a handle pointint to it, otherwise - fall through
+    auto [proj_root, proj_dir] = getProjectionStorageRootAndDir(root_path, part_dir, name, detected);
+    return std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(
+        volume,
+        std::move(proj_root),
+        std::move(proj_dir),
+        use_parent_transaction ? transaction : nullptr,
+        detected));
 }
 
 DataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name) const
 {
-    return std::make_shared<DataPartStorageOnDiskFull>(volume, std::string(fs::path(root_path) / part_dir), name);
+    ProjectionStorageFormat detected = detectProjectionAndItsFormat(name);
+
+    if (detected == ProjectionStorageFormat::NONE)
+        detected = projection_storage_format;
+
+    auto [proj_root, proj_dir] = getProjectionStorageRootAndDir(root_path, part_dir, name, detected);
+    return std::make_shared<DataPartStorageOnDiskFull>(
+            volume,
+            std::move(proj_root),
+            std::move(proj_dir),
+            detected);
 }
 
 bool DataPartStorageOnDiskFull::exists() const
@@ -261,7 +348,9 @@ void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, co
 
 void DataPartStorageOnDiskFull::createProjection(const std::string & name)
 {
-    executeWriteOperation([&](auto & disk) { disk.createDirectory(fs::path(root_path) / part_dir / name); });
+    /// Always write at the storage's configured layout. No probing.
+    const auto [proj_root, proj_dir] = getProjectionStorageRootAndDir(root_path, part_dir, name, projection_storage_format);
+    executeWriteOperation([&](auto & disk) { disk.createDirectory(fs::path(proj_root) / proj_dir); });
 }
 
 void DataPartStorageOnDiskFull::beginTransaction()
