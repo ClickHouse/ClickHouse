@@ -135,7 +135,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | SYSTEM_KEYWORDS_TABLE           | 54468   | system tables          | Server populates `system.keywords` so the canonical `clickhouse-client` can autocomplete keywords. No native-protocol wire change. |
 | ROWS_BEFORE_AGGREGATION         | 54469   | ProfileInfo            | Adds `applied_aggregation` (Bool) and `rows_before_aggregation` (VarUInt) to ProfileInfo, in that order at the tail. |
 | CHUNKED_PROTOCOL                | 54470   | Connection framing     | Per-packet chunk framing wraps every packet body. Negotiated in Addendum. ServerHello carries the server's preference for each direction; Addendum carries the client's final choice. See [chunked framing](#chunked-framing). |
-| VERSIONED_PARALLEL_REPLICAS_PROTOCOL | 54471 | ServerHello, Addendum | Both sides exchange a `VarUInt` parallel-replicas coordination protocol version. ServerHello's field is positioned **immediately after `protocol_version`** (before `timezone`). Addendum's field is appended after the chunked-protocol strings. Current value: `7` (`DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION`). |
+| VERSIONED_PARALLEL_REPLICAS_PROTOCOL | 54471 | ServerHello, Addendum | Both sides exchange a `VarUInt` parallel-replicas coordination protocol version. ServerHello's field is positioned **immediately after `protocol_version`** (before `timezone`). Addendum's field is appended after the chunked-protocol strings. Current value: `8` (`DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION`). Version `8` adds [`MergeTreeAllRangesAnnouncementResponse`](#mergetreeallrangesannouncementresponse) (client packet `14`): when the negotiated parallel-replicas version is `≥ 8` the initiator replies to every non-`Default`-mode follower announcement with the authoritative parts list for that stream, and the follower waits for it before issuing read requests. Below `8` the announcement is fire-and-forget. |
 | INTERSERVER_EXTERNALLY_GRANTED_ROLES | 54472 | Query | Adds a `String external_roles` field to the Query body, between the settings terminator and the interserver-secret hash. External clients send an empty role list (a single byte `0x00`, i.e. VarUInt 0 inside a String envelope). |
 | V2_DYNAMIC_AND_JSON_SERIALIZATION | 54473 | Column body | Server may emit V2 serialization for `Dynamic` and `JSON` column types — gates which `state_prefix` version they use. See [versioned types](/interfaces/specs/NativeFormat#versioned-types). |
 | SERVER_SETTINGS                 | 54474   | ServerHello            | Server broadcasts its non-default settings as a list at the tail of ServerHello, after `nonce`. Format: `(key, flags, value)` triples terminated by an empty key — same as the Query packet's settings list. |
@@ -444,7 +444,7 @@ Server → Client. The reply to ClientHello on successful authentication.
 | 2 | version_major    | VarUInt | universal | always                 | Server major version |
 | 3 | version_minor    | VarUInt | universal | always                 | Server minor version |
 | 4 | protocol_version | VarUInt | universal | always                 | Server's protocol version |
-| 4a | parallel_replicas_protocol_version | VarUInt | universal | VERSIONED_PARALLEL_REPLICAS_PROTOCOL (v54471) | Server's parallel-replicas coordination protocol version. **Wire position: immediately after `protocol_version`**, before `timezone`. Current: `7`. |
+| 4a | parallel_replicas_protocol_version | VarUInt | universal | VERSIONED_PARALLEL_REPLICAS_PROTOCOL (v54471) | Server's parallel-replicas coordination protocol version. **Wire position: immediately after `protocol_version`**, before `timezone`. Current: `8`. |
 | 5 | timezone         | String  | universal | TIMEZONE (v54058)      | Server timezone (e.g., `"UTC"`) |
 | 6 | display_name     | String  | universal | DISPLAY_NAME (v54372)  | Human-readable server name |
 | 7 | version_patch    | VarUInt | universal | VERSION_PATCH (v54401) | Server patch version |
@@ -478,7 +478,7 @@ Client → Server, gated by `ADDENDUM` (v54458). Sent immediately after the hand
 | 1 | quota_key         | String | universal    | always                     | Resource quota key for server-side keyed quotas. Clients that do not use a keyed quota send an empty string. |
 | 2 | proto_send_chunked | String | universal   | CHUNKED_PROTOCOL (v54470)  | Client's negotiated outbound chunking: `"chunked"` or `"notchunked"`. Computed against `proto_recv_chunked_srv` from ServerHello. |
 | 3 | proto_recv_chunked | String | universal   | CHUNKED_PROTOCOL (v54470)  | Client's negotiated inbound chunking. Computed against `proto_send_chunked_srv`. |
-| 4 | parallel_replicas_protocol_version | VarUInt | universal | VERSIONED_PARALLEL_REPLICAS_PROTOCOL (v54471) | Client's supported parallel-replicas coordination protocol version. External clients not participating in distributed queries SHOULD still send a valid version (current `7`) so the server's compatibility check succeeds. |
+| 4 | parallel_replicas_protocol_version | VarUInt | universal | VERSIONED_PARALLEL_REPLICAS_PROTOCOL (v54471) | Client's supported parallel-replicas coordination protocol version. External clients not participating in distributed queries SHOULD still send a valid version (current `8`) so the server's compatibility check succeeds. |
 
 The chunked-framing flip applies *after* this Addendum is flushed — the Addendum itself is unframed.
 
@@ -818,6 +818,62 @@ This is the reverse of the password handshake, where ServerHello immediately fol
 
 External clients that don't use SSH auth never see packets 11, 12, or 18 — they stay off the wire unless the user explicitly opts in via the username prefix.
 
+### MergeTreeAllRangesAnnouncementResponse (packet type 14) {#mergetreeallrangesannouncementresponse}
+
+Client → Server, inter-server only. Gated by `parallel_replicas_protocol_version ≥ 8` (see [VERSIONED_PARALLEL_REPLICAS_PROTOCOL](#feature-table)). External clients never send this packet.
+
+When the negotiated parallel-replicas version is `≥ 8`, the initiator's request/response cycle for a follower's [`MergeTreeAllRangesAnnouncement`](#packet-type-reference) (packet type `15`, server→client direction) changes:
+
+1. A follower opens its read pipeline and sends `MergeTreeAllRangesAnnouncement` to the initiator.
+2. **Only when the announcement's `mode` is non-`Default`** (`WithOrder = 1` or `ReverseOrder = 2`, both used for in-order parallel reads) the initiator replies with `MergeTreeAllRangesAnnouncementResponse`. For `mode = Default = 0` the initiator stays silent and the follower does not wait — `Default` mode hands out ranges with each `MergeTreeReadTaskRequest` and never needs the up-front parts list.
+3. The follower blocks on the response (when expected) before issuing its first [`MergeTreeReadTaskRequest`](#packet-type-reference) (server packet `16` — sent follower→initiator; the initiator replies with `MergeTreeReadTaskResponse`, client packet `10`), using the returned parts list to filter source construction to exactly the parts its `#split_i` stream owns.
+
+Below version `8` the announcement is fire-and-forget regardless of mode, and the follower constructs sources over every locally-known part (the legacy behaviour).
+
+#### Body {#mergetreeallrangesannouncementresponse-body}
+
+| # | Field      | Type                                                                                | Description |
+|---|------------|-------------------------------------------------------------------------------------|-------------|
+| 1 | version    | Int64 (little-endian)                                                               | The sender's parallel-replicas protocol version. Equals `DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION` (currently `8`) when the recipient's TCP revision is `≥ DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL` (`54471`); otherwise falls back to `DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION` (`3`). The receiver rejects any value below `DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION`. |
+| 2 | parts      | [RangesInDataPartsDescription](#rangesindatapartsdescription)                       | Authoritative set of parts the coordinator has registered for the announcement's stream. An empty list means the stream does not exist on the coordinator (e.g. the follower over-announced more splits than the initiator created); the follower's pool for that stream marks itself finished immediately. |
+| 3 | stream_id  | String                                                                              | Echoes the `stream_id` of the announcement this response answers (table name plus `#split_i` suffix when split topology is in play). |
+
+#### RangesInDataPartsDescription body {#rangesindatapartsdescription}
+
+| # | Field   | Type                                                                              | Description |
+|---|---------|-----------------------------------------------------------------------------------|-------------|
+| 1 | count   | VarUInt                                                                           | Number of part descriptors that follow. The decoder rejects values above `100'000'000'000` as malformed. |
+| 2 | parts   | [RangesInDataPartDescription](#rangesindatapartdescription) repeated `count` times | The descriptors, in the coordinator's registration order. |
+
+#### RangesInDataPartDescription body {#rangesindatapartdescription}
+
+| # | Field             | Type                                                | Gate                                                                  | Description |
+|---|-------------------|-----------------------------------------------------|-----------------------------------------------------------------------|-------------|
+| 1 | info              | [MergeTreePartInfo](#mergetreepartinfo)             | universal                                                             | Part identity (partition, block range, level, mutation). |
+| 2 | ranges            | [MarkRanges](#markranges)                           | universal                                                             | Mark ranges within `info` that this stream may serve. An empty list means the part is registered but currently has no work assigned. |
+| 3 | rows              | VarUInt                                             | universal                                                             | Total rows covered by `ranges`. |
+| 4 | projection_name   | String                                              | `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION` (PR v5)          | Empty for primary-part rows; otherwise the projection's name. |
+| 5 | min_marks_per_task | VarUInt                                            | `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK` (PR v6) | Lower bound on marks the follower's pool should batch into a single read task for this part. |
+
+#### MergeTreePartInfo body {#mergetreepartinfo}
+
+| # | Field                | Type                  | Description |
+|---|----------------------|-----------------------|-------------|
+| 1 | version              | Int64 (little-endian) | Always `DBMS_MERGE_TREE_PART_INFO_VERSION` (`1`). Decoder rejects any other value. |
+| 2 | partition_id         | String                | Partition identifier (e.g. `"all"` for un-partitioned tables, or the partition-key tuple expression's stringified value). |
+| 3 | min_block            | Int64 (little-endian) | First block number in the part's block range. |
+| 4 | max_block            | Int64 (little-endian) | Last block number in the part's block range (inclusive). |
+| 5 | level                | UInt32 (little-endian)| Merge level. |
+| 6 | mutation             | Int64 (little-endian) | Mutation version that produced this part (`0` for unmutated). |
+| 7 | use_legacy_max_level | Bool (text)           | Encoded as a single ASCII byte (`'1'` or `'0'`) — historical compatibility flag for the part-name format. |
+
+#### MarkRanges body {#markranges}
+
+| # | Field   | Type                  | Description |
+|---|---------|-----------------------|-------------|
+| 1 | size    | UInt64 (little-endian) | Number of mark-range pairs that follow. Note: little-endian fixed-width, **not** VarUInt. |
+| 2 | ranges  | `size` repetitions of `(UInt64 begin, UInt64 end)`, each little-endian | Half-open `[begin, end)` mark intervals. |
+
 ## Packet type reference {#packet-type-reference}
 
 ### Client → Server {#client-to-server}
@@ -838,6 +894,7 @@ External clients that don't use SSH auth never see packets 11, 12, or 18 — the
 | 11   | SSHChallengeRequest       | [SSH auth](#ssh-authentication) | SSH auth challenge request |
 | 12   | SSHChallengeResponse      | [SSH auth](#ssh-authentication) | SSH auth challenge response |
 | 13   | QueryPlan                 | not specified       | Query plan |
+| 14   | MergeTreeAllRangesAnnouncementResponse | [MergeTreeAllRangesAnnouncementResponse](#mergetreeallrangesannouncementresponse) | Initiator's reply to a follower's [`MergeTreeAllRangesAnnouncement`](#packet-type-reference) (gated on `parallel_replicas_protocol_version ≥ 8` — see [VERSIONED_PARALLEL_REPLICAS_PROTOCOL](#feature-table)). Inter-server only — external clients never send. |
 
 ### Server → Client {#server-to-client}
 
