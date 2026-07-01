@@ -331,6 +331,15 @@ public:
     size_t getMaxTasksCount() const;
 
     bool trySchedule(ExecutableTaskPtr task);
+
+    /// Reserve up to `desired` free task slots for merges that run outside this executor (e.g. the
+    /// synchronous merges of OPTIMIZE FINAL). Returns the number of slots actually reserved, which
+    /// may be fewer than requested (down to zero if the pool is already full). The reservation is
+    /// accounted in the same task metric and taken under the same lock as `trySchedule`, so the two
+    /// never race and the metric never exceeds the configured maximum. Release with `releaseTaskSlots`.
+    size_t tryReserveTaskSlots(size_t desired);
+    void releaseTaskSlots(size_t count) noexcept;
+
     void removeTasksCorrespondingToStorage(StorageID id);
     void wait();
 

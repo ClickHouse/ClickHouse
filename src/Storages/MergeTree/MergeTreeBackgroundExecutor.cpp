@@ -169,6 +169,39 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     return true;
 }
 
+template <class Queue>
+size_t MergeTreeBackgroundExecutor<Queue>::tryReserveTaskSlots(size_t desired)
+{
+    if (desired == 0)
+        return 0;
+
+    /// Same lock as trySchedule, so the check-and-increment of the task metric is atomic with
+    /// scheduling and the metric never exceeds max_tasks_count (CompactionStatistics treats that
+    /// as a logical error).
+    LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
+
+    if (shutdown)
+        return 0;
+
+    auto & value = CurrentMetrics::values[metric];
+    const Int64 current = value.load();
+    const Int64 max_count = static_cast<Int64>(max_tasks_count.load());
+    if (current >= max_count)
+        return 0;
+
+    const size_t granted = std::min(desired, static_cast<size_t>(max_count - current));
+    value.fetch_add(static_cast<Int64>(granted));
+    return granted;
+}
+
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::releaseTaskSlots(size_t count) noexcept
+{
+    /// Decrement without the lock, mirroring how TaskRuntimeData releases its slot on destruction.
+    if (count)
+        CurrentMetrics::values[metric].fetch_sub(static_cast<Int64>(count));
+}
+
 static void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
 {
     std::exception_ptr ex = std::current_exception();

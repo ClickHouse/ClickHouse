@@ -78,7 +78,6 @@ namespace CurrentMetrics
     extern const Metric OptimizeFinalThreads;
     extern const Metric OptimizeFinalThreadsActive;
     extern const Metric OptimizeFinalThreadsScheduled;
-    extern const Metric BackgroundMergesAndMutationsPoolTask;
 }
 
 namespace DB
@@ -2070,38 +2069,21 @@ bool StorageMergeTree::optimize(
         /// single transaction object, which is not designed for concurrent use.
         ///
         /// To respect the operator's configured merge concurrency (`background_pool_size` *
-        /// `background_merges_mutations_concurrency_ratio`), reserve the slots in the same
-        /// `BackgroundMergesAndMutationsPoolTask` counter that background merge selection consults,
-        /// before assigning anything. The reservation is atomic and clamped to the free capacity, so
-        /// concurrent OPTIMIZE FINAL queries and the background pool all account for these merges, and
-        /// the counter never exceeds `getMaxTasksCount()` (which `getMaxSourcePartsBytesForMerge`
-        /// treats as a logical error). The reservation is held for the whole query and released here.
+        /// `background_merges_mutations_concurrency_ratio`), reserve the slots in the background
+        /// merge/mutate executor before assigning anything. The reservation is taken under the same
+        /// lock and accounted in the same task metric as `MergeTreeBackgroundExecutor::trySchedule`,
+        /// so concurrent OPTIMIZE FINAL queries and the background pool all account for these merges,
+        /// the two never race, and the metric never exceeds the configured maximum. The reservation
+        /// is clamped to the currently free capacity, held for the whole query, and released here.
+        auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
         size_t reserved_merge_slots = 0;
-        auto & merge_pool_task_metric = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask];
         SCOPE_EXIT({
             if (reserved_merge_slots)
-                merge_pool_task_metric.fetch_sub(static_cast<Int64>(reserved_merge_slots), std::memory_order_relaxed);
+                merge_mutate_executor->releaseTaskSlots(reserved_merge_slots);
         });
 
-        if (txn == nullptr && partition_ids.size() > 1)
-        {
-            if (auto merge_mutate_executor = getContext()->getMergeMutateExecutor())
-            {
-                const Int64 max_tasks = static_cast<Int64>(merge_mutate_executor->getMaxTasksCount());
-                const Int64 wanted = std::min<Int64>(static_cast<Int64>(partition_ids.size()), std::max<Int64>(1, max_tasks));
-
-                Int64 occupied = merge_pool_task_metric.load(std::memory_order_relaxed);
-                while (occupied < max_tasks)
-                {
-                    const Int64 grant = std::min(wanted, max_tasks - occupied);
-                    if (merge_pool_task_metric.compare_exchange_weak(occupied, occupied + grant, std::memory_order_relaxed))
-                    {
-                        reserved_merge_slots = static_cast<size_t>(grant);
-                        break;
-                    }
-                }
-            }
-        }
+        if (txn == nullptr && partition_ids.size() > 1 && merge_mutate_executor)
+            reserved_merge_slots = merge_mutate_executor->tryReserveTaskSlots(partition_ids.size());
 
         const size_t max_concurrent_merges = std::max<size_t>(1, reserved_merge_slots);
 
