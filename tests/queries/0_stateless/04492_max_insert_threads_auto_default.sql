@@ -1,3 +1,7 @@
+-- Tags: no-random-settings
+-- The settings randomizer injects an explicit `max_insert_threads`, which marks the setting as
+-- changed and prevents the `compatibility` setting from restoring its previous default below.
+
 -- Since 26.7, `max_insert_threads` defaults to auto (the number of CPU cores) instead of 1,
 -- so `INSERT SELECT` is parallelized by default.
 
