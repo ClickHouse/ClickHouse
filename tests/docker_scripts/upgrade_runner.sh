@@ -149,8 +149,12 @@ configure "${configure_opts[@]}"
 
 # Check that all new/changed setting were added in settings changes history.
 # Some settings can be different for builds with sanitizers, so we check
-# Also the automatic value of 'max_threads' and similar was displayed as "'auto(...)'" in previous versions instead of "auto(...)".
 # settings changes only for non-sanitizer builds.
+# The automatic value of 'max_threads' and similar settings is rendered as auto(N); older releases
+# rendered it as the quoted 'auto(N)' (with the quotes baked into the value). Suppress only this pure
+# rendering difference - a row where the old value is exactly the new value wrapped in single quotes -
+# so it is not reported as a setting change. A genuine change of an auto-valued setting's default is
+# still caught and must have a settings changes history entry.
 IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
@@ -170,6 +174,7 @@ then
   FROM new_settings
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
   WHERE (old_value IS NULL OR new_value != old_value)
+      AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
@@ -189,6 +194,7 @@ then
   FROM new_merge_tree_settings
   LEFT JOIN old_merge_tree_settings ON new_merge_tree_settings.name = old_merge_tree_settings.name
   WHERE (old_value IS NULL OR new_value != old_value)
+      AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
@@ -327,6 +333,8 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `CANNOT_PARSE_TEXT` errors come from:
 #       - 00834_kill_mutation{,_replicated_zookeeper}: `DELETE WHERE toUInt32(s) = 1` on String data ('a', 'b')
 #       - 01414_mutations_and_errors_zookeeper: `MODIFY COLUMN value UInt64` on String data ('Hello')
+#       - 04338_on_fly_mutation_read_overwritten_lc_source: `MODIFY COLUMN v UInt64` on String data ('x')
+#       - 01155_old_mutation_parts_to_do: `UPDATE m = m*toInt8(s) WHERE n=3` on String data ('fail')
 #       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
 #       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
@@ -396,6 +404,16 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       regex in the secondary pipe below to require BOTH the `SystemLog` flush wrapper for `metric_log` AND
 #       the `DEADLOCK_AVOIDED` error code together, so unrelated lock-timeout errors and unrelated
 #       `metric_log` errors are not masked.
+# `PostgreSQLConnectionPool: Connection error` and `DatabasePostgreSQL::removeOutdatedTables` + `Connection to`
+#       + `failed` are benign background-reconnection errors from a `DatabasePostgreSQL` engine left behind by
+#       `04210_show_remote_databases_in_system_tables` when the stress phase interrupts that test between its
+#       `CREATE DATABASE ... ENGINE = PostgreSQL('192.0.2.1:5432', ...)` and the final `DROP DATABASE` (the
+#       documentation IP `192.0.2.1`, RFC 5737, is intentionally unreachable). `DatabasePostgreSQL::startup`
+#       always activates the `PostgreSQLCleanerTask`, so after the upgrade restart the leftover database's cleaner
+#       task (`removeOutdatedTables`) tries to connect and the connection pool logs `<Error>` for each retry.
+#       Filtered via regex in the secondary pipe below to require the PostgreSQL connection-pool / cleaner-task
+#       context AND the connection-failure symptom together, so real PostgreSQL regressions (auth, protocol,
+#       query errors) are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -426,6 +444,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "is lost forever." \
            -e "Unknown index: idx." \
            -e "Cannot parse string 'Hello' as UInt64" \
+           -e "Cannot parse string 'x' as UInt64" \
            -e "Cannot parse string 'Hello' as UInt32" \
            -e "Cannot parse string \'Hello\' as UInt32" \
            -e "Cannot parse string \\'Hello\\' as UInt32" \
@@ -433,6 +452,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse string \'b\' as UInt32" \
            -e "Cannot parse string 'a' as UInt32" \
            -e "Cannot parse string 'b' as UInt32" \
+           -e "Cannot parse string 'fail' as Int8" \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
@@ -479,6 +499,8 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
+    | grep -av -e "PostgreSQLConnectionPool: Connection error" \
+    | grep -av -e "DatabasePostgreSQL::removeOutdatedTables.*Connection to .* failed" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
