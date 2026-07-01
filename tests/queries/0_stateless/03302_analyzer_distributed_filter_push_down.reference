@@ -246,22 +246,37 @@ Positions: 2 1
                   Function: sum(UInt32) → UInt64
                   Arguments: __table1.y
             Skip merging: 0
-              Expression ((Before GROUP BY + Change column names to column identifiers))
-              Actions: INPUT : 0 -> x UInt32 : 0
-                       INPUT : 1 -> y UInt32 : 1
-                       ALIAS x :: 0 -> __table1.x UInt32 : 2
-                       ALIAS y :: 1 -> __table1.y UInt32 : 0
-              Positions: 2 0
-                ReadFromMergeTree (default.tab0)
-                ReadType: Default
-                Parts: 1
-                Granules: 123
-                Indexes:
-                  PrimaryKey
-                    Condition: true
-                    Parts: 1/1
-                    Granules: 123/123
-                  Ranges: 1
+              Expression (Before GROUP BY)
+              Actions: INPUT :: 0 -> __table1.x UInt32 : 0
+                       INPUT :: 1 -> __table1.y UInt32 : 1
+              Positions: 0 1
+                Expression ((WHERE + Change column names to column identifiers))
+                Actions: INPUT : 1 -> y UInt32 : 0
+                         INPUT : 0 -> x UInt32 : 1
+                         ALIAS y :: 0 -> __table1.y UInt32 : 2
+                         ALIAS x :: 1 -> __table1.x UInt32 : 0
+                Positions: 0 2
+                  ReadFromMergeTree (default.tab0)
+                  ReadType: Default
+                  Parts: 1
+                  Granules: 1
+                  Prewhere info
+                  Need filter: 1
+                    Prewhere filter
+                    Prewhere filter column: equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) (removed)
+                    Actions: INPUT : 0 -> x UInt32 : 0
+                             COLUMN Const(UInt8) -> _CAST(42_UInt8, \'UInt8\'_String) UInt8 : 1
+                             FUNCTION equals(x : 0, _CAST(42_UInt8, \'UInt8\'_String) :: 1) -> equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) UInt8 : 2
+                    Positions: 0 2
+                  Indexes:
+                    PrimaryKey
+                      Keys:
+                        x
+                      Condition: (x in [42, 42])
+                      Parts: 1/1
+                      Granules: 1/123
+                      Search Algorithm: binary search
+                    Ranges: 1
 ============ in / global in
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
