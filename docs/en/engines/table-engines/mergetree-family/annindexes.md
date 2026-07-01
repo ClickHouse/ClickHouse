@@ -121,7 +121,7 @@ We recommend changing the index granularity only for advanced users who understa
 
 Vector similarity indexes are generic in the sense that they can accommodate different approximate search method.
 The actually used method is specified by parameter `<type>`.
-As of now, the only available method is HNSW ([academic paper](https://arxiv.org/abs/1603.09320)), a popular and state-of-the-art technique for approximate vector search based on hierarchical proximity graphs.
+As of now, two methods are available: HNSW ([academic paper](https://arxiv.org/abs/1603.09320)), a popular and state-of-the-art technique for approximate vector search based on hierarchical proximity graphs, and ScaNN (experimental, see [below](#scann)).
 If HNSW is used as type, users may optionally specify further HNSW-specific parameters:
 
 ```sql
@@ -143,6 +143,68 @@ These HNSW-specific parameters are available:
 The default values of all HNSW-specific parameters work reasonably well in the majority of use cases.
 We therefore do not recommend customizing the HNSW-specific parameters.
 
+#### ScaNN (experimental) {#scann}
+
+[ScaNN](https://github.com/google-research/google-research/tree/master/scann) is Google's Scalable Nearest Neighbors library.
+It uses an IVF (Inverted File Index) partitioning scheme combined with asymmetric hashing for fast approximate search and optional exact reranking.
+ScaNN is well-suited for large, high-dimensional datasets where HNSW's memory consumption becomes a bottleneck.
+
+:::note
+The ScaNN backend is experimental. To create a `vector_similarity('scann', ...)` index, first enable the experimental setting:
+
+```sql
+SET allow_experimental_scann_index = 1;
+```
+:::
+
+ScaNN indexes are created with exactly three arguments — no optional extras:
+
+```sql
+SET allow_experimental_scann_index = 1;
+
+CREATE TABLE table
+(
+  [...],
+  vectors Array(Float32),
+  INDEX index_name vectors TYPE vector_similarity('scann', <distance_function>, <dimensions>) [GRANULARITY N]
+)
+ENGINE = MergeTree
+ORDER BY [...];
+```
+
+The supported distance functions for ScaNN are `L2Distance`, `cosineDistance`, and `dotProduct`.
+Unlike HNSW, ScaNN supports only `Array(Float32)` and `Array(Float64)` columns — `Array(BFloat16)` is not supported.
+
+**ScaNN-specific query settings**
+
+Two settings allow per-query tuning of the recall/latency trade-off:
+
+- `scann_num_leaves_to_search` (default: `0`) — number of IVF partitions to probe at query time.
+  Value `0` uses the index's built-in default, which is approximately `num_leaves^0.5` where `num_leaves = num_vectors^0.5`.
+  Higher values increase recall at the cost of query latency.
+
+- `scann_candidate_pool_size` (default: `0`) — size of the asymmetric-hashing candidate pool fed into the exact reranker.
+  Value `0` means automatic: `1000 × LIMIT`.
+  Higher values increase recall at the cost of query latency.
+
+Example with custom tuning:
+
+```sql
+WITH [0.0, 1.0, ...] AS reference_vec
+SELECT id, cosineDistance(vec, reference_vec) AS dist
+FROM table
+ORDER BY dist ASC
+LIMIT 10
+SETTINGS scann_num_leaves_to_search = 80, scann_candidate_pool_size = 5000;
+```
+
+**ScaNN minimum vector requirement**
+
+ScaNN requires at least 1000 vectors per index granule to build an index.
+If a part contains fewer than 1000 vectors (e.g. during incremental inserts before a merge), the index is not built for that part and ClickHouse falls back to an exact scan for those rows.
+After parts are merged into a larger part with ≥ 1000 vectors, the index is built automatically.
+Use `OPTIMIZE TABLE ... FINAL` to force a merge if needed.
+
 Further restrictions apply:
 - Vector similarity indexes can only be build on columns of type [Array(Float32)](../../../sql-reference/data-types/array.md), [Array(Float64)](../../../sql-reference/data-types/array.md), or [Array(BFloat16)](../../../sql-reference/data-types/array.md). Arrays of nullable and low-cardinality floats such as `Array(Nullable(Float32))` and `Array(LowCardinality(Float32))` are not allowed.
 - Vector similarity indexes must be build on single columns.
@@ -154,7 +216,7 @@ Further restrictions apply:
 
 A vector generated for use with a typical AI model (e.g. a Large Language Model, [LLMs](https://en.wikipedia.org/wiki/Large_language_model)) consists of hundreds or thousands of floating-point values.
 Thus, a single vector value can have a memory consumption of multiple kilobyte.
-Users who like to estimate the storage required for the underlying vector column in the table, as well as the main memory needed for the vector similarity index, can use below two formula:
+Users who like to estimate the storage required for the underlying vector column in the table, as well as the main memory needed for the vector similarity index, can use the formula below.
 
 Storage consumption of the vector column in the table (uncompressed):
 
@@ -171,7 +233,9 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 The vector similarity index must be fully loaded from disk into main memory to perform searches.
 Similarly, the vector index is also constructed fully in memory and then saved to disk.
 
-Memory consumption required to load a vector index:
+**HNSW memory consumption**
+
+Memory consumption required to load an HNSW index:
 
 ```text
 Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
@@ -189,7 +253,32 @@ Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
 Memory consumption = 3072 + 512 = 3584 MB
 ```
 
-Above formula does not account for additional memory required by vector similarity indexes to allocate runtime data structures like pre-allocated buffers and caches.
+**ScaNN memory consumption**
+
+The HNSW formula does not apply to ScaNN. A ScaNN index has three main memory components:
+
+```text
+Raw vectors (rv)    = Number of vectors * DimensionPadded * 4   (Float32; DimensionPadded = Dimension rounded up to the next multiple of 8)
+AH hashed data (ah) = Number of vectors * ceil(Dimension / 4)   (2 bits per sub-quantizer per vector, 4 dimensions per sub-quantizer)
+IVF centroids (iv)  = ceil(sqrt(Number of vectors)) * Dimension * 4
+
+Memory consumption: rv + ah + iv
+```
+
+Example for the dbpedia dataset:
+
+```text
+Raw vectors (rv)    = 1 million * 1536 * 4 = 6144 MB
+AH hashed data (ah) = 1 million * ceil(1536 / 4) = 1 million * 384 = 384 MB
+IVF centroids (iv)  = ceil(sqrt(1 million)) * 1536 * 4 = 1000 * 1536 * 4 ≈ 6 MB
+
+Memory consumption ≈ 6534 MB
+```
+
+Note that ScaNN retains full-precision Float32 vectors for exact reranking, which makes its memory footprint larger than HNSW with BFloat16 quantization for the same dataset.
+For the actual size of a built index, query `system.data_skipping_indices` or inspect the log message emitted when the index is loaded.
+
+Above formulas do not account for additional memory required by vector similarity indexes to allocate runtime data structures like pre-allocated buffers and caches.
 
 #### Using a Vector Similarity Index {#using-a-vector-similarity-index}
 

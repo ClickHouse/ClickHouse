@@ -1,0 +1,50 @@
+1. L2Distance
+5	0
+6	0.09999990463256836
+7	0.20000004768371582
+0
+0
+0
+2. cosineDistance
+6	0.005731362878640178
+4	0.09204062768384846
+1	0.15200169244542905
+0
+0
+0
+3. dotProduct
+6	18.600000381469727
+4	10.399999618530273
+7	9.399999618530273
+0
+0
+0
+4. Fallback path (< 1000 vectors)
+0
+0
+0
+5. ScaNN not skipped when combined with a minmax index
+0
+6. invalid distance function
+7. too few arguments
+8. too many arguments
+9. dimensions must be > 0
+10. must be created on Array(Float32) or Array(Float64) column
+11. dimension mismatch at insert
+12. scann_num_leaves_to_search small: result cardinality equals LIMIT
+1
+0
+13. non-finite values rejected at insert (NaN/Inf)
+14. non-finite values rejected in query vector
+15. Float64 value overflowing to float32 +Inf rejected in query vector
+16. Serialization round-trip (DETACH/ATTACH)
+1
+0
+17. L2Distance optimized plan returns correct distance value (not double-sqrt)
+1
+18. cosineDistance rejects zero-magnitude indexed vector
+19. cosineDistance rejects zero-magnitude query vector
+20. Large Float64 cosine vectors: float32 overflow in normalization regression
+0
+0
+21. Unquoted scann identifier requires allow_experimental_scann_index

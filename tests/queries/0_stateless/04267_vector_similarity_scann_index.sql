@@ -1,0 +1,476 @@
+-- Tags: no-fasttest, no-ordinary-database, long, no-flaky-check
+-- long: ScaNN index build on 2000+ vectors is slow under instrumentation.
+-- no-flaky-check: the flaky check reruns new tests ~50x concurrently; a real ScaNN
+--   build (MSan ~363s, debug ~228s) is too heavy for that.  The test still runs once
+--   in regular sanitizer builds, so coverage is preserved.
+-- Tests for MergeTree vector_similarity('scann', ...) secondary index.
+-- Tests 1-3 insert >= 2000 vectors so the ScaNN index is actually built.
+-- The original reference rows are padded with distant vectors so that the
+-- expected top-K is unchanged while the ANN path is exercised.
+
+SET enable_analyzer = 1;
+SET allow_experimental_scann_index = 1;
+SET vector_search_with_rescoring = 1;
+
+SELECT '1. L2Distance';
+DROP TABLE IF EXISTS tab_scann_l2;
+CREATE TABLE tab_scann_l2 (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO tab_scann_l2 VALUES
+    (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]),
+    (5, [0.0, 2.0]), (6, [0.0, 2.1]), (7, [0.0, 2.2]), (8, [0.0, 2.3]), (9, [0.0, 2.4]);
+INSERT INTO tab_scann_l2
+    SELECT 10 + toInt32(number), [toFloat32((number + 1) * 100.0), toFloat32(0.0)]
+    FROM numbers(1990);
+OPTIMIZE TABLE tab_scann_l2 FINAL;
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, L2Distance(vec, reference_vec) AS dist
+FROM tab_scann_l2
+ORDER BY dist ASC
+LIMIT 3
+SETTINGS use_skip_indexes = 1;
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id, L2Distance(vec, reference_vec) AS dist
+    FROM tab_scann_l2
+    ORDER BY dist ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id, L2Distance(vec, reference_vec) AS dist
+    FROM tab_scann_l2
+    ORDER BY dist ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id, L2Distance(vec, reference_vec) AS dist
+    FROM tab_scann_l2
+    ORDER BY dist ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 0
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id, L2Distance(vec, reference_vec) AS dist
+    FROM tab_scann_l2
+    ORDER BY dist ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1
+);
+-- Verify the optimize_plan=true path (rescoring=0) returns the correct top-3 IDs.
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_l2 ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_l2 ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+DROP TABLE tab_scann_l2;
+
+SELECT '2. cosineDistance';
+DROP TABLE IF EXISTS tab_scann_cos;
+CREATE TABLE tab_scann_cos (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'cosineDistance', 2))
+    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO tab_scann_cos VALUES
+    (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]),
+    (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
+INSERT INTO tab_scann_cos
+    SELECT 12 + toInt32(number), [toFloat32((number + 1) * 100.0), toFloat32(0.0)]
+    FROM numbers(1988);
+OPTIMIZE TABLE tab_scann_cos FINAL;
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, cosineDistance(vec, reference_vec) AS dist
+FROM tab_scann_cos
+ORDER BY dist ASC
+LIMIT 3
+SETTINGS use_skip_indexes = 1;
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id, cosineDistance(vec, reference_vec) AS dist
+    FROM tab_scann_cos
+    ORDER BY dist ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id, cosineDistance(vec, reference_vec) AS dist
+    FROM tab_scann_cos
+    ORDER BY dist ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id, cosineDistance(vec, reference_vec) AS dist
+    FROM tab_scann_cos
+    ORDER BY dist ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 0
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id, cosineDistance(vec, reference_vec) AS dist
+    FROM tab_scann_cos
+    ORDER BY dist ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1
+);
+-- Verify the optimize_plan=true path (rescoring=0).
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_cos ORDER BY cosineDistance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_cos ORDER BY cosineDistance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+DROP TABLE tab_scann_cos;
+
+SELECT '3. dotProduct';
+DROP TABLE IF EXISTS tab_scann_dot;
+CREATE TABLE tab_scann_dot (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'dotProduct', 2))
+    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO tab_scann_dot VALUES
+    (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]),
+    (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
+INSERT INTO tab_scann_dot
+    SELECT 12 + toInt32(number), [toFloat32((number + 1) * 100.0), toFloat32(0.0)]
+    FROM numbers(1988);
+OPTIMIZE TABLE tab_scann_dot FINAL;
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, dotProduct(vec, reference_vec) AS score
+FROM tab_scann_dot
+ORDER BY score DESC
+LIMIT 3
+SETTINGS use_skip_indexes = 1;
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id, dotProduct(vec, reference_vec) AS score
+    FROM tab_scann_dot
+    ORDER BY score DESC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id, dotProduct(vec, reference_vec) AS score
+    FROM tab_scann_dot
+    ORDER BY score DESC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id, dotProduct(vec, reference_vec) AS score
+    FROM tab_scann_dot
+    ORDER BY score DESC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 0
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id, dotProduct(vec, reference_vec) AS score
+    FROM tab_scann_dot
+    ORDER BY score DESC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1
+);
+-- Verify the optimize_plan=true path (rescoring=0).
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_dot ORDER BY dotProduct(vec, reference_vec) DESC LIMIT 3
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_dot ORDER BY dotProduct(vec, reference_vec) DESC LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+DROP TABLE tab_scann_dot;
+
+-- Test 4: fallback path (< 1000 vectors, ScaNN index not built).
+-- Verifies that both rescoring modes produce correct results when the index is absent.
+SELECT '4. Fallback path (< 1000 vectors)';
+DROP TABLE IF EXISTS tab_scann_fallback;
+CREATE TABLE tab_scann_fallback (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO tab_scann_fallback VALUES
+    (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]),
+    (5, [0.0, 2.0]), (6, [0.0, 2.1]), (7, [0.0, 2.2]), (8, [0.0, 2.3]), (9, [0.0, 2.4]);
+-- rescoring=1: fallback should return the same results as the exact search.
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_fallback ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 1
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_fallback ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+-- rescoring=0: fallback must not set sentinel +inf distances (regression test for the
+-- bug where distances.has_value()==true caused optimize_plan=true on fallback parts).
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_fallback ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_fallback ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+-- Regression: small parts (< MIN_VECTORS) serialize with empty artifacts. After
+-- DETACH/ATTACH buildIndexFromSerialized must treat this as the same no-index fallback
+-- rather than throwing "serialized artifacts are missing".
+DETACH TABLE tab_scann_fallback SYNC;
+ATTACH TABLE tab_scann_fallback;
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_fallback ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 1
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_fallback ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+DROP TABLE tab_scann_fallback;
+
+-- Test 5: mixed index (ScaNN + minmax) — regression for the bug where the per-part
+-- skip-index ordering ran minmax first, filtered marks, and then skipped ScaNN
+-- entirely because vector indexes require all_match.  ScaNN must run first so that
+-- it sees the full mark range, producing correct results.
+SELECT '5. ScaNN not skipped when combined with a minmax index';
+DROP TABLE IF EXISTS tab_scann_mixed;
+CREATE TABLE tab_scann_mixed (
+    id  Int32,
+    tag Int32,
+    vec Array(Float32),
+    INDEX scann_idx vec TYPE vector_similarity('scann', 'L2Distance', 2) GRANULARITY 100000000,
+    INDEX mm_idx    tag TYPE minmax GRANULARITY 1
+) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO tab_scann_mixed
+    SELECT toInt32(number), toInt32(number % 10), [toFloat32(number), toFloat32(0.0)]
+    FROM numbers(2000);
+OPTIMIZE TABLE tab_scann_mixed FINAL;
+-- Results must match brute-force; a mismatch would mean ScaNN was skipped.
+SELECT count() FROM (
+    WITH [toFloat32(1000), toFloat32(0.0)] AS ref
+    SELECT id FROM tab_scann_mixed ORDER BY L2Distance(vec, ref) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 1
+    EXCEPT
+    WITH [toFloat32(1000), toFloat32(0.0)] AS ref
+    SELECT id FROM tab_scann_mixed ORDER BY L2Distance(vec, ref) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+DROP TABLE tab_scann_mixed;
+
+SELECT '6. invalid distance function';
+CREATE TABLE tab_scann_bad_dist (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'hamming', 2)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_DATA }
+
+SELECT '7. too few arguments';
+CREATE TABLE tab_scann_too_few (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance')) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+SELECT '8. too many arguments';
+CREATE TABLE tab_scann_too_many (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'extra')) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+SELECT '9. dimensions must be > 0';
+CREATE TABLE tab_scann_zero_dim (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 0)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_DATA }
+
+SELECT '10. must be created on Array(Float32) or Array(Float64) column';
+CREATE TABLE tab_scann_wrong_col (vec Array(UInt64), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
+
+SELECT '11. dimension mismatch at insert';
+DROP TABLE IF EXISTS tab_scann_dim_ins;
+CREATE TABLE tab_scann_dim_ins (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_scann_dim_ins VALUES (0, [1.0, 2.0, 3.0]); -- { serverError INCORRECT_DATA }
+DROP TABLE tab_scann_dim_ins;
+
+-- Test 11: scann_num_leaves_to_search too small relative to LIMIT must not truncate
+-- result cardinality. With scann_num_leaves_to_search=1 ScaNN searches a single IVF
+-- partition (~sqrt(N) vectors), so nn.size() < num_candidates when LIMIT is large.
+-- The fix falls back to a full-granule exact scan, returning exactly LIMIT rows.
+SELECT '12. scann_num_leaves_to_search small: result cardinality equals LIMIT';
+DROP TABLE IF EXISTS tab_scann_few_leaves;
+CREATE TABLE tab_scann_few_leaves (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO tab_scann_few_leaves
+    SELECT toInt32(number), [toFloat32(number), toFloat32(0.0)]
+    FROM numbers(2000);
+OPTIMIZE TABLE tab_scann_few_leaves FINAL;
+-- count() = 1 means exactly 100 rows were returned.
+SELECT count() = 100 FROM (
+    WITH [toFloat32(1000), toFloat32(0.0)] AS ref
+    SELECT id FROM tab_scann_few_leaves ORDER BY L2Distance(vec, ref) ASC LIMIT 100
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1, scann_num_leaves_to_search = 1
+);
+-- Fallback uses exact distances so results must match brute-force.
+-- Use a secondary sort on id to break ties deterministically at the LIMIT boundary.
+SELECT count() FROM (
+    WITH [toFloat32(1000), toFloat32(0.0)] AS ref
+    SELECT id FROM tab_scann_few_leaves ORDER BY L2Distance(vec, ref) ASC, id ASC LIMIT 100
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1, scann_num_leaves_to_search = 1
+    EXCEPT
+    WITH [toFloat32(1000), toFloat32(0.0)] AS ref
+    SELECT id FROM tab_scann_few_leaves ORDER BY L2Distance(vec, ref) ASC, id ASC LIMIT 100
+    SETTINGS use_skip_indexes = 0
+);
+DROP TABLE tab_scann_few_leaves;
+
+SELECT '13. non-finite values rejected at insert (NaN/Inf)';
+DROP TABLE IF EXISTS tab_scann_nonfinite;
+CREATE TABLE tab_scann_nonfinite (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_scann_nonfinite VALUES (0, [nan, 1.0]); -- { serverError INCORRECT_DATA }
+INSERT INTO tab_scann_nonfinite VALUES (0, [inf, 1.0]); -- { serverError INCORRECT_DATA }
+INSERT INTO tab_scann_nonfinite VALUES (0, [-inf, 1.0]); -- { serverError INCORRECT_DATA }
+DROP TABLE tab_scann_nonfinite;
+
+SELECT '14. non-finite values rejected in query vector';
+DROP TABLE IF EXISTS tab_scann_nonfinite_q;
+CREATE TABLE tab_scann_nonfinite_q (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_scann_nonfinite_q SELECT toInt32(number), [toFloat32(number), toFloat32(number + 1)] FROM numbers(2000);
+OPTIMIZE TABLE tab_scann_nonfinite_q FINAL;
+WITH [nan, 0.0] AS ref SELECT id FROM tab_scann_nonfinite_q ORDER BY L2Distance(vec, ref) LIMIT 1 SETTINGS use_skip_indexes = 1; -- { serverError INCORRECT_DATA }
+WITH [inf, 0.0] AS ref SELECT id FROM tab_scann_nonfinite_q ORDER BY L2Distance(vec, ref) LIMIT 1 SETTINGS use_skip_indexes = 1; -- { serverError INCORRECT_DATA }
+DROP TABLE tab_scann_nonfinite_q;
+
+-- Test 14: Float64 query values that are finite as double but overflow to +Inf when
+-- narrowed to float must be rejected. Regression for the bug where isfinite was checked
+-- on the double value before the static_cast<float>, letting 1e100 pass validation.
+SELECT '15. Float64 value overflowing to float32 +Inf rejected in query vector';
+DROP TABLE IF EXISTS tab_scann_f64_overflow;
+CREATE TABLE tab_scann_f64_overflow (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_scann_f64_overflow SELECT toInt32(number), [toFloat32(number), toFloat32(0.0)] FROM numbers(2000);
+OPTIMIZE TABLE tab_scann_f64_overflow FINAL;
+WITH [toFloat64(1e100), toFloat64(0.0)] AS ref
+SELECT id FROM tab_scann_f64_overflow ORDER BY L2Distance(vec, ref) ASC LIMIT 1
+SETTINGS use_skip_indexes = 1; -- { serverError INCORRECT_DATA }
+DROP TABLE tab_scann_f64_overflow;
+
+-- Test 15: index survives DETACH/ATTACH (serialization round-trip).
+SELECT '16. Serialization round-trip (DETACH/ATTACH)';
+DROP TABLE IF EXISTS tab_scann_detach;
+CREATE TABLE tab_scann_detach (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO tab_scann_detach VALUES
+    (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]),
+    (5, [0.0, 2.0]), (6, [0.0, 2.1]), (7, [0.0, 2.2]), (8, [0.0, 2.3]), (9, [0.0, 2.4]);
+INSERT INTO tab_scann_detach
+    SELECT 10 + toInt32(number), [toFloat32((number + 1) * 100.0), toFloat32(0.0)]
+    FROM numbers(1990);
+OPTIMIZE TABLE tab_scann_detach FINAL;
+DETACH TABLE tab_scann_detach SYNC;
+ATTACH TABLE tab_scann_detach;
+WITH [0.0, 2.0] AS reference_vec
+SELECT isFinite(L2Distance(vec, reference_vec))
+FROM tab_scann_detach
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 1
+SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1;
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_detach ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 1
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_detach ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 1
+    SETTINGS use_skip_indexes = 0
+);
+DROP TABLE tab_scann_detach;
+
+-- Test 17: Optimized plan must return the correct L2Distance value, not sqrt(L2Distance).
+-- Vector [3.0, 4.0] has L2Distance to [0.0, 0.0] = 5.0 exactly.
+-- A double-sqrt bug would return sqrt(5) ≈ 2.236 instead.
+-- Compare against the known exact value (not against another subquery, which the optimizer
+-- could merge into the same scan and return the same wrong value for both sides).
+SELECT '17. L2Distance optimized plan returns correct distance value (not double-sqrt)';
+DROP TABLE IF EXISTS tab_scann_l2_val;
+CREATE TABLE tab_scann_l2_val (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO tab_scann_l2_val VALUES (0, [3.0, 4.0]);
+INSERT INTO tab_scann_l2_val SELECT toInt32(number + 1), [toFloat32(number + 100), toFloat32(number + 100)] FROM numbers(1999);
+OPTIMIZE TABLE tab_scann_l2_val FINAL;
+-- Exact L2Distance([3,4], [0,0]) = 5.0. Tolerance 0.01 for float32 rounding.
+-- A double-sqrt bug would produce sqrt(5) ≈ 2.24, caught by abs(...) >= 0.01.
+SELECT abs(L2Distance(vec, [toFloat32(0.0), toFloat32(0.0)]) - 5.0) < 0.01
+FROM tab_scann_l2_val
+ORDER BY L2Distance(vec, [toFloat32(0.0), toFloat32(0.0)]) ASC LIMIT 1
+SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1;
+DROP TABLE tab_scann_l2_val;
+
+-- Test 18: cosineDistance rejects zero-magnitude indexed vectors.
+SELECT '18. cosineDistance rejects zero-magnitude indexed vector';
+DROP TABLE IF EXISTS tab_scann_cosine_zero;
+CREATE TABLE tab_scann_cosine_zero (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'cosineDistance', 2))
+    ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_scann_cosine_zero VALUES (0, [0.0, 0.0]); -- { serverError INCORRECT_DATA }
+DROP TABLE tab_scann_cosine_zero;
+
+-- Test 19: cosineDistance rejects zero-magnitude query vectors.
+SELECT '19. cosineDistance rejects zero-magnitude query vector';
+DROP TABLE IF EXISTS tab_scann_cosine_zero_q;
+CREATE TABLE tab_scann_cosine_zero_q (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'cosineDistance', 2))
+    ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_scann_cosine_zero_q SELECT toInt32(number), [toFloat32(number + 1), toFloat32(0.0)] FROM numbers(2000);
+OPTIMIZE TABLE tab_scann_cosine_zero_q FINAL;
+WITH [toFloat32(0.0), toFloat32(0.0)] AS ref
+SELECT id FROM tab_scann_cosine_zero_q ORDER BY cosineDistance(vec, ref) ASC LIMIT 1
+SETTINGS use_skip_indexes = 1; -- { serverError INCORRECT_DATA }
+DROP TABLE tab_scann_cosine_zero_q;
+
+-- Test 20: Large finite Float64 cosine vectors must not be corrupted by float32 overflow
+-- in normalization. For a vector like [1e20, 0]: 1e20 fits in float32 but 1e20^2 = 1e40
+-- overflows float32 to Inf, making inv = 0 and silently storing the indexed vector as [0, 0].
+-- The same overflow affects the query-vector normalization path.
+-- Regression: both paths must produce results matching exact cosineDistance.
+SELECT '20. Large Float64 cosine vectors: float32 overflow in normalization regression';
+DROP TABLE IF EXISTS tab_scann_cos_f64_large;
+CREATE TABLE tab_scann_cos_f64_large (id Int32, vec Array(Float64), INDEX idx vec TYPE vector_similarity('scann', 'cosineDistance', 2))
+    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+-- id=0: [1e20, 0] points along x-axis; id=1: [0, 1e20] points along y-axis.
+INSERT INTO tab_scann_cos_f64_large VALUES (0, [1e20, 0.0]), (1, [0.0, 1e20]);
+INSERT INTO tab_scann_cos_f64_large
+    SELECT 2 + toInt32(number), [toFloat64(number + 1), toFloat64(1.0)]
+    FROM numbers(1998);
+OPTIMIZE TABLE tab_scann_cos_f64_large FINAL;
+-- Indexed-vector path: reference [1.0, 0.0] isolates indexed-vector normalization.
+-- Without the fix, [1e20, 0] is stored as [0, 0] (cosineDistance = 1) and ranked incorrectly.
+SELECT count() FROM (
+    WITH [toFloat64(1.0), toFloat64(0.0)] AS reference_vec
+    SELECT id FROM tab_scann_cos_f64_large ORDER BY cosineDistance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
+    EXCEPT
+    WITH [toFloat64(1.0), toFloat64(0.0)] AS reference_vec
+    SELECT id FROM tab_scann_cos_f64_large ORDER BY cosineDistance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+-- Query-vector path: reference [1e20, 0.0] isolates query-vector normalization.
+-- Without the fix, the query vector is normalized to [0, 0] and all distances become 1.
+SELECT count() FROM (
+    WITH [toFloat64(1e20), toFloat64(0.0)] AS reference_vec
+    SELECT id FROM tab_scann_cos_f64_large ORDER BY cosineDistance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
+    EXCEPT
+    WITH [toFloat64(1e20), toFloat64(0.0)] AS reference_vec
+    SELECT id FROM tab_scann_cos_f64_large ORDER BY cosineDistance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+DROP TABLE tab_scann_cos_f64_large;
+
+-- Test 21: Unquoted 'scann' identifier must be treated as method name 'scann' and
+-- require allow_experimental_scann_index = 1, same as the quoted form.
+-- Before the fix, hasScannVectorSimilarityIndex only checked ASTLiteral, so
+-- vector_similarity(scann, ...) bypassed the experimental guard.
+SELECT '21. Unquoted scann identifier requires allow_experimental_scann_index';
+SET allow_experimental_scann_index = 0;
+DROP TABLE IF EXISTS tab_scann_unquoted;
+-- CREATE TABLE path
+CREATE TABLE tab_scann_unquoted (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity(scann, 'L2Distance', 2) GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError SUPPORT_IS_DISABLED }
+-- ALTER TABLE path
+CREATE TABLE tab_scann_unquoted (id Int32, vec Array(Float32)) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE tab_scann_unquoted ADD INDEX idx vec TYPE vector_similarity(scann, 'L2Distance', 2) GRANULARITY 1; -- { serverError SUPPORT_IS_DISABLED }
+DROP TABLE tab_scann_unquoted;
+SET allow_experimental_scann_index = 1;

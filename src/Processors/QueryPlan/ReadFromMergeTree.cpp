@@ -2131,12 +2131,10 @@ void ReadFromMergeTree::buildIndexes(
         MergeTreeIndexConditionPtr condition;
         if (index_helper->isVectorSimilarityIndex())
         {
-#if USE_USEARCH
-            if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
-                condition = vector_similarity_index->createIndexCondition(filter_dag.predicate, query_context, vector_search_parameters);
-#endif
-            if (!condition)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
+            /// All vector similarity index types implement the virtual overload of createIndexCondition
+            /// that accepts VectorSearchParameters. Call it via polymorphism so that new backends
+            /// (e.g. vector_similarity('scann', ...)) work without modifying this file.
+            condition = index_helper->createIndexCondition(filter_dag.predicate, query_context, vector_search_parameters);
         }
         else
         {
@@ -2246,15 +2244,12 @@ void ReadFromMergeTree::buildIndexes(
                 auto l_index_priority = l_is_minmax ? 1 : 2;
                 auto r_index_priority = r_is_minmax ? 1 : 2;
 
-#if USE_USEARCH
-                // A vector similarity index (if present) is the most selective, hence move it to front
-                bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
-                bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
-                if (l_is_vectorsimilarity)
+                // Vector similarity indexes require all_match (no prior mark filtering),
+                // so move them to the front regardless of which backend is used.
+                if (l_index->isVectorSimilarityIndex())
                     l_index_priority = 0;
-                if (r_is_vectorsimilarity)
+                if (r_index->isVectorSimilarityIndex())
                     r_index_priority = 0;
-#endif
                 // negated since we want to prioritize coarser indexes
                 const auto neg_l_granularity = -l_index->getGranularity();
                 const auto neg_r_granularity = -r_index->getGranularity();
